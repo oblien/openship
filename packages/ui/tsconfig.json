@@ -1,7 +1,9 @@
 {
-  "extends": "openship-tsconfig/nextjs.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "jsx": "preserve",
     "outDir": "dist"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],

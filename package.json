@@ -7,19 +7,22 @@
     "type": "git",
     "url": "https://github.com/oblien/openship.git"
   },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "db:generate": "turbo run db:generate --filter=openship-db",
-    "db:push": "turbo run db:push --filter=openship-db",
-    "db:migrate": "turbo run db:migrate --filter=openship-db",
+    "db:generate": "turbo run db:generate --filter=@repo/db",
+    "db:push": "turbo run db:push --filter=@repo/db",
+    "db:migrate": "turbo run db:migrate --filter=@repo/db",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
-    "openship-tsconfig": "workspace:*",
     "prettier": "^3.2.0",
     "turbo": "^2.0.0",
     "typescript": "^5.4.0"

@@ -9,7 +9,7 @@ COPY packages/ ./packages/
 COPY apps/web/ ./apps/web/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm run build --filter=openship-web...
+RUN pnpm run build --filter=@repo/web...
 
 # ─── Production stage ──────────────────────────────────
 FROM node:20-alpine AS runner

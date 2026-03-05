@@ -1,5 +1,5 @@
 {
-  "name": "openship-web",
+  "name": "@repo/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,14 +10,13 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
-    "openship-ui": "workspace:*",
-    "openship-core": "workspace:*",
+    "@repo/ui": "workspace:*",
+    "@repo/core": "workspace:*",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
   },
   "devDependencies": {
-    "openship-tsconfig": "workspace:*",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",

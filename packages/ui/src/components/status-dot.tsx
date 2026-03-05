@@ -1,5 +1,5 @@
 import { cn } from "../lib/cn";
-import type { DeploymentStatus } from "openship-core";
+import type { DeploymentStatus } from "@repo/core";
 
 const statusColors: Record<string, string> = {
   queued: "bg-gray-400",

@@ -1,5 +1,5 @@
 {
-  "name": "openship-db",
+  "name": "@repo/db",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -24,7 +24,6 @@
     "@prisma/client": "^5.14.0"
   },
   "devDependencies": {
-    "openship-tsconfig": "workspace:*",
     "prisma": "^5.14.0",
     "tsup": "^8.1.0",
     "typescript": "^5.4.0"

@@ -9,7 +9,7 @@ COPY packages/ ./packages/
 COPY apps/dashboard/ ./apps/dashboard/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm run build --filter=openship-dashboard...
+RUN pnpm run build --filter=@repo/dashboard...
 
 # ─── Production stage ──────────────────────────────────
 FROM node:20-alpine AS runner

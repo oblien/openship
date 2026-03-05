@@ -1,5 +1,5 @@
 {
-  "name": "openship-adapters",
+  "name": "@repo/adapters",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -17,10 +17,9 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
-    "openship-core": "workspace:*"
+    "@repo/core": "workspace:*"
   },
   "devDependencies": {
-    "openship-tsconfig": "workspace:*",
     "tsup": "^8.1.0",
     "typescript": "^5.4.0"
   }

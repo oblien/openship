@@ -1,7 +1,8 @@
 {
-  "extends": "openship-tsconfig/node.json",
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
+    "lib": ["ES2022"],
     "paths": {
       "@/*": ["./src/*"]
     },

@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ["openship-ui", "openship-core", "openship-db"],
+  transpilePackages: ["@repo/ui", "@repo/core", "@repo/db"],
 };
 
 export default nextConfig;

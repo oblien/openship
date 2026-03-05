@@ -9,7 +9,7 @@ COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm run build --filter=openship-api...
+RUN pnpm run build --filter=@repo/api...
 
 # ─── Production stage ──────────────────────────────────
 FROM node:20-alpine AS runner

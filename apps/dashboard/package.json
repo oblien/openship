@@ -1,5 +1,5 @@
 {
-  "name": "openship-dashboard",
+  "name": "@repo/dashboard",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,16 +10,15 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
-    "openship-ui": "workspace:*",
-    "openship-core": "workspace:*",
-    "openship-db": "workspace:*",
+    "@repo/ui": "workspace:*",
+    "@repo/core": "workspace:*",
+    "@repo/db": "workspace:*",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "next-auth": "^5.0.0-beta.0"
   },
   "devDependencies": {
-    "openship-tsconfig": "workspace:*",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
