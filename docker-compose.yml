@@ -1,0 +1,87 @@
+# ──────────────────────────────────────────────────────────
+# Openship — Self-Hosted Docker Compose
+#
+# Quick start:
+#   cp .env.example .env
+#   docker compose up -d
+#
+# This spins up the full Openship stack:
+#   • Dashboard (Next.js)  → localhost:3001
+#   • Web / Landing        → localhost:3000
+#   • API (Hono)           → localhost:4000
+#   • PostgreSQL            → localhost:5432
+#   • Redis                 → localhost:6379
+# ──────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+  # ─── Database ─────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: openship
+      POSTGRES_PASSWORD: openship
+      POSTGRES_DB: openship
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # ─── Cache / Queue ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # ─── API ──────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      CLOUD_MODE: "false"
+      DATABASE_URL: postgresql://openship:openship@postgres:5432/openship
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: change-me-in-production
+    depends_on:
+      - postgres
+      - redis
+
+  # ─── Dashboard ────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://api:4000/api
+    depends_on:
+      - api
+
+  # ─── Web / Landing ───────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,37 @@
+{
+  "name": "openship-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --dts",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo node_modules"
+  },
+  "dependencies": {
+    "openship-core": "workspace:*",
+    "openship-db": "workspace:*",
+    "openship-adapters": "workspace:*",
+    "@hono/node-server": "^1.11.0",
+    "hono": "^4.4.0",
+    "zod": "^3.23.0",
+    "jsonwebtoken": "^9.0.0",
+    "bcryptjs": "^2.4.3",
+    "stripe": "^15.0.0",
+    "bullmq": "^5.7.0",
+    "ioredis": "^5.4.0",
+    "pino": "^9.1.0"
+  },
+  "devDependencies": {
+    "openship-tsconfig": "workspace:*",
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/bcryptjs": "^2.4.0",
+    "tsx": "^4.11.0",
+    "tsup": "^8.1.0",
+    "vitest": "^1.6.0",
+    "typescript": "^5.4.0"
+  }
+}

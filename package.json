@@ -1,0 +1,31 @@
+{
+  "name": "openship",
+  "version": "0.1.0",
+  "description": "Open-source, self-hostable deployment platform",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oblien/openship.git"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:generate": "turbo run db:generate --filter=openship-db",
+    "db:push": "turbo run db:push --filter=openship-db",
+    "db:migrate": "turbo run db:migrate --filter=openship-db",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "openship-tsconfig": "workspace:*",
+    "prettier": "^3.2.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
