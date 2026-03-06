@@ -1,6 +1,7 @@
 /**
- * Auth layout — minimal shell without sidebar, used for login/register pages.
+ * Auth layout — minimal shell, no sidebar.
+ * Background and body color come from theme tokens.
  */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-screen bg-gray-50">{children}</div>;
+  return <div className="th-page">{children}</div>;
 }

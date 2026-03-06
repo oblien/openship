@@ -12,25 +12,28 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
-    "@repo/core": "workspace:*",
-    "@repo/db": "workspace:*",
-    "@repo/adapters": "workspace:*",
+    "@better-auth/drizzle-adapter": "^1.2.0",
     "@hono/node-server": "^1.11.0",
     "@hono/typebox-validator": "^0.3.0",
+    "@repo/adapters": "workspace:*",
+    "@repo/core": "workspace:*",
+    "@repo/db": "workspace:*",
     "@sinclair/typebox": "^0.34.0",
     "better-auth": "^1.2.0",
-    "@better-auth/drizzle-adapter": "^1.2.0",
-    "hono": "^4.4.0",
-    "zod": "^3.24.0",
-    "stripe": "^15.0.0",
     "bullmq": "^5.7.0",
+    "hono": "^4.4.0",
     "ioredis": "^5.4.0",
-    "pino": "^9.1.0"
+    "nodemailer": "^8.0.1",
+    "pino": "^9.1.0",
+    "stripe": "^15.0.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
-    "tsx": "^4.11.0",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^7.0.11",
     "tsup": "^8.1.0",
-    "vitest": "^1.6.0",
-    "typescript": "^5.4.0"
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
   }
 }

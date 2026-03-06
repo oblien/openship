@@ -1,0 +1,123 @@
+{
+  "brand": "OpenShip",
+  "auth": {
+    "login": {
+      "title": "Welcome back",
+      "subtitle": "Sign in to your account to continue.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "••••••••",
+      "forgot": "Forgot?",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "noAccount": "No account?",
+      "createOne": "Create one"
+    },
+    "register": {
+      "title": "Create your account",
+      "subtitle": "Get started with Openship in seconds.",
+      "nameLabel": "Name",
+      "namePlaceholder": "Your name",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Min. 8 characters",
+      "submit": "Create account",
+      "submitting": "Creating account…",
+      "hasAccount": "Already have an account?",
+      "signIn": "Sign in"
+    },
+    "forgotPassword": {
+      "title": "Reset your password",
+      "subtitle": "Enter your email and we'll send you a reset link.",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "submit": "Send reset link",
+      "submitting": "Sending…",
+      "backToSignIn": "Back to sign in",
+      "sentTitle": "Check your inbox",
+      "sentDescription": "We sent a password reset link to {email}. It may take a minute to arrive.",
+      "tryDifferentEmail": "Try a different email"
+    },
+    "resetPassword": {
+      "title": "Set a new password",
+      "subtitle": "Choose a strong password for your account.",
+      "passwordLabel": "New password",
+      "passwordPlaceholder": "Min. 8 characters",
+      "confirmLabel": "Confirm password",
+      "confirmPlaceholder": "Re-enter password",
+      "submit": "Reset password",
+      "submitting": "Resetting…",
+      "backToSignIn": "Back to sign in",
+      "doneTitle": "Password reset",
+      "doneDescription": "Your password has been updated successfully.",
+      "doneAction": "Sign in",
+      "noTokenError": "No reset token found. Please {link}.",
+      "noTokenLink": "request a new link"
+    },
+    "verifyEmail": {
+      "verifyingTitle": "Verifying your email…",
+      "verifyingSubtitle": "Just a moment.",
+      "verifiedTitle": "Email verified",
+      "verifiedDescription": "Your email has been verified. You can now sign in.",
+      "verifiedAction": "Continue to sign in",
+      "errorTitle": "Verification failed",
+      "errorDescription": "The link may have expired or is invalid.",
+      "resendEmail": "Resend email",
+      "signIn": "Sign in",
+      "pendingTitle": "Verify your email",
+      "pendingSentTo": "We sent a verification link to {email}. Check your inbox and click the link to continue.",
+      "pendingGeneric": "Check your inbox for a verification link.",
+      "resendVerification": "Resend verification email",
+      "backToSignIn": "Back to sign in"
+    },
+    "oauth": {
+      "or": "or",
+      "github": "Continue with GitHub",
+      "google": "Continue with Google"
+    },
+    "errors": {
+      "invalidCredentials": "Invalid email or password.",
+      "serverUnreachable": "Could not reach the server. Is the API running?",
+      "generic": "Something went wrong. Please try again.",
+      "oauthFailed": "OAuth sign-in failed. Please try again.",
+      "passwordMin": "Password must be at least 8 characters.",
+      "passwordMismatch": "Passwords do not match.",
+      "invalidToken": "Invalid or missing reset token. Please request a new link.",
+      "resetFailed": "Could not reset password.",
+      "createFailed": "Could not create account.",
+      "verificationFailed": "Verification failed.",
+      "verificationExpired": "Verification failed. The link may have expired.",
+      "resendFailed": "Failed to resend. Please try again.",
+      "verificationSent": "Verification email sent!"
+    },
+    "toggleTheme": "Toggle theme",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
+  },
+  "dashboard": {
+    "nav": {
+      "projects": "Projects",
+      "deployments": "Deployments",
+      "domains": "Domains",
+      "monitoring": "Monitoring",
+      "settings": "Settings",
+      "billing": "Billing"
+    },
+    "user": {
+      "logout": "Log out",
+      "loggingOut": "Logging out\u2026",
+      "profile": "Profile",
+      "preferences": "Preferences"
+    },
+    "pages": {
+      "projects": { "title": "Projects", "description": "Create and manage your deployment projects." },
+      "deployments": { "title": "Deployments", "description": "View and manage your deployment history." },
+      "domains": { "title": "Domains", "description": "Manage custom domains and DNS records." },
+      "monitoring": { "title": "Monitoring", "description": "Logs, metrics, and health checks for your services." },
+      "settings": { "title": "Settings", "description": "Account, team, and platform settings." },
+      "billing": { "title": "Billing", "description": "Manage your subscription, usage, and payment methods." }
+    }
+  }
+}

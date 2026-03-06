@@ -38,6 +38,16 @@ const envSchema = z.object({
   GITHUB_APP_ID: z.string().optional(),
   GITHUB_PRIVATE_KEY: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
+
+  /* ---------- Email (SMTP) ---------- */
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().default("Openship <noreply@openship.dev>"),
+
+  /* ---------- Dashboard ---------- */
+  DASHBOARD_URL: z.string().default("http://localhost:3001"),
 });
 
 export type Env = z.infer<typeof envSchema>;

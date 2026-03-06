@@ -1,10 +1,16 @@
+"use client";
+
+import { PageHeader } from "@/components/page-header";
+
 export default function BillingPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold">Billing</h1>
-      <p className="mt-2 text-gray-600">
-        Manage your subscription, usage, and payment methods.
-      </p>
-    </div>
+    <>
+      <PageHeader pageKey="billing" />
+      <div className="rounded-xl border border-border bg-card p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          Billing and subscription management will appear here.
+        </p>
+      </div>
+    </>
   );
 }

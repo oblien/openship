@@ -184,6 +184,7 @@ Copy `.env.example` to `.env`. Key variables:
 | ------------------------ | -------------------------- | ------------------------------------ |
 | `CLOUD_MODE`             | `false`                    | `true` = cloud with billing enabled  |
 | `DATABASE_URL`           | _(empty = PGlite)_         | Empty for PGlite (dev) or `postgres://` URL |
+| `PGLITE_DATA_DIR`        | `.openship/data`           | PGlite storage path (when no `DATABASE_URL`) |
 | `BETTER_AUTH_SECRET`     | `change-me-...`            | Auth session signing secret (32+ chars) |
 | `BETTER_AUTH_URL`        | `http://localhost:4000`    | API base URL for auth callbacks      |
 | `REDIS_URL`              | `redis://localhost:6379`   | Queue and cache                      |

@@ -1,8 +1,16 @@
+"use client";
+
+import { PageHeader } from "@/components/page-header";
+
 export default function MonitoringPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold">Monitoring</h1>
-      <p className="mt-2 text-gray-600">Logs, metrics, and health checks for your services.</p>
-    </div>
+    <>
+      <PageHeader pageKey="monitoring" />
+      <div className="rounded-xl border border-border bg-card p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          No active services to monitor.
+        </p>
+      </div>
+    </>
   );
 }

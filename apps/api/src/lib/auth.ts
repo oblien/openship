@@ -2,6 +2,8 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, schema } from "@repo/db";
 import { env } from "../config/env";
+import { sendMail, smtpEnabled } from "./mail";
+import { resetPasswordEmail, verifyEmailTemplate } from "./email-templates";
 
 /**
  * Better Auth — handles registration, login, OAuth, sessions, tokens.
@@ -30,6 +32,23 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 8,
     maxPasswordLength: 128,
+
+    /* Password reset — only functional when SMTP is configured */
+    sendResetPassword: smtpEnabled
+      ? async ({ user, url }) => {
+          const email = resetPasswordEmail(user, url);
+          await sendMail({ to: user.email, ...email });
+        }
+      : undefined,
+
+    /* Email verification — only functional when SMTP is configured */
+    requireEmailVerification: smtpEnabled,
+    sendVerificationEmail: smtpEnabled
+      ? async ({ user, url }) => {
+          const email = verifyEmailTemplate(user, url);
+          await sendMail({ to: user.email, ...email });
+        }
+      : undefined,
   },
 
   /* ---------- OAuth Providers ---------- */

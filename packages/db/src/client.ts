@@ -1,12 +1,17 @@
-import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { mkdirSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type { PgliteDatabase } from "drizzle-orm/pglite";
 import * as schema from "./schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type Database = NodePgDatabase<typeof schema>;
+/**
+ * Unified database type — works regardless of driver (pg or PGlite).
+ * Every repo and service receives this; they never know which driver runs beneath.
+ */
+export type Database = NodePgDatabase<typeof schema> | PgliteDatabase<typeof schema>;
 
 /** Which driver is active — useful for conditional logic in adapters */
 export type Driver = "pg" | "pglite";
@@ -19,10 +24,27 @@ export function getDriver(): Driver {
   return _driver;
 }
 
-// ─── Migration paths ─────────────────────────────────────────────────────────
+// ─── Resolved paths ─────────────────────────────────────────────────────────
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, "../drizzle");
+
+// ─── Data directory ──────────────────────────────────────────────────────────
+
+/**
+ * Resolves the PGlite data directory from environment or convention.
+ *
+ * Priority:
+ *   1) PGLITE_DATA_DIR env var — explicit path (recommended for self-hosted)
+ *   2) Default: ~/.openship/data  (outside the project, won't be committed)
+ */
+function resolvePgliteDataDir(): string {
+  const explicit = process.env.PGLITE_DATA_DIR;
+  if (explicit) return resolve(explicit);
+
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "/tmp";
+  return resolve(home, ".openship", "data");
+}
 
 // ─── Client factory ──────────────────────────────────────────────────────────
 
@@ -31,7 +53,11 @@ const MIGRATIONS_DIR = resolve(__dirname, "../drizzle");
  *
  * Driver selection based on DATABASE_URL:
  *   postgres://...  → node-postgres Pool  (production / Docker self-host)
- *   empty or path   → PGlite embedded     (zero-config dev, no Docker)
+ *   empty / absent  → PGlite embedded     (zero-config dev, no Docker)
+ *
+ * PGlite data location (when active):
+ *   PGLITE_DATA_DIR  → explicit path (self-hosted customisation)
+ *   _(default)_      → ~/.openship/data  (outside the project)
  *
  * Migrations run automatically at startup from `packages/db/drizzle/`.
  * Schema changes → `pnpm db:generate` → commit the new migration → restart.
@@ -43,7 +69,7 @@ async function createDb(): Promise<Database> {
     return createPgClient(url);
   }
 
-  return createPgliteClient(url);
+  return createPgliteClient();
 }
 
 // ─── PostgreSQL (node-postgres) ──────────────────────────────────────────────
@@ -51,6 +77,7 @@ async function createDb(): Promise<Database> {
 async function createPgClient(url: string): Promise<Database> {
   _driver = "pg";
   const { Pool } = await import("pg");
+  const { drizzle } = await import("drizzle-orm/node-postgres");
   const pool = new Pool({
     connectionString: url,
     max: 20,
@@ -68,24 +95,23 @@ async function createPgClient(url: string): Promise<Database> {
 
 // ─── PGlite (embedded PostgreSQL) ────────────────────────────────────────────
 
-async function createPgliteClient(url: string): Promise<Database> {
+async function createPgliteClient(): Promise<Database> {
   _driver = "pglite";
-  const dataDir = url || "./data/pglite";
+  const dataDir = resolvePgliteDataDir();
   if (!existsSync(dataDir)) {
     mkdirSync(dataDir, { recursive: true });
   }
 
   const { PGlite } = await import("@electric-sql/pglite");
-  const { drizzle: pgliteDrizzle } = await import("drizzle-orm/pglite");
+  const { drizzle } = await import("drizzle-orm/pglite");
   const client = new PGlite(dataDir);
-  const db = pgliteDrizzle(client, { schema });
+  const db = drizzle(client, { schema });
 
   // Run pending migrations
   const { migrate } = await import("drizzle-orm/pglite/migrator");
   await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
 
-  // Cast to shared Database type — both use the same PostgreSQL dialect
-  return db as unknown as Database;
+  return db;
 }
 
 // ─── Singleton export ────────────────────────────────────────────────────────

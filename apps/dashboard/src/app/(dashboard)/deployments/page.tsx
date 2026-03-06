@@ -1,8 +1,16 @@
+"use client";
+
+import { PageHeader } from "@/components/page-header";
+
 export default function DeploymentsPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold">Deployments</h1>
-      <p className="mt-2 text-gray-600">View and manage your deployment history.</p>
-    </div>
+    <>
+      <PageHeader pageKey="deployments" />
+      <div className="rounded-xl border border-border bg-card p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          No deployments yet. Deploy a project to see history here.
+        </p>
+      </div>
+    </>
   );
 }

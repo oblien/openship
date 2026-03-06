@@ -1,8 +1,16 @@
+"use client";
+
+import { PageHeader } from "@/components/page-header";
+
 export default function DomainsPage() {
   return (
-    <div>
-      <h1 className="text-2xl font-bold">Domains</h1>
-      <p className="mt-2 text-gray-600">Manage custom domains and DNS records.</p>
-    </div>
+    <>
+      <PageHeader pageKey="domains" />
+      <div className="rounded-xl border border-border bg-card p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          No custom domains configured. Add a domain to get started.
+        </p>
+      </div>
+    </>
   );
 }

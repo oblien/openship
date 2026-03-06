@@ -27,8 +27,9 @@ Thumbs.db
 coverage/
 
 # Database (PGlite local data)
-packages/db/data/
-apps/api/data/
+.openship/
+data/
+*.pglite
 
 # Logs
 *.log

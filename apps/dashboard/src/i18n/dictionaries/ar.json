@@ -1,0 +1,123 @@
+{
+  "brand": "openship",
+  "auth": {
+    "login": {
+      "title": "مرحبًا بعودتك",
+      "subtitle": "سجّل الدخول إلى حسابك للمتابعة.",
+      "emailLabel": "البريد الإلكتروني",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "كلمة المرور",
+      "passwordPlaceholder": "••••••••",
+      "forgot": "نسيت؟",
+      "submit": "تسجيل الدخول",
+      "submitting": "جارٍ تسجيل الدخول…",
+      "noAccount": "ليس لديك حساب؟",
+      "createOne": "إنشاء حساب"
+    },
+    "register": {
+      "title": "أنشئ حسابك",
+      "subtitle": "ابدأ مع Openship في ثوانٍ.",
+      "nameLabel": "الاسم",
+      "namePlaceholder": "اسمك",
+      "emailLabel": "البريد الإلكتروني",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "كلمة المرور",
+      "passwordPlaceholder": "٨ أحرف على الأقل",
+      "submit": "إنشاء حساب",
+      "submitting": "جارٍ الإنشاء…",
+      "hasAccount": "لديك حساب بالفعل؟",
+      "signIn": "تسجيل الدخول"
+    },
+    "forgotPassword": {
+      "title": "إعادة تعيين كلمة المرور",
+      "subtitle": "أدخل بريدك الإلكتروني وسنرسل لك رابط إعادة التعيين.",
+      "emailLabel": "البريد الإلكتروني",
+      "emailPlaceholder": "you@example.com",
+      "submit": "إرسال رابط إعادة التعيين",
+      "submitting": "جارٍ الإرسال…",
+      "backToSignIn": "العودة لتسجيل الدخول",
+      "sentTitle": "تحقق من بريدك",
+      "sentDescription": "أرسلنا رابط إعادة تعيين كلمة المرور إلى {email}. قد يستغرق الأمر دقيقة.",
+      "tryDifferentEmail": "جرّب بريدًا مختلفًا"
+    },
+    "resetPassword": {
+      "title": "تعيين كلمة مرور جديدة",
+      "subtitle": "اختر كلمة مرور قوية لحسابك.",
+      "passwordLabel": "كلمة المرور الجديدة",
+      "passwordPlaceholder": "٨ أحرف على الأقل",
+      "confirmLabel": "تأكيد كلمة المرور",
+      "confirmPlaceholder": "أعد إدخال كلمة المرور",
+      "submit": "إعادة تعيين كلمة المرور",
+      "submitting": "جارٍ إعادة التعيين…",
+      "backToSignIn": "العودة لتسجيل الدخول",
+      "doneTitle": "تم إعادة تعيين كلمة المرور",
+      "doneDescription": "تم تحديث كلمة المرور بنجاح.",
+      "doneAction": "تسجيل الدخول",
+      "noTokenError": "لم يتم العثور على رمز إعادة التعيين. يرجى {link}.",
+      "noTokenLink": "طلب رابط جديد"
+    },
+    "verifyEmail": {
+      "verifyingTitle": "جارٍ التحقق من بريدك الإلكتروني…",
+      "verifyingSubtitle": "لحظة واحدة.",
+      "verifiedTitle": "تم التحقق من البريد الإلكتروني",
+      "verifiedDescription": "تم التحقق من بريدك الإلكتروني. يمكنك الآن تسجيل الدخول.",
+      "verifiedAction": "متابعة لتسجيل الدخول",
+      "errorTitle": "فشل التحقق",
+      "errorDescription": "قد يكون الرابط منتهي الصلاحية أو غير صالح.",
+      "resendEmail": "إعادة إرسال البريد",
+      "signIn": "تسجيل الدخول",
+      "pendingTitle": "تحقق من بريدك الإلكتروني",
+      "pendingSentTo": "أرسلنا رابط التحقق إلى {email}. تحقق من بريدك وانقر على الرابط للمتابعة.",
+      "pendingGeneric": "تحقق من بريدك الوارد للعثور على رابط التحقق.",
+      "resendVerification": "إعادة إرسال بريد التحقق",
+      "backToSignIn": "العودة لتسجيل الدخول"
+    },
+    "oauth": {
+      "or": "أو",
+      "github": "المتابعة مع GitHub",
+      "google": "المتابعة مع Google"
+    },
+    "errors": {
+      "invalidCredentials": "بريد إلكتروني أو كلمة مرور غير صحيحة.",
+      "serverUnreachable": "تعذر الوصول إلى الخادم. هل واجهة البرمجة تعمل؟",
+      "generic": "حدث خطأ ما. يرجى المحاولة مرة أخرى.",
+      "oauthFailed": "فشل تسجيل الدخول عبر OAuth. يرجى المحاولة مرة أخرى.",
+      "passwordMin": "يجب أن تكون كلمة المرور ٨ أحرف على الأقل.",
+      "passwordMismatch": "كلمتا المرور غير متطابقتين.",
+      "invalidToken": "رمز إعادة التعيين غير صالح أو مفقود. يرجى طلب رابط جديد.",
+      "resetFailed": "تعذر إعادة تعيين كلمة المرور.",
+      "createFailed": "تعذر إنشاء الحساب.",
+      "verificationFailed": "فشل التحقق.",
+      "verificationExpired": "فشل التحقق. قد يكون الرابط منتهي الصلاحية.",
+      "resendFailed": "فشل إعادة الإرسال. يرجى المحاولة مرة أخرى.",
+      "verificationSent": "تم إرسال بريد التحقق!"
+    },
+    "toggleTheme": "تبديل السمة",
+    "showPassword": "إظهار كلمة المرور",
+    "hidePassword": "إخفاء كلمة المرور"
+  },
+  "dashboard": {
+    "nav": {
+      "projects": "المشاريع",
+      "deployments": "عمليات النشر",
+      "domains": "النطاقات",
+      "monitoring": "المراقبة",
+      "settings": "الإعدادات",
+      "billing": "الفوترة"
+    },
+    "user": {
+      "logout": "تسجيل الخروج",
+      "loggingOut": "جارٍ تسجيل الخروج…",
+      "profile": "الملف الشخصي",
+      "preferences": "التفضيلات"
+    },
+    "pages": {
+      "projects": { "title": "المشاريع", "description": "إنشاء وإدارة مشاريع النشر الخاصة بك." },
+      "deployments": { "title": "عمليات النشر", "description": "عرض وإدارة سجل النشر." },
+      "domains": { "title": "النطاقات", "description": "إدارة النطاقات المخصصة وسجلات DNS." },
+      "monitoring": { "title": "المراقبة", "description": "السجلات والمقاييس وفحوصات الصحة لخدماتك." },
+      "settings": { "title": "الإعدادات", "description": "إعدادات الحساب والفريق والمنصة." },
+      "billing": { "title": "الفوترة", "description": "إدارة اشتراكك واستخدامك وطرق الدفع." }
+    }
+  }
+}

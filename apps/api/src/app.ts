@@ -16,9 +16,17 @@ import { healthRoutes } from "./modules/health/health.routes";
 export const app = new Hono();
 
 /* ---------- Global middleware ---------- */
+app.use(
+  "*",
+  cors({
+    origin: env.TRUSTED_ORIGINS
+      ? env.TRUSTED_ORIGINS.split(",")
+      : ["http://localhost:3000", "http://localhost:3001"],
+    credentials: true,
+  }),
+);
 app.use("*", errorHandler);
 app.use("*", logger());
-app.use("*", cors());
 app.use("/api/auth/*", rateLimiter);
 
 /* ---------- Shared routes (self-hosted + cloud) ---------- */

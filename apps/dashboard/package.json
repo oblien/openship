@@ -10,18 +10,26 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
-    "@repo/ui": "workspace:*",
+    "@radix-ui/react-slot": "^1.2.4",
     "@repo/core": "workspace:*",
-    "@repo/db": "workspace:*",
+    "@repo/ui": "workspace:*",
+    "better-auth": "^1.2.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "lucide-react": "^0.577.0",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "next-auth": "^5.0.0-beta.0"
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1",
     "typescript": "^5.4.0"
   }
 }
