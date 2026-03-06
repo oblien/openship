@@ -1,12 +1,13 @@
 <div align="center">
-  <h1>🚀 Openship</h1>
-  <p><strong>The open-source, self-hostable deployment platform.</strong></p>
-  <p>Deploy anywhere — from your own server to our managed cloud.</p>
+  <h1>Openship</h1>
+  <p><strong>Open-source, self-hostable deployment platform.</strong></p>
+  <p>Deploy anywhere — self-host on your own server or use our managed cloud.</p>
 
   <br />
 
   <a href="#quick-start">Quick Start</a> ·
   <a href="#architecture">Architecture</a> ·
+  <a href="#development">Development</a> ·
   <a href="#self-hosting">Self-Hosting</a> ·
   <a href="#cloud">Cloud</a> ·
   <a href="#contributing">Contributing</a>
@@ -18,49 +19,27 @@
 
 ### Prerequisites
 
+- [Bun](https://bun.sh/) >= 1.0 (package manager + runtime)
 - [Node.js](https://nodejs.org/) >= 20
-- [pnpm](https://pnpm.io/) >= 9
 - [Docker](https://www.docker.com/) (for self-hosting or local development)
 
-### Development
+### Install & Run
 
 ```bash
-# Clone the repo
-git clone https://github.com/openship/openship.git
+git clone https://github.com/oblien/openship.git
 cd openship
-
-# Install dependencies
-pnpm install
-
-# Set up environment
 cp .env.example .env
-
-# Generate Prisma client
-pnpm db:generate
-
-# Push schema to local SQLite
-pnpm db:push
-
-# Start all apps in dev mode
-pnpm dev
+bun install
+bun dev
 ```
 
-This will start:
+That's it. Three services start in parallel:
 
-| App         | URL                     |
-| ----------- | ----------------------- |
-| Web         | http://localhost:3000    |
-| Dashboard   | http://localhost:3001    |
-| API         | http://localhost:4000    |
-
-### Self-Hosting with Docker
-
-```bash
-cp .env.example .env
-docker compose up -d
-```
-
-That's it. Openship will be running at `http://localhost:3001`.
+| Service     | URL                   | What it is                  |
+| ----------- | --------------------- | --------------------------- |
+| Web         | http://localhost:3000  | Marketing site & docs       |
+| Dashboard   | http://localhost:3001  | Deployment dashboard (UI)   |
+| API         | http://localhost:4000  | Backend engine              |
 
 ---
 
@@ -69,53 +48,170 @@ That's it. Openship will be running at `http://localhost:3001`.
 ```
 openship/
 ├── apps/
-│   ├── web/          # Next.js — Marketing site, landing page, docs, pricing
-│   ├── dashboard/    # Next.js — Authenticated deployment dashboard (Vercel-style)
-│   ├── api/          # Hono — Core API engine (auth, deployments, billing, webhooks)
-│   └── cli/          # TypeScript CLI — `openship deploy` from your terminal
+│   ├── web/              # Next.js — Landing page, pricing, docs
+│   ├── dashboard/        # Next.js — Authenticated dashboard (shared: self-host + cloud)
+│   ├── api/              # Hono — Core API (auth, projects, deployments, billing)
+│   └── cli/              # TypeScript — CLI tool (`openship deploy`)
 │
 ├── packages/
-│   ├── adapters/     # Deployment adapters (DockerAdapter, OblienAdapter)
-│   ├── db/           # Prisma schema + client (SQLite local, Postgres cloud)
-│   ├── core/         # Shared types, constants, utilities, error classes
-│   └── ui/           # Shared React component library (Tailwind + shadcn style)
+│   ├── adapters/         # DockerAdapter (self-host) + OblienAdapter (cloud)
+│   ├── core/             # Shared types, constants, utilities, errors
+│   ├── db/               # Drizzle ORM schema + client (PGlite local / Postgres cloud)
+│   └── ui/               # Shared React components (Tailwind + shadcn)
 │
-├── tooling/
-│   └── tsconfig/     # Shared TypeScript configurations
-│
-├── docker-compose.yml
-├── turbo.json
-└── pnpm-workspace.yaml
+├── tsconfig.base.json    # Shared TypeScript config (extended by all apps/packages)
+├── docker-compose.yml    # One-click self-hosting
+├── turbo.json            # Turborepo build pipeline
+└── package.json          # Workspace root (bun workspaces)
 ```
+
+### How apps connect
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   apps/web      │     │  apps/dashboard  │
+│  localhost:3000  │     │  localhost:3001  │
+│  (marketing)     │     │  (deploy UI)     │
+└─────────────────┘     └────────┬────────┘
+                                 │ fetch
+                        ┌────────▼────────┐
+                        │    apps/api      │
+                        │  localhost:4000  │
+                        │  (Hono engine)   │
+                        └────────┬────────┘
+                                 │
+              ┌──────────────────┼──────────────────┐
+              │                  │                   │
+    ┌─────────▼──────┐  ┌───────▼───────┐  ┌───────▼───────┐
+    │ packages/db    │  │ packages/     │  │ packages/     │
+    │ (Drizzle)      │  │ adapters      │  │ core          │
+    └────────────────┘  └───────────────┘  └───────────────┘
+```
+
+### Self-hosted vs Cloud — one codebase, two modes
+
+The `CLOUD_MODE` environment variable controls what's active:
+
+| Feature              | Self-hosted (`false`) | Cloud (`true`)  |
+| -------------------- | --------------------- | --------------- |
+| Auth / Users         | ✅                     | ✅               |
+| Projects & Deploys   | ✅                     | ✅               |
+| Custom Domains       | ✅                     | ✅               |
+| Git Webhooks         | ✅                     | ✅               |
+| Adapter              | DockerAdapter          | OblienAdapter   |
+| Billing / Stripe     | ❌ (not mounted)       | ✅               |
+| Usage Metering       | ❌                     | ✅               |
+| Teams / SSO          | ❌                     | ✅ (planned)     |
+
+Cloud-only API routes are **not even mounted** when `CLOUD_MODE=false`. Self-hosters never see them.
 
 ### API Modules
 
-The API is organized into clean, independent modules:
+Each module follows `routes → controller → service → schema`:
 
-| Module         | Path                          | Purpose                                  |
-| -------------- | ----------------------------- | ---------------------------------------- |
-| **Auth**       | `modules/auth/`               | Registration, login, JWT, sessions       |
-| **Projects**   | `modules/projects/`           | CRUD for deployment projects             |
-| **Deployments**| `modules/deployments/`        | Build, deploy, rollback, logs            |
-| **Domains**    | `modules/domains/`            | Custom domains, DNS verification, SSL    |
-| **Billing**    | `modules/billing/`            | Plans, subscriptions, usage (cloud only) |
-| **Webhooks**   | `modules/webhooks/`           | GitHub/GitLab/Bitbucket push triggers    |
-| **Health**     | `modules/health/`             | Health check endpoint for load balancers |
+```
+apps/api/src/modules/<name>/
+  ├── <name>.routes.ts        # Route definitions (Hono)
+  ├── <name>.controller.ts    # Request handlers
+  ├── <name>.service.ts       # Business logic
+  └── <name>.schema.ts        # Zod validation schemas
+```
+
+| Module        | Shared | Cloud-only | Purpose                                |
+| ------------- | ------ | ---------- | -------------------------------------- |
+| `auth`        | ✅      |            | Register, login, JWT, sessions         |
+| `projects`    | ✅      |            | CRUD for deployment projects           |
+| `deployments` | ✅      |            | Build, deploy, rollback, logs          |
+| `domains`     | ✅      |            | Custom domains, DNS, SSL               |
+| `webhooks`    | ✅      |            | GitHub / GitLab / Bitbucket triggers   |
+| `health`      | ✅      |            | Health check for load balancers        |
+| `billing`     |        | ✅          | Plans, subscriptions, Stripe, usage    |
 
 ### Adapter Pattern
 
-The **adapter pattern** is what makes Openship platform-agnostic:
+```typescript
+// packages/adapters/src/registry.ts
+getAdapter("docker")  // → DockerAdapter  (self-hosted, runs containers locally)
+getAdapter("oblien")  // → OblienAdapter  (cloud, talks to Oblien infra API)
+```
 
-- **`DockerAdapter`** — Self-hosted. Builds and runs containers on the host machine.
-- **`OblienAdapter`** — Cloud. Communicates with the Oblien infrastructure API.
+Both implement the same `DeploymentAdapter` interface: `deploy()`, `getStatus()`, `getLogs()`, `cancel()`, `rollback()`, `destroy()`.
 
-The `CLOUD_MODE` environment variable controls which adapter is active. For self-hosted installs, billing is completely disabled.
+---
+
+## Development
+
+### Run everything
+
+```bash
+bun dev
+```
+
+### Run a single app
+
+```bash
+bun dev --filter @repo/dashboard    # Dashboard only → localhost:3001
+bun dev --filter @repo/api          # API only → localhost:4000
+bun dev --filter @repo/web          # Web only → localhost:3000
+```
+
+### Where to edit
+
+| What you're building               | Edit files in              |
+| ----------------------------------- | -------------------------- |
+| Dashboard UI (projects, deploys)    | `apps/dashboard/src/`      |
+| Landing page, marketing, pricing    | `apps/web/src/`            |
+| API endpoints & business logic      | `apps/api/src/`            |
+| CLI commands                        | `apps/cli/src/`            |
+| Shared React components             | `packages/ui/src/`         |
+| Shared types, utils, errors         | `packages/core/src/`       |
+| Database schema                     | `packages/db/src/schema/`  |
+| Deployment adapters                 | `packages/adapters/src/`   |
+
+### Database
+
+```bash
+bun db:generate     # Generate Drizzle migration files from schema changes
+bun db:push         # Push schema to database (dev — no migration file)
+bun db:migrate      # Run pending migrations (production)
+```
+
+### Environment Variables
+
+Copy `.env.example` to `.env`. Key variables:
+
+| Variable                 | Default                    | Description                          |
+| ------------------------ | -------------------------- | ------------------------------------ |
+| `CLOUD_MODE`             | `false`                    | `true` = cloud with billing enabled  |
+| `DATABASE_URL`           | _(empty = PGlite)_         | Empty for PGlite (dev) or `postgres://` URL |
+| `BETTER_AUTH_SECRET`     | `change-me-...`            | Auth session signing secret (32+ chars) |
+| `BETTER_AUTH_URL`        | `http://localhost:4000`    | API base URL for auth callbacks      |
+| `REDIS_URL`              | `redis://localhost:6379`   | Queue and cache                      |
+| `STRIPE_SECRET_KEY`      | —                          | Stripe key (cloud only)              |
+| `STRIPE_WEBHOOK_SECRET`  | —                          | Stripe webhook secret (cloud only)   |
 
 ---
 
 ## Self-Hosting
 
-Openship is designed to be self-hosted with a single `docker compose up`. The Docker adapter handles all builds and deployments locally on your machine.
+### Docker (recommended)
+
+```bash
+git clone https://github.com/oblien/openship.git
+cd openship
+cp .env.example .env
+docker compose up -d
+```
+
+Services:
+
+| Service    | Port  |
+| ---------- | ----- |
+| Dashboard  | 3001  |
+| Web        | 3000  |
+| API        | 4000  |
+| PostgreSQL | 5432  |
+| Redis      | 6379  |
 
 **Requirements:** Docker Engine, 2GB RAM minimum.
 
@@ -123,12 +219,20 @@ Openship is designed to be self-hosted with a single `docker compose up`. The Do
 
 ## Cloud
 
-The hosted version at [openship.cloud](https://openship.cloud) adds:
+The hosted version at [openship.io](https://openship.io) adds:
 
 - Managed infrastructure via the Oblien adapter
 - Subscription billing (Stripe)
 - Usage metering (build minutes, bandwidth)
-- Team management and SSO
+- Team management and SSO (planned)
+
+### Production Domains
+
+| App        | Domain                    |
+| ---------- | ------------------------- |
+| Web        | `openship.io`             |
+| Dashboard  | `dashboard.openship.io`   |
+| API        | `api.openship.io`         |
 
 ---
 
@@ -138,10 +242,11 @@ The hosted version at [openship.cloud](https://openship.cloud) adds:
 | ---------- | --------------------------------- |
 | Frontend   | Next.js 14, React 18, Tailwind    |
 | API        | Hono (edge-compatible)             |
-| Database   | Prisma (SQLite / PostgreSQL)       |
+| Database   | Drizzle ORM (PGlite / PostgreSQL)  |
+| Auth       | Better Auth (email + OAuth)         |
 | Queue      | BullMQ + Redis                     |
 | CLI        | Commander.js, TypeScript           |
-| Monorepo   | Turborepo + pnpm workspaces       |
+| Monorepo   | Turborepo + Bun workspaces        |
 | Containers | Docker                             |
 | Billing    | Stripe                             |
 
@@ -149,16 +254,19 @@ The hosted version at [openship.cloud](https://openship.cloud) adds:
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feat/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the branch (`git push origin feat/amazing-feature`)
-5. Open a Pull Request
+```bash
+git checkout -b feat/my-feature
+# make changes
+bun format
+git commit -m "feat: add my feature"
+git push origin feat/my-feature
+# open PR
+```
 
 ---
 
 ## License
 
-[MIT](LICENSE) — Free to use, self-host, and modify. Cloud/SaaS usage requires the AGPL license terms.
+[MIT](LICENSE)

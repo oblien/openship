@@ -2,12 +2,12 @@
   "name": "@repo/ui",
   "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./src/index.tsx",
+      "import": "./src/index.tsx"
     },
     "./globals.css": "./src/globals.css"
   },

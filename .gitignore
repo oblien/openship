@@ -26,9 +26,9 @@ Thumbs.db
 # Testing
 coverage/
 
-# Prisma
-packages/db/prisma/*.db
-packages/db/prisma/*.db-journal
+# Database (PGlite local data)
+packages/db/data/
+apps/api/data/
 
 # Logs
 *.log

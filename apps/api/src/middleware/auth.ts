@@ -1,24 +1,24 @@
 import type { Context, Next } from "hono";
+import { auth } from "../lib/auth";
 
 /**
- * JWT authentication middleware.
- * Extracts and verifies the Bearer token from the Authorization header.
+ * Session authentication middleware.
+ * Verifies the session via cookie or Bearer token.
+ * Sets `user` and `session` on the Hono context.
+ *
+ * Usage:
+ *   app.get("/api/projects", authMiddleware, handler);
  */
 export async function authMiddleware(c: Context, next: Next) {
-  const header = c.req.header("Authorization");
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
 
-  if (!header?.startsWith("Bearer ")) {
+  if (!session) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  const token = header.slice(7);
-
-  try {
-    // TODO: Verify JWT, attach user to context
-    // const payload = verifyToken(token);
-    // c.set("user", payload);
-    await next();
-  } catch {
-    return c.json({ error: "Invalid token" }, 401);
-  }
+  c.set("user", session.user);
+  c.set("session", session.session);
+  await next();
 }

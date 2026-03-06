@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env } from "./config/env";
+import { errorHandler } from "./middleware/error-handler";
+import { rateLimiter } from "./middleware/rate-limiter";
 
 import { authRoutes } from "./modules/auth/auth.routes";
 import { projectRoutes } from "./modules/projects/project.routes";
@@ -14,8 +16,10 @@ import { healthRoutes } from "./modules/health/health.routes";
 export const app = new Hono();
 
 /* ---------- Global middleware ---------- */
+app.use("*", errorHandler);
 app.use("*", logger());
 app.use("*", cors());
+app.use("/api/auth/*", rateLimiter);
 
 /* ---------- Shared routes (self-hosted + cloud) ---------- */
 app.route("/api/health", healthRoutes);

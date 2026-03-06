@@ -1,11 +1,41 @@
-import { PrismaClient } from "@prisma/client";
+// ─── Database client ─────────────────────────────────────────────────────────
+export { db, getDriver, type Database, type Driver } from "./client";
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
+// ─── Schema (table definitions) ──────────────────────────────────────────────
+export * as schema from "./schema";
 
-export const db = globalForPrisma.prisma ?? new PrismaClient();
+// ─── Repositories (all DB access goes through here) ──────────────────────────
+export {
+  repos,
+  createUserRepo,
+  createSessionRepo,
+  createAccountRepo,
+  type User,
+  type NewUser,
+  type Session,
+  type Account,
+} from "./repos";
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = db;
-}
-
-export * from "@prisma/client";
+// ─── Drizzle operators (re-exported for convenience) ─────────────────────────
+export {
+  eq,
+  ne,
+  and,
+  or,
+  not,
+  gt,
+  gte,
+  lt,
+  lte,
+  like,
+  ilike,
+  inArray,
+  notInArray,
+  isNull,
+  isNotNull,
+  between,
+  desc,
+  asc,
+  sql,
+  count,
+} from "drizzle-orm";

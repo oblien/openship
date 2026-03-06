@@ -14,12 +14,18 @@ const envSchema = z.object({
   CLOUD_MODE: z.coerce.boolean().default(false),
 
   /* ---------- Database ---------- */
-  DATABASE_URL: z.string().default("file:./dev.db"),
+  DATABASE_URL: z.string().default(""),
 
-  /* ---------- Auth ---------- */
-  JWT_SECRET: z.string().default("change-me-in-production"),
-  JWT_EXPIRES_IN: z.string().default("15m"),
-  JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+  /* ---------- Auth (Better Auth) ---------- */
+  BETTER_AUTH_SECRET: z.string().default("change-me-in-production"),
+  BETTER_AUTH_URL: z.string().default("http://localhost:4000"),
+  TRUSTED_ORIGINS: z.string().optional(),
+
+  /* ---------- OAuth Providers ---------- */
+  GITHUB_CLIENT_ID: z.string().optional(),
+  GITHUB_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 
   /* ---------- Redis ---------- */
   REDIS_URL: z.string().default("redis://localhost:6379"),
@@ -28,7 +34,7 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
-  /* ---------- Git Providers ---------- */
+  /* ---------- Git Webhooks ---------- */
   GITHUB_APP_ID: z.string().optional(),
   GITHUB_PRIVATE_KEY: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
