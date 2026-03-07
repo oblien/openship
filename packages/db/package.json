@@ -29,15 +29,15 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
-    "drizzle-orm": "^0.41.0",
-    "pg": "^8.13.0",
-    "@electric-sql/pglite": "^0.2.0"
+    "drizzle-orm": "^0.45.1",
+    "pg": "^8.20.0",
+    "@electric-sql/pglite": "^0.3.15"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.13.0",
     "@types/pg": "^8.11.0",
-    "drizzle-kit": "^0.31.0",
-    "tsup": "^8.1.0",
-    "typescript": "^5.4.0"
+    "drizzle-kit": "^0.31.9",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
   }
 }

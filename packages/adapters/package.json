@@ -20,7 +20,8 @@
     "@repo/core": "workspace:*"
   },
   "devDependencies": {
-    "tsup": "^8.1.0",
-    "typescript": "^5.4.0"
+    "@types/node": "^22.13.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
   }
 }

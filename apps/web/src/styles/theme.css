@@ -1,0 +1,198 @@
+/*
+ * ─────────────────────────────────────────────────────────────────
+ *  OPENSHIP LANDING — THEME TOKENS
+ *  Follows the dashboard's --th-* pattern exactly.
+ *  Light-mode by default for the marketing site.
+ *
+ *  System:
+ *    --th-on-{N}    Foreground at N% opacity (text, icons, borders)
+ *    --th-sf-{N}    Surface fill at N% opacity (backgrounds)
+ *
+ *  Semantic aliases:
+ *    --th-text-*    Text colors
+ *    --th-bg-*      Background fills
+ *    --th-bd-*      Border colors
+ *    Component-level: btn, card, input, etc.
+ *
+ *  Landing-specific:
+ *    --th-accent-*  Gradient accent colors for hero blob & highlights
+ * ─────────────────────────────────────────────────────────────────
+ */
+
+:root {
+
+  /* ── Foreground scale — black on white ────────────────────── */
+  --th-on-05: rgba(0,0,0,.05);
+  --th-on-06: rgba(0,0,0,.06);
+  --th-on-08: rgba(0,0,0,.08);
+  --th-on-10: rgba(0,0,0,.10);
+  --th-on-12: rgba(0,0,0,.12);
+  --th-on-16: rgba(0,0,0,.16);
+  --th-on-20: rgba(0,0,0,.20);
+  --th-on-30: rgba(0,0,0,.30);
+  --th-on-40: rgba(0,0,0,.40);
+  --th-on-50: rgba(0,0,0,.50);
+  --th-on-60: rgba(0,0,0,.60);
+  --th-on-70: rgba(0,0,0,.70);
+  --th-on-80: rgba(0,0,0,.80);
+  --th-on-90: rgba(0,0,0,.90);
+  --th-on-95: rgba(0,0,0,.95);
+
+  /* ── Surface fill scale ───────────────────────────────────── */
+  --th-sf-01: rgba(0,0,0,.01);
+  --th-sf-02: rgba(0,0,0,.02);
+  --th-sf-03: rgba(0,0,0,.03);
+  --th-sf-04: rgba(0,0,0,.04);
+  --th-sf-05: rgba(0,0,0,.05);
+  --th-sf-06: rgba(0,0,0,.06);
+  --th-sf-08: rgba(0,0,0,.08);
+
+  /* ── Text ─────────────────────────────────────────────────── */
+  --th-text-heading:   rgba(0,0,0,1);
+  --th-text-title:     rgba(0,0,0,.92);
+  --th-text-strong:    rgba(0,0,0,.82);
+  --th-text-body:      rgba(0,0,0,.55);
+  --th-text-secondary: rgba(0,0,0,.48);
+  --th-text-muted:     rgba(0,0,0,.38);
+  --th-text-label:     rgba(0,0,0,.42);
+  --th-text-hint:      rgba(0,0,0,.32);
+  --th-text-ghost:     rgba(0,0,0,.16);
+
+  /* ── Page / layout ────────────────────────────────────────── */
+  --th-bg-page:        #ffffff;
+  --th-bg-card:        #fafafa;
+  --th-bg-subtle:      rgba(0,0,0,.02);
+  --th-bg-hover:       rgba(0,0,0,.025);
+  --th-bg-inset:       rgba(0,0,0,.015);
+
+  /* ── Borders ──────────────────────────────────────────────── */
+  --th-bd-default:     #e8e8e8;
+  --th-bd-subtle:      #f0f0f0;
+  --th-bd-strong:      #d0d0d0;
+  --th-bd-card:        #efefef;
+
+  /* ── Button — primary (filled) ────────────────────────────── */
+  --th-btn-bg:         rgba(0,0,0,.92);
+  --th-btn-text:       #ffffff;
+  --th-btn-bg-hover:   rgba(0,0,0,.80);
+
+  /* ── Button — ghost / outline ─────────────────────────────── */
+  --th-btn-ghost-bd:         #e0e0e0;
+  --th-btn-ghost-text:       rgba(0,0,0,.52);
+  --th-btn-ghost-bd-hover:   #c8c8c8;
+  --th-btn-ghost-text-hover: rgba(0,0,0,.72);
+  --th-btn-ghost-bg-hover:   rgba(0,0,0,.025);
+
+  /* ── Card ─────────────────────────────────────────────────── */
+  --th-card-bg:        #ffffff;
+  --th-card-bd:        #efefef;
+  --th-card-bd-hover:  #e0e0e0;
+  --th-card-shadow:    0 1px 3px rgba(0,0,0,.04);
+
+  /* ── Divider ──────────────────────────────────────────────── */
+  --th-divider:        #f0f0f0;
+
+  /* ── Accent — gradient blob & highlight colors ────────────── */
+  --th-accent-indigo:  #818cf8;
+  --th-accent-violet:  #a78bfa;
+  --th-accent-purple:  #c084fc;
+  --th-accent-pink:    #f9a8d4;
+  --th-accent-blue:    #93c5fd;
+  --th-accent-amber:   #fde68a;
+
+  /* ── Aurora — hero / section glow palette (violet + amber) ── */
+  --th-aurora-violet-strong: rgba(139, 92, 246, .55);
+  --th-aurora-violet-mid:    rgba(124, 58, 237, .35);
+  --th-aurora-violet-soft:   rgba(109, 40, 217, .15);
+  --th-aurora-amber-strong:  rgba(245, 158, 11, .34);
+  --th-aurora-amber-mid:     rgba(251, 191, 36, .18);
+  --th-aurora-amber-soft:    rgba(234, 88, 12, .08);
+  --th-aurora-peach-strong:  rgba(251, 191, 36, .30);
+  --th-aurora-peach-mid:     rgba(253, 224, 71, .14);
+  --th-aurora-lavender:      rgba(167, 139, 250, .38);
+
+  /* ── Terminal ─────────────────────────────────────────────── */
+  --th-terminal-bg:    #0a0a0a;
+  --th-terminal-text:  rgba(255,255,255,.75);
+  --th-terminal-muted: rgba(255,255,255,.35);
+  --th-terminal-green: #4ade80;
+  --th-terminal-red:   #f87171;
+  --th-terminal-blue:  #60a5fa;
+  --th-terminal-yellow:#facc15;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   UTILITY CLASSES  —  .th-*
+   Each class is a single-purpose semantic token.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Text ───────────────────────────────────────────────────── */
+.th-text-heading   { color: var(--th-text-heading); }
+.th-text-title     { color: var(--th-text-title); }
+.th-text-strong    { color: var(--th-text-strong); }
+.th-text-body      { color: var(--th-text-body); }
+.th-text-secondary { color: var(--th-text-secondary); }
+.th-text-muted     { color: var(--th-text-muted); }
+.th-text-label     { color: var(--th-text-label); }
+.th-text-hint      { color: var(--th-text-hint); }
+.th-text-ghost     { color: var(--th-text-ghost); }
+
+/* ── Backgrounds ────────────────────────────────────────────── */
+.th-bg-page   { background-color: var(--th-bg-page); }
+.th-bg-card   { background-color: var(--th-bg-card); }
+.th-bg-subtle { background-color: var(--th-bg-subtle); }
+
+/* ── Card ───────────────────────────────────────────────────── */
+.th-card {
+  background-color: var(--th-card-bg);
+  border: 1px solid var(--th-card-bd);
+  border-radius: 1rem;
+  box-shadow: var(--th-card-shadow);
+  transition: border-color .2s, box-shadow .2s;
+}
+.th-card:hover {
+  border-color: var(--th-card-bd-hover);
+  box-shadow: 0 4px 12px rgba(0,0,0,.06);
+}
+
+/* ── Borders ────────────────────────────────────────────────── */
+.th-bd-default { border-color: var(--th-bd-default); }
+.th-bd-subtle  { border-color: var(--th-bd-subtle); }
+.th-divider    { border-color: var(--th-divider); }
+
+/* ── Button — primary ───────────────────────────────────────── */
+.th-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-color: var(--th-btn-bg);
+  color: var(--th-btn-text);
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: background-color .15s, transform .1s;
+}
+.th-btn:hover { background-color: var(--th-btn-bg-hover); }
+.th-btn:active { transform: scale(0.98); }
+
+/* ── Button — ghost / outline ───────────────────────────────── */
+.th-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--th-btn-ghost-bd);
+  color: var(--th-btn-ghost-text);
+  background-color: transparent;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background-color .15s, transform .1s;
+}
+.th-btn-ghost:hover {
+  border-color: var(--th-btn-ghost-bd-hover);
+  color: var(--th-btn-ghost-text-hover);
+  background-color: var(--th-btn-ghost-bg-hover);
+}
+.th-btn-ghost:active { transform: scale(0.98); }

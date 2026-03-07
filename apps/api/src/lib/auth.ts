@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type User } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, schema } from "@repo/db";
 import { env } from "../config/env";
@@ -35,7 +35,7 @@ export const auth = betterAuth({
 
     /* Password reset — only functional when SMTP is configured */
     sendResetPassword: smtpEnabled
-      ? async ({ user, url }) => {
+      ? async ({ user, url }: { user: User; url: string; token: string }) => {
           const email = resetPasswordEmail(user, url);
           await sendMail({ to: user.email, ...email });
         }
@@ -44,7 +44,7 @@ export const auth = betterAuth({
     /* Email verification — only functional when SMTP is configured */
     requireEmailVerification: smtpEnabled,
     sendVerificationEmail: smtpEnabled
-      ? async ({ user, url }) => {
+      ? async ({ user, url }: { user: User; url: string; token: string }) => {
           const email = verifyEmailTemplate(user, url);
           await sendMail({ to: user.email, ...email });
         }

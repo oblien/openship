@@ -47,3 +47,7 @@
     color: var(--th-text-body);
   }
 }
+
+::-webkit-scrollbar {
+  display: none;
+}

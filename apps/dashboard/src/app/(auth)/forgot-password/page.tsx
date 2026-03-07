@@ -10,10 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, Mail } from "lucide-react";
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
-}
+import { isNetworkError } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const { toast } = useToast();
@@ -33,7 +30,7 @@ export default function ForgotPasswordPage() {
       });
       setSent(true);
     } catch (err) {
-      toast("error", isAbortError(err)
+      toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
     } finally {

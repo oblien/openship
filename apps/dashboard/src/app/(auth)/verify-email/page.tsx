@@ -9,10 +9,7 @@ import { useI18n, interpolate } from "@/components/i18n-provider";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2, Mail, XCircle } from "lucide-react";
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
-}
+import { isNetworkError } from "@/lib/api";
 
 export default function VerifyEmailPage() {
   return (
@@ -59,7 +56,7 @@ function VerifyEmailContent() {
         if (cancelled) return;
         setStatus("error");
         setErrorMessage(
-          isAbortError(err)
+          isNetworkError(err)
             ? t.auth.errors.serverUnreachable
             : t.auth.errors.verificationExpired,
         );
@@ -80,7 +77,7 @@ function VerifyEmailContent() {
       });
       toast("success", t.auth.errors.verificationSent);
     } catch (err) {
-      const msg = isAbortError(err)
+      const msg = isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.resendFailed;
       toast("error", msg);

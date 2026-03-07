@@ -1,0 +1,299 @@
+/**
+ * SSE Message Processors
+ * 
+ * These processors define how different types of SSE streams should be handled.
+ * Each processor is responsible for parsing and handling messages specific to its use case.
+ */
+
+import { SSEMessage, SSEMessageProcessor } from '@/hooks/useSSEStream';
+
+// ============================================================================
+// BUILD MESSAGE PROCESSOR
+// ============================================================================
+
+export interface BuildMessage extends SSEMessage {
+  type: 'log' | 'success' | 'failure' | 'phase' | 'progress' | 'reconnected' | 'complete' | 'end' | 'connected' | 'error' | 'cancelled' | 'unknown';
+  data?: string;
+  success?: boolean;
+  message?: string;
+  error?: string;
+  phase?: string;
+  currentStep?: number;
+  progress?: number;
+  eventId?: number;
+  exitCode?: number;
+  running?: boolean;
+}
+
+export interface BuildMessageCallbacks {
+  onLog?: (message: BuildMessage, rawText?: string, rawBytes?: Uint8Array) => void;
+  onSuccess?: (data?: any) => void;
+  onFailure?: (message?: string) => void;
+  onCanceled?: (message?: string) => void;
+  onPhaseChange?: (phase: string) => void;
+  onProgress?: (currentStep: number, progress: number) => void;
+  onReconnected?: () => void;
+  onContainerExit?: (exitCode: number, message?: string) => void;
+}
+
+export const createBuildMessageProcessor = (
+  callbacks: BuildMessageCallbacks = {}
+): SSEMessageProcessor<BuildMessage> => {
+  return {
+    parseMessage: (jsonData: any): BuildMessage => {
+      // Complete message
+      if (jsonData?.type === 'complete') {
+        return { type: 'complete', ...jsonData };
+      }
+
+      // Container stream end message
+      if (jsonData?.type === 'end') {
+        return { type: 'end', ...jsonData };
+      }
+
+      // Container connected message
+      if (jsonData?.type === 'connected') {
+        return { type: 'connected', ...jsonData };
+      }
+
+      // Container error message
+      if (jsonData?.type === 'error' && !jsonData?.success) {
+        return { type: 'error', ...jsonData };
+      }
+
+      // Reconnected message
+      if (jsonData?.type === 'reconnected') {
+        return { type: 'reconnected', ...jsonData };
+      }
+
+      // Canceled message
+      if (jsonData?.type === 'cancelled') {
+        return { type: 'cancelled', ...jsonData };
+      }
+
+      // Success message
+      if (jsonData?.success === true) {
+        return { type: 'success', ...jsonData };
+      }
+
+      // Failure message
+      if (jsonData?.success === false) {
+        return { type: 'failure', ...jsonData };
+      }
+
+      // Phase change
+      if (jsonData?.phase) {
+        return { type: 'phase', ...jsonData };
+      }
+
+      // Progress update
+      if (jsonData?.currentStep !== undefined || jsonData?.progress !== undefined) {
+        return { type: 'progress', ...jsonData };
+      }
+
+      // Log message
+      if (jsonData?.type === 'log' && jsonData?.data) {
+        return { type: 'log', ...jsonData };
+      }
+
+      return { type: 'unknown', ...jsonData };
+    },
+
+    handleMessage: (message, context) => {
+      const { rawText, rawBytes, writeToTerminal } = context;
+
+      switch (message.type) {
+        case 'complete':
+          if (message.success === true) {
+            callbacks.onSuccess?.(message);
+          } else if (message.success === false) {
+            callbacks.onFailure?.(message.message || message.error || 'Build completed with errors');
+          }
+          break;
+
+        case 'reconnected':
+          callbacks.onReconnected?.();
+          break;
+
+        case 'progress':
+          if (message.currentStep !== undefined && message.progress !== undefined) {
+            callbacks.onProgress?.(message.currentStep, message.progress);
+          }
+          // Also write log if it exists
+          if (message.data && rawBytes) {
+            writeToTerminal?.(rawBytes);
+            callbacks.onLog?.(message, rawText, rawBytes);
+          }
+          break;
+
+        case 'success':
+          callbacks.onSuccess?.(message);
+          break;
+
+        case 'failure':
+          callbacks.onFailure?.(message.message || message.error);
+          break;
+
+        case 'cancelled':
+          callbacks.onCanceled?.(message.message || 'Build cancelled by user');
+          break;
+
+        case 'phase':
+          callbacks.onPhaseChange?.(message.phase!);
+          // Phase messages also have log data
+          if (message.data && rawBytes) {
+            writeToTerminal?.(rawBytes);
+            callbacks.onLog?.(message, rawText, rawBytes);
+          }
+          break;
+
+        case 'log':
+          if (message.data && rawBytes) {
+            writeToTerminal?.(rawBytes);
+            callbacks.onLog?.(message, rawText, rawBytes);
+          }
+          break;
+
+        case 'end':
+          // Container stream ended - check exit code
+          if (message.exitCode !== undefined && message.exitCode !== 0) {
+            const exitMessage = message.message || `Container exited with code ${message.exitCode}`;
+            callbacks.onContainerExit?.(message.exitCode, exitMessage);
+          }
+          break;
+
+        case 'connected':
+          // Container connected - check if it's running
+          if (message.running === false && message.exitCode !== undefined && message.exitCode !== 0) {
+            const exitMessage = `Container not running (exit code: ${message.exitCode})`;
+            callbacks.onContainerExit?.(message.exitCode, exitMessage);
+          }
+          break;
+
+        case 'error':
+          const errorMsg = message.error || message.message || 'Container error occurred';
+          callbacks.onFailure?.(errorMsg);
+          break;
+      }
+
+      return true; // Continue processing
+    },
+  };
+};
+
+// ============================================================================
+// LIVE LOGS MESSAGE PROCESSOR
+// ============================================================================
+
+export interface LogMessage extends SSEMessage {
+  type: 'log' | 'connected' | 'error' | 'end' | 'unknown';
+  data?: string;
+  message?: string;
+  error?: string;
+  exitCode?: number;
+  running?: boolean;
+}
+
+export interface LogMessageCallbacks {
+  onLog?: (message: LogMessage, rawText?: string, rawBytes?: Uint8Array) => void;
+  onError?: (message: string) => void;
+  onContainerExit?: (exitCode: number, message?: string) => void;
+}
+
+export const createLogMessageProcessor = (
+  callbacks: LogMessageCallbacks = {}
+): SSEMessageProcessor<LogMessage> => {
+  return {
+    parseMessage: (jsonData: any): LogMessage => {
+      // Container connected
+      if (jsonData?.type === 'connected') {
+        return { type: 'connected', ...jsonData };
+      }
+
+      // Container error
+      if (jsonData?.type === 'error') {
+        return { type: 'error', ...jsonData };
+      }
+
+      // Container stream end
+      if (jsonData?.type === 'end') {
+        return { type: 'end', ...jsonData };
+      }
+
+      // Log message (most common)
+      if (jsonData?.type === 'log' || jsonData?.data) {
+        return { type: 'log', ...jsonData };
+      }
+
+      return { type: 'unknown', ...jsonData };
+    },
+
+    handleMessage: (message, context) => {
+      const { rawText, rawBytes, writeToTerminal } = context;
+
+      switch (message.type) {
+        case 'log':
+          if (message.data && rawBytes) {
+            writeToTerminal?.(rawBytes);
+            callbacks.onLog?.(message, rawText, rawBytes);
+          }
+          break;
+
+        case 'connected':
+          // Container connected - check if it's running
+          if (message.running === false && message.exitCode !== undefined && message.exitCode !== 0) {
+            const exitMessage = `Container not running (exit code: ${message.exitCode})`;
+            callbacks.onContainerExit?.(message.exitCode, exitMessage);
+          }
+          break;
+
+        case 'end':
+          // Container stream ended
+          if (message.exitCode !== undefined && message.exitCode !== 0) {
+            const exitMessage = message.message || `Container exited with code ${message.exitCode}`;
+            callbacks.onContainerExit?.(message.exitCode, exitMessage);
+          }
+          break;
+
+        case 'error':
+          const errorMsg = message.error || message.message || 'Container error occurred';
+          callbacks.onError?.(errorMsg);
+          break;
+      }
+
+      return true; // Continue processing
+    },
+  };
+};
+
+// ============================================================================
+// GENERIC/PASSTHROUGH MESSAGE PROCESSOR
+// ============================================================================
+
+export interface GenericMessage extends SSEMessage {
+  type: string;
+  [key: string]: any;
+}
+
+export const createGenericMessageProcessor = (
+  onMessage?: (message: GenericMessage, context: {
+    rawText?: string;
+    rawBytes?: Uint8Array;
+    writeToTerminal?: (bytes: Uint8Array) => void;
+  }) => void
+): SSEMessageProcessor<GenericMessage> => {
+  return {
+    parseMessage: (jsonData: any): GenericMessage => {
+      return {
+        type: jsonData?.type || 'message',
+        ...jsonData,
+      };
+    },
+
+    handleMessage: (message, context) => {
+      onMessage?.(message, context);
+      return true;
+    },
+  };
+};
+

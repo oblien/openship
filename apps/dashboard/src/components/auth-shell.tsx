@@ -23,28 +23,28 @@ export function AuthShell({
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center px-4 py-12">
-      {/* Top-right controls */}
-      <div className="fixed right-5 top-5 flex items-center gap-1">
-        <LanguageSwitcher />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggle}
-          aria-label={t.auth.toggleTheme}
-        >
-          {resolvedTheme === "dark" ? <Sun /> : <Moon />}
-        </Button>
-      </div>
-
-      <div className={`w-full ${maxWidth}`}>
-        {/* Brand */}
-        <div className="mb-10 flex items-center justify-center gap-2.5">
-          <Logo size={28} />
-          <span className="text-[22px] font-semibold tracking-tight text-foreground">
+      {/* Top bar — logo left, controls right */}
+      <div className="fixed inset-x-0 top-0 flex items-center justify-between px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <Logo size={24} />
+          <span className="text-[16px] font-semibold tracking-tight text-foreground">
             {t.brand}
           </span>
         </div>
+        <div className="flex items-center gap-1">
+          <LanguageSwitcher />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggle}
+            aria-label={t.auth.toggleTheme}
+          >
+            {resolvedTheme === "dark" ? <Sun /> : <Moon />}
+          </Button>
+        </div>
+      </div>
 
+      <div className={`w-full ${maxWidth}`}>
         {children}
       </div>
     </div>

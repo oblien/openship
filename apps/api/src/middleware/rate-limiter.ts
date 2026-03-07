@@ -7,6 +7,15 @@ import type { Context, Next } from "hono";
 const requestCounts = new Map<string, { count: number; resetAt: number }>();
 
 export async function rateLimiter(c: Context, next: Next) {
+  const path = c.req.path;
+  
+  // Skip rate limiting for get-session - it's a safe read-only endpoint
+  // that gets called frequently on page navigations
+  if (path === "/api/auth/get-session") {
+    await next();
+    return;
+  }
+  
   const ip = c.req.header("x-forwarded-for") || "unknown";
   const now = Date.now();
   const window = 60_000; // 1 minute

@@ -97,13 +97,45 @@
     "hidePassword": "Hide password"
   },
   "dashboard": {
+    "home": {
+      "goodMorning": "Good morning",
+      "goodAfternoon": "Good afternoon",
+      "goodEvening": "Good evening",
+      "subtitle": "Here's what's happening across your projects",
+      "statsProjects": "Projects",
+      "statsDeployments": "Deployments",
+      "statsSuccessful": "Successful",
+      "statsFailed": "Failed",
+      "recentProjects": "Recent Projects",
+      "yourLatestActivity": "Your latest activity",
+      "viewAll": "View all",
+      "noProjectsYet": "No projects yet",
+      "createFirstProject": "Create your first project",
+      "justNow": "just now",
+      "minutesAgo": "{n}m ago",
+      "hoursAgo": "{n}h ago",
+      "daysAgo": "{n}d ago",
+      "monthsAgo": "{n}mo ago",
+      "statusLive": "Live",
+      "statusPaused": "Paused"
+    },
     "nav": {
+      "home": "Home",
       "projects": "Projects",
       "deployments": "Deployments",
       "domains": "Domains",
       "monitoring": "Monitoring",
       "settings": "Settings",
-      "billing": "Billing"
+      "billing": "Billing",
+      "sections": {
+        "main": "Main",
+        "settings": "Settings",
+        "account": "Account"
+      }
+    },
+    "sidebar": {
+      "expand": "Expand sidebar",
+      "collapse": "Collapse sidebar"
     },
     "user": {
       "logout": "Log out",
@@ -112,12 +144,70 @@
       "preferences": "Preferences"
     },
     "pages": {
-      "projects": { "title": "Projects", "description": "Create and manage your deployment projects." },
+      "projects": {
+        "title": "Projects",
+        "description": "Deploy and manage your applications with ease",
+        "createButton": "Create Project",
+        "stats": {
+          "totalProjects": "Total Projects",
+          "liveNow": "Live Now",
+          "avgPerDay": "Avg per Day",
+          "successRate": "Success Rate"
+        },
+        "searchPlaceholder": "Search projects...",
+        "pinnedProjects": "Pinned Projects",
+        "otherProjects": "Other Projects",
+        "noResultsFound": "No projects found matching \"{query}\"",
+        "emptyState": {
+          "title": "Start your first project",
+          "description": "Import a Git repository, use a template, or deploy from CLI. Your projects will appear here.",
+          "createProject": "Create Project",
+          "browseTemplates": "Browse Templates",
+          "zeroConfig": "Zero-config deployment",
+          "instant": "Instant",
+          "instantDesc": "Deploy in seconds",
+          "global": "Global",
+          "globalDesc": "100+ edge regions",
+          "previews": "Previews",
+          "previewsDesc": "URL per branch",
+          "rollbacks": "Rollbacks",
+          "rollbacksDesc": "One-click revert",
+          "commandPalette": "Or press {key} to open command palette"
+        }
+      },
       "deployments": { "title": "Deployments", "description": "View and manage your deployment history." },
       "domains": { "title": "Domains", "description": "Manage custom domains and DNS records." },
       "monitoring": { "title": "Monitoring", "description": "Logs, metrics, and health checks for your services." },
       "settings": { "title": "Settings", "description": "Account, team, and platform settings." },
       "billing": { "title": "Billing", "description": "Manage your subscription, usage, and payment methods." }
+    },
+    "quickLinks": {
+      "title": "Quick Actions",
+      "subtitle": "Jump into common tasks",
+      "deployProject": {
+        "title": "Deploy Project",
+        "description": "Import from Git"
+      },
+      "projects": {
+        "title": "Projects",
+        "description": "All projects"
+      },
+      "deployments": {
+        "title": "Deployments",
+        "description": "Build history"
+      },
+      "settings": {
+        "title": "Settings",
+        "description": "Manage access"
+      },
+      "domains": {
+        "title": "Domains",
+        "description": "Custom domains"
+      },
+      "billing": {
+        "title": "Billing",
+        "description": "Usage & plans"
+      }
     }
   }
 }

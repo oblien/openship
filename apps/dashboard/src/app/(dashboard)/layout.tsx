@@ -11,14 +11,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!session) redirect("/login");
 
   return (
-    <div className="flex h-dvh bg-background">
-      <Sidebar user={session.user} />
-
+    <div className="flex h-dvh">
+      <Sidebar />
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-8 py-8">
-          {children}
-        </div>
+        {children}
       </main>
     </div>
   );

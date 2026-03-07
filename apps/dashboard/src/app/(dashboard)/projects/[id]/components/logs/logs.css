@@ -1,0 +1,127 @@
+/* Custom scrollbar styling for logs components */
+
+/* Terminal scrollbar */
+.terminal-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.terminal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.terminal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* XTerm terminal scrollbar styling */
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+  background: transparent;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 8px 0;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Server logs scrollbar */
+.server-logs-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.server-logs-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.server-logs-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.server-logs-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Firefox scrollbar support */
+.terminal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.server-logs-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
+}
+
+.xterm .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* Extra padding for terminal content */
+.xterm .xterm-screen {
+  padding-bottom: 32px !important;
+}
+
+/* Ensure terminal content has breathing room at bottom */
+.xterm-rows {
+  padding-bottom: 20px !important;
+}
+
+/* Custom search highlight colors */
+.xterm-decoration-overview-ruler {
+  opacity: 0.8;
+}
+
+/* Search match highlighting - white shade theme */
+.xterm .xterm-decoration-top-layer {
+  pointer-events: none;
+}
+
+/* All matches - subtle white highlight */
+.xterm .xterm-decoration {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* Current active match - brighter white highlight */
+.xterm .xterm-decoration.xterm-decoration-active {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+/* Fallback for older xterm versions */
+.xterm .xterm-search-result {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  color: inherit !important;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.xterm .xterm-search-result-active {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  color: inherit !important;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+

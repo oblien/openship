@@ -1,0 +1,921 @@
+/*
+ * ─────────────────────────────────────────────────────────────────
+ *  OPENSHIP LANDING — ANIMATIONS & VISUAL FX
+ *  Premium mesh-gradient blobs, grid, terminal, navbar pill.
+ * ─────────────────────────────────────────────────────────────────
+ */
+
+
+/* ══════════════════════════════════════════════════════════════
+   NAVBAR — floating pill
+   ══════════════════════════════════════════════════════════════ */
+
+.nav-pill {
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: rgba(255,255,255,.72);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.03),
+    0 2px 8px rgba(0,0,0,.04);
+  transition: box-shadow .25s, background .25s;
+}
+.nav-pill:hover {
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.04),
+    0 4px 16px rgba(0,0,0,.06);
+}
+.nav-pill-item {
+  letter-spacing: 0.005em;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   HERO — clean bottom aurora glow
+   ══════════════════════════════════════════════════════════════ */
+
+.hero-section {
+  background-color: var(--th-bg-page);
+}
+
+/* ── Grain ───────────────────────────────────────────────────── */
+.hero-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px;
+  opacity: 0.018;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+/* ── Grid ────────────────────────────────────────────────────── */
+.hero-grid {
+  background-image:
+    linear-gradient(var(--th-on-05) 1px, transparent 1px),
+    linear-gradient(90deg, var(--th-on-05) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(ellipse 70% 45% at 50% 65%, rgba(0,0,0,.2) 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 45% at 50% 65%, rgba(0,0,0,.2) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ── Aurora container — sits at the bottom, bleeds beyond viewport ── */
+.hero-aurora {
+  position: absolute;
+  bottom: -6%;
+  left: -5%;
+  right: -5%;
+  height: 60%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* ── Core glow — rich violet, vivid, centered ───────────────── */
+.hero-aurora-core {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 85%;
+  height: 100%;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse 55% 75% at 50% 90%,
+    rgba(139, 92, 246, .55) 0%,
+    rgba(124, 58, 237, .35) 20%,
+    rgba(109, 40, 217, .15) 45%,
+    transparent 70%
+  );
+  filter: blur(45px);
+  animation: aurora-breathe 16s ease-in-out infinite;
+}
+
+/* ── Wings — flanking color accents ─────────────────────────── */
+.hero-aurora-wing {
+  position: absolute;
+  bottom: 0;
+  width: 55%;
+  height: 95%;
+  filter: blur(55px);
+}
+
+/* Left wing — warm amber / orange glow */
+.hero-aurora-wing--left {
+  left: -3%;
+  background: radial-gradient(
+    ellipse 60% 70% at 65% 85%,
+    rgba(245, 158, 11, .34) 0%,
+    rgba(251, 191, 36, .18) 30%,
+    rgba(234, 88, 12, .08) 55%,
+    transparent 72%
+  );
+  animation: aurora-sway-left 20s ease-in-out infinite;
+}
+
+/* Right wing — soft peach-yellow that bleeds into the violet core */
+.hero-aurora-wing--right {
+  right: -3%;
+  background: radial-gradient(
+    ellipse 60% 70% at 35% 85%,
+    rgba(251, 191, 36, .30) 0%,
+    rgba(253, 224, 71, .14) 30%,
+    rgba(167, 139, 250, .10) 55%,
+    transparent 72%
+  );
+  animation: aurora-sway-right 22s ease-in-out infinite;
+}
+
+/* ── Aurora keyframes ────────────────────────────────────────── */
+@keyframes aurora-breathe {
+  0%, 100% { transform: translateX(-50%) scale(1);     opacity: 1; }
+  50%      { transform: translateX(-50%) scale(1.05);   opacity: 0.88; }
+}
+@keyframes aurora-sway-left {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(18px, -8px) scale(1.05); }
+  66%      { transform: translate(-12px, 6px) scale(0.97); }
+}
+@keyframes aurora-sway-right {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-16px, -6px) scale(1.04); }
+  66%      { transform: translate(14px, 5px) scale(0.97); }
+}
+
+/* ── Second headline ─────────────────────────────────────────── */
+.hero-headline-second {
+  color: var(--th-on-40);
+}
+
+/* ── Stack ticker ────────────────────────────────────────────── */
+.hero-ticker-mask {
+  mask-image: linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 8%, black 92%, transparent 100%);
+}
+.hero-ticker {
+  animation: hero-ticker-scroll 30s linear infinite;
+}
+@keyframes hero-ticker-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ── Edge fades ──────────────────────────────────────────────── */
+.hero-edge-fade-top {
+  background: linear-gradient(to bottom, var(--th-bg-page), transparent);
+  pointer-events: none;
+}
+.hero-edge-fade-bottom {
+  background: linear-gradient(to top, var(--th-bg-page), transparent);
+  pointer-events: none;
+  z-index: 5;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   FADE-IN ANIMATIONS
+   ══════════════════════════════════════════════════════════════ */
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.65s cubic-bezier(.16,1,.3,1) both;
+}
+.animate-delay-100 { animation-delay: 0.1s; }
+.animate-delay-200 { animation-delay: 0.2s; }
+.animate-delay-300 { animation-delay: 0.3s; }
+.animate-delay-400 { animation-delay: 0.4s; }
+.animate-delay-500 { animation-delay: 0.5s; }
+.animate-delay-600 { animation-delay: 0.6s; }
+
+
+/* ══════════════════════════════════════════════════════════════
+   TERMINAL MOCKUP
+   ══════════════════════════════════════════════════════════════ */
+
+.terminal {
+  background-color: var(--th-terminal-bg);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow:
+    0 20px 60px rgba(0,0,0,.18),
+    0 4px 16px rgba(0,0,0,.10);
+}
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  background-color: rgba(255,255,255,.04);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.terminal-dot-red    { background-color: #ff5f57; }
+.terminal-dot-yellow { background-color: #febc2e; }
+.terminal-dot-green  { background-color: #28c840; }
+.terminal-body {
+  padding: 20px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--th-terminal-text);
+}
+.terminal-body .t-muted  { color: var(--th-terminal-muted); }
+.terminal-body .t-green  { color: var(--th-terminal-green); }
+.terminal-body .t-red    { color: var(--th-terminal-red); }
+.terminal-body .t-blue   { color: var(--th-terminal-blue); }
+.terminal-body .t-yellow { color: var(--th-terminal-yellow); }
+
+
+/* ══════════════════════════════════════════════════════════════
+   GRADIENT TEXT
+   ══════════════════════════════════════════════════════════════ */
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--th-text-heading) 0%, var(--th-on-60) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.accent-gradient-text {
+  background: linear-gradient(135deg, var(--th-accent-indigo), var(--th-accent-purple), var(--th-accent-pink));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   SECTION UTILITIES
+   ══════════════════════════════════════════════════════════════ */
+
+.section-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--th-bd-default) 30%, var(--th-bd-default) 70%, transparent 100%);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   DARK SECTION — Reusable full-width dark container
+   Scroll-linked scale 0.88→1→0.88 with GSAP (desktop only).
+   ══════════════════════════════════════════════════════════════ */
+
+.dark-section {
+  position: relative;
+  z-index: 20;
+}
+
+.dark-section__inner {
+  position: relative;
+  background: #09090b;
+  overflow: hidden;
+  border-radius: clamp(24px, 4vw, 48px);
+  box-shadow: 0 -20px 80px rgba(0,0,0,.18);
+  transform-origin: top center;
+}
+@media (max-width: 768px) {
+  .dark-section__inner {
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+/* Top edge glow line */
+.dark-section__edge-glow {
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+}
+
+
+
+/* ══════════════════════════════════════════════════════════════
+   HOW IT WORKS — Content inside DarkSection
+   ══════════════════════════════════════════════════════════════ */
+
+/* Outer wrapper — full width with just a sliver of page color */
+.hiw-outer {
+  padding: 0 1rem;
+}
+@media (max-width: 768px) {
+  .hiw-outer { padding: 0; }
+}
+
+/* Content area inside the dark container */
+.hiw-content {
+  position: relative;
+  padding: 96px 48px 88px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+@media (min-width: 640px) {
+  .hiw-content { padding: 112px 64px 96px; }
+}
+@media (max-width: 480px) {
+  .hiw-content { padding: 64px 24px 56px; }
+}
+
+/* Header */
+.hiw-header {
+  text-align: center;
+  margin-bottom: 64px;
+}
+.hiw-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(255,255,255,.35);
+  margin-bottom: 12px;
+}
+.hiw-heading {
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: #ffffff;
+}
+.hiw-subtext {
+  margin-top: 16px;
+  font-size: 17px;
+  line-height: 1.6;
+  color: rgba(255,255,255,.40);
+}
+
+/* Steps — 3-column centered grid */
+.hiw-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+}
+@media (max-width: 640px) {
+  .hiw-steps { grid-template-columns: 1fr; gap: 24px; }
+}
+
+/* Individual step card */
+.hiw-step {
+  text-align: center;
+  padding: 36px 24px 32px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+  transition: background .3s, border-color .3s;
+}
+.hiw-step:hover {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(255,255,255,.10);
+}
+
+/* Step icon */
+.hiw-step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.08);
+  color: rgba(255,255,255,.65);
+  margin-bottom: 20px;
+}
+
+/* Step number */
+.hiw-step-num {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(255,255,255,.18);
+  margin-bottom: 8px;
+}
+
+/* Step title */
+.hiw-step-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(255,255,255,.88);
+  margin-bottom: 10px;
+}
+
+/* Step description */
+.hiw-step-desc {
+  font-size: 14px;
+  line-height: 1.65;
+  color: rgba(255,255,255,.38);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURES — Premium card layout with GSAP scrub
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Section background — subtle tint band ───────────────────── */
+.feat-section {
+  background:
+    linear-gradient(
+      180deg,
+      var(--th-bg-page) 0%,
+      var(--th-sf-02) 10%,
+      var(--th-sf-02) 90%,
+      var(--th-bg-page) 100%
+    );
+}
+.feat-edge-aurora-container {
+  opacity: 0.5;
+  position: fixed
+}
+/* ── Scroll-linked edge aurora — multi-shade, hero-style ──────── */
+.feat-edge-aurora {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 420px;
+  height: 360px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  will-change: opacity;
+}
+.feat-edge-aurora--left  { left: -180px; }
+.feat-edge-aurora--right { right: -180px; }
+
+/* Core glow — primary color, centered */
+.feat-edge-aurora__core {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  filter: blur(90px);
+  transition: background 0.6s ease;
+  animation: edge-aurora-breathe 16s ease-in-out infinite;
+}
+.feat-edge-aurora--left .feat-edge-aurora__core {
+  background: radial-gradient(
+    ellipse 60% 70% at 65% 50%,
+    var(--lc, transparent) 0%,
+    transparent 72%
+  );
+}
+.feat-edge-aurora--right .feat-edge-aurora__core {
+  background: radial-gradient(
+    ellipse 60% 70% at 35% 50%,
+    var(--rc, transparent) 0%,
+    transparent 72%
+  );
+}
+
+/* Wings — offset accent blobs */
+.feat-edge-aurora__wing {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  transition: background 0.6s ease;
+}
+.feat-edge-aurora__wing--upper {
+  top: -15%;
+  left: 10%;
+  width: 75%;
+  height: 60%;
+}
+.feat-edge-aurora__wing--lower {
+  bottom: -10%;
+  right: 5%;
+  width: 70%;
+  height: 55%;
+}
+
+/* Left side wings */
+.feat-edge-aurora--left .feat-edge-aurora__wing--upper {
+  background: radial-gradient(
+    ellipse 55% 65% at 60% 55%,
+    var(--lu, transparent) 0%,
+    transparent 70%
+  );
+  animation: edge-sway-1 20s ease-in-out infinite;
+}
+.feat-edge-aurora--left .feat-edge-aurora__wing--lower {
+  background: radial-gradient(
+    ellipse 55% 65% at 50% 45%,
+    var(--ll, transparent) 0%,
+    transparent 70%
+  );
+  animation: edge-sway-2 22s ease-in-out infinite;
+}
+
+/* Right side wings */
+.feat-edge-aurora--right .feat-edge-aurora__wing--upper {
+  background: radial-gradient(
+    ellipse 55% 65% at 40% 55%,
+    var(--ru, transparent) 0%,
+    transparent 70%
+  );
+  animation: edge-sway-2 20s ease-in-out infinite;
+}
+.feat-edge-aurora--right .feat-edge-aurora__wing--lower {
+  background: radial-gradient(
+    ellipse 55% 65% at 50% 45%,
+    var(--rl, transparent) 0%,
+    transparent 70%
+  );
+  animation: edge-sway-1 22s ease-in-out infinite;
+}
+
+/* Keyframes */
+@keyframes edge-aurora-breathe {
+  0%, 100% { transform: scale(1);     opacity: 1;    }
+  50%      { transform: scale(1.06);   opacity: 0.85; }
+}
+@keyframes edge-sway-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(14px, -10px) scale(1.05); }
+  66%      { transform: translate(-10px, 8px) scale(0.96); }
+}
+@keyframes edge-sway-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(-12px, -6px) scale(1.04); }
+  66%      { transform: translate(10px, 5px) scale(0.97); }
+}
+
+@media (max-width: 768px) {
+  .feat-edge-aurora { width: 280px; height: 240px; }
+  .feat-edge-aurora--left  { left: -140px; }
+  .feat-edge-aurora--right { right: -140px; }
+  .feat-edge-aurora__core { filter: blur(65px); }
+  .feat-edge-aurora__wing { filter: blur(55px); }
+}
+
+/* ── Card stack ──────────────────────────────────────────────── */
+.feat-cards-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Each feature card — full-width, divider separated ───────── */
+/* Progressive enhancement — hidden ONLY while GSAP manages scroll-reveal.
+   Without JS (or if GSAP fails) the class is never added → content stays visible. */
+.feat-animated .feat-header,
+.feat-animated .feat-card,
+.feat-animated .feat-card-text,
+.feat-animated .feat-card-visual,
+.feat-animated .feat-build-item,
+.feat-animated .feat-bullets li {
+  opacity: 0;
+}
+
+.feat-card {
+  position: relative;
+  will-change: transform, opacity;
+  border-bottom: 1px solid var(--th-bd-subtle);
+  padding: 56px 0;
+}
+.feat-card:first-child {
+  border-top: 1px solid var(--th-bd-subtle);
+}
+
+/* ── Edge blobs — large ambient glows that bleed past container ─ */
+.feat-card::after {
+  content: "";
+  position: absolute;
+  width: 420px;
+  height: 320px;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity .6s ease;
+}
+.feat-card:hover::after {
+  opacity: 1;
+}
+/* Violet cards — blob on the visual side (right for even, left for odd) */
+.feat-card[data-accent="violet"]::after {
+  background: radial-gradient(circle, rgba(139,92,246,.10) 0%, rgba(124,58,237,.04) 50%, transparent 70%);
+  top: 10%;
+  right: -12%;
+}
+.feat-card[data-accent="violet"]:nth-child(odd)::after {
+  right: -12%;
+  left: auto;
+}
+.feat-card[data-accent="violet"]:nth-child(even)::after {
+  left: -12%;
+  right: auto;
+}
+/* Amber cards — opposite side blob */
+.feat-card[data-accent="amber"]::after {
+  background: radial-gradient(circle, rgba(245,158,11,.10) 0%, rgba(234,88,12,.04) 50%, transparent 70%);
+  top: 10%;
+}
+.feat-card[data-accent="amber"]:nth-child(odd)::after {
+  right: -12%;
+  left: auto;
+}
+.feat-card[data-accent="amber"]:nth-child(even)::after {
+  left: -12%;
+  right: auto;
+}
+.feat-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+
+
+/* ── Card inner — two-column grid ────────────────────────────── */
+.feat-card-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  align-items: start;
+}
+.feat-card-inner--reverse { direction: rtl; }
+.feat-card-inner--reverse > * { direction: ltr; }
+
+@media (max-width: 768px) {
+  .feat-card-inner,
+  .feat-card-inner--reverse {
+    grid-template-columns: 1fr;
+    direction: ltr;
+    gap: 28px;
+  }
+}
+
+/* ── Text block ──────────────────────────────────────────────── */
+.feat-card-text { min-width: 0; }
+
+/* ══════════════════════════════════════════════════════════════
+   VISUAL CARD — locked-width container with inner glow
+   ══════════════════════════════════════════════════════════════ */
+.feat-card-visual {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  justify-self: center;
+  align-self: center;
+  padding: 6px 4px;
+  border-radius: 16px;
+  background: var(--th-bg-card);
+  border: 1px solid rgba(255,255,255,.08);
+  overflow: hidden;
+  box-shadow: none;
+  transition: border-color .4s;
+}
+.feat-card:hover .feat-card-visual {
+  border-color: rgba(255,255,255,.16);
+}
+/* Background image layer — rendered behind overlay */
+.feat-card-visual::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: var(--v-bg-img, none) center / cover no-repeat;
+  pointer-events: none;
+  z-index: 1;
+}
+/* Overlay tint + backdrop-filter — sits on top of the image */
+.feat-card-visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: var(--v-overlay, transparent);
+  backdrop-filter: var(--v-backdrop, none);
+  -webkit-backdrop-filter: var(--v-backdrop, none);
+  pointer-events: none;
+  z-index: 2;
+}
+.feat-card-visual > * {
+  position: relative;
+  z-index: 3;
+}
+@media (max-width: 768px) {
+  .feat-card-visual {
+    max-width: 100%;
+    justify-self: stretch;
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   UNIFIED TILE DESIGN SYSTEM
+   Every child element inside the visual uses the same tile style.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Base tile ───────────────────────────────────────────────── */
+.feat-tile {
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: var(--th-bg-page);
+  border: 1px solid var(--th-bd-default);
+  transition: border-color .25s;
+}
+
+/* ── Tile variants ───────────────────────────────────────────── */
+
+/* Highlight — subtle elevation for primary items */
+.feat-tile--highlight {
+  box-shadow:
+    0 1px 4px rgba(0,0,0,.03),
+    0 4px 14px rgba(0,0,0,.04);
+  border-color: var(--th-bd-default);
+}
+
+/* Mono — code/command style */
+.feat-tile--mono {
+  background: var(--th-sf-03);
+  border-color: var(--th-bd-subtle);
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+}
+
+/* Accent — violet-tinted for AI/special elements */
+.feat-tile--accent {
+  background: rgba(139, 92, 246, .04);
+  border-color: rgba(139, 92, 246, .14);
+}
+
+/* Amber accent — warm tint for amber sections */
+.feat-tile--amber {
+  background: rgba(245, 158, 11, .04);
+  border-color: rgba(245, 158, 11, .14);
+}
+
+/* Danger — red-tinted for errors */
+.feat-tile--danger {
+  background: rgba(239, 68, 68, .03);
+  border-color: rgba(239, 68, 68, .14);
+}
+
+/* Success — green-tinted */
+.feat-tile--success {
+  background: rgba(34, 197, 94, .03);
+  border-color: rgba(34, 197, 94, .18);
+}
+
+/* Compact — tighter padding for grid cells */
+.feat-tile--compact {
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-color: var(--th-bd-default);
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   SHARED ATOMIC COMPONENTS
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Icon badge — small rounded container for SVG icons ──────── */
+.feat-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--th-sf-05);
+  color: var(--th-text-secondary);
+  flex-shrink: 0;
+}
+.feat-icon-badge--violet {
+  background: rgba(139, 92, 246, .10);
+  color: var(--th-accent-violet);
+}
+.feat-icon-badge--amber {
+  background: rgba(245, 158, 11, .10);
+  color: var(--th-accent-amber);
+}
+.feat-icon-badge--green {
+  background: rgba(34, 197, 94, .08);
+  color: #15803d;
+}
+.feat-icon-badge--red {
+  background: rgba(239, 68, 68, .08);
+  color: #dc2626;
+}
+
+/* ── Badge — inline status pill ──────────────────────────────── */
+.feat-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--th-text-hint);
+  background: var(--th-sf-04);
+  border: 1px solid transparent;
+}
+.feat-badge--green {
+  color: #15803d;
+  background: rgba(34, 197, 94, .08);
+  border-color: rgba(34, 197, 94, .15);
+}
+.feat-badge--violet {
+  color: var(--th-accent-violet);
+  background: rgba(139, 92, 246, .07);
+  border-color: rgba(139, 92, 246, .15);
+}
+.feat-badge--amber {
+  color: var(--th-accent-amber);
+  background: rgba(245, 158, 11, .07);
+  border-color: rgba(245, 158, 11, .15);
+}
+.feat-badge--action {
+  color: var(--th-text-muted);
+  background: transparent;
+  border: 1px solid var(--th-bd-default);
+  cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+.feat-badge--action:hover {
+  border-color: var(--th-accent-violet);
+  color: var(--th-accent-violet);
+}
+
+/* ── Live dot — pulsing circle ───────────────────────────────── */
+.feat-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, .4);
+  animation: feat-pulse-green 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.feat-live-dot--violet {
+  background: var(--th-accent-violet);
+  box-shadow: 0 0 0 0 rgba(139, 92, 246, .4);
+  animation: feat-pulse-violet 2s ease-in-out infinite;
+}
+.feat-live-dot--amber {
+  background: var(--th-accent-amber);
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, .4);
+  animation: feat-pulse-amber 2s ease-in-out infinite;
+}
+@keyframes feat-pulse-green {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .4); }
+  50%      { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+}
+@keyframes feat-pulse-violet {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, .4); }
+  50%      { box-shadow: 0 0 0 4px rgba(139, 92, 246, 0); }
+}
+@keyframes feat-pulse-amber {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, .4); }
+  50%      { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0); }
+}
+
+/* ── Idle dot — muted circle ─────────────────────────────────── */
+.feat-idle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--th-on-12);
+  flex-shrink: 0;
+}
+
+/* ── Stat cell (cloud metrics) ───────────────────────────────── */
+.feat-stat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  background: var(--th-sf-02);
+  border: 1px solid var(--th-bd-subtle);
+}
+
+/* ── Typing cursor ──────────────────────────────────────────── */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+.typing-cursor::after {
+  content: '▋';
+  animation: cursor-blink 1s step-end infinite;
+  color: var(--th-terminal-text);
+  margin-left: 2px;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   GSAP BUILD ITEMS — performance hint
+   ══════════════════════════════════════════════════════════════ */
+.feat-build-item {
+  will-change: transform, opacity;
+}

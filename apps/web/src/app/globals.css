@@ -1,3 +1,20 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "../styles/fonts.css";
+@import "../styles/theme.css";
+@import "../styles/landing.css";
+
+@theme inline {
+  --font-sans: 'Gellix', 'SF Arabic', system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--th-bg-page);
+    color: var(--th-text-body);
+  }
+}

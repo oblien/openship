@@ -97,13 +97,45 @@
     "hidePassword": "إخفاء كلمة المرور"
   },
   "dashboard": {
+    "home": {
+      "goodMorning": "صباح الخير",
+      "goodAfternoon": "مساء الخير",
+      "goodEvening": "مساء الخير",
+      "subtitle": "إليك ما يحدث في مشاريعك",
+      "statsProjects": "المشاريع",
+      "statsDeployments": "عمليات النشر",
+      "statsSuccessful": "الناجحة",
+      "statsFailed": "الفاشلة",
+      "recentProjects": "المشاريع الأخيرة",
+      "yourLatestActivity": "آخر نشاطاتك",
+      "viewAll": "عرض الكل",
+      "noProjectsYet": "لا توجد مشاريع بعد",
+      "createFirstProject": "أنشئ مشروعك الأول",
+      "justNow": "الآن",
+      "minutesAgo": "منذ {n} دقيقة",
+      "hoursAgo": "منذ {n} ساعة",
+      "daysAgo": "منذ {n} يوم",
+      "monthsAgo": "منذ {n} شهر",
+      "statusLive": "مباشر",
+      "statusPaused": "متوقف"
+    },
     "nav": {
+      "home": "الرئيسية",
       "projects": "المشاريع",
       "deployments": "عمليات النشر",
       "domains": "النطاقات",
       "monitoring": "المراقبة",
       "settings": "الإعدادات",
-      "billing": "الفوترة"
+      "billing": "الفوترة",
+      "sections": {
+        "main": "الرئيسية",
+        "settings": "الإعدادات",
+        "account": "الحساب"
+      }
+    },
+    "sidebar": {
+      "expand": "توسيع الشريط الجانبي",
+      "collapse": "طي الشريط الجانبي"
     },
     "user": {
       "logout": "تسجيل الخروج",
@@ -112,12 +144,70 @@
       "preferences": "التفضيلات"
     },
     "pages": {
-      "projects": { "title": "المشاريع", "description": "إنشاء وإدارة مشاريع النشر الخاصة بك." },
+      "projects": {
+        "title": "المشاريع",
+        "description": "انشر وأدر تطبيقاتك بسهولة",
+        "createButton": "إنشاء مشروع",
+        "stats": {
+          "totalProjects": "إجمالي المشاريع",
+          "liveNow": "مباشر الآن",
+          "avgPerDay": "المعدل اليومي",
+          "successRate": "معدل النجاح"
+        },
+        "searchPlaceholder": "البحث في المشاريع...",
+        "pinnedProjects": "المشاريع المثبتة",
+        "otherProjects": "المشاريع الأخرى",
+        "noResultsFound": "لم يتم العثور على مشاريع مطابقة لـ \"{query}\"",
+        "emptyState": {
+          "title": "ابدأ مشروعك الأول",
+          "description": "استورد من مستودع Git، استخدم قالب، أو انشر من سطر الأوامر. ستظهر مشاريعك هنا.",
+          "createProject": "إنشاء مشروع",
+          "browseTemplates": "تصفح القوالب",
+          "zeroConfig": "نشر بدون إعداد",
+          "instant": "فوري",
+          "instantDesc": "انشر في ثوانٍ",
+          "global": "عالمي",
+          "globalDesc": "100+ منطقة حافة",
+          "previews": "معاينات",
+          "previewsDesc": "رابط لكل فرع",
+          "rollbacks": "التراجع",
+          "rollbacksDesc": "استرجاع بنقرة واحدة",
+          "commandPalette": "أو اضغط {key} لفتح لوحة الأوامر"
+        }
+      },
       "deployments": { "title": "عمليات النشر", "description": "عرض وإدارة سجل النشر." },
       "domains": { "title": "النطاقات", "description": "إدارة النطاقات المخصصة وسجلات DNS." },
       "monitoring": { "title": "المراقبة", "description": "السجلات والمقاييس وفحوصات الصحة لخدماتك." },
       "settings": { "title": "الإعدادات", "description": "إعدادات الحساب والفريق والمنصة." },
       "billing": { "title": "الفوترة", "description": "إدارة اشتراكك واستخدامك وطرق الدفع." }
+    },
+    "quickLinks": {
+      "title": "الإجراءات السريعة",
+      "subtitle": "انتقل إلى المهام الشائعة",
+      "deployProject": {
+        "title": "نشر مشروع",
+        "description": "استيراد من Git"
+      },
+      "projects": {
+        "title": "المشاريع",
+        "description": "جميع المشاريع"
+      },
+      "deployments": {
+        "title": "عمليات النشر",
+        "description": "سجل البناء"
+      },
+      "settings": {
+        "title": "الإعدادات",
+        "description": "إدارة الوصول"
+      },
+      "domains": {
+        "title": "النطاقات",
+        "description": "النطاقات المخصصة"
+      },
+      "billing": {
+        "title": "الفوترة",
+        "description": "الاستخدام والخطط"
+      }
     }
   }
 }

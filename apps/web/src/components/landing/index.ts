@@ -1,0 +1,9 @@
+export { Navbar } from "./navbar";
+export { Hero } from "./hero";
+export { Features } from "./features";
+export { HowItWorks } from "./how-it-works";
+export { DarkSection } from "./dark-section";
+export { AiNative } from "./ai-native";
+export { DeveloperExperience } from "./developer-experience";
+export { OpenSourceCta } from "./open-source-cta";
+export { Footer } from "./footer";

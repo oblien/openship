@@ -3,6 +3,8 @@ import "./globals.css";
 import { ThemeProvider, ThemeScript } from "@/components/theme-provider";
 import { ToastProvider } from "@/components/toast";
 import { I18nProvider } from "@/components/i18n-provider";
+import { AuthProvider } from "@/context/AuthContext";
+import { NetworkErrorHandler } from "@/components/network-error-handler";
 
 export const metadata: Metadata = {
   title: "Openship",
@@ -17,9 +19,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ThemeProvider>
-          <I18nProvider>
-            <ToastProvider>{children}</ToastProvider>
-          </I18nProvider>
+          <AuthProvider>
+            <I18nProvider>
+              <ToastProvider>
+                <NetworkErrorHandler />
+                {children}
+              </ToastProvider>
+            </I18nProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

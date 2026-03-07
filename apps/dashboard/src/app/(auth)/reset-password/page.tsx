@@ -11,10 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
-}
+import { isNetworkError } from "@/lib/api";
 
 export default function ResetPasswordPage() {
   return (
@@ -65,7 +62,7 @@ function ResetPasswordForm() {
         setDone(true);
       }
     } catch (err) {
-      toast("error", isAbortError(err)
+      toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
     } finally {

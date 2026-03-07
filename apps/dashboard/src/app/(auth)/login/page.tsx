@@ -12,10 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-
-function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === "AbortError";
-}
+import { isNetworkError } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,14 +28,14 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const result = await signIn.email({ email, password, callbackURL: "/" });
+      const result = await signIn.email({ email, password });
       if (result.error) {
         toast("error", result.error.message ?? t.auth.errors.invalidCredentials);
       } else {
         router.push("/");
       }
     } catch (err) {
-      toast("error", isAbortError(err)
+      toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
     } finally {

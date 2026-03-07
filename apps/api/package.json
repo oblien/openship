@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "node --import tsx --watch src/index.ts",
     "build": "tsup src/index.ts --format esm --dts",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
@@ -12,28 +12,28 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "^1.2.0",
-    "@hono/node-server": "^1.11.0",
+    "@better-auth/drizzle-adapter": "^1.5.4",
+    "@hono/node-server": "^1.19.11",
     "@hono/typebox-validator": "^0.3.0",
     "@repo/adapters": "workspace:*",
     "@repo/core": "workspace:*",
     "@repo/db": "workspace:*",
-    "@sinclair/typebox": "^0.34.0",
-    "better-auth": "^1.2.0",
-    "bullmq": "^5.7.0",
-    "hono": "^4.4.0",
-    "ioredis": "^5.4.0",
+    "@sinclair/typebox": "^0.34.48",
+    "better-auth": "^1.5.4",
+    "bullmq": "^5.70.4",
+    "hono": "^4.12.5",
+    "ioredis": "^5.10.0",
     "nodemailer": "^8.0.1",
-    "pino": "^9.1.0",
-    "stripe": "^15.0.0",
-    "zod": "^3.24.0"
+    "pino": "^10.3.1",
+    "stripe": "^20.4.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.13.0",
     "@types/nodemailer": "^7.0.11",
-    "tsup": "^8.1.0",
-    "tsx": "^4.11.0",
-    "typescript": "^5.4.0",
-    "vitest": "^1.6.0"
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }
