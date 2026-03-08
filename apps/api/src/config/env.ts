@@ -12,6 +12,14 @@ const envSchema = z.object({
 
   /* ---------- Mode ---------- */
   CLOUD_MODE: z.coerce.boolean().default(false),
+  /**
+   * Deployment mode — determines the runtime + infrastructure combination:
+   *   - "docker"  (default) → Docker runtime + Traefik routing/SSL (self-hosted)
+   *   - "bare"              → Process runtime + Traefik routing/SSL (self-hosted)
+   *   - "cloud"             → Oblien cloud API for everything (auto-set when CLOUD_MODE=true)
+   *   - "desktop"           → Bare runtime, no routing/SSL (desktop app)
+   */
+  DEPLOY_MODE: z.enum(["docker", "bare", "cloud", "desktop"]).default("docker"),
 
   /* ---------- Database ---------- */
   DATABASE_URL: z.string().default(""),
@@ -36,6 +44,7 @@ const envSchema = z.object({
 
   /* ---------- Git Webhooks ---------- */
   GITHUB_APP_ID: z.string().optional(),
+  GITHUB_APP_SLUG: z.string().optional(),
   GITHUB_PRIVATE_KEY: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
 
@@ -48,6 +57,10 @@ const envSchema = z.object({
 
   /* ---------- Dashboard ---------- */
   DASHBOARD_URL: z.string().default("http://localhost:3001"),
+
+  /* ---------- Screenshots (optional) ---------- */
+  SCREENSHOT_SERVICE_URL: z.string().optional(),
+  CDN_UPLOAD_URL: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

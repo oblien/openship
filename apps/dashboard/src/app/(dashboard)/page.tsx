@@ -214,14 +214,14 @@ export default function DashboardHome() {
                   
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                     <Link
-                      href="/library"
+                      href="/new"
                       className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
                     >
                       <Plus className="size-4" />
                       Create Project
                     </Link>
                     <Link
-                      href="/library?tab=templates"
+                      href="/new"
                       className="inline-flex items-center gap-2 px-6 py-3 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
                     >
                       <GitBranch className="size-4" />
@@ -294,7 +294,7 @@ export default function DashboardHome() {
             {/* Shortcuts Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Link
-                href="/library"
+                href="/new"
                 className="bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/40 hover:border-border transition-all group"
               >
                 <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
@@ -304,7 +304,7 @@ export default function DashboardHome() {
                 <p className="text-xs text-muted-foreground mt-0.5">From repository</p>
               </Link>
               <Link
-                href="/library"
+                href="/new"
                 className="bg-card border border-border/50 rounded-xl p-4 hover:bg-muted/40 hover:border-border transition-all group"
               >
                 <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">

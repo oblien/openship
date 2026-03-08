@@ -3,6 +3,23 @@
  *  OPENSHIP LANDING — ANIMATIONS & VISUAL FX
  *  Premium mesh-gradient blobs, grid, terminal, navbar pill.
  * ─────────────────────────────────────────────────────────────────
+ *
+ *  DESIGN LANGUAGE — LARGE ROUNDED
+ *  ──────────────────────────────────────────────────────
+ *  This project uses a consistently large border-radius style.
+ *  Every surface — cards, tiles, icons, badges, sections —
+ *  should feel soft and generously rounded.
+ *
+ *  Reference radii (keep these in sync when adding new elements):
+ *    • Full-width sections (DarkSection)  → clamp(32px, 5vw, 56px)
+ *    • Cards / visual containers          → 24px
+ *    • Tiles / inner panels               → 16px
+ *    • Icon badges / small elements       → 12px
+ *    • Pills / status badges              → 999px  (full pill)
+ *    • Circles (dots, avatars)            → 50%
+ *
+ *  When in doubt, round MORE, not less.
+ * ─────────────────────────────────────────────────────────────────
  */
 
 
@@ -191,9 +208,10 @@
    TERMINAL MOCKUP
    ══════════════════════════════════════════════════════════════ */
 
+/* Large rounded: terminal → 1.25rem (20px) */
 .terminal {
   background-color: var(--th-terminal-bg);
-  border-radius: 0.75rem;
+  border-radius: 1.25rem;
   overflow: hidden;
   box-shadow:
     0 20px 60px rgba(0,0,0,.18),
@@ -268,11 +286,12 @@
   z-index: 20;
 }
 
+/* Large rounded: DarkSection → clamp(32px, 5vw, 56px) */
 .dark-section__inner {
   position: relative;
   background: #09090b;
   overflow: hidden;
-  border-radius: clamp(24px, 4vw, 48px);
+  border-radius: clamp(32px, 5vw, 56px);
   box-shadow: 0 -20px 80px rgba(0,0,0,.18);
   transform-origin: top center;
 }
@@ -283,6 +302,25 @@
   }
 }
 
+/* Background texture image + black/80 overlay */
+.dark-section__inner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(rgba(0,0,0,.85), rgba(0,0,0,.95)),
+    url('https://oblien.com/textures/4.jpeg') center / cover no-repeat;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* All direct children sit above the texture */
+.dark-section__inner > * {
+  position: relative;
+  z-index: 2;
+}
+
 /* Top edge glow line */
 .dark-section__edge-glow {
   position: absolute;
@@ -291,125 +329,17 @@
   right: 10%;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+  z-index: 3;
 }
 
 
 
 /* ══════════════════════════════════════════════════════════════
-   HOW IT WORKS — Content inside DarkSection
+   HOW IT WORKS
    ══════════════════════════════════════════════════════════════ */
 
-/* Outer wrapper — full width with just a sliver of page color */
-.hiw-outer {
-  padding: 0 1rem;
-}
-@media (max-width: 768px) {
-  .hiw-outer { padding: 0; }
-}
-
-/* Content area inside the dark container */
-.hiw-content {
-  position: relative;
-  padding: 96px 48px 88px;
-  max-width: 960px;
-  margin: 0 auto;
-}
-@media (min-width: 640px) {
-  .hiw-content { padding: 112px 64px 96px; }
-}
-@media (max-width: 480px) {
-  .hiw-content { padding: 64px 24px 56px; }
-}
-
-/* Header */
-.hiw-header {
-  text-align: center;
-  margin-bottom: 64px;
-}
-.hiw-label {
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: rgba(255,255,255,.35);
-  margin-bottom: 12px;
-}
-.hiw-heading {
-  font-size: clamp(1.75rem, 4vw, 2.75rem);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.15;
-  color: #ffffff;
-}
-.hiw-subtext {
-  margin-top: 16px;
-  font-size: 17px;
-  line-height: 1.6;
-  color: rgba(255,255,255,.40);
-}
-
-/* Steps — 3-column centered grid */
-.hiw-steps {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 32px;
-}
-@media (max-width: 640px) {
-  .hiw-steps { grid-template-columns: 1fr; gap: 24px; }
-}
-
-/* Individual step card */
-.hiw-step {
-  text-align: center;
-  padding: 36px 24px 32px;
-  border-radius: 16px;
-  background: rgba(255,255,255,.03);
-  border: 1px solid rgba(255,255,255,.06);
-  transition: background .3s, border-color .3s;
-}
-.hiw-step:hover {
-  background: rgba(255,255,255,.05);
-  border-color: rgba(255,255,255,.10);
-}
-
-/* Step icon */
-.hiw-step-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: rgba(255,255,255,.06);
-  border: 1px solid rgba(255,255,255,.08);
-  color: rgba(255,255,255,.65);
-  margin-bottom: 20px;
-}
-
-/* Step number */
-.hiw-step-num {
-  display: block;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: rgba(255,255,255,.18);
-  margin-bottom: 8px;
-}
-
-/* Step title */
-.hiw-step-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: rgba(255,255,255,.88);
-  margin-bottom: 10px;
-}
-
-/* Step description */
-.hiw-step-desc {
-  font-size: 14px;
-  line-height: 1.65;
-  color: rgba(255,255,255,.38);
+.hiw-card:hover {
+  border-color: var(--bdr-h) !important;
 }
 
 
@@ -418,15 +348,18 @@
    ══════════════════════════════════════════════════════════════ */
 
 /* ── Section background — subtle tint band ───────────────────── */
+/* feat-outer provides spacing; DarkSection provides the dark bg */
+.feat-outer {
+  position: relative;
+  padding: 0 1rem;
+  margin-top: clamp(80px, 10vw, 140px);
+}
+@media (max-width: 768px) {
+  .feat-outer { padding: 0; margin-top: 64px; }
+}
 .feat-section {
-  background:
-    linear-gradient(
-      180deg,
-      var(--th-bg-page) 0%,
-      var(--th-sf-02) 10%,
-      var(--th-sf-02) 90%,
-      var(--th-bg-page) 100%
-    );
+  /* background is now handled by DarkSection__inner */
+  position: relative;
 }
 .feat-edge-aurora-container {
   opacity: 0.5;
@@ -551,6 +484,43 @@
   .feat-edge-aurora__wing { filter: blur(55px); }
 }
 
+/* ── Scroll-drawn SVG border ─────────────────────────────────── */
+/*
+ * Two mirrored SVG paths that draw from center-top outward,
+ * down both sides, and close at center-bottom on scroll.
+ * JS sets strokeDasharray/strokeDashoffset in real pixels;
+ * GSAP scrubs dashoffset to 0.
+ */
+
+.feat-container {
+  position: relative;
+}
+
+.feat-draw-border {
+  /* sized by JS (90 vw), centered in the section */
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 0;
+  overflow: visible;
+}
+
+.feat-draw-border__path {
+  fill: none;
+  /* stroke set by JS STROKE_COLOR const in useDrawBorder hook */
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+@media (max-width: 768px) {
+  .feat-draw-border {
+    display: none;
+  }
+}
+
 /* ── Card stack ──────────────────────────────────────────────── */
 .feat-cards-grid {
   display: flex;
@@ -573,11 +543,13 @@
 .feat-card {
   position: relative;
   will-change: transform, opacity;
-  border-bottom: 1px solid var(--th-bd-subtle);
   padding: 56px 0;
 }
 .feat-card:first-child {
-  border-top: 1px solid var(--th-bd-subtle);
+  /* no CSS border — SVG dividers handle all separators */
+}
+.feat-card:last-child {
+  padding-bottom: 48px;
 }
 
 /* ── Edge blobs — large ambient glows that bleed past container ─ */
@@ -655,6 +627,7 @@
 /* ══════════════════════════════════════════════════════════════
    VISUAL CARD — locked-width container with inner glow
    ══════════════════════════════════════════════════════════════ */
+/* Large rounded: visual container → 24px */
 .feat-card-visual {
   position: relative;
   width: 100%;
@@ -662,8 +635,8 @@
   justify-self: center;
   align-self: center;
   padding: 6px 4px;
-  border-radius: 16px;
-  background: var(--th-bg-card);
+  border-radius: 24px;
+  background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.08);
   overflow: hidden;
   box-shadow: none;
@@ -677,26 +650,82 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 16px;
+  border-radius: 24px;
   background: var(--v-bg-img, none) center / cover no-repeat;
   pointer-events: none;
   z-index: 1;
 }
 /* Overlay tint + backdrop-filter — sits on top of the image */
-.feat-card-visual::after {
+.feat-card-visual:after {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 16px;
+  border-radius: 24px;
   background: var(--v-overlay, transparent);
   backdrop-filter: var(--v-backdrop, none);
   -webkit-backdrop-filter: var(--v-backdrop, none);
   pointer-events: none;
   z-index: 2;
+  backdrop-filter: blur(25px) grayscale(50%);
 }
 .feat-card-visual > * {
   position: relative;
   z-index: 3;
+}
+
+
+/* ── Dark-context overrides for tile system inside features ──── */
+.feat-section .feat-tile {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(255,255,255,.08);
+}
+.feat-section .feat-tile--highlight {
+  box-shadow:
+    0 1px 4px rgba(0,0,0,.15),
+    0 4px 14px rgba(0,0,0,.2);
+  border-color: rgba(255,255,255,.10);
+}
+.feat-section .feat-tile--mono {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.08);
+}
+.feat-section .feat-icon-badge {
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.50);
+}
+.feat-section .feat-badge {
+  color: rgba(255,255,255,.40);
+  background: rgba(255,255,255,.06);
+}
+.feat-section .feat-badge--green {
+  color: #4ade80;
+  background: rgba(34, 197, 94, .10);
+  border-color: rgba(34, 197, 94, .20);
+}
+.feat-section .feat-badge--violet {
+  color: #a78bfa;
+  background: rgba(139, 92, 246, .10);
+  border-color: rgba(139, 92, 246, .20);
+}
+.feat-section .feat-badge--amber {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, .10);
+  border-color: rgba(245, 158, 11, .20);
+}
+.feat-section .feat-badge--action {
+  color: rgba(255,255,255,.40);
+  border-color: rgba(255,255,255,.10);
+}
+.feat-section .feat-badge--action:hover {
+  border-color: #a78bfa;
+  color: #a78bfa;
+}
+.feat-section .feat-idle-dot {
+  background: rgba(255,255,255,.16);
+}
+.feat-section .feat-stat-cell {
+  background: rgba(255,255,255,.03);
+  border-color: rgba(255,255,255,.06);
 }
 @media (max-width: 768px) {
   .feat-card-visual {
@@ -712,9 +741,10 @@
    ══════════════════════════════════════════════════════════════ */
 
 /* ── Base tile ───────────────────────────────────────────────── */
+/* Large rounded: tile → 16px */
 .feat-tile {
   padding: 13px 15px;
-  border-radius: 12px;
+  border-radius: 16px;
   background: var(--th-bg-page);
   border: 1px solid var(--th-bd-default);
   transition: border-color .25s;
@@ -784,7 +814,7 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: 12px; /* Large rounded: icon badge → 12px */
   background: var(--th-sf-05);
   color: var(--th-text-secondary);
   flex-shrink: 0;
@@ -895,7 +925,7 @@
   align-items: center;
   gap: 1px;
   padding: 8px 4px;
-  border-radius: 8px;
+  border-radius: 12px; /* Large rounded: stat cell → 12px */
   background: var(--th-sf-02);
   border: 1px solid var(--th-bd-subtle);
 }

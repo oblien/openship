@@ -17,6 +17,7 @@ import {
   Sun,
   PanelLeftClose,
   PanelLeftOpen,
+  Library,
 } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
 import { useTheme } from "@/components/theme-provider";
@@ -26,6 +27,7 @@ import { useAuth } from "@/context/AuthContext";
 
 const MAIN_NAV = [
   { key: "home",        href: "/",            icon: LayoutDashboard },
+  { key: "library",     href: "/new",         icon: Library },
   { key: "projects",    href: "/projects",    icon: FolderKanban },
   { key: "deployments", href: "/deployments", icon: Rocket },
   { key: "domains",     href: "/domains",     icon: Globe },

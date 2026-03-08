@@ -3,9 +3,9 @@ import Link from "next/link";
 const footerLinks = {
   Product: [
     { label: "Features", href: "/#features" },
+    { label: "Download", href: "/download" },
     { label: "Pricing", href: "/pricing" },
     { label: "Docs", href: "/docs" },
-    { label: "Changelog", href: "/docs/changelog" },
   ],
   Developers: [
     { label: "CLI Reference", href: "/docs/cli" },
@@ -43,7 +43,7 @@ export function Footer() {
               </span>
             </Link>
             <p className="th-text-muted mt-4 max-w-xs text-sm leading-relaxed">
-              Open-source, self-hostable deployment platform. Ship faster, own your infrastructure.
+              Open-source desktop app for deploying anything to your server. Download, connect, deploy.
             </p>
           </div>
 
@@ -69,10 +69,37 @@ export function Footer() {
 
         {/* Bottom bar */}
         <div className="section-divider mt-12" />
-        <div className="mt-8 flex flex-col items-center justify-between gap-4 sm:flex-row">
+        <div className="mt-8 flex flex-col items-center justify-between gap-6 sm:flex-row">
           <p className="th-text-muted text-sm">
-            &copy; {new Date().getFullYear()} Openship. All rights reserved.
+            &copy; {new Date().getFullYear()} Oblien LLC. All rights reserved.
           </p>
+
+          {/* Oblien attribution */}
+          <a
+            href="https://oblien.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 th-text-muted transition-colors hover:text-[var(--th-text-strong)]"
+          >
+            <span className="text-[13px]">An</span>
+            <span
+              className="inline-block h-[16px] w-[60px]"
+              style={{
+                backgroundColor: "var(--th-text-heading)",
+                maskImage: "url(https://oblien.com/logo.svg)",
+                WebkitMaskImage: "url(https://oblien.com/logo.svg)",
+                maskSize: "contain",
+                WebkitMaskSize: "contain",
+                maskRepeat: "no-repeat",
+                WebkitMaskRepeat: "no-repeat",
+                maskPosition: "center",
+                WebkitMaskPosition: "center",
+              }}
+              aria-label="Oblien"
+            />
+            <span className="text-[13px]">project</span>
+          </a>
+
           <div className="flex items-center gap-5">
             {/* GitHub */}
             <a

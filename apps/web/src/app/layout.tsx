@@ -19,6 +19,21 @@ export const metadata: Metadata = {
     "git push deploy",
     "docker deploy",
   ],
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/ico/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/ico/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/ico/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+    other: [
+      { url: '/ico/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/ico/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
+    ],
+  },
+  manifest: '/ico/site.webmanifest',
   authors: [{ name: "Openship" }],
   openGraph: {
     type: "website",

@@ -1,9 +1,103 @@
-import { z } from "zod";
+/**
+ * Project validation schemas — TypeBox for Hono route validation.
+ * Framework & PackageManager enums are derived from the STACKS registry
+ * so adding a new stack automatically adds it to validation.
+ */
 
-export const createProjectSchema = z.object({
-  name: z.string().min(1).max(100),
-  repo: z.string().url().optional(),
-  framework: z.enum(["nextjs", "node", "static", "docker"]).optional(),
+import { Type, type Static, type TLiteral } from "@sinclair/typebox";
+import { STACK_IDS, ALL_PACKAGE_MANAGERS } from "@repo/core";
+
+// ─── Shared enums (derived from registry) ────────────────────────────────────
+
+const FrameworkEnum = Type.Union(
+  STACK_IDS.map((id) => Type.Literal(id)) as [TLiteral<string>, ...TLiteral<string>[]],
+);
+
+const PackageManagerEnum = Type.Union(
+  ALL_PACKAGE_MANAGERS.map((pm) => Type.Literal(pm)) as [TLiteral<string>, ...TLiteral<string>[]],
+);
+
+const EnvironmentEnum = Type.Union([
+  Type.Literal("production"), Type.Literal("preview"), Type.Literal("development"),
+]);
+
+const ResourceTierEnum = Type.Union([
+  Type.Literal("lightweight"), Type.Literal("standard"),
+  Type.Literal("performance"), Type.Literal("enterprise"), Type.Literal("custom"),
+]);
+
+// ─── Route params ────────────────────────────────────────────────────────────
+
+export const ProjectIdParam = Type.Object({
+  id: Type.String({ minLength: 1 }),
 });
 
-export const updateProjectSchema = createProjectSchema.partial();
+// ─── Query params ────────────────────────────────────────────────────────────
+
+export const ListProjectsQuery = Type.Object({
+  page: Type.Optional(Type.Number({ minimum: 1, default: 1 })),
+  perPage: Type.Optional(Type.Number({ minimum: 1, maximum: 100, default: 20 })),
+});
+
+// ─── Request bodies ──────────────────────────────────────────────────────────
+
+export const CreateProjectBody = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: 100 }),
+  // Git source
+  gitProvider: Type.Optional(Type.String({ default: "github" })),
+  gitOwner: Type.Optional(Type.String({ maxLength: 100 })),
+  gitRepo: Type.Optional(Type.String({ maxLength: 100 })),
+  gitBranch: Type.Optional(Type.String({ default: "main" })),
+  installationId: Type.Optional(Type.Number()),
+  // Build configuration
+  framework: Type.Optional(FrameworkEnum),
+  packageManager: Type.Optional(PackageManagerEnum),
+  installCommand: Type.Optional(Type.String({ maxLength: 500 })),
+  buildCommand: Type.Optional(Type.String({ maxLength: 500 })),
+  outputDirectory: Type.Optional(Type.String({ maxLength: 200 })),
+  rootDirectory: Type.Optional(Type.String({ maxLength: 200 })),
+  productionMode: Type.Optional(Type.Union([
+    Type.Literal("host"), Type.Literal("static"), Type.Literal("standalone"),
+  ])),
+  port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
+});
+
+export const UpdateProjectBody = Type.Partial(CreateProjectBody);
+
+export const SetEnvVarsBody = Type.Object({
+  environment: EnvironmentEnum,
+  vars: Type.Array(
+    Type.Object({
+      key: Type.String({ minLength: 1, maxLength: 256 }),
+      value: Type.String({ maxLength: 10000 }),
+      isSecret: Type.Optional(Type.Boolean({ default: false })),
+    }),
+    { minItems: 0, maxItems: 100 },
+  ),
+});
+
+export const UpdateResourcesBody = Type.Object({
+  production: Type.Optional(Type.Object({
+    tier: Type.Optional(ResourceTierEnum),
+    cpuCores: Type.Optional(Type.Number({ minimum: 0.25, maximum: 4 })),
+    memoryMb: Type.Optional(Type.Number({ minimum: 128, maximum: 8192 })),
+  })),
+  build: Type.Optional(Type.Object({
+    tier: Type.Optional(ResourceTierEnum),
+    cpuCores: Type.Optional(Type.Number({ minimum: 0.25, maximum: 4 })),
+    memoryMb: Type.Optional(Type.Number({ minimum: 128, maximum: 8192 })),
+  })),
+  sleepMode: Type.Optional(Type.Union([
+    Type.Literal("auto_sleep"), Type.Literal("always_on"),
+  ])),
+  port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
+});
+
+// ─── Inferred types ──────────────────────────────────────────────────────────
+
+export type TProjectIdParam = Static<typeof ProjectIdParam>;
+export type TListProjectsQuery = Static<typeof ListProjectsQuery>;
+export type TCreateProjectBody = Static<typeof CreateProjectBody>;
+export type TUpdateProjectBody = Static<typeof UpdateProjectBody>;
+export type TSetEnvVarsBody = Static<typeof SetEnvVarsBody>;
+export type TUpdateResourcesBody = Static<typeof UpdateResourcesBody>;

@@ -1,0 +1,98 @@
+---
+title: API Reference
+description: Openship REST API for programmatic access to deployments, projects, and infrastructure.
+---
+
+# API Reference
+
+The Openship API lets you manage everything programmatically. All endpoints require an API key.
+
+## Authentication
+
+```bash
+curl -H "Authorization: Bearer os_key_..." https://api.openship.io/v1/projects
+```
+
+Generate an API key from **Dashboard → Settings → API Keys**.
+
+## Projects
+
+### List projects
+
+```
+GET /v1/projects
+```
+
+```json
+{
+  "projects": [
+    {
+      "id": "proj_abc123",
+      "name": "my-app",
+      "framework": "nextjs",
+      "status": "active",
+      "url": "https://my-app.openship.io"
+    }
+  ]
+}
+```
+
+### Create project
+
+```
+POST /v1/projects
+```
+
+```json
+{
+  "name": "my-app",
+  "repo": "https://github.com/you/my-app",
+  "branch": "main"
+}
+```
+
+## Deployments
+
+### Trigger deployment
+
+```
+POST /v1/projects/:id/deployments
+```
+
+### Get deployment status
+
+```
+GET /v1/deployments/:id
+```
+
+```json
+{
+  "id": "dpl_xyz789",
+  "status": "live",
+  "url": "https://my-app.openship.io",
+  "created_at": "2026-03-08T12:00:00Z",
+  "build_time_ms": 14200
+}
+```
+
+## Domains
+
+### Add domain
+
+```
+POST /v1/projects/:id/domains
+```
+
+```json
+{
+  "domain": "example.com"
+}
+```
+
+## Rate limits
+
+| Plan | Requests/min |
+|------|-------------|
+| Free | 60 |
+| Pro | 300 |
+| Self-hosted | Unlimited |

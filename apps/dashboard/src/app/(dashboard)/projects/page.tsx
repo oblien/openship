@@ -150,7 +150,7 @@ export default function DeploymentDashboard() {
               </p>
             </div>
             <Link
-              href="/library"
+              href="/new"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 w-full sm:w-auto justify-center"
             >
               {generateIcon('story%20add-152-1658436130.png', 18, 'hsl(var(--primary-foreground))')}

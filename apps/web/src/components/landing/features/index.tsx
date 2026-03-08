@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useGsapScroll } from "@/hooks/use-gsap-scroll";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { DarkSection } from "../dark-section";
 import { CloudVisual } from "./cloud-visual";
 import { AiVisual } from "./ai-visual";
 import { GitVisual } from "./git-visual";
@@ -11,6 +12,258 @@ import { RollbackVisual } from "./rollback-visual";
 import { StacksVisual } from "./stacks-visual";
 import { SslVisual } from "./ssl-visual";
 import { InfraVisual } from "./infra-visual";
+
+gsap.registerPlugin(ScrollTrigger);
+
+/* ─── Hook: scroll-drawn border ─────────────────────────────── */
+/**
+ * Two mirrored SVG paths that draw simultaneously on scroll:
+ *
+ *   Right half: center-top → top-right → bottom-right → center-bottom
+ *   Left half:  center-top → top-left  → bottom-left  → center-bottom
+ *
+ * Animation phases (scroll → draw):
+ *   1. Top edges expand from center outward to corners
+ *   2. Both sides descend simultaneously
+ *   3. Bottom edges close from corners toward center
+ *
+ * Sharp corners. Real pixel-based stroke-dasharray/dashoffset.
+ */
+function useDrawBorder() {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const rightRef = useRef<SVGPathElement>(null);
+  const leftRef = useRef<SVGPathElement>(null);
+  const dividersRef = useRef<SVGGElement>(null);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    const rPath = rightRef.current;
+    const lPath = leftRef.current;
+    const divG = dividersRef.current;
+    if (!svg || !rPath || !lPath || !divG) return;
+
+    const section = svg.closest(".feat-section") as HTMLElement;
+    const container = section?.querySelector(".feat-container") as HTMLElement;
+    const cardsGrid = section?.querySelector(".feat-cards-grid") as HTMLElement;
+    if (!container || !section || !cardsGrid) return;
+
+    /* ── tuneable consts ─────────────────────────────────── */
+    const MAX_W        = 1280;   // max border width — matches navbar max-w-7xl
+    const TK           = 20;     // + crosshair arm length (px)
+    const STROKE_COLOR = "rgba(255,255,255,0.12)"; // border stroke color (light for dark bg)
+    /* ──────────────────────────────────────────────────────── */
+
+    const MARGIN = TK + 2; // viewBox bleed so outward ticks aren't clipped
+
+    /** Measure the dynamic TOP_OFFSET = distance from section top to cards-grid top
+     *  Uses offsetTop chain — immune to parent CSS transforms (DarkSection scale). */
+    const measureOffset = () => {
+      let top = 0;
+      let el: HTMLElement | null = cardsGrid;
+      while (el && el !== section) {
+        top += el.offsetTop;
+        el = el.offsetParent as HTMLElement | null;
+      }
+      return top;
+    };
+
+    const measure = () => {
+      const topOffset = measureOffset();
+      const sw = Math.min(window.innerWidth, MAX_W);
+      const sh = cardsGrid.offsetHeight; // CSS pixels, not affected by parent transform
+      return { sw, sh, topOffset };
+    };
+
+    const cross = (cx: number, cy: number, outX: number, inX: number, outY: number, inY: number) => [
+      `L ${cx + outX},${cy}`,
+      `L ${cx + inX},${cy}`,
+      `L ${cx},${cy}`,
+      `L ${cx},${cy + outY}`,
+      `L ${cx},${cy + inY}`,
+      `L ${cx},${cy}`,
+    ];
+
+    const buildRight = (sw: number, sh: number) => {
+      const vw = sw + MARGIN * 2;
+      const vh = sh + MARGIN * 2;
+      const cx = vw / 2;
+      const t = MARGIN + 0.5;
+      const r = vw - MARGIN - 0.5;
+      const b = vh - MARGIN - 0.5;
+      return [
+        `M ${cx},${t}`,
+        `L ${r},${t}`,
+        ...cross(r, t, TK, -TK, -TK, TK),
+        `L ${r},${b}`,
+        ...cross(r, b, TK, -TK, TK, -TK),
+        `L ${cx},${b}`,
+      ].join(' ');
+    };
+
+    const buildLeft = (sw: number, sh: number) => {
+      const vw = sw + MARGIN * 2;
+      const vh = sh + MARGIN * 2;
+      const cx = vw / 2;
+      const t = MARGIN + 0.5;
+      const l = MARGIN + 0.5;
+      const b = vh - MARGIN - 0.5;
+      return [
+        `M ${cx},${t}`,
+        `L ${l},${t}`,
+        ...cross(l, t, -TK, TK, -TK, TK),
+        `L ${l},${b}`,
+        ...cross(l, b, -TK, TK, TK, -TK),
+        `L ${cx},${b}`,
+      ].join(' ');
+    };
+
+    const calcLen = (sw: number, sh: number) => {
+      return sw / 2 + (TK * 6) + sh + (TK * 6) + sw / 2;
+    };
+
+    /* ── Divider line elements (created once, updated on resize) ── */
+    let dividerLines: { left: SVGLineElement; right: SVGLineElement; card: HTMLElement }[] = [];
+
+    const cards = section.querySelectorAll<HTMLElement>(".feat-card");
+
+    /** Create SVG line pairs for each card boundary (skip first — top edge of rect is the divider) */
+    const createDividers = () => {
+      while (divG.firstChild) divG.removeChild(divG.firstChild);
+      dividerLines = [];
+
+      cards.forEach((card, i) => {
+        if (i === 0) return; // first card's top = border-rect top edge
+        const makeL = () => {
+          const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          l.style.stroke = STROKE_COLOR;
+          l.style.strokeWidth = "1";
+          l.style.fill = "none";
+          l.setAttribute("vector-effect", "non-scaling-stroke");
+          return l;
+        };
+        const left = makeL();
+        const right = makeL();
+        divG.appendChild(left);
+        divG.appendChild(right);
+        dividerLines.push({ left, right, card });
+      });
+    };
+
+    createDividers();
+
+    /** Position dividers at each card boundary, extending past rect edges by TK for + crosshairs */
+    const setupDividers = (sw: number) => {
+      const vw = sw + MARGIN * 2;
+      const cx = vw / 2;
+      const l = MARGIN + 0.5;           // left edge of rect
+      const r = vw - MARGIN - 0.5;      // right edge of rect
+      const lTick = l - TK;             // extend past left edge for + mark
+      const rTick = r + TK;             // extend past right edge for + mark
+      const halfLen = (sw / 2) + TK;    // half-line length including tick
+      const gridOffsetTop = cardsGrid.offsetTop; // grid's offset relative to its offsetParent
+
+      dividerLines.forEach(({ left, right, card }) => {
+        // Card's top relative to grid (CSS px, transform-safe)
+        const cardTopInGrid = card.offsetTop - gridOffsetTop;
+        const svgY = cardTopInGrid + MARGIN + 0.5;
+
+        // Right half: center → right edge + TK overshoot
+        right.setAttribute("x1", String(cx));
+        right.setAttribute("y1", String(svgY));
+        right.setAttribute("x2", String(rTick));
+        right.setAttribute("y2", String(svgY));
+        right.style.strokeDasharray = `${halfLen}`;
+        right.style.strokeDashoffset = `${halfLen}`;
+
+        // Left half: center → left edge + TK overshoot
+        left.setAttribute("x1", String(cx));
+        left.setAttribute("y1", String(svgY));
+        left.setAttribute("x2", String(lTick));
+        left.setAttribute("y2", String(svgY));
+        left.style.strokeDasharray = `${halfLen}`;
+        left.style.strokeDashoffset = `${halfLen}`;
+      });
+    };
+
+    const setup = () => {
+      const { sw, sh, topOffset } = measure();
+      const vw = sw + MARGIN * 2;
+      const vh = sh + MARGIN * 2;
+      svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
+      svg.style.width = `${vw}px`;
+      svg.style.height = `${vh}px`;
+      svg.style.top = `${topOffset - MARGIN}px`;
+      rPath.setAttribute("d", buildRight(sw, sh));
+      lPath.setAttribute("d", buildLeft(sw, sh));
+      rPath.style.stroke = STROKE_COLOR;
+      lPath.style.stroke = STROKE_COLOR;
+
+      const len = calcLen(sw, sh);
+      rPath.style.strokeDasharray = `${len}`;
+      rPath.style.strokeDashoffset = `${len}`;
+      lPath.style.strokeDasharray = `${len}`;
+      lPath.style.strokeDashoffset = `${len}`;
+
+      setupDividers(sw);
+
+      return len;
+    };
+
+    let len = setup();
+
+    const ro = new ResizeObserver(() => {
+      len = setup();
+      ScrollTrigger.refresh();
+    });
+    ro.observe(section);
+
+    let ctx: gsap.Context | undefined;
+
+    try {
+      ctx = gsap.context(() => {
+        // Border paths — draw on section scroll
+        gsap.to([rPath, lPath], {
+          strokeDashoffset: 0,
+          ease: "none",
+          scrollTrigger: {
+            trigger: section,
+            start: "top 80%",
+            end: "bottom 60%",
+            scrub: true,
+          },
+        });
+
+        // Dividers — each draws from center outward as its card scrolls in
+        dividerLines.forEach(({ left, right, card }) => {
+          gsap.to([left, right], {
+            strokeDashoffset: 0,
+            ease: "none",
+            scrollTrigger: {
+              trigger: card,
+              start: "top 85%",
+              end: "top 50%",
+              scrub: true,
+            },
+          });
+        });
+      }, section as Element);
+    } catch {
+      rPath.style.strokeDashoffset = "0";
+      lPath.style.strokeDashoffset = "0";
+      dividerLines.forEach(({ left, right }) => {
+        left.style.strokeDashoffset = "0";
+        right.style.strokeDashoffset = "0";
+      });
+    }
+
+    return () => {
+      ro.disconnect();
+      ctx?.revert();
+    };
+  }, []);
+
+  return { svgRef, rightRef, leftRef, dividersRef };
+}
 
 /* ─── Aurora palette per feature — mixed hues like hero (violet+amber+cyan etc) ─ */
 const BLOB_PALETTE = [
@@ -141,54 +394,54 @@ const FEATURES: {
   backdropFilter?: string;
 }[] = [
     {
-      title: "Your Cloud or Ours",
+      title: "Deploy Anywhere",
       description:
-        "Run on our managed cloud with auto-scaling and zero ops — or self-host on your own metal. Same platform, your rules.",
+        "Use Openship Cloud and deploy instantly, or connect your own servers — any VPS, any provider, any region. Add more servers as you grow. Same app, your rules.",
       points: [
-        "Managed cloud with automatic scaling to zero",
-        "Self-host anywhere — any Linux box, any provider",
-        "Migrate between managed and self-hosted any time",
+        "Openship Cloud with automatic scaling — zero config",
+        "Connect any Linux server — any provider, any region",
+        "Multi-server deployments — not limited to one box",
       ],
       Visual: CloudVisual,
       accent: "violet",
       bg: "https://framerusercontent.com/images/DWC8UZeRiKEKDpUceDrVk7IfyA.jpg",
-      color: "rgba(0,0,0,1)",
-      overlay: "rgba(255,255,255,0.9)",
+      color: "rgba(255,255,255,1)",
+      overlay: "rgba(0,0,0,0.82)",
     },
     {
-      title: "Native Microservices",
+      title: "Full Backend Stack",
       description:
-        "Stop juggling providers. Spin up your API, database, Redis, WebSocket server, workers — your entire backend stack from one UI. One click.",
+        "The app sets up your entire backend — API, database, Redis, WebSocket, workers. AI detects what you need, UI lets you tweak it. No Docker knowledge required.",
       points: [
-        "Add Postgres, Redis, MongoDB in one click",
+        "AI auto-provisions Postgres, Redis, MongoDB",
         "Built-in API gateway, WebSocket & worker support",
-        "Private networking between services — zero config",
+        "Private networking between services — configured automatically",
       ],
       Visual: InfraVisual,
       accent: "amber",
       bg: "https://framerusercontent.com/images/RPfj9rnNJTScxvWiCwQ189Xde0.jpg",
-      color: "rgba(0,0,0,1)",
-      overlay: "rgba(255,255,255,0.9)",
+      color: "rgba(255,255,255,1)",
+      overlay: "rgba(0,0,0,0.82)",
     },
     {
       title: "AI-Powered Builds",
       description:
-        "A built-in AI agent watches every build. When something breaks it diagnoses the root cause and can apply the fix automatically.",
+        "Every build runs locally on your machine. The AI agent watches for errors, diagnoses them, and fixes them before anything touches your server.",
       points: [
         "Automatic error detection and root-cause analysis",
-        "One-click AI fix for common build failures",
+        "AI applies the fix — broken builds never reach your server",
         "Learns your project patterns over time",
       ],
       Visual: AiVisual,
       accent: "violet",
       bg: "https://framerusercontent.com/images/H1DkziaAiY3dL9msAC3bwGQqJY.jpg",
-      color: "rgba(0,0,0,1)",
-      overlay: "rgba(255,255,255,0.9)",
+      color: "rgba(255,255,255,1)",
+      overlay: "rgba(0,0,0,0.82)",
     },
     {
       title: "Git Push to Deploy",
       description:
-        "Connect your repo. Every push triggers an automatic build & deploy — preview branches and staging environments included.",
+        "Connect your repo inside the app. Every push builds locally and deploys automatically — preview branches and staging environments included.",
       points: [
         "Automatic deploys on every push to main",
         "Preview deployments for every pull request",
@@ -197,8 +450,8 @@ const FEATURES: {
       Visual: GitVisual,
       accent: "violet",
       bg: "https://framerusercontent.com/images/WUXubbFykMGhPqFWRwQRozQM.jpg",
-      color: "rgba(0,0,0,1)",
-      overlay: "rgba(255,255,255,0.9)",
+      color: "rgba(255,255,255,1)",
+      overlay: "rgba(0,0,0,0.82)",
     },
     {
       title: "Instant Rollbacks",
@@ -212,23 +465,23 @@ const FEATURES: {
       Visual: RollbackVisual,
       accent: "amber",
       bg: "https://framerusercontent.com/images/gCvZUfjCAtNS7imiZz6gZGE0LE.jpg",
-      color: "rgba(0,0,0,1)",
-      overlay: "rgba(255,255,255,0.9)",
+      color: "rgba(255,255,255,1)",
+      overlay: "rgba(0,0,0,0.82)",
     },
     {
       title: "Any Stack, Any Language",
       description:
-        "Node.js, Python, Go, Rust, PHP, Ruby — if it builds, it ships. First-class Dockerfile support and automatic buildpack detection.",
+        "Node.js, Python, Go, Rust, PHP, Ruby — if it builds, the app ships it. AI detects your framework and configures the build automatically.",
       points: [
-        "Auto-detect language, framework, and build command",
+        "AI detects language, framework, and build command",
         "Full Dockerfile support for custom setups",
         "Monorepo support — deploy any sub-path",
       ],
       Visual: StacksVisual,
       accent: "violet",
       bg: "https://framerusercontent.com/images/DWC8UZeRiKEKDpUceDrVk7IfyA.jpg",
-      color: "rgba(0,0,0,1)",
-      overlay: "rgba(255,255,255,0.9)",
+      color: "rgba(255,255,255,1)",
+      overlay: "rgba(0,0,0,0.82)",
     },
     {
       title: "Free SSL & Custom Domains",
@@ -242,8 +495,8 @@ const FEATURES: {
       Visual: SslVisual,
       accent: "amber",
       bg: "https://framerusercontent.com/images/TquFwq0VjZoGsaKv8WjwTRQhLc.jpg",
-      color: "rgba(0,0,0,1)",
-      overlay: "rgba(255,255,255,0.9)",
+      color: "rgba(255,255,255,1)",
+      overlay: "rgba(0,0,0,0.82)",
     },
   ];
 
@@ -252,7 +505,7 @@ function Check({ accent: _ }: { accent: "violet" | "amber" }) {
   return (
     <svg
       className="mt-[3px] h-4 w-4 shrink-0"
-      style={{ color: "#000" }}
+      style={{ color: "rgba(255,255,255,.7)" }}
       fill="none"
       viewBox="0 0 24 24"
       stroke="currentColor"
@@ -269,6 +522,7 @@ const allowBlob = false
 export function Features() {
   const containerRef = useGsapScroll();
   const { leftRef, rightRef } = useEdgeBlobs(allowBlob);
+  const { svgRef, rightRef: borderRightRef, leftRef: borderLeftRef, dividersRef } = useDrawBorder();
 
   return (
     <>
@@ -301,73 +555,87 @@ export function Features() {
           <span className="feat-edge-aurora__wing feat-edge-aurora__wing--lower" />
         </div>
       </>}
-      <section id="features" className="feat-section relative overflow-hidden">
+      <section id="features" className="feat-outer">
+        <DarkSection>
+          <div className="feat-section relative">
+            {/* ── Scroll-drawn SVG border (lives in section, not container, so it can be wider) ── */}
+            <svg
+              ref={svgRef}
+              className="feat-draw-border"
+              aria-hidden="true"
+            >
+              <path ref={borderRightRef} className="feat-draw-border__path" />
+              <path ref={borderLeftRef} className="feat-draw-border__path" />
+              <g ref={dividersRef} />
+            </svg>
 
-        <div ref={containerRef} className="mx-auto max-w-[1120px] px-5 sm:px-8">
-          {/* ── Header ──────────────────────────────────────── */}
-          <div className="feat-header mx-auto max-w-2xl text-center pt-28 sm:pt-36 pb-16 sm:pb-20">
-            <p className="th-text-muted mb-3 text-[12px] font-semibold uppercase tracking-[0.15em]">
-              Platform
-            </p>
-            <h2 className="th-text-heading text-[clamp(1.75rem,4vw,2.75rem)] font-semibold tracking-[-0.025em] leading-[1.15]">
-              Everything you need to ship
-            </h2>
-            <p className="th-text-body mt-4 text-[16px] leading-[1.65]">
-              A complete deployment platform — from push to production.
-            </p>
-          </div>
+            <div ref={containerRef} className="feat-container mx-auto max-w-[1120px] px-5 sm:px-8 relative">
+              {/* ── Header ──────────────────────────────────────── */}
+              <div className="feat-header mx-auto max-w-2xl text-center pt-28 sm:pt-36 pb-16 sm:pb-20">
+                <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.15em]" style={{ color: 'rgba(255,255,255,.38)' }}>
+                  Platform
+                </p>
+                <h2 className="text-[clamp(1.75rem,4vw,2.75rem)] font-semibold tracking-[-0.025em] leading-[1.15]" style={{ color: 'rgba(255,255,255,1)' }}>
+                  Everything between your code and production
+                </h2>
+                <p className="mt-4 text-[16px] leading-[1.65]" style={{ color: 'rgba(255,255,255,.50)' }}>
+                  We handle the config. You handle the code. Ship in minutes.
+                </p>
+              </div>
 
-          {/* ── Feature cards ───────────────────────────────── */}
-          <div className="feat-cards-grid">
-            {FEATURES.map((f, i) => {
-              const isRight = i % 2 !== 0;
-              return (
-                <div key={f.title} className="feat-card" data-accent={f.accent}>
-                  {/* Inner grid: text + visual */}
-                  <div
-                    className={`feat-card-inner ${isRight ? "feat-card-inner--reverse" : ""}`}
-                  >
-                    {/* Text side */}
-                    <div className="feat-card-text">
-                      <h3 className="th-text-heading text-[clamp(1.5rem,3.2vw,2rem)] font-semibold tracking-[-0.025em] leading-[1.15] mb-4">
-                        {f.title}
-                      </h3>
-                      <p className="th-text-body text-[16px] leading-[1.7]">
-                        {f.description}
-                      </p>
-                      <ul className="feat-bullets mt-5 space-y-3">
-                        {f.points.map((p) => (
-                          <li key={p} className="flex items-start gap-2.5">
-                            <Check accent={f.accent} />
-                            <span className="text-[15px] leading-[1.55] th-text-secondary">
-                              {p}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+              {/* ── Feature cards ───────────────────────────────── */}
+              <div className="feat-cards-grid">
+                {FEATURES.map((f, i) => {
+                  const isRight = i % 2 !== 0;
+                  return (
+                    <div key={f.title} className="feat-card" data-accent={f.accent}>
+                      {/* Inner grid: text + visual */}
+                      <div
+                        className={`feat-card-inner ${isRight ? "feat-card-inner--reverse" : ""}`}
+                      >
+                        {/* Text side */}
+                        <div className="feat-card-text">
+                          <h3 className="text-[clamp(1.5rem,3.2vw,2rem)] font-semibold tracking-[-0.025em] leading-[1.15] mb-4" style={{ color: 'rgba(255,255,255,.95)' }}>
+                            {f.title}
+                          </h3>
+                          <p className="text-[16px] leading-[1.7]" style={{ color: 'rgba(255,255,255,.50)' }}>
+                            {f.description}
+                          </p>
+                          <ul className="feat-bullets mt-5 space-y-3">
+                            {f.points.map((p) => (
+                              <li key={p} className="flex items-start gap-2.5">
+                                <Check accent={f.accent} />
+                                <span className="text-[15px] leading-[1.55]" style={{ color: 'rgba(255,255,255,.45)' }}>
+                                  {p}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Visual side — locked width */}
+                        <div
+                          className="feat-card-visual"
+                          style={{
+                            '--v-bg-img': f.bg ? `url(${f.bg})` : 'none',
+                            '--v-overlay': f.overlay,
+                            '--v-backdrop': f.backdropFilter ?? 'none',
+                            color: f.color,
+                          } as React.CSSProperties}
+                        >
+                          <f.Visual />
+                        </div>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
 
-                    {/* Visual side — locked width */}
-                    <div
-                      className="feat-card-visual"
-                      style={{
-                        '--v-bg-img': f.bg ? `url(${f.bg})` : 'none',
-                        '--v-overlay': f.overlay,
-                        '--v-backdrop': f.backdropFilter ?? 'none',
-                        color: f.color,
-                      } as React.CSSProperties}
-                    >
-                      <f.Visual />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+              {/* Bottom breathing room */}
+              <div className="h-16 sm:h-24" />
+            </div>
           </div>
-
-          {/* Bottom breathing room */}
-          <div className="h-16 sm:h-24" />
-        </div>
+        </DarkSection>
       </section>
     </>
   );

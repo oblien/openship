@@ -1,0 +1,36 @@
+{
+  "$schema": "https://www.electronforge.io/schema.json",
+  "packagerConfig": {
+    "name": "Openship",
+    "executableName": "openship",
+    "icon": "resources/icon",
+    "asar": true
+  },
+  "makers": [
+    {
+      "name": "@electron-forge/maker-squirrel",
+      "config": {
+        "name": "openship"
+      }
+    },
+    {
+      "name": "@electron-forge/maker-zip",
+      "platforms": ["darwin", "linux"]
+    },
+    {
+      "name": "@electron-forge/maker-deb",
+      "config": {
+        "options": {
+          "maintainer": "Openship Team",
+          "homepage": "https://openship.dev"
+        }
+      }
+    },
+    {
+      "name": "@electron-forge/maker-dmg",
+      "config": {
+        "format": "ULFO"
+      }
+    }
+  ]
+}

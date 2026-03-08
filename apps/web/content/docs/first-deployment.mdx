@@ -1,0 +1,56 @@
+---
+title: First Deployment
+description: Deploy an app with custom domains, environment variables, and Git integration.
+---
+
+# First Deployment
+
+This guide walks through deploying a real project with all the essentials configured.
+
+## Deploy from Git
+
+Connect a GitHub, GitLab, or Bitbucket repository:
+
+```bash
+openship projects create --repo https://github.com/you/your-app
+```
+
+Openship automatically:
+- Detects the framework and build command
+- Generates an optimized Dockerfile (if needed)
+- Builds and deploys on every push to `main`
+
+## Custom domains
+
+```bash
+openship domains add yourapp.com --project your-app
+```
+
+SSL certificates are provisioned automatically via Let's Encrypt. Wildcard certificates are supported.
+
+## Environment variables
+
+```bash
+openship env set DATABASE_URL="postgres://..." --project your-app
+openship env set REDIS_URL="redis://..." --project your-app
+```
+
+Variables are encrypted at rest and injected at build time and runtime.
+
+## Preview deployments
+
+Every pull request gets a unique preview URL:
+
+```
+https://pr-42--your-app.preview.openship.io
+```
+
+Preview deployments are destroyed automatically when the PR is merged or closed.
+
+## Rollbacks
+
+```bash
+openship rollback --project your-app
+```
+
+Instant rollback to any previous deployment. Zero downtime.

@@ -14,9 +14,30 @@ export type DeploymentStatus =
 
 export type Environment = "production" | "preview" | "development";
 
-export type Framework = "nextjs" | "node" | "static" | "docker";
+import type { StackId, Language } from "./stacks";
+
+/** Framework / stack identifier — derived from STACKS registry */
+export type Framework = StackId;
+
+/** Programming language — derived from LANGUAGES registry */
+export type LanguageId = Language;
+
+/**
+ * Package manager identifier.
+ * JS has npm/yarn/pnpm/bun, Go has go, Rust has cargo, Python has pip/poetry/uv, etc.
+ * Kept as a string (not union) because new package managers can be added to LANGUAGES.
+ */
+export type PackageManager = string;
+
+export type ProductionMode = "host" | "static" | "standalone";
 
 export type AdapterType = "docker" | "oblien";
+
+export type SleepMode = "auto_sleep" | "always_on";
+
+export type DomainStatus = "pending" | "active" | "failed" | "removing";
+
+export type SslStatus = "none" | "provisioning" | "active" | "expired" | "error";
 
 /* ---------- Billing ---------- */
 

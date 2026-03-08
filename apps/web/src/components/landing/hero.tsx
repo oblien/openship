@@ -1,3 +1,7 @@
+"use client";
+
+import { DownloadButton } from "./download-button";
+
 const STACKS = [
   { name: 'Next.js',     icon: 'https://cdn.simpleicons.org/nextdotjs/000000' },
   { name: 'Node',        icon: 'https://cdn.simpleicons.org/nodedotjs/5FA04E' },
@@ -28,7 +32,7 @@ export function Hero() {
       </div>
 
       {/* ═══════════════ Content ═══════════════ */}
-      <div className="relative z-10 mx-auto w-full max-w-[860px] px-6 text-center">
+      <div className="relative z-20 mx-auto w-full max-w-[860px] px-6 text-center">
         {/* Badge */}
         <div className="animate-fade-in-up mb-7 inline-flex items-center gap-2 rounded-full border border-[var(--th-on-06)] bg-white/60 px-4 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,.04)] backdrop-blur-sm">
           <span className="relative flex h-1.5 w-1.5">
@@ -36,7 +40,7 @@ export function Hero() {
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[var(--th-accent-violet)]" />
           </span>
           <span className="text-[12px] font-medium tracking-[0.02em] th-text-secondary">
-            Open Source &middot; Self-Hostable
+            Open Source &middot; Cloud or Self-Hosted
           </span>
         </div>
 
@@ -51,38 +55,34 @@ export function Hero() {
         </h1>
 
         {/* Sub */}
-        <p className="animate-fade-in-up animate-delay-200 mx-auto mt-6 max-w-[480px] text-[16px] leading-[1.65] th-text-body">
-          The open-source deployment platform with native microservices, AI&nbsp;builds, and&nbsp;one&#8209;click&nbsp;infrastructure&nbsp;— self&#8209;host&nbsp;it or&nbsp;let&nbsp;us&nbsp;run&nbsp;it.
+        <p className="animate-fade-in-up animate-delay-200 mx-auto mt-6 max-w-[520px] text-[16px] leading-[1.65] th-text-body">
+          Push your code&nbsp;&mdash; AI handles the build, config, and deployment. Use our cloud or connect your own servers. Zero&nbsp;lock&#8209;in, completely&nbsp;open&#8209;source.
         </p>
 
         {/* CTAs */}
         <div className="animate-fade-in-up animate-delay-300 mt-9 flex flex-col items-center justify-center gap-3.5 sm:flex-row">
+          <DownloadButton size="large" />
           <a
             href="/login"
-            className="th-btn group rounded-full px-7 py-3 text-[15px] font-medium"
+            className="th-btn-ghost group rounded-full px-7 py-3 text-[15px] font-medium"
           >
-            Start Deploying
-            <svg className="ml-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+            Start Free
+            <svg
+              className="ml-1.5 -mr-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.2}
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
-          </a>
-          <a
-            href="https://github.com/oblien/openship"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="th-btn-ghost rounded-full px-7 py-3 text-[15px]"
-          >
-            <svg className="h-[18px] w-[18px]" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-            </svg>
-            Star on GitHub
           </a>
         </div>
       </div>
 
       {/* ═══════════════ Stack ticker ═══════════════ */}
       <div className="animate-fade-in-up animate-delay-500 relative z-10 mt-16 w-full max-w-[820px] px-6">
-        <p className="mb-5 text-center text-[13px] font-medium uppercase tracking-[0.1em] th-text-muted">
+        <p className="mb-6 text-center text-[13px] font-medium uppercase tracking-[0.1em] th-text-muted">
           Designed for your favorite stack
         </p>
         <div className="hero-ticker-mask overflow-hidden">

@@ -1,0 +1,65 @@
+---
+title: Installation
+description: Install Openship on your own server or use the managed cloud.
+---
+
+# Installation
+
+Openship runs on any Linux server. You can self-host it or use Openship Cloud.
+
+## Self-hosted
+
+### System requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| CPU | 2 cores | 4+ cores |
+| RAM | 2 GB | 4+ GB |
+| Disk | 20 GB | 50+ GB SSD |
+| OS | Ubuntu 22.04+ | Ubuntu 24.04 |
+
+### One-line install
+
+```bash
+curl -fsSL https://get.openship.io | sh
+```
+
+### Docker Compose
+
+```yaml
+version: "3.8"
+services:
+  openship:
+    image: ghcr.io/openshiporg/openship:latest
+    ports:
+      - "3000:3000"
+      - "443:443"
+      - "80:80"
+    volumes:
+      - openship-data:/data
+    restart: unless-stopped
+
+volumes:
+  openship-data:
+```
+
+```bash
+docker compose up -d
+```
+
+### Verify
+
+```bash
+openship status
+```
+
+You should see `Openship daemon running` with the dashboard URL.
+
+## Openship Cloud
+
+Don't want to manage a server? [Sign up for Openship Cloud](https://app.openship.io) — same platform, fully managed.
+
+## Next steps
+
+- [Deploy your first app](/docs/first-deployment)
+- [CLI reference](/docs/cli)

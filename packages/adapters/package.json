@@ -17,10 +17,14 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
-    "@repo/core": "workspace:*"
+    "@repo/core": "workspace:*",
+    "dockerode": "^4.0.9",
+    "ssh2": "^1.17.0"
   },
   "devDependencies": {
+    "@types/dockerode": "^4.0.1",
     "@types/node": "^22.13.0",
+    "@types/ssh2": "^1.15.5",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"
   }

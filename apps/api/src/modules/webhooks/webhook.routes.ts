@@ -1,12 +1,15 @@
+/**
+ * Webhook routes — unified entry point for GitHub and Stripe.
+ *
+ * POST /api/webhooks/:provider — dispatches to the registered provider
+ *
+ * Only "github" and "stripe" are accepted. All other paths return 404.
+ * These routes do NOT require session auth — they verify signatures instead.
+ */
+
 import { Hono } from "hono";
-import * as webhookController from "./webhook.controller";
+import { handleWebhook } from "./webhook.controller";
 
 export const webhookRoutes = new Hono();
 
-/* Git provider webhooks (push events trigger deployments) */
-webhookRoutes.post("/github", webhookController.github);
-webhookRoutes.post("/gitlab", webhookController.gitlab);
-webhookRoutes.post("/bitbucket", webhookController.bitbucket);
-
-/* Generic webhook for custom integrations */
-webhookRoutes.post("/custom/:projectId", webhookController.custom);
+webhookRoutes.post("/:provider", handleWebhook);

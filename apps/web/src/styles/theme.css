@@ -37,6 +37,7 @@
   --th-on-80: rgba(0,0,0,.80);
   --th-on-90: rgba(0,0,0,.90);
   --th-on-95: rgba(0,0,0,.95);
+  --th-on-100: rgba(0,0,0,1);
 
   /* ── Surface fill scale ───────────────────────────────────── */
   --th-sf-01: rgba(0,0,0,.01);
@@ -99,6 +100,34 @@
   --th-accent-pink:    #f9a8d4;
   --th-accent-blue:    #93c5fd;
   --th-accent-amber:   #fde68a;
+
+  /* ── Semantic accent — plum / terracotta / seafoam / amber ── */
+  --th-clr-plum:       #6C5CE7;
+  --th-clr-plum-soft:  #A29BFE;
+  --th-clr-plum-wash:  rgba(108,92,231,.06);
+  --th-clr-plum-bg:    rgba(108,92,231,.08);
+  --th-clr-plum-blob:  rgba(108,92,231,.07);
+  --th-clr-plum-bdr:   rgba(108,92,231,.18);
+  --th-clr-plum-tag:   rgba(108,92,231,.48);
+
+  --th-clr-terra:      #E05874;
+  --th-clr-terra-soft: #F4A0B2;
+  --th-clr-terra-wash: rgba(224,88,116,.06);
+  --th-clr-terra-bg:   rgba(224,88,116,.08);
+  --th-clr-terra-blob: rgba(224,88,116,.07);
+  --th-clr-terra-bdr:  rgba(224,88,116,.18);
+  --th-clr-terra-tag:  rgba(224,88,116,.48);
+
+  --th-clr-sea:        #00B894;
+  --th-clr-sea-soft:   #55EFC4;
+  --th-clr-sea-wash:   rgba(0,184,148,.06);
+  --th-clr-sea-bg:     rgba(0,184,148,.08);
+  --th-clr-sea-blob:   rgba(0,184,148,.07);
+  --th-clr-sea-bdr:    rgba(0,184,148,.18);
+  --th-clr-sea-tag:    rgba(0,184,148,.50);
+
+  --th-clr-amber:      #FFEAA7;
+  --th-clr-amber-wash: rgba(253,224,71,.10);
 
   /* ── Aurora — hero / section glow palette (violet + amber) ── */
   --th-aurora-violet-strong: rgba(139, 92, 246, .55);

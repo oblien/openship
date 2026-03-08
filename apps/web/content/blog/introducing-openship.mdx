@@ -1,0 +1,46 @@
+---
+title: "Introducing Openship: Deploy Anything, Own Everything"
+description: "We're launching Openship — an open-source, self-hostable deployment platform. Here's why we built it and what it can do."
+date: "2026-03-01"
+category: "Announcement"
+author: "Openship Team"
+---
+
+# Introducing Openship: Deploy Anything, Own Everything
+
+Today we're open-sourcing Openship — a deployment platform you can run on your own servers.
+
+## Why we built this
+
+Cloud platforms like Vercel and Netlify are great for getting started. But as your app grows, so does the bill. Metered CPU, per-seat pricing, bandwidth caps — it adds up fast. And when you want to leave, you realize your infrastructure is locked into their proprietary systems.
+
+We wanted something different:
+
+- **Self-hosted first** — Run on any Linux server. A $20/month VPS handles what costs $200+ on managed platforms.
+- **Open source** — MIT licensed. No black boxes, no vendor lock-in.
+- **AI-assisted** — Framework detection, build optimization, and configuration are handled automatically.
+
+## What you can deploy
+
+Openship supports any stack that runs in a container:
+
+- **Frontend frameworks** — Next.js, Nuxt, SvelteKit, Astro, Remix
+- **Backend** — Node.js, Python, Go, Rust, Ruby, PHP
+- **Databases** — Postgres, MySQL, Redis, MongoDB
+- **Full-stack** — Multi-service apps with shared networking
+
+## Getting started
+
+```bash
+curl -fsSL https://get.openship.io | sh
+cd your-project
+openship deploy
+```
+
+Three commands. That's it.
+
+## What's next
+
+We're working on load balancers, cluster management, private networking, and a built-in CI/CD pipeline. Check the [roadmap](/docs) for details.
+
+Star us on [GitHub](https://github.com/openshiporg/openship) and join the community.

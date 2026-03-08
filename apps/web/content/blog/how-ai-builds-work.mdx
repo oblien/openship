@@ -1,0 +1,55 @@
+---
+title: "How AI Builds Work in Openship"
+description: "A look under the hood at how Openship uses AI to detect frameworks, generate configs, and optimize builds automatically."
+date: "2026-03-08"
+category: "Engineering"
+author: "Openship Team"
+---
+
+# How AI Builds Work in Openship
+
+When you run `openship deploy`, a lot happens before your app goes live. Here's how the AI build system works.
+
+## Step 1: Framework detection
+
+Openship scans your project for signals:
+
+- `package.json` scripts and dependencies
+- Config files (`next.config.js`, `nuxt.config.ts`, `Cargo.toml`, etc.)
+- Dockerfile presence
+- Directory structure patterns
+
+This produces a confidence-scored framework match. If Openship detects Next.js with 95% confidence, it uses the Next.js build pipeline. If there's a Dockerfile, it uses that directly.
+
+## Step 2: Config generation
+
+Based on the detected framework, Openship generates:
+
+- **Build command** — `npm run build`, `go build`, etc.
+- **Start command** — `npm start`, `./server`, etc.
+- **Port mapping** — Detects which port your app listens on
+- **Environment variables** — Suggests required vars based on framework conventions
+
+You can override any of these in `openship.json`.
+
+## Step 3: Build optimization
+
+The AI layer optimizes the build:
+
+- **Layer caching** — Dependency layers are cached separately from source code
+- **Multi-stage builds** — Production images exclude dev dependencies
+- **Parallel builds** — Multi-service projects build concurrently
+
+## Step 4: Health checks
+
+After deployment, Openship verifies:
+
+- The container starts successfully
+- The health check endpoint responds
+- SSL is provisioned and valid
+
+If any check fails, the deployment is rolled back automatically.
+
+## What's next
+
+We're working on AI-powered diagnostics — when a build fails, Openship will analyze the error and suggest fixes. Stay tuned.

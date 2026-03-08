@@ -22,14 +22,14 @@ export function StacksVisual() {
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-6 gap-[1px] rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,.06)" }}>
+      <div className="grid grid-cols-6 gap-[1px] rounded-xl overflow-hidden">
         {stacks.map((s) => (
           <div
             key={s.name}
-            className="feat-build-item flex flex-col items-center justify-center gap-2.5 py-5 px-1.5"
-            style={{ background: "rgba(255,255,255,.03)" }}
+            className="feat-build-item relative flex flex-col items-center justify-center gap-2.5 py-5 px-1.5"
+            style={{ background: "rgba(255,255,255,0.05)" }}
           >
-            {/* Icon masked to currentColor */}
+            {/* Icon — currentColor (inherits theme text color) */}
             <span
               className="h-6 w-6 block"
               style={{
@@ -45,7 +45,7 @@ export function StacksVisual() {
                 WebkitMaskPosition: "center",
               }}
             />
-            <span className="text-[11px] font-semibold leading-none text-center" style={{ color: "currentColor", opacity: 0.5 }}>{s.name}</span>
+            <span className="text-[11px] font-semibold leading-none text-center" style={{ color: "currentColor", opacity: 0.40 }}>{s.name}</span>
           </div>
         ))}
       </div>

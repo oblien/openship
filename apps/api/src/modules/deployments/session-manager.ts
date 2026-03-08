@@ -1,0 +1,171 @@
+/**
+ * Build session manager — manages active build SSE streams.
+ *
+ * Ported from old sessionManager.js into a typed, TtlCache-backed implementation.
+ * Uses Hono's SSE streaming instead of raw Express res.write().
+ *
+ * Responsibilities:
+ *   - Track active build sessions with log buffers
+ *   - Broadcast log entries to SSE subscribers
+ *   - Auto-cleanup stale sessions
+ *   - SSE heartbeat keep-alive for proxy compatibility
+ */
+
+import { SYSTEM } from "@repo/core";
+import { TtlCache } from "../../lib/cache";
+import type { LogEntry } from "@repo/adapters";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface BuildSessionState {
+  deploymentId: string;
+  projectId: string;
+  status: "queued" | "building" | "deploying" | "ready" | "failed" | "cancelled";
+  logs: LogEntry[];
+  /** SSE writer callbacks for active subscribers */
+  subscribers: Set<SseWriter>;
+  startedAt: number;
+}
+
+export type SseWriter = (event: string, data: string) => boolean;
+
+// ─── Cache ───────────────────────────────────────────────────────────────────
+
+/** Active sessions cache — keyed by build session ID */
+const sessions = new TtlCache<BuildSessionState>({
+  maxSize: SYSTEM.SSE.MAX_SESSIONS,
+  sweepIntervalMs: SYSTEM.SSE.SWEEP_INTERVAL_MS,
+});
+
+// ─── Heartbeat ───────────────────────────────────────────────────────────────
+
+/** Send keep-alive pings to all active subscribers to prevent connection drops */
+const heartbeatTimer = setInterval(() => {
+  for (const session of sessions.values()) {
+    const dead: SseWriter[] = [];
+    for (const writer of session.subscribers) {
+      const ok = writer("ping", "{}");
+      if (!ok) dead.push(writer);
+    }
+    for (const w of dead) session.subscribers.delete(w);
+  }
+}, SYSTEM.SSE.HEARTBEAT_INTERVAL_MS);
+
+// Don't keep the process alive just for heartbeats
+if (heartbeatTimer.unref) heartbeatTimer.unref();
+
+/** Create a new build session */
+export function createSession(
+  sessionId: string,
+  deploymentId: string,
+  projectId: string,
+): BuildSessionState {
+  const state: BuildSessionState = {
+    deploymentId,
+    projectId,
+    status: "queued",
+    logs: [],
+    subscribers: new Set(),
+    startedAt: Date.now(),
+  };
+  sessions.set(sessionId, state, SYSTEM.SSE.SESSION_TTL_SECONDS);
+  return state;
+}
+
+/** Get an active session */
+export function getSession(sessionId: string): BuildSessionState | null {
+  return sessions.get(sessionId);
+}
+
+/** Append a log entry and broadcast to subscribers */
+export function appendLog(sessionId: string, entry: LogEntry): void {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  session.logs.push(entry);
+  if (session.logs.length > SYSTEM.SSE.MAX_LOGS_PER_SESSION) {
+    session.logs.splice(0, session.logs.length - SYSTEM.SSE.MAX_LOGS_PER_SESSION);
+  }
+
+  // Broadcast to all active subscribers
+  const data = JSON.stringify(entry);
+  for (const writer of session.subscribers) {
+    const ok = writer("log", data);
+    if (!ok) session.subscribers.delete(writer);
+  }
+}
+
+/** Update session status and optionally broadcast */
+export function updateStatus(
+  sessionId: string,
+  status: BuildSessionState["status"],
+): void {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  session.status = status;
+  const data = JSON.stringify({ status });
+  for (const writer of session.subscribers) {
+    writer("status", data);
+  }
+
+  // Terminal states: close all subscribers
+  if (status === "ready" || status === "failed" || status === "cancelled") {
+    for (const writer of session.subscribers) {
+      writer("end", JSON.stringify({ status }));
+    }
+    session.subscribers.clear();
+  }
+}
+
+/** Subscribe a new SSE writer to a session, returns unsubscribe fn */
+export function subscribe(
+  sessionId: string,
+  writer: SseWriter,
+): { success: boolean; unsubscribe: () => void } {
+  const session = sessions.get(sessionId);
+  if (!session) return { success: false, unsubscribe: () => {} };
+
+  // Enforce subscriber limit — evict oldest if full
+  if (session.subscribers.size >= SYSTEM.SSE.MAX_SUBSCRIBERS_PER_SESSION) {
+    const oldest = session.subscribers.values().next().value;
+    if (oldest) {
+      oldest("end", JSON.stringify({ message: "Evicted: subscriber limit reached" }));
+      session.subscribers.delete(oldest);
+    }
+  }
+
+  session.subscribers.add(writer);
+
+  // Replay existing logs
+  for (const entry of session.logs) {
+    const ok = writer("log", JSON.stringify(entry));
+    if (!ok) {
+      session.subscribers.delete(writer);
+      return { success: false, unsubscribe: () => {} };
+    }
+  }
+
+  // If session already finished, send end event immediately
+  if (["ready", "failed", "cancelled"].includes(session.status)) {
+    writer("end", JSON.stringify({ status: session.status }));
+    session.subscribers.delete(writer);
+  }
+
+  return {
+    success: true,
+    unsubscribe: () => session.subscribers.delete(writer),
+  };
+}
+
+/** Remove a session completely */
+export function removeSession(sessionId: string): void {
+  const session = sessions.get(sessionId);
+  if (session) {
+    for (const writer of session.subscribers) {
+      writer("end", JSON.stringify({ message: "Session ended" }));
+    }
+    session.subscribers.clear();
+  }
+  sessions.delete(sessionId);
+}

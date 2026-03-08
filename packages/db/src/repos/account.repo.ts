@@ -78,5 +78,15 @@ export function createAccountRepo(db: Database) {
         .limit(1);
       return rows[0];
     },
+
+    /** Find account by provider + provider account ID (e.g. GitHub user id) */
+    async findByProviderAccountId(providerId: string, providerAccountId: string) {
+      return db.query.account.findFirst({
+        where: and(
+          eq(account.providerId, providerId),
+          eq(account.accountId, providerAccountId),
+        ),
+      });
+    },
   };
 }

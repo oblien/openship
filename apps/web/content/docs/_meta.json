@@ -1,0 +1,14 @@
+{
+  "title": "Documentation",
+  "root": true,
+  "pages": [
+    "index",
+    "quickstart",
+    "---Getting Started---",
+    "installation",
+    "first-deployment",
+    "---Reference---",
+    "cli",
+    "api"
+  ]
+}

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src *; img-src 'self' data:;"
+    />
+    <title>Openship</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- ═══ Drag region (frameless macOS title bar) ═══ -->
+    <div id="drag-bar"></div>
+
+    <!-- ═══ Screens ═══ -->
+    <div id="app">
+      <!-- Screen 1: Welcome -->
+      <section id="screen-welcome" class="screen active">
+        <div class="screen-inner">
+          <div class="logo">
+            <svg width="48" height="48" viewBox="0 0 120 120" fill="none">
+              <rect width="120" height="120" rx="28" fill="#7C3AED" />
+              <path
+                d="M36 60c0-13.255 10.745-24 24-24s24 10.745 24 24-10.745 24-24 24-24-10.745-24-24z"
+                stroke="#fff"
+                stroke-width="6"
+              />
+              <circle cx="60" cy="60" r="8" fill="#fff" />
+            </svg>
+          </div>
+          <h1>Welcome to Openship</h1>
+          <p class="subtitle">
+            Deploy anything, own everything.<br />
+            Let's get you connected in under a minute.
+          </p>
+          <button id="btn-get-started" class="btn-primary">Get Started</button>
+          <p class="version-text" id="app-version"></p>
+        </div>
+      </section>
+
+      <!-- Screen 2: Connect -->
+      <section id="screen-connect" class="screen">
+        <div class="screen-inner">
+          <button id="btn-back" class="btn-back" aria-label="Go back">
+            <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h2>Connect to a server</h2>
+          <p class="subtitle">
+            Enter the URL of your Openship API server.<br />
+            This can be our cloud or your own self-hosted instance.
+          </p>
+
+          <div class="form-group">
+            <label for="input-api-url">API Server URL</label>
+            <input
+              id="input-api-url"
+              type="url"
+              placeholder="https://api.openship.dev"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <span class="input-hint">e.g. https://api.openship.dev or http://localhost:4000</span>
+          </div>
+
+          <div class="form-group">
+            <label for="input-dashboard-url">Dashboard URL <span class="optional">(optional)</span></label>
+            <input
+              id="input-dashboard-url"
+              type="url"
+              placeholder="Leave empty to auto-detect"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <span class="input-hint">Only needed if your dashboard runs on a different origin</span>
+          </div>
+
+          <div id="connect-status" class="status-message"></div>
+
+          <button id="btn-connect" class="btn-primary">Connect &amp; Launch</button>
+
+          <div class="divider"><span>or</span></div>
+
+          <button id="btn-cloud" class="btn-secondary">Use Openship Cloud</button>
+          <p class="cloud-hint">Free tier available — no server needed</p>
+        </div>
+      </section>
+
+      <!-- Screen 3: Connecting (loading) -->
+      <section id="screen-loading" class="screen">
+        <div class="screen-inner">
+          <div class="spinner"></div>
+          <h2>Connecting…</h2>
+          <p class="subtitle" id="loading-message">Verifying your server</p>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="./onboarding.ts"></script>
+  </body>
+</html>

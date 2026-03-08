@@ -1,0 +1,71 @@
+:root {
+  --color-fd-primary: #6C5CE7;
+  --fd-primary: #6C5CE7;
+}
+
+.dark {
+  --color-fd-primary: #A29BFE;
+  --fd-primary: #A29BFE;
+  --color-fd-background: #0a0a0a;
+  --color-fd-card: #111111;
+  --color-fd-secondary: #0a0a0a;
+  --color-fd-muted: #141414;
+  --color-fd-accent: #1a1a1a;
+  --color-fd-popover: #111111;
+  --color-fd-border: #1f1f1f;
+}
+
+.dark body,
+.dark main,
+.dark [data-fd-layout] {
+  background: #0a0a0a !important;
+}
+
+/* ── TOC active link ── */
+[data-toc] a[data-active="true"] {
+  color: var(--color-fd-primary);
+}
+
+[data-toc] a[data-active="true"]::before {
+  background: var(--color-fd-primary);
+}
+
+/* ── Sidebar polish ── */
+[data-fd-sidebar] [data-type="separator"] {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.45;
+  margin-top: 1.25rem;
+  padding-bottom: 0.25rem;
+}
+
+[data-fd-sidebar] [data-type="folder"] > button,
+[data-fd-sidebar] [data-type="folder"] > a {
+  font-weight: 500;
+}
+
+/* ── Code blocks ── */
+code,
+pre,
+code *,
+pre * {
+  font-family: "Fira Code", "Consolas", "Monaco", "Courier New", monospace !important;
+}
+
+/* ── Prose adjustments ── */
+[data-fd-layout] h1 {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+[data-fd-layout] h2 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* ── Hide Next.js dev toast ── */
+[data-nextjs-toast] {
+  display: none !important;
+}

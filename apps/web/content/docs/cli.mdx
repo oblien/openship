@@ -1,0 +1,80 @@
+---
+title: CLI Reference
+description: Openship CLI commands for managing deployments from the terminal.
+---
+
+# CLI Reference
+
+The Openship CLI lets you manage projects, deployments, domains, and more from your terminal.
+
+## Installation
+
+```bash
+curl -fsSL https://get.openship.io/cli | sh
+```
+
+Or via npm:
+
+```bash
+npx openship
+```
+
+## Commands
+
+### `openship init`
+
+Initialize a project in the current directory.
+
+```bash
+openship init
+```
+
+Detects your framework, generates `openship.json`, and links to a project.
+
+### `openship deploy`
+
+Deploy the current project.
+
+```bash
+openship deploy              # Deploy from current directory
+openship deploy --prod       # Deploy to production
+openship deploy --preview    # Create a preview deployment
+```
+
+### `openship projects`
+
+```bash
+openship projects list                    # List all projects
+openship projects create --name my-app    # Create a new project
+openship projects delete my-app           # Delete a project
+```
+
+### `openship domains`
+
+```bash
+openship domains list --project my-app
+openship domains add example.com --project my-app
+openship domains remove example.com --project my-app
+```
+
+### `openship env`
+
+```bash
+openship env list --project my-app
+openship env set KEY=value --project my-app
+openship env remove KEY --project my-app
+```
+
+### `openship logs`
+
+```bash
+openship logs --project my-app           # Stream build + runtime logs
+openship logs --project my-app --build   # Build logs only
+```
+
+### `openship rollback`
+
+```bash
+openship rollback --project my-app                    # Rollback to previous
+openship rollback --project my-app --deployment abc123 # Rollback to specific
+```

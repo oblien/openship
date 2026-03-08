@@ -1,0 +1,45 @@
+---
+title: Quickstart
+description: Deploy your first app with Openship in under 2 minutes.
+---
+
+# Quickstart
+
+Get from zero to a live deployment in three steps.
+
+## Prerequisites
+
+- A server running Linux (Ubuntu 22.04+ recommended)
+- Docker installed
+- A domain name (optional, but recommended)
+
+## 1. Install Openship
+
+```bash
+curl -fsSL https://get.openship.io | sh
+```
+
+This installs the Openship CLI and daemon on your server.
+
+## 2. Initialize a project
+
+```bash
+cd your-project
+openship init
+```
+
+Openship detects your framework (Next.js, Node, Python, Go, etc.) and generates a deploy config.
+
+## 3. Deploy
+
+```bash
+openship deploy
+```
+
+That's it. Your app is live with automatic SSL and a preview URL.
+
+## What's next?
+
+- [Add a custom domain](/docs/first-deployment#custom-domains)
+- [Set up environment variables](/docs/first-deployment#environment-variables)
+- [Configure automatic deploys from Git](/docs/first-deployment#git-integration)

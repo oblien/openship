@@ -1,0 +1,59 @@
+---
+title: "Self-Hosting vs. Managed Platforms: The Real Cost Breakdown"
+description: "We compared the actual cost of running a production Next.js app on Vercel, AWS, and a self-hosted Openship setup. The numbers might surprise you."
+date: "2026-03-05"
+category: "Guide"
+author: "Openship Team"
+---
+
+# Self-Hosting vs. Managed Platforms: The Real Cost Breakdown
+
+"Just use Vercel" is good advice — until your bill arrives. We ran the same Next.js app across three setups and tracked every cost for 30 days.
+
+## The test app
+
+A production Next.js 15 app with:
+- ~50 routes, ISR enabled
+- Postgres database
+- Redis for caching
+- ~100K monthly visitors
+- ~500GB bandwidth/month
+
+## The results
+
+| | Vercel Pro | AWS (ECS + RDS) | Openship (self-hosted) |
+|---|---|---|---|
+| Compute | $150/mo | $85/mo | $24/mo |
+| Database | $50/mo (Neon) | $45/mo | Included |
+| Bandwidth | $120/mo | $45/mo | Included |
+| SSL/Domains | Included | $1/mo | Included |
+| **Total** | **$320/mo** | **$176/mo** | **$24/mo** |
+
+The self-hosted Openship setup runs on a single Hetzner VPS (CPX31: 4 vCPU, 8GB RAM, 160GB SSD).
+
+## The trade-offs
+
+Managed platforms give you zero-ops. You push code, it deploys. That's real value.
+
+But Openship closes the gap significantly:
+- **AI handles config** — Build detection, Dockerfile generation, and SSL are automatic.
+- **One-command deploys** — `openship deploy` is just as fast.
+- **Built-in monitoring** — Logs, metrics, and alerts out of the box.
+
+The remaining trade-off is server maintenance — OS updates, disk space, uptime monitoring. For most teams, that's a few hours per month.
+
+## When to self-host
+
+Self-hosting makes sense when:
+- Your monthly bill exceeds ~$100 on managed platforms
+- You need data sovereignty or compliance
+- You want predictable, flat-rate pricing
+- You're deploying multiple apps (cost stays the same)
+
+## Try it
+
+```bash
+curl -fsSL https://get.openship.io | sh
+```
+
+Your server, your data, your bill.

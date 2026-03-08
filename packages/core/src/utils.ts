@@ -2,6 +2,8 @@
  * Shared utility functions.
  */
 
+import { randomBytes } from "node:crypto";
+
 /** Generate a URL-safe slug from a string */
 export function slugify(text: string): string {
   return text
@@ -10,6 +12,12 @@ export function slugify(text: string): string {
     .replace(/[\s_]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 100);
+}
+
+/** Generate a prefixed unique ID (e.g. "proj_abc123...") */
+export function generateId(prefix?: string): string {
+  const id = randomBytes(12).toString("base64url");
+  return prefix ? `${prefix}_${id}` : id;
 }
 
 /** Format bytes to human-readable string */

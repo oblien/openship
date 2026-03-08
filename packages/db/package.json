@@ -29,6 +29,7 @@
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
+    "@repo/core": "workspace:*",
     "drizzle-orm": "^0.45.1",
     "pg": "^8.20.0",
     "@electric-sql/pglite": "^0.3.15"
