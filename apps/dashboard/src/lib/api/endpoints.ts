@@ -53,9 +53,9 @@ export const endpoints = {
   /*  GitHub                                                          */
   /* ---------------------------------------------------------------- */
   github: {
-    userHome: "github/user/home",
+    userHome: "github/home",
     orgRepos: (owner: string) => `github/orgs/${owner}/repos`,
-    userRepos: "github/repos/user",
+    userRepos: "github/repos",
     status: "github/status",
     connect: "github/connect",
     disconnect: "github/disconnect",

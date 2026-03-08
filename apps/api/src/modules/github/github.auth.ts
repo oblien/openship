@@ -302,11 +302,13 @@ export function mapAccounts(installations: GitHubInstallation[]): MappedAccount[
 
 // ─── Connect / Disconnect ────────────────────────────────────────────────────
 
+/** Whether we're running in cloud mode (GitHub App installation flow). */
+export function isCloudMode(): boolean {
+  return env.CLOUD_MODE || env.DEPLOY_MODE === "cloud";
+}
+
 /**
- * Get the GitHub App installation URL for the user to install/configure.
- *
- * Better Auth handles OAuth login. This is specifically for the GitHub App
- * installation flow (granting repo access).
+ * Get the GitHub App installation URL (cloud mode).
  */
 export function getInstallUrl(): string {
   const appSlug = env.GITHUB_APP_SLUG ?? "openship";

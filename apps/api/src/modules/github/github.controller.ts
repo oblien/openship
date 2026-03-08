@@ -35,7 +35,7 @@ function param(c: Context, name: string): string {
 export async function getStatus(c: Context) {
   const userId = getUserId(c);
   const status = await githubAuth.getUserStatus(userId);
-  return c.json(status);
+  return c.json({ ...status, mode: githubAuth.isCloudMode() ? "cloud" : "desktop" });
 }
 
 /** GET /github/home — User's GitHub home: status + accounts + repos */
@@ -45,10 +45,35 @@ export async function getHome(c: Context) {
   return c.json(data);
 }
 
-/** POST /github/connect — Get GitHub App installation URL */
+/** POST /github/connect — Returns connection info based on deploy mode.
+ *
+ *  Cloud mode (GitHub App):
+ *    - needsOAuth true/false + url to installation page
+ *    - Frontend chains OAuth → install in one popup when needed
+ *
+ *  Desktop / self-hosted mode (direct OAuth):
+ *    - url to Better Auth social sign-in (OAuth only, no App install)
+ *    - User's personal token is used — fully local, no cloud involvement
+ */
 export async function connect(c: Context) {
-  const url = githubAuth.getInstallUrl();
-  return c.json({ url });
+  const userId = getUserId(c);
+  const cloud = githubAuth.isCloudMode();
+  const hasToken = !!(await githubAuth.getUserToken(userId));
+
+  if (cloud) {
+    // Cloud: GitHub App installation flow
+    return c.json({
+      mode: "cloud" as const,
+      url: githubAuth.getInstallUrl(),
+      needsOAuth: !hasToken,
+    });
+  }
+
+  // Desktop / self-hosted: direct OAuth only
+  return c.json({
+    mode: "desktop" as const,
+    needsOAuth: !hasToken,
+  });
 }
 
 /** POST /github/disconnect — Disconnect GitHub (remove installations) */
@@ -84,13 +109,20 @@ export async function listOrgsWithRepos(c: Context) {
 
 // ─── Repositories ────────────────────────────────────────────────────────────
 
-/** GET /github/repos — List repos for user's installation */
+/** GET /github/repos — List repos (mode-aware) */
 export async function listRepos(c: Context) {
   const userId = getUserId(c);
   const owner = c.req.query("owner");
+  const cloud = githubAuth.isCloudMode();
 
+  if (!cloud) {
+    // Desktop/self-hosted: use personal OAuth token
+    const repos = await githubService.listUserOwnedRepos(userId, owner || undefined);
+    return c.json({ data: repos });
+  }
+
+  // Cloud: use GitHub App installation
   if (!owner) {
-    /* Default to user's own repos via their status */
     const status = await githubAuth.getUserStatus(userId);
     if (!status.connected) {
       return c.json({ error: "Not connected to GitHub" }, 400);

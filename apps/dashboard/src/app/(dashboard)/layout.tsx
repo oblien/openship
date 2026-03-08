@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/server/session";
 import { Sidebar } from "@/components/sidebar";
+import { DashboardProviders } from "./providers";
 
 /**
  * Dashboard shell layout — sidebar + main area.
@@ -11,12 +12,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!session) redirect("/login");
 
   return (
-    <div className="flex h-dvh">
-      <Sidebar />
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto">
-        {children}
-      </main>
-    </div>
+    <DashboardProviders>
+      <div className="flex h-dvh">
+        <Sidebar />
+        {/* Main content */}
+        <main className="flex-1 overflow-y-auto">
+          {children}
+        </main>
+      </div>
+    </DashboardProviders>
   );
 }

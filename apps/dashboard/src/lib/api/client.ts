@@ -12,8 +12,11 @@
  *   - Consistent error shape (`ApiError`)
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 const DEFAULT_TIMEOUT = 15_000;
+
+/* Ensure the base always ends with a slash for correct URL resolution */
+const RESOLVED_BASE = BASE_URL.endsWith("/") ? BASE_URL : BASE_URL + "/";
 
 /* ------------------------------------------------------------------ */
 /*  Global network-error hook                                         */
@@ -84,7 +87,8 @@ async function request<T = unknown>(
   { body, timeout = DEFAULT_TIMEOUT, params, ...init }: RequestOptions = {},
 ): Promise<T> {
   /* --- Build URL -------------------------------------------------- */
-  const url = new URL(path.startsWith("/") ? path : `/${path}`, BASE_URL);
+  const cleanPath = path.startsWith("/") ? path.slice(1) : path;
+  const url = new URL(cleanPath, RESOLVED_BASE);
 
   if (params) {
     for (const [k, v] of Object.entries(params)) {

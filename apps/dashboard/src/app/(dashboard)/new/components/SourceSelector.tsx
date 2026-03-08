@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   Github,
   Upload,
@@ -16,33 +16,9 @@ import {
   FolderUp,
   ChevronDown,
 } from "lucide-react";
-import { githubApi } from "@/lib/api";
-import { initAuthWindow } from "@/utils/github";
+import { useGitHub } from "@/context/GitHubContext";
 import type { ProjectSource, GitHubSource, UrlSource, UploadSource, TemplateSource } from "../types";
 import { frameworks, getFrameworkConfig } from "@/components/import-project/Frameworks";
-
-/* ── GitHub types (reused from library) ──────────────────────────── */
-
-interface Account {
-  login: string;
-  avatar_url: string;
-  type: string;
-}
-
-interface Repository {
-  id: number;
-  full_name: string;
-  name: string;
-  description: string;
-  private: boolean;
-  stargazers_count: number;
-  forks_count: number;
-  language: string;
-  updated_at: string;
-  default_branch: string;
-  owner: { login: string; avatar_url: string };
-  html_url: string;
-}
 
 /* ── Tab picker ──────────────────────────────────────────────────── */
 
@@ -119,85 +95,28 @@ export default function SourceSelector({ onSelect }: SourceSelectorProps) {
 /* ── GitHub Panel ────────────────────────────────────────────────── */
 
 function GitHubPanel({ onSelect }: { onSelect: (source: GitHubSource) => void }) {
-  const [connected, setConnected] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [connectLoading, setConnectLoading] = useState(false);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [repos, setRepos] = useState<Repository[]>([]);
-  const [selectedOwner, setSelectedOwner] = useState("");
+  const {
+    connected,
+    connecting,
+    loading,
+    connect,
+    accounts,
+    selectedOwner,
+    setSelectedOwner,
+    repos,
+    loadingRepos,
+  } = useGitHub();
   const [search, setSearch] = useState("");
-  const [loadingRepos, setLoadingRepos] = useState(false);
-  const initRef = useRef(false);
-
-  useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-    (async () => {
-      try {
-        const res = await githubApi.getUserHome();
-        if (res?.status?.connected && res.accounts?.length > 0) {
-          setConnected(true);
-          setAccounts(res.accounts);
-          setSelectedOwner(res.status.login);
-          setRepos(res.repos ?? []);
-        }
-      } catch { /* silent */ }
-      setLoading(false);
-    })();
-  }, []);
-
-  /* Switch owner → load repos */
-  useEffect(() => {
-    if (!selectedOwner || !connected) return;
-    (async () => {
-      setLoadingRepos(true);
-      try {
-        const isOrg = accounts.find((a) => a.login === selectedOwner)?.type === "Organization";
-        const res = isOrg
-          ? await githubApi.getOrgRepos(selectedOwner)
-          : await githubApi.getUserRepos(selectedOwner);
-        setRepos(res?.repos ?? []);
-      } catch { /* silent */ }
-      setLoadingRepos(false);
-    })();
-  }, [selectedOwner, connected, accounts]);
 
   const filtered = useMemo(() => {
     if (!search) return repos;
     const q = search.toLowerCase();
     return repos.filter(
       (r) =>
-        r.name.toLowerCase().includes(q) ||
+        r.name?.toLowerCase().includes(q) ||
         r.description?.toLowerCase().includes(q)
     );
   }, [repos, search]);
-
-  const handleConnect = async () => {
-    setConnectLoading(true);
-    try {
-      const res = await githubApi.connect();
-      if (res?.redirectUrl) {
-        initAuthWindow(res.redirectUrl, () => {
-          setConnectLoading(false);
-          // Re-check connection
-          initRef.current = false;
-          (async () => {
-            try {
-              const home = await githubApi.getUserHome();
-              if (home?.status?.connected && home.accounts?.length > 0) {
-                setConnected(true);
-                setAccounts(home.accounts);
-                setSelectedOwner(home.status.login);
-                setRepos(home.repos ?? []);
-              }
-            } catch { /* silent */ }
-          })();
-        });
-      }
-    } catch {
-      setConnectLoading(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -229,16 +148,16 @@ function GitHubPanel({ onSelect }: { onSelect: (source: GitHubSource) => void })
           Link your GitHub account to import repositories. Get automatic deployments on every push.
         </p>
         <button
-          onClick={handleConnect}
-          disabled={connectLoading}
+          onClick={connect}
+          disabled={connecting}
           className="inline-flex items-center gap-2 px-6 py-3 bg-foreground text-background text-sm font-medium rounded-xl hover:opacity-90 transition-all disabled:opacity-50"
         >
-          {connectLoading ? (
+          {connecting ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <Github className="size-4" />
           )}
-          {connectLoading ? "Connecting..." : "Connect GitHub"}
+          {connecting ? "Connecting..." : "Connect GitHub"}
         </button>
       </div>
     );
@@ -298,13 +217,15 @@ function GitHubPanel({ onSelect }: { onSelect: (source: GitHubSource) => void })
           </div>
         ) : (
           <div className="divide-y divide-border/40">
-            {filtered.map((repo) => (
+            {filtered.map((repo) => {
+              const ownerLogin = typeof repo.owner === "string" ? repo.owner : repo.owner?.login || selectedOwner;
+              return (
               <button
                 key={repo.id}
                 onClick={() =>
                   onSelect({
                     kind: "github",
-                    owner: repo.owner.login,
+                    owner: ownerLogin,
                     repo: repo.name,
                     branch: repo.default_branch,
                     branches: [repo.default_branch],
@@ -334,16 +255,17 @@ function GitHubPanel({ onSelect }: { onSelect: (source: GitHubSource) => void })
                   {repo.language && (
                     <span className="text-xs text-muted-foreground">{repo.language}</span>
                   )}
-                  {repo.stargazers_count > 0 && (
+                  {(repo.stargazers_count ?? repo.stars ?? 0) > 0 && (
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Star className="size-3" />
-                      {repo.stargazers_count}
+                      {repo.stargazers_count ?? repo.stars ?? 0}
                     </span>
                   )}
                   <ArrowRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

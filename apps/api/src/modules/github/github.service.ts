@@ -10,6 +10,7 @@ import {
   getUserStatus,
   getUserInstallations,
   mapAccounts,
+  isCloudMode,
 } from "./github.auth";
 import type {
   GitHubRepository,
@@ -52,6 +53,35 @@ export function mapRepositories(repos: GitHubRepository[]): MappedRepository[] {
 }
 
 // ─── Repository operations ───────────────────────────────────────────────────
+
+/**
+ * Fetch repos for a user/org via personal OAuth token (desktop/self-hosted mode).
+ * Works without a GitHub App installation.
+ */
+export async function listUserOwnedRepos(
+  userId: string,
+  owner?: string,
+): Promise<MappedRepository[]> {
+  if (!owner) {
+    // User's own repos
+    const data = await githubFetch<GitHubRepository[]>({
+      userId,
+      url: "https://api.github.com/user/repos",
+      useUserToken: true,
+      params: { per_page: 100, sort: "updated", affiliation: "owner,collaborator,organization_member" },
+    });
+    return mapRepositories(Array.isArray(data) ? data : []);
+  }
+
+  // Org repos
+  const data = await githubFetch<GitHubRepository[]>({
+    userId,
+    url: `https://api.github.com/orgs/${encodeURIComponent(owner)}/repos`,
+    useUserToken: true,
+    params: { type: "all", per_page: 100 },
+  });
+  return mapRepositories(Array.isArray(data) ? data : []);
+}
 
 /**
  * Fetch repositories visible to the installation.
@@ -410,20 +440,53 @@ export async function listUserOrgsWithRepos(
  */
 export async function getUserHome(userId: string) {
   const status = await getUserStatus(userId);
+  const cloud = isCloudMode();
+
   if (!status.connected) {
-    return { status, repos: [] as MappedRepository[], accounts: [] as MappedAccount[] };
+    return { status, repos: [] as MappedRepository[], accounts: [] as MappedAccount[], mode: cloud ? "cloud" : "desktop" };
   }
 
+  if (!cloud) {
+    // Desktop/self-hosted: fetch repos via user's personal OAuth token
+    let repos: MappedRepository[] = [];
+    try {
+      const data = await githubFetch<GitHubRepository[]>({
+        userId,
+        url: "https://api.github.com/user/repos",
+        useUserToken: true,
+        params: { per_page: 100, sort: "updated", affiliation: "owner,collaborator,organization_member" },
+      });
+      repos = mapRepositories(Array.isArray(data) ? data : []);
+    } catch { /* empty */ }
+
+    // Build account list from /user + /user/orgs
+    const accounts: MappedAccount[] = [
+      { login: status.login, id: status.id, avatar_url: status.avatar_url, type: "User" },
+    ];
+    try {
+      const orgs = await githubFetch<Array<{ login: string; id: number; avatar_url: string }>>({
+        userId,
+        url: "https://api.github.com/user/orgs",
+        useUserToken: true,
+      });
+      for (const org of orgs) {
+        accounts.push({ login: org.login, id: org.id, avatar_url: org.avatar_url, type: "Organization" });
+      }
+    } catch { /* empty */ }
+
+    return { status, repos, accounts, mode: "desktop" as const };
+  }
+
+  // Cloud mode: use GitHub App installations
   const installations = await getUserInstallations(userId);
   const accounts = mapAccounts(installations);
 
-  /* Fetch repos for the user's own account (first installation) */
   let repos: MappedRepository[] = [];
   if (installations.length > 0) {
     repos = await listInstallationRepos(userId, status.login, installations[0].id);
   }
 
-  return { status, repos, accounts };
+  return { status, repos, accounts, mode: "cloud" as const };
 }
 
 // ─── Webhook registration ────────────────────────────────────────────────────
