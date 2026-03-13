@@ -2,6 +2,16 @@
 
 import { GitHubProvider } from "@/context/GitHubContext";
 
-export function DashboardProviders({ children }: { children: React.ReactNode }) {
-  return <GitHubProvider>{children}</GitHubProvider>;
+interface DashboardProvidersProps {
+  children: React.ReactNode;
+  selfHosted: boolean;
+  deployMode: string;
+}
+
+export function DashboardProviders({ children, selfHosted, deployMode }: DashboardProvidersProps) {
+  return (
+    <GitHubProvider initialSelfHosted={selfHosted} initialDeployMode={deployMode}>
+      {children}
+    </GitHubProvider>
+  );
 }

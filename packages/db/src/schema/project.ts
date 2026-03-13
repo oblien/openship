@@ -25,8 +25,12 @@ export const project = pgTable("project", {
   /** URL-safe slug derived from name */
   slug: text("slug").notNull(),
 
+  /* ── Source ───────────────────────────────────────────────────────────── */
+  /** Absolute path on disk for locally-imported projects */
+  localPath: text("local_path"),
+
   /* ── Git source ─────────────────────────────────────────────────────── */
-  /** Git provider ("github" | "gitlab" | "bitbucket") */
+  /** Git provider ("github" | "gitlab" | "bitbucket" | "local") */
   gitProvider: text("git_provider").default("github"),
   /** Owner/org on the git provider */
   gitOwner: text("git_owner"),
@@ -52,13 +56,21 @@ export const project = pgTable("project", {
   outputDirectory: text("output_directory"),
   /** Root directory within the repo (for monorepos) */
   rootDirectory: text("root_directory"),
+  /** Start command for production runtime */
+  startCommand: text("start_command"),
+  /** Docker image for build environment (e.g. node:22, oven/bun:latest) */
+  buildImage: text("build_image"),
   /** Production mode: host, static, standalone */
   productionMode: text("production_mode").default("host"),
   /** Port the app listens on */
   port: integer("port").default(3000),
+  /** Whether the project needs a running server (false = static site, deployed via Pages) */
+  hasServer: boolean("has_server").notNull().default(true),
+  /** Whether the project needs a build step (false = deploy source files directly) */
+  hasBuild: boolean("has_build").notNull().default(true),
 
   /* ── Resources (VM-native format) ───────────────────────────────────── */
-  /** JSON: { cpus, cpuConfig: { quotaUs, periodUs }, memoryMb } */
+  /** JSON: { cpuCores, memoryMb } */
   resources: jsonb("resources"),
   /** JSON: build-specific resource overrides */
   buildResources: jsonb("build_resources"),

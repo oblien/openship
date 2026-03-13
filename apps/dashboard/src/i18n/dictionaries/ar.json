@@ -121,7 +121,7 @@
     },
     "nav": {
       "home": "الرئيسية",
-      "library": "المكتبة",
+      "new-project": "مشروع جديد",
       "projects": "المشاريع",
       "deployments": "عمليات النشر",
       "domains": "النطاقات",

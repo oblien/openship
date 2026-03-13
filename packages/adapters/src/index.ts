@@ -12,14 +12,13 @@
 
 // ─── Shared types ────────────────────────────────────────────────────────────
 export type {
-  CpuConfig,
   ResourceConfig,
-  ResourceTier,
   ContainerStatus,
   BuildConfig,
   DeployConfig,
   BuildResult,
   DeploymentResult,
+  BuildStep,
   LogEntry,
   LogCallback,
   ContainerInfo,
@@ -31,7 +30,10 @@ export type {
 } from "./types";
 
 export {
-  RESOURCE_TIERS,
+  BUILD_STEPS,
+} from "./types";
+
+export {
   DEFAULT_RESOURCE_CONFIG,
   DEFAULT_BUILD_RESOURCE_CONFIG,
 } from "./types";
@@ -42,6 +44,14 @@ export { assertCapability } from "./runtime/types";
 export { DockerRuntime, type DockerConnectionOptions } from "./runtime/docker";
 export { BareRuntime, type BareRuntimeOptions } from "./runtime/bare";
 export { CloudRuntime } from "./runtime/cloud";
+export { BuildLogger } from "./runtime/build-pipeline";
+export {
+  type DeployEnvironment,
+  type DeployRouting,
+  type DeployPipelineInput,
+  type DeployPipelineResult,
+  runDeployPipeline,
+} from "./runtime/deploy-pipeline";
 export {
   type RuntimeMode,
   type CreateRuntimeOptions,

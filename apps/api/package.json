@@ -26,6 +26,7 @@
     "nodemailer": "^8.0.1",
     "pino": "^10.3.1",
     "stripe": "^20.4.0",
+    "yaml": "^2.8.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {

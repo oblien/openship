@@ -1,7 +1,8 @@
 "use client";
 import React, { useCallback, useRef, useState } from "react";
-import { generateIcon } from "@/utils/icons";
+import { Eye, EyeOff, Trash2, Plus, Upload, X, Key, Pencil } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
+import { useToast } from "@/context/ToastContext";
 
 interface EnvironmentVariablesPropsOptional {
   mode?: "deploy" | "settings";
@@ -12,6 +13,8 @@ interface EnvironmentVariablesPropsOptional {
   onCancel?: () => void;
   hasChanges?: boolean;
   isSaving?: boolean;
+  /** When true, removes the outer card border and inner divider — for embedding inside another card. */
+  borderless?: boolean;
   // For settings mode - external env vars
   envVars?: Array<{ key: string; value: string; visible: boolean }>;
   onEnvVarsChange?: (envVars: Array<{ key: string; value: string; visible: boolean }>) => void;
@@ -26,10 +29,12 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   onCancel,
   hasChanges,
   isSaving = false,
+  borderless = false,
   envVars: externalEnvVars,
   onEnvVarsChange,
 }) => {
   const { config, updateConfig } = useDeployment();
+  const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [internalIsEditingMode, setInternalIsEditingMode] = useState(mode === "deploy");
@@ -89,6 +94,62 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   const handleValueChange = (index: number, value: string) => {
     updateEnvVar(index, "value", value);
   };
+
+  // Smart paste: intercept paste in KEY/VALUE inputs, detect multi-line KEY=VALUE format
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLInputElement>, index: number) => {
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
+
+    // Check if pasted text looks like env format (has at least one KEY=VALUE line)
+    const lines = text.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+    const envLines = lines.filter(l => {
+      const eqIdx = l.indexOf('=');
+      if (eqIdx <= 0) return false;
+      const key = l.substring(0, eqIdx).trim();
+      return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
+    });
+
+    // Only intercept if we detect multiple env lines, or a single KEY=VALUE that differs from a plain value
+    if (envLines.length < 2 && (envLines.length === 0 || !text.includes('\n'))) return;
+
+    e.preventDefault();
+
+    const parsed = parseEnvFile(text);
+    if (parsed.length === 0) return;
+
+    // Merge: update existing keys, add new ones
+    const existingMap = new Map(currentEnvVars.map((v, i) => [v.key, i]));
+    const merged = [...currentEnvVars];
+
+    // Remove the current empty row if it was the target of the paste
+    const currentRow = merged[index];
+    const isEmptyRow = currentRow && !currentRow.key && !currentRow.value;
+
+    let added = 0;
+    let updated = 0;
+    for (const pv of parsed) {
+      const existingIdx = existingMap.get(pv.key);
+      if (existingIdx !== undefined) {
+        merged[existingIdx] = { ...merged[existingIdx], value: pv.value };
+        updated++;
+      } else {
+        merged.push(pv);
+        added++;
+      }
+    }
+
+    // Remove the empty row that triggered the paste
+    if (isEmptyRow) {
+      merged.splice(index, 1);
+    }
+
+    updateEnvVars(merged);
+
+    const parts: string[] = [];
+    if (added > 0) parts.push(`${added} added`);
+    if (updated > 0) parts.push(`${updated} updated`);
+    showToast(`Pasted ${parsed.length} variable${parsed.length !== 1 ? 's' : ''}${parts.length ? ` (${parts.join(', ')})` : ''}`, "success", "Environment Variables");
+  }, [currentEnvVars, updateEnvVars, showToast]);
 
   const parseEnvFile = (content: string) => {
     const lines = content.split('\n');
@@ -255,90 +316,62 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   }, [currentEnvVars, updateEnvVars]);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 mb-10">
-      <div className="flex items-center justify-between mb-6">
-        <h2 
-          className="font-normal text-black"
-          style={{ fontSize: '1.35rem' }}
-        >
-          Environment Variables
-        </h2>
+    <div className={borderless ? '' : 'bg-card rounded-2xl border border-border/50'}>
+      <div className="flex items-center justify-between px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-violet-500/10 flex items-center justify-center">
+            <Key className="size-[18px] text-violet-500" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">Environment Variables</p>
+            <p className="text-xs text-muted-foreground">
+              {currentEnvVars.length === 0 ? 'None set' : `${currentEnvVars.length} variable${currentEnvVars.length !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           {mode === "settings" && !isEditingMode && (
             <button
               onClick={() => setIsEditingMode(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-white border text-black/50 hover:text-black text-sm font-normal rounded-xl hover:border-black transition-all"
-              style={{
-                borderColor: '#e2e8f0',
-                borderRadius: '18px',
-              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors"
             >
-              {generateIcon('pen-411-1658238246.png', 20, 'currentColor')}
-              <span>Edit</span>
+              <Pencil className="size-3.5" />
+              Edit
             </button>
           )}
           {mode === "settings" && isEditingMode && (
             <>
               <button
                 onClick={onCancel}
-                className="p-2 text-black/50 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                className="p-2 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
                 title="Cancel"
               >
-                {generateIcon('close%20remove-802-1662363936.png', 20, 'currentColor')}
+                <X className="size-4" />
               </button>
               <button
                 onClick={handleUploadClick}
-                className="flex items-center gap-2 px-4 py-2 bg-white border text-black hover:text-black text-sm font-normal rounded-xl hover:border-black transition-all"
-                style={{
-                  borderColor: '#e2e8f0',
-                  borderRadius: '18px',
-                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors"
               >
-                { generateIcon('Upload_uZvcsm1OqhVwR8BruGgMmeM2HaZoUOb0YqM8.png', 18, 'currentColor') }
-                <span>Upload .env</span>
+                <Upload className="size-3.5" />
+                Upload .env
               </button>
               <button
                 onClick={onSave}
                 disabled={isSaving}
-                className="flex items-center gap-2 px-5 py-2.5 bg-black text-white font-normal transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{
-                  background: hasChanges ? 'var(--button-primary)' : '#gray',
-                  borderRadius: '18px',
-                  fontSize: '0.95rem',
-                }}
-                onMouseEnter={(e) => {
-                  if (hasChanges && !isSaving) {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, #222, #444)';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.15)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (hasChanges && !isSaving) {
-                    e.currentTarget.style.background = 'var(--button-primary)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }
-                }}
+                className="px-4 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
+                {isSaving ? 'Saving...' : 'Save Changes'}
               </button>
             </>
           )}
           {mode === "deploy" && isEditingMode && (
-            <>
-              <button
-                onClick={handleUploadClick}
-                className="flex items-center gap-2 px-4 py-2 bg-white border text-black hover:text-black text-sm font-normal rounded-xl hover:border-black transition-all"
-                style={{
-                  borderColor: '#e2e8f0',
-                  borderRadius: '18px',
-                }}
-              >
-                { generateIcon('Upload_uZvcsm1OqhVwR8BruGgMmeM2HaZoUOb0YqM8.png', 18, 'currentColor') }
-                <span>Upload .env</span>
-              </button>
-            </>
+            <button
+              onClick={handleUploadClick}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors"
+            >
+              <Upload className="size-3.5" />
+              Upload .env
+            </button>
           )}
         </div>
       </div>
@@ -351,148 +384,94 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
         className="hidden"
       />
 
-      <div 
-        className="space-y-3 rounded-xl transition-all p-4"
-        style={{
-          border: isDragging ? '2px solid #36b37e' : 'none',
-          backgroundColor: isDragging ? 'rgba(54, 179, 126, 0.05)' : 'transparent',
-          boxShadow: isDragging ? '0 5px 20px rgba(54, 179, 126, 0.15)' : 'none',
-        }}
+      <div
+        className={`px-5 pb-5 space-y-3 pt-4 transition-all ${
+          borderless ? 'rounded-b-xl' : 'border-t border-border/50 rounded-b-2xl'
+        } ${
+          isDragging ? 'ring-2 ring-primary/30 bg-primary/5' : ''
+        }`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {currentEnvVars.map((env, index) => {
-          return (
-            <div key={index} className="flex gap-3 items-start">
-              <div className="flex-1">
-                <input
-                  type="text"
-                  value={env.key}
-                  onChange={(e) => handleKeyChange(index, e.target.value)}
-                  placeholder="KEY_NAME"
-                  readOnly={!isEditingMode}
-                  className="w-full px-4 py-3 bg-white border outline-none text-black  transition-all duration-200"
-                  style={{
-                    borderColor: '#f0f0f0',
-                    borderRadius: '18px',
-                    fontSize: '1.05rem',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
-                    cursor: !isEditingMode ? 'default' : 'text',
-                    backgroundColor: !isEditingMode ? '#fafafa' : 'white',
-                  }}
-                  onFocus={(e) => {
-                    if (isEditingMode) {
-                      e.currentTarget.style.borderColor = '#36b37e';
-                      e.currentTarget.style.boxShadow = '0 5px 20px rgba(54, 179, 126, 0.15)';
-                    }
-                  }}
-                  onBlur={(e) => {
-                    e.currentTarget.style.borderColor = '#f0f0f0';
-                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.02)';
-                  }}
-                />
-              </div>
-              <div className="flex-1">
-                <div className="relative">
-                  <input
-                    type={env.visible ? "text" : "password"}
-                    value={env.value}
-                    onChange={(e) => handleValueChange(index, e.target.value)}
-                    placeholder="value"
-                    readOnly={!isEditingMode}
-                    className="w-full px-4 py-3 pr-11 bg-white border outline-none text-black  transition-all duration-200"
-                    style={{
-                      borderColor: '#f0f0f0',
-                      borderRadius: '18px',
-                      fontSize: '1.05rem',
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.02)',
-                      cursor: !isEditingMode ? 'default' : 'text',
-                      backgroundColor: !isEditingMode ? '#fafafa' : 'white',
-                    }}
-                    onFocus={(e) => {
-                      if (isEditingMode) {
-                        e.currentTarget.style.borderColor = '#36b37e';
-                        e.currentTarget.style.boxShadow = '0 5px 20px rgba(54, 179, 126, 0.15)';
-                      }
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = '#f0f0f0';
-                      e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.02)';
-                    }}
-                  />
-                  <button
-                    onClick={() => toggleEnvVisibility(index)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black transition-colors p-1 rounded-lg hover:bg-gray-100"
-                    type="button"
-                  >
-                    {env.visible ? (
-                      generateIcon('hide-33-1691989601.png', 20, 'currentColor')
-                    ) : (
-                      generateIcon('Eye_vsFHLJrbkKv9lf6nic8FhE340LfLNdM8ffBe.png', 20, 'currentColor')
-                    )}
-                  </button>
-                </div>
-              </div>
-              
-              {showEditControls && isEditingMode && (
-                <button
-                  onClick={() => removeEnvVar(index)}
-                  className="p-3 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                  type="button"
-                  title="Delete"
-                >
-                  {generateIcon('delete-36-1692683695.png', 20, 'currentColor')}
-                </button>
-              )}
+        {currentEnvVars.map((env, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={env.key}
+              onChange={(e) => handleKeyChange(index, e.target.value)}
+              onPaste={(e) => handlePaste(e, index)}
+              placeholder="KEY"
+              readOnly={!isEditingMode}
+              className={`flex-1 px-3.5 py-2.5 border border-border/50 rounded-lg text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all ${
+                !isEditingMode ? 'cursor-default bg-muted/20' : 'bg-muted/30'
+              }`}
+            />
+            <div className="relative flex-1">
+              <input
+                type={env.visible ? "text" : "password"}
+                value={env.value}
+                onChange={(e) => handleValueChange(index, e.target.value)}
+                onPaste={(e) => handlePaste(e, index)}
+                placeholder="value"
+                readOnly={!isEditingMode}
+                className={`w-full px-3.5 py-2.5 pr-9 border border-border/50 rounded-lg text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all ${
+                  !isEditingMode ? 'cursor-default bg-muted/20' : 'bg-muted/30'
+                }`}
+              />
+              <button
+                onClick={() => toggleEnvVisibility(index)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                type="button"
+              >
+                {env.visible ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              </button>
             </div>
-          );
-        })}
+
+            {showEditControls && isEditingMode && (
+              <button
+                onClick={() => removeEnvVar(index)}
+                className="flex size-8 items-center justify-center rounded-lg text-muted-foreground/50 hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                type="button"
+                title="Delete"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
 
         {currentEnvVars.length === 0 && (
-          <div 
-            className="text-center flex flex-col relative justify-center items-center border-2 border-dashed rounded-xl transition-all"
-            style={{
-              borderColor: isDragging ? '#36b37e' : '#e2e8f0',
-              backgroundColor: isDragging ? 'rgba(54, 179, 126, 0.05)' : '#fafafa',
-              padding: '3rem 2rem',
-            }}
+          <div
+            className={`text-center flex flex-col items-center justify-center py-10 px-6 border-2 border-dashed rounded-xl transition-all ${
+              isDragging
+                ? 'border-primary bg-primary/5'
+                : 'border-border/50 bg-muted/20'
+            }`}
           >
-            <div className="mb-4">
-              {generateIcon('key-45-1691989638.png', 56, isDragging ? '#36b37e' : 'rgba(0,0,0,0.35)')}
-            </div>
-            <div className="font-normal mb-2 transition-colors" style={{
-              color: isDragging ? '#36b37e' : '#000',
-              fontSize: '1.1rem',
-            }}>
+            <Key className={`size-10 mb-3 ${isDragging ? 'text-primary' : 'text-muted-foreground/30'}`} />
+            <p className={`text-sm font-medium mb-1 ${isDragging ? 'text-primary' : 'text-foreground'}`}>
               {isDragging ? 'Drop .env file here' : 'No environment variables'}
-            </div>
-            <div className="text-black max-w-md text-center leading-relaxed" style={{
-              fontSize: '0.95rem',
-            }}>
-              {isEditingMode ? (
-                <>Click <span className="font-normal text-black">"Add Variable"</span> below or <span className="font-normal text-black">"Upload .env"</span> to add environment variables, or drag and drop a .env file here</>
-              ) : (
-                <>Click <span className="font-normal text-black">"Edit"</span> to manage environment variables</>
-              )}
-            </div>
+            </p>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              {isEditingMode
+                ? 'Click "Add Variable" below, "Upload .env", or drag and drop a .env file here'
+                : 'Click "Edit" to manage environment variables'}
+            </p>
           </div>
         )}
 
-        {/* Add Variable Button - Wide placeholder style at bottom */}
         {isEditingMode && (
-          <button
-            onClick={addEnvVar}
-            className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed rounded-xl text-black/50 hover:text-black hover:border-gray-400 transition-all"
-            style={{
-              borderColor: '#e2e8f0',
-              backgroundColor: '#fafafa',
-            }}
-          >
-            {generateIcon('plus%204-49-1658433844.png', 20, 'currentColor')}
-            <span className="font-normal">Add Variable</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={addEnvVar}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-colors"
+            >
+              <Plus className="size-3.5" />
+              Add Variable
+            </button>
+          </div>
         )}
       </div>
     </div>

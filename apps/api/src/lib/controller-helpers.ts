@@ -35,15 +35,22 @@ export function param(c: Context, name: string): string {
 /**
  * Resolve the deployment target from environment config.
  *
+ * CLOUD_MODE (SaaS hosting) and DEPLOY_MODE=cloud (Oblien runtime) both
+ * need the cloud platform adapter, so either triggers the cloud config.
+ * Auth/billing concerns are gated separately by CLOUD_MODE alone.
+ *
  * Priority:
- *   1. CLOUD_MODE=true → "cloud" (overrides DEPLOY_MODE)
- *   2. DEPLOY_MODE env → "docker" | "bare" | "cloud" | "desktop"
- *   3. Default → "docker" (self-hosted with Docker runtime)
+ *   1. CLOUD_MODE=true or DEPLOY_MODE=cloud → "cloud" (Oblien runtime)
+ *   2. DEPLOY_MODE=desktop → "desktop"
+ *   3. Default → "selfhosted" with docker or bare runtime
  */
 function resolveConfig(): PlatformConfig {
-  // Cloud mode override
   if (env.CLOUD_MODE || env.DEPLOY_MODE === "cloud") {
-    return { target: "cloud" };
+    return {
+      target: "cloud",
+      cloudClientId: env.OBLIEN_CLIENT_ID,
+      cloudClientSecret: env.OBLIEN_CLIENT_SECRET,
+    };
   }
 
   if (env.DEPLOY_MODE === "desktop") {

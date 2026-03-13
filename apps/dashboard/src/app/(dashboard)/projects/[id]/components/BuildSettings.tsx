@@ -54,9 +54,9 @@ export const BuildSettings = () => {
       const response = await projectsApi.createDeploymentSession(projectData.id);
 
       if (response.success) {
-        // Redirect to build page if deployment_session_id is returned
-        if (response.deployment_session_id) {
-          router.push(`/build/${response.deployment_session_id}?redeploy=true`);
+        // Redirect to build page if deployment_id is returned
+        if (response.deployment_id) {
+          router.push(`/build/${response.deployment_id}?redeploy=true`);
         }
       } else {
         showToast(response.message || 'Failed to start redeployment', 'error', 'Error');

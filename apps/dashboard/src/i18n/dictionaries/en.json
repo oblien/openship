@@ -121,7 +121,7 @@
     },
     "nav": {
       "home": "Home",
-      "library": "Library",
+      "new-project": "New Project",
       "projects": "Projects",
       "deployments": "Deployments",
       "domains": "Domains",

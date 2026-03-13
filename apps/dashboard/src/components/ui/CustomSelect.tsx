@@ -69,20 +69,20 @@ export function CustomSelect<T extends string>({
         className={`
           w-full px-4 py-3 rounded-2xl text-sm font-medium
           transition-all duration-200 flex items-center justify-between gap-2
-          border border-black/[0.04]
+          border border-border/50
           ${isOpen 
-            ? 'bg-white border-black/10' 
-            : 'bg-white/60 hover:bg-white hover:border-black/[0.08]'
+            ? 'bg-muted/80 border-border' 
+            : 'bg-muted/40 hover:bg-muted/60 hover:border-border'
           }
         `}
         type="button"
       >
-        <span className="flex items-center gap-2 truncate text-black/70">
+        <span className="flex items-center gap-2 truncate text-foreground/70">
           {selectedOption?.icon}
-          {selectedOption?.label || <span className="text-black/40">{placeholder}</span>}
+          {selectedOption?.label || <span className="text-muted-foreground">{placeholder}</span>}
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-black/40 transition-transform duration-200 flex-shrink-0 ${
+          className={`w-4 h-4 text-muted-foreground transition-transform duration-200 flex-shrink-0 ${
             isOpen ? "rotate-180" : ""
           }`}
         />
@@ -90,7 +90,7 @@ export function CustomSelect<T extends string>({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute z-50 w-full mt-2 bg-white border border-black/[0.06] rounded-2xl overflow-hidden shadow-xl shadow-black/[0.08]">
+        <div className="absolute z-50 w-full mt-2 bg-popover border border-border/50 rounded-2xl overflow-hidden shadow-xl shadow-black/[0.08]">
           <div className="py-1.5 max-h-64 overflow-y-auto">
             {options.map((option) => {
               const isSelected = option.value === value;
@@ -102,8 +102,8 @@ export function CustomSelect<T extends string>({
                     w-full px-4 py-2.5 text-left flex items-center justify-between gap-2 
                     text-sm transition-all duration-150
                     ${isSelected 
-                      ? 'bg-black/[0.03] text-black font-medium' 
-                      : 'text-black/60 hover:text-black hover:bg-black/[0.02]'
+                      ? 'bg-accent text-accent-foreground font-medium' 
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                     }
                   `}
                   type="button"
@@ -113,7 +113,7 @@ export function CustomSelect<T extends string>({
                     {option.label}
                   </span>
                   {isSelected && (
-                    <Check className="w-3.5 h-3.5 text-black/40 flex-shrink-0" />
+                    <Check className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                   )}
                 </button>
               );

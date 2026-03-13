@@ -3,7 +3,7 @@
  * Provides helper functions for connecting to SSE endpoints
  */
 
-import { deployApi, getAuthToken } from '@/lib/api';
+import { getApiBaseUrl } from '@/lib/api';
 
 export interface SSEClientOptions {
   onMessage: (data: string) => void;
@@ -26,75 +26,56 @@ export class NoRetryError extends Error {
 }
 
 /**
- * Connect to live logs SSE stream
+ * Connect to live logs SSE stream (runtime logs via local API)
  */
 export const connectToLiveLogs = async ({
   projectId = '',
   options = {} as SSEClientOptions,
-  streamUrl = ''
 }) => {
-  // Get logs token from API
-  const logsToken = await deployApi.getLogsAccess(projectId);
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}projects/${projectId}/logs/stream`;
 
-  if (!logsToken?.token) {
-    throw new Error('Failed to get logs token');
-  }
-
-  // Use custom stream URL or default
-  const url = streamUrl || `https://deploy.oblien.com/logs/containers/stream`;
-  
-  return connectToSSE(
-    url,
-    {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${logsToken.token}`,
-        ...options.headers,
-      },
-    }
-  );
-};
-
-/**
- * Connect to build logs SSE stream
- */
-export const connectToBuildLogs = async (
-  deployment_session_id: string,
-  options: SSEClientOptions
-) => {
-  const token = await getAuthToken();
-  
-  return connectToSSE(
-    `https://private.oblien.com/logs/build/${deployment_session_id}`,
-    {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        ...options.headers,
-      },
-    }
-  );
-};
-
-/**
- * Connect to deployment build stream
- */
-export const connectToBuildStream = async (
-  buildToken: string,
-  options: SSEClientOptions
-) => {
-  const token = await getAuthToken();
-  
-  const response = await fetch('https://private.oblien.com/build/start', {
-    method: 'POST',
+  return connectToSSE(url, {
+    ...options,
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
       ...options.headers,
     },
-    body: JSON.stringify({ 
-      token: buildToken,
-    }),
+  });
+};
+
+/**
+ * Connect to build logs SSE stream (via local API)
+ */
+export const connectToBuildLogs = async (
+  deploymentId: string,
+  options: SSEClientOptions
+) => {
+  const baseUrl = getApiBaseUrl();
+
+  return connectToSSE(
+    `${baseUrl}deployments/${deploymentId}/build`,
+    {
+      ...options,
+    }
+  );
+};
+
+/**
+ * Start a new build via local API
+ */
+export const connectToBuildStream = async (
+  sessionId: string,
+  options: SSEClientOptions
+) => {
+  const baseUrl = getApiBaseUrl();
+
+  const response = await fetch(`${baseUrl}deployments/${sessionId}/build`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
   });
 
   // Check content type and handle accordingly
@@ -118,104 +99,19 @@ export const connectToBuildStream = async (
 };
 
 /**
- * Reconnect to existing build session
+ * Reconnect to existing build session (attach to SSE log stream)
  */
 export const reconnectToBuildStream = async (
-  buildToken: string,
+  sessionId: string,
   lastEventId: number | undefined,
   options: SSEClientOptions
 ) => {
-  const token = await getAuthToken();
-  
-  const response = await fetch('https://private.oblien.com/build/check-session', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      ...options.headers,
-    },
-    body: JSON.stringify({ 
-      token: buildToken, 
-      attach: true,
-      last_event_id: lastEventId
-    }),
-  });
+  const baseUrl = getApiBaseUrl();
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    
-    // Permanent failures should not be retried
-    if (response.status === 404 || response.status === 410) {
-      throw new NoRetryError(error.error || 'Build session not found');
-    }
-    
-    throw new Error(error.error || 'Failed to reconnect to build');
-  }
+  // Use the SSE stream endpoint to re-attach to running build logs
+  const url = `${baseUrl}deployments/${sessionId}/stream?sessionId=${sessionId}`;
 
-  // Check if response is JSON (build complete) or SSE stream (build in progress)
-  const contentType = response.headers.get('content-type');
-  
-  // If not SSE stream and not JSON, this is an invalid response - do not retry
-  if (!contentType?.includes('text/event-stream') && !contentType?.includes('application/json')) {
-    console.error('[SSEClient] Invalid response content-type:', contentType);
-    throw new NoRetryError('Invalid response type from server - expected SSE stream or JSON');
-  }
-  
-  if (contentType?.includes('application/json')) {
-    // Response is JSON - process it as a message
-    const data = await response.json();
-    console.log('[SSEClient] Processing JSON response:', data);
-    
-    // Process missed logs if available
-    if (data.missedLogs && Array.isArray(data.missedLogs)) {
-      data.missedLogs.forEach((log: any) => {
-        // Send each missed log as SSE format
-        const sseMessage = `data: ${JSON.stringify(log)}\n\n`;
-        options.onMessage(sseMessage);
-      });
-    }
-    
-    // Send the main JSON data as SSE format for processing
-    const sseMessage = `data: ${JSON.stringify(data)}\n\n`;
-    options.onMessage(sseMessage);
-    
-    // Handle terminal states
-    if (data.isActive === false) {
-      console.log('[SSEClient] Build is no longer active - stopping reconnection');
-      throw new NoRetryError('Build session is no longer active');
-    }
-    
-    if (data.hasActiveConnections === false) {
-      console.log('[SSEClient] No active connections for this build - stopping reconnection');
-      throw new NoRetryError('Build session has no active connections');
-    }
-    
-    // If data indicates completion or error, handle appropriately
-    if (data.type === 'complete' || data.type === 'success' || data.type === 'failure' || data.type === 'cancelled') {
-      console.log('[SSEClient] Received terminal message via JSON:', data.type);
-      // Let the message be processed, then disconnect
-      setTimeout(() => {
-        if (data.type === 'failure' || (data.type === 'complete' && data.success === false)) {
-          options.onError?.(new NoRetryError(data.message || data.error || 'Build failed'));
-        } else {
-          options.onDisconnect?.();
-        }
-      }, 100);
-      return { disconnect: () => {} }; // Return dummy disconnect function
-    }
-    
-    // For other JSON responses, continue processing normally
-    return { disconnect: () => {} }; // Return dummy disconnect function
-  }
-
-  // Validate we actually have text/event-stream before processing
-  if (!contentType?.includes('text/event-stream')) {
-    console.error('[SSEClient] Response is not SSE stream:', contentType);
-    throw new NoRetryError('Response is not a valid SSE stream');
-  }
-
-  // Response is SSE stream - process normally
-  return processSSEStream(response, options);
+  return connectToSSE(url, options);
 };
 
 /**
@@ -227,6 +123,7 @@ export const connectToSSE = async (
 ) => {
   const response = await fetch(url, {
     method: 'GET',
+    credentials: 'include',
     headers: {
       'Accept': 'text/event-stream',
       ...options.headers,

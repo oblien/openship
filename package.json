@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --filter=@repo/api --filter=@repo/dashboard --filter=@repo/desktop",
+    "dev": "turbo run dev",
     "dev:api": "turbo run dev --filter=@repo/api...",
     "dev:dashboard": "turbo run dev --filter=@repo/dashboard",
     "dev:desktop": "turbo run dev --filter=@repo/desktop",
@@ -35,5 +35,9 @@
   "packageManager": "bun@1.3.10",
   "engines": {
     "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@octokit/auth-oauth-device": "^8.0.3",
+    "api": "^6.1.3"
   }
 }

@@ -6,6 +6,7 @@
  */
 export {
   DeploymentCard,
+  DeploymentsContent,
   DeploymentsFilters,
   DeploymentsList,
   ProjectFilter,

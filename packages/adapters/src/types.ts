@@ -8,45 +8,27 @@
 
 // ─── Resource configuration ──────────────────────────────────────────────────
 
-export interface CpuConfig {
-  /** CFS quota in microseconds (e.g. 50 000 = 0.5 cores with 100 000 period) */
-  quotaUs: number;
-  /** CFS period in microseconds (default 100 000) */
-  periodUs: number;
-}
-
 export interface ResourceConfig {
-  /** Number of CPUs visible to the container */
-  cpus: number;
-  /** CPU quota configuration */
-  cpuConfig: CpuConfig;
+  /** CPU cores (fractional, e.g. 0.5, 1.0, 2.0) — the universal unit all runtimes use */
+  cpuCores: number;
   /** Memory limit in megabytes */
   memoryMb: number;
+  /** Writable disk in megabytes */
+  diskMb: number;
 }
 
-export interface ResourceTier {
-  cpuCores: number;
-  memoryMb: number;
-}
-
-/** Predefined resource tiers */
-export const RESOURCE_TIERS: Record<string, ResourceTier> = {
-  lightweight: { cpuCores: 0.5, memoryMb: 512 },
-  standard: { cpuCores: 1.0, memoryMb: 1024 },
-  performance: { cpuCores: 2.0, memoryMb: 2048 },
-  enterprise: { cpuCores: 4.0, memoryMb: 4096 },
-};
-
+/** Single source of truth — production resources */
 export const DEFAULT_RESOURCE_CONFIG: ResourceConfig = {
-  cpus: 1,
-  cpuConfig: { quotaUs: 50_000, periodUs: 100_000 },
+  cpuCores: 1,
   memoryMb: 512,
+  diskMb: 4096,
 };
 
+/** Single source of truth — build resources */
 export const DEFAULT_BUILD_RESOURCE_CONFIG: ResourceConfig = {
-  cpus: 2,
-  cpuConfig: { quotaUs: 200_000, periodUs: 100_000 },
+  cpuCores: 2,
   memoryMb: 4096,
+  diskMb: 10240,
 };
 
 // ─── Build / Deploy types ────────────────────────────────────────────────────
@@ -73,6 +55,8 @@ export interface BuildConfig {
   commitSha?: string;
   /** Detected framework / stack */
   stack: string;
+  /** Docker image for the build container (e.g. "node:22", "oven/bun:latest") */
+  buildImage: string;
   /** Package manager (npm | yarn | pnpm | bun) */
   packageManager: string;
   /** Shell command to install dependencies */
@@ -85,6 +69,8 @@ export interface BuildConfig {
   envVars: Record<string, string>;
   /** Resources allocated for the build container */
   resources: ResourceConfig;
+  /** Ephemeral token for cloning private repos — never persisted */
+  gitToken?: string;
 }
 
 export interface DeployConfig {
@@ -94,16 +80,26 @@ export interface DeployConfig {
   projectId: string;
   /** Reference to the completed build session */
   buildSessionId: string;
+  /** Opaque reference to the built artifact (workspace ID, docker image tag, etc.) */
+  imageRef?: string;
   /** "production" | "preview" */
   environment: string;
   /** Port the application listens on */
   port: number;
+  /** Shell command to start the application (e.g. "npm start", "node server.js") */
+  startCommand?: string;
+  /** Detected framework / stack (e.g. "nextjs", "express") */
+  stack?: string;
   /** Environment variables injected at runtime */
   envVars: Record<string, string>;
   /** Resources allocated for the production container */
   resources: ResourceConfig;
   /** Container restart policy */
   restartPolicy?: "always" | "on-failure" | "no";
+  /** URL slug for the deployment (e.g. "my-app" → my-app.opsh.io) */
+  slug?: string;
+  /** Custom domain to bind via DNS (e.g. "app.example.com") — separate from free subdomain */
+  customDomain?: string;
 }
 
 export interface BuildResult {
@@ -121,10 +117,21 @@ export interface DeploymentResult {
   status: ContainerStatus;
 }
 
+/** Pipeline step identifiers for stepper UI */
+export type BuildStep = "clone" | "install" | "build" | "deploy";
+
+export const BUILD_STEPS: readonly BuildStep[] = ["clone", "install", "build", "deploy"] as const;
+
 export interface LogEntry {
   timestamp: string;
   message: string;
   level: "info" | "warn" | "error";
+  /** When present, this entry is a step event for the stepper UI */
+  step?: BuildStep;
+  /** Step lifecycle status */
+  stepStatus?: "running" | "completed" | "failed" | "skipped";
+  /** Pre-encoded base64 data — passed through to SSE without re-encoding. */
+  rawData?: string;
 }
 
 export interface ContainerInfo {

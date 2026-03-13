@@ -9,7 +9,7 @@
  */
 
 import { Hono } from "hono";
-import { authMiddleware } from "../../middleware";
+import { authMiddleware, localOnly } from "../../middleware";
 import * as ctrl from "./github.controller";
 
 export const githubRoutes = new Hono();
@@ -19,6 +19,8 @@ githubRoutes.use("*", authMiddleware);
 
 /* ─── Status / Connection ──────────────────────────────────────────────── */
 githubRoutes.get("/status", ctrl.getStatus);
+githubRoutes.get("/local-status", localOnly, ctrl.getLocalStatus);
+githubRoutes.get("/connect/poll", localOnly, ctrl.pollConnect);
 githubRoutes.get("/home", ctrl.getHome);
 githubRoutes.post("/connect", ctrl.connect);
 githubRoutes.post("/disconnect", ctrl.disconnect);

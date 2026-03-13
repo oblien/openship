@@ -63,14 +63,14 @@ const EmptyState: React.FC = () => {
       
       <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-10">
         <Link
-          href="/new"
+          href="/library"
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
         >
           <Plus className="size-4" />
           {emptyState.createProject}
         </Link>
         <Link
-          href="/new"
+          href="/library"
           className="inline-flex items-center gap-2 px-6 py-3 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
         >
           <GitBranch className="size-4" />

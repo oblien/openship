@@ -33,6 +33,7 @@ app.use(
 );
 app.use("*", errorHandler);
 app.use("*", logger());
+
 app.use("/api/auth/*", rateLimiter);
 
 /* ---------- Shared routes (self-hosted + cloud) ---------- */

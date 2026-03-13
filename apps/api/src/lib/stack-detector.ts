@@ -19,7 +19,7 @@
  *   Generic: Node.js, static, Docker
  */
 
-import { STACKS, OUTPUT_DIRECTORIES, type StackId } from "@repo/core";
+import { STACKS, OUTPUT_DIRECTORIES, getProjectType, getBuildImage, type StackId, type ProjectType } from "@repo/core";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -30,13 +30,16 @@ export interface RepoFile {
 
 export interface StackResult {
   stack: StackId;
+  projectType: ProjectType;
   category: string;
   dependencies: Record<string, string>;
   packageManager: string;
   installCommand: string;
   buildCommand: string;
   startCommand: string;
+  buildImage: string;
   outputDirectory: string;
+  port: number;
 }
 
 // ─── Package manager detection ───────────────────────────────────────────────
@@ -67,9 +70,9 @@ export function detectPackageManager(
 
   // ── JS/TS lock files (most reliable) ──
   if (fileSet.has("pnpm-lock.yaml")) return "pnpm";
-  if (fileSet.has("yarn.lock")) return "yarn";
   if (fileSet.has("bun.lockb") || fileSet.has("bun.lock")) return "bun";
   if (fileSet.has("package-lock.json")) return "npm";
+  if (fileSet.has("yarn.lock")) return "yarn";
 
   // packageManager field in package.json
   if (packageJson?.packageManager) {
@@ -357,11 +360,18 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
       fs.has("requirements.txt") || fs.has("pyproject.toml") || fs.has("pipfile") || fs.has("setup.py"),
   },
 
-  // ── Docker ────────────────────────────────────────────────────────────────
+  // ── Docker Compose (check before single Dockerfile) ───────────────────────
+
+  {
+    stack: "docker-compose",
+    fileMatch: (fs) => fs.has("docker-compose.yml") || fs.has("docker-compose.yaml") || fs.has("compose.yml") || fs.has("compose.yaml"),
+  },
+
+  // ── Dockerfile (single container) ─────────────────────────────────
 
   {
     stack: "docker",
-    fileMatch: (fs) => fs.has("dockerfile") || fs.has("docker-compose.yml") || fs.has("docker-compose.yaml"),
+    fileMatch: (fs) => fs.has("dockerfile"),
   },
 
   // ── Static site (no package.json / manifest at all) ───────────────────────
@@ -413,20 +423,23 @@ export function detectStack(
 
   return {
     stack: matched,
+    projectType: getProjectType(matched),
     category: stackDef.category,
     dependencies: deps,
     packageManager: pm,
     installCommand: getInstallCommand(pm),
     buildCommand: getBuildCommand(pm, matched, packageJson),
     startCommand: getStartCommand(pm, matched, packageJson),
+    buildImage: getBuildImage(matched, pm),
     outputDirectory: OUTPUT_DIRECTORIES[matched] ?? "dist",
+    port: stackDef.defaultPort,
   };
 }
 
 // ─── Default commands ────────────────────────────────────────────────────────
 
 /** Install command per package manager */
-function getInstallCommand(pm: string): string {
+export function getInstallCommand(pm: string): string {
   switch (pm) {
     case "pnpm": return "pnpm install --frozen-lockfile";
     case "yarn": return "yarn install --frozen-lockfile";

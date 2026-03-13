@@ -1,8 +1,6 @@
 import { githubApi } from "@/lib/api";
 import { openAuthWindow } from "@/utils/authWindow";
 
-const AUTH_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
 /**
  * @deprecated Use `openAuthWindow` from `@/utils/authWindow` directly.
  */
@@ -22,53 +20,40 @@ export const handleConnectGithub = async (
   try {
     setLoading(true);
 
-    const handle = openAuthWindow();
     const res = await githubApi.connect();
 
-    if (res?.mode === "desktop" && !res.needsOAuth) {
-      handle.close();
+    // Already connected — just refresh
+    if (res?.connected) {
       setLoading(false);
       checkGithubConnection();
       return;
     }
 
-    if (res?.needsOAuth) {
-      // Both modes: POST to Better Auth for OAuth URL
-      // callbackURL must be on our own origin (Better Auth validates it)
-      const callbackURL =
-        res.mode === "cloud" ? "/auth/callback/install" : "/auth/callback/close";
-
-      const oauthRes = await fetch(
-        `${AUTH_API_URL}/api/auth/sign-in/social`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ provider: "github", callbackURL }),
-        }
-      );
-      const oauthData = await oauthRes.json();
-      if (oauthData?.url) {
-        handle.navigate(oauthData.url);
-      } else {
-        handle.close();
-        setLoading(false);
-        showToast("Failed to start GitHub authorization", "error");
+    switch (res?.flow) {
+      case "redirect": {
+        const handle = openAuthWindow();
+        handle.navigate(res.url);
+        handle.onClose(() => {
+          setLoading(false);
+          checkGithubConnection();
+        });
         return;
       }
-    } else if (res?.url) {
-      // Cloud mode, has OAuth → install URL
-      handle.navigate(res.url);
-    } else {
-      handle.close();
-      setLoading(false);
-      return;
-    }
 
-    handle.onClose(() => {
-      setLoading(false);
-      checkGithubConnection();
-    });
+      case "device_code":
+        // Device flow is handled by GitHubContext; toast for standalone callers
+        showToast(`Enter code ${res.userCode} at ${res.verificationUri}`, "success");
+        setLoading(false);
+        return;
+
+      case "terminal":
+        showToast(res.message ?? res.command, "error");
+        setLoading(false);
+        return;
+
+      default:
+        setLoading(false);
+    }
   } catch (error) {
     console.error("Failed to connect to GitHub:", error);
     showToast("Failed to connect to GitHub", "error");

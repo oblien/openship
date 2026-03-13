@@ -8,6 +8,7 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type { RuntimeAdapter, RuntimeCapability } from "./types";
 export { assertCapability } from "./types";
+export { runBuildPipeline, BuildLogger, type BuildEnvironment } from "./build-pipeline";
 
 // ─── Runtime classes ─────────────────────────────────────────────────────────
 export { DockerRuntime, type DockerConnectionOptions } from "./docker";
@@ -28,10 +29,10 @@ export interface CreateRuntimeOptions {
   docker?: DockerConnectionOptions;
   /** Bare runtime config (only used when mode="bare") */
   bare?: BareRuntimeOptions;
-  /** Oblien API URL (only used when mode="cloud") */
-  cloudApiUrl?: string;
-  /** Oblien API key (only used when mode="cloud") */
-  cloudApiKey?: string;
+  /** Oblien client ID (only used when mode="cloud") */
+  cloudClientId?: string;
+  /** Oblien client secret (only used when mode="cloud") */
+  cloudClientSecret?: string;
 }
 
 /**
@@ -54,8 +55,8 @@ export async function createRuntime(opts: CreateRuntimeOptions): Promise<Runtime
     case "cloud": {
       const { CloudRuntime } = await import("./cloud");
       return new CloudRuntime(
-        opts.cloudApiUrl ?? process.env.OBLIEN_API_URL ?? "https://api.oblien.com",
-        opts.cloudApiKey ?? process.env.OBLIEN_API_KEY ?? "",
+        opts.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "",
+        opts.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
       );
     }
   }

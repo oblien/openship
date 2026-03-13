@@ -17,7 +17,7 @@ import {
   Sun,
   PanelLeftClose,
   PanelLeftOpen,
-  Library,
+  Plus,
 } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
 import { useTheme } from "@/components/theme-provider";
@@ -25,19 +25,36 @@ import { useI18n } from "@/components/i18n-provider";
 import { Logo } from "@/components/logo";
 import { useAuth } from "@/context/AuthContext";
 
-const MAIN_NAV = [
-  { key: "home",        href: "/",            icon: LayoutDashboard },
-  { key: "library",     href: "/library",    icon: Library },
-  { key: "projects",    href: "/projects",    icon: FolderKanban },
-  { key: "deployments", href: "/deployments", icon: Rocket },
-  { key: "domains",     href: "/domains",     icon: Globe },
-  { key: "monitoring",  href: "/monitoring",  icon: Activity },
-] as const;
+interface NavItem {
+  key: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
+}
 
-const SETTINGS_NAV = [
-  { key: "settings", href: "/settings", icon: Settings },
-  { key: "billing",  href: "/billing",  icon: CreditCard },
-] as const;
+interface NavSection {
+  section?: string;   // i18n key under t.dashboard.nav.sections
+  items: NavItem[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    section: "main",
+    items: [
+      { key: "home",         href: "/",             icon: LayoutDashboard },
+      { key: "projects",     href: "/projects",     icon: FolderKanban },
+      { key: "deployments",  href: "/deployments",  icon: Rocket },
+      { key: "domains",      href: "/domains",      icon: Globe },
+      { key: "monitoring",   href: "/monitoring",   icon: Activity },
+    ],
+  },
+  {
+    section: "settings",
+    items: [
+      { key: "settings", href: "/settings", icon: Settings },
+      { key: "billing",  href: "/billing",  icon: CreditCard },
+    ],
+  },
+];
 
 export function Sidebar() {
   const { user } = useAuth();
@@ -65,6 +82,9 @@ export function Sidebar() {
 
   const label = (key: string) =>
     (t.dashboard.nav as unknown as Record<string, string>)[key] ?? key;
+
+  const sectionLabel = (key: string) =>
+    (t.dashboard.nav.sections as unknown as Record<string, string>)[key] ?? key;
 
   return (
     <aside
@@ -112,68 +132,55 @@ export function Sidebar() {
 
       <div className="mx-3 h-px bg-border/60" />
 
-      {/* ── Main nav ─────────────────────────────────────────── */}
+      {/* ── Nav sections ────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto px-3 pt-3 pb-1">
-        {!collapsed && (
-          <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-            {t.dashboard.nav.sections.main}
-          </p>
-        )}
-        <div className="space-y-1">
-          {MAIN_NAV.map(({ key, href, icon: Icon }) => {
-            const active = isActive(href);
-            return (
-              <Link
-                key={key}
-                href={href}
-                title={collapsed ? label(key) : undefined}
-                className={`flex items-center rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors ${
-                  collapsed ? "justify-center" : "gap-3"
-                } ${
-                  active
-                    ? "bg-foreground/[0.07] text-foreground"
-                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-                }`}
-              >
-                <Icon className="size-[18px] shrink-0" strokeWidth={1.7} />
-                {!collapsed && label(key)}
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* Settings group */}
-        <div className="mt-5">
-          {!collapsed && (
-            <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-              {t.dashboard.nav.sections.settings}
-            </p>
-          )}
-          {collapsed && <div className="my-3 mx-2 h-px bg-border/60" />}
-          <div className="space-y-1">
-            {SETTINGS_NAV.map(({ key, href, icon: Icon }) => {
-              const active = isActive(href);
-              return (
-                <Link
-                  key={key}
-                  href={href}
-                  title={collapsed ? label(key) : undefined}
-                  className={`flex items-center rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors ${
-                    collapsed ? "justify-center" : "gap-3"
-                  } ${
-                    active
-                      ? "bg-foreground/[0.07] text-foreground"
-                      : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="size-[18px] shrink-0" strokeWidth={1.7} />
-                  {!collapsed && label(key)}
-                </Link>
-              );
-            })}
+        {NAV_SECTIONS.map(({ section, items }, si) => (
+          <div key={section ?? si} className={si > 0 ? "mt-5" : undefined}>
+            {!collapsed && section && (
+              <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                {sectionLabel(section)}
+              </p>
+            )}
+            {collapsed && si > 0 && <div className="my-3 mx-2 h-px bg-border/60" />}
+            <div className="space-y-1">
+              {items.map(({ key, href, icon: Icon }) => {
+                const active = isActive(href);
+                return (
+                  <Link
+                    key={key}
+                    href={href}
+                    title={collapsed ? label(key) : undefined}
+                    className={`flex items-center rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors ${
+                      collapsed ? "justify-center" : "gap-3"
+                    } ${
+                      active
+                        ? "bg-foreground/[0.07] text-foreground"
+                        : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="size-[18px] shrink-0" strokeWidth={1.7} />
+                    {!collapsed && label(key)}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ))}
       </nav>
+
+      {/* ── New Project ─────────────────────────────────────── */}
+      <div className="px-3 pb-2">
+        <Link
+          href="/library"
+          title={collapsed ? label("new-project") : undefined}
+          className={`relative flex items-center justify-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all overflow-hidden ${"bg-gradient-to-r from-violet-500/90 via-primary/90 to-blue-500/90 text-white shadow-sm shadow-primary/20 hover:shadow-md hover:shadow-primary/30 hover:brightness-110 dark:from-amber-400/90 dark:via-orange-500/90 dark:to-rose-500/90 dark:shadow-orange-500/20 dark:hover:shadow-orange-500/30"
+          }`}
+        >
+          <span className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.15),transparent_70%)]" />
+          <Plus className="relative size-4" strokeWidth={2.5} />
+          {!collapsed && <span className="relative">New Project</span>}
+        </Link>
+      </div>
 
       {/* ── Account ──────────────────────────────────────────── */}
       <div className="px-3 pb-4 pt-1">

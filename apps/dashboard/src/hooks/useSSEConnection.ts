@@ -12,7 +12,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { SSEMessage, useSSEStream } from './useSSEStream';
 import { createLogMessageProcessor, createBuildMessageProcessor, LogMessageCallbacks, BuildMessageCallbacks } from '@/lib/sseMessageProcessors';
-import { deployApi, getAuthToken } from '@/lib/api';
+import { getApiBaseUrl } from '@/lib/api';
 import type { Terminal } from '@xterm/xterm';
 
 // ============================================================================
@@ -115,23 +115,16 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
       isConnectingRef.current = true;
       setError(null);
 
-      // Get logs token from API
-      const logsToken = await deployApi.getLogsAccess(projectId);
-
-      if (!logsToken?.token) {
-        throw new Error('Failed to get logs token');
-      }
-
       // Create abort controller
       abortControllerRef.current = new AbortController();
 
-      // Connect to logs stream
-      const url = 'https://deploy.oblien.com/logs/containers/stream';
+      // Connect to runtime logs stream via local API
+      const baseUrl = getApiBaseUrl();
+      const url = `${baseUrl}projects/${projectId}/logs/stream`;
       
       await sseStream.connect(url, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${logsToken.token}`,
           'Accept': 'text/event-stream',
         },
       });
@@ -187,7 +180,7 @@ export interface UseBuildStreamOptions {
 }
 
 export interface UseBuildStreamReturn {
-  connect: (buildToken: string, startBuild?: boolean) => Promise<void>;
+  connect: (deploymentId: string, startBuild?: boolean) => Promise<void>;
   disconnect: () => void;
   isConnected: boolean;
   isConnecting: boolean;
@@ -259,42 +252,50 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
     },
   });
 
+  const connectingRef = useRef(false);
+
   /**
    * Connect to build stream
    */
-  const connect = useCallback(async (buildToken: string, startBuild: boolean = true) => {
+  const connect = useCallback(async (deploymentId: string, startBuild: boolean = true) => {
+    // Prevent duplicate concurrent connections (double-click, remount race)
+    if (connectingRef.current) return;
+    connectingRef.current = true;
+
     try {
       setIsConnecting(true);
       setError(null);
 
-      const token = await getAuthToken();
+      const baseUrl = getApiBaseUrl();
 
       // Create abort controller
       abortControllerRef.current = new AbortController();
 
-      // Choose endpoint based on whether we're starting or attaching
-      const url = startBuild 
-        ? 'https://private.oblien.com/build/start'
-        : 'https://private.oblien.com/build/check-session';
-
-      const body = startBuild
-        ? { token: buildToken }
-        : { token: buildToken, attach: true };
-
-      await sseStream.connect(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body,
-      });
+      if (startBuild) {
+        // Start new build via POST
+        await sseStream.connect(`${baseUrl}deployments/${deploymentId}/build`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+      } else {
+        // Attach to existing build's SSE stream via GET
+        await sseStream.connect(`${baseUrl}deployments/${deploymentId}/stream`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/event-stream',
+          },
+        });
+      }
     } catch (err: any) {
       console.error('[useBuildStream] Connection error:', err);
       setError(err);
       setIsConnecting(false);
       onError?.(err);
       throw err;
+    } finally {
+      connectingRef.current = false;
     }
   }, [sseStream, onError]);
 
@@ -302,6 +303,7 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
    * Disconnect from stream
    */
   const disconnect = useCallback(() => {
+    connectingRef.current = false;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;

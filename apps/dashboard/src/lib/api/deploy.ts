@@ -6,29 +6,46 @@ import { endpoints } from "./endpoints";
 /* ------------------------------------------------------------------ */
 
 export const deployApi = {
-  /** Initialise a new deployment */
-  init: (body: { owner: string; repo: string; force?: string | boolean }) =>
-    api.post<any>(endpoints.deploy.init, body),
+  /** List all deployments for the authenticated user */
+  getAll: (opts?: { page?: number; perPage?: number }) =>
+    api.get<any>(endpoints.deploy.list, { params: opts }),
 
-  /** Request build access token / start build */
-  buildAccess: (payload: Record<string, any>) =>
+  /** Cancel a deployment */
+  cancel: (id: string) =>
+    api.post<any>(endpoints.deploy.cancel(id)),
+
+  /** Delete a deployment */
+  deleteDeployment: (id: string) =>
+    api.delete<any>(endpoints.deploy.delete(id)),
+
+  /** Resolve project info from GitHub repo or local path — detects stack */
+  prepare: (body:
+    | { source?: "github"; owner: string; repo: string; force?: string | boolean }
+    | { source: "local"; path: string }
+  ) =>
+    api.post<any>(endpoints.deploy.prepare, body),
+
+  /** Create deployment + build session for an existing project */
+  buildAccess: (payload: {
+    projectId: string;
+    branch?: string;
+    environment?: string;
+    envVars?: Record<string, string>;
+    customDomain?: string;
+  }) =>
     api.post<any>(endpoints.deploy.buildAccess, payload),
 
   /** Poll build status */
-  getBuildStatus: (sessionId: string) =>
-    api.get<any>(endpoints.deploy.buildStatus(sessionId)),
+  getBuildStatus: (deploymentId: string) =>
+    api.get<any>(endpoints.deploy.buildStatus(deploymentId)),
 
-  /** Cancel a running build */
-  buildCancel: (deployment_session_id: string) =>
-    api.post<any>(endpoints.deploy.buildCancel, { deployment_session_id }),
+  /** Start a build by deployment ID */
+  buildStart: (deployment_id: string) =>
+    api.post<any>(endpoints.deploy.buildStart(deployment_id)),
 
-  /** Re-deploy an existing build */
-  buildRedeploy: (deployment_session_id: string) =>
-    api.post<any>(endpoints.deploy.buildRedeploy, { deployment_session_id }),
-
-  /** Get a short-lived token for SSE log streaming */
-  getLogsAccess: (projectId: string | number) =>
-    api.post<any>(endpoints.deploy.logsAccess, { projectId }),
+  /** Re-deploy an existing deployment */
+  buildRedeploy: (deployment_id: string) =>
+    api.post<any>(endpoints.deploy.buildRedeploy(deployment_id)),
 
   /** Check SSL certificate status for a domain */
   sslStatus: (domain: string) =>

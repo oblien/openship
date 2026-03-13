@@ -26,7 +26,7 @@ export const ProjectsBottomNavigation = () => {
         window.history.replaceState({}, '', `/projects/${projectData.id}/${tabId}`);
     };
 
-    if(!projectData.id) {
+    if(!projectData.id || !projectData.activeDeploymentId) {
         return null;
     }
 

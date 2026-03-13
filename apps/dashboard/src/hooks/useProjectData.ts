@@ -50,7 +50,7 @@ const initialProjectData = {
   domains: [
     {
       id: 1,
-      domain: "my-awesome-app.obl.ee",
+      domain: "my-awesome-app.opsh.io",
       primary: true,
       verified: true,
     },

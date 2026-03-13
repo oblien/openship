@@ -1,3 +1,5 @@
+import type { StackId } from "@repo/core";
+
 export interface Framework {
   id: string;
   name: string;
@@ -19,18 +21,7 @@ export interface EnvironmentVariable {
 
 export type StartCommand = string;
 
-export type FrameworkId =
-  | "next"
-  | "react"
-  | "vite"
-  | "nuxt"
-  | "sveltekit"
-  | "vue"
-  | "static"
-  | "astro"
-  | "angular"
-  | "unknown"
-  | "node";
+export type FrameworkId = StackId;
 
 export interface ProjectSettingsProps {
   projectName: string;

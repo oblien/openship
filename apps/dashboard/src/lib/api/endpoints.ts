@@ -11,7 +11,9 @@ export const endpoints = {
   /* ---------------------------------------------------------------- */
   projects: {
     home: "projects/home",
-    deploymentsAll: "projects/deployments/all",
+    local: "projects/local",
+    scan: "projects/scan",
+    import: "projects/import",
     info: (id: string | number) => `projects/${id}/info`,
     delete: (id: string | number) => `projects/${id}/delete`,
     update: (id: string | number) => `projects/${id}/update`,
@@ -33,20 +35,25 @@ export const endpoints = {
     resources: (id: string | number) => `projects/${id}/resources`,
     sleepMode: (id: string | number) => `projects/${id}/sleep-mode`,
     deployments: (id: string | number) => `projects/${id}/deployments`,
+    logs: (id: string | number) => `projects/${id}/logs`,
+    logsStream: (id: string | number) => `projects/${id}/logs/stream`,
+    ensure: "projects/ensure",
   },
 
   /* ---------------------------------------------------------------- */
   /*  Deploy / Build                                                  */
   /* ---------------------------------------------------------------- */
   deploy: {
-    init: "deploy/init",
-    buildAccess: "deploy/build/access",
-    buildStatus: (id: string) => `deploy/build/${id}`,
-    buildCancel: "deploy/build/cancel",
-    buildRedeploy: "deploy/build/redeploy",
-    logsAccess: "deploy/logs-access",
-    sslStatus: "deploy/ssl/status",
-    sslRenew: "deploy/ssl/renew",
+    list: "deployments",
+    delete: (id: string) => `deployments/${id}`,
+    cancel: (id: string) => `deployments/${id}/cancel`,
+    prepare: "deployments/prepare",
+    buildAccess: "deployments/build/access",
+    buildStart: (id: string) => `deployments/${id}/build`,
+    buildStatus: (id: string) => `deployments/${id}/build`,
+    buildRedeploy: (id: string) => `deployments/${id}/redeploy`,
+    sslStatus: "deployments/ssl/status",
+    sslRenew: "deployments/ssl/renew",
   },
 
   /* ---------------------------------------------------------------- */
@@ -58,6 +65,7 @@ export const endpoints = {
     userRepos: "github/repos",
     status: "github/status",
     connect: "github/connect",
+    connectPoll: "github/connect/poll",
     disconnect: "github/disconnect",
   },
 

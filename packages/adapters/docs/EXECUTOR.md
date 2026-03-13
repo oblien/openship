@@ -33,7 +33,7 @@ Two implementations, same interface:
 | Method | `LocalExecutor` | `SshExecutor` |
 |---|---|---|
 | `exec()` | `child_process.exec()` | `ssh2.Client.exec()` |
-| `streamExec()` | `child_process.spawn()` with pipe | `ssh2.Client.exec()` with stream events |
+| `streamExec()` | `child_process.spawn()` detached (process group leader) | `ssh2.Client.exec()` with stream events |
 | `writeFile()` | `fs.writeFile()` | SFTP `writeFile()` |
 | `readFile()` | `fs.readFile()` | SFTP `readFile()` |
 | `exists()` | `fs.access()` | SFTP `stat()` |
@@ -139,3 +139,36 @@ The shared executor handles everything **except** Docker container management:
 - Traefik config files (YAML writes)
 - System checks and installations
 - Bare runtime process management (when not using Docker)
+
+## Process Groups & Cleanup
+
+### LocalExecutor — detached spawn
+
+`streamExec()` uses `spawn("sh", ["-c", command], { detached: true })`. The `detached: true` flag makes the child process a **process group leader**. This means:
+
+- The child and all its descendants share the same PGID
+- `kill -- -${pid}` kills the entire tree in one shot
+- No orphan processes when a build is cancelled
+
+### BareRuntime — setsid for deployed processes
+
+Deploy uses `setsid nohup npm start &` — `setsid` creates a new session and process group. The stored PID equals the PGID, so:
+
+```
+kill -- -${pid}        ← SIGTERM entire group (npm + node + children)
+kill -9 -- -${pid}     ← SIGKILL entire group (fallback after 10s)
+```
+
+Fallback to plain `kill ${pid}` if group kill isn't supported (some minimal environments).
+
+### Why not just `kill ${pid}`?
+
+```
+npm start
+  └─ node server.js
+       └─ worker.js
+
+kill ${pid}       ← only kills npm, node+worker become orphans
+kill -- -${pid}   ← kills npm, node, AND worker — clean shutdown
+```
+

@@ -48,7 +48,7 @@ export const ProjectNotFound: React.FC = () => {
             {/* Action Buttons */}
             <div className="flex gap-3 mb-6">
               <button
-                onClick={() => window.location.href = '/dashboard'}
+                onClick={() => window.location.href = '/'}
                 className="flex items-center justify-center flex-1 bg-black hover:bg-gray-800 text-white font-semibold py-3 rounded-xl transition-all gap-2"
               >
                 <Home className="w-4 h-4" />

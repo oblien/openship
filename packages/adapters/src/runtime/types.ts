@@ -20,6 +20,7 @@ import type {
   ContainerInfo,
   ResourceUsage,
 } from "../types";
+import type { BuildLogger } from "./build-pipeline";
 
 // ─── Capabilities ────────────────────────────────────────────────────────────
 
@@ -39,6 +40,7 @@ export type RuntimeCapability =
   | "destroy"
   | "containerInfo"
   | "runtimeLogs"
+  | "streamLogs"
   | "usage"
   | "containerIp";
 
@@ -65,7 +67,7 @@ export interface RuntimeAdapter {
    * Bare: runs on the host via shell commands.
    * Cloud: delegates to cloud build infrastructure.
    */
-  build(config: BuildConfig, onLog?: LogCallback): Promise<BuildResult>;
+  build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult>;
 
   /** Cancel an in-progress build */
   cancelBuild(sessionId: string): Promise<void>;
@@ -97,6 +99,16 @@ export interface RuntimeAdapter {
 
   /** Get runtime logs */
   getRuntimeLogs(containerId: string, tail?: number): Promise<LogEntry[]>;
+
+  /**
+   * Stream runtime logs in real-time via callback.
+   * Returns a cleanup function to stop the stream.
+   */
+  streamRuntimeLogs(
+    containerId: string,
+    onLog: LogCallback,
+    opts?: { tail?: number },
+  ): Promise<() => void>;
 
   /** Get current resource usage metrics */
   getUsage(containerId: string): Promise<ResourceUsage>;

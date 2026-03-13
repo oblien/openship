@@ -40,6 +40,9 @@ export const SSL_STATUSES = ["none", "provisioning", "active", "expired", "error
 export const BUILD_ENV_VARS: Record<string, string> = {
   CI: "true",
   DEBIAN_FRONTEND: "noninteractive",
+  // Force color output even without a TTY (exec API uses pipes, not PTY)
+  FORCE_COLOR: "1",
+  TERM: "xterm-256color",
   // Framework telemetry
   NG_CLI_ANALYTICS: "false",
   NEXT_TELEMETRY_DISABLED: "1",

@@ -11,7 +11,10 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
 
   /* ---------- Mode ---------- */
-  CLOUD_MODE: z.coerce.boolean().default(false),
+  CLOUD_MODE: z
+    .enum(["true", "false", "1", "0", ""])
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
   /**
    * Deployment mode — determines the runtime + infrastructure combination:
    *   - "docker"  (default) → Docker runtime + Traefik routing/SSL (self-hosted)
@@ -35,6 +38,19 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
 
+  /* ---------- GitHub Auth Strategy ---------- */
+  /**
+   * Controls how the API authenticates with GitHub:
+   *   - "auto"  (default) → inferred from DEPLOY_MODE / CLOUD_MODE
+   *   - "app"             → GitHub App installation tokens (cloud)
+   *   - "oauth"           → Better Auth OAuth flow only (self-hosted with OAuth)
+   *   - "cli"             → `gh auth login` token from the machine (local/desktop)
+   *   - "token"           → static GITHUB_TOKEN env var (CI, scripts)
+   */
+  GITHUB_AUTH_MODE: z.enum(["auto", "app", "oauth", "cli", "token"]).default("auto"),
+  /** Static GitHub personal access token — used when GITHUB_AUTH_MODE="token" */
+  GITHUB_TOKEN: z.string().optional(),
+
   /* ---------- Redis ---------- */
   REDIS_URL: z.string().default("redis://localhost:6379"),
 
@@ -57,6 +73,10 @@ const envSchema = z.object({
 
   /* ---------- Dashboard ---------- */
   DASHBOARD_URL: z.string().default("http://localhost:3001"),
+
+  /* ---------- Oblien Cloud ---------- */
+  OBLIEN_CLIENT_ID: z.string().optional(),
+  OBLIEN_CLIENT_SECRET: z.string().optional(),
 
   /* ---------- Screenshots (optional) ---------- */
   SCREENSHOT_SERVICE_URL: z.string().optional(),

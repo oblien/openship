@@ -7,12 +7,14 @@
 
 import { SSEMessage, SSEMessageProcessor } from '@/hooks/useSSEStream';
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 // ============================================================================
 // BUILD MESSAGE PROCESSOR
 // ============================================================================
 
 export interface BuildMessage extends SSEMessage {
-  type: 'log' | 'success' | 'failure' | 'phase' | 'progress' | 'reconnected' | 'complete' | 'end' | 'connected' | 'error' | 'cancelled' | 'unknown';
+  type: 'log' | 'success' | 'failure' | 'phase' | 'progress' | 'reconnected' | 'complete' | 'end' | 'connected' | 'started' | 'error' | 'cancelled' | 'unknown';
   data?: string;
   success?: boolean;
   message?: string;
@@ -71,12 +73,27 @@ export const createBuildMessageProcessor = (
         return { type: 'cancelled', ...jsonData };
       }
 
-      // Success message
+      // Started — build acknowledged, NOT a success event
+      if (jsonData?.type === 'started') {
+        return { type: 'started', ...jsonData };
+      }
+
+      // Log message (must be checked before success/failure catch-all)
+      if (jsonData?.type === 'log' && jsonData?.data) {
+        return { type: 'log', ...jsonData };
+      }
+
+      // Progress update (must be before success/failure catch-all)
+      if (jsonData?.type === 'progress') {
+        return { type: 'progress', ...jsonData };
+      }
+
+      // Success message (catch-all for { success: true })
       if (jsonData?.success === true) {
         return { type: 'success', ...jsonData };
       }
 
-      // Failure message
+      // Failure message (catch-all for { success: false })
       if (jsonData?.success === false) {
         return { type: 'failure', ...jsonData };
       }
@@ -86,14 +103,9 @@ export const createBuildMessageProcessor = (
         return { type: 'phase', ...jsonData };
       }
 
-      // Progress update
+      // Progress update (fallback for messages without explicit type)
       if (jsonData?.currentStep !== undefined || jsonData?.progress !== undefined) {
         return { type: 'progress', ...jsonData };
-      }
-
-      // Log message
-      if (jsonData?.type === 'log' && jsonData?.data) {
-        return { type: 'log', ...jsonData };
       }
 
       return { type: 'unknown', ...jsonData };
@@ -173,6 +185,10 @@ export const createBuildMessageProcessor = (
         case 'error':
           const errorMsg = message.error || message.message || 'Container error occurred';
           callbacks.onFailure?.(errorMsg);
+          break;
+
+        case 'started':
+          // Build acknowledged — nothing to do, logs will follow
           break;
       }
 

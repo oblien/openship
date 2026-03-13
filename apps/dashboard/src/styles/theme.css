@@ -101,6 +101,7 @@
 
   /* ─ Card ─ */
   --th-card-bg:       #ffffff;
+  --th-card-bg-solid: #ffffff;
   --th-card-bd:       #efefef;
   --th-card-bd-hover: #e0e0e0;
   --th-card-shadow:   none;
@@ -196,6 +197,7 @@
 
   /* ─ Card ─ */
   --th-card-bg:       rgba(255,255,255,.025);
+  --th-card-bg-solid: #060606;
   --th-card-bd:       rgba(255,255,255,.06);
   --th-card-bd-hover: rgba(255,255,255,.12);
   --th-card-shadow:   none;

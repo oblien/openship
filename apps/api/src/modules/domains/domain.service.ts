@@ -155,9 +155,34 @@ export async function renewDomainSsl(domainId: string, userId: string) {
 
 /**
  * Batch-renew all expiring SSL certificates.
- * Meant to be called from an admin endpoint or external cron.
+ * Meant to be called from an internal cron scheduler only.
  */
 export { renewExpiringCerts } from "../../lib/ssl-scheduler";
+
+/**
+ * Renew expiring SSL certs for a specific user's domains only.
+ */
+export async function renewUserCerts(userId: string) {
+  const projects = await repos.project.listByUser(userId, { page: 1, perPage: 1000 });
+  const results: Array<{ domain: string; status: string; error?: string }> = [];
+
+  for (const p of projects.rows) {
+    const domains = await repos.domain.listByProject(p.id);
+    for (const d of domains) {
+      if (d.sslStatus !== "active" || !d.sslExpiresAt) continue;
+      const daysLeft = (new Date(d.sslExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+      if (daysLeft > 14) continue; // not expiring soon
+      try {
+        await renewDomainSsl(d.id, userId);
+        results.push({ domain: d.hostname, status: "renewed" });
+      } catch (err) {
+        results.push({ domain: d.hostname, status: "failed", error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  }
+
+  return { renewed: results.filter(r => r.status === "renewed").length, results };
+}
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getDomainWithAuth(domainId: string, userId: string): Promise<Domain> {

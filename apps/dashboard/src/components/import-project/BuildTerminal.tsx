@@ -193,7 +193,7 @@ const BuildTerminal: React.FC<BuildTerminalProps> = ({
       };
 
       const darkTheme = {
-        background: '#1e1e1e',
+        background: '#000000',
         foreground: '#cccccc',
         cursor: '#ffffff',
         black: '#000000',
@@ -316,6 +316,26 @@ const BuildTerminal: React.FC<BuildTerminalProps> = ({
     if (!terminalRef.current || terminalInstanceRef.current || isInitializedRef.current) return;
     initializeTerminal();
   }, [onReady, mockData, theme]);
+
+  // Update terminal theme when theme prop changes
+  useEffect(() => {
+    const term = terminalInstanceRef.current;
+    if (!term) return;
+    const lightTheme = {
+      background: '#ffffff',
+      foreground: '#1a1a1a',
+      cursor: '#000000',
+      cursorAccent: '#ffffff',
+      selectionBackground: '#d1d5da',
+    };
+    const darkTheme = {
+      background: '#000000',
+      foreground: '#cccccc',
+      cursor: '#ffffff',
+      selectionBackground: '#444444',
+    };
+    term.options.theme = theme === 'light' ? lightTheme : darkTheme;
+  }, [theme]);
 
   return (
     <div

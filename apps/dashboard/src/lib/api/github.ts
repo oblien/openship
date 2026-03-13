@@ -23,6 +23,9 @@ export const githubApi = {
   /** Start GitHub OAuth connection */
   connect: () => api.post<any>(endpoints.github.connect),
 
+  /** Poll device flow status */
+  pollConnect: () => api.get<any>(endpoints.github.connectPoll),
+
   /** Disconnect GitHub integration */
   disconnect: () => api.post<any>(endpoints.github.disconnect),
 };

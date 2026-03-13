@@ -11,8 +11,6 @@ import React, {
 import { githubApi } from "@/lib/api";
 import { openAuthWindow } from "@/utils/authWindow";
 
-const AUTH_API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
 /* ── Types ────────────────────────────────────────────────────────── */
 
 export interface GitHubAccount {
@@ -39,7 +37,7 @@ export interface GitHubRepo {
   html_url?: string;
 }
 
-export type GitHubMode = "cloud" | "desktop";
+export type GitHubMode = "cloud" | "desktop" | "cli" | "token";
 
 interface GitHubContextValue {
   /* Connection */
@@ -47,7 +45,12 @@ interface GitHubContextValue {
   connecting: boolean;
   loading: boolean;
   mode: GitHubMode;
+  selfHosted: boolean;
+  deployMode: string;
   connect: () => Promise<void>;
+
+  /* CLI / Device flow */
+  cliAction: CliAction | null;
 
   /* Data */
   accounts: GitHubAccount[];
@@ -62,6 +65,10 @@ interface GitHubContextValue {
   fetchReposForOwner: (owner: string) => Promise<void>;
 }
 
+export type CliAction =
+  | { type: "terminal"; command: string; message: string }
+  | { type: "device_flow"; userCode: string; verificationUri: string; expiresIn: number; interval: number };
+
 const GitHubContext = createContext<GitHubContextValue | undefined>(undefined);
 
 export function useGitHub() {
@@ -72,11 +79,20 @@ export function useGitHub() {
 
 /* ── Provider ─────────────────────────────────────────────────────── */
 
-export function GitHubProvider({ children }: { children: React.ReactNode }) {
+interface GitHubProviderProps {
+  children: React.ReactNode;
+  initialSelfHosted?: boolean;
+  initialDeployMode?: string;
+}
+
+export function GitHubProvider({ children, initialSelfHosted = true, initialDeployMode = "docker" }: GitHubProviderProps) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<GitHubMode>("cloud");
+  const [selfHosted, setSelfHosted] = useState(initialSelfHosted);
+  const [deployMode] = useState(initialDeployMode);
+  const [cliAction, setCliAction] = useState<CliAction | null>(null);
   const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
   const [userLogin, setUserLogin] = useState("");
   const [selectedOwner, setSelectedOwnerState] = useState("");
@@ -88,9 +104,19 @@ export function GitHubProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const res = await githubApi.getUserHome();
-      if (res?.mode) setMode(res.mode);
+      if (res?.mode) {
+        // Map backend mode to frontend mode type
+        const m = res.mode as string;
+        if (m === "app") setMode("cloud");
+        else if (m === "cli") setMode("cli");
+        else if (m === "token") setMode("token");
+        else if (m === "oauth") setMode("desktop");
+        else setMode(m as GitHubMode);
+      }
+      if (res?.selfHosted !== undefined) setSelfHosted(res.selfHosted);
       if (res?.status?.connected && res.accounts?.length > 0) {
         setConnected(true);
+        setCliAction(null);
         setAccounts(res.accounts);
         setUserLogin(res.status.login);
         if (!selectedOwner) setSelectedOwnerState(res.status.login);
@@ -117,72 +143,77 @@ export function GitHubProvider({ children }: { children: React.ReactNode }) {
   /* ── Connect GitHub ─────────────────────────────────────────── */
   const connect = useCallback(async () => {
     setConnecting(true);
-
-    // Open auth window immediately (synchronous) so browsers don't block it.
-    const handle = openAuthWindow();
+    setCliAction(null);
 
     try {
       const res = await githubApi.connect();
 
-      if (res?.mode === "desktop" && !res.needsOAuth) {
-        // Desktop: already has OAuth token — nothing to do
-        handle.close();
+      // Already connected — just refresh
+      if (res?.connected) {
         setConnecting(false);
         refresh();
         return;
       }
 
-      if (res?.needsOAuth) {
-        // Both modes: need OAuth first.
-        // POST to Better Auth to get the GitHub OAuth redirect URL.
-        // callbackURL must be on our own origin (Better Auth validates it).
-        // cloud → /auth/callback/install (fetches install URL then redirects)
-        // desktop → /auth/callback/close (auto-closes popup)
-        const callbackURL =
-          res.mode === "cloud"
-            ? "/auth/callback/install"
-            : "/auth/callback/close";
-
-        const oauthRes = await fetch(
-          `${AUTH_API_URL}/api/auth/sign-in/social`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({
-              provider: "github",
-              callbackURL,
-            }),
-          }
-        );
-        const oauthData = await oauthRes.json();
-        if (oauthData?.url) {
-          handle.navigate(oauthData.url);
-        } else {
-          handle.close();
-          setConnecting(false);
+      switch (res?.flow) {
+        case "redirect": {
+          // Backend gave us a URL — open in popup / system browser
+          const handle = openAuthWindow();
+          handle.navigate(res.url);
+          handle.onClose(() => {
+            setTimeout(() => {
+              setConnecting(false);
+              refresh();
+            }, 1000);
+          });
           return;
         }
-      } else if (res?.url) {
-        // Cloud mode, has OAuth → go straight to App installation
-        handle.navigate(res.url);
-      } else {
-        handle.close();
-        setConnecting(false);
-        return;
-      }
 
-      handle.onClose(() => {
-        setTimeout(() => {
+        case "device_code":
+          // Show verification code inline
+          setCliAction({
+            type: "device_flow",
+            userCode: res.userCode,
+            verificationUri: res.verificationUri,
+            expiresIn: res.expiresIn,
+            interval: res.interval,
+          });
           setConnecting(false);
-          refresh();
-        }, 1000);
-      });
+          return;
+
+        case "terminal":
+          // Show terminal instruction
+          setCliAction({ type: "terminal", command: res.command, message: res.message });
+          setConnecting(false);
+          return;
+
+        default:
+          setConnecting(false);
+      }
     } catch {
-      handle.close();
       setConnecting(false);
     }
   }, [refresh]);
+
+  /* ── Device flow polling ────────────────────────────────────── */
+  useEffect(() => {
+    if (cliAction?.type !== "device_flow") return;
+
+    const interval = (cliAction.interval || 5) * 1000;
+    const timer = setInterval(async () => {
+      try {
+        const res = await githubApi.pollConnect();
+        if (res?.status === "complete") {
+          setCliAction(null);
+          refresh();
+        } else if (res?.status === "error") {
+          setCliAction(null);
+        }
+      } catch { /* keep polling */ }
+    }, interval);
+
+    return () => clearInterval(timer);
+  }, [cliAction, refresh]);
 
   /* ── Fetch repos for an owner ───────────────────────────────── */
   const fetchReposForOwner = useCallback(
@@ -225,7 +256,10 @@ export function GitHubProvider({ children }: { children: React.ReactNode }) {
         connecting,
         loading,
         mode,
+        selfHosted,
+        deployMode,
         connect,
+        cliAction,
         accounts,
         userLogin,
         selectedOwner,

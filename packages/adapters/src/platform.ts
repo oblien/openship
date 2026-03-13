@@ -62,10 +62,10 @@ export interface PlatformConfig {
   bare?: import("./runtime/bare").BareRuntimeOptions;
   /** Traefik provider options (only for selfhosted target) */
   traefik?: Omit<import("./infra/traefik").TraefikProviderOptions, "executor">;
-  /** Oblien API URL (only for cloud target) */
-  cloudApiUrl?: string;
-  /** Oblien API key (only for cloud target) */
-  cloudApiKey?: string;
+  /** Oblien client ID (only for cloud target) */
+  cloudClientId?: string;
+  /** Oblien client secret (only for cloud target) */
+  cloudClientSecret?: string;
   /**
    * SSH config for remote server management (self-hosted only).
    *
@@ -139,14 +139,14 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
   const { CloudRuntime } = await import("./runtime/cloud");
   const { CloudInfraProvider } = await import("./infra/cloud");
 
-  const apiUrl = config.cloudApiUrl ?? process.env.OBLIEN_API_URL ?? "https://api.oblien.com";
-  const apiKey = config.cloudApiKey ?? process.env.OBLIEN_API_KEY ?? "";
+  const clientId = config.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "";
+  const clientSecret = config.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "";
 
   return {
     target: "cloud",
-    runtime: new CloudRuntime(apiUrl, apiKey),
-    routing: new CloudInfraProvider(apiUrl, apiKey),
-    ssl: new CloudInfraProvider(apiUrl, apiKey),
+    runtime: new CloudRuntime(clientId, clientSecret),
+    routing: new CloudInfraProvider(clientId, clientSecret),
+    ssl: new CloudInfraProvider(clientId, clientSecret),
     system: null,
     executor: null,
   };

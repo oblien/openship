@@ -10,8 +10,9 @@ import {
   getUserStatus,
   getUserInstallations,
   mapAccounts,
-  isCloudMode,
+  getGitHubAuthMode,
 } from "./github.auth";
+import { getLocalGhStatus } from "./github.local-auth";
 import type {
   GitHubRepository,
   GitHubBranch,
@@ -403,7 +404,62 @@ export async function updateCheckRun(
 // ─── User organisations ──────────────────────────────────────────────────────
 
 /**
- * List the user's GitHub organisations (as mapped accounts).
+ * Build account list from the GitHub API (non-app modes).
+ * Returns the authenticated user + their orgs.
+ */
+export async function listUserAccounts(
+  userId: string,
+  status: { login: string; id: number; avatar_url: string },
+): Promise<MappedAccount[]> {
+  const accounts: MappedAccount[] = [
+    { login: status.login, id: status.id, avatar_url: status.avatar_url, type: "User" },
+  ];
+  try {
+    const orgs = await githubFetch<Array<{ login: string; id: number; avatar_url: string }>>({
+      userId,
+      url: "https://api.github.com/user/orgs",
+      useUserToken: true,
+    });
+    for (const org of orgs) {
+      accounts.push({ login: org.login, id: org.id, avatar_url: org.avatar_url, type: "Organization" });
+    }
+  } catch { /* empty */ }
+  return accounts;
+}
+
+/**
+ * List the user's GitHub organisations via API (non-app modes).
+ */
+export async function listUserOrgsViaApi(userId: string): Promise<MappedAccount[]> {
+  try {
+    const orgs = await githubFetch<Array<{ login: string; id: number; avatar_url: string }>>({
+      userId,
+      url: "https://api.github.com/user/orgs",
+      useUserToken: true,
+    });
+    return orgs.map((o) => ({ login: o.login, id: o.id, avatar_url: o.avatar_url, type: "Organization" }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * List orgs with their repos via API (non-app modes).
+ */
+export async function listUserOrgsWithReposViaApi(
+  userId: string,
+): Promise<Array<{ org: MappedAccount; repos: MappedRepository[] }>> {
+  const orgs = await listUserOrgsViaApi(userId);
+  return Promise.all(
+    orgs.map(async (org) => {
+      const repos = await listUserOwnedRepos(userId, org.login);
+      return { org, repos };
+    }),
+  );
+}
+
+/**
+ * List the user's GitHub organisations (app mode — via installations).
  */
 export async function listUserOrgs(userId: string): Promise<MappedAccount[]> {
   const installations = await getUserInstallations(userId);
@@ -440,14 +496,17 @@ export async function listUserOrgsWithRepos(
  */
 export async function getUserHome(userId: string) {
   const status = await getUserStatus(userId);
-  const cloud = isCloudMode();
+  const mode = getGitHubAuthMode();
+
+  // In cli mode, include local gh CLI status
+  const localStatus = mode === "cli" ? await getLocalGhStatus() : undefined;
 
   if (!status.connected) {
-    return { status, repos: [] as MappedRepository[], accounts: [] as MappedAccount[], mode: cloud ? "cloud" : "desktop" };
+    return { status, repos: [] as MappedRepository[], accounts: [] as MappedAccount[], mode, localStatus };
   }
 
-  if (!cloud) {
-    // Desktop/self-hosted: fetch repos via user's personal OAuth token
+  if (mode !== "app") {
+    // Non-app modes: fetch repos via personal token (OAuth, CLI, or static)
     let repos: MappedRepository[] = [];
     try {
       const data = await githubFetch<GitHubRepository[]>({
@@ -474,10 +533,10 @@ export async function getUserHome(userId: string) {
       }
     } catch { /* empty */ }
 
-    return { status, repos, accounts, mode: "desktop" as const };
+    return { status, repos, accounts, mode, localStatus };
   }
 
-  // Cloud mode: use GitHub App installations
+  // App mode: use GitHub App installations
   const installations = await getUserInstallations(userId);
   const accounts = mapAccounts(installations);
 
@@ -486,7 +545,7 @@ export async function getUserHome(userId: string) {
     repos = await listInstallationRepos(userId, status.login, installations[0].id);
   }
 
-  return { status, repos, accounts, mode: "cloud" as const };
+  return { status, repos, accounts, mode, localStatus };
 }
 
 // ─── Webhook registration ────────────────────────────────────────────────────

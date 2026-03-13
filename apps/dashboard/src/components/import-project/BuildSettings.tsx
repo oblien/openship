@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import { Terminal, FolderOutput, Server } from "lucide-react";
-import { ServerSideSwitch } from "@/components/project-settings/ServerSideSwitch";
+import { Terminal, FolderOutput, Server, Package, Play, Hash, Settings2, ChevronDown, ChevronUp, Pencil, Hammer } from "lucide-react";
+import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useDeployment } from "@/context/DeploymentContext";
-import generateIcon from "@/utils/icons";
 
 interface InputField {
   key: string;
@@ -12,7 +11,6 @@ interface InputField {
   type: 'text' | 'number';
   min?: number;
   max?: number;
-  showCondition?: () => boolean;
   optional?: boolean;
   icon: React.ReactNode;
 }
@@ -40,65 +38,55 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
   const [isEditing] = useState(mode === 'simple');
 
-  // Field-specific editing states (for advanced mode)
   const [editingField, setEditingField] = useState<string | null>(null);
   const [tempValues, setTempValues] = useState<{ [key: string]: string }>({});
+  const [expanded, setExpanded] = useState(true);
 
-  // Use external buildData in advanced mode, or config in simple mode
   const buildData = mode === 'advanced' ? externalBuildData : config?.options;
-
-  // Check if the framework needs a build step
   const needsBuild = config?.framework !== "node" && config?.framework !== "static";
 
-  // Define all input fields in a clean object structure
-  const inputFields: InputField[] = [
+  const hasBuild = buildData?.hasBuild !== false;
+  const hasServer = !!buildData?.hasServer;
+
+  // ── Build-group fields (shown when Build is ON) ──────────────────
+  const buildFields: InputField[] = [
     {
-      key: 'buildCommand',
-      label: 'Build Command',
-      placeholder: 'npm run build',
-      description: 'Command to build your project',
+      key: 'installCommand',
+      label: 'Install Command',
+      placeholder: 'bun install',
+      description: 'Command to install dependencies',
       type: 'text',
-      showCondition: () => needsBuild,
-      icon: <Terminal className="w-5 h-5 text-black/50" />
+      icon: <Package className="size-4" />
     },
-    {
-      key: 'outputDirectory',
-      label: 'Output Directory',
-      placeholder: '.next',
-      description: 'Directory with build output',
-      type: 'text',
-      showCondition: () => needsBuild,
-      icon: <FolderOutput className="w-5 h-5 text-black/50" />
-    },
+    ...(needsBuild ? [
+      {
+        key: 'buildCommand',
+        label: 'Build Command',
+        placeholder: 'npm run build',
+        description: 'Command to build your project',
+        type: 'text' as const,
+        icon: <Terminal className="size-4" />
+      },
+      {
+        key: 'outputDirectory',
+        label: 'Output Directory',
+        placeholder: '.next',
+        description: 'Directory with build output',
+        type: 'text' as const,
+        icon: <FolderOutput className="size-4" />
+      },
+    ] : []),
+  ];
+
+  // ── Start-group fields (shown when Start is ON) ──────────────────
+  const startFields: InputField[] = [
     {
       key: 'startCommand',
       label: 'Start Command',
       placeholder: 'npm start',
       description: 'Command to start your application',
       type: 'text',
-      showCondition: () => buildData?.hasServer,
-      icon: <Terminal className="w-5 h-5 text-black/50" />
-    },
-    {
-      key: 'installCommand',
-      label: 'Install Command',
-      placeholder: 'bun install',
-      description: 'Command to install your application',
-      type: 'text',
-      min: 1,
-      max: 65535,
-      showCondition: () => true,
-      optional: false,
-      icon: <Server className="w-5 h-5 text-black/50" />
-    },
-    {
-      key: 'rootDirectory',
-      label: 'Root Directory',
-      placeholder: './',
-      description: 'Deploy a subdirectory of your repository',
-      type: 'text',
-      optional: true,
-      icon: <FolderOutput className="w-5 h-5 text-black/50" />
+      icon: <Play className="size-4" />
     },
     {
       key: 'productionPort',
@@ -108,11 +96,22 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       type: 'number',
       min: 1,
       max: 65535,
-      showCondition: () => buildData?.hasServer,
       optional: true,
-      icon: <Server className="w-5 h-5 text-black/50" />
+      icon: <Hash className="size-4" />
     },
+  ];
 
+  // ── General fields (always visible) ──────────────────────────────
+  const generalFields: InputField[] = [
+    {
+      key: 'rootDirectory',
+      label: 'Root Directory',
+      placeholder: './',
+      description: 'Deploy a subdirectory of your repository',
+      type: 'text',
+      optional: true,
+      icon: <FolderOutput className="size-4" />
+    },
   ];
 
   const handleEdit = (field: string, currentValue: string) => {
@@ -146,13 +145,12 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
     const displayValue = isCurrentlyEditing ? tempValues[field.key] : value;
 
     if (mode === 'simple') {
-      // Simple mode - basic inputs like import-project
       return (
         <div key={field.key}>
-          <label className="block text-sm font-normal text-black mb-2">
+          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
             {field.label}
             {field.optional && (
-              <span className="text-gray-400 font-normal ml-1">(Optional)</span>
+              <span className="text-muted-foreground/50 ml-1">(Optional)</span>
             )}
           </label>
           <input
@@ -163,29 +161,26 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             onChange={(e) => handleChange(field.key, e.target.value)}
             readOnly={!isEditing}
             placeholder={field.placeholder}
-            className={`w-full px-5 py-3 border border-black/10 rounded-[15px] outline-none text-black transition-all ${isEditing
-              ? 'bg-black/5 focus:ring-2 focus:ring-black focus:border-transparent focus:bg-white cursor-text'
-              : 'bg-black/5 cursor-not-allowed text-black/50'
+            className={`w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground transition-all ${isEditing
+              ? 'bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-text'
+              : 'bg-muted/20 cursor-not-allowed text-muted-foreground'
               }`}
           />
-          <p className="text-xs text-black/50 mt-2">
-            {field.description}
-          </p>
         </div>
       );
     }
 
-    // Advanced mode - fancy edit/save/cancel buttons like project-settings
+    // Advanced mode
     return (
       <div key={field.key}>
         <div className="mb-3">
-          <h3 className="text-sm font-semibold text-black/70">{field.label}</h3>
-          <p className="text-xs text-black/50 mt-1">{field.description}</p>
+          <h3 className="text-sm font-medium text-foreground">{field.label}</h3>
+          <p className="text-xs text-muted-foreground mt-1">{field.description}</p>
         </div>
 
         {isCurrentlyEditing ? (
           <div className="space-y-3">
-            <div className="flex items-center gap-3 p-4 bg-black/5 rounded-xl border border-black/10">
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl border border-border/50">
               {field.icon}
               <input
                 type={field.type}
@@ -194,7 +189,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                 value={displayValue || ''}
                 onChange={(e) => setTempValues({ ...tempValues, [field.key]: e.target.value })}
                 placeholder={field.placeholder}
-                className="flex-1 text-sm bg-transparent border-0 outline-none placeholder:text-black/40"
+                className="flex-1 text-sm bg-transparent border-0 outline-none text-foreground placeholder:text-muted-foreground/50"
                 autoFocus
               />
             </div>
@@ -202,29 +197,29 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
               <button
                 onClick={() => handleSave(field.key)}
                 disabled={loading[field.key]}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Save
               </button>
               <button
                 onClick={() => handleCancel(field.key, value)}
-                className="px-4 py-2 bg-black/5 hover:bg-black/10 text-black rounded-full transition-all text-sm font-medium"
+                className="px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-xl text-sm font-medium transition-all"
               >
                 Cancel
               </button>
             </div>
           </div>
         ) : (
-          <div className="relative p-4 bg-black/5 rounded-xl group hover:bg-black/10 transition-all">
+          <div className="relative p-3 bg-muted/30 rounded-xl group hover:bg-muted/50 transition-all">
             <div className="flex items-center gap-3">
               {field.icon}
-              <p className="text-sm font-medium text-black flex-1">{displayValue || field.placeholder}</p>
+              <p className="text-sm font-medium text-foreground flex-1">{displayValue || field.placeholder}</p>
             </div>
             <button
               onClick={() => handleEdit(field.key, value)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-black/40 hover:text-indigo-600 transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/50 hover:text-primary transition-colors"
             >
-              {generateIcon('pen-411-1658238246.png', 20, 'rgb(0, 0, 0, 0.5)')}
+              <Pencil className="size-4" />
             </button>
           </div>
         )}
@@ -232,56 +227,90 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
     );
   };
 
-  // Filter fields based on their show conditions
-  const visibleFields = inputFields.filter(field =>
-    !field.showCondition || field.showCondition()
-  );
+  const visibleBuildFields = hasBuild ? buildFields : [];
+  const visibleStartFields = hasServer ? startFields : [];
 
-  // Group fields for layout
-  const buildFields = visibleFields.filter(field =>
-    field.key === 'buildCommand' || field.key === 'outputDirectory'
-  );
-  const otherFields = visibleFields.filter(field =>
-    field.key !== 'buildCommand' && field.key !== 'outputDirectory'
-  );
-
-  return (
-    <div>
-      <div className="border-b border-gray-200 mb-4"></div>
-
-      <div className="flex items-center justify-between mb-6">
-        <h2
-          className="font-normal text-black"
-          style={{ fontSize: '1.35rem' }}
+  if (mode === 'simple') {
+    return (
+      <div className="bg-card rounded-2xl border border-border/50">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full flex items-center justify-between px-5 py-4 text-left"
         >
-          Build Settings
-        </h2>
-      </div>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-orange-500/10 flex items-center justify-center">
+              <Settings2 className="size-[18px] text-orange-500" />
+            </div>
+            <div>
+              <p className="text-[15px] font-semibold text-foreground">Deploy Configuration</p>
+              <p className="text-sm text-muted-foreground">
+                {config?.framework ? `${config.framework} defaults applied` : 'Configure build options'}
+              </p>
+            </div>
+          </div>
+          {expanded ? (
+            <ChevronUp className="size-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="size-4 text-muted-foreground" />
+          )}
+        </button>
 
-      <div className="grid gap-5 mb-6">
-        {/* Build fields (if needed) */}
-        {buildFields.length > 0 && (
-          <div className="grid md:grid-cols-2 gap-5">
-            {buildFields.map(renderInput)}
+        {expanded && (
+          <div className="px-5 pb-5 border-t border-border/50 pt-4">
+            <div className="grid md:grid-cols-2 gap-4">
+              {/* ── Build column ──────────────────────────────── */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border border-border/50">
+                  <div className="flex items-center gap-2">
+                    <Hammer className="w-3.5 h-3.5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Build</p>
+                      <p className="text-[11px] text-muted-foreground leading-tight">
+                        {hasBuild ? 'Install & build commands' : 'Deploy source directly'}
+                      </p>
+                    </div>
+                  </div>
+                  <Toggle checked={hasBuild} onChange={(v: boolean) => updateOptions?.({ hasBuild: v })} />
+                </div>
+                {visibleBuildFields.map(renderInput)}
+                {generalFields.map(renderInput)}
+              </div>
+
+              {/* ── Start column ──────────────────────────────── */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-2.5 bg-muted/30 rounded-lg border border-border/50">
+                  <div className="flex items-center gap-2">
+                    <Play className="w-3.5 h-3.5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Start</p>
+                      <p className="text-[11px] text-muted-foreground leading-tight">
+                        {hasServer ? `Server on port ${buildData?.productionPort || '3000'}` : 'Static from edge'}
+                      </p>
+                    </div>
+                  </div>
+                  <Toggle checked={hasServer} onChange={(v: boolean) => updateOptions?.({ hasServer: v })} />
+                </div>
+                {visibleStartFields.map(renderInput)}
+              </div>
+            </div>
           </div>
         )}
+      </div>
+    );
+  }
 
-        {/* Other fields */}
+  // Advanced mode
+  const allVisibleFields = [...visibleBuildFields, ...visibleStartFields, ...generalFields];
+  return (
+    <div className="bg-card rounded-2xl border border-border/50 p-6">
+      <h2 className="text-lg font-semibold text-foreground mb-6">
+        Build Settings
+      </h2>
+      <div className="grid gap-5 mb-6">
         <div className="grid md:grid-cols-2 gap-5">
-          {otherFields.map(renderInput)}
+          {allVisibleFields.map(renderInput)}
         </div>
       </div>
-
-      {mode === 'simple' && (
-        <>
-          <div className="border-b border-gray-200 mb-6"></div>
-          <ServerSideSwitch
-            productionPort={config?.options?.productionPort}
-            hasServer={config?.options?.hasServer}
-            handleServerToggleChange={(checked: boolean) => updateOptions?.({ hasServer: checked })}
-          />
-        </>
-      )}
     </div>
   );
 };

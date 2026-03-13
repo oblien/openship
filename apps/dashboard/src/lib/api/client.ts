@@ -18,6 +18,11 @@ const DEFAULT_TIMEOUT = 15_000;
 /* Ensure the base always ends with a slash for correct URL resolution */
 const RESOLVED_BASE = BASE_URL.endsWith("/") ? BASE_URL : BASE_URL + "/";
 
+/** Public accessor for building full URLs (e.g. SSE endpoints). */
+export function getApiBaseUrl(): string {
+  return RESOLVED_BASE;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Global network-error hook                                         */
 /* ------------------------------------------------------------------ */

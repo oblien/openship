@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import generateIcon from "@/utils/icons";
+import { Search } from "lucide-react";
 import { ProjectFilter } from "./ProjectFilter";
 import type { Project } from "../types";
 
@@ -37,80 +37,63 @@ export const DeploymentsFilters: React.FC<DeploymentsFiltersProps> = React.memo(
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // Update local state when parent changes search query
   useEffect(() => {
     setLocalSearchQuery(searchQuery);
   }, [searchQuery]);
 
-  // Debounce search input - only call parent after 300ms of no typing
   const handleSearchChange = (value: string) => {
     setLocalSearchQuery(value);
-    
-    if (debounceTimeout.current) {
-      clearTimeout(debounceTimeout.current);
-    }
-    
-    debounceTimeout.current = setTimeout(() => {
-      onSearchChange(value);
-    }, 300);
+    if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
+    debounceTimeout.current = setTimeout(() => onSearchChange(value), 300);
   };
 
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
-      if (debounceTimeout.current) {
-        clearTimeout(debounceTimeout.current);
-      }
+      if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
     };
   }, []);
 
   return (
-    <div className="bg-white rounded-[20px] sm:rounded-full p-4 sm:p-5">
-      <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between">
-        {/* Left: Status Filters + Project Filter */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap w-full xl:w-auto">
-          {isProject ?
-            <div className="flex items-center gap-2">
-              {generateIcon('filter-80-1658432731.png', 24, 'rgba(0, 0, 0, 0.25)', { marginRight: '3px' })}
-              <div className="divider h-4 bg-black/10 w-[1px]"></div>
-            </div> :
-            <ProjectFilter
-              projects={projects}
-              selectedProjectId={selectedProjectId}
-              onProjectChange={onProjectChange}
-            />}
-          {/* Status Filters */}
-          {FILTERS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => onFilterChange(f.value)}
-              className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-semibold transition-all ${filter === f.value
-                ? "bg-black text-white shadow-md"
-                : "bg-black/5 text-black/70 hover:bg-black/10"
-                }`}
-            >
-              {f.label}
-            </button>
-          ))}
-
-          <div className="divider h-4 bg-black/10 w-[1px] hidden sm:block"></div>
-
-        </div>
-
-        {/* Right: Search Input */}
-        <div className="relative w-full xl:w-80">
-          {generateIcon('search-123-1658435124.png', 16, 'rgba(0, 0, 0, 0.5)', { position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' })}
+    <div className="bg-card rounded-2xl border border-border/50 px-4 py-3 space-y-3">
+      {/* Row 1: Search + Project filter */}
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search commits, authors, projects..."
+            placeholder="Search deployments..."
             value={localSearchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
-            className="w-full pl-10 sm:pl-11 pr-4 py-2 sm:py-2.5 bg-black/5 border border-black/10 rounded-full text-xs sm:text-sm text-black placeholder:text-black/40 focus:outline-none focus:bg-white focus:border-black/20 focus: transition-all"
+            className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring transition-colors"
           />
         </div>
+        {!isProject && (
+          <ProjectFilter
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            onProjectChange={onProjectChange}
+          />
+        )}
+      </div>
+
+      {/* Row 2: Status filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => onFilterChange(f.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              filter === f.value
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
     </div>
   );
 });
 
-DeploymentsFilters.displayName = 'DeploymentsFilters';
+DeploymentsFilters.displayName = "DeploymentsFilters";

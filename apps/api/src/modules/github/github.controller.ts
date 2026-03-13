@@ -11,7 +11,10 @@
  */
 
 import type { Context } from "hono";
+import { env } from "../../config/env";
+import { auth } from "../../lib/auth";
 import * as githubAuth from "./github.auth";
+import * as localAuth from "./github.local-auth";
 import * as githubService from "./github.service";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -35,45 +38,138 @@ function param(c: Context, name: string): string {
 export async function getStatus(c: Context) {
   const userId = getUserId(c);
   const status = await githubAuth.getUserStatus(userId);
-  return c.json({ ...status, mode: githubAuth.isCloudMode() ? "cloud" : "desktop" });
+  return c.json({ ...status, mode: githubAuth.getGitHubAuthMode() });
 }
 
 /** GET /github/home — User's GitHub home: status + accounts + repos */
 export async function getHome(c: Context) {
   const userId = getUserId(c);
   const data = await githubService.getUserHome(userId);
-  return c.json(data);
+  return c.json({ ...data, selfHosted: !env.CLOUD_MODE });
 }
 
-/** POST /github/connect — Returns connection info based on deploy mode.
+/** POST /github/connect — Normalized connection flow.
  *
- *  Cloud mode (GitHub App):
- *    - needsOAuth true/false + url to installation page
- *    - Frontend chains OAuth → install in one popup when needed
+ *  Returns a consistent shape regardless of auth mode:
  *
- *  Desktop / self-hosted mode (direct OAuth):
- *    - url to Better Auth social sign-in (OAuth only, no App install)
- *    - User's personal token is used — fully local, no cloud involvement
+ *  Already connected:
+ *    { connected: true }
+ *
+ *  Needs redirect (OAuth or App install):
+ *    { connected: false, flow: "redirect", url: "https://..." }
+ *
+ *  Device flow (desktop with CLIENT_ID):
+ *    { connected: false, flow: "device_code", userCode, verificationUri, ... }
+ *
+ *  Terminal instruction (desktop without CLIENT_ID):
+ *    { connected: false, flow: "terminal", command, message }
+ *
+ *  The frontend is mode-agnostic — it just reacts to `flow`.
  */
 export async function connect(c: Context) {
   const userId = getUserId(c);
-  const cloud = githubAuth.isCloudMode();
-  const hasToken = !!(await githubAuth.getUserToken(userId));
+  const mode = githubAuth.getGitHubAuthMode();
+  const hasOAuth = !!(await githubAuth.getUserToken(userId));
 
-  if (cloud) {
-    // Cloud: GitHub App installation flow
+  // ── Already connected? ─────────────────────────────────────
+  if (mode === "token" && env.GITHUB_TOKEN) {
+    return c.json({ connected: true });
+  }
+
+  if (mode === "cli") {
+    const ghCliToken = await localAuth.getLocalGhToken();
+    if (ghCliToken || hasOAuth) {
+      return c.json({ connected: true });
+    }
+  }
+
+  if ((mode === "app" || mode === "oauth") && hasOAuth) {
+    if (mode === "app") {
+      // Has OAuth but still needs App installation → redirect to install page
+      return c.json({ connected: false, flow: "redirect" as const, url: githubAuth.getInstallUrl() });
+    }
+    // OAuth mode, has token → already connected
+    return c.json({ connected: true });
+  }
+
+  // ── CLI: no token yet ──────────────────────────────────────
+  if (mode === "cli") {
+    // No GITHUB_CLIENT_ID → run `gh auth login` in terminal
+    if (!env.GITHUB_CLIENT_ID) {
+      return c.json({
+        connected: false,
+        flow: "terminal" as const,
+        command: "gh auth login",
+        message: "Run this command in your terminal, then click refresh.",
+      });
+    }
+    // Has CLIENT_ID → start device flow
+    try {
+      const verification = await localAuth.startDeviceFlow(userId);
+      return c.json({
+        connected: false,
+        flow: "device_code" as const,
+        userCode: verification.user_code,
+        verificationUri: verification.verification_uri,
+        expiresIn: verification.expires_in,
+        interval: verification.interval,
+      });
+    } catch (err) {
+      return c.json({ connected: false, error: (err as Error).message }, 500);
+    }
+  }
+
+  // ── Token mode with no token ───────────────────────────────
+  if (mode === "token") {
     return c.json({
-      mode: "cloud" as const,
-      url: githubAuth.getInstallUrl(),
-      needsOAuth: !hasToken,
+      connected: false,
+      flow: "terminal" as const,
+      command: "GITHUB_TOKEN=ghp_... (set in environment)",
+      message: "Set the GITHUB_TOKEN environment variable and restart the server.",
     });
   }
 
-  // Desktop / self-hosted: direct OAuth only
+  // ── App / OAuth: need GitHub OAuth → generate URL server-side ──
+  const callbackURL = mode === "app" ? "/auth/callback/install" : "/auth/callback/close";
+
+  try {
+    const result = await auth.api.signInSocial({
+      body: {
+        provider: "github",
+        callbackURL,
+      },
+      headers: c.req.raw.headers,
+    });
+
+    if (result?.url) {
+      return c.json({ connected: false, flow: "redirect" as const, url: result.url });
+    }
+  } catch { /* fall through */ }
+
+  return c.json({ connected: false, error: "Unable to start GitHub authorization" }, 500);
+}
+
+/** GET /github/local-status — Check if the machine has `gh` CLI auth available.
+ *  Gated by `localOnly` middleware — never reaches this handler in cloud modes.
+ */
+export async function getLocalStatus(c: Context) {
+  const localStatus = await localAuth.getLocalGhStatus();
   return c.json({
-    mode: "desktop" as const,
-    needsOAuth: !hasToken,
+    ...localStatus,
+    activeMode: githubAuth.getGitHubAuthMode(),
   });
+}
+
+/** GET /github/connect/poll — Poll the device flow status.
+ *  Gated by `localOnly` middleware.
+ */
+export async function pollConnect(c: Context) {
+  const userId = getUserId(c);
+  const status = localAuth.getDeviceFlowStatus(userId);
+  if (!status) {
+    return c.json({ status: "none" as const }, 404);
+  }
+  return c.json(status);
 }
 
 /** POST /github/disconnect — Disconnect GitHub (remove installations) */
@@ -88,6 +184,16 @@ export async function disconnect(c: Context) {
 /** GET /github/accounts — List connected GitHub accounts (user + orgs) */
 export async function listAccounts(c: Context) {
   const userId = getUserId(c);
+  const mode = githubAuth.getGitHubAuthMode();
+
+  if (mode !== "app") {
+    // Non-app modes: build account list from /user + /user/orgs
+    const status = await githubAuth.getUserStatus(userId);
+    if (!status.connected) return c.json({ data: [] });
+    const accounts = await githubService.listUserAccounts(userId, status);
+    return c.json({ data: accounts });
+  }
+
   const installations = await githubAuth.getUserInstallations(userId);
   const accounts = githubAuth.mapAccounts(installations);
   return c.json({ data: accounts });
@@ -96,6 +202,13 @@ export async function listAccounts(c: Context) {
 /** GET /github/orgs — List user's org accounts */
 export async function listOrgs(c: Context) {
   const userId = getUserId(c);
+  const mode = githubAuth.getGitHubAuthMode();
+
+  if (mode !== "app") {
+    const orgs = await githubService.listUserOrgsViaApi(userId);
+    return c.json({ data: orgs });
+  }
+
   const orgs = await githubService.listUserOrgs(userId);
   return c.json({ data: orgs });
 }
@@ -103,6 +216,13 @@ export async function listOrgs(c: Context) {
 /** GET /github/orgs/repos — List all orgs with their repos */
 export async function listOrgsWithRepos(c: Context) {
   const userId = getUserId(c);
+  const mode = githubAuth.getGitHubAuthMode();
+
+  if (mode !== "app") {
+    const data = await githubService.listUserOrgsWithReposViaApi(userId);
+    return c.json({ data });
+  }
+
   const data = await githubService.listUserOrgsWithRepos(userId);
   return c.json({ data });
 }
@@ -113,15 +233,18 @@ export async function listOrgsWithRepos(c: Context) {
 export async function listRepos(c: Context) {
   const userId = getUserId(c);
   const owner = c.req.query("owner");
-  const cloud = githubAuth.isCloudMode();
+  const mode = githubAuth.getGitHubAuthMode();
 
-  if (!cloud) {
-    // Desktop/self-hosted: use personal OAuth token
-    const repos = await githubService.listUserOwnedRepos(userId, owner || undefined);
+  if (mode !== "app") {
+    // If the owner matches the authenticated user, fetch their own repos
+    // (not /orgs/{owner}/repos which would 404 for a user account)
+    const status = await githubAuth.getUserStatus(userId);
+    const isOwnAccount = owner && status.connected && owner === status.login;
+    const repos = await githubService.listUserOwnedRepos(userId, isOwnAccount ? undefined : (owner || undefined));
     return c.json({ data: repos });
   }
 
-  // Cloud: use GitHub App installation
+  // App mode: use GitHub App installation
   if (!owner) {
     const status = await githubAuth.getUserStatus(userId);
     if (!status.connected) {
@@ -139,6 +262,13 @@ export async function listRepos(c: Context) {
 export async function listOrgRepos(c: Context) {
   const userId = getUserId(c);
   const org = param(c, "org");
+  const mode = githubAuth.getGitHubAuthMode();
+
+  if (mode !== "app") {
+    const repos = await githubService.listUserOwnedRepos(userId, org);
+    return c.json({ data: repos });
+  }
+
   const repos = await githubService.listInstallationRepos(userId, org);
   return c.json({ data: repos });
 }

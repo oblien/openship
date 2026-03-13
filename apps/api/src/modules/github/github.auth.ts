@@ -8,6 +8,9 @@
  *   - User OAuth tokens (for user-scoped operations, via Better Auth)
  *   - A thin `githubFetch` helper that picks the right auth automatically
  *
+ * In local / desktop mode, token resolution falls back to the machine's
+ * `gh` CLI credentials — see `github.local-auth.ts`.
+ *
  * Token caching uses a simple in-memory Map with TTL to avoid hitting
  * GitHub's token endpoint on every request.
  */
@@ -16,6 +19,7 @@ import crypto from "crypto";
 import { repos } from "@repo/db";
 import { env } from "../../config/env";
 import { TtlCache } from "../../lib/cache";
+import { getLocalGhToken } from "./github.local-auth";
 import type { GitHubInstallation, MappedAccount } from "./github.types";
 
 // ─── Token cache ─────────────────────────────────────────────────────────────
@@ -157,21 +161,37 @@ export interface TokenOptions {
 /**
  * Resolve the best available token for a GitHub API request.
  *
- * Priority:
- *   1. User token (if useUserToken=true, e.g. for /user/* endpoints)
- *   2. Installation token (for repo-scoped operations)
- *   3. User token as fallback (when no owner is specified)
+ * Dispatches by GITHUB_AUTH_MODE:
+ *   - "app"   → installation token → user OAuth fallback
+ *   - "oauth" → user OAuth token only
+ *   - "cli"   → user OAuth → gh CLI fallback
+ *   - "token" → static GITHUB_TOKEN env var
  */
 export async function resolveToken(opts: TokenOptions): Promise<string | null> {
-  if (opts.useUserToken) {
-    return getUserToken(opts.userId);
+  const mode = getGitHubAuthMode();
+
+  switch (mode) {
+    case "token":
+      return env.GITHUB_TOKEN ?? null;
+
+    case "app": {
+      if (opts.useUserToken) return getUserToken(opts.userId);
+      if (opts.owner) {
+        const instToken = await getInstallationToken(opts.userId, opts.owner, opts.installationId);
+        if (instToken) return instToken;
+      }
+      return getUserToken(opts.userId);
+    }
+
+    case "oauth":
+      return getUserToken(opts.userId);
+
+    case "cli": {
+      const userToken = await getUserToken(opts.userId);
+      if (userToken) return userToken;
+      return getLocalGhToken();
+    }
   }
-  if (opts.owner) {
-    const instToken = await getInstallationToken(opts.userId, opts.owner, opts.installationId);
-    if (instToken) return instToken;
-  }
-  /* Fallback to user OAuth token if no installation token found */
-  return getUserToken(opts.userId);
 }
 
 // ─── GitHub API fetch helper ─────────────────────────────────────────────────
@@ -244,22 +264,51 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
 
 /**
  * Check if the user is connected to GitHub and return their profile.
+ *
+ * Token source depends on GITHUB_AUTH_MODE:
+ *   - "app" / "oauth" → user OAuth token
+ *   - "cli"           → OAuth first, then gh CLI fallback
+ *   - "token"         → static GITHUB_TOKEN env var
  */
 export async function getUserStatus(userId: string) {
-  const token = await getUserToken(userId);
+  const mode = getGitHubAuthMode();
+  let token: string | null = null;
+  let tokenSource: GitHubAuthMode = mode;
+
+  switch (mode) {
+    case "token":
+      token = env.GITHUB_TOKEN ?? null;
+      break;
+    case "cli": {
+      token = await getUserToken(userId);
+      if (token) { tokenSource = "oauth"; break; }
+      token = await getLocalGhToken();
+      tokenSource = "cli";
+      break;
+    }
+    default: // "app" | "oauth"
+      token = await getUserToken(userId);
+      tokenSource = "oauth";
+      break;
+  }
+
   if (!token) {
-    return { connected: false as const };
+    return { connected: false as const, tokenSource: null };
   }
 
   try {
-    const user = await githubFetch<{ login: string; id: number; avatar_url: string }>({
-      userId,
-      url: "https://api.github.com/user",
-      useUserToken: true,
+    const res = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
     });
-    return { connected: true as const, ...user };
+    if (!res.ok) return { connected: false as const, tokenSource: null };
+    const user = (await res.json()) as { login: string; id: number; avatar_url: string };
+    return { connected: true as const, tokenSource, ...user };
   } catch {
-    return { connected: false as const };
+    return { connected: false as const, tokenSource: null };
   }
 }
 
@@ -302,9 +351,33 @@ export function mapAccounts(installations: GitHubInstallation[]): MappedAccount[
 
 // ─── Connect / Disconnect ────────────────────────────────────────────────────
 
-/** Whether we're running in cloud mode (GitHub App installation flow). */
+// ─── GitHub auth mode ─────────────────────────────────────────────────────
+
+export type GitHubAuthMode = "app" | "oauth" | "cli" | "token";
+
+/**
+ * Resolve the effective GitHub auth mode.
+ *
+ * If `GITHUB_AUTH_MODE=auto` (default), inferred from CLOUD_MODE:
+ *   - CLOUD_MODE=true  → "app"  (GitHub App installation tokens)
+ *   - CLOUD_MODE=false → "cli"  (gh CLI / device flow)
+ *
+ * DEPLOY_MODE is intentionally not checked here — a local dashboard
+ * deploying to Oblien (DEPLOY_MODE=cloud) should still use CLI auth.
+ *
+ * Explicit values ("app", "oauth", "cli", "token") are used as-is.
+ */
+export function getGitHubAuthMode(): GitHubAuthMode {
+  const explicit = env.GITHUB_AUTH_MODE;
+  if (explicit !== "auto") return explicit;
+
+  if (env.CLOUD_MODE) return "app";
+  return "cli";
+}
+
+/** Shorthand — true when the resolved auth mode is "app" (GitHub App). */
 export function isCloudMode(): boolean {
-  return env.CLOUD_MODE || env.DEPLOY_MODE === "cloud";
+  return getGitHubAuthMode() === "app";
 }
 
 /**

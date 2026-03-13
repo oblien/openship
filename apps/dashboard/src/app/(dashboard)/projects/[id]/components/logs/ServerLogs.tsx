@@ -46,23 +46,15 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     const gb = mb / 1024;
     return `${gb.toFixed(2)} GB`;
   }, []);
-  // Real-time SSE stream from Deploy API (access logs)
+  // Real-time SSE stream from local API (runtime logs)
   useEffect(() => {
     let disconnect: (() => void) | null = null;
     // Reset current logs on connect
     setServerLogs([]);
     const connect = async () => {
       try {
-        const params = new URLSearchParams();
-        params.set('stream', 'true');
-        params.set('cursor', '$');
-        params.set('limit', '50');
-
-        const streamUrl = `https://deploy.oblien.com/logs/requests?${params.toString()}`;
-
         const res = await connectToLiveLogs({
           projectId,
-          streamUrl,
           options: {
             onMessage: (chunk: string) => {
               // Debug: inspect raw SSE chunks

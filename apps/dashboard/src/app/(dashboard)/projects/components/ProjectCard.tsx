@@ -17,6 +17,7 @@ interface Props {
     lastDeployed: string;
     repo?: string;
     url?: string;
+    latestDeploymentId?: string | null;
   };
   viewMode?: "grid" | "list";
   isPinned?: boolean;
@@ -26,6 +27,13 @@ interface Props {
 const ProjectCard = ({ project, viewMode = "list", isPinned = false, onTogglePin }: Props) => {
   const isGridView = viewMode === "grid";
   const router = useRouter();
+
+  const isDraft = project.status === "draft";
+  const clickTarget = isDraft
+    ? (project.latestDeploymentId
+        ? `/build/${project.latestDeploymentId}`
+        : (project.repo ? `/deploy/${project.repo}` : `/projects/${project.id}`))
+    : `/projects/${project.id}`;
 
   // Get framework icon or fallback
   const getFrameworkIcon = () => {
@@ -102,6 +110,13 @@ const ProjectCard = ({ project, viewMode = "list", isPinned = false, onTogglePin
           dot: "bg-indigo-600",
           ring: "ring-1 ring-indigo-500/20"
         };
+      case "draft":
+        return {
+          bg: "bg-amber-500/10",
+          text: "text-amber-700",
+          dot: "bg-amber-500",
+          ring: "ring-1 ring-amber-500/20"
+        };
       default:
         return {
           bg: "bg-muted",
@@ -117,7 +132,7 @@ const ProjectCard = ({ project, viewMode = "list", isPinned = false, onTogglePin
   if (viewMode === "list") {
     return (
       <div className="bg-card rounded-xl border border-border/50 hover:border-border transition-all group">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 lg:gap-6 p-4 lg:p-5" onClick={() => router.push(`/projects/${project.id}`)} style={{ cursor: 'pointer' }}>
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 lg:gap-6 p-4 lg:p-5" onClick={() => router.push(clickTarget)} style={{ cursor: 'pointer' }}>
           {/* Icon + Name/Domain + Status */}
           <div className="flex items-center gap-3 lg:gap-4 w-full lg:w-auto lg:min-w-0 lg:flex-[0_0_320px]">
             <div className="w-11 h-11 lg:w-12 lg:h-12 rounded-xl bg-muted flex items-center justify-center flex-shrink-0 group-hover:bg-muted/80 transition-all">
@@ -132,7 +147,7 @@ const ProjectCard = ({ project, viewMode = "list", isPinned = false, onTogglePin
 
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${statusConfig.bg} ${statusConfig.text} ${statusConfig.ring}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot}`}></span>
-              {project.status === 'live' ? 'Live' : project.status === 'building' ? 'Building' : project.status}
+              {project.status === 'live' ? 'Live' : project.status === 'building' ? 'Building' : project.status === 'draft' ? 'Draft' : project.status}
             </span>
           </div>
 
@@ -218,7 +233,7 @@ const ProjectCard = ({ project, viewMode = "list", isPinned = false, onTogglePin
   return (
     <div 
       className="bg-card rounded-xl transition-all duration-300 group cursor-pointer border border-border/50 hover:border-border" 
-      onClick={() => router.push(`/projects/${project.id}`)}
+      onClick={() => router.push(clickTarget)}
     >
       <div className="p-4 flex flex-col h-full">
         {/* Header with Icon and Status */}
@@ -232,7 +247,7 @@ const ProjectCard = ({ project, viewMode = "list", isPinned = false, onTogglePin
             </h3>
             <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-normal ${statusConfig.bg} ${statusConfig.text} ${statusConfig.ring}`}>
               <span className={`w-1 h-1 rounded-full ${statusConfig.dot}`}></span>
-              {project.status === 'live' ? 'Live' : project.status === 'building' ? 'Building' : project.status}
+              {project.status === 'live' ? 'Live' : project.status === 'building' ? 'Building' : project.status === 'draft' ? 'Draft' : project.status}
             </span>
           </div>
           {onTogglePin && (

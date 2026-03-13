@@ -8,17 +8,17 @@ import React from "react";
  */
 const BuildSkeleton: React.FC = () => {
   return (
-    <div className="min-h-screen mx-auto md:px-12" style={{ background: 'linear-gradient(to bottom, #fcfcfc, #f9f9f9)' }}>
+    <div className="min-h-screen mx-auto md:px-12 bg-background">
       {/* Header Skeleton */}
-      <div className="bg-white">
+      <div className="bg-background">
         <div className="py-5 relative">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div>
                 {/* Title skeleton */}
-                <div className="h-7 w-48 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-2 animate-pulse" />
+                <div className="h-7 w-48 bg-gradient-to-r from-muted via-muted/50 to-muted rounded-lg mb-2 animate-pulse" />
                 {/* Subtitle skeleton */}
-                <div className="h-4 w-32 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg animate-pulse" />
+                <div className="h-4 w-32 bg-gradient-to-r from-muted via-muted/50 to-muted rounded-lg animate-pulse" />
               </div>
             </div>
           </div>
@@ -30,47 +30,29 @@ const BuildSkeleton: React.FC = () => {
           {/* Main Content - Left Side (2/3) */}
           <div className="lg:col-span-2 space-y-6">
             {/* Progress Steps Skeleton */}
-            <div
-              className="bg-white rounded-[20px] border p-8"
-              style={{
-                boxShadow: '0 8px 25px rgba(0, 0, 0, 0.04)',
-                borderColor: '#f0f0f0',
-              }}
-            >
+            <div className="bg-card rounded-2xl border border-border/50 p-8">
               {/* Title */}
-              <div className="h-5 w-40 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-6 animate-pulse" />
+              <div className="h-5 w-40 bg-gradient-to-r from-muted via-muted/50 to-muted rounded-lg mb-6 animate-pulse" />
 
               {/* Steps */}
               <div className="relative">
                 {/* Progress Line */}
-                <div
-                  className="absolute top-6 left-0 right-0 z-0"
-                  style={{
-                    height: '2px',
-                    background: '#f0f0f0',
-                  }}
-                >
-                  <div
-                    className="h-full w-1/4 bg-gradient-to-r from-gray-300 via-gray-200 to-gray-100 animate-pulse"
-                  />
+                <div className="absolute top-6 left-0 right-0 z-0 h-0.5 bg-border/50">
+                  <div className="h-full w-1/4 bg-gradient-to-r from-muted-foreground/30 via-muted-foreground/20 to-muted/50 animate-pulse" />
                 </div>
 
                 {/* Step Items */}
                 <div className="relative flex justify-between z-10">
                   {[0, 1, 2, 3, 4].map((index) => (
-                    <div key={index} className="flex flex-col items-center bg-white z-10 px-2">
+                    <div key={index} className="flex flex-col items-center bg-card z-10 px-2">
                       {/* Circle skeleton */}
                       <div
-                        className="rounded-full flex items-center justify-center transition-all duration-300 animate-pulse"
-                        style={{
-                          width: '48px',
-                          height: '48px',
-                          background: index === 0 ? '#e5e7eb' : 'white',
-                          border: index === 0 ? 'none' : '2px solid #e5e7eb',
-                        }}
+                        className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 animate-pulse ${
+                          index === 0 ? 'bg-muted' : 'bg-card border-2 border-border'
+                        }`}
                       />
                       {/* Label skeleton */}
-                      <div className="h-3 w-16 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded mt-3 animate-pulse" />
+                      <div className="h-3 w-16 bg-gradient-to-r from-muted via-muted/50 to-muted rounded mt-3 animate-pulse" />
                     </div>
                   ))}
                 </div>
@@ -78,36 +60,29 @@ const BuildSkeleton: React.FC = () => {
             </div>
 
             {/* Terminal Skeleton */}
-            <div
-              className="bg-white rounded-[20px] border overflow-hidden"
-              style={{
-                boxShadow: '0 8px 25px rgba(0, 0, 0, 0.04)',
-                borderColor: '#f0f0f0',
-              }}
-            >
+            <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
               {/* Terminal Header */}
-              <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 bg-muted/50">
                 <div className="flex items-center gap-3">
                   <div className="flex gap-2">
-                    <div className="w-3 h-3 rounded-full bg-red-400/50 animate-pulse"></div>
+                    <div className="w-3 h-3 rounded-full bg-destructive/40 animate-pulse"></div>
                     <div className="w-3 h-3 rounded-full bg-yellow-400/50 animate-pulse"></div>
                     <div className="w-3 h-3 rounded-full bg-green-400/50 animate-pulse"></div>
                   </div>
-                  <div className="h-4 w-24 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-pulse" />
+                  <div className="h-4 w-24 bg-gradient-to-r from-muted via-muted/50 to-muted rounded animate-pulse" />
                 </div>
-                <div className="h-4 w-16 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-pulse" />
+                <div className="h-4 w-16 bg-gradient-to-r from-muted via-muted/50 to-muted rounded animate-pulse" />
               </div>
 
               {/* Terminal Body */}
-              <div className="bg-white p-6 min-h-[400px] space-y-3">
+              <div className="bg-card p-6 min-h-[400px] space-y-3">
                 {/* Log line skeletons */}
                 {[...Array(8)].map((_, i) => {
-                  // Use deterministic widths based on index to avoid hydration mismatch
                   const widths = [98, 97, 92, 93, 73, 71, 62, 85];
                   return (
                     <div
                       key={i}
-                      className="h-4 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-pulse"
+                      className="h-4 bg-gradient-to-r from-muted via-muted/50 to-muted rounded animate-pulse"
                       style={{
                         width: `${widths[i] || 80}%`,
                         animationDelay: `${i * 0.1}s`,
@@ -122,69 +97,45 @@ const BuildSkeleton: React.FC = () => {
           {/* Sidebar - Right Side (1/3) */}
           <div className="space-y-6">
             {/* Project Info Skeleton */}
-            <div
-              className="bg-white rounded-[20px] border p-6"
-              style={{
-                boxShadow: '0 8px 25px rgba(0, 0, 0, 0.04)',
-                borderColor: '#f0f0f0',
-              }}
-            >
+            <div className="bg-card rounded-2xl border border-border/50 p-6">
               {/* Title */}
-              <div className="h-5 w-32 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-4 animate-pulse" />
+              <div className="h-5 w-32 bg-gradient-to-r from-muted via-muted/50 to-muted rounded-lg mb-4 animate-pulse" />
               
               {/* Info rows */}
               <div className="space-y-4">
                 {[...Array(4)].map((_, i) => (
                   <div key={i} className="flex items-center justify-between">
-                    <div className="h-4 w-24 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-pulse" />
-                    <div className="h-4 w-32 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded animate-pulse" />
+                    <div className="h-4 w-24 bg-gradient-to-r from-muted via-muted/50 to-muted rounded animate-pulse" />
+                    <div className="h-4 w-32 bg-gradient-to-r from-muted via-muted/50 to-muted rounded animate-pulse" />
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Domain Skeleton */}
-            <div
-              className="bg-white rounded-[20px] border p-6"
-              style={{
-                boxShadow: '0 8px 25px rgba(0, 0, 0, 0.04)',
-                borderColor: '#f0f0f0',
-              }}
-            >
+            <div className="bg-card rounded-2xl border border-border/50 p-6">
               {/* Title */}
-              <div className="h-5 w-28 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-4 animate-pulse" />
+              <div className="h-5 w-28 bg-gradient-to-r from-muted via-muted/50 to-muted rounded-lg mb-4 animate-pulse" />
               
               {/* Domain box */}
-              <div className="h-12 w-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-xl animate-pulse" />
+              <div className="h-12 w-full bg-gradient-to-r from-muted via-muted/50 to-muted rounded-xl animate-pulse" />
               
               {/* Copy button */}
-              <div className="h-10 w-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-full mt-3 animate-pulse" />
+              <div className="h-10 w-full bg-gradient-to-r from-muted via-muted/50 to-muted rounded-full mt-3 animate-pulse" />
             </div>
 
             {/* Build Time Skeleton */}
-            <div
-              className="bg-white rounded-[20px] border p-6"
-              style={{
-                boxShadow: '0 8px 25px rgba(0, 0, 0, 0.04)',
-                borderColor: '#f0f0f0',
-              }}
-            >
-              <div className="h-5 w-24 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-4 animate-pulse" />
-              <div className="h-8 w-20 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg animate-pulse" />
+            <div className="bg-card rounded-2xl border border-border/50 p-6">
+              <div className="h-5 w-24 bg-gradient-to-r from-muted via-muted/50 to-muted rounded-lg mb-4 animate-pulse" />
+              <div className="h-8 w-20 bg-gradient-to-r from-muted via-muted/50 to-muted rounded-lg animate-pulse" />
             </div>
 
             {/* Actions Skeleton */}
-            <div
-              className="bg-white rounded-[20px] border p-6"
-              style={{
-                boxShadow: '0 8px 25px rgba(0, 0, 0, 0.04)',
-                borderColor: '#f0f0f0',
-              }}
-            >
-              <div className="h-5 w-20 bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-lg mb-4 animate-pulse" />
+            <div className="bg-card rounded-2xl border border-border/50 p-6">
+              <div className="h-5 w-20 bg-gradient-to-r from-muted via-muted/50 to-muted rounded-lg mb-4 animate-pulse" />
               <div className="space-y-3">
-                <div className="h-10 w-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-xl animate-pulse" />
-                <div className="h-10 w-full bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 rounded-xl animate-pulse" />
+                <div className="h-10 w-full bg-gradient-to-r from-muted via-muted/50 to-muted rounded-xl animate-pulse" />
+                <div className="h-10 w-full bg-gradient-to-r from-muted via-muted/50 to-muted rounded-xl animate-pulse" />
               </div>
             </div>
           </div>
@@ -192,13 +143,13 @@ const BuildSkeleton: React.FC = () => {
       </div>
 
       {/* Loading Indicator Overlay */}
-      <div className="fixed bottom-8 right-8 bg-white rounded-2xl border border-black/10 px-6 py-4 shadow-2xl">
+      <div className="fixed bottom-8 right-8 bg-card rounded-2xl border border-border/50 px-6 py-4 shadow-2xl">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="w-5 h-5 border-3 border-black/10 border-t-black rounded-full animate-spin"></div>
+            <div className="w-5 h-5 border-3 border-foreground/10 border-t-foreground rounded-full animate-spin"></div>
           </div>
           <div>
-          <span className="text-sm text-gray-500">Loading build session...</span>
+          <span className="text-sm text-muted-foreground">Loading build session...</span>
           </div>
         </div>
       </div>

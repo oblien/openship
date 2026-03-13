@@ -10,8 +10,8 @@ import type { RoutingProvider, SslProvider } from "./types";
 
 export class CloudInfraProvider implements RoutingProvider, SslProvider {
   constructor(
-    private readonly apiUrl: string,
-    private readonly apiKey: string,
+    private readonly clientId: string,
+    private readonly clientSecret: string,
   ) {}
 
   // ── Routing ──────────────────────────────────────────────────────────

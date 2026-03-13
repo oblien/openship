@@ -12,13 +12,15 @@ export interface Project {
   description: string;
   framework: string;
   url: string;
-  status: "live" | "paused";
+  status: "live" | "paused" | "draft";
   lastDeployed: string;
   domain: string;
   isCustomDomain: boolean;
   deploymentCount: number;
   visitors: string;
   repo: string;
+  /** Latest deployment ID (any status) — used to navigate drafts */
+  latestDeploymentId?: string | null;
 }
 
 /** Simplified deployment record used in project-scoped deployment cards. */

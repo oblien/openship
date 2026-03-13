@@ -21,11 +21,6 @@ const EnvironmentEnum = Type.Union([
   Type.Literal("production"), Type.Literal("preview"), Type.Literal("development"),
 ]);
 
-const ResourceTierEnum = Type.Union([
-  Type.Literal("lightweight"), Type.Literal("standard"),
-  Type.Literal("performance"), Type.Literal("enterprise"), Type.Literal("custom"),
-]);
-
 // ─── Route params ────────────────────────────────────────────────────────────
 
 export const ProjectIdParam = Type.Object({
@@ -43,6 +38,10 @@ export const ListProjectsQuery = Type.Object({
 
 export const CreateProjectBody = Type.Object({
   name: Type.String({ minLength: 1, maxLength: 100 }),
+  /** Override the auto-generated slug (used as free subdomain: slug.opsh.io) */
+  slug: Type.Optional(Type.String({ minLength: 1, maxLength: 63, pattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" })),
+  // Local source
+  localPath: Type.Optional(Type.String({ maxLength: 1000 })),
   // Git source
   gitProvider: Type.Optional(Type.String({ default: "github" })),
   gitOwner: Type.Optional(Type.String({ maxLength: 100 })),
@@ -56,10 +55,14 @@ export const CreateProjectBody = Type.Object({
   buildCommand: Type.Optional(Type.String({ maxLength: 500 })),
   outputDirectory: Type.Optional(Type.String({ maxLength: 200 })),
   rootDirectory: Type.Optional(Type.String({ maxLength: 200 })),
+  startCommand: Type.Optional(Type.String({ maxLength: 500 })),
+  buildImage: Type.Optional(Type.String({ maxLength: 200 })),
   productionMode: Type.Optional(Type.Union([
     Type.Literal("host"), Type.Literal("static"), Type.Literal("standalone"),
   ])),
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
+  hasServer: Type.Optional(Type.Boolean({ default: true })),
+  hasBuild: Type.Optional(Type.Boolean({ default: true })),
 });
 
 export const UpdateProjectBody = Type.Partial(CreateProjectBody);
@@ -78,14 +81,14 @@ export const SetEnvVarsBody = Type.Object({
 
 export const UpdateResourcesBody = Type.Object({
   production: Type.Optional(Type.Object({
-    tier: Type.Optional(ResourceTierEnum),
     cpuCores: Type.Optional(Type.Number({ minimum: 0.25, maximum: 4 })),
     memoryMb: Type.Optional(Type.Number({ minimum: 128, maximum: 8192 })),
+    diskMb: Type.Optional(Type.Number({ minimum: 64, maximum: 204800 })),
   })),
   build: Type.Optional(Type.Object({
-    tier: Type.Optional(ResourceTierEnum),
     cpuCores: Type.Optional(Type.Number({ minimum: 0.25, maximum: 4 })),
     memoryMb: Type.Optional(Type.Number({ minimum: 128, maximum: 8192 })),
+    diskMb: Type.Optional(Type.Number({ minimum: 64, maximum: 204800 })),
   })),
   sleepMode: Type.Optional(Type.Union([
     Type.Literal("auto_sleep"), Type.Literal("always_on"),

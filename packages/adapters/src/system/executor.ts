@@ -26,6 +26,11 @@ import type { CommandExecutor, LogEntry, SshConfig } from "../types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Shell-quote a value for use in `sh -c` commands. */
+function sq(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function logEntry(
   message: string,
   level: LogEntry["level"] = "info",
@@ -61,23 +66,33 @@ export class LocalExecutor implements CommandExecutor {
       const child = spawn("sh", ["-c", command], {
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, DEBIAN_FRONTEND: "noninteractive" },
+        detached: true,
       });
+
+      // Detach from parent event loop so the process doesn't hold it open
+      child.unref();
 
       const chunks: string[] = [];
 
       child.stdout.on("data", (data: Buffer) => {
-        const line = data.toString().trim();
-        if (line) {
-          chunks.push(line);
-          onLog(logEntry(line));
+        const text = data.toString();
+        for (const raw of text.split("\n")) {
+          const line = raw.trimEnd();
+          if (line) {
+            chunks.push(line);
+            onLog(logEntry(line));
+          }
         }
       });
 
       child.stderr.on("data", (data: Buffer) => {
-        const line = data.toString().trim();
-        if (line) {
-          chunks.push(line);
-          onLog(logEntry(line, "warn"));
+        const text = data.toString();
+        for (const raw of text.split("\n")) {
+          const line = raw.trimEnd();
+          if (line) {
+            chunks.push(line);
+            onLog(logEntry(line, "warn"));
+          }
         }
       });
 
@@ -231,29 +246,35 @@ export class SshExecutor implements CommandExecutor {
     command: string,
     onLog: (log: LogEntry) => void,
   ): Promise<{ code: number; output: string }> {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const client = await this.connect();
-        const envPrefix = "export DEBIAN_FRONTEND=noninteractive && ";
+    const connectAndExec = async (): Promise<{ code: number; output: string }> => {
+      const client = await this.connect();
+      const envPrefix = "export DEBIAN_FRONTEND=noninteractive && ";
 
+      return new Promise((resolve, reject) => {
         client.exec(envPrefix + command, (err, stream) => {
           if (err) return reject(err);
 
           const chunks: string[] = [];
 
           stream.on("data", (data: Buffer) => {
-            const line = data.toString().trim();
-            if (line) {
-              chunks.push(line);
-              onLog(logEntry(line));
+            const text = data.toString();
+            for (const raw of text.split("\n")) {
+              const line = raw.trimEnd();
+              if (line) {
+                chunks.push(line);
+                onLog(logEntry(line));
+              }
             }
           });
 
           stream.stderr.on("data", (data: Buffer) => {
-            const line = data.toString().trim();
-            if (line) {
-              chunks.push(line);
-              onLog(logEntry(line, "warn"));
+            const text = data.toString();
+            for (const raw of text.split("\n")) {
+              const line = raw.trimEnd();
+              if (line) {
+                chunks.push(line);
+                onLog(logEntry(line, "warn"));
+              }
             }
           });
 
@@ -261,17 +282,17 @@ export class SshExecutor implements CommandExecutor {
             resolve({ code: code ?? 1, output: chunks.join("\n") });
           });
         });
-      } catch (err) {
-        reject(err);
-      }
-    });
+      });
+    };
+
+    return connectAndExec();
   }
 
   async writeFile(path: string, content: string): Promise<void> {
     // Ensure parent directory exists
     const dir = dirname(path);
     try {
-      await this.exec(`mkdir -p "${dir}"`);
+      await this.exec(`mkdir -p ${sq(dir)}`);
     } catch {
       // Best effort
     }
@@ -305,8 +326,8 @@ export class SshExecutor implements CommandExecutor {
   }
 
   async mkdir(path: string): Promise<void> {
-    // SFTP mkdir isn't recursive — use exec
-    await this.exec(`mkdir -p "${path}"`);
+    // SFTP mkdir isn't recursive — use exec with sq() for safe quoting
+    await this.exec(`mkdir -p ${sq(path)}`);
   }
 
   async rm(path: string): Promise<void> {

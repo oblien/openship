@@ -1,59 +1,42 @@
 /**
- * Resource management utilities — ported from old resourceManager.js.
+ * Resource utilities.
  *
- * Handles CPU/memory tier management:
- *   - Convert between user-friendly (cpu_cores + tier) and VM-native (cpuConfig) formats
- *   - Validate resource requests
- *   - Apply resource defaults
+ * Single source of truth: DEFAULT_RESOURCE_CONFIG / DEFAULT_BUILD_RESOURCE_CONFIG
+ * in @repo/adapters. Everything flows from there.
  */
 
 import {
-  RESOURCE_TIERS,
   DEFAULT_RESOURCE_CONFIG,
   DEFAULT_BUILD_RESOURCE_CONFIG,
   type ResourceConfig,
-  type CpuConfig,
 } from "@repo/adapters";
 
-// ─── Conversion helpers ──────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Convert CPU cores (float) → VM-native CpuConfig */
-function coresToCpuConfig(cores: number): CpuConfig {
-  const periodUs = 100_000;
-  return { quotaUs: Math.floor(cores * periodUs), periodUs };
-}
-
-/** Convert CpuConfig → CPU cores (float) */
-function cpuConfigToCores(config: CpuConfig | null | undefined, cpus?: number): number {
-  if (!config?.quotaUs || !config?.periodUs) return cpus ?? 1.0;
-  return config.quotaUs / config.periodUs;
-}
-
-/** Detect tier name from cores + memory */
-function detectTier(cpuCores: number, memoryMb: number): string {
-  for (const [tier, config] of Object.entries(RESOURCE_TIERS)) {
-    if (config.cpuCores === cpuCores && config.memoryMb === memoryMb) return tier;
-  }
-  return "custom";
+/**
+ * Normalize a possibly-legacy DB value into cpuCores.
+ * Old format: { cpus, cpuConfig: { quotaUs, periodUs }, memoryMb }
+ * New format: { cpuCores, memoryMb }
+ */
+function extractCpuCores(raw: Record<string, unknown>): number | undefined {
+  if (typeof raw.cpuCores === "number") return raw.cpuCores;
+  const cfg = raw.cpuConfig as { quotaUs?: number; periodUs?: number } | undefined;
+  if (cfg?.quotaUs && cfg?.periodUs) return cfg.quotaUs / cfg.periodUs;
+  if (typeof raw.cpus === "number") return raw.cpus;
+  return undefined;
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-export interface UserFriendlyResources {
-  cpuCores: number;
-  memoryMb: number;
-  tier: string;
-}
-
 export interface DeploymentResources {
-  build: UserFriendlyResources;
-  production: UserFriendlyResources;
+  build: ResourceConfig;
+  production: ResourceConfig;
   sleepMode: string;
   port: number;
 }
 
 /**
- * Encode VM-native ResourceConfig → user-friendly format (for API display).
+ * Encode ResourceConfig → display format (for API responses).
  */
 export function encodeResources(
   production?: ResourceConfig | null,
@@ -61,47 +44,25 @@ export function encodeResources(
   sleepMode = "auto_sleep",
   port = 3000,
 ): DeploymentResources {
-  const encode = (config: ResourceConfig | null | undefined, defaults: ResourceConfig): UserFriendlyResources => {
-    if (!config) {
-      const cores = cpuConfigToCores(defaults.cpuConfig, defaults.cpus);
-      return { cpuCores: cores, memoryMb: defaults.memoryMb, tier: detectTier(cores, defaults.memoryMb) };
-    }
-    const cores = cpuConfigToCores(config.cpuConfig, config.cpus);
-    return { cpuCores: cores, memoryMb: config.memoryMb, tier: detectTier(cores, config.memoryMb) };
-  };
-
   return {
-    build: encode(build, DEFAULT_BUILD_RESOURCE_CONFIG),
-    production: encode(production, DEFAULT_RESOURCE_CONFIG),
+    build: build ?? { ...DEFAULT_BUILD_RESOURCE_CONFIG },
+    production: production ?? { ...DEFAULT_RESOURCE_CONFIG },
     sleepMode,
     port,
   };
 }
 
 /**
- * Validate and decode user resource input → VM-native ResourceConfig.
- * Accepts tier presets or custom cpu_cores/memory_mb values.
+ * Validate user resource input → ResourceConfig.
  */
 export function decodeResources(input: {
-  tier?: string;
   cpuCores?: number;
   memoryMb?: number;
+  diskMb?: number;
 }): ResourceConfig {
-  const { tier, cpuCores, memoryMb } = input;
-
-  // Tier preset
-  if (tier && tier !== "custom" && RESOURCE_TIERS[tier]) {
-    const preset = RESOURCE_TIERS[tier];
-    return {
-      cpus: Math.max(1, Math.ceil(preset.cpuCores)),
-      cpuConfig: coresToCpuConfig(preset.cpuCores),
-      memoryMb: preset.memoryMb,
-    };
-  }
-
-  // Custom values
-  const cores = cpuCores ?? 0.5;
-  const mem = memoryMb ?? 512;
+  const cores = input.cpuCores ?? DEFAULT_RESOURCE_CONFIG.cpuCores;
+  const mem = input.memoryMb ?? DEFAULT_RESOURCE_CONFIG.memoryMb;
+  const disk = input.diskMb ?? DEFAULT_RESOURCE_CONFIG.diskMb;
 
   if (cores < 0.25 || cores > 4.0) {
     throw new Error("CPU cores must be between 0.25 and 4.00");
@@ -109,25 +70,27 @@ export function decodeResources(input: {
   if (mem < 128 || mem > 8192) {
     throw new Error("Memory must be between 128 MB and 8192 MB");
   }
+  if (disk < 64 || disk > 204800) {
+    throw new Error("Disk must be between 64 MB and 204800 MB");
+  }
 
-  return {
-    cpus: Math.max(1, Math.ceil(cores)),
-    cpuConfig: coresToCpuConfig(cores),
-    memoryMb: mem,
-  };
+  return { cpuCores: cores, memoryMb: mem, diskMb: disk };
 }
 
 /**
  * Ensure a ResourceConfig has all fields populated with safe defaults.
+ * Handles legacy DB format ({ cpus, cpuConfig }) transparently.
  */
 export function withDefaults(
-  config?: ResourceConfig | null,
+  config?: ResourceConfig | Record<string, unknown> | null,
   defaults = DEFAULT_RESOURCE_CONFIG,
 ): ResourceConfig {
   if (!config) return { ...defaults };
-  return {
-    cpus: config.cpus ?? defaults.cpus,
-    cpuConfig: config.cpuConfig ?? defaults.cpuConfig,
-    memoryMb: config.memoryMb ?? defaults.memoryMb,
-  };
+
+  const raw = config as Record<string, unknown>;
+  const cpuCores = extractCpuCores(raw) ?? defaults.cpuCores;
+  const memoryMb = (typeof raw.memoryMb === "number" ? raw.memoryMb : undefined) ?? defaults.memoryMb;
+  const diskMb = (typeof raw.diskMb === "number" ? raw.diskMb : undefined) ?? defaults.diskMb;
+
+  return { cpuCores, memoryMb, diskMb };
 }

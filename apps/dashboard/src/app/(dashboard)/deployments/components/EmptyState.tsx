@@ -1,8 +1,8 @@
 "use client";
 
 import React from "react";
-import { Rocket, SearchX } from "lucide-react";
-import { generateIcon } from "@/utils/icons";
+import Link from "next/link";
+import { SearchX, Plus, GitBranch } from "lucide-react";
 
 interface EmptyStateProps {
   hasFilters: boolean;
@@ -11,14 +11,14 @@ interface EmptyStateProps {
 export const EmptyState: React.FC<EmptyStateProps> = ({ hasFilters }) => {
   if (hasFilters) {
     return (
-      <div className="bg-white rounded-[20px] border border-black/5 shadow-sm p-16 text-center">
+      <div className="bg-card rounded-2xl border border-border/50 p-16 text-center">
         <div className="max-w-md mx-auto">
-          <div className="w-20 h-20 bg-black/5 rounded-full flex items-center justify-center mx-auto mb-5 border border-black/10">
-            <SearchX className="w-10 h-10 text-black/30" />
+          <div className="w-16 h-16 bg-muted/60 rounded-full flex items-center justify-center mx-auto mb-4 border border-border/50">
+            <SearchX className="w-7 h-7 text-muted-foreground/50" />
           </div>
-          <h3 className="text-xl font-bold text-black mb-2">No deployments found</h3>
-          <p className="text-sm text-black/50 leading-relaxed">
-            We couldn't find any deployments matching your search or filter criteria. Try adjusting your filters or clearing your search.
+          <h3 className="text-lg font-medium text-foreground/80 mb-2">No deployments found</h3>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Try adjusting your filters or clearing your search.
           </p>
         </div>
       </div>
@@ -26,47 +26,74 @@ export const EmptyState: React.FC<EmptyStateProps> = ({ hasFilters }) => {
   }
 
   return (
-    <div className="bg-gradient-to-br from-white to-black/[0.02] rounded-[20px] border border-black/5 shadow-sm p-20 text-center">
-      <div className="max-w-lg mx-auto">
-        {/* Icon */}
-        <div className="w-24 h-24 bg-gradient-to-br from-black/5 to-black/10 rounded-2xl flex items-center justify-center mx-auto mb-6 border border-black/10 shadow-sm">
-          {generateIcon('space%20rocket-84-1687505465.png', 48, 'rgb(0, 0, 0, 0.4)')}
-        </div>
+    <div className="bg-card rounded-2xl border border-border/50 px-6 pb-10 text-center">
+      {/* SVG Illustration — matches home page empty state */}
+      <div className="relative mx-auto w-64 h-44">
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 260 180" fill="none">
+          {/* Background card stack */}
+          <rect x="75" y="45" width="130" height="95" rx="14" fill="var(--th-sf-04)" />
+          <rect x="65" y="35" width="130" height="95" rx="14" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
+          <rect x="55" y="25" width="130" height="95" rx="14" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
 
-        {/* Title */}
-        <h3 className="text-2xl font-bold text-black mb-3">No deployments yet</h3>
-        
-        {/* Description */}
-        <p className="text-base text-black/60 leading-relaxed mb-8">
-          Your deployment history will appear here once you start deploying your project. Each deployment will show commit details, build status, and performance metrics.
-        </p>
+          {/* Card header bar */}
+          <rect x="55" y="25" width="130" height="28" rx="14" fill="var(--th-sf-05)" />
+          <circle cx="72" cy="39" r="4" fill="#ef4444" fillOpacity="0.6" />
+          <circle cx="84" cy="39" r="4" fill="#eab308" fillOpacity="0.6" />
+          <circle cx="96" cy="39" r="4" fill="#22c55e" fillOpacity="0.6" />
 
-        {/* Info Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
-          <div className="bg-white/80 rounded-xl border border-black/5 p-4">
-            <div className="w-10 h-10 bg-emerald-50 rounded-lg flex items-center justify-center mx-auto mb-3 border border-emerald-200">
-              {generateIcon('flash-109-1689918656.png', 20, 'rgb(5, 150, 105)')}
-            </div>
-            <p className="text-xs font-semibold text-black/70">Auto Deploy</p>
-            <p className="text-xs text-black/50 mt-1">Push to deploy</p>
-          </div>
+          {/* Content lines */}
+          <rect x="70" y="65" width="50" height="5" rx="2.5" fill="var(--th-on-12)" />
+          <rect x="70" y="76" width="85" height="4" rx="2" fill="var(--th-on-08)" />
+          <rect x="70" y="85" width="65" height="4" rx="2" fill="var(--th-on-08)" />
 
-          <div className="bg-white/80 rounded-xl border border-black/5 p-4">
-            <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center mx-auto mb-3 border border-blue-200">
-              {generateIcon('terminal-184-1658431404.png', 20, 'rgb(37, 99, 235)')}
-            </div>
-            <p className="text-xs font-semibold text-black/70">Build Logs</p>
-            <p className="text-xs text-black/50 mt-1">Real-time updates</p>
-          </div>
+          {/* Rocket icon in card */}
+          <circle cx="84" cy="108" r="10" fill="var(--th-on-05)" stroke="var(--th-on-10)" strokeWidth="1" />
+          <path d="M84 102l3 8h-6l3-8z" fill="var(--th-on-20)" />
+          <circle cx="84" cy="106" r="2" fill="var(--th-on-30)" />
 
-          <div className="bg-white/80 rounded-xl border border-black/5 p-4">
-            <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center mx-auto mb-3 border border-purple-200">
-              {generateIcon('git%20branch-159-1658431404.png', 20, 'rgb(168, 85, 247)')}
-            </div>
-            <p className="text-xs font-semibold text-black/70">Git History</p>
-            <p className="text-xs text-black/50 mt-1">Track commits</p>
-          </div>
-        </div>
+          {/* Plus button */}
+          <circle cx="210" cy="90" r="22" fill="var(--th-on-05)" />
+          <circle cx="210" cy="90" r="16" fill="var(--th-card-bg)" stroke="var(--th-on-20)" strokeWidth="2" strokeDasharray="4 3" />
+          <path d="M210 82v16M202 90h16" stroke="var(--th-on-40)" strokeWidth="2" strokeLinecap="round" />
+
+          {/* Decorative dots */}
+          <circle cx="30" cy="60" r="4" fill="var(--th-on-10)" />
+          <circle cx="40" cy="140" r="6" fill="var(--th-on-08)" />
+          <circle cx="230" cy="40" r="3" fill="var(--th-on-12)" />
+          <circle cx="245" cy="130" r="5" fill="var(--th-on-06)" />
+
+          {/* Sparkle accents */}
+          <path d="M25 100l2-4 2 4-4-2 4 0-4 2z" fill="var(--th-on-16)" />
+          <path d="M220 150l1.5-3 1.5 3-3-1.5 3 0-3 1.5z" fill="var(--th-on-12)" />
+
+          {/* Connecting line */}
+          <path d="M185 95 Q 192 92 195 90" stroke="var(--th-on-12)" strokeWidth="1.5" strokeDasharray="3 3" fill="none" />
+        </svg>
+      </div>
+
+      <h3 className="text-lg font-medium text-foreground/80 mb-2">
+        No deployments yet
+      </h3>
+      <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-8 leading-relaxed">
+        Deploy your first project and it will appear here with
+        build status, commit details, and performance metrics.
+      </p>
+
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+        <Link
+          href="/library"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
+        >
+          <Plus className="size-4" />
+          Deploy Project
+        </Link>
+        <Link
+          href="/library"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
+        >
+          <GitBranch className="size-4" />
+          Browse Templates
+        </Link>
       </div>
     </div>
   );

@@ -47,8 +47,10 @@ export const deployment = pgTable("deployment", {
   url: text("url"),
 
   /* ── Metadata ───────────────────────────────────────────────────────── */
-  /** JSON: snapshot of build config used */
+  /** JSON: snapshot of build config used for this deployment */
   meta: jsonb("meta"),
+  /** JSON: encrypted environment variables snapshot for this deployment */
+  envVars: jsonb("env_vars"),
   /** Error message if failed */
   errorMessage: text("error_message"),
 

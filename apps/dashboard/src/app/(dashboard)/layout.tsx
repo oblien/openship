@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/server/session";
+import { getSession, getDeploymentInfo } from "@/lib/server/session";
 import { Sidebar } from "@/components/sidebar";
 import { DashboardProviders } from "./providers";
 
@@ -11,8 +11,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await getSession();
   if (!session) redirect("/login");
 
+  const deploymentInfo = await getDeploymentInfo();
+
   return (
-    <DashboardProviders>
+    <DashboardProviders selfHosted={deploymentInfo.selfHosted} deployMode={deploymentInfo.deployMode}>
       <div className="flex h-dvh">
         <Sidebar />
         {/* Main content */}

@@ -48,9 +48,9 @@ export async function renewSsl(c: Context) {
   return c.json({ data: result });
 }
 
-/** POST /domains/renew-all — batch SSL renewal (admin / cron) */
+/** POST /domains/renew-all — batch SSL renewal for the requesting user's domains */
 export async function renewAllSsl(c: Context) {
-  getUserId(c); // auth check
-  const result = await domainService.renewExpiringCerts();
+  const userId = getUserId(c);
+  const result = await domainService.renewUserCerts(userId);
   return c.json({ data: result });
 }

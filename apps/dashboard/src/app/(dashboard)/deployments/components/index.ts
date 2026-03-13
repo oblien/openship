@@ -1,4 +1,5 @@
 export { DeploymentCard } from "./DeploymentCard";
+export { DeploymentsContent } from "./DeploymentsContent";
 export { DeploymentsFilters } from "./DeploymentsFilters";
 export { DeploymentsList } from "./DeploymentsList";
 export { ProjectFilter } from "./ProjectFilter";

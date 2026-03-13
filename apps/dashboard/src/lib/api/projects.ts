@@ -12,8 +12,63 @@ export const projectsApi = {
       endpoints.projects.home,
     ),
 
-  /** All deployments across every project */
-  getAllDeployments: () => api.get<any>(endpoints.projects.deploymentsAll),
+  /** Create or update a project (mandatory before build access) */
+  ensure: (body: {
+    name: string;
+    slug?: string;
+    gitOwner?: string;
+    gitRepo?: string;
+    gitBranch?: string;
+    framework?: string;
+    localPath?: string;
+    packageManager?: string;
+    installCommand?: string;
+    buildCommand?: string;
+    outputDirectory?: string;
+    rootDirectory?: string;
+    startCommand?: string;
+    buildImage?: string;
+    port?: number;
+    hasServer?: boolean;
+    hasBuild?: boolean;
+  }) =>
+    api.post<any>(endpoints.projects.ensure, body),
+
+  /** List local projects only */
+  getLocal: () =>
+    api.get<{ success: boolean; projects: any[] }>(endpoints.projects.local),
+
+  /** Scan a local directory for framework detection */
+  scan: (path: string) =>
+    api.post<{
+      success: boolean;
+      name: string;
+      path: string;
+      stack: string;
+      category: string;
+      packageManager: string;
+      installCommand: string;
+      buildCommand: string;
+      startCommand: string;
+      outputDirectory: string;
+    }>(endpoints.projects.scan, { path }),
+
+  /** Import a local folder as a project */
+  importLocal: (data: {
+    name: string;
+    localPath: string;
+    framework?: string;
+    packageManager?: string;
+    buildCommand?: string;
+    installCommand?: string;
+    outputDirectory?: string;
+    port?: number;
+  }) =>
+    api.post<{ data: any }>(endpoints.projects.import, data),
+
+  /** Delete a local project */
+  deleteLocal: (id: string) =>
+    api.delete<{ message: string }>(`projects/${id}`),
 
   /** Single project info */
   getInfo: (id: string | number) => api.get<any>(endpoints.projects.info(id)),

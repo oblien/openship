@@ -11,7 +11,7 @@
  * Usage:
  *   import { STACKS, STACK_IDS, LANGUAGES, type StackId } from "@repo/core";
  *
- *   STACKS.nextjs.runtimeImage   // "node:20-slim"
+ *   STACKS.nextjs.runtimeImage   // "node:22"
  *   STACKS.go.defaultPort        // 8080
  *   STACK_IDS                    // ["nextjs", "nuxt", ... ] — auto-generated
  */
@@ -31,14 +31,14 @@ export interface LanguageDefinition {
 export const LANGUAGES = {
   javascript: {
     name: "JavaScript",
-    buildImage: "node:20-alpine",
-    runtimeImage: "node:20-slim",
+    buildImage: "node:22",
+    runtimeImage: "node:22",
     packageManagers: ["npm", "yarn", "pnpm", "bun"],
   },
   typescript: {
     name: "TypeScript",
-    buildImage: "node:20-alpine",
-    runtimeImage: "node:20-slim",
+    buildImage: "node:22",
+    runtimeImage: "node:22",
     packageManagers: ["npm", "yarn", "pnpm", "bun"],
   },
   go: {
@@ -101,7 +101,11 @@ export type Language = keyof typeof LANGUAGES;
 
 // ─── Stack categories ────────────────────────────────────────────────────────
 
-export type StackCategory = "frontend" | "backend" | "fullstack" | "static" | "generic";
+export type StackCategory = "frontend" | "backend" | "fullstack" | "static" | "docker" | "services" | "generic";
+
+// ─── Project type (determines deploy-page UI path) ──────────────────────────
+
+export type ProjectType = "app" | "docker" | "services";
 
 // ─── Stack definition ────────────────────────────────────────────────────────
 
@@ -535,9 +539,18 @@ export const STACKS = {
     defaultStartCommand: "",
   },
   docker: {
-    name: "Docker",
+    name: "Dockerfile",
     language: "multi",
-    category: "generic",
+    category: "docker",
+    outputDirectory: ".",
+    defaultPort: 3000,
+    defaultBuildCommand: "",
+    defaultStartCommand: "",
+  },
+  "docker-compose": {
+    name: "Docker Compose",
+    language: "multi",
+    category: "services",
     outputDirectory: ".",
     defaultPort: 3000,
     defaultBuildCommand: "",
@@ -575,24 +588,125 @@ export const OUTPUT_DIRECTORIES: Record<string, string> = Object.fromEntries(
   Object.entries(STACKS).map(([id, s]) => [id, s.outputDirectory]),
 );
 
+/** JS/TS languages that should use oven/bun when the package manager is bun */
+const BUN_ELIGIBLE_LANGUAGES: ReadonlySet<string> = new Set(["javascript", "typescript"]);
+
 /** Get the resolved Docker build image for a stack */
-export function getBuildImage(stackId: StackId): string {
+export function getBuildImage(stackId: StackId, packageManager?: string): string {
   const stack = STACKS[stackId] as StackDefinition;
+  if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
+    return "oven/bun:latest";
+  }
   return stack.buildImage ?? LANGUAGES[stack.language].buildImage;
 }
 
 /** Get the resolved Docker runtime image for a stack */
-export function getRuntimeImage(stackId: StackId): string {
+export function getRuntimeImage(stackId: StackId, packageManager?: string): string {
   const stack = STACKS[stackId] as StackDefinition;
+  if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
+    return "oven/bun:latest";
+  }
   return stack.runtimeImage ?? LANGUAGES[stack.language].runtimeImage;
 }
 
+
 /** Get the full stack definition with resolved images */
-export function getStackDefaults(stackId: StackId) {
+export function getStackDefaults(stackId: StackId, packageManager?: string) {
   const stack = STACKS[stackId] as StackDefinition;
   return {
     ...stack,
-    buildImage: getBuildImage(stackId),
-    runtimeImage: getRuntimeImage(stackId),
+    buildImage: getBuildImage(stackId, packageManager),
+    runtimeImage: getRuntimeImage(stackId, packageManager),
   };
 }
+
+/** Derive the project type from a stack ID */
+export function getProjectType(stackId: StackId): ProjectType {
+  const cat = (STACKS[stackId] as StackDefinition).category;
+  if (cat === "docker") return "docker";
+  if (cat === "services") return "services";
+  return "app";
+}
+
+/**
+ * Hint whether a stack is typically static (no running server).
+ * Used as a default for the hasServer toggle — the user can override.
+ */
+export function isTypicallyStatic(stackId: StackId): boolean {
+  const stack = STACKS[stackId] as StackDefinition;
+  return (
+    (stack.category === "static" || stack.category === "frontend") &&
+    !stack.defaultStartCommand
+  );
+}
+
+// ─── Icon URLs — source of truth for logo/icon display ───────────────────────
+
+const DI = "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons";
+
+export const STACK_ICONS: Partial<Record<StackId, string>> = {
+  // JS/TS — Frontend & Fullstack
+  nextjs:      `${DI}/nextjs/nextjs-original.svg`,
+  nuxt:        `${DI}/nuxtjs/nuxtjs-original.svg`,
+  sveltekit:   `${DI}/svelte/svelte-original.svg`,
+  remix:       `${DI}/react/react-original.svg`,
+  astro:       `${DI}/astro/astro-original.svg`,
+  vite:        `${DI}/vitejs/vitejs-original.svg`,
+  angular:     `${DI}/angular/angular-original.svg`,
+  gatsby:      `${DI}/gatsby/gatsby-original.svg`,
+  cra:         `${DI}/react/react-original.svg`,
+  vue:         `${DI}/vuejs/vuejs-original.svg`,
+  react:       `${DI}/react/react-original.svg`,
+
+  // JS/TS — Backend
+  express:     `${DI}/express/express-original.svg`,
+  fastify:     `${DI}/fastify/fastify-original.svg`,
+  hono:        "https://hono.dev/images/logo-small.png",
+  nestjs:      `${DI}/nestjs/nestjs-original.svg`,
+  koa:         `${DI}/nodejs/nodejs-original.svg`,
+  adonis:      `${DI}/adonisjs/adonisjs-original.svg`,
+  elysia:      "https://elysiajs.com/assets/elysia.svg",
+
+  // Go
+  go:          `${DI}/go/go-original.svg`,
+  gin:         `${DI}/go/go-original.svg`,
+  fiber:       `${DI}/go/go-original.svg`,
+  echo:        `${DI}/go/go-original.svg`,
+
+  // Rust
+  rust:        `${DI}/rust/rust-original.svg`,
+  actix:       `${DI}/rust/rust-original.svg`,
+  axum:        `${DI}/rust/rust-original.svg`,
+  rocket:      `${DI}/rust/rust-original.svg`,
+
+  // Python
+  python:      `${DI}/python/python-original.svg`,
+  django:      `${DI}/django/django-plain.svg`,
+  flask:       `${DI}/flask/flask-original.svg`,
+  fastapi:     `${DI}/fastapi/fastapi-original.svg`,
+
+  // Ruby
+  rails:       `${DI}/rails/rails-plain.svg`,
+  sinatra:     `${DI}/ruby/ruby-original.svg`,
+
+  // PHP
+  laravel:     `${DI}/laravel/laravel-original.svg`,
+  symfony:     `${DI}/symfony/symfony-original.svg`,
+
+  // Java
+  springboot:  `${DI}/spring/spring-original.svg`,
+  quarkus:     `${DI}/quarkus/quarkus-original.svg`,
+
+  // C# / .NET
+  dotnet:      `${DI}/dotnetcore/dotnetcore-original.svg`,
+  blazor:      `${DI}/dotnetcore/dotnetcore-original.svg`,
+
+  // Elixir
+  phoenix:     `${DI}/phoenix/phoenix-original.svg`,
+
+  // Generic
+  node:        `${DI}/nodejs/nodejs-original.svg`,
+  static:      `${DI}/html5/html5-original.svg`,
+  docker:      `${DI}/docker/docker-original.svg`,
+  "docker-compose": `${DI}/docker/docker-original.svg`,
+};

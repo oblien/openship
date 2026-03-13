@@ -30,6 +30,7 @@ import type {
 } from "../types";
 
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
+import { BuildLogger } from "./build-pipeline";
 
 // ─── Connection config ───────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ export class DockerRuntime implements RuntimeAdapter {
     "destroy",
     "containerInfo",
     "runtimeLogs",
+    "streamLogs",
     "usage",
     "containerIp",
   ]);
@@ -175,12 +177,13 @@ export class DockerRuntime implements RuntimeAdapter {
 
   // ── Build lifecycle ────────────────────────────────────────────────────
 
-  async build(config: BuildConfig, onLog?: LogCallback): Promise<BuildResult> {
+  async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
     // TODO: Build implementation using:
     //   1. Clone repo into temp dir or use `docker.buildImage()` with tar context
-    //   2. Stream build output via onLog callback
+    //   2. Stream build output via logger
     //   3. Tag the resulting image
-    onLog?.({ timestamp: new Date().toISOString(), message: "Build queued", level: "info" });
+    const log = logger ?? new BuildLogger();
+    log.log("Build queued");
     return { sessionId: config.sessionId, status: "queued" };
   }
 
@@ -277,7 +280,28 @@ export class DockerRuntime implements RuntimeAdapter {
       tail: tail ?? 200,
     });
 
-    const raw = buffer.toString("utf-8");
+    // Docker multiplexed streams prepend 8-byte frame headers per line.
+    // Strip them before parsing text.
+    const stripHeaders = (buf: Buffer): string => {
+      const lines: string[] = [];
+      let offset = 0;
+      while (offset < buf.length) {
+        if (offset + 8 <= buf.length &&
+            (buf[offset] === 1 || buf[offset] === 2) &&
+            buf[offset + 1] === 0 && buf[offset + 2] === 0 && buf[offset + 3] === 0) {
+          const size = buf.readUInt32BE(offset + 4);
+          lines.push(buf.subarray(offset + 8, offset + 8 + size).toString("utf-8"));
+          offset += 8 + size;
+        } else {
+          // No header — treat rest as raw text
+          lines.push(buf.subarray(offset).toString("utf-8"));
+          break;
+        }
+      }
+      return lines.join("");
+    };
+
+    const raw = stripHeaders(buffer);
 
     return raw
       .split("\n")
@@ -295,6 +319,74 @@ export class DockerRuntime implements RuntimeAdapter {
 
         return { timestamp, message, level };
       });
+  }
+
+  async streamRuntimeLogs(
+    containerId: string,
+    onLog: LogCallback,
+    opts?: { tail?: number },
+  ): Promise<() => void> {
+    const container = this.docker.getContainer(containerId);
+    const stream = await container.logs({
+      stdout: true,
+      stderr: true,
+      timestamps: true,
+      follow: true,
+      tail: opts?.tail ?? 100,
+    }) as unknown as NodeJS.ReadableStream;
+
+    let destroyed = false;
+
+    const parseLevel = (msg: string) =>
+      /\b(error|fatal|panic)\b/i.test(msg)
+        ? "error" as const
+        : /\bwarn(ing)?\b/i.test(msg)
+          ? "warn" as const
+          : "info" as const;
+
+    // Docker multiplexed streams prepend an 8-byte frame header per chunk
+    // when both stdout and stderr are attached. Strip it before parsing.
+    const stripDockerHeader = (chunk: Buffer): Buffer => {
+      // Header format: [stream_type(1), 0, 0, 0, size(4 big-endian)]
+      // stream_type: 1 = stdout, 2 = stderr
+      if (chunk.length >= 8 && (chunk[0] === 1 || chunk[0] === 2) &&
+          chunk[1] === 0 && chunk[2] === 0 && chunk[3] === 0) {
+        return chunk.subarray(8);
+      }
+      return chunk;
+    };
+
+    let buffer = "";
+    stream.on("data", (chunk: Buffer) => {
+      if (destroyed) return;
+      buffer += stripDockerHeader(chunk).toString("utf-8");
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line) continue;
+        const spaceIdx = line.indexOf(" ");
+        const timestamp = spaceIdx > 0 ? line.slice(0, spaceIdx) : new Date().toISOString();
+        const message = spaceIdx > 0 ? line.slice(spaceIdx + 1) : line;
+        onLog({ timestamp, message, level: parseLevel(message) });
+      }
+    });
+
+    stream.on("end", () => {
+      if (buffer && !destroyed) {
+        onLog({ timestamp: new Date().toISOString(), message: buffer, level: parseLevel(buffer) });
+        buffer = "";
+      }
+    });
+
+    return () => {
+      if (!destroyed) {
+        destroyed = true;
+        // Destroy the follow stream to stop Docker from sending more data
+        if ("destroy" in stream && typeof (stream as any).destroy === "function") {
+          (stream as any).destroy();
+        }
+      }
+    };
   }
 
   async getUsage(containerId: string): Promise<ResourceUsage> {

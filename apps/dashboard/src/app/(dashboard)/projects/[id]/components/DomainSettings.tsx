@@ -93,8 +93,8 @@ export const DomainSettings = () => {
     navigator.clipboard.writeText(text);
   };
 
-  // Check if primary domain is .obl.ee
-  const isObleeDomain = primaryDomain?.domain?.endsWith('.obl.ee');
+  // Check if primary domain is .opsh.io
+  const isObleeDomain = primaryDomain?.domain?.endsWith('.opsh.io');
 
   const handleRenewSSL = async () => {
     if (!primaryDomain?.domain) return;
@@ -257,7 +257,7 @@ export const DomainSettings = () => {
                       Free SSL Included
                     </div>
                     <div className="text-xs text-indigo-900">
-                      Your .obl.ee domain includes free SSL with no expiration. Certificate renewal is available for custom domains.
+                      Your .opsh.io domain includes free SSL with no expiration. Certificate renewal is available for custom domains.
                     </div>
                   </div>
                 </div>
@@ -416,24 +416,37 @@ export const DomainSettings = () => {
                     Add these DNS records
                   </div>
                   <div className="space-y-3">
-                    {/* A Record */}
+                    {/* CNAME Record */}
                     <div className="bg-white rounded-2xl p-4 border-2 border-purple-100">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex flex-col">
-                          <span className="text-xs font-semibold text-gray-500">A Record</span>
+                          <span className="text-xs font-semibold text-gray-500">CNAME Record</span>
                           <span className="text-xs text-gray-400 mt-0.5">
-                            @ → 88.99.101.216
+                            @ → edge.openship.io
                           </span>
                         </div>
                         <button
-                          onClick={() => copyToClipboard('88.99.101.216')}
+                          onClick={() => copyToClipboard('edge.openship.io')}
                           className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                           title="Copy"
                         >
                           {generateIcon("copy%201-34-1662364367.png", 20, "rgb(0, 0, 0, 0.5)")}
                         </button>
                       </div>
-                      <code className="text-xs text-black block">88.99.101.216</code>
+                      <code className="text-xs text-black block">edge.openship.io</code>
+                    </div>
+
+                    {/* TXT Record */}
+                    <div className="bg-white rounded-2xl p-4 border-2 border-purple-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-gray-500">TXT Record</span>
+                          <span className="text-xs text-gray-400 mt-0.5">
+                            _openship-challenge → verification token
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500">The verification token will be provided after you submit the domain below.</p>
                     </div>
 
                     {/* WWW CNAME Record - Only show when includeWww is true */}
@@ -443,18 +456,18 @@ export const DomainSettings = () => {
                           <div className="flex flex-col">
                             <span className="text-xs font-semibold text-gray-500">CNAME Record (WWW)</span>
                             <span className="text-xs text-gray-400 mt-0.5">
-                              www → {newDomain || 'yourdomain.com'}
+                              www → edge.openship.io
                             </span>
                           </div>
                           <button
-                            onClick={() => copyToClipboard(newDomain || 'yourdomain.com')}
+                            onClick={() => copyToClipboard('edge.openship.io')}
                             className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                             title="Copy"
                           >
                             <Copy className="h-3 w-3 text-gray-400" />
                           </button>
                         </div>
-                        <code className="text-xs text-black block">{newDomain || 'yourdomain.com'}</code>
+                        <code className="text-xs text-black block">edge.openship.io</code>
                       </div>
                     )}
                   </div>

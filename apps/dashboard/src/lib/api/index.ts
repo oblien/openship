@@ -9,7 +9,7 @@
  */
 
 /* --- Low-level client (rarely needed directly) -------------------- */
-export { api, ApiError, isAbortError, isNetworkError, setNetworkErrorHandler } from "./client";
+export { api, ApiError, isAbortError, isNetworkError, setNetworkErrorHandler, getApiBaseUrl } from "./client";
 export type { RequestOptions } from "./client";
 
 /* --- Endpoint registry (single source of truth for paths) --------- */

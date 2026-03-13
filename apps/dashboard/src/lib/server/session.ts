@@ -38,17 +38,54 @@ export type SessionData = { session: Session; user: User };
  * Returns the session data or `null` if unauthenticated.
  */
 export const getSession = cache(async (): Promise<SessionData | null> => {
-  try {
-    const data = await serverApi.get<SessionData>("/api/auth/get-session", {
-      cache: "no-store",
-    });
-    return data;
-  } catch (err) {
-    if (err instanceof ServerApiError && err.status === 401) {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY = 1000; // ms
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const data = await serverApi.get<SessionData>("/api/auth/get-session", {
+        cache: "no-store",
+      });
+      return data;
+    } catch (err) {
+      // 401 = genuinely unauthenticated — no point retrying
+      if (err instanceof ServerApiError && err.status === 401) {
+        return null;
+      }
+      // Network / timeout error — API may be restarting, retry
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY));
+        continue;
+      }
+      // Exhausted retries — return null so the page shows login
       return null;
     }
-    // Network errors, timeouts, etc. — treat as unauthenticated
-    // to fall back to login rather than crashing the page.
-    return null;
   }
+  return null;
 });
+
+/* ------------------------------------------------------------------ */
+/*  Deployment info (fetched once, cached in module memory forever)    */
+/* ------------------------------------------------------------------ */
+
+export type DeploymentInfo = {
+  selfHosted: boolean;
+  deployMode: string;
+};
+
+let _deploymentInfo: DeploymentInfo | null = null;
+
+/**
+ * Deployment info is static per instance — fetch once from
+ * GET /api/health/env and cache in module memory.
+ * Zero per-request cost after the first call.
+ */
+export async function getDeploymentInfo(): Promise<DeploymentInfo> {
+  if (_deploymentInfo) return _deploymentInfo;
+  try {
+    _deploymentInfo = await serverApi.get<DeploymentInfo>("/api/health/env");
+  } catch {
+    _deploymentInfo = { selfHosted: true, deployMode: "docker" };
+  }
+  return _deploymentInfo;
+}

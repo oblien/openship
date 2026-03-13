@@ -50,6 +50,29 @@ export function createDeploymentRepo(db: Database) {
       return { rows, total: Number(total), page, perPage };
     },
 
+    async listByUser(
+      userId: string,
+      opts?: { page?: number; perPage?: number },
+    ) {
+      const page = opts?.page ?? 1;
+      const perPage = opts?.perPage ?? 50;
+      const offset = (page - 1) * perPage;
+
+      const rows = await db.query.deployment.findMany({
+        where: eq(deployment.userId, userId),
+        orderBy: [desc(deployment.createdAt)],
+        limit: perPage,
+        offset,
+      });
+
+      const [{ value: total }] = await db
+        .select({ value: sql<number>`count(*)` })
+        .from(deployment)
+        .where(eq(deployment.userId, userId));
+
+      return { rows, total: Number(total), page, perPage };
+    },
+
     async create(data: Omit<NewDeployment, "id">) {
       const id = generateId("dep");
       const row = { id, ...data };
@@ -69,6 +92,14 @@ export function createDeploymentRepo(db: Database) {
         .update(deployment)
         .set({ containerId, url, updatedAt: new Date() })
         .where(eq(deployment.id, id));
+    },
+
+    /** Find the most recent deployment for a project (any status) */
+    async findLatestByProject(projectId: string) {
+      return db.query.deployment.findFirst({
+        where: eq(deployment.projectId, projectId),
+        orderBy: [desc(deployment.createdAt)],
+      });
     },
 
     /** Find the most recent successful deployment for rollback */
@@ -98,6 +129,13 @@ export function createDeploymentRepo(db: Database) {
       });
     },
 
+    async findBuildSessionByDeploymentId(deploymentId: string) {
+      return db.query.buildSession.findFirst({
+        where: eq(buildSession.deploymentId, deploymentId),
+        orderBy: [desc(buildSession.createdAt)],
+      });
+    },
+
     async updateBuildSession(id: string, data: Partial<NewBuildSession>) {
       await db
         .update(buildSession)
@@ -115,6 +153,16 @@ export function createDeploymentRepo(db: Database) {
           finishedAt: new Date(),
         })
         .where(eq(buildSession.id, id));
+    },
+
+    async deleteDeployment(id: string) {
+      await db.delete(buildSession).where(eq(buildSession.deploymentId, id));
+      await db.delete(deployment).where(eq(deployment.id, id));
+    },
+
+    async deleteByProjectId(projectId: string) {
+      await db.delete(buildSession).where(eq(buildSession.projectId, projectId));
+      await db.delete(deployment).where(eq(deployment.projectId, projectId));
     },
   };
 }

@@ -35,6 +35,7 @@ import type {
 
 import { LocalExecutor } from "../system/executor";
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
+import { BuildLogger, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ export class BareRuntime implements RuntimeAdapter {
     "restart",
     "destroy",
     "runtimeLogs",
+    "streamLogs",
     "containerIp",
   ]);
 
@@ -76,6 +78,8 @@ export class BareRuntime implements RuntimeAdapter {
   private executor: CommandExecutor;
   /** True if we created the executor ourselves (must dispose on cleanup) */
   private readonly ownsExecutor: boolean;
+  /** Track active builds by sessionId for cancellation */
+  private readonly activeBuilds = new Map<string, AbortController>();
 
   constructor(opts?: BareRuntimeOptions) {
     this.workDir = opts?.workDir ?? DEFAULT_WORK_DIR;
@@ -145,111 +149,46 @@ export class BareRuntime implements RuntimeAdapter {
     }
   }
 
-  // ─── Command execution ──────────────────────────────────────────────
-
-  private async runCommand(
-    command: string,
-    cwd: string,
-    env: Record<string, string>,
-    onLog?: LogCallback,
-  ): Promise<void> {
-    const logFn = (msg: string, level: LogEntry["level"] = "info") => {
-      onLog?.({ timestamp: new Date().toISOString(), message: msg, level });
-    };
-
-    logFn(`$ ${command}`);
-
-    // Build env prefix for the remote command
-    const envPrefix = Object.entries(env)
-      .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-      .join(" ");
-
-    const fullCommand = envPrefix
-      ? `cd ${JSON.stringify(cwd)} && ${envPrefix} ${command}`
-      : `cd ${JSON.stringify(cwd)} && ${command}`;
-
-    const { code } = await this.executor.streamExec(fullCommand, (entry) => {
-      onLog?.(entry);
-    });
-
-    if (code !== 0) {
-      throw new Error(`Command failed with exit code ${code}: ${command}`);
-    }
-  }
-
   // ── Build lifecycle ────────────────────────────────────────────────────
 
-  async build(config: BuildConfig, onLog?: LogCallback): Promise<BuildResult> {
-    const start = Date.now();
+  async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
+    const log = logger ?? new BuildLogger();
     const dir = this.projectDir(config.projectId);
-    const logFn = (msg: string, level: LogEntry["level"] = "info") => {
-      onLog?.({ timestamp: new Date().toISOString(), message: msg, level });
+    await this.executor.mkdir(dir);
+
+    const abort = new AbortController();
+    this.activeBuilds.set(config.sessionId, abort);
+
+    const buildEnv: BuildEnvironment = {
+      projectDir: dir,
+      exec: async (command, logCb) => {
+        if (abort.signal.aborted) throw new Error("Build cancelled");
+        const { code } = await this.executor.streamExec(command, logCb);
+        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (code !== 0) {
+          throw new Error(`Command failed with exit code ${code}`);
+        }
+      },
     };
 
     try {
-      logFn("Preparing source code...");
-      await this.executor.mkdir(dir);
-
-      const hasGit = await this.executor.exists(`${dir}/.git`);
-
-      if (hasGit) {
-        await this.runCommand(
-          `git fetch --all && git reset --hard origin/${config.branch}`,
-          dir,
-          config.envVars,
-          onLog,
-        );
-      } else {
-        await this.runCommand(
-          `git clone --depth 1 --branch ${config.branch} ${config.repoUrl} .`,
-          dir,
-          config.envVars,
-          onLog,
-        );
-      }
-
-      if (config.commitSha) {
-        await this.runCommand(
-          `git checkout ${config.commitSha}`,
-          dir,
-          config.envVars,
-          onLog,
-        );
-      }
-
-      logFn("Installing dependencies...");
-      await this.runCommand(config.installCommand, dir, config.envVars, onLog);
-
-      logFn("Building...");
-      await this.runCommand(config.buildCommand, dir, config.envVars, onLog);
-
-      const durationMs = Date.now() - start;
-      logFn(`Build completed in ${(durationMs / 1000).toFixed(1)}s`);
-
+      const result = await runBuildPipeline(buildEnv, config, log);
       return {
         sessionId: config.sessionId,
-        status: "deploying",
-        imageRef: dir,
-        durationMs,
+        status: result.status,
+        imageRef: result.status === "deploying" ? dir : undefined,
+        durationMs: result.durationMs,
       };
-    } catch (err) {
-      const durationMs = Date.now() - start;
-      logFn(
-        `Build failed: ${err instanceof Error ? err.message : String(err)}`,
-        "error",
-      );
-      return {
-        sessionId: config.sessionId,
-        status: "failed",
-        durationMs,
-      };
+    } finally {
+      this.activeBuilds.delete(config.sessionId);
     }
   }
 
   async cancelBuild(sessionId: string): Promise<void> {
-    const pid = await this.readPid(`build-${sessionId}`);
-    if (pid && (await this.isAlive(pid))) {
-      await this.executor.exec(`kill ${pid} 2>/dev/null || true`);
+    const abort = this.activeBuilds.get(sessionId);
+    if (abort) {
+      abort.abort();
+      this.activeBuilds.delete(sessionId);
     }
   }
 
@@ -281,13 +220,16 @@ export class BareRuntime implements RuntimeAdapter {
       NODE_ENV: config.environment === "production" ? "production" : "development",
     };
     const envPrefix = Object.entries(envEntries)
-      .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+      .map(([k, v]) => `${k}=${sq(v)}`)
       .join(" ");
 
-    // Spawn detached process: nohup + background, write PID to stdout
+    const startCommand = config.startCommand || "npm start";
+
+    // Spawn detached process in its own process group via setsid.
+    // This ensures `kill -- -PGID` can clean up the entire tree.
     const spawnCmd = [
-      `cd ${JSON.stringify(dir)}`,
-      `${envPrefix} nohup npm start >> ${JSON.stringify(logPath)} 2>&1 &`,
+      `cd ${sq(dir)}`,
+      `setsid ${envPrefix} nohup ${startCommand} >> ${sq(logPath)} 2>&1 &`,
       `echo $!`,
     ].join(" && ");
 
@@ -310,8 +252,9 @@ export class BareRuntime implements RuntimeAdapter {
     if (!pid) return;
 
     if (await this.isAlive(pid)) {
-      // SIGTERM first
-      await this.executor.exec(`kill ${pid} 2>/dev/null || true`);
+      // Kill the entire process group so child processes don't become orphans.
+      // PGID equals the leader PID when spawned with setsid.
+      await this.executor.exec(`kill -- -${pid} 2>/dev/null || kill ${pid} 2>/dev/null || true`);
 
       // Wait up to 10s for graceful shutdown
       const deadline = Date.now() + 10_000;
@@ -319,9 +262,9 @@ export class BareRuntime implements RuntimeAdapter {
         await new Promise((r) => setTimeout(r, 500));
       }
 
-      // SIGKILL if still alive
+      // SIGKILL the whole group if still alive
       if (await this.isAlive(pid)) {
-        await this.executor.exec(`kill -9 ${pid} 2>/dev/null || true`);
+        await this.executor.exec(`kill -9 -- -${pid} 2>/dev/null || kill -9 ${pid} 2>/dev/null || true`);
       }
     }
   }
@@ -366,7 +309,7 @@ export class BareRuntime implements RuntimeAdapter {
       // Use `tail` command instead of reading entire file — efficient for
       // large log files and works the same over SSH.
       const lines = tail
-        ? await this.executor.exec(`tail -n ${tail} ${JSON.stringify(logPath)}`)
+        ? await this.executor.exec(`tail -n ${tail} ${sq(logPath)}`)
         : await this.executor.readFile(logPath);
 
       return lines
@@ -384,6 +327,34 @@ export class BareRuntime implements RuntimeAdapter {
     } catch {
       return [];
     }
+  }
+
+  async streamRuntimeLogs(
+    containerId: string,
+    onLog: LogCallback,
+    opts?: { tail?: number },
+  ): Promise<() => void> {
+    const logPath = this.logFile(containerId);
+    const tailN = opts?.tail ?? 100;
+
+    // Use streamExec with tail -f for real-time streaming
+    let stopped = false;
+    const promise = this.executor.streamExec(
+      `tail -n ${tailN} -f ${sq(logPath)}`,
+      (entry) => {
+        if (!stopped) onLog(entry);
+      },
+    );
+
+    // The stream resolves when tail exits (which normally won't happen
+    // until the cleanup function kills it). Swallow errors from kill.
+    promise.catch(() => {});
+
+    return () => {
+      stopped = true;
+      // Kill the tail process watching this specific log file
+      this.executor.exec(`pkill -f ${sq(`tail.*${logPath}`)} 2>/dev/null || true`).catch(() => {});
+    };
   }
 
   async getUsage(containerId: string): Promise<ResourceUsage> {

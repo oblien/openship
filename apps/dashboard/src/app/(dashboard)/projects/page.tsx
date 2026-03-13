@@ -39,22 +39,32 @@ export default function DeploymentDashboard() {
         if (response.success && Array.isArray(response.projects)) {
           // Map API response to Project interface
           const mappedProjects: Project[] = response.projects.map((project: any, index: number) => {
-            const hasRepo = project.owner && project.repo;
-            const repoSlug = hasRepo ? `${project.owner}/${project.repo}` : '';
+            const hasRepo = project.gitOwner && project.gitRepo;
+            const repoSlug = hasRepo ? `${project.gitOwner}/${project.gitRepo}` : '';
+
+            // Draft = never had a successful build (no activeDeploymentId)
+            const isDraft = !project.activeDeploymentId;
+            let status: Project["status"];
+            if (isDraft) {
+              status = "draft";
+            } else {
+              status = "live";
+            }
 
             return {
               id: project.id,
               name: project.name || 'Unnamed Project',
-              description: project.commit_message || project.description || `Production deployment`,
-              framework: project.stack || 'unknown',
-              url: `https://${project.domain}`,
-              status: project.active ? "live" : "paused",
-              lastDeployed: project.updated_at || project.created_at,
-              domain: project.domain,
-              isCustomDomain: !project.domain.endsWith('.obl.ee'),
+              description: project.commitMessage || project.description || `Production deployment`,
+              framework: project.framework || 'unknown',
+              url: project.activeDeploymentId ? `https://${project.slug}.opsh.io` : '',
+              status,
+              lastDeployed: project.updatedAt || project.createdAt,
+              domain: project.slug || '',
+              isCustomDomain: false,
               deploymentCount: 1,
               visitors: '0',
               repo: repoSlug,
+              latestDeploymentId: project.latestDeploymentId || null,
             };
           });
           setProjects(mappedProjects);
@@ -150,7 +160,7 @@ export default function DeploymentDashboard() {
               </p>
             </div>
             <Link
-              href="/new"
+              href="/library"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 w-full sm:w-auto justify-center"
             >
               {generateIcon('story%20add-152-1658436130.png', 18, 'hsl(var(--primary-foreground))')}

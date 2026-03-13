@@ -69,6 +69,8 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const isConnectedRef = useRef(false);
+  /** Buffer for incomplete SSE frames across chunks */
+  const sseBufferRef = useRef('');
 
   /**
    * Process and decode base64 log data
@@ -113,33 +115,51 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
   }, []);
 
   /**
-   * Process a chunk of SSE data
+   * Process a chunk of SSE data — properly handles event: + data: lines
+   * and message boundaries (\n\n).
    */
   const processSSEChunk = useCallback((chunk: string) => {
     try {
-      const lines = chunk.split('\n');
+      // Append chunk to buffer for cross-chunk boundary handling
+      const buffer = sseBufferRef.current + chunk;
 
-      for (const line of lines) {
-        if (!line.trim()) continue;
+      // SSE messages are separated by \n\n
+      const parts = buffer.split('\n\n');
+
+      // Last element may be incomplete — keep in buffer
+      sseBufferRef.current = parts.pop() || '';
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+
+        let eventType = 'message';
+        let dataStr = '';
+
+        for (const line of part.split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('event:')) {
+            eventType = trimmed.substring(6).trim();
+          } else if (trimmed.startsWith('data:')) {
+            const d = trimmed.substring(5).trim();
+            dataStr = dataStr ? dataStr + '\n' + d : d;
+          } else if (trimmed.startsWith('{')) {
+            // Direct JSON line (non-SSE format fallback)
+            dataStr = trimmed;
+          }
+        }
+
+        if (!dataStr) continue;
 
         let jsonData: any;
-
-        // Parse JSON from line (handles both direct JSON and SSE format)
-        if (line.trim().startsWith('{')) {
-          try {
-            jsonData = JSON.parse(line.trim());
-          } catch (e) {
-            continue;
-          }
-        } else if (line.trim().startsWith('data:')) {
-          const jsonPart = line.substring(line.indexOf(':') + 1).trim();
-          try {
-            jsonData = JSON.parse(jsonPart);
-          } catch (e) {
-            continue;
-          }
-        } else {
+        try {
+          jsonData = JSON.parse(dataStr);
+        } catch {
           continue;
+        }
+
+        // Inject SSE event type if not present in JSON data
+        if (!jsonData.type && eventType !== 'message') {
+          jsonData.type = eventType;
         }
 
         // Parse message using custom parser or default
@@ -149,7 +169,7 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
         // Process log data if present
         let rawText: string | undefined;
         let rawBytes: Uint8Array | undefined;
-        
+
         if (message.data && typeof message.data === 'string') {
           const processed = processLogData(message.data);
           if (processed) {
@@ -170,7 +190,7 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
             rawBytes,
             writeToTerminal,
           });
-          
+
           // If handler returns false, stop processing
           if (shouldContinue === false) {
             break;
@@ -199,12 +219,16 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
       abortControllerRef.current.abort();
     }
 
+    // Reset SSE buffer
+    sseBufferRef.current = '';
+
     // Create new abort controller
     abortControllerRef.current = new AbortController();
 
     try {
       const response = await fetch(url, {
         method: options.method || 'GET',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           ...options.headers,
@@ -266,6 +290,7 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
       abortControllerRef.current = null;
     }
     isConnectedRef.current = false;
+    sseBufferRef.current = '';
   }, []);
 
   /**

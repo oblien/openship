@@ -14,9 +14,9 @@
  *         └─ API (remote server, reached via HTTP)
  */
 
-import { app, BrowserWindow, shell, ipcMain, net } from "electron";
+import { app, BrowserWindow, shell, ipcMain, net, dialog } from "electron";
 import { join } from "node:path";
-import Store from "electron-store";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
 // ─── Persistent config ───────────────────────────────────────────────────────
 
@@ -31,13 +31,53 @@ interface AppConfig {
   windowBounds?: { x: number; y: number; width: number; height: number };
 }
 
-const store = new Store<AppConfig>({
-  defaults: {
-    apiUrl: "",
-    dashboardUrl: "",
-    onboardingComplete: false,
-  },
-});
+const defaults: AppConfig = {
+  apiUrl: "",
+  dashboardUrl: "",
+  onboardingComplete: false,
+};
+
+/** Minimal JSON config store using app.getPath('userData') */
+class ConfigStore {
+  private data: AppConfig;
+  private filePath: string;
+
+  constructor() {
+    const dir = app.getPath("userData");
+    mkdirSync(dir, { recursive: true });
+    this.filePath = join(dir, "config.json");
+
+    try {
+      this.data = { ...defaults, ...JSON.parse(readFileSync(this.filePath, "utf-8")) };
+    } catch {
+      this.data = { ...defaults };
+    }
+  }
+
+  get<K extends keyof AppConfig>(key: K): AppConfig[K] {
+    return this.data[key];
+  }
+
+  set<K extends keyof AppConfig>(key: K, value: AppConfig[K]) {
+    this.data[key] = value;
+    this.save();
+  }
+
+  getAll(): AppConfig {
+    return { ...this.data };
+  }
+
+  clear() {
+    this.data = { ...defaults };
+    this.save();
+  }
+
+  private save() {
+    writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+  }
+}
+
+const store = new ConfigStore();
 
 // ─── Window management ───────────────────────────────────────────────────────
 
@@ -102,15 +142,7 @@ function createWindow() {
 function loadOnboarding() {
   if (!mainWindow) return;
 
-  // In dev, electron-vite serves the renderer on a local URL
-  // In production, load from the bundled file
-  const rendererUrl = process.env.ELECTRON_RENDERER_URL;
-
-  if (rendererUrl) {
-    mainWindow.loadURL(rendererUrl);
-  } else {
-    mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
-  }
+  mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
 }
 
 function loadDashboard() {
@@ -154,7 +186,7 @@ ipcMain.handle("config:set", (_event, key: keyof AppConfig, value: unknown) => {
 });
 
 ipcMain.handle("config:getAll", () => {
-  return store.store;
+  return store.getAll();
 });
 
 // ─── IPC: App metadata ──────────────────────────────────────────────────────
@@ -213,6 +245,16 @@ ipcMain.handle(
 
 ipcMain.handle("onboarding:open-external", (_event, url: string) => {
   shell.openExternal(url);
+});
+
+ipcMain.handle("onboarding:browse-file", async () => {
+  if (!mainWindow) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: "Select SSH Key",
+    properties: ["openFile"],
+    filters: [{ name: "All Files", extensions: ["*"] }],
+  });
+  return canceled || !filePaths.length ? null : filePaths[0];
 });
 
 // ─── IPC: Reset (for settings → re-onboard) ─────────────────────────────────
