@@ -22,6 +22,8 @@ export interface ToolchainStatus {
   installed: boolean;
   /** Detected version string */
   version?: string;
+  /** Minimum required version for this stack/toolchain check */
+  requiredVersion?: string;
   /** Ready to use */
   healthy: boolean;
   /** Human-readable status message */
@@ -37,6 +39,8 @@ export interface ToolchainCheckResult {
   ready: boolean;
   /** Names of missing tools */
   missing: string[];
+  /** Names of installed but too-old tools */
+  outdated: string[];
 }
 
 // ─── Catalog entry types ─────────────────────────────────────────────────────

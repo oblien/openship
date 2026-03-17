@@ -1,8 +1,7 @@
 import React, { useState } from "react";
-import { Terminal, FolderOutput, Server, Package, Play, Hash, Settings2, ChevronDown, ChevronUp, Pencil, Hammer, BoxSelect, ShieldCheck, Cloud, Monitor } from "lucide-react";
+import { Terminal, FolderOutput, Server, Package, Play, Hash, Settings2, ChevronDown, ChevronUp, Pencil, Hammer, BoxSelect, ShieldCheck } from "lucide-react";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useDeployment } from "@/context/DeploymentContext";
-import type { BuildStrategy } from "@/context/deployment/types";
 
 interface InputField {
   key: string;
@@ -291,7 +290,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                 {generalFields.map(renderInput)}
 
                 {/* ── Advanced (collapsible) ──────────────────── */}
-                {(advancedFields.length > 0 || hasBuild) && (
+                {advancedFields.length > 0 && (
                   <div className="border border-border/30 rounded-lg overflow-hidden">
                     <button
                       onClick={() => setAdvancedOpen(!advancedOpen)}
@@ -309,30 +308,6 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                     </button>
                     {advancedOpen && (
                       <div className="px-3 pb-3 space-y-3">
-                        {hasBuild && (
-                          <div>
-                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Build Location</label>
-                            <div className="flex gap-1.5 p-1 bg-muted/30 rounded-lg border border-border/50">
-                              {([
-                                { value: "server" as BuildStrategy, label: "Server", icon: <Cloud className="w-3.5 h-3.5" /> },
-                                { value: "local" as BuildStrategy, label: "Local", icon: <Monitor className="w-3.5 h-3.5" /> },
-                              ]).map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  onClick={() => updateConfig?.({ buildStrategy: opt.value })}
-                                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                                    config?.buildStrategy === opt.value
-                                      ? 'bg-background text-foreground shadow-sm border border-border/50'
-                                      : 'text-muted-foreground hover:text-foreground'
-                                  }`}
-                                >
-                                  {opt.icon}
-                                  {opt.label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                         {advancedFields.map(renderInput)}
                       </div>
                     )}

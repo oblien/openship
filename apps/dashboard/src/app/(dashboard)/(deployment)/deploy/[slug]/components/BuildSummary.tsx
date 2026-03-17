@@ -1,5 +1,5 @@
 import React from "react";
-import { Terminal, FolderOutput, Server, Globe, Container, Layers, Hash, ExternalLink } from "lucide-react";
+import { Terminal, FolderOutput, Server, Globe, Container, Layers, Hash, ExternalLink, Cloud, Monitor } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { STACKS, STACK_ICONS } from "@repo/core";
@@ -83,6 +83,25 @@ const BuildSummary: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {/* Build location — for apps with build step */}
+        {isApp && config.options.hasBuild && (
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-md bg-muted/60 flex items-center justify-center">
+              {config.buildStrategy === "local" ? (
+                <Monitor className="size-3.5 text-muted-foreground" />
+              ) : (
+                <Cloud className="size-3.5 text-muted-foreground" />
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Build Location</p>
+              <p className="text-sm font-medium text-foreground">
+                {config.buildStrategy === "local" ? "Local Machine" : "Server"}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* App-specific: build/install/output */}
         {isApp && config.options.buildCommand && (

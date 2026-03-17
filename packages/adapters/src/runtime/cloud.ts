@@ -25,6 +25,8 @@ import type {
 
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
 import { BuildLogger, runBuildPipeline, type BuildEnvironment } from "./build-pipeline";
+import { runLocalBuild } from "./local-build";
+import { transferLocalDirectory } from "./transfer";
 
 function now(): string {
   return new Date().toISOString();
@@ -67,43 +69,14 @@ export class CloudRuntime implements RuntimeAdapter {
     return this.client.workspace(workspaceId);
   }
 
-  // ── File transfer ──────────────────────────────────────────────────────
-
-  /**
-   * Upload files from a local path on the API server into a cloud workspace.
-   *
-   * Single implementation, two call sites:
-   *   - Build preflight: upload source when buildStrategy="server" + localPath
-   *   - Deploy phase:    upload build output when buildStrategy="local" (future)
-   *
-   * Tars the local directory, uploads via Oblien transfer API.
-   */
-  async uploadLocal(
-    localPath: string,
-    rt: Awaited<ReturnType<WorkspaceHandle["runtime"]>>,
-    destPath: string,
-    logger: BuildLogger,
-  ): Promise<void> {
-    logger.log(`Uploading ${localPath} → ${destPath}...\n`);
-
-    const { execSync } = await import("node:child_process");
-    const tarBuffer = execSync(
-      `tar czf - -C '${localPath.replace(/'/g, "'\\''")}' --exclude=node_modules --exclude=.git .`,
-      { maxBuffer: 500 * 1024 * 1024 },
-    );
-
-    const result = await rt.transfer.upload({
-      body: tarBuffer,
-      dest: destPath,
-    });
-
-    logger.log(`Uploaded ${result.files_extracted} files.\n`);
-  }
-
   // ── Build lifecycle ────────────────────────────────────────────────────
 
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
     const log = logger ?? new BuildLogger();
+
+    // "local" = build on the API host, then upload output to cloud workspace.
+    // "server" (default) = build inside the cloud workspace.
+    const buildLocally = config.buildStrategy === "local";
 
     // 1. Provision workspace + acquire runtime token (logs to terminal)
     let wsId: string;
@@ -122,7 +95,37 @@ export class CloudRuntime implements RuntimeAdapter {
       };
     }
 
-    // 2. Build environment — exec delegates to cloud runtime API
+    if (buildLocally) {
+      log.log("Build strategy: local (build on API host, upload to cloud)\n");
+
+      const result = await runLocalBuild({
+        config,
+        logger: log,
+        transferOutput: async (buildDir) => {
+          await transferLocalDirectory(
+            buildDir,
+            {
+              kind: "cloud-runtime",
+              runtime: rt,
+              path: "/app",
+            },
+            log,
+            { excludes: [] },
+          );
+        },
+      });
+
+      return {
+        sessionId: config.sessionId,
+        status: result.status,
+        imageRef: wsId,
+        durationMs: result.durationMs,
+      };
+    }
+
+    // ── Server build: exec delegates to cloud runtime API ──
+    log.log("Build strategy: server (build in cloud workspace)\n");
+
     const buildEnv: BuildEnvironment = {
       projectDir: "/app",
       hasNativeEnv: true,
@@ -131,7 +134,15 @@ export class CloudRuntime implements RuntimeAdapter {
       },
       preflight: async (cfg, plog) => {
         if (!cfg.localPath) return;
-        await this.uploadLocal(cfg.localPath, rt, "/app", plog);
+        await transferLocalDirectory(
+          cfg.localPath,
+          {
+            kind: "cloud-runtime",
+            runtime: rt,
+            path: "/app",
+          },
+          plog,
+        );
       },
     };
 

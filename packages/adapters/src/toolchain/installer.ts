@@ -28,6 +28,7 @@ export async function installTool(
   executor: CommandExecutor,
   name: string,
   onLog?: (log: LogEntry) => void,
+  requiredVersion?: string,
 ): Promise<ToolchainInstallResult> {
   const startedAt = Date.now();
   const recipe = toolchainCatalog.checks[name];
@@ -39,7 +40,7 @@ export async function installTool(
   // If tool is provided by a parent, check if it's already available
   // (parent install may have brought it in)
   if (recipe.providedBy && !toolchainCatalog.installs[name]) {
-    const status = await checkTool(executor, name);
+    const status = await checkTool(executor, name, { minVersion: requiredVersion });
     if (status.healthy) {
       return { tool: name, success: true, version: status.version };
     }
@@ -148,6 +149,7 @@ export async function installTools(
   executor: CommandExecutor,
   toolNames: readonly string[],
   onLog?: (log: LogEntry) => void,
+  requiredVersions?: Readonly<Record<string, string>>,
 ): Promise<ToolchainInstallResult[]> {
   // Sort: parent tools first, children after
   const sorted = [...toolNames].sort((a, b) => {
@@ -166,7 +168,9 @@ export async function installTools(
 
   for (const name of sorted) {
     // Skip if already healthy (e.g. parent install brought it in)
-    const status = await checkTool(executor, name);
+    const status = await checkTool(executor, name, {
+      minVersion: requiredVersions?.[name],
+    });
     if (status.healthy) {
       onLog?.({
         timestamp: new Date().toISOString(),
@@ -177,7 +181,7 @@ export async function installTools(
       continue;
     }
 
-    const result = await installTool(executor, name, onLog);
+    const result = await installTool(executor, name, onLog, requiredVersions?.[name]);
     results.push(result);
   }
 

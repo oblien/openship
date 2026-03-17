@@ -250,7 +250,7 @@ export interface CommandExecutor {
   /** Create a directory (recursive). */
   mkdir(path: string): Promise<void>;
 
-  /** Remove a file. Silently succeeds if already gone. */
+  /** Remove a file or directory recursively. Silently succeeds if already gone. */
   rm(path: string): Promise<void>;
 
   /**
@@ -259,12 +259,17 @@ export interface CommandExecutor {
    * LocalExecutor: cp -a (same filesystem).
    * SshExecutor:   tar locally → pipe through SSH → extract remotely.
    *
+   * By default SshExecutor excludes `node_modules` and `.git` (source transfer).
+   * Pass `options.excludes` to override (e.g. `[]` to include everything for
+   * build output transfer).
+   *
    * Rejects on failure.
    */
   transferIn(
     localPath: string,
     remotePath: string,
     onLog?: (log: LogEntry) => void,
+    options?: { excludes?: string[] },
   ): Promise<void>;
 
   /** Clean up connections / resources. */

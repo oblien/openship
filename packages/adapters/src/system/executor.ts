@@ -252,7 +252,7 @@ export class LocalExecutor implements CommandExecutor {
 
   async rm(path: string): Promise<void> {
     try {
-      await fsRm(path);
+      await fsRm(path, { recursive: true, force: true });
     } catch {
       // Already gone
     }
@@ -262,6 +262,7 @@ export class LocalExecutor implements CommandExecutor {
     localPath: string,
     remotePath: string,
     onLog?: (log: LogEntry) => void,
+    _options?: { excludes?: string[] },
   ): Promise<void> {
     const log = onLog ?? (() => {});
     const { code } = await this.streamExec(
@@ -507,10 +508,11 @@ export class SshExecutor implements CommandExecutor {
   }
 
   async rm(path: string): Promise<void> {
-    const sftp = await this.sftp();
-    return new Promise((resolve) => {
-      sftp.unlink(path, () => resolve()); // Silently ignore if gone
-    });
+    try {
+      await this.exec(`rm -rf ${sq(path)}`);
+    } catch {
+      // Already gone
+    }
   }
 
   async dispose(): Promise<void> {
@@ -567,9 +569,15 @@ export class SshExecutor implements CommandExecutor {
     localPath: string,
     remotePath: string,
     onLog?: (log: LogEntry) => void,
+    options?: { excludes?: string[] },
   ): Promise<void> {
+    const excludes = options?.excludes ?? ["node_modules", ".git"];
+    const excludeFlags = excludes.map((e) => `--exclude=${sq(e)}`).join(" ");
+    const tarCmd = excludeFlags
+      ? `tar czf - -C ${sq(localPath)} ${excludeFlags} .`
+      : `tar czf - -C ${sq(localPath)} .`;
     const { code } = await this.pipeLocal(
-      `tar czf - -C ${sq(localPath)} --exclude=node_modules --exclude=.git .`,
+      tarCmd,
       `mkdir -p ${sq(remotePath)} && tar xzf - -C ${sq(remotePath)}`,
       onLog,
     );

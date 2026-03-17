@@ -21,25 +21,25 @@ export async function getBuildMode(userId: string): Promise<BuildMode> {
 /**
  * Resolve the effective build strategy for a deployment.
  *
+ * The per-deploy value sent by the UI is the source of truth.
+ * The global user preference is only used as an initial default
+ * in the dashboard when preparing a new deploy — it should NOT
+ * override an explicit per-deploy choice here.
+ *
  * Priority chain:
- *   1. Explicit per-deploy override (passed by the user at deploy time)
- *   2. User platform preference ("server" / "local" override)
- *   3. Stack default (STACKS[framework].defaultBuildStrategy)
- *   4. Fallback: "server"
+ *   1. Explicit per-deploy value (always sent by the dashboard)
+ *   2. Stack default (STACKS[framework].defaultBuildStrategy)
+ *   3. Fallback: "server"
  */
 export async function resolveStrategy(
-  userId: string,
+  _userId: string,
   framework: string | undefined,
   explicit?: BuildStrategy,
 ): Promise<BuildStrategy> {
-  // 1. Per-deploy explicit override
+  // 1. Per-deploy explicit value (source of truth)
   if (explicit) return explicit;
 
-  // 2. User platform preference
-  const mode = await getBuildMode(userId);
-  if (mode === "server" || mode === "local") return mode;
-
-  // 3. Stack default → 4. Fallback
+  // 2. Stack default → 3. Fallback
   const stackId = framework as StackId;
   const stackDef: StackDefinition | undefined =
     stackId && stackId in STACKS

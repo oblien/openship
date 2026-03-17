@@ -1,273 +1,353 @@
-<div align="center">
-  <h1>Openship</h1>
-  <p><strong>Open-source, self-hostable deployment platform.</strong></p>
-  <p>Deploy anywhere — self-host on your own server or use our managed cloud.</p>
+# Openship
 
-  <br />
+Deploy anything. Own everything.
 
-  <a href="#quick-start">Quick Start</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#development">Development</a> ·
-  <a href="#self-hosting">Self-Hosting</a> ·
-  <a href="#cloud">Cloud</a> ·
-  <a href="#contributing">Contributing</a>
-</div>
+Push your code — build, configure, and deploy from one place.  
+Use our cloud or connect your own servers.
+
+Desktop-first. Open-source. Zero lock-in.
 
 ---
 
-## Quick Start
+## What Openship Is
 
-### Prerequisites
+Openship is a **desktop-first deployment platform with built-in CI/CD and full infrastructure control**.
 
-- [Bun](https://bun.sh/) >= 1.0 (package manager + runtime)
-- [Node.js](https://nodejs.org/) >= 20
-- [Docker](https://www.docker.com/) (for self-hosting or local development)
+It removes the gap between writing code and running it in production.
 
-### Install & Run
+No pipelines to maintain.  
+No YAML to manage.  
+No platform lock-in.
+
+---
+
+## The Core Idea
+
+Most platforms run everything on your server:
+
+- CI/CD pipelines
+- Build systems
+- Dashboards
+- Databases
+- Your apps
+
+→ Your production resources are shared with tooling.
+
+---
+
+### Openship
+
+**Your machine**
+- Desktop app (UI)
+- Build system (local by default)
+- Deployment control
+
+**Your server**
+- Production containers only
+
+→ No resource contention  
+→ Predictable performance  
+→ Clean architecture  
+
+---
+
+## Desktop-First Architecture
+
+Openship is not a hosted dashboard.
+
+It’s a **local control plane for your infrastructure**.
+
+- Builds run locally by default
+- Deployments are triggered instantly
+- Works with any VPS or private network
+- No dependency on a remote control layer
+
+Your server stays minimal:
+- No CI runners
+- No dashboards
+- No management services
+
+Only your apps.
+
+---
+
+## Built-in CI/CD (Without the Overhead)
+
+CI/CD is fully integrated — without pipelines to configure.
+
+- Deploy on every push
+- Preview environments per branch
+- Staging and production flows
+- Rollbacks built-in
+
+You can still use:
+- CLI workflows
+- External CI if needed
+- Server-side builds (optional)
+
+Default: simple, fast, local.
+
+---
+
+## Deploy Anywhere
+
+- Openship Cloud (managed)
+- Any VPS or bare metal
+- Any provider, any region
+- Multi-server deployments
+
+Same app, same flow — everywhere.
+
+---
+
+## Full Backend Support
+
+Run complete applications out of the box:
+
+- Databases (Postgres, MySQL, MongoDB)
+- Redis / caching
+- Background workers
+- WebSockets
+- APIs
+- Storage
+
+Provision and manage everything from the app.
+
+---
+
+## Any Stack
+
+If it builds, it ships.
+
+- Node.js, Bun, Deno
+- Python, Go, Rust
+- PHP, Ruby, Java, .NET
+- Docker (full control)
+- Monorepos supported
+
+No lock-in to a runtime.
+
+---
+
+## Domains & SSL
+
+- Automatic SSL (Let's Encrypt)
+- Wildcard domains
+- Unlimited domains
+- Auto-renewal
+
+No manual setup.
+
+---
+
+## The Desktop App
+
+Everything in one place:
+
+- One-click deploys
+- Live build logs
+- Real-time metrics
+- Domain & DNS management
+- Database control
+- Backups & restore
+- Scaling controls
+
+Replaces:
+- CI dashboards
+- SSH workflows
+- Manual Docker setup
+
+---
+
+## Developer Interfaces
+
+### CLI
 
 ```bash
-git clone https://github.com/oblien/openship.git
-cd openship
-cp .env.example .env
-bun install
-bun dev
+openship deploy
+openship logs --follow
+openship rollback
+openship domains
 ```
-
-That's it. Three services start in parallel:
-
-| Service     | URL                   | What it is                  |
-| ----------- | --------------------- | --------------------------- |
-| Web         | http://localhost:3000  | Marketing site & docs       |
-| Dashboard   | http://localhost:3001  | Deployment dashboard (UI)   |
-| API         | http://localhost:4000  | Backend engine              |
 
 ---
 
-## Architecture
+### REST API
 
-```
-openship/
-├── apps/
-│   ├── web/              # Next.js — Landing page, pricing, docs
-│   ├── dashboard/        # Next.js — Authenticated dashboard (shared: self-host + cloud)
-│   ├── api/              # Hono — Core API (auth, projects, deployments, billing)
-│   └── cli/              # TypeScript — CLI tool (`openship deploy`)
-│
-├── packages/
-│   ├── adapters/         # DockerAdapter (self-host) + OblienAdapter (cloud)
-│   ├── core/             # Shared types, constants, utilities, errors
-│   ├── db/               # Drizzle ORM schema + client (PGlite local / Postgres cloud)
-│   └── ui/               # Shared React components (Tailwind + shadcn)
-│
-├── tsconfig.base.json    # Shared TypeScript config (extended by all apps/packages)
-├── docker-compose.yml    # One-click self-hosting
-├── turbo.json            # Turborepo build pipeline
-└── package.json          # Workspace root (bun workspaces)
-```
+Automate everything:
 
-### How apps connect
-
-```
-┌─────────────────┐     ┌─────────────────┐
-│   apps/web      │     │  apps/dashboard  │
-│  localhost:3000  │     │  localhost:3001  │
-│  (marketing)     │     │  (deploy UI)     │
-└─────────────────┘     └────────┬────────┘
-                                 │ fetch
-                        ┌────────▼────────┐
-                        │    apps/api      │
-                        │  localhost:4000  │
-                        │  (Hono engine)   │
-                        └────────┬────────┘
-                                 │
-              ┌──────────────────┼──────────────────┐
-              │                  │                   │
-    ┌─────────▼──────┐  ┌───────▼───────┐  ┌───────▼───────┐
-    │ packages/db    │  │ packages/     │  │ packages/     │
-    │ (Drizzle)      │  │ adapters      │  │ core          │
-    └────────────────┘  └───────────────┘  └───────────────┘
-```
-
-### Self-hosted vs Cloud — one codebase, two modes
-
-The `CLOUD_MODE` environment variable controls what's active:
-
-| Feature              | Self-hosted (`false`) | Cloud (`true`)  |
-| -------------------- | --------------------- | --------------- |
-| Auth / Users         | ✅                     | ✅               |
-| Projects & Deploys   | ✅                     | ✅               |
-| Custom Domains       | ✅                     | ✅               |
-| Git Webhooks         | ✅                     | ✅               |
-| Adapter              | DockerAdapter          | OblienAdapter   |
-| Billing / Stripe     | ❌ (not mounted)       | ✅               |
-| Usage Metering       | ❌                     | ✅               |
-| Teams / SSO          | ❌                     | ✅ (planned)     |
-
-Cloud-only API routes are **not even mounted** when `CLOUD_MODE=false`. Self-hosters never see them.
-
-### API Modules
-
-Each module follows `routes → controller → service → schema`:
-
-```
-apps/api/src/modules/<name>/
-  ├── <name>.routes.ts        # Route definitions (Hono)
-  ├── <name>.controller.ts    # Request handlers
-  ├── <name>.service.ts       # Business logic
-  └── <name>.schema.ts        # Zod validation schemas
-```
-
-| Module        | Shared | Cloud-only | Purpose                                |
-| ------------- | ------ | ---------- | -------------------------------------- |
-| `auth`        | ✅      |            | Register, login, JWT, sessions         |
-| `projects`    | ✅      |            | CRUD for deployment projects           |
-| `deployments` | ✅      |            | Build, deploy, rollback, logs          |
-| `domains`     | ✅      |            | Custom domains, DNS, SSL               |
-| `webhooks`    | ✅      |            | GitHub / GitLab / Bitbucket triggers   |
-| `health`      | ✅      |            | Health check for load balancers        |
-| `billing`     |        | ✅          | Plans, subscriptions, Stripe, usage    |
-
-### Adapter Pattern
-
-```typescript
-// packages/adapters/src/registry.ts
-getAdapter("docker")  // → DockerAdapter  (self-hosted, runs containers locally)
-getAdapter("oblien")  // → OblienAdapter  (cloud, talks to Oblien infra API)
-```
-
-Both implement the same `DeploymentAdapter` interface: `deploy()`, `getStatus()`, `getLogs()`, `cancel()`, `rollback()`, `destroy()`.
+- Deployments
+- Projects
+- Domains
+- Logs
 
 ---
 
-## Development
+### MCP (AI / Agent Control)
 
-### Run everything
-
-```bash
-bun dev
-```
-
-### Run a single app
-
-```bash
-bun dev --filter @repo/dashboard    # Dashboard only → localhost:3001
-bun dev --filter @repo/api          # API only → localhost:4000
-bun dev --filter @repo/web          # Web only → localhost:3000
-```
-
-### Where to edit
-
-| What you're building               | Edit files in              |
-| ----------------------------------- | -------------------------- |
-| Dashboard UI (projects, deploys)    | `apps/dashboard/src/`      |
-| Landing page, marketing, pricing    | `apps/web/src/`            |
-| API endpoints & business logic      | `apps/api/src/`            |
-| CLI commands                        | `apps/cli/src/`            |
-| Shared React components             | `packages/ui/src/`         |
-| Shared types, utils, errors         | `packages/core/src/`       |
-| Database schema                     | `packages/db/src/schema/`  |
-| Deployment adapters                 | `packages/adapters/src/`   |
-
-### Database
-
-```bash
-bun db:generate     # Generate Drizzle migration files from schema changes
-bun db:push         # Push schema to database (dev — no migration file)
-bun db:migrate      # Run pending migrations (production)
-```
-
-### Environment Variables
-
-Copy `.env.example` to `.env`. Key variables:
-
-| Variable                 | Default                    | Description                          |
-| ------------------------ | -------------------------- | ------------------------------------ |
-| `CLOUD_MODE`             | `false`                    | `true` = cloud with billing enabled  |
-| `DATABASE_URL`           | _(empty = PGlite)_         | Empty for PGlite (dev) or `postgres://` URL |
-| `PGLITE_DATA_DIR`        | `.openship/data`           | PGlite storage path (when no `DATABASE_URL`) |
-| `BETTER_AUTH_SECRET`     | `change-me-...`            | Auth session signing secret (32+ chars) |
-| `BETTER_AUTH_URL`        | `http://localhost:4000`    | API base URL for auth callbacks      |
-| `REDIS_URL`              | `redis://localhost:6379`   | Queue and cache                      |
-| `STRIPE_SECRET_KEY`      | —                          | Stripe key (cloud only)              |
-| `STRIPE_WEBHOOK_SECRET`  | —                          | Stripe webhook secret (cloud only)   |
+Expose deployment actions to external agents when needed.
 
 ---
 
-## Self-Hosting
+## Backups
 
-### Docker (recommended)
-
-```bash
-git clone https://github.com/oblien/openship.git
-cd openship
-cp .env.example .env
-docker compose up -d
-```
-
-Services:
-
-| Service    | Port  |
-| ---------- | ----- |
-| Dashboard  | 3001  |
-| Web        | 3000  |
-| API        | 4000  |
-| PostgreSQL | 5432  |
-| Redis      | 6379  |
-
-**Requirements:** Docker Engine, 2GB RAM minimum.
+- Scheduled backups
+- Databases + volumes
+- One-click restore
+- Export anytime
 
 ---
 
-## Cloud
+## Portability
 
-The hosted version at [openship.io](https://openship.io) adds:
+Move anywhere:
 
-- Managed infrastructure via the Oblien adapter
-- Subscription billing (Stripe)
-- Usage metering (build minutes, bandwidth)
-- Team management and SSO (planned)
+- Cloud ↔ self-host
+- VPS → VPS
+- Full export/import
 
-### Production Domains
-
-| App        | Domain                    |
-| ---------- | ------------------------- |
-| Web        | `openship.io`             |
-| Dashboard  | `dashboard.openship.io`   |
-| API        | `api.openship.io`         |
+No proprietary formats:
+- Standard Docker containers
+- Encrypted transfer via SSH
 
 ---
 
-## Tech Stack
+## Built-in Mail Server
 
-| Layer      | Technology                        |
-| ---------- | --------------------------------- |
-| Frontend   | Next.js 14, React 18, Tailwind    |
-| API        | Hono (edge-compatible)             |
-| Database   | Drizzle ORM (PGlite / PostgreSQL)  |
-| Auth       | Better Auth (email + OAuth)         |
-| Queue      | BullMQ + Redis                     |
-| CLI        | Commander.js, TypeScript           |
-| Monorepo   | Turborepo + Bun workspaces        |
-| Containers | Docker                             |
-| Billing    | Stripe                             |
+- Unlimited domains
+- Standard email auth (DKIM, SPF, DMARC)
+- No external providers required
 
 ---
 
-## Contributing
+## Global CDN
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+- Edge caching
+- Compression (HTTP/3, Brotli)
+- Instant cache purge
 
-```bash
-git checkout -b feat/my-feature
-# make changes
-bun format
-git commit -m "feat: add my feature"
-git push origin feat/my-feature
-# open PR
-```
+Works with any deployment.
+
+---
+
+## Scaling
+
+### Cloud
+- Auto-scaling
+- Load balancing
+- Zero config
+
+### Self-hosted
+- Upgrade servers anytime
+- Move workloads without redeploy
+- Multi-node ready
+
+---
+
+## Architecture Comparison
+
+### Traditional Tools
+
+Server runs:
+- CI/CD
+- Build system
+- Dashboard
+- Reverse proxy
+- Apps
+
+→ Resource contention  
+→ Complex setup  
+
+---
+
+### Openship
+
+**Local machine**
+- Builds
+- Control plane
+
+**Server**
+- Production containers only
+
+→ Maximum efficiency  
+→ Minimal overhead  
+
+---
+
+## Why Openship
+
+- Desktop-first deployment loop
+- Built-in CI/CD without pipeline overhead
+- No YAML or infra complexity
+- No server-side tooling overhead
+- Works on any Linux server
+- Fully open-source (AGPL-3)
+- No vendor lock-in
+
+---
+
+## Example Flow
+
+1. Connect your repo
+2. Connect a server (or use cloud)
+3. Click deploy
+
+Under the hood:
+- Build runs locally
+- Production container is shipped
+- App goes live
+
+---
+
+## Philosophy
+
+Infrastructure should be:
+
+- Local-first
+- Transparent
+- Portable
+- Fully owned
+
+Not hidden behind platforms.  
+Not tied to pricing models.  
+Not dependent on proprietary runtimes.
+
+---
+
+## Open Source
+
+- AGPL-3 licensed
+- Fully self-hostable
+- No usage limits
+- Community-driven
+
+---
+
+## Status
+
+Production-ready core.
+
+Planned:
+- Multi-node clusters
+- Load balancing UI
+- Private networking
+- Advanced monitoring
+- Visual CI/CD pipelines
+
+---
+
+## Get Started
+
+- Download the app
+- Connect your repo
+- Deploy in minutes
+
+No lock-in.  
+No complexity.  
+Full control.
 
 ---
 
 ## License
 
-[MIT](LICENSE)
+AGPL-3

@@ -1,10 +1,11 @@
 import React, { useCallback } from "react";
-import { GitBranch, Rocket, Github, Loader2, Globe, Database, Container, Server, Layers, Check, AlertCircle, Key } from "lucide-react";
+import { GitBranch, Rocket, Github, Loader2, Globe, Database, Container, Server, Layers, Check, AlertCircle, Key, Cloud, Monitor } from "lucide-react";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useRouter } from "next/navigation";
+import type { BuildStrategy } from "@/context/deployment/types";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
 
@@ -192,6 +193,39 @@ const Sidebar: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Build Location — prominent toggle for where the build runs */}
+      {config.projectType === "app" && config.options.hasBuild && (
+        <div className="border border-border/50 rounded-xl bg-card p-4 space-y-2.5">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            Build Location
+          </p>
+          <div className="flex gap-1.5 p-1 bg-muted/30 rounded-lg border border-border/50">
+            {([
+              { value: "server" as BuildStrategy, label: "Server", desc: "Build in cloud workspace", icon: <Cloud className="w-4 h-4" /> },
+              { value: "local" as BuildStrategy, label: "Local", desc: "Build on this machine", icon: <Monitor className="w-4 h-4" /> },
+            ]).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => updateConfig({ buildStrategy: opt.value })}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  config.buildStrategy === opt.value
+                    ? "bg-background text-foreground shadow-sm border border-border/50"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {opt.icon}
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {config.buildStrategy === "local"
+              ? "Build runs on your machine, then artifacts are uploaded"
+              : "Source is sent to the server for building"}
+          </p>
+        </div>
+      )}
 
       {/* Domain — per-service for compose, checklist for others */}
       {isServices ? (

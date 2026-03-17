@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { FrameworkId } from "@/components/import-project/types";
 import { deployApi } from "@/lib/api";
+import { settingsApi } from "@/lib/api/settings";
+import type { BuildMode } from "@/lib/api/settings";
 import { STACKS, type StackDefinition } from "@repo/core";
-import type { DeploymentConfig } from "./types";
+import type { BuildStrategy, DeploymentConfig } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 
 /**
@@ -12,9 +14,21 @@ import { DEFAULT_CONFIG } from "./types";
  *
  * Prepare = resolve project info from a source (GitHub repo or local path),
  * detect stack, and populate config with defaults.
+ *
+ * The user's global build mode preference (from settings) is fetched once
+ * and used as the initial default for buildStrategy — but the per-deploy
+ * value in config is the sole source of truth sent to the API.
  */
 export function useDeploymentConfig() {
   const [config, setConfig] = useState<DeploymentConfig>(DEFAULT_CONFIG);
+  const userBuildPref = useRef<BuildMode>("auto");
+
+  // Fetch user's global build mode preference once
+  useEffect(() => {
+    settingsApi.get().then((res) => {
+      if (res?.buildMode) userBuildPref.current = res.buildMode;
+    }).catch(() => { /* non-critical — fall back to stack default */ });
+  }, []);
 
   const updateConfig = useCallback((updates: Partial<DeploymentConfig>) => {
     setConfig((prev) => ({ ...prev, ...updates }));
@@ -22,6 +36,13 @@ export function useDeploymentConfig() {
 
   const updateOptions = useCallback((updates: Partial<DeploymentConfig["options"]>) => {
     setConfig((prev) => ({ ...prev, options: { ...prev.options, ...updates } }));
+  }, []);
+
+  /** Resolve initial buildStrategy: user global pref > stack default > "server" */
+  const resolveInitialStrategy = useCallback((stackDef: StackDefinition | undefined): BuildStrategy => {
+    const pref = userBuildPref.current;
+    if (pref === "server" || pref === "local") return pref;
+    return stackDef?.defaultBuildStrategy ?? "server";
   }, []);
 
   // ── Prepare from GitHub repo ───────────────────────────────────────────────
@@ -58,7 +79,7 @@ export function useDeploymentConfig() {
           domain: repoName.toLowerCase(),
           framework: detectedStack,
           detectedFramework: detectedStack,
-          buildStrategy: stackDef?.defaultBuildStrategy ?? "server",
+          buildStrategy: resolveInitialStrategy(stackDef),
           packageManager: response.packageManager || "npm",
           buildImage: response.buildImage || "node:22",
           branch: response.repository.default_branch || "main",
@@ -114,7 +135,7 @@ export function useDeploymentConfig() {
           domain: name.toLowerCase().replace(/[^a-z0-9-]/g, ""),
           framework: detectedStack,
           detectedFramework: detectedStack,
-          buildStrategy: stackDef?.defaultBuildStrategy ?? "server",
+          buildStrategy: resolveInitialStrategy(stackDef),
           packageManager: response.packageManager || "npm",
           buildImage: response.buildImage || "node:22",
           branch: "main",

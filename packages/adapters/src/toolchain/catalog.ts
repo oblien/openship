@@ -15,18 +15,20 @@ import type { ToolchainCheckEntry, ToolchainInstallPlan } from "./types";
 // ─── Install plan factories ─────────────────────────────────────────────────
 
 function nodeInstallPlan(profile: EnvironmentProfile): ToolchainInstallPlan {
-  if (profile.packageManager === "apt") {
+  if (profile.os === "linux" && ["apt", "dnf", "yum"].includes(profile.packageManager)) {
+    const installCommands: Record<string, string> = {
+      apt: "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs",
+      dnf: "curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash - && dnf install -y nodejs",
+      yum: "curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash - && yum install -y nodejs",
+    };
     return {
       supported: true,
-      installCommand:
-        "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs",
+      installCommand: installCommands[profile.packageManager],
       verifyCommand: "node --version",
     };
   }
 
   const fallbacks: Record<string, string> = {
-    dnf: "dnf install -y nodejs",
-    yum: "yum install -y nodejs",
     brew: "brew install node",
   };
 

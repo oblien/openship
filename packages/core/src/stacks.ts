@@ -145,6 +145,8 @@ export interface StackDefinition {
   defaultBuildCommand: string;
   /** Default start command */
   defaultStartCommand: string;
+  /** Minimum tool versions required by this stack on bare metal. */
+  requiredToolVersions?: Readonly<Record<string, string>>;
   /**
    * Files/directories to copy into `/app/production/` after build.
    * Only these paths are needed at runtime — everything else stays in `/app`.
@@ -173,6 +175,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "next build",
     defaultStartCommand: "next start",
+    requiredToolVersions: { node: "20.9.0" },
     defaultBuildStrategy: "local",
   },
   nuxt: {

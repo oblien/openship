@@ -12,11 +12,15 @@
  *   - Desktop app (local development)
  *
  * Process lifecycle:
- *   build()   → clone repo, install deps, build (via executor)
+ *   build()   → clone repo, install deps, build (via executor or locally)
  *   deploy()  → spawn a long-running process, track via PID file
  *   stop()    → SIGTERM → SIGKILL fallback
  *   start()   → re-spawn the process
  *   destroy() → kill + remove working directory
+ *
+ * buildStrategy support:
+ *   "server" → clone + build on the target machine (via executor)
+ *   "local"  → clone + build on the API host, then transfer output to target
  *
  * No containers, no images, no Docker dependency at all.
  */
@@ -37,6 +41,8 @@ import { LocalExecutor } from "../system/executor";
 import { checkToolchainForStack, installTools } from "../toolchain";
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
 import { BuildLogger, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
+import { runLocalBuild } from "./local-build";
+import { transferLocalDirectory } from "./transfer";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -111,12 +117,20 @@ export class BareRuntime implements RuntimeAdapter {
     return `${this.workDir}/${projectId}`;
   }
 
+  private buildDir(sessionId: string): string {
+    return `${this.workDir}/.builds/${sessionId}`;
+  }
+
   private pidFile(processId: string): string {
     return `${this.workDir}/.pids/${processId}.pid`;
   }
 
   private logFile(processId: string): string {
     return `${this.workDir}/.logs/${processId}.log`;
+  }
+
+  private artifactFile(processId: string): string {
+    return `${this.workDir}/.artifacts/${processId}.path`;
   }
 
   // ─── PID management (via executor) ───────────────────────────────────
@@ -140,6 +154,25 @@ export class BareRuntime implements RuntimeAdapter {
     await this.executor.rm(this.pidFile(processId));
   }
 
+  private async readArtifactPath(processId: string): Promise<string | null> {
+    try {
+      const content = await this.executor.readFile(this.artifactFile(processId));
+      const path = content.trim();
+      return path || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeArtifactPath(processId: string, artifactPath: string): Promise<void> {
+    await this.executor.mkdir(`${this.workDir}/.artifacts`);
+    await this.executor.writeFile(this.artifactFile(processId), artifactPath);
+  }
+
+  private async removeArtifactPath(processId: string): Promise<void> {
+    await this.executor.rm(this.artifactFile(processId));
+  }
+
   /** Check if a PID is alive on the target machine. */
   private async isAlive(pid: number): Promise<boolean> {
     try {
@@ -157,30 +190,100 @@ export class BareRuntime implements RuntimeAdapter {
    *
    * Delegates entirely to the executor — LocalExecutor does cp,
    * SshExecutor does tar+pipe. No branching here.
-   *
-   * Two call sites:
-   *   - Build preflight: transfer source when localPath is set
-   *   - Deploy phase:    transfer build output when buildStrategy="local" (future)
    */
   async transferFiles(
     localPath: string,
     remotePath: string,
     logger: BuildLogger,
   ): Promise<void> {
-    logger.log(`Transferring ${localPath} → ${remotePath}...\n`);
-    await this.executor.transferIn(localPath, remotePath, logger.callback);
-    logger.log("Transfer complete.\n");
+    await transferLocalDirectory(
+      localPath,
+      {
+        kind: "executor",
+        executor: this.executor,
+        path: remotePath,
+      },
+      logger,
+    );
   }
 
   // ── Build lifecycle ────────────────────────────────────────────────────
 
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
     const log = logger ?? new BuildLogger();
-    const dir = this.projectDir(config.projectId);
-    await this.executor.mkdir(dir);
+
+    // "local" = build on the API host, then transfer output to the target.
+    // "server" (default) = build directly on the target via the executor.
+    // When the executor is already local, both modes are equivalent.
+    const buildLocally =
+      config.buildStrategy === "local" &&
+      !(this.executor instanceof LocalExecutor);
 
     const abort = new AbortController();
     this.activeBuilds.set(config.sessionId, abort);
+
+    try {
+      if (buildLocally) {
+        return await this.buildLocally(config, log, abort);
+      }
+      return await this.buildOnTarget(config, log, abort);
+    } finally {
+      this.activeBuilds.delete(config.sessionId);
+    }
+  }
+
+  /** Build on the API host, then transfer output to the target server. */
+  private async buildLocally(
+    config: BuildConfig,
+    log: BuildLogger,
+    abort: AbortController,
+  ): Promise<BuildResult> {
+    log.log("Build strategy: local (build on API host, transfer to server)\n");
+    const remoteDir = this.projectDir(config.projectId);
+
+    const result = await runLocalBuild({
+      config,
+      logger: log,
+      abort: abort.signal,
+      preflight: async (cfg, plog, localExec) => {
+        await this.ensureToolchain(localExec, cfg.stack, plog);
+        plog.log("Checking runtime tools on target server...\n");
+        await this.ensureToolchain(this.executor, cfg.stack, plog);
+      },
+      transferOutput: async (buildDir) => {
+        await this.executor.rm(remoteDir);
+        await this.executor.mkdir(remoteDir);
+        await transferLocalDirectory(
+          buildDir,
+          {
+            kind: "executor",
+            executor: this.executor,
+            path: remoteDir,
+          },
+          log,
+          { excludes: [] },
+        );
+      },
+    });
+
+    return {
+      sessionId: config.sessionId,
+      status: result.status,
+      imageRef: result.status === "deploying" ? remoteDir : undefined,
+      durationMs: result.durationMs,
+    };
+  }
+
+  /** Build directly on the target machine via the executor. */
+  private async buildOnTarget(
+    config: BuildConfig,
+    log: BuildLogger,
+    abort: AbortController,
+  ): Promise<BuildResult> {
+    log.log("Build strategy: server (build on target)\n");
+    const dir = this.buildDir(config.sessionId);
+    await this.executor.rm(dir);
+    await this.executor.mkdir(dir);
 
     const buildEnv: BuildEnvironment = {
       projectDir: dir,
@@ -194,37 +297,52 @@ export class BareRuntime implements RuntimeAdapter {
       },
       preflight: async (cfg, plog) => {
         if (abort.signal.aborted) throw new Error("Build cancelled");
-
-        // Toolchain validation — ensure language runtime is available
-        const toolcheck = await checkToolchainForStack(this.executor, cfg.stack);
-        if (!toolcheck.ready) {
-          plog.log(`Missing toolchain: ${toolcheck.missing.join(", ")}\n`);
-          const results = await installTools(this.executor, toolcheck.missing, plog.callback);
-          const failed = results.filter((r) => !r.success);
-          if (failed.length > 0) {
-            throw new Error(
-              `Failed to install required tools: ${failed.map((f) => `${f.tool} (${f.error})`).join(", ")}`,
-            );
-          }
-        }
-
-        // Transfer source files for local projects
+        await this.ensureToolchain(this.executor, cfg.stack, plog);
         if (cfg.localPath) {
           await this.transferFiles(cfg.localPath, dir, plog);
         }
       },
     };
 
-    try {
-      const result = await runBuildPipeline(buildEnv, config, log);
-      return {
-        sessionId: config.sessionId,
-        status: result.status,
-        imageRef: result.status === "deploying" ? dir : undefined,
-        durationMs: result.durationMs,
-      };
-    } finally {
-      this.activeBuilds.delete(config.sessionId);
+    const result = await runBuildPipeline(buildEnv, config, log);
+    return {
+      sessionId: config.sessionId,
+      status: result.status,
+      imageRef: result.status === "deploying" ? dir : undefined,
+      durationMs: result.durationMs,
+    };
+  }
+
+  /**
+   * Check that the target executor has the required toolchain for a stack,
+   * and install any missing or outdated tools.
+   */
+  private async ensureToolchain(
+    executor: CommandExecutor,
+    stack: string,
+    plog: BuildLogger,
+  ): Promise<void> {
+    const toolcheck = await checkToolchainForStack(executor, stack);
+    if (toolcheck.ready) return;
+
+    const requiredTools = toolcheck.tools.filter((tool) => !tool.healthy);
+    plog.log(`${requiredTools.map((tool) => tool.message).join("\n")}\n`);
+
+    const results = await installTools(
+      executor,
+      requiredTools.map((tool) => tool.name),
+      plog.callback,
+      Object.fromEntries(
+        requiredTools
+          .filter((tool) => tool.requiredVersion)
+          .map((tool) => [tool.name, tool.requiredVersion!]),
+      ),
+    );
+    const failed = results.filter((r) => !r.success);
+    if (failed.length > 0) {
+      throw new Error(
+        `Failed to install required tools: ${failed.map((f) => `${f.tool} (${f.error})`).join(", ")}`,
+      );
     }
   }
 
@@ -251,7 +369,7 @@ export class BareRuntime implements RuntimeAdapter {
    * or SSH — no node:child_process spawn() needed.
    */
   async deploy(config: DeployConfig, _onLog?: LogCallback): Promise<DeploymentResult> {
-    const dir = this.projectDir(config.projectId);
+    const dir = config.imageRef ?? this.projectDir(config.projectId);
     const logPath = this.logFile(config.deploymentId);
 
     // Ensure log directory exists
@@ -283,6 +401,7 @@ export class BareRuntime implements RuntimeAdapter {
     if (!isNaN(pid) && pid > 0) {
       await this.writePid(config.deploymentId, pid);
     }
+    await this.writeArtifactPath(config.deploymentId, dir);
 
     return {
       deploymentId: config.deploymentId,
@@ -329,9 +448,20 @@ export class BareRuntime implements RuntimeAdapter {
   }
 
   async destroy(containerId: string): Promise<void> {
+    if (containerId.includes("/")) {
+      await this.executor.rm(containerId);
+      return;
+    }
+
     await this.stop(containerId);
     await this.removePid(containerId);
     await this.executor.rm(this.logFile(containerId));
+
+    const artifactPath = await this.readArtifactPath(containerId);
+    if (artifactPath) {
+      await this.executor.rm(artifactPath);
+    }
+    await this.removeArtifactPath(containerId);
   }
 
   // ── Observability ──────────────────────────────────────────────────────
