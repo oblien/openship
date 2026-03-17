@@ -1,11 +1,18 @@
-# Openship
+<h1 align="center">Openship</h1>
 
-Deploy anything. Own everything.
+<p align="center">
+  Deploy anything. Own everything.<br>
+  Push your code — build, configure, and deploy from one place.<br>
+  Use our cloud or connect your own servers.
+</p>
 
-Push your code — build, configure, and deploy from one place.  
-Use our cloud or connect your own servers.
+<p align="center">
+  Desktop-first. Open-source. Zero lock-in.
+</p>
 
-Desktop-first. Open-source. Zero lock-in.
+<p align="center">
+  <img src="docs/screenshots/screen.png" alt="Openship" width="800" />
+</p>
 
 ---
 
