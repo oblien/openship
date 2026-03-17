@@ -54,6 +54,8 @@ export const project = pgTable("project", {
   buildCommand: text("build_command"),
   /** Build output directory */
   outputDirectory: text("output_directory"),
+  /** Files/directories needed at runtime (JSON string array, e.g. [".next","node_modules","package.json"]) */
+  productionPaths: text("production_paths"),
   /** Root directory within the repo (for monorepos) */
   rootDirectory: text("root_directory"),
   /** Start command for production runtime */

@@ -182,12 +182,12 @@ const ModalRenderer: React.FC<ModalRendererProps> = memo(({ instance = { config:
   const getButtonStyle = (variant?: string) => {
     switch (variant) {
       case 'primary':
-        return 'bg-black text-white hover:bg-gray-800';
+        return 'bg-primary text-primary-foreground hover:bg-primary/90';
       case 'danger':
         return 'bg-red-600 text-white hover:bg-red-700';
       case 'secondary':
       default:
-        return 'bg-white/10 text-white hover:bg-white/20 border border-white/20';
+        return 'bg-muted text-foreground hover:bg-muted/80 border border-border';
     }
   };
 
@@ -200,7 +200,7 @@ const ModalRenderer: React.FC<ModalRendererProps> = memo(({ instance = { config:
         <div className="flex items-start justify-between mb-4">
           {config.title && (
             <div className="flex-1">
-              <h3 className="text-xl font-bold text-black mb-1">
+              <h3 className="text-xl font-bold text-foreground mb-1">
                 {config.title}
               </h3>
             </div>
@@ -211,7 +211,7 @@ const ModalRenderer: React.FC<ModalRendererProps> = memo(({ instance = { config:
       {/* Message */}
       {config.message && (
         <div className="mb-6">
-          <p className="text-gray-700 text-sm leading-relaxed">
+          <p className="text-muted-foreground text-sm leading-relaxed">
             {config.message}
           </p>
         </div>
@@ -219,13 +219,13 @@ const ModalRenderer: React.FC<ModalRendererProps> = memo(({ instance = { config:
 
       {/* Switches */}
       {config.switches && config.switches.length > 0 && (
-        <div className="space-y-3 mb-6 p-4 bg-gray-50 rounded-xl">
+        <div className="space-y-3 mb-6 p-4 bg-muted/50 rounded-xl">
           {config.switches.map((switchConfig) => (
             <label
               key={switchConfig.id}
               className="flex items-center justify-between cursor-pointer group"
             >
-              <span className="text-sm font-medium text-gray-700 group-hover:text-black transition-colors">
+              <span className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
                 {switchConfig.label}
               </span>
               <button
@@ -235,7 +235,7 @@ const ModalRenderer: React.FC<ModalRendererProps> = memo(({ instance = { config:
                 onClick={() => handleSwitchChange(switchConfig.id, !switchStates[switchConfig.id])}
                 className={`
                   relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-                  ${switchStates[switchConfig.id] ? 'bg-black' : 'bg-gray-300'}
+                  ${switchStates[switchConfig.id] ? 'bg-primary' : 'bg-muted-foreground/30'}
                 `}
               >
                 <span
@@ -264,7 +264,7 @@ const ModalRenderer: React.FC<ModalRendererProps> = memo(({ instance = { config:
               }}
               disabled={button.disabled}
               className={`
-                flex-1 px-4 text-black py-3 rounded-xl font-semibold text-sm transition-all
+                flex-1 px-4 py-3 rounded-xl font-semibold text-sm transition-all
                 disabled:opacity-50 disabled:cursor-not-allowed
                 ${getButtonStyle(button.variant)}
               `}

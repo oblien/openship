@@ -25,6 +25,7 @@ export type User = {
   createdAt: string;
   updatedAt: string;
   role: string;
+  autoProvisioned?: boolean;
 };
 
 export type SessionData = { session: Session; user: User };
@@ -71,21 +72,32 @@ export const getSession = cache(async (): Promise<SessionData | null> => {
 export type DeploymentInfo = {
   selfHosted: boolean;
   deployMode: string;
+  authMode: "cloud" | "local" | "none";
+  cloudAuthUrl: string;
+  machineName?: string;
 };
 
 let _deploymentInfo: DeploymentInfo | null = null;
+let _deploymentInfoFetchedAt = 0;
 
 /**
- * Deployment info is static per instance — fetch once from
- * GET /api/health/env and cache in module memory.
- * Zero per-request cost after the first call.
+ * Deployment info is mostly static, but during desktop onboarding
+ * authMode can change from "none" to "cloud" or vice versa.
+ * Re-fetch every 30 seconds so changes take effect quickly.
  */
+const DEPLOYMENT_INFO_TTL = 30_000;
+
 export async function getDeploymentInfo(): Promise<DeploymentInfo> {
-  if (_deploymentInfo) return _deploymentInfo;
+  if (_deploymentInfo && Date.now() - _deploymentInfoFetchedAt < DEPLOYMENT_INFO_TTL) {
+    return _deploymentInfo;
+  }
   try {
     _deploymentInfo = await serverApi.get<DeploymentInfo>("/api/health/env");
+    _deploymentInfoFetchedAt = Date.now();
   } catch {
-    _deploymentInfo = { selfHosted: true, deployMode: "docker" };
+    if (!_deploymentInfo) {
+      _deploymentInfo = { selfHosted: true, deployMode: "docker", authMode: "local", cloudAuthUrl: "" };
+    }
   }
   return _deploymentInfo;
 }

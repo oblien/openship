@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --env-file=.env --import tsx --watch src/index.ts",
+    "dev:saas": "PGLITE_DATA_DIR=$HOME/.openship/data-saas node --env-file=.env.saas --import tsx --watch src/index.ts",
     "build": "tsup src/index.ts --format esm --dts",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",

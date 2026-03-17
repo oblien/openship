@@ -18,6 +18,8 @@ import {
   HardDrive,
 } from "lucide-react";
 import { projectsApi } from "@/lib/api/projects";
+import { systemApi } from "@/lib/api/system";
+import { encodeLocalSlug } from "@/utils/repoSlug";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -78,6 +80,21 @@ export function LocalProjects() {
     }
   };
 
+  const handleDeploy = (localPath: string) => {
+    router.push(`/deploy/${encodeLocalSlug(localPath)}`);
+  };
+
+  const handleImport = async () => {
+    if (systemApi.hasNativePicker()) {
+      const picked = await systemApi.pickFolder();
+      if (picked) {
+        handleDeploy(picked);
+        return;
+      }
+    }
+    setShowImport(true);
+  };
+
   return (
     <div className="bg-card rounded-2xl border border-border/50">
       {/* ── Header ─────────────────────────────── */}
@@ -95,7 +112,7 @@ export function LocalProjects() {
             </div>
           </div>
           <button
-            onClick={() => setShowImport(true)}
+            onClick={handleImport}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             <Plus className="size-3.5" />
@@ -129,7 +146,7 @@ export function LocalProjects() {
           ))}
         </div>
       ) : projects.length === 0 && !showImport ? (
-        <EmptyState onImport={() => setShowImport(true)} />
+        <EmptyState onImport={handleImport} />
       ) : (
         <div className="divide-y divide-border/50">
           {projects.map((project) => (
@@ -165,7 +182,7 @@ export function LocalProjects() {
                   <Trash2 className="size-3.5" />
                 </button>
                 <button
-                  onClick={() => router.push(`/project/${project.id}`)}
+                  onClick={() => project.localPath && handleDeploy(project.localPath)}
                   className="p-1.5 rounded-lg text-muted-foreground/40 group-hover:text-muted-foreground transition-colors"
                 >
                   <ArrowRight className="size-4" />

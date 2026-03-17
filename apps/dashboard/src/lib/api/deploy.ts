@@ -32,6 +32,7 @@ export const deployApi = {
     environment?: string;
     envVars?: Record<string, string>;
     customDomain?: string;
+    buildStrategy?: "server" | "local";
   }) =>
     api.post<any>(endpoints.deploy.buildAccess, payload),
 

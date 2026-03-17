@@ -60,7 +60,8 @@ projectRoutes.post("/:id/sleep-mode", ctrl.setSleepMode);
 /* ─── Deployments ──────────────────────────────────────────────────────── */
 projectRoutes.get("/:id/deployments", ctrl.listDeployments);
 projectRoutes.post("/:id/deployment-session", ctrl.deploymentSession);
-
+/* ─── Custom domain ─────────────────────────────────────────────────────────── */
+projectRoutes.post("/:id/connect", ctrl.connectDomain);
 /* ─── Runtime logs ─────────────────────────────────────────────────────── */
 projectRoutes.get("/:id/logs", ctrl.runtimeLogs);
 projectRoutes.get("/:id/logs/stream", ctrl.runtimeLogStream);

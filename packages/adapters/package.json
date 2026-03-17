@@ -19,7 +19,7 @@
   "dependencies": {
     "@repo/core": "workspace:*",
     "dockerode": "^4.0.9",
-    "oblien": "^2.1.6",
+    "oblien": "^2.1.8",
     "ssh2": "^1.17.0"
   },
   "devDependencies": {

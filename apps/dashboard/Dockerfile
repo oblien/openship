@@ -1,15 +1,13 @@
 # ─── Build stage ────────────────────────────────────────
-FROM node:20-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
+FROM oven/bun:1 AS builder
 WORKDIR /app
 
-COPY pnpm-workspace.yaml pnpm-lock.yaml* package.json ./
-COPY tooling/ ./tooling/
+COPY package.json bun.lock pnpm-workspace.yaml ./
 COPY packages/ ./packages/
 COPY apps/dashboard/ ./apps/dashboard/
 
-RUN pnpm install --frozen-lockfile
-RUN pnpm run build --filter=@repo/dashboard...
+RUN bun install --frozen-lockfile
+RUN cd apps/dashboard && bun run build
 
 # ─── Production stage ──────────────────────────────────
 FROM node:20-alpine AS runner

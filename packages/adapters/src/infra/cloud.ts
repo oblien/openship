@@ -5,14 +5,16 @@
  * proxy or ACME configuration needed.
  */
 
+import { Oblien } from "oblien";
 import type { RouteConfig, SslResult } from "../types";
 import type { RoutingProvider, SslProvider } from "./types";
 
 export class CloudInfraProvider implements RoutingProvider, SslProvider {
-  constructor(
-    private readonly clientId: string,
-    private readonly clientSecret: string,
-  ) {}
+  private readonly client: Oblien;
+
+  constructor(client: Oblien) {
+    this.client = client;
+  }
 
   // ── Routing ──────────────────────────────────────────────────────────
 

@@ -199,7 +199,7 @@ export class DockerRuntime implements RuntimeAdapter {
 
   // ── Deploy lifecycle ───────────────────────────────────────────────────
 
-  async deploy(config: DeployConfig): Promise<DeploymentResult> {
+  async deploy(config: DeployConfig, _onLog?: LogCallback): Promise<DeploymentResult> {
     // TODO: Create and start a container using:
     //   this.docker.createContainer({ Image, Env, HostConfig, Labels, ... })
     //   container.start()

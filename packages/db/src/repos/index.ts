@@ -5,6 +5,8 @@ export { createGitInstallationRepo, type GitInstallation, type NewGitInstallatio
 export { createProjectRepo, type Project, type NewProject, type EnvVar, type NewEnvVar } from "./project.repo";
 export { createDeploymentRepo, type Deployment, type NewDeployment, type BuildSession, type NewBuildSession } from "./deployment.repo";
 export { createDomainRepo, type Domain, type NewDomain } from "./domain.repo";
+export { createSettingsRepo, type UserSettings, type NewUserSettings } from "./settings.repo";
+export { createInstanceSettingsRepo, type InstanceSettings, type NewInstanceSettings } from "./instance-settings.repo";
 
 // ─── Convenience: pre-bound repos using the singleton db ─────────────────────
 
@@ -16,6 +18,8 @@ import { createGitInstallationRepo } from "./git-installation.repo";
 import { createProjectRepo } from "./project.repo";
 import { createDeploymentRepo } from "./deployment.repo";
 import { createDomainRepo } from "./domain.repo";
+import { createSettingsRepo } from "./settings.repo";
+import { createInstanceSettingsRepo } from "./instance-settings.repo";
 
 /**
  * Pre-bound repository instances using the singleton `db`.
@@ -34,4 +38,6 @@ export const repos = {
   project: createProjectRepo(db),
   deployment: createDeploymentRepo(db),
   domain: createDomainRepo(db),
+  settings: createSettingsRepo(db),
+  instanceSettings: createInstanceSettingsRepo(db),
 } as const;

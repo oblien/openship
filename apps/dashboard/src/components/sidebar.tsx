@@ -18,12 +18,15 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Server,
 } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
 import { useTheme } from "@/components/theme-provider";
 import { useI18n } from "@/components/i18n-provider";
 import { Logo } from "@/components/logo";
 import { useAuth } from "@/context/AuthContext";
+import { useGitHub } from "@/context/GitHubContext";
+import { useCloud } from "@/context/CloudContext";
 
 interface NavItem {
   key: string;
@@ -36,28 +39,53 @@ interface NavSection {
   items: NavItem[];
 }
 
-const NAV_SECTIONS: NavSection[] = [
-  {
-    section: "main",
-    items: [
-      { key: "home",         href: "/",             icon: LayoutDashboard },
-      { key: "projects",     href: "/projects",     icon: FolderKanban },
-      { key: "deployments",  href: "/deployments",  icon: Rocket },
-      { key: "domains",      href: "/domains",      icon: Globe },
-      { key: "monitoring",   href: "/monitoring",   icon: Activity },
-    ],
-  },
-  {
-    section: "settings",
-    items: [
-      { key: "settings", href: "/settings", icon: Settings },
-      { key: "billing",  href: "/billing",  icon: CreditCard },
-    ],
-  },
+const MAIN_ITEMS: NavItem[] = [
+  { key: "home",         href: "/",             icon: LayoutDashboard },
+  { key: "projects",     href: "/projects",     icon: FolderKanban },
+  { key: "deployments",  href: "/deployments",  icon: Rocket },
 ];
+
+/** Build nav sections dynamically */
+function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection[] {
+  const settingsItems: NavItem[] = [
+    { key: "settings",   href: "/settings",   icon: Settings },
+  ];
+  if (isSaaS) {
+    settingsItems.push({ key: "billing", href: "/billing", icon: CreditCard });
+  }
+
+  const infraItems: NavItem[] = [];
+  if (selfHosted) {
+    infraItems.push({ key: "servers", href: "/servers", icon: Server });
+  }
+  infraItems.push(
+    { key: "monitoring", href: "/monitoring", icon: Activity },
+    { key: "domains",    href: "/domains",    icon: Globe },
+  );
+
+  return [
+    { section: "main", items: MAIN_ITEMS },
+    { section: "settings", items: settingsItems },
+    { section: "infrastructure", items: infraItems },
+  ];
+}
 
 export function Sidebar() {
   const { user } = useAuth();
+  const { selfHosted, deployMode, authMode, machineName } = useGitHub();
+  const { connected: cloudConnected, cloudUser } = useCloud();
+  const isDesktop = deployMode === "desktop";
+
+  // On desktop, show cloud identity when connected, machine name when local
+  const displayName = isDesktop
+    ? (cloudConnected && cloudUser?.name ? cloudUser.name : (machineName || "Local User"))
+    : (user?.name || user?.email?.split("@")[0] || "");
+  const displayEmail = isDesktop
+    ? (cloudConnected && cloudUser?.email ? cloudUser.email : "Desktop")
+    : user?.email;
+  const displayInitial = displayName?.[0] ?? displayEmail?.[0] ?? "?";
+  const isSaaS = !selfHosted || cloudConnected;
+  const navSections = getNavSections(isSaaS, selfHosted);
   const pathname = usePathname();
   const router = useRouter();
   const { resolvedTheme, toggle } = useTheme();
@@ -68,6 +96,11 @@ export function Sidebar() {
   async function handleLogout() {
     setLoggingOut(true);
     try {
+      if (isDesktop && (window as any).desktop?.reset) {
+        // Desktop: reset config and return to Electron onboarding
+        await (window as any).desktop.reset();
+        return;
+      }
       await signOut();
       router.push("/login");
     } catch {
@@ -134,7 +167,7 @@ export function Sidebar() {
 
       {/* ── Nav sections ────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto px-3 pt-3 pb-1">
-        {NAV_SECTIONS.map(({ section, items }, si) => (
+        {navSections.map(({ section, items }, si) => (
           <div key={section ?? si} className={si > 0 ? "mt-5" : undefined}>
             {!collapsed && section && (
               <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
@@ -197,25 +230,25 @@ export function Sidebar() {
         >
           {/* Avatar */}
           <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.08] text-sm font-semibold uppercase text-foreground">
-            {user?.name?.[0] ?? user?.email?.[0] ?? "?"}
+            {displayInitial}
           </div>
 
           {!collapsed && (
             <>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[14px] font-medium leading-tight text-foreground">
-                  {user?.name || user?.email?.split("@")[0] || ""}
+                  {displayName}
                 </p>
                 <p className="truncate text-[12px] leading-tight text-muted-foreground">
-                  {user?.email}
+                  {displayEmail}
                 </p>
               </div>
               <button
                 onClick={handleLogout}
                 disabled={loggingOut}
                 className="flex size-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
-                aria-label={t.dashboard.user.logout}
-                title={t.dashboard.user.logout}
+                aria-label={isDesktop ? "Back to setup" : t.dashboard.user.logout}
+                title={isDesktop ? "Back to setup" : t.dashboard.user.logout}
               >
                 {loggingOut ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -233,7 +266,7 @@ export function Sidebar() {
             onClick={handleLogout}
             disabled={loggingOut}
             className="mt-2 flex w-full items-center justify-center rounded-xl py-2.5 text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
-            title={t.dashboard.user.logout}
+            title={isDesktop ? "Back to setup" : t.dashboard.user.logout}
           >
             {loggingOut ? (
               <Loader2 className="size-4 animate-spin" />

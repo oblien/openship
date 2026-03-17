@@ -14,7 +14,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const deploymentInfo = await getDeploymentInfo();
 
   return (
-    <DashboardProviders selfHosted={deploymentInfo.selfHosted} deployMode={deploymentInfo.deployMode}>
+    <DashboardProviders selfHosted={deploymentInfo.selfHosted} deployMode={deploymentInfo.deployMode} authMode={deploymentInfo.authMode} cloudAuthUrl={deploymentInfo.cloudAuthUrl} machineName={deploymentInfo.machineName}>
       <div className="flex h-dvh">
         <Sidebar />
         {/* Main content */}

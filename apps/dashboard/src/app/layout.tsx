@@ -6,6 +6,7 @@ import { ToastProvider as ContextToastProvider } from "@/context/ToastContext";
 import { I18nProvider } from "@/components/i18n-provider";
 import { AuthProvider } from "@/context/AuthContext";
 import { NetworkErrorHandler } from "@/components/network-error-handler";
+import { ModalProvider } from "@/context/ModalContext";
 
 export const metadata: Metadata = {
   title: "Openship",
@@ -39,8 +40,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <I18nProvider>
               <ToastProvider>
                 <ContextToastProvider>
-                <NetworkErrorHandler />
-                {children}
+                  <ModalProvider>
+                    <NetworkErrorHandler />
+                    {children}
+                  </ModalProvider>
                 </ContextToastProvider>
               </ToastProvider>
             </I18nProvider>

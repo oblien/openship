@@ -27,8 +27,18 @@ export type SystemLogCallback = (log: SystemLog) => void;
 
 // ─── Component status ────────────────────────────────────────────────────────
 
+export interface SystemComponentDefinition {
+  name: string;
+  label: string;
+  description: string;
+  installable: boolean;
+}
+
 export interface ComponentStatus {
   name: string;
+  label: string;
+  description: string;
+  installable: boolean;
   installed: boolean;
   version?: string;
   /** Whether the daemon is actively running (Docker, Traefik) */

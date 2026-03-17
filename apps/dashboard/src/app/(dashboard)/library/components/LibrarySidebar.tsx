@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { GitHubRepo } from "@/context/GitHubContext";
 
-type Tab = "projects" | "repositories" | "url" | "template";
+type Tab = "local" | "repositories" | "url" | "template";
 
 interface LibrarySidebarProps {
   connected: boolean;

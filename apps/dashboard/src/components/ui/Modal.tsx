@@ -83,7 +83,7 @@ export function Modal({
       {/* Modal Container */}
       <div
         className="relative w-full bg-card rounded-2xl shadow-2xl flex flex-col transition-all duration-300 !overflow-x-hidden"
-        style={{{
+        style={{
           width,
           overflow,
           maxWidth,

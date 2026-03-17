@@ -2,6 +2,16 @@
  * System layer barrel exports.
  */
 
+export type {
+  EnvironmentProfile,
+  LinuxDistro,
+  SystemArch,
+  SystemOs,
+  SystemPackageManager,
+  SystemServiceManager,
+} from "./environment";
+export { resolveEnvironment } from "./environment";
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type {
   ComponentStatus,
@@ -27,7 +37,6 @@ export { LocalExecutor, SshExecutor, createExecutor } from "./executor";
 // ─── Checks ──────────────────────────────────────────────────────────────────
 export {
   checkAll,
-  checkBun,
   checkComponents,
   checkDocker,
   checkGit,
@@ -39,7 +48,6 @@ export {
 // ─── Installers ──────────────────────────────────────────────────────────────
 export {
   COMPONENT_INSTALLERS,
-  installBun,
   installDocker,
   installGit,
   installNode,

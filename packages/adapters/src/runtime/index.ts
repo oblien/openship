@@ -29,10 +29,12 @@ export interface CreateRuntimeOptions {
   docker?: DockerConnectionOptions;
   /** Bare runtime config (only used when mode="bare") */
   bare?: BareRuntimeOptions;
-  /** Oblien client ID (only used when mode="cloud") */
+  /** Oblien client ID (cloud — master creds) */
   cloudClientId?: string;
-  /** Oblien client secret (only used when mode="cloud") */
+  /** Oblien client secret (cloud — master creds) */
   cloudClientSecret?: string;
+  /** Oblien namespace-scoped token (cloud — local instances) */
+  cloudToken?: string;
 }
 
 /**
@@ -53,11 +55,15 @@ export async function createRuntime(opts: CreateRuntimeOptions): Promise<Runtime
       return new BareRuntime(opts.bare);
     }
     case "cloud": {
+      const { Oblien } = await import("oblien");
       const { CloudRuntime } = await import("./cloud");
-      return new CloudRuntime(
-        opts.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "",
-        opts.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
-      );
+      const client = opts.cloudToken
+        ? new Oblien({ token: opts.cloudToken })
+        : new Oblien({
+            clientId: opts.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "",
+            clientSecret: opts.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
+          });
+      return new CloudRuntime(client);
     }
   }
 }

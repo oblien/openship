@@ -12,12 +12,16 @@ export interface DesktopBridge {
   app: {
     version: () => Promise<string>;
     platform: string;
+    cloudUrls: () => Promise<{ api: string; dashboard: string }>;
   };
   navigate: (url: string) => Promise<void>;
   onboarding: {
     complete: (apiUrl: string, dashboardUrl: string) => Promise<boolean>;
-    testConnection: (apiUrl: string) => Promise<{ ok: boolean; message: string }>;
     openExternal: (url: string) => Promise<void>;
+    browseFile: () => Promise<string | null>;
+  };
+  system: {
+    browseFolder: () => Promise<string | null>;
   };
   reset: () => Promise<boolean>;
 }

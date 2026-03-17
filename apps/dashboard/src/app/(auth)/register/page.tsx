@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signUp } from "@/lib/auth-client";
 import { useToast } from "@/components/toast";
 import { useI18n } from "@/components/i18n-provider";
@@ -16,6 +16,7 @@ import { isNetworkError } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
 
@@ -24,6 +25,27 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Desktop callback: after signup, redirect to authorize page (has state + PKCE)
+  // Self-hosted connect: after signup, redirect directly to handoff (no state)
+  const callback = searchParams.get("callback");
+  const appParam = searchParams.get("app");
+  const machineParam = searchParams.get("machine");
+  const stateParam = searchParams.get("state");
+  const codeChallengeParam = searchParams.get("code_challenge");
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+  const postLoginUrl = callback
+    ? stateParam
+      ? `/authorize?${new URLSearchParams({
+          callback,
+          ...(appParam ? { app: appParam } : {}),
+          ...(machineParam ? { machine: machineParam } : {}),
+          ...(stateParam ? { state: stateParam } : {}),
+          ...(codeChallengeParam ? { code_challenge: codeChallengeParam } : {}),
+        }).toString()}`
+      : `${API_URL}/api/cloud/connect-handoff?redirect=${encodeURIComponent(callback)}`
+    : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,6 +68,8 @@ export default function RegisterPage() {
           return;
         }
         toast("error", result.error.message ?? t.auth.errors.createFailed);
+      } else if (postLoginUrl) {
+        window.location.href = postLoginUrl;
       } else {
         router.push("/");
       }
@@ -128,11 +152,22 @@ export default function RegisterPage() {
         </Button>
       </form>
 
-      <OAuthButtons />
+      <OAuthButtons callbackURL={postLoginUrl ?? "/"} />
 
       <p className="mt-8 text-center text-sm text-muted-foreground">
         {t.auth.register.hasAccount}{" "}
-        <Link href="/login" className="font-medium text-foreground transition-colors hover:underline">
+        <Link
+          href={callback
+            ? `/login?${new URLSearchParams({
+                callback,
+                ...(appParam ? { app: appParam } : {}),
+                ...(machineParam ? { machine: machineParam } : {}),
+                ...(stateParam ? { state: stateParam } : {}),
+                ...(codeChallengeParam ? { code_challenge: codeChallengeParam } : {}),
+              }).toString()}`
+            : "/login"}
+          className="font-medium text-foreground transition-colors hover:underline"
+        >
           {t.auth.register.signIn}
         </Link>
       </p>

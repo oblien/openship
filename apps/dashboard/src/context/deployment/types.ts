@@ -30,12 +30,20 @@ export interface ComposeServiceInfo {
   domainType?: "free" | "custom";
 }
 
+// ─── Build Strategy ──────────────────────────────────────────────────────────
+
+export type BuildStrategy = "server" | "local";
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export interface DeploymentConfig {
   projectName: string;
   repo: string;
   owner: string;
+  /** Absolute path for local projects (mutually exclusive with owner/repo git source) */
+  localPath?: string;
+  /** Where the build runs: "server" (default, build in cloud/workspace) or "local" (build on host machine) */
+  buildStrategy: BuildStrategy;
   projectType: ProjectType;
   framework: FrameworkId;
   detectedFramework: FrameworkId | null;
@@ -51,6 +59,7 @@ export interface DeploymentConfig {
   options: {
     buildCommand: string;
     outputDirectory: string;
+    productionPaths: string;
     installCommand: string;
     startCommand: string;
     productionPort: string;
@@ -64,6 +73,8 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   projectName: "",
   repo: "",
   owner: "",
+  localPath: undefined,
+  buildStrategy: "server",
   projectType: "app",
   framework: "nextjs",
   detectedFramework: null,
@@ -78,6 +89,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   options: {
     buildCommand: "",
     outputDirectory: "",
+    productionPaths: "",
     installCommand: "",
     startCommand: "",
     productionPort: "",
@@ -103,6 +115,10 @@ export interface DeploymentState {
   currentStepIndex: number;
   screenshots: Screenshot[];
   projectId: string | null;
+  /** Final build duration in ms (set when build finishes). */
+  buildDurationMs: number | null;
+  /** ISO timestamp when the build started (for elapsed timer). */
+  buildStartedAt: string | null;
 }
 
 export const INITIAL_STATE: DeploymentState = {
@@ -118,6 +134,8 @@ export const INITIAL_STATE: DeploymentState = {
   currentStepIndex: 0,
   screenshots: [],
   projectId: null,
+  buildDurationMs: null,
+  buildStartedAt: null,
 };
 
 // ─── Status ──────────────────────────────────────────────────────────────────

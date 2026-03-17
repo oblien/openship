@@ -3,16 +3,18 @@
  */
 
 import { repos, type Project, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError, BUILD_ENV_VARS, SYSTEM } from "@repo/core";
-import type { BuildConfig, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
-import { BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, runDeployPipeline } from "@repo/adapters";
+import { NotFoundError, ForbiddenError, BUILD_ENV_VARS, SYSTEM, STACKS, type StackId } from "@repo/core";
+import type { BuildConfig, BuildStrategy, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
+import { BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, runDeployPipeline, createPlatform } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
+import { env } from "../../config";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { withDefaults } from "../../lib/resources";
 import { resolveToken } from "../github/github.auth";
 import * as sessionManager from "./session-manager";
 import { onFailure, onSuccess, onCancelled, type LifecycleContext } from "./deployment-lifecycle";
 import { runPreflightChecks } from "./preflight";
+import * as settingsService from "../settings/settings.service";
 
 // ─── Terminal output collapsing ──────────────────────────────────────────────
 
@@ -90,6 +92,7 @@ export interface DeploymentConfigSnapshot {
   installCommand: string;
   buildCommand: string;
   outputDirectory: string;
+  productionPaths: string[];
   rootDirectory: string;
   port: number;
   startCommand: string;
@@ -99,6 +102,12 @@ export interface DeploymentConfigSnapshot {
   hasServer: boolean;
   /** Whether the project needs a build step (false = deploy source directly) */
   hasBuild: boolean;
+  /** Custom domain from deploy input (e.g. "app.example.com") */
+  customDomain?: string;
+  /** Absolute path to a local project directory (alternative to repoUrl) */
+  localPath?: string;
+  /** Build strategy: "server" (build in workspace) or "local" (build on host) */
+  buildStrategy?: BuildStrategy;
 }
 
 export interface BuildAccessInput {
@@ -107,30 +116,44 @@ export interface BuildAccessInput {
   environment?: string;
   envVars?: Record<string, string>;
   customDomain?: string;
+  buildStrategy?: BuildStrategy;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Build a config snapshot from the project — pure pass-through, no fallbacks.
  *  All values must be set by prepare / ensureProject before this is called. */
-function buildConfigSnapshot(project: Project, branch?: string): DeploymentConfigSnapshot {
+function buildConfigSnapshot(project: Project, branch?: string, customDomain?: string): DeploymentConfigSnapshot {
   return {
-    repoUrl: project.gitUrl!,
-    branch: branch || project.gitBranch!,
+    repoUrl: project.gitUrl ?? "",
+    branch: branch || project.gitBranch || "main",
     framework: project.framework!,
     buildImage: project.buildImage!,
     packageManager: project.packageManager!,
     installCommand: project.installCommand!,
     buildCommand: project.buildCommand!,
     outputDirectory: project.outputDirectory!,
+    productionPaths: parseProductionPaths(project.productionPaths, project.framework),
     rootDirectory: project.rootDirectory || "",
     port: project.port!,
     startCommand: project.startCommand!,
     resources: (project.resources as ResourceConfig) || null,
     buildResources: (project.buildResources as ResourceConfig) || null,
-    hasServer: project.hasServer ?? true,
+    hasServer: !!project.startCommand?.trim(),
     hasBuild: project.hasBuild ?? true,
+    customDomain: customDomain || undefined,
+    localPath: project.localPath || undefined,
   };
+}
+
+/** Parse productionPaths from DB text (comma-separated) with STACKS fallback. */
+function parseProductionPaths(raw: string | null | undefined, framework: string | null | undefined): string[] {
+  if (raw) return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (framework && framework in STACKS) {
+    const paths = STACKS[framework as StackId] as import("@repo/core").StackDefinition;
+    return paths.productionPaths ? [...paths.productionPaths] : [];
+  }
+  return [];
 }
 
 /** Encrypt a plaintext key-value map. Returns null if empty. */
@@ -240,7 +263,7 @@ export { subscribe as subscribeToBuildSession } from "./session-manager";
  * Project MUST exist before calling this.
  */
 export async function requestBuildAccess(userId: string, input: BuildAccessInput) {
-  const { projectId, branch, environment, envVars, customDomain } = input;
+  const { projectId, branch, environment, envVars, customDomain, buildStrategy } = input;
 
   const project = await repos.project.findById(projectId);
   if (!project || project.userId !== userId) {
@@ -249,11 +272,18 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
 
   await checkNoActiveBuild(project.id);
 
-  const snapshot = buildConfigSnapshot(project, branch);
+  const snapshot = buildConfigSnapshot(project, branch, customDomain);
+
+  // Resolve effective build strategy via settings service
+  snapshot.buildStrategy = await settingsService.resolveStrategy(
+    userId,
+    snapshot.framework,
+    buildStrategy ?? snapshot.buildStrategy,
+  );
 
   // ── Preflight: validate config + domain before creating any resources ──
   const preflight = await runPreflightChecks(snapshot, {
-    customDomain,
+    customDomain: snapshot.customDomain,
     slug: project.slug,
   });
   if (!preflight.ok) {
@@ -369,10 +399,13 @@ export async function getBuildSessionStatus(deploymentId: string, userId: string
       startCommand: snapshot?.startCommand,
       productionPort: snapshot?.port ? String(snapshot.port) : undefined,
       rootDirectory: snapshot?.rootDirectory,
+      hasServer: snapshot?.hasServer ?? !!snapshot?.startCommand?.trim(),
     },
     progress,
     currentStep,
     screenshots: [],
+    buildDurationMs: buildSessionRow?.durationMs ?? null,
+    buildStartedAt: buildSessionRow?.startedAt?.toISOString() ?? null,
   };
 }
 
@@ -464,8 +497,8 @@ export async function triggerDeployment(userId: string, data: { projectId: strin
     throw new NotFoundError("Project", data.projectId);
   }
 
-  if (!project.gitUrl) {
-    throw new ForbiddenError("Project has no git repository configured");
+  if (!project.gitUrl && !project.localPath) {
+    throw new ForbiddenError("Project has no git repository or local path configured");
   }
 
   const branch = data.branch ?? project.gitBranch ?? "main";
@@ -522,7 +555,22 @@ async function executeBuildAndDeploy(
   dep: Deployment,
   buildSessionId: string,
 ) {
-  const { runtime, routing } = platform();
+  // In cloud mode the singleton platform has master creds.
+  // In local mode deploying to cloud, we fetch a namespace token
+  // from the SaaS API and create a per-deploy cloud platform.
+  const plat = platform();
+  let { runtime, routing } = plat;
+
+  if (!env.CLOUD_MODE && plat.target === "cloud") {
+    const { getCloudToken } = await import("../../lib/cloud-client");
+    const result = await getCloudToken(dep.userId);
+    if (result) {
+      const cloudPlatform = await createPlatform({ target: "cloud", cloudToken: result.token });
+      runtime = cloudPlatform.runtime;
+      routing = cloudPlatform.routing;
+    }
+  }
+
   const logs: LogEntry[] = [];
   const MAX_LOG_ENTRIES = 50_000;
 
@@ -581,9 +629,12 @@ async function executeBuildAndDeploy(
     const buildConfig: BuildConfig = {
       sessionId: buildSessionId,
       projectId: project.id,
+      slug: project.slug ?? undefined,
       repoUrl: snapshot.repoUrl,
       branch: dep.branch,
       commitSha: dep.commitSha ?? undefined,
+      localPath: snapshot.localPath,
+      buildStrategy: snapshot.buildStrategy,
       stack: snapshot.framework,
       buildImage: snapshot.buildImage,
       packageManager: snapshot.packageManager,
@@ -644,6 +695,8 @@ async function executeBuildAndDeploy(
         envVars: envMap,
         resources: prodResources,
         restartPolicy: "no",
+        slug: project.slug,
+        customDomain: snapshot.customDomain,
         outputDirectory: snapshot.outputDirectory,
         projectName: project.name,
       });
@@ -676,12 +729,15 @@ async function executeBuildAndDeploy(
         resources: prodResources,
         restartPolicy: "always",
         slug: project.slug,
+        productionPaths: snapshot.productionPaths.length
+          ? snapshot.productionPaths
+          : undefined,
       };
 
       // Compose deploy environment from runtime adapter
       const deployEnv: DeployEnvironment = {
-        activate: async (cfg) => {
-          const r = await runtime.deploy(cfg);
+        activate: async (cfg, onLog) => {
+          const r = await runtime.deploy(cfg, onLog);
           if (!r.containerId) throw new Error("Deploy produced no container");
           return { containerId: r.containerId, url: r.url };
         },
@@ -698,16 +754,15 @@ async function executeBuildAndDeploy(
       const prevDep = project.activeDeploymentId
         ? await repos.deployment.findById(project.activeDeploymentId)
         : null;
-      const allDomains = await repos.domain.listByProject(project.id);
-      const verifiedDomains = allDomains
-        .filter((d) => d.verified)
-        .map((d) => ({ hostname: d.hostname, tls: d.sslStatus === "active" }));
 
-      // Attach custom domain if the project has a verified primary domain
-      const primaryDomain = allDomains.find((d) => d.isPrimary && d.verified);
-      if (primaryDomain) {
-        deployConfig.customDomain = primaryDomain.hostname;
+      // Attach custom domain from snapshot (passed through from input)
+      if (snapshot.customDomain) {
+        deployConfig.customDomain = snapshot.customDomain;
       }
+
+      const verifiedDomains = snapshot.customDomain
+        ? [{ hostname: snapshot.customDomain, tls: true }]
+        : [];
 
       const deployResult = await runDeployPipeline(deployEnv, {
         config: deployConfig,

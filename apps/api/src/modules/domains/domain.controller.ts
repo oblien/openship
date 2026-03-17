@@ -22,8 +22,8 @@ export async function list(c: Context) {
 export async function add(c: Context) {
   const userId = getUserId(c);
   const body = await c.req.json<TAddDomainBody>();
-  const domain = await domainService.addDomain(userId, body);
-  return c.json({ data: domain }, 201);
+  const result = await domainService.addDomain(userId, body);
+  return c.json({ data: result.domain, records: result.records }, 201);
 }
 
 export async function remove(c: Context) {
@@ -38,6 +38,23 @@ export async function verify(c: Context) {
   const id = param(c, "id");
   const result = await domainService.verifyDomain(id, userId);
   return c.json(result);
+}
+
+export async function records(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const result = await domainService.getDomainRecords(id, userId);
+  return c.json({ data: result });
+}
+
+/** POST /domains/preview — get DNS records for a hostname (no DB write) */
+export async function preview(c: Context) {
+  const body = await c.req.json<{ hostname: string }>();
+  if (!body.hostname?.trim()) {
+    return c.json({ error: "hostname is required" }, 400);
+  }
+  const result = await domainService.previewRecords(body.hostname.trim().toLowerCase());
+  return c.json({ data: result });
 }
 
 /** POST /domains/:id/renew — renew SSL for a single domain */

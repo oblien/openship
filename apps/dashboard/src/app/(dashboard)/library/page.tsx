@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Github, Link2, Sparkles } from "lucide-react";
+import { FolderOpen, Github, Link2, Sparkles } from "lucide-react";
 import { useGitHub } from "@/context/GitHubContext";
 import { ConnectPrompt } from "./components/ConnectPrompt";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
@@ -11,7 +11,7 @@ import { LibrarySidebar } from "./components/LibrarySidebar";
 import { UrlImport } from "./components/UrlImport";
 import { TemplateGrid } from "./components/TemplateGrid";
 
-type Tab = "projects" | "repositories" | "url" | "template";
+type Tab = "local" | "repositories" | "url" | "template";
 
 interface TabItem {
   key: Tab;
@@ -35,15 +35,16 @@ export default function LibraryPage() {
     selfHosted,
   } = useGitHub();
 
-  const [activeTab, setActiveTab] = useState<Tab>(selfHosted ? "projects" : "repositories");
+  const [activeTab, setActiveTab] = useState<Tab>(selfHosted ? "local" : "repositories");
 
-  // Sync active tab when selfHosted changes after API load
+  // Auto-select GitHub tab once connected; hide Local tab if not self-hosted
   useEffect(() => {
-    if (!selfHosted && activeTab === "projects") setActiveTab("repositories");
-  }, [selfHosted]);
+    if (!selfHosted && activeTab === "local") setActiveTab("repositories");
+    if (connected && activeTab === "local") setActiveTab("repositories");
+  }, [selfHosted, connected]);
 
   const tabs: TabItem[] = [
-    ...(selfHosted ? [{ key: "projects" as Tab, label: "Projects", icon: Github }] : []),
+    ...(selfHosted ? [{ key: "local" as Tab, label: "Local", icon: FolderOpen }] : []),
     { key: "repositories", label: "GitHub", icon: Github },
     { key: "url", label: "Git URL", icon: Link2 },
     { key: "template", label: "Template", icon: Sparkles },
@@ -89,7 +90,7 @@ export default function LibraryPage() {
 
           {/* ── LEFT COLUMN ────────────────────────────────────────── */}
           <div className="space-y-6 min-w-0">
-            {activeTab === "projects" ? (
+            {activeTab === "local" ? (
               <LocalProjects />
             ) : activeTab === "url" ? (
               <UrlImport />

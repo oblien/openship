@@ -176,7 +176,9 @@ export function useDeploymentBuild(
       onProgress: handleProgressUpdate,
       onSuccess: (data) => {
         handleSuccessMessage(data);
-        canStreamContainer.current = true;
+        if (config.options.hasServer) {
+          canStreamContainer.current = true;
+        }
         buildStream.disconnect();
       },
       onFailure: (message) => {
@@ -200,7 +202,8 @@ export function useDeploymentBuild(
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   const startDeployment = useCallback(async (): Promise<string | null> => {
-    if (!config.repo || !config.owner || !config.branch) {
+    const isLocal = !!config.localPath;
+    if (!isLocal && (!config.repo || !config.owner || !config.branch)) {
       showToast("Repository data is incomplete", "error", "Error");
       return null;
     }
@@ -229,15 +232,17 @@ export function useDeploymentBuild(
     try {
       // Step 1: Ensure project exists
       const projectData = await projectsApi.ensure({
-        name: config.projectName || config.repo,
-        gitOwner: config.owner,
-        gitRepo: config.repo,
-        gitBranch: config.branch,
+        name: config.projectName || config.repo || config.localPath?.split("/").pop() || "project",
+        gitOwner: config.owner || undefined,
+        gitRepo: config.repo || undefined,
+        gitBranch: config.branch || undefined,
+        localPath: config.localPath || undefined,
         framework: config.framework,
         packageManager: config.packageManager,
         buildImage: config.buildImage,
         buildCommand: config.options.buildCommand,
         outputDirectory: config.options.outputDirectory,
+        productionPaths: config.options.productionPaths || undefined,
         installCommand: config.options.installCommand,
         startCommand: config.options.startCommand,
         rootDirectory: config.options.rootDirectory,
@@ -265,9 +270,10 @@ export function useDeploymentBuild(
 
       const data = await deployApi.buildAccess({
         projectId: projectData.project_id,
-        branch: config.branch,
+        branch: config.branch || undefined,
         envVars: Object.keys(envVarsMap).length > 0 ? envVarsMap : undefined,
         customDomain: config.domainType === "custom" && config.customDomain ? config.customDomain : undefined,
+        buildStrategy: config.buildStrategy !== "server" ? config.buildStrategy : undefined,
       });
 
       if (data.success && data.deployment_id) {
@@ -339,6 +345,7 @@ export function useDeploymentBuild(
             options: {
               buildCommand: apiConfig.buildCommand || prev.options.buildCommand,
               outputDirectory: apiConfig.outputDirectory || prev.options.outputDirectory,
+              productionPaths: apiConfig.productionPaths || prev.options.productionPaths,
               installCommand: apiConfig.installCommand || prev.options.installCommand,
               startCommand: apiConfig.startCommand || prev.options.startCommand,
               productionPort: apiConfig.productionPort || prev.options.productionPort,
@@ -373,6 +380,8 @@ export function useDeploymentBuild(
           screenshots: !isActive ? (data.screenshots || []) : [],
           failureMessage: !isActive ? (data.failureMessage || "") : "",
           buildLogs,
+          buildDurationMs: data.buildDurationMs ?? null,
+          buildStartedAt: data.buildStartedAt ?? null,
         }));
 
         // Write existing logs to terminal

@@ -1,120 +1,130 @@
 /**
- * Domain service — manage custom domains, DNS verification, SSL certificates.
+ * Domain service — custom domains, DNS verification, SSL certificates.
  *
- * Flow:
- *   1. User adds a domain → status: pending, verification token generated
- *   2. User adds DNS TXT record
- *   3. User triggers verify → DNS lookup checks TXT record
- *   4. On verification → provision SSL via adapter
- *   5. Register reverse-proxy route via adapter
+ * Cloud mode  → CNAME (target from Oblien) + TXT (verification hash)
+ * Self-hosted → A record (server IP)       + TXT (verification hash)
+ *
+ * verifyDomain only checks DNS. SSL & routing are separate concerns.
  */
 
+import { createHmac } from "node:crypto";
+import dns from "node:dns/promises";
 import { repos, type Domain } from "@repo/db";
 import { NotFoundError, ConflictError, ForbiddenError } from "@repo/core";
 import { platform } from "../../lib/controller-helpers";
+import { env } from "../../config/env";
 import type { TAddDomainBody } from "./domain.schema";
+import type { CloudRuntime } from "@repo/adapters";
 
-// ─── List domains ────────────────────────────────────────────────────────────
+// ─── Token ───────────────────────────────────────────────────────────────────
+
+/**
+ * Deterministic verification token for a hostname.
+ * HMAC-SHA256(hostname, secret) → hex prefix. Same input always produces
+ * the same output so preview and stored tokens match.
+ */
+function generateToken(hostname: string): string {
+  return createHmac("sha256", env.BETTER_AUTH_SECRET)
+    .update(hostname.toLowerCase())
+    .digest("hex")
+    .slice(0, 16);
+}
+
+// ─── List ────────────────────────────────────────────────────────────────────
 
 export async function listDomains(projectId: string, userId: string) {
-  // Verify ownership
   const project = await repos.project.findById(projectId);
   if (!project || project.userId !== userId) {
     throw new NotFoundError("Project", projectId);
   }
-
   return repos.domain.listByProject(projectId);
 }
 
-// ─── Add domain ──────────────────────────────────────────────────────────────
+// ─── Add ─────────────────────────────────────────────────────────────────────
 
 export async function addDomain(userId: string, data: TAddDomainBody) {
-  // Verify project ownership
   const project = await repos.project.findById(data.projectId);
   if (!project || project.userId !== userId) {
     throw new NotFoundError("Project", data.projectId);
   }
 
-  // Check for duplicate hostname
   const existing = await repos.domain.findByHostname(data.hostname);
   if (existing) {
     throw new ConflictError(`Domain "${data.hostname}" is already in use`);
   }
 
+  const token = generateToken(data.hostname);
+
   const domain = await repos.domain.create({
     projectId: data.projectId,
     hostname: data.hostname,
     isPrimary: data.isPrimary ?? false,
+    verificationToken: token,
   });
 
-  // If primary, update project
   if (data.isPrimary) {
     await repos.domain.setPrimary(data.projectId, domain.id);
   }
 
-  return domain;
+  const records = await buildRecords(domain.hostname, token);
+  return { domain, records };
 }
 
-// ─── Verify domain ──────────────────────────────────────────────────────────
+// ─── Preview records (no auth, no DB write) ──────────────────────────────────
+
+export async function previewRecords(hostname: string) {
+  const token = generateToken(hostname);
+  return buildRecords(hostname, token);
+}
+
+// ─── Get DNS records (existing domain) ───────────────────────────────────────
+
+export async function getDomainRecords(domainId: string, userId: string) {
+  const domain = await getDomainWithAuth(domainId, userId);
+  const token = domain.verificationToken ?? generateToken(domain.hostname);
+  return buildRecords(domain.hostname, token);
+}
+
+// ─── Verify ──────────────────────────────────────────────────────────────────
+//
+// Only checks DNS records. Does NOT provision SSL or register routes.
 
 export async function verifyDomain(domainId: string, userId: string) {
   const domain = await getDomainWithAuth(domainId, userId);
 
   if (domain.verified) {
-    return { verified: true, message: "Domain is already verified" };
+    return { verified: true, cnameVerified: true, txtVerified: true, message: "Already verified" };
   }
 
-  // DNS TXT record lookup
-  const verified = await checkDnsVerification(domain.hostname, domain.verificationToken!);
+  const { target } = platform();
+  const token = domain.verificationToken ?? generateToken(domain.hostname);
 
-  if (verified) {
+  // 1. Routing record — cloud: CNAME via Oblien, self-hosted: A record
+  const routeOk = target === "cloud"
+    ? await verifyCname(domain.hostname)
+    : await verifyARecord(domain.hostname);
+
+  // 2. Ownership — TXT record with verification hash
+  const txtOk = await verifyTxt(domain.hostname, token);
+
+  if (routeOk && txtOk) {
     await repos.domain.markVerified(domainId);
-
-    // Provision SSL and register route
-    try {
-      const { runtime, routing, ssl } = platform();
-      const sslResult = await ssl.provisionCert(domain.hostname);
-      await repos.domain.updateSsl(domainId, {
-        sslStatus: "active",
-        sslIssuer: sslResult.issuer,
-        sslExpiresAt: sslResult.expiresAt ? new Date(sslResult.expiresAt) : undefined,
-      });
-
-      // Register reverse-proxy route
-      const project = await repos.project.findById(domain.projectId);
-      if (project?.activeDeploymentId) {
-        const dep = await repos.deployment.findById(project.activeDeploymentId);
-        if (dep?.containerId) {
-          const ip = await runtime.getContainerIp(dep.containerId);
-          if (ip) {
-            await routing.registerRoute({
-              domain: domain.hostname,
-              targetUrl: `http://${ip}:${project.port ?? 3000}`,
-              tls: true,
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.error(`[DOMAIN] SSL provisioning failed for ${domain.hostname}:`, err);
-      await repos.domain.updateSsl(domainId, { sslStatus: "error" });
-    }
-
-    return { verified: true, message: "Domain verified successfully" };
+    return { verified: true, cnameVerified: true, txtVerified: true, message: "Domain verified" };
   }
 
   return {
     verified: false,
-    message: `DNS verification pending. Add a TXT record for _openship-challenge.${domain.hostname} with value: ${domain.verificationToken}`,
+    cnameVerified: routeOk,
+    txtVerified: txtOk,
+    message: verifyMessage(domain.hostname, token, routeOk, txtOk, target),
   };
 }
 
-// ─── Remove domain ──────────────────────────────────────────────────────────
+// ─── Remove ──────────────────────────────────────────────────────────────────
 
 export async function removeDomain(domainId: string, userId: string) {
   const domain = await getDomainWithAuth(domainId, userId);
 
-  // Remove reverse-proxy route
   try {
     const { routing } = platform();
     await routing.removeRoute(domain.hostname);
@@ -124,11 +134,9 @@ export async function removeDomain(domainId: string, userId: string) {
 
   await repos.domain.remove(domainId);
 }
-// ─── SSL renewal ─────────────────────────────────────────────────────────
 
-/**
- * Renew SSL for a single domain (user-initiated).
- */
+// ─── SSL ─────────────────────────────────────────────────────────────────────
+
 export async function renewDomainSsl(domainId: string, userId: string) {
   const domain = await getDomainWithAuth(domainId, userId);
 
@@ -153,15 +161,8 @@ export async function renewDomainSsl(domainId: string, userId: string) {
   };
 }
 
-/**
- * Batch-renew all expiring SSL certificates.
- * Meant to be called from an internal cron scheduler only.
- */
 export { renewExpiringCerts } from "../../lib/ssl-scheduler";
 
-/**
- * Renew expiring SSL certs for a specific user's domains only.
- */
 export async function renewUserCerts(userId: string) {
   const projects = await repos.project.listByUser(userId, { page: 1, perPage: 1000 });
   const results: Array<{ domain: string; status: string; error?: string }> = [];
@@ -171,7 +172,7 @@ export async function renewUserCerts(userId: string) {
     for (const d of domains) {
       if (d.sslStatus !== "active" || !d.sslExpiresAt) continue;
       const daysLeft = (new Date(d.sslExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-      if (daysLeft > 14) continue; // not expiring soon
+      if (daysLeft > 14) continue;
       try {
         await renewDomainSsl(d.id, userId);
         results.push({ domain: d.hostname, status: "renewed" });
@@ -181,8 +182,9 @@ export async function renewUserCerts(userId: string) {
     }
   }
 
-  return { renewed: results.filter(r => r.status === "renewed").length, results };
+  return { renewed: results.filter((r) => r.status === "renewed").length, results };
 }
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getDomainWithAuth(domainId: string, userId: string): Promise<Domain> {
@@ -197,17 +199,187 @@ async function getDomainWithAuth(domainId: string, userId: string): Promise<Doma
   return domain;
 }
 
-/**
- * Check if a DNS TXT record matches the expected verification token.
- * Uses Node's built-in dns module.
- */
-async function checkDnsVerification(hostname: string, expectedToken: string): Promise<boolean> {
+// ── DNS resolution (Google DNS-over-HTTPS → node:dns fallback) ───────────────
+
+const GOOGLE_DNS = "https://dns.google/resolve";
+
+interface GoogleDnsAnswer {
+  name: string;
+  type: number;
+  data: string;
+}
+
+/** Query Google public DNS API. Falls back to node:dns on failure. */
+async function resolveRecords(
+  name: string,
+  type: "A" | "CNAME" | "TXT",
+): Promise<string[]> {
+  const rrtype: Record<string, number> = { A: 1, CNAME: 5, TXT: 16 };
+
   try {
-    const dns = await import("node:dns/promises");
-    const records = await dns.resolveTxt(`_openship-challenge.${hostname}`);
-    const values = records.flat();
-    return values.some((v) => v === expectedToken);
+    const url = `${GOOGLE_DNS}?name=${encodeURIComponent(name)}&type=${rrtype[type]}`;
+    const res = await fetch(url, {
+      headers: { accept: "application/dns-json" },
+      signal: AbortSignal.timeout(5_000),
+    });
+
+    if (res.ok) {
+      const json = (await res.json()) as { Answer?: GoogleDnsAnswer[] };
+      return (json.Answer ?? []).map((a) => a.data.replace(/^"|"$/g, ""));
+    }
+  } catch { /* Google DNS unreachable */ }
+
+  // Fallback — local resolver
+  try {
+    switch (type) {
+      case "A":
+        return await dns.resolve4(name);
+      case "CNAME":
+        return await dns.resolveCname(name);
+      case "TXT": {
+        const rows = await dns.resolveTxt(name);
+        return rows.flat();
+      }
+    }
+  } catch { /* no records */ }
+
+  return [];
+}
+
+// ── DNS checks ───────────────────────────────────────────────────────────────
+
+/** Cloud: ask Oblien if the CNAME is pointing correctly. */
+async function verifyCname(hostname: string): Promise<boolean> {
+  const { runtime } = platform();
+  try {
+    const cloud = runtime as CloudRuntime;
+    const result = await cloud.verifyDomain(hostname);
+    return result.cname;
   } catch {
     return false;
   }
+}
+
+/** Self-hosted: check if an A record resolves to our server IP. */
+async function verifyARecord(hostname: string): Promise<boolean> {
+  const serverIp = await getServerIp();
+  if (!serverIp) return false;
+
+  const records = await resolveRecords(hostname, "A");
+  return records.includes(serverIp);
+}
+
+/** Check _openship-challenge.{hostname} TXT record for verification token. */
+async function verifyTxt(hostname: string, token: string): Promise<boolean> {
+  const records = await resolveRecords(`_openship-challenge.${hostname}`, "TXT");
+  return records.some((v) => v === token);
+}
+
+// ── Server IP detection ──────────────────────────────────────────────────────
+
+let cachedServerIp: string | null = null;
+
+/** Resolve the server's public IP: SERVER_IP env → ipify API → BETTER_AUTH_URL. */
+async function getServerIp(): Promise<string | null> {
+  if (cachedServerIp) return cachedServerIp;
+
+  // 1. Explicit env
+  if (env.SERVER_IP) {
+    cachedServerIp = env.SERVER_IP;
+    return cachedServerIp;
+  }
+
+  // 2. Auto-detect via ipify
+  try {
+    const res = await fetch("https://api.ipify.org?format=json", {
+      signal: AbortSignal.timeout(3_000),
+    });
+    if (res.ok) {
+      const { ip } = (await res.json()) as { ip: string };
+      if (ip) {
+        cachedServerIp = ip;
+        return cachedServerIp;
+      }
+    }
+  } catch { /* ipify unreachable */ }
+
+  // 3. Fallback — parse BETTER_AUTH_URL hostname if it's an IP
+  try {
+    const host = new URL(env.BETTER_AUTH_URL).hostname;
+    if (host !== "localhost" && host !== "127.0.0.1" && host !== "0.0.0.0") {
+      cachedServerIp = host;
+      return cachedServerIp;
+    }
+  } catch { /* invalid URL */ }
+
+  return null;
+}
+
+// ── Record generation ────────────────────────────────────────────────────────
+
+type DnsRecord =
+  | { type: "CNAME"; host: string; value: string }
+  | { type: "A"; host: string; value: string }
+  | { type: "TXT"; host: string; value: string };
+
+/**
+ * Build the DNS records the user needs to add.
+ *
+ * Cloud       → CNAME @ → <target from Oblien>
+ * Self-hosted → A     @ → <server public IP>
+ * Both        → TXT _openship-challenge → <verification hash>
+ */
+async function buildRecords(
+  hostname: string,
+  token: string,
+): Promise<{ mode: "cloud" | "selfhosted"; records: DnsRecord[] }> {
+  const { target, runtime } = platform();
+
+  const txt: DnsRecord = { type: "TXT", host: "_openship-challenge", value: token };
+
+  if (target === "cloud") {
+    let cnameTarget: string | null = null;
+    try {
+      const cloud = runtime as CloudRuntime;
+      const result = await cloud.verifyDomain(hostname);
+      cnameTarget = result.requiredRecords.cname.target;
+    } catch { /* Oblien unreachable */ }
+
+    return {
+      mode: "cloud",
+      records: [{ type: "CNAME", host: "@", value: cnameTarget ?? "" }, txt],
+    };
+  }
+
+  // Self-hosted — A record
+  const serverIp = await getServerIp();
+  return {
+    mode: "selfhosted",
+    records: [{ type: "A", host: "@", value: serverIp ?? "" }, txt],
+  };
+}
+
+/** Build a human-readable verification failure message. */
+function verifyMessage(
+  hostname: string,
+  token: string,
+  routeOk: boolean,
+  txtOk: boolean,
+  target: string,
+): string {
+  const parts: string[] = [];
+
+  if (!routeOk) {
+    parts.push(
+      target === "cloud"
+        ? `CNAME record not found for ${hostname}`
+        : `A record not pointing to server for ${hostname}`,
+    );
+  }
+
+  if (!txtOk) {
+    parts.push(`TXT record _openship-challenge.${hostname} must equal "${token}"`);
+  }
+
+  return parts.join(". ");
 }

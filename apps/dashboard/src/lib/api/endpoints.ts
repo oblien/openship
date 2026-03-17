@@ -57,6 +57,13 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  Domains                                                          */
+  /* ---------------------------------------------------------------- */
+  domains: {
+    preview: "domains/preview",
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  GitHub                                                          */
   /* ---------------------------------------------------------------- */
   github: {
@@ -84,9 +91,39 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  System (self-hosted only)                                       */
+  /* ---------------------------------------------------------------- */
+  system: {
+    browse: "system/browse",
+    settings: "system/settings",
+    check: "system/check",
+    install: "system/install",
+    installStream: "system/install/stream",
+    installSession: "system/install/session",
+    monitorStream: "system/monitor/stream",
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Sandbox                                                         */
   /* ---------------------------------------------------------------- */
   sandbox: {
     resources: (id: string | number) => `sandbox/${id}/resources`,
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Settings (user platform preferences)                            */
+  /* ---------------------------------------------------------------- */
+  settings: {
+    get: "settings",
+    upsert: "settings",
+    buildMode: "settings/build-mode",
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Cloud (Openship Cloud connection — local/self-hosted only)      */
+  /* ---------------------------------------------------------------- */
+  cloud: {
+    disconnect: "cloud/disconnect",
+    status: "cloud/status",
   },
 } as const;

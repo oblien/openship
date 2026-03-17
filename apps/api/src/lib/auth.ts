@@ -1,7 +1,7 @@
 import { betterAuth, type User } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db, schema } from "@repo/db";
-import { env } from "../config/env";
+import { env, trustedOrigins } from "../config/env";
 import { sendMail, smtpEnabled } from "./mail";
 import { resetPasswordEmail, verifyEmailTemplate } from "./email-templates";
 
@@ -89,12 +89,17 @@ export const auth = betterAuth({
         defaultValue: "user",
         input: false,
       },
+      autoProvisioned: {
+        type: "boolean",
+        defaultValue: false,
+        input: false,
+      },
     },
   },
 
   /* ---------- Security ---------- */
   secret: env.BETTER_AUTH_SECRET,
-  trustedOrigins: env.TRUSTED_ORIGINS ? env.TRUSTED_ORIGINS.split(",") : ["http://localhost:3000", "http://localhost:3001"],
+  trustedOrigins,
 });
 
 export type Auth = typeof auth;

@@ -14,6 +14,7 @@
 export type {
   ResourceConfig,
   ContainerStatus,
+  BuildStrategy,
   BuildConfig,
   DeployConfig,
   BuildResult,
@@ -73,6 +74,7 @@ export type {
   InstallResult,
   PrerequisiteRule,
   RuntimeMode as SystemRuntimeMode,
+  SystemComponentDefinition,
   SetupResult,
   SystemCheckResult,
   SystemLog,
@@ -82,11 +84,27 @@ export type {
 export type { SetupState, SetupStateStore, ComponentState } from "./system/state";
 export { FileStateStore } from "./system/state";
 
+export type {
+  EnvironmentProfile,
+  LinuxDistro,
+  SystemArch,
+  SystemOs,
+  SystemPackageManager,
+  SystemServiceManager,
+} from "./system/environment";
+export { resolveEnvironment } from "./system/environment";
+export { systemCatalog } from "./system/catalog";
+export { SYSTEM_COMPONENTS, getSystemComponentDefinition } from "./system/components";
+export {
+  isRemoteConnectionError,
+  isRetryableRemoteConnectionError,
+  isSshAuthError,
+} from "./system/errors";
+
 export { LocalExecutor, SshExecutor, createExecutor } from "./system/executor";
 
 export {
   checkAll as checkAllComponents,
-  checkBun,
   checkComponents,
   checkDocker,
   checkGit,
@@ -96,13 +114,30 @@ export {
 } from "./system/checks";
 export {
   COMPONENT_INSTALLERS,
-  installBun,
   installDocker,
   installGit,
   installNode,
   installTraefik,
 } from "./system/installer";
 export { SystemManager, type SystemManagerOptions } from "./system/setup";
+
+// ─── Toolchain layer ────────────────────────────────────────────────────────
+export type {
+  ToolchainStatus,
+  ToolchainCheckResult,
+  ToolchainCheckEntry,
+  ToolchainInstallPlan,
+  ToolchainInstallResult,
+} from "./toolchain";
+
+export { toolchainCatalog } from "./toolchain";
+export {
+  checkTool,
+  checkTools,
+  checkToolchain,
+  checkToolchainForStack,
+} from "./toolchain";
+export { installTool, installTools } from "./toolchain";
 
 // ─── Platform (top-level entry point) ────────────────────────────────────────
 export type { PlatformTarget, PlatformConfig, Platform } from "./platform";

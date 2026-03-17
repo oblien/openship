@@ -7,6 +7,7 @@ const withMDX = createMDX({ configPath: "./source.config.ts" });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "standalone",
   transpilePackages: ["@repo/ui", "@repo/core"],
   turbopack: {
     root: path.resolve(__dirname, "../.."),

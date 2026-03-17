@@ -92,6 +92,7 @@
       "resendFailed": "Failed to resend. Please try again.",
       "verificationSent": "Verification email sent!"
     },
+    "back": "Back",
     "toggleTheme": "Toggle theme",
     "showPassword": "Show password",
     "hidePassword": "Hide password"
@@ -126,11 +127,13 @@
       "deployments": "Deployments",
       "domains": "Domains",
       "monitoring": "Monitoring",
+      "servers": "Servers",
       "settings": "Settings",
       "billing": "Billing",
       "sections": {
         "main": "Main",
         "settings": "Settings",
+        "infrastructure": "Infrastructure",
         "account": "Account"
       }
     },
@@ -179,6 +182,7 @@
       "deployments": { "title": "Deployments", "description": "View and manage your deployment history." },
       "domains": { "title": "Domains", "description": "Manage custom domains and DNS records." },
       "monitoring": { "title": "Monitoring", "description": "Logs, metrics, and health checks for your services." },
+      "servers": { "title": "Servers", "description": "Manage your deployment servers and infrastructure." },
       "settings": { "title": "Settings", "description": "Account, team, and platform settings." },
       "billing": { "title": "Billing", "description": "Manage your subscription, usage, and payment methods." }
     },

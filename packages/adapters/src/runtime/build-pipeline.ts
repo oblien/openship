@@ -81,14 +81,19 @@ export interface BuildEnvironment {
   readonly hasNativeEnv?: boolean;
 
   /**
-   * Optional pre-build preparation — runs before clone with full log streaming.
+   * Pre-build preparation — runs before clone with full log streaming.
    *
-   * Use for environment validation and setup that should be visible in the
-   * terminal but isn't a numbered stepper step:
+   * Each runtime uses this for environment-specific setup:
    *   - Self-hosted: is Docker running? is the build image pullable?
    *   - SSH: is the remote server reachable?
    *   - Cloud: are credentials valid? is there capacity?
    *   - Any: create working directories, validate disk space, etc.
+   *
+   * For local projects (config.localPath), this is where the runtime
+   * transfers source files into the build environment:
+   *   - BareRuntime (local):  cp -a (same filesystem)
+   *   - BareRuntime (SSH):    tar + pipe over SSH
+   *   - CloudRuntime:         tar.gz → Oblien transfer.upload API
    *
    * Receives the logger so output streams to the terminal in real-time.
    * Throw to abort the build with a descriptive error.
@@ -131,6 +136,12 @@ export async function runBuildPipeline(
 
   const exec = (command: string) => env.exec(command, logger.callback);
 
+  // Only show machine specs for cloud builds where resources are allocated
+  if (env.hasNativeEnv) {
+    const { cpuCores, memoryMb, diskMb } = config.resources;
+    logger.log(`Machine: ${cpuCores} CPU · ${memoryMb} MB RAM · ${diskMb} MB Disk`);
+  }
+
   try {
     // ── Pre-build validation ────────────────────────────────────────
     if (env.preflight) {
@@ -139,18 +150,24 @@ export async function runBuildPipeline(
 
     // ── Step 1: Clone ──────────────────────────────────────────────
     currentStep = "clone";
-    await logger.runStep("clone", `Cloning ${config.repoUrl} (branch: ${config.branch})`, async () => {
-      const cloneUrl = injectGitToken(config.repoUrl, config.gitToken);
-      if (config.commitSha) {
-        await exec(
-          `git clone --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(env.projectDir)} && cd ${sq(env.projectDir)} && git checkout ${sq(config.commitSha)}`,
-        );
-      } else {
-        await exec(
-          `git clone --depth 1 --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(env.projectDir)}`,
-        );
-      }
-    });
+    if (config.localPath) {
+      // Local project — source was already transferred into projectDir
+      // by the runtime's preflight. Nothing to clone.
+      logger.step("clone", "completed", "Local source ready");
+    } else {
+      await logger.runStep("clone", `Cloning ${config.repoUrl} (branch: ${config.branch})`, async () => {
+        const cloneUrl = injectGitToken(config.repoUrl, config.gitToken);
+        if (config.commitSha) {
+          await exec(
+            `git clone --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(env.projectDir)} && cd ${sq(env.projectDir)} && git checkout ${sq(config.commitSha)}`,
+          );
+        } else {
+          await exec(
+            `git clone --depth 1 --branch ${sq(config.branch)} ${sq(cloneUrl)} ${sq(env.projectDir)}`,
+          );
+        }
+      });
+    }
 
     // Env prefix for install & build commands — skip when env vars are set natively
     const envPrefix = env.hasNativeEnv

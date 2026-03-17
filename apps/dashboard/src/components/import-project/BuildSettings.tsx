@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { Terminal, FolderOutput, Server, Package, Play, Hash, Settings2, ChevronDown, ChevronUp, Pencil, Hammer } from "lucide-react";
+import { Terminal, FolderOutput, Server, Package, Play, Hash, Settings2, ChevronDown, ChevronUp, Pencil, Hammer, BoxSelect, ShieldCheck, Cloud, Monitor } from "lucide-react";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useDeployment } from "@/context/DeploymentContext";
+import type { BuildStrategy } from "@/context/deployment/types";
 
 interface InputField {
   key: string;
@@ -33,14 +34,15 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   buildConfig,
   updateOptions: externalUpdateOptions
 }) => {
-  const deploymentContext = mode === 'simple' ? useDeployment() : { config: buildConfig || {}, updateOptions: () => { } };
-  const { config, updateOptions } = deploymentContext || { config: buildConfig || {}, updateOptions: externalUpdateOptions };
+  const deploymentContext = mode === 'simple' ? useDeployment() : { config: buildConfig || {}, updateOptions: () => { }, updateConfig: () => {} };
+  const { config, updateOptions, updateConfig } = deploymentContext || { config: buildConfig || {}, updateOptions: externalUpdateOptions, updateConfig: () => {} };
 
   const [isEditing] = useState(mode === 'simple');
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [tempValues, setTempValues] = useState<{ [key: string]: string }>({});
   const [expanded, setExpanded] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const buildData = mode === 'advanced' ? externalBuildData : config?.options;
   const needsBuild = config?.framework !== "node" && config?.framework !== "static";
@@ -77,6 +79,19 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       },
     ] : []),
   ];
+
+  // ── Advanced fields (hidden behind toggle) ───────────────────────
+  const advancedFields: InputField[] = needsBuild ? [
+    {
+      key: 'productionPaths',
+      label: 'Production Paths',
+      placeholder: 'dist, node_modules, package.json',
+      description: 'Only deploy these files/dirs after build — hides source code from runtime. Leave empty to run in-place.',
+      type: 'text',
+      optional: true,
+      icon: <ShieldCheck className="size-4" />
+    },
+  ] : [];
 
   // ── Start-group fields (shown when Start is ON) ──────────────────
   const startFields: InputField[] = [
@@ -274,6 +289,55 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                 </div>
                 {visibleBuildFields.map(renderInput)}
                 {generalFields.map(renderInput)}
+
+                {/* ── Advanced (collapsible) ──────────────────── */}
+                {(advancedFields.length > 0 || hasBuild) && (
+                  <div className="border border-border/30 rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setAdvancedOpen(!advancedOpen)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground" />
+                        <span className="text-xs font-medium text-muted-foreground">Advanced</span>
+                      </div>
+                      {advancedOpen ? (
+                        <ChevronUp className="size-3 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="size-3 text-muted-foreground" />
+                      )}
+                    </button>
+                    {advancedOpen && (
+                      <div className="px-3 pb-3 space-y-3">
+                        {hasBuild && (
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Build Location</label>
+                            <div className="flex gap-1.5 p-1 bg-muted/30 rounded-lg border border-border/50">
+                              {([
+                                { value: "server" as BuildStrategy, label: "Server", icon: <Cloud className="w-3.5 h-3.5" /> },
+                                { value: "local" as BuildStrategy, label: "Local", icon: <Monitor className="w-3.5 h-3.5" /> },
+                              ]).map((opt) => (
+                                <button
+                                  key={opt.value}
+                                  onClick={() => updateConfig?.({ buildStrategy: opt.value })}
+                                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                                    config?.buildStrategy === opt.value
+                                      ? 'bg-background text-foreground shadow-sm border border-border/50'
+                                      : 'text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  {opt.icon}
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {advancedFields.map(renderInput)}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* ── Start column ──────────────────────────────── */}
@@ -311,6 +375,25 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
           {allVisibleFields.map(renderInput)}
         </div>
       </div>
+
+      {/* ── Advanced section ──────────────────────────── */}
+      {advancedFields.length > 0 && (
+        <div className="border-t border-border/50 pt-4">
+          <button
+            onClick={() => setAdvancedOpen(!advancedOpen)}
+            className="flex items-center gap-2 mb-4 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ShieldCheck className="size-4" />
+            <span className="font-medium">Advanced</span>
+            {advancedOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+          </button>
+          {advancedOpen && (
+            <div className="grid md:grid-cols-2 gap-5">
+              {advancedFields.map(renderInput)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

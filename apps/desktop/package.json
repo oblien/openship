@@ -5,8 +5,8 @@
   "description": "Openship Desktop — Electron wrapper for the deployment dashboard",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "npm run build && electron .",
-    "build": "tsc && cp -r src/renderer out/renderer",
+    "dev": "npm run build && node scripts/dev.mjs",
+    "build": "rm -rf out && tsc && cp -r src/renderer out/renderer",
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make",
     "lint": "tsc --noEmit",
@@ -20,6 +20,7 @@
     "@electron-forge/maker-zip": "^7.11.1",
     "@types/node": "^22.13.0",
     "electron": "^40.8.0",
+    "electronmon": "^2.0.4",
     "typescript": "^5.9.3"
   }
 }

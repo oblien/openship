@@ -48,7 +48,9 @@ const STEP_PROGRESS: Record<string, number> = {
 /** Convert a LogEntry into the JSON payload the frontend expects. */
 function formatLogPayload(entry: LogEntry, eventId: number): string {
   // Use native base64 when available (cloud adapter), otherwise encode.
-  const base64Data = entry.rawData ?? Buffer.from(entry.message).toString("base64");
+  // Local/SSH logs are single lines without trailing newlines — append \n
+  // so the terminal renders each entry on its own line.
+  const base64Data = entry.rawData ?? Buffer.from(entry.message + "\n").toString("base64");
   return JSON.stringify({
     type: "log",
     data: base64Data,

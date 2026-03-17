@@ -26,6 +26,12 @@ export interface LanguageDefinition {
   runtimeImage: string;
   /** Package managers available for this language */
   packageManagers: readonly string[];
+  /**
+   * Tools required on bare metal to build/run this language.
+   * Used by the toolchain catalog to validate and install prerequisites.
+   * Empty array means no tool validation needed (e.g. multi-language, docker).
+   */
+  requiredTools: readonly string[];
 }
 
 export const LANGUAGES = {
@@ -34,66 +40,77 @@ export const LANGUAGES = {
     buildImage: "node:22",
     runtimeImage: "node:22",
     packageManagers: ["npm", "yarn", "pnpm", "bun"],
+    requiredTools: ["node", "npm"],
   },
   typescript: {
     name: "TypeScript",
     buildImage: "node:22",
     runtimeImage: "node:22",
     packageManagers: ["npm", "yarn", "pnpm", "bun"],
+    requiredTools: ["node", "npm"],
   },
   go: {
     name: "Go",
     buildImage: "golang:1.22-alpine",
     runtimeImage: "alpine:3.19",
     packageManagers: ["go"],
+    requiredTools: ["go"],
   },
   rust: {
     name: "Rust",
     buildImage: "rust:1.77-slim",
     runtimeImage: "debian:bookworm-slim",
     packageManagers: ["cargo"],
+    requiredTools: ["rustc", "cargo"],
   },
   python: {
     name: "Python",
     buildImage: "python:3.12-slim",
     runtimeImage: "python:3.12-slim",
     packageManagers: ["pip", "poetry", "pipenv", "uv"],
+    requiredTools: ["python3", "pip"],
   },
   ruby: {
     name: "Ruby",
     buildImage: "ruby:3.3-slim",
     runtimeImage: "ruby:3.3-slim",
     packageManagers: ["bundler"],
+    requiredTools: ["ruby", "bundler"],
   },
   php: {
     name: "PHP",
     buildImage: "php:8.3-cli",
     runtimeImage: "php:8.3-fpm",
     packageManagers: ["composer"],
+    requiredTools: ["php", "composer"],
   },
   java: {
     name: "Java",
     buildImage: "eclipse-temurin:21-jdk-alpine",
     runtimeImage: "eclipse-temurin:21-jre-alpine",
     packageManagers: ["maven", "gradle"],
+    requiredTools: ["java", "javac"],
   },
   csharp: {
     name: "C#",
     buildImage: "mcr.microsoft.com/dotnet/sdk:8.0",
     runtimeImage: "mcr.microsoft.com/dotnet/aspnet:8.0",
     packageManagers: ["dotnet"],
+    requiredTools: ["dotnet"],
   },
   elixir: {
     name: "Elixir",
     buildImage: "elixir:1.16-alpine",
     runtimeImage: "elixir:1.16-alpine",
     packageManagers: ["mix"],
+    requiredTools: ["elixir", "mix"],
   },
   multi: {
     name: "Multi-language",
     buildImage: "ubuntu:22.04",
     runtimeImage: "ubuntu:22.04",
     packageManagers: [],
+    requiredTools: [],
   },
 } as const satisfies Record<string, LanguageDefinition>;
 
@@ -128,6 +145,18 @@ export interface StackDefinition {
   defaultBuildCommand: string;
   /** Default start command */
   defaultStartCommand: string;
+  /**
+   * Files/directories to copy into `/app/production/` after build.
+   * Only these paths are needed at runtime — everything else stays in `/app`.
+   * Omit for stacks where everything is needed (e.g. docker, static).
+   */
+  productionPaths?: readonly string[];
+  /**
+   * Preferred build location for this stack.
+   * "server" = build in the cloud/workspace (default if omitted).
+   * "local"  = build on the host machine, then transfer the artifact.
+   */
+  defaultBuildStrategy?: "server" | "local";
 }
 
 // ─── The registry ────────────────────────────────────────────────────────────
@@ -144,6 +173,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "next build",
     defaultStartCommand: "next start",
+    defaultBuildStrategy: "local",
   },
   nuxt: {
     name: "Nuxt",
@@ -153,6 +183,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "nuxt build",
     defaultStartCommand: "node .output/server/index.mjs",
+    defaultBuildStrategy: "local",
   },
   sveltekit: {
     name: "SvelteKit",
@@ -162,6 +193,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "vite build",
     defaultStartCommand: "node build/index.js",
+    defaultBuildStrategy: "local",
   },
   remix: {
     name: "Remix",
@@ -171,6 +203,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "remix build",
     defaultStartCommand: "remix-serve build/index.js",
+    defaultBuildStrategy: "local",
   },
   astro: {
     name: "Astro",
@@ -180,6 +213,7 @@ export const STACKS = {
     defaultPort: 4321,
     defaultBuildCommand: "astro build",
     defaultStartCommand: "node dist/server/entry.mjs",
+    defaultBuildStrategy: "local",
   },
   vite: {
     name: "Vite",
@@ -189,6 +223,7 @@ export const STACKS = {
     defaultPort: 5173,
     defaultBuildCommand: "vite build",
     defaultStartCommand: "",
+    defaultBuildStrategy: "local",
   },
   angular: {
     name: "Angular",
@@ -198,6 +233,7 @@ export const STACKS = {
     defaultPort: 4200,
     defaultBuildCommand: "ng build --configuration production",
     defaultStartCommand: "",
+    defaultBuildStrategy: "local",
   },
   gatsby: {
     name: "Gatsby",
@@ -207,6 +243,7 @@ export const STACKS = {
     defaultPort: 8000,
     defaultBuildCommand: "gatsby build",
     defaultStartCommand: "gatsby serve",
+    defaultBuildStrategy: "local",
   },
   cra: {
     name: "Create React App",
@@ -216,6 +253,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "react-scripts build",
     defaultStartCommand: "",
+    defaultBuildStrategy: "local",
   },
   vue: {
     name: "Vue CLI",
@@ -225,6 +263,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "vue-cli-service build",
     defaultStartCommand: "",
+    defaultBuildStrategy: "local",
   },
   react: {
     name: "React",
@@ -234,6 +273,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "",
     defaultStartCommand: "",
+    defaultBuildStrategy: "local",
   },
 
   // ── JavaScript / TypeScript — Backend ──────────────────────────────────────
@@ -246,6 +286,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "",
     defaultStartCommand: "node index.js",
+    defaultBuildStrategy: "local",
   },
   fastify: {
     name: "Fastify",
@@ -255,6 +296,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "",
     defaultStartCommand: "node dist/index.js",
+    defaultBuildStrategy: "local",
   },
   hono: {
     name: "Hono",
@@ -264,6 +306,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "",
     defaultStartCommand: "node dist/index.js",
+    defaultBuildStrategy: "local",
   },
   nestjs: {
     name: "NestJS",
@@ -273,6 +316,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "nest build",
     defaultStartCommand: "node dist/main.js",
+    defaultBuildStrategy: "local",
   },
   koa: {
     name: "Koa",
@@ -282,6 +326,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "",
     defaultStartCommand: "node index.js",
+    defaultBuildStrategy: "local",
   },
   adonis: {
     name: "AdonisJS",
@@ -291,6 +336,7 @@ export const STACKS = {
     defaultPort: 3333,
     defaultBuildCommand: "node ace build --production",
     defaultStartCommand: "node build/server.js",
+    defaultBuildStrategy: "local",
   },
   elysia: {
     name: "Elysia",
@@ -300,6 +346,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "",
     defaultStartCommand: "bun dist/index.js",
+    defaultBuildStrategy: "local",
   },
 
   // ── Go ─────────────────────────────────────────────────────────────────────
@@ -312,6 +359,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "go build -o app .",
     defaultStartCommand: "./app",
+    productionPaths: ["app"],
   },
   gin: {
     name: "Gin",
@@ -321,6 +369,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "go build -o app .",
     defaultStartCommand: "./app",
+    productionPaths: ["app"],
   },
   fiber: {
     name: "Fiber",
@@ -330,6 +379,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "go build -o app .",
     defaultStartCommand: "./app",
+    productionPaths: ["app"],
   },
   echo: {
     name: "Echo",
@@ -339,6 +389,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "go build -o app .",
     defaultStartCommand: "./app",
+    productionPaths: ["app"],
   },
 
   // ── Rust ───────────────────────────────────────────────────────────────────
@@ -351,6 +402,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "cargo build --release",
     defaultStartCommand: "./target/release/app",
+    productionPaths: ["target/release/app"],
   },
   actix: {
     name: "Actix Web",
@@ -360,6 +412,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "cargo build --release",
     defaultStartCommand: "./target/release/app",
+    productionPaths: ["target/release/app"],
   },
   axum: {
     name: "Axum",
@@ -369,6 +422,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "cargo build --release",
     defaultStartCommand: "./target/release/app",
+    productionPaths: ["target/release/app"],
   },
   rocket: {
     name: "Rocket",
@@ -378,6 +432,7 @@ export const STACKS = {
     defaultPort: 8000,
     defaultBuildCommand: "cargo build --release",
     defaultStartCommand: "./target/release/app",
+    productionPaths: ["target/release/app"],
   },
 
   // ── Python ─────────────────────────────────────────────────────────────────
@@ -473,6 +528,8 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "mvn clean package -DskipTests",
     defaultStartCommand: "java -jar target/*.jar",
+    productionPaths: ["target"],
+    defaultBuildStrategy: "local",
   },
   quarkus: {
     name: "Quarkus",
@@ -482,6 +539,8 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "mvn clean package -DskipTests",
     defaultStartCommand: "java -jar target/quarkus-app/quarkus-run.jar",
+    productionPaths: ["target"],
+    defaultBuildStrategy: "local",
   },
 
   // ── C# / .NET ──────────────────────────────────────────────────────────────
@@ -494,6 +553,7 @@ export const STACKS = {
     defaultPort: 5000,
     defaultBuildCommand: "dotnet publish -c Release -o publish",
     defaultStartCommand: "dotnet publish/app.dll",
+    productionPaths: ["publish"],
   },
   blazor: {
     name: "Blazor",
@@ -503,6 +563,7 @@ export const STACKS = {
     defaultPort: 5000,
     defaultBuildCommand: "dotnet publish -c Release -o publish",
     defaultStartCommand: "dotnet publish/app.dll",
+    productionPaths: ["publish"],
   },
 
   // ── Elixir ─────────────────────────────────────────────────────────────────
@@ -515,6 +576,7 @@ export const STACKS = {
     defaultPort: 4000,
     defaultBuildCommand: "MIX_ENV=prod mix do deps.get, compile, assets.deploy, release",
     defaultStartCommand: "_build/prod/rel/app/bin/app start",
+    productionPaths: ["_build/prod/rel"],
   },
 
   // ── Generic ────────────────────────────────────────────────────────────────
@@ -527,6 +589,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "",
     defaultStartCommand: "node index.js",
+    defaultBuildStrategy: "local",
   },
   static: {
     name: "Static Site",

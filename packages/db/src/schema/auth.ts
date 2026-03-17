@@ -10,6 +10,7 @@ export const user = pgTable("user", {
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
   role: text("role").notNull().default("user"), // custom: "user" | "admin"
+  autoProvisioned: boolean("auto_provisioned").notNull().default(false), // true for desktop local users
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

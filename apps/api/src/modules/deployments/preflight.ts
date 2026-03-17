@@ -17,6 +17,7 @@
 import type { DeploymentConfigSnapshot } from "./build.service";
 import { platform } from "../../lib/controller-helpers";
 import type { CloudRuntime } from "@repo/adapters";
+import { SYSTEM } from "@repo/core";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,8 +45,8 @@ export interface PreflightOptions {
 function checkConfig(snapshot: DeploymentConfigSnapshot): PreflightCheck {
     const missing: string[] = [];
 
-    if (!snapshot.repoUrl) missing.push("repository URL");
-    if (!snapshot.branch) missing.push("branch");
+    if (!snapshot.repoUrl && !snapshot.localPath) missing.push("repository URL or local path");
+    if (!snapshot.branch && !snapshot.localPath) missing.push("branch");
     if (!snapshot.buildImage) missing.push("build image");
 
     // Build mode requires install command
@@ -104,18 +105,48 @@ function checkStack(snapshot: DeploymentConfigSnapshot): PreflightCheck {
 }
 
 /**
- * Verify a custom domain's DNS configuration.
- * Uses Oblien SDK domain.validate() in cloud mode, local DNS in self-hosted.
- * Skipped for free .opsh.io subdomains.
+ * Check subdomain slug availability via Oblien's checkSlug API.
+ * Cloud only — skipped in self-hosted mode.
  */
-async function checkDomain(customDomain: string): Promise<PreflightCheck> {
+async function checkSlug(slug: string): Promise<PreflightCheck> {
+    const { target, runtime } = platform();
+    if (target !== "cloud") {
+        return { id: "slug-available", label: "Subdomain availability", status: "pass" };
+    }
+
+    try {
+        const cloud = runtime as CloudRuntime;
+        const result = await cloud.checkSlug(slug);
+
+        console.log("Slug check result:", result);
+        if (result.available) {
+            return { id: "slug-available", label: "Subdomain availability", status: "pass" };
+        }
+
+        return {
+            id: "slug-available",
+            label: "Subdomain availability",
+            status: "fail",
+            message: `"${slug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}" is already taken. Choose a different subdomain.`,
+        };
+    } catch {
+        // Don't block deploy if the check itself fails — conflict will surface at expose time
+        return { id: "slug-available", label: "Subdomain availability", status: "warn", message: "Could not verify subdomain availability" };
+    }
+}
+
+/**
+ * Verify a custom domain's DNS configuration via Oblien's verify API.
+ * Falls back to local DNS CNAME check in self-hosted mode.
+ */
+async function checkCustomDomain(customDomain: string): Promise<PreflightCheck> {
     const { target, runtime } = platform();
 
     // Cloud mode: use Oblien SDK for DNS validation
     if (target === "cloud") {
         try {
             const cloud = runtime as CloudRuntime;
-            const result = await cloud.validateDomain(customDomain);
+            const result = await cloud.verifyDomain(customDomain);
 
             if (result.verified) {
                 return { id: "domain", label: "Domain DNS", status: "pass" };
@@ -226,18 +257,21 @@ export async function runPreflightChecks(
         checkStack(snapshot),
     ];
 
-    // Validate slug format for free subdomain
-    if (opts?.slug) {
+    // Validate slug format + availability — skip when using custom domain
+    // since the free subdomain won't be exposed
+    if (opts?.slug && !opts?.customDomain) {
         checks.push(checkSlugFormat(opts.slug));
+        checks.push(await checkSlug(opts.slug));
     }
 
     // Verify cloud runtime credentials are working
     checks.push(await checkCloudRuntime());
 
-    // If custom domain provided, verify DNS before starting the build
+    // Verify custom domain DNS records
     if (opts?.customDomain) {
-        checks.push(await checkDomain(opts.customDomain));
+        checks.push(await checkCustomDomain(opts.customDomain));
     }
+    
 
     return {
         ok: checks.every((c) => c.status !== "fail"),

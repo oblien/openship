@@ -25,8 +25,9 @@ function isAbortError(err: unknown): boolean {
 /**
  * Shared OAuth buttons — GitHub + Google.
  * Includes the divider above them.
+ * Pass callbackURL to override the default post-OAuth redirect.
  */
-export function OAuthButtons() {
+export function OAuthButtons({ callbackURL = "/" }: { callbackURL?: string }) {
   const { toast } = useToast();
   const { t } = useI18n();
   const [loading, setLoading] = useState<"github" | "google" | null>(null);
@@ -34,7 +35,7 @@ export function OAuthButtons() {
   async function handleOAuth(provider: "github" | "google") {
     setLoading(provider);
     try {
-      await signIn.social({ provider, callbackURL: "/" });
+      await signIn.social({ provider, callbackURL });
     } catch (err) {
       setLoading(null);
       const msg = isAbortError(err)

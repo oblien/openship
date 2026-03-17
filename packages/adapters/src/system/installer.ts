@@ -24,6 +24,8 @@ import type {
   SystemLogCallback,
   SystemLog,
 } from "./types";
+import { systemCatalog } from "./catalog";
+import { resolveEnvironment } from "./environment";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -50,26 +52,38 @@ export async function installDocker(
   executor: CommandExecutor,
   onLog: SystemLogCallback,
 ): Promise<InstallResult> {
+  const profile = await resolveEnvironment(executor);
+  const plan = systemCatalog.installs.docker(profile);
+  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
+    return {
+      component: "docker",
+      success: false,
+      error: plan.unsupportedReason ?? "Docker installation is not supported on this environment",
+    };
+  }
+
   onLog(log("Installing Docker Engine via official script..."));
 
   try {
     const { code } = await executor.streamExec(
-      "curl -fsSL https://get.docker.com | sh",
+      plan.installCommand,
       onLog as (log: LogEntry) => void,
     );
     if (code !== 0) {
       return { component: "docker", success: false, error: "Docker install script failed" };
     }
 
-    onLog(log("Enabling and starting Docker service..."));
-    await executor.streamExec(
-      "systemctl enable docker && systemctl start docker",
-      onLog as (log: LogEntry) => void,
-    );
+    if (plan.startCommand) {
+      onLog(log("Enabling and starting Docker service..."));
+      await executor.streamExec(
+        plan.startCommand,
+        onLog as (log: LogEntry) => void,
+      );
+    }
 
     onLog(log("Verifying Docker installation..."));
-    const version = await executor.exec("docker --version");
-    const parsed = version.match(/Docker version ([^\s,]+)/)?.[1] ?? version;
+    const version = await executor.exec(plan.verifyCommand);
+    const parsed = systemCatalog.checks.docker.parseVersion(version);
 
     onLog(log(`Docker ${parsed} installed successfully`));
     return { component: "docker", success: true, version: parsed };
@@ -88,12 +102,13 @@ export async function installTraefik(
   config?: InstallerConfig,
 ): Promise<InstallResult> {
   const mode = config?.traefikMode ?? "docker";
+  const profile = await resolveEnvironment(executor);
 
   try {
     if (mode === "docker") {
-      return await installTraefikDocker(executor, onLog, config);
+      return await installTraefikDocker(executor, onLog, profile, config);
     }
-    return await installTraefikBinary(executor, onLog);
+    return await installTraefikBinary(executor, onLog, profile);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     onLog(log(`Traefik installation failed: ${msg}`, "error"));
@@ -104,16 +119,25 @@ export async function installTraefik(
 async function installTraefikDocker(
   executor: CommandExecutor,
   onLog: SystemLogCallback,
+  profile: Awaited<ReturnType<typeof resolveEnvironment>>,
   config?: InstallerConfig,
 ): Promise<InstallResult> {
-  const acmeEmail = config?.acmeEmail ?? "admin@localhost";
   if (config?.acmeEmail && !isValidEmail(config.acmeEmail)) {
     return { component: "traefik", success: false, error: "Invalid ACME email" };
   }
 
+  const plan = systemCatalog.installs.traefikDocker(profile, config);
+  if (!plan.supported || !plan.installCommand || !plan.startCommand) {
+    return {
+      component: "traefik",
+      success: false,
+      error: plan.unsupportedReason ?? "Traefik Docker installation is not supported on this environment",
+    };
+  }
+
   onLog(log("Pulling Traefik Docker image..."));
   const { code } = await executor.streamExec(
-    "docker pull traefik:v3.4",
+    plan.installCommand,
     onLog as (log: LogEntry) => void,
   );
   if (code !== 0) {
@@ -125,25 +149,8 @@ async function installTraefikDocker(
   await executor.mkdir("/etc/traefik/acme");
 
   onLog(log("Starting Traefik container..."));
-  const args = [
-    "docker run -d",
-    "--name traefik",
-    "--restart unless-stopped",
-    "--network host",
-    "-v /var/run/docker.sock:/var/run/docker.sock:ro",
-    "-v /etc/traefik:/etc/traefik",
-    "traefik:v3.4",
-    "--providers.file.directory=/etc/traefik/dynamic",
-    "--providers.file.watch=true",
-    "--entrypoints.web.address=:80",
-    "--entrypoints.websecure.address=:443",
-    `--certificatesresolvers.letsencrypt.acme.email=${acmeEmail}`,
-    "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json",
-    "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web",
-  ];
-
   const { code: runCode } = await executor.streamExec(
-    args.join(" "),
+    plan.startCommand,
     onLog as (log: LogEntry) => void,
   );
   if (runCode !== 0) {
@@ -157,22 +164,21 @@ async function installTraefikDocker(
 async function installTraefikBinary(
   executor: CommandExecutor,
   onLog: SystemLogCallback,
+  profile: Awaited<ReturnType<typeof resolveEnvironment>>,
 ): Promise<InstallResult> {
   onLog(log("Downloading Traefik binary..."));
 
-  // Detect architecture on the target machine
-  let arch: string;
-  try {
-    const uname = await executor.exec("uname -m");
-    arch = uname.includes("aarch64") || uname.includes("arm64") ? "arm64" : "amd64";
-  } catch {
-    arch = "amd64";
+  const plan = systemCatalog.installs.traefikBinary(profile);
+  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
+    return {
+      component: "traefik",
+      success: false,
+      error: plan.unsupportedReason ?? "Traefik binary installation is not supported on this environment",
+    };
   }
 
-  const url = `https://github.com/traefik/traefik/releases/latest/download/traefik_linux_${arch}`;
-
   const { code } = await executor.streamExec(
-    `curl -fsSL -o /tmp/traefik "${url}" && chmod +x /tmp/traefik && mv /tmp/traefik /usr/local/bin/traefik`,
+    plan.installCommand,
     onLog as (log: LogEntry) => void,
   );
   if (code !== 0) {
@@ -181,7 +187,7 @@ async function installTraefikBinary(
 
   let version = "unknown";
   try {
-    version = await executor.exec("traefik version 2>/dev/null || echo unknown");
+    version = await executor.exec(plan.verifyCommand);
   } catch {
     // keep "unknown"
   }
@@ -196,32 +202,29 @@ export async function installGit(
   executor: CommandExecutor,
   onLog: SystemLogCallback,
 ): Promise<InstallResult> {
+  const profile = await resolveEnvironment(executor);
+  const plan = systemCatalog.installs.git(profile);
+  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
+    return {
+      component: "git",
+      success: false,
+      error: plan.unsupportedReason ?? "Git installation is not supported on this environment",
+    };
+  }
+
   onLog(log("Installing Git..."));
 
   try {
-    const pm = await detectPackageManager(executor);
-
-    const commands: Record<string, string> = {
-      apt: "apt-get update -qq && apt-get install -y -qq git",
-      dnf: "dnf install -y git",
-      yum: "yum install -y git",
-      brew: "brew install git",
-    };
-
-    if (!pm || !commands[pm]) {
-      return { component: "git", success: false, error: "No supported package manager found" };
-    }
-
     const { code } = await executor.streamExec(
-      commands[pm],
+      plan.installCommand,
       onLog as (log: LogEntry) => void,
     );
     if (code !== 0) {
       return { component: "git", success: false, error: "Git installation failed" };
     }
 
-    const version = await executor.exec("git --version");
-    const parsed = version.match(/git version (\S+)/)?.[1] ?? version;
+    const version = await executor.exec(plan.verifyCommand);
+    const parsed = systemCatalog.checks.git.parseVersion(version);
 
     onLog(log(`Git ${parsed} installed`));
     return { component: "git", success: true, version: parsed };
@@ -238,30 +241,48 @@ export async function installNode(
   executor: CommandExecutor,
   onLog: SystemLogCallback,
 ): Promise<InstallResult> {
+  const profile = await resolveEnvironment(executor);
+  const plan = systemCatalog.installs.node(profile);
+  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
+    return {
+      component: "node",
+      success: false,
+      error: plan.unsupportedReason ?? "Node.js installation is not supported on this environment",
+    };
+  }
+
   onLog(log("Installing Node.js (LTS)..."));
 
   try {
     const { code } = await executor.streamExec(
-      "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs",
+      plan.installCommand,
       onLog as (log: LogEntry) => void,
     );
 
     if (code !== 0) {
-      const pm = await detectPackageManager(executor);
-      if (pm === "brew") {
-        await executor.streamExec("brew install node", onLog as (log: LogEntry) => void);
-      } else if (pm === "dnf" || pm === "yum") {
-        await executor.streamExec(
-          `${pm} install -y nodejs`,
+      if (!plan.fallbackInstallCommands?.length) {
+        return { component: "node", success: false, error: "Node.js installation failed" };
+      }
+
+      let recovered = false;
+      for (const fallback of plan.fallbackInstallCommands) {
+        const result = await executor.streamExec(
+          fallback,
           onLog as (log: LogEntry) => void,
         );
-      } else {
+        if (result.code === 0) {
+          recovered = true;
+          break;
+        }
+      }
+
+      if (!recovered) {
         return { component: "node", success: false, error: "Node.js installation failed" };
       }
     }
 
-    const version = await executor.exec("node --version");
-    const parsed = version.replace(/^v/, "");
+    const version = await executor.exec(plan.verifyCommand);
+    const parsed = systemCatalog.checks.node.parseVersion(version);
 
     onLog(log(`Node.js ${parsed} installed`));
     return { component: "node", success: true, version: parsed };
@@ -270,55 +291,6 @@ export async function installNode(
     onLog(log(`Node.js installation failed: ${msg}`, "error"));
     return { component: "node", success: false, error: msg };
   }
-}
-
-// ─── Bun ─────────────────────────────────────────────────────────────────────
-
-export async function installBun(
-  executor: CommandExecutor,
-  onLog: SystemLogCallback,
-): Promise<InstallResult> {
-  onLog(log("Installing Bun..."));
-
-  try {
-    const { code } = await executor.streamExec(
-      "curl -fsSL https://bun.sh/install | bash",
-      onLog as (log: LogEntry) => void,
-    );
-    if (code !== 0) {
-      return { component: "bun", success: false, error: "Bun installation failed" };
-    }
-
-    let version = "unknown";
-    try {
-      version = await executor.exec("bun --version");
-    } catch {
-      // keep "unknown"
-    }
-
-    onLog(log(`Bun ${version} installed`));
-    return { component: "bun", success: true, version };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    onLog(log(`Bun installation failed: ${msg}`, "error"));
-    return { component: "bun", success: false, error: msg };
-  }
-}
-
-// ─── Package manager detection ───────────────────────────────────────────────
-
-async function detectPackageManager(
-  executor: CommandExecutor,
-): Promise<"apt" | "dnf" | "yum" | "brew" | null> {
-  for (const pm of ["apt", "dnf", "yum", "brew"] as const) {
-    try {
-      await executor.exec(`command -v ${pm}`, { timeout: 5_000 });
-      return pm;
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────
@@ -335,5 +307,4 @@ export const COMPONENT_INSTALLERS: Record<string, InstallerFn> = {
   traefik: installTraefik,
   git: (exec, log) => installGit(exec, log),
   node: (exec, log) => installNode(exec, log),
-  bun: (exec, log) => installBun(exec, log),
 };

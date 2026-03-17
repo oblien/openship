@@ -42,17 +42,25 @@ export type ContainerStatus =
   | "failed"
   | "cancelled";
 
+export type BuildStrategy = "server" | "local";
+
 export interface BuildConfig {
   /** Unique build session id */
   sessionId: string;
   /** Project identifier */
   projectId: string;
-  /** Git repo clone URL */
+  /** URL slug for the project (e.g. "my-app") */
+  slug?: string;
+  /** Git repo clone URL (required when source is a git repo) */
   repoUrl: string;
   /** Branch to build */
   branch: string;
   /** Commit SHA (optional, defaults to HEAD) */
   commitSha?: string;
+  /** Absolute path to a local project directory (used instead of repoUrl for local projects) */
+  localPath?: string;
+  /** Where the build runs: "server" (clone/copy to workspace) or "local" (build on host, transfer dist) */
+  buildStrategy?: BuildStrategy;
   /** Detected framework / stack */
   stack: string;
   /** Docker image for the build container (e.g. "node:22", "oven/bun:latest") */
@@ -100,6 +108,9 @@ export interface DeployConfig {
   slug?: string;
   /** Custom domain to bind via DNS (e.g. "app.example.com") — separate from free subdomain */
   customDomain?: string;
+  /** Files/directories to copy into /app/production/ before starting the workload.
+   *  When set, the workload runs from /app/production/ instead of /app/. */
+  productionPaths?: string[];
 }
 
 export interface BuildResult {
@@ -185,13 +196,15 @@ export type LogCallback = (entry: LogEntry) => void;
  *   - Platform: wires SSH config to both layers
  *
  * Security:
- *   - Key-based auth ONLY (no password)
+ *   - Supports private key, SSH agent, or password auth
  *   - Private keys should be encrypted at rest, decrypted in memory
  */
 export interface SshConfig {
   host: string;
   port?: number;
   username?: string;
+  /** SSH password for password-based auth */
+  password?: string;
   /** Decrypted PEM private key — never stored in plaintext on disk */
   privateKey?: string;
   /** Passphrase for the key (if the PEM itself is encrypted) */
@@ -239,6 +252,20 @@ export interface CommandExecutor {
 
   /** Remove a file. Silently succeeds if already gone. */
   rm(path: string): Promise<void>;
+
+  /**
+   * Transfer a local directory into the target environment.
+   *
+   * LocalExecutor: cp -a (same filesystem).
+   * SshExecutor:   tar locally → pipe through SSH → extract remotely.
+   *
+   * Rejects on failure.
+   */
+  transferIn(
+    localPath: string,
+    remotePath: string,
+    onLog?: (log: LogEntry) => void,
+  ): Promise<void>;
 
   /** Clean up connections / resources. */
   dispose(): Promise<void>;

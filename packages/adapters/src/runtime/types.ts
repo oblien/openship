@@ -78,7 +78,7 @@ export interface RuntimeAdapter {
   // ── Deploy lifecycle ─────────────────────────────────────────────────
 
   /** Start a container/process from a completed build */
-  deploy(config: DeployConfig): Promise<DeploymentResult>;
+  deploy(config: DeployConfig, onLog?: LogCallback): Promise<DeploymentResult>;
 
   /** Stop a running container/process (preserves state) */
   stop(containerId: string): Promise<void>;

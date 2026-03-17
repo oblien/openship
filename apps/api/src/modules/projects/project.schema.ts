@@ -54,6 +54,7 @@ export const CreateProjectBody = Type.Object({
   installCommand: Type.Optional(Type.String({ maxLength: 500 })),
   buildCommand: Type.Optional(Type.String({ maxLength: 500 })),
   outputDirectory: Type.Optional(Type.String({ maxLength: 200 })),
+  productionPaths: Type.Optional(Type.String({ maxLength: 2000 })),
   rootDirectory: Type.Optional(Type.String({ maxLength: 200 })),
   startCommand: Type.Optional(Type.String({ maxLength: 500 })),
   buildImage: Type.Optional(Type.String({ maxLength: 200 })),

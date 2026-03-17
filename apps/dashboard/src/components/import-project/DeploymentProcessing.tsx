@@ -411,8 +411,23 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
 
 const DeploymentDetails = memo(() => {
   const { state, deploymentStatus, config } = useDeployment();
-  const [buildTime, setBuildTime] = useState<number>(0);
+  const [buildTime, setBuildTime] = useState<number>(() => {
+    // Initialize from persisted duration if available
+    if (state.buildDurationMs) return Math.round(state.buildDurationMs / 1000);
+    // For in-progress builds, calculate elapsed from startedAt
+    if (state.buildStartedAt) {
+      return Math.max(0, Math.round((Date.now() - new Date(state.buildStartedAt).getTime()) / 1000));
+    }
+    return 0;
+  });
   const router = useRouter();
+
+  // Sync final duration when build completes
+  useEffect(() => {
+    if (state.buildDurationMs && (state.deploymentSuccess || state.deploymentFailed || state.deploymentCanceled)) {
+      setBuildTime(Math.round(state.buildDurationMs / 1000));
+    }
+  }, [state.buildDurationMs, state.deploymentSuccess, state.deploymentFailed, state.deploymentCanceled]);
 
   useEffect(() => {
     if (state.deploymentSuccess || state.deploymentFailed || state.deploymentCanceled) {

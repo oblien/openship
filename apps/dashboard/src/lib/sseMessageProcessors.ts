@@ -250,8 +250,16 @@ export const createLogMessageProcessor = (
       switch (message.type) {
         case 'log':
           if (message.data && rawBytes) {
+            // Base64-encoded binary data — write to terminal
             writeToTerminal?.(rawBytes);
             callbacks.onLog?.(message, rawText, rawBytes);
+          } else if (message.message) {
+            // Plain text fallback (no base64 data)
+            const text = message.message;
+            const encoder = new TextEncoder();
+            const bytes = encoder.encode(text);
+            writeToTerminal?.(bytes);
+            callbacks.onLog?.(message, text, bytes);
           }
           break;
 

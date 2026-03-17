@@ -30,14 +30,13 @@ export function createDomainRepo(db: Database) {
       });
     },
 
-    async create(data: Omit<NewDomain, "id">) {
+    async create(data: Omit<NewDomain, "id"> & { verificationToken?: string }) {
       const id = generateId("dom");
-      const token = `openship-verify=${generateId()}`;
       const row = {
         id,
         ...data,
         hostname: data.hostname.toLowerCase(),
-        verificationToken: token,
+        verificationToken: data.verificationToken ?? id,
       };
       await db.insert(domain).values(row);
       return { ...row, createdAt: new Date(), updatedAt: new Date() } as Domain;

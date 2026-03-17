@@ -57,6 +57,7 @@ export async function ensureProject(userId: string, data: TCreateProjectBody) {
       installCommand: data.installCommand,
       buildCommand: data.buildCommand,
       outputDirectory: data.outputDirectory,
+      productionPaths: data.productionPaths,
       rootDirectory: data.rootDirectory,
       startCommand: data.startCommand,
       buildImage: data.buildImage,
@@ -76,6 +77,7 @@ export async function ensureProject(userId: string, data: TCreateProjectBody) {
     if (data.installCommand !== undefined) update.installCommand = data.installCommand;
     if (data.buildCommand !== undefined) update.buildCommand = data.buildCommand;
     if (data.outputDirectory !== undefined) update.outputDirectory = data.outputDirectory;
+    if (data.productionPaths !== undefined) update.productionPaths = data.productionPaths;
     if (data.rootDirectory !== undefined) update.rootDirectory = data.rootDirectory;
     if (data.startCommand !== undefined) update.startCommand = data.startCommand;
     if (data.buildImage !== undefined) update.buildImage = data.buildImage;
@@ -147,6 +149,7 @@ export async function createProject(userId: string, data: TCreateProjectBody) {
     installCommand: data.installCommand,
     buildCommand: data.buildCommand,
     outputDirectory: data.outputDirectory,
+    productionPaths: data.productionPaths,
     rootDirectory: data.rootDirectory,
     productionMode: data.productionMode ?? "host",
     port: data.port ?? 3000,
@@ -391,6 +394,7 @@ export async function updateOptions(projectId: string, userId: string, options: 
   if (options.buildCommand !== undefined) update.buildCommand = options.buildCommand;
   if (options.installCommand !== undefined) update.installCommand = options.installCommand;
   if (options.outputDirectory !== undefined) update.outputDirectory = options.outputDirectory;
+  if (options.productionPaths !== undefined) update.productionPaths = options.productionPaths;
   if (options.rootDirectory !== undefined) update.rootDirectory = options.rootDirectory;
   if (options.startCommand !== undefined) update.startCommand = options.startCommand;
   if (options.productionPort !== undefined) update.port = options.productionPort;

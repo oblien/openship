@@ -12,6 +12,10 @@
 
 import type { CommandExecutor } from "../types";
 import type { ComponentStatus } from "./types";
+import { systemCatalog } from "./catalog";
+import { getSystemComponentDefinition, SYSTEM_COMPONENTS } from "./components";
+import { formatDuration, systemDebug } from "./debug";
+import { isRemoteConnectionError } from "./errors";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -20,9 +24,28 @@ async function tryExec(
   executor: CommandExecutor,
   command: string,
 ): Promise<string | null> {
+  const startedAt = Date.now();
+  systemDebug("checks", `exec:start ${command}`);
   try {
-    return await executor.exec(command, { timeout: 10_000 });
-  } catch {
+    const result = await executor.exec(command, { timeout: 10_000 });
+    systemDebug(
+      "checks",
+      `exec:ok ${command} (${formatDuration(startedAt)})`,
+    );
+    return result;
+  } catch (err) {
+    if (isRemoteConnectionError(err)) {
+      systemDebug(
+        "checks",
+        `exec:abort ${command} (${formatDuration(startedAt)}) ${err instanceof Error ? err.message : String(err)}`,
+      );
+      throw err;
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    systemDebug(
+      "checks",
+      `exec:fail ${command} (${formatDuration(startedAt)}) ${msg}`,
+    );
     return null;
   }
 }
@@ -32,8 +55,12 @@ function healthy(
   version: string,
   running?: boolean,
 ): ComponentStatus {
+  const component = getSystemComponentDefinition(name);
   return {
     name,
+    label: component.label,
+    description: component.description,
+    installable: component.installable,
     installed: true,
     version,
     running,
@@ -49,8 +76,12 @@ function unhealthy(
   message: string,
   opts?: { version?: string; running?: boolean },
 ): ComponentStatus {
+  const component = getSystemComponentDefinition(name);
   return {
     name,
+    label: component.label,
+    description: component.description,
+    installable: component.installable,
     installed: !!opts?.version,
     version: opts?.version,
     running: opts?.running,
@@ -64,96 +95,90 @@ function unhealthy(
 export async function checkDocker(
   executor: CommandExecutor,
 ): Promise<ComponentStatus> {
-  const version = await tryExec(executor, "docker --version");
+  const startedAt = Date.now();
+  const recipe = systemCatalog.checks.docker;
+  const version = await tryExec(executor, recipe.versionCommand);
   if (!version) {
-    return unhealthy("docker", "Docker is not installed");
+    systemDebug("checks", `docker:missing (${formatDuration(startedAt)})`);
+    return unhealthy("docker", recipe.missingMessage);
   }
 
-  const parsed = version.match(/Docker version ([^\s,]+)/)?.[1] ?? version;
+  const parsed = recipe.parseVersion(version);
 
-  const info = await tryExec(
-    executor,
-    "docker info --format '{{.ServerVersion}}'",
-  );
+  const info = await tryExec(executor, recipe.daemonCommand!);
   if (!info) {
-    return unhealthy("docker", "Docker is installed but the daemon is not running", {
+    systemDebug("checks", `docker:not-running (${formatDuration(startedAt)})`);
+    return unhealthy("docker", recipe.notRunningMessage!, {
       version: parsed,
       running: false,
     });
   }
 
+  systemDebug("checks", `docker:healthy (${formatDuration(startedAt)})`);
   return healthy("docker", parsed, true);
 }
 
 export async function checkTraefik(
   executor: CommandExecutor,
 ): Promise<ComponentStatus> {
-  const version = await tryExec(
-    executor,
-    "traefik version --format json 2>/dev/null",
-  );
+  const startedAt = Date.now();
+  const recipe = systemCatalog.checks.traefik;
+  const version = await tryExec(executor, recipe.versionCommand);
 
   let parsed: string | undefined;
   if (version) {
-    try {
-      parsed = JSON.parse(version).Version;
-    } catch {
-      parsed = version.match(/Version:\s*(\S+)/)?.[1] ?? version;
-    }
+    parsed = recipe.parseVersion(version);
   }
 
-  // Check for running process — either native or Docker container
-  const process = await tryExec(executor, "pgrep -x traefik");
-  const dockerContainer = await tryExec(
-    executor,
-    "docker ps --filter name=traefik --format '{{.Names}}' 2>/dev/null",
+  const runningChecks = await Promise.all(
+    recipe.runningCommands!.map((command) => tryExec(executor, command)),
   );
-
-  const running = !!process || !!dockerContainer;
+  const running = runningChecks.some(Boolean);
 
   if (!parsed && !running) {
-    return unhealthy("traefik", "Traefik is not installed");
+    systemDebug("checks", `traefik:missing (${formatDuration(startedAt)})`);
+    return unhealthy("traefik", recipe.missingMessage);
   }
 
   if (!running) {
-    return unhealthy("traefik", "Traefik is installed but not running", {
+    systemDebug("checks", `traefik:not-running (${formatDuration(startedAt)})`);
+    return unhealthy("traefik", recipe.notRunningMessage!, {
       version: parsed,
       running: false,
     });
   }
 
+  systemDebug("checks", `traefik:healthy (${formatDuration(startedAt)})`);
   return healthy("traefik", parsed ?? "unknown", true);
 }
 
 export async function checkGit(
   executor: CommandExecutor,
 ): Promise<ComponentStatus> {
-  const version = await tryExec(executor, "git --version");
+  const startedAt = Date.now();
+  const recipe = systemCatalog.checks.git;
+  const version = await tryExec(executor, recipe.versionCommand);
   if (!version) {
-    return unhealthy("git", "Git is not installed");
+    systemDebug("checks", `git:missing (${formatDuration(startedAt)})`);
+    return unhealthy("git", recipe.missingMessage);
   }
-  const parsed = version.match(/git version (\S+)/)?.[1] ?? version;
+  const parsed = recipe.parseVersion(version);
+  systemDebug("checks", `git:healthy (${formatDuration(startedAt)})`);
   return healthy("git", parsed);
 }
 
 export async function checkNode(
   executor: CommandExecutor,
 ): Promise<ComponentStatus> {
-  const version = await tryExec(executor, "node --version");
+  const startedAt = Date.now();
+  const recipe = systemCatalog.checks.node;
+  const version = await tryExec(executor, recipe.versionCommand);
   if (!version) {
-    return unhealthy("node", "Node.js is not installed");
+    systemDebug("checks", `node:missing (${formatDuration(startedAt)})`);
+    return unhealthy("node", recipe.missingMessage);
   }
-  return healthy("node", version.replace(/^v/, ""));
-}
-
-export async function checkBun(
-  executor: CommandExecutor,
-): Promise<ComponentStatus> {
-  const version = await tryExec(executor, "bun --version");
-  if (!version) {
-    return unhealthy("bun", "Bun is not installed");
-  }
-  return healthy("bun", version);
+  systemDebug("checks", `node:healthy (${formatDuration(startedAt)})`);
+  return healthy("node", recipe.parseVersion(version));
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────
@@ -165,15 +190,23 @@ export const COMPONENT_CHECKS: Record<string, CheckFn> = {
   traefik: checkTraefik,
   git: checkGit,
   node: checkNode,
-  bun: checkBun,
 };
 
 /** Run every registered check in parallel. */
 export async function checkAll(
   executor: CommandExecutor,
 ): Promise<ComponentStatus[]> {
-  const entries = Object.entries(COMPONENT_CHECKS);
-  return Promise.all(entries.map(([, fn]) => fn(executor)));
+  const startedAt = Date.now();
+  const entries = SYSTEM_COMPONENTS
+    .map((component) => [component.name, COMPONENT_CHECKS[component.name]] as const)
+    .filter((entry): entry is readonly [string, CheckFn] => Boolean(entry[1]));
+  systemDebug(
+    "checks",
+    `checkAll:start [${entries.map(([name]) => name).join(", ")}]`,
+  );
+  const result = await Promise.all(entries.map(([, fn]) => fn(executor)));
+  systemDebug("checks", `checkAll:done (${formatDuration(startedAt)})`);
+  return result;
 }
 
 /** Run checks for a specific set of components. */
@@ -181,8 +214,15 @@ export async function checkComponents(
   executor: CommandExecutor,
   names: string[],
 ): Promise<ComponentStatus[]> {
+  const startedAt = Date.now();
   const fns = names
     .map((name) => COMPONENT_CHECKS[name])
     .filter(Boolean);
-  return Promise.all(fns.map((fn) => fn(executor)));
+  systemDebug("checks", `checkComponents:start [${names.join(", ")}]`);
+  const result = await Promise.all(fns.map((fn) => fn(executor)));
+  systemDebug(
+    "checks",
+    `checkComponents:done [${names.join(", ")}] (${formatDuration(startedAt)})`,
+  );
+  return result;
 }

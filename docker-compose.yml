@@ -50,9 +50,12 @@ services:
       NODE_ENV: production
       PORT: 4000
       CLOUD_MODE: "false"
+      DEPLOY_MODE: docker
       DATABASE_URL: postgresql://openship:openship@postgres:5432/openship
       REDIS_URL: redis://redis:6379
       JWT_SECRET: change-me-in-production
+      BETTER_AUTH_SECRET: change-me-in-production   # used for session signing
+      TRUSTED_ORIGINS: http://localhost:3001,http://localhost:3000
     depends_on:
       - postgres
       - redis

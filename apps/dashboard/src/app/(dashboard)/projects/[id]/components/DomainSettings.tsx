@@ -6,6 +6,12 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { projectsApi, deployApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 
+interface DnsRecord {
+  type: "CNAME" | "A" | "TXT";
+  host: string;
+  value: string;
+}
+
 export const DomainSettings = () => {
   const { domainsData, updateDomains, id } = useProjectSettings();
   const { showToast } = useToast();
@@ -18,6 +24,8 @@ export const DomainSettings = () => {
   const [sslData, setSSLData] = useState<any>(null);
   const [isLoadingSSL, setIsLoadingSSL] = useState(false);
   const [isRenewingSSL, setIsRenewingSSL] = useState(false);
+  const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
+  const [dnsMode, setDnsMode] = useState<"cloud" | "selfhosted">("cloud");
 
   const primaryDomain = domainsData?.domains?.find((d) => d.primary) || {};
 
@@ -65,6 +73,12 @@ export const DomainSettings = () => {
       showToast(result.error || 'Failed to connect domain', 'error', result.message || 'Failed to connect domain');
       setIsSubmitting(false);
       return;
+    }
+
+    // Store DNS records from the API
+    if (result.records?.records) {
+      setDnsRecords(result.records.records);
+      setDnsMode(result.records.mode ?? "cloud");
     }
 
     // Add the custom domain and set it as primary
@@ -416,58 +430,79 @@ export const DomainSettings = () => {
                     Add these DNS records
                   </div>
                   <div className="space-y-3">
-                    {/* CNAME Record */}
-                    <div className="bg-white rounded-2xl p-4 border-2 border-purple-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex flex-col">
-                          <span className="text-xs font-semibold text-gray-500">CNAME Record</span>
-                          <span className="text-xs text-gray-400 mt-0.5">
-                            @ → edge.openship.io
-                          </span>
+                    {dnsRecords.length > 0 ? (
+                      dnsRecords.map((record, i) => (
+                        <div key={i} className="bg-white rounded-2xl p-4 border-2 border-purple-100">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-semibold text-gray-500">{record.type} Record</span>
+                              <span className="text-xs text-gray-400 mt-0.5">
+                                {record.host} → {record.value || "loading..."}
+                              </span>
+                            </div>
+                            {record.value && (
+                              <button
+                                onClick={() => copyToClipboard(record.value)}
+                                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                                title="Copy"
+                              >
+                                {generateIcon("copy%201-34-1662364367.png", 20, "rgb(0, 0, 0, 0.5)")}
+                              </button>
+                            )}
+                          </div>
+                          <code className="text-xs text-black block">{record.value || "—"}</code>
                         </div>
-                        <button
-                          onClick={() => copyToClipboard('edge.openship.io')}
-                          className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="Copy"
-                        >
-                          {generateIcon("copy%201-34-1662364367.png", 20, "rgb(0, 0, 0, 0.5)")}
-                        </button>
-                      </div>
-                      <code className="text-xs text-black block">edge.openship.io</code>
-                    </div>
-
-                    {/* TXT Record */}
-                    <div className="bg-white rounded-2xl p-4 border-2 border-purple-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex flex-col">
-                          <span className="text-xs font-semibold text-gray-500">TXT Record</span>
-                          <span className="text-xs text-gray-400 mt-0.5">
-                            _openship-challenge → verification token
-                          </span>
+                      ))
+                    ) : (
+                      <>
+                        {/* Placeholder before submit */}
+                        <div className="bg-white rounded-2xl p-4 border-2 border-purple-100">
+                          <div className="flex flex-col">
+                            <span className="text-xs font-semibold text-gray-500">
+                              {dnsMode === "selfhosted" ? "A Record" : "CNAME Record"}
+                            </span>
+                            <span className="text-xs text-gray-400 mt-0.5">
+                              @ → {dnsMode === "selfhosted" ? "your server IP" : "provided after connecting"}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <p className="text-xs text-gray-500">The verification token will be provided after you submit the domain below.</p>
-                    </div>
+                        <div className="bg-white rounded-2xl p-4 border-2 border-purple-100">
+                          <div className="flex flex-col">
+                            <span className="text-xs font-semibold text-gray-500">TXT Record</span>
+                            <span className="text-xs text-gray-400 mt-0.5">
+                              _openship-challenge → project slug
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-2">Records will be provided after you submit the domain below.</p>
+                        </div>
+                      </>
+                    )}
 
                     {/* WWW CNAME Record - Only show when includeWww is true */}
                     {includeWww && (
                       <div className="bg-white rounded-2xl p-4 border-2 border-purple-100 animate-in fade-in duration-200">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex flex-col">
-                            <span className="text-xs font-semibold text-gray-500">CNAME Record (WWW)</span>
+                            <span className="text-xs font-semibold text-gray-500">
+                              {dnsMode === "selfhosted" ? "A Record (WWW)" : "CNAME Record (WWW)"}
+                            </span>
                             <span className="text-xs text-gray-400 mt-0.5">
-                              www → edge.openship.io
+                              www → {dnsRecords.find((r) => r.type !== "TXT")?.value || "same as above"}
                             </span>
                           </div>
-                          <button
-                            onClick={() => copyToClipboard('edge.openship.io')}
-                            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
-                            title="Copy"
-                          >
-                            <Copy className="h-3 w-3 text-gray-400" />
-                          </button>
+                          {dnsRecords.find((r) => r.type !== "TXT")?.value && (
+                            <button
+                              onClick={() => copyToClipboard(dnsRecords.find((r) => r.type !== "TXT")!.value)}
+                              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="Copy"
+                            >
+                              <Copy className="h-3 w-3 text-gray-400" />
+                            </button>
+                          )}
                         </div>
-                        <code className="text-xs text-black block">edge.openship.io</code>
+                        <code className="text-xs text-black block">
+                          {dnsRecords.find((r) => r.type !== "TXT")?.value || "—"}
+                        </code>
                       </div>
                     )}
                   </div>

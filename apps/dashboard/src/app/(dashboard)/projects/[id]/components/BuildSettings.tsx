@@ -18,6 +18,7 @@ export const BuildSettings = () => {
     installCommand: false,
     buildCommand: false,
     outputDirectory: false,
+    productionPaths: false,
     startCommand: false,
     productionPort: false,
     redeploy: false,

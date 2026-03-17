@@ -12,7 +12,7 @@
  * the system manager and infra providers.
  */
 
-import { exec, spawn } from "node:child_process";
+import { exec, execFile, spawn } from "node:child_process";
 import {
   access,
   mkdir as fsMkdir,
@@ -20,9 +20,12 @@ import {
   rm as fsRm,
   writeFile as fsWriteFile,
 } from "node:fs/promises";
-import { dirname } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 import type { CommandExecutor, LogEntry, SshConfig } from "../types";
+import { systemDebug } from "./debug";
+import { isSshAuthError } from "./errors";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -36,6 +39,124 @@ function logEntry(
   level: LogEntry["level"] = "info",
 ): LogEntry {
   return { timestamp: new Date().toISOString(), message, level };
+}
+
+function formatSshTarget(config: SshConfig): string {
+  return `${config.username ?? "root"}@${config.host}:${config.port ?? 22}`;
+}
+
+function describeSshAuthFailure(config: SshConfig, originalMessage: string): string {
+  const target = formatSshTarget(config);
+
+  if (config.password) {
+    return `SSH password authentication failed for ${target}. Check the username/password, or verify that the server allows password login. (${originalMessage})`;
+  }
+
+  if (config.privateKey || config.sshAgent) {
+    return `SSH key authentication failed for ${target}. Check the username, private key, passphrase, or whether the server accepts this key. (${originalMessage})`;
+  }
+
+  return `SSH authentication failed for ${target}. (${originalMessage})`;
+}
+
+function execFileText(
+  command: string,
+  args: string[],
+  timeout = 5_000,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { timeout }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(stderr.trim() || stdout.trim() || err.message));
+        return;
+      }
+      resolve(stdout.trim());
+    });
+  });
+}
+
+function parseKnownHostsEntries(text: string): Set<string> {
+  const entries = new Set<string>();
+
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const parts = trimmed.split(/\s+/);
+    if (parts.length >= 3) {
+      entries.add(`${parts[1]} ${parts[2]}`);
+    }
+  }
+
+  return entries;
+}
+
+async function reconcileKnownHosts(config: SshConfig): Promise<void> {
+  const knownHostsPath = join(homedir(), ".ssh", "known_hosts");
+
+  try {
+    await access(knownHostsPath);
+  } catch {
+    return;
+  }
+
+  const port = config.port ?? 22;
+  const hostPatterns = port === 22
+    ? [config.host]
+    : [config.host, `[${config.host}]:${port}`];
+
+  const knownEntries = new Set<string>();
+  for (const pattern of hostPatterns) {
+    try {
+      const output = await execFileText(
+        "ssh-keygen",
+        ["-F", pattern, "-f", knownHostsPath],
+        4_000,
+      );
+      for (const entry of parseKnownHostsEntries(output)) {
+        knownEntries.add(entry);
+      }
+    } catch {
+      // No matching entry for this host pattern.
+    }
+  }
+
+  if (knownEntries.size === 0) return;
+
+  let scanned: string;
+  try {
+    scanned = await execFileText(
+      "ssh-keyscan",
+      ["-p", String(port), "-T", "5", config.host],
+      7_000,
+    );
+  } catch {
+    return;
+  }
+
+  const scannedEntries = parseKnownHostsEntries(scanned);
+  if (scannedEntries.size === 0) return;
+
+  for (const entry of knownEntries) {
+    if (scannedEntries.has(entry)) {
+      return;
+    }
+  }
+
+  for (const pattern of hostPatterns) {
+    try {
+      await execFileText(
+        "ssh-keygen",
+        ["-R", pattern, "-f", knownHostsPath],
+        4_000,
+      );
+      systemDebug(
+        "ssh-known-hosts",
+        `removed stale known_hosts entry for ${pattern}`,
+      );
+    } catch {
+      // Best effort cleanup only.
+    }
+  }
 }
 
 // ─── Local executor ──────────────────────────────────────────────────────────
@@ -137,6 +258,19 @@ export class LocalExecutor implements CommandExecutor {
     }
   }
 
+  async transferIn(
+    localPath: string,
+    remotePath: string,
+    onLog?: (log: LogEntry) => void,
+  ): Promise<void> {
+    const log = onLog ?? (() => {});
+    const { code } = await this.streamExec(
+      `cp -a ${sq(localPath + "/")}. ${sq(remotePath)}`,
+      log,
+    );
+    if (code !== 0) throw new Error("Failed to copy local project files");
+  }
+
   async dispose(): Promise<void> {
     // Nothing to clean up for local execution
   }
@@ -151,17 +285,17 @@ export class LocalExecutor implements CommandExecutor {
  * The SSH connection is established lazily on first use and reused for
  * all subsequent operations. Call `dispose()` to close the connection.
  *
- * Security: key-based auth only — no password auth.
+ * Security: supports key, agent, or password auth.
  */
 export class SshExecutor implements CommandExecutor {
   private client: import("ssh2").Client | null = null;
+  private connecting: Promise<import("ssh2").Client> | null = null;
   private readonly config: SshConfig;
 
   constructor(config: SshConfig) {
-    if (!config.privateKey && !config.sshAgent) {
+    if (!config.privateKey && !config.sshAgent && !config.password) {
       throw new Error(
-        "SSH requires either privateKey or sshAgent. " +
-          "Password auth is not supported.",
+        "SSH requires one of privateKey, sshAgent, or password.",
       );
     }
     this.config = config;
@@ -170,27 +304,69 @@ export class SshExecutor implements CommandExecutor {
   /** Lazily establish the SSH connection. */
   private async connect(): Promise<import("ssh2").Client> {
     if (this.client) return this.client;
+    if (this.connecting) return this.connecting;
 
-    const { Client } = await import("ssh2");
-    this.client = new Client();
+    this.connecting = (async () => {
+      await reconcileKnownHosts(this.config);
 
-    return new Promise((resolve, reject) => {
-      this.client!.on("ready", () => resolve(this.client!));
-      this.client!.on("error", (err) => {
-        this.client = null;
+      const { Client } = await import("ssh2");
+      const client = new Client();
+
+      return new Promise<import("ssh2").Client>((resolve, reject) => {
+      let settled = false;
+
+      const resetClient = () => {
+        if (this.client === client) {
+          this.client = null;
+        }
+      };
+
+      client.on("ready", () => {
+        if (settled) return;
+        settled = true;
+        this.client = client;
+        this.connecting = null;
+        resolve(client);
+      });
+
+      client.on("error", (err) => {
+        resetClient();
+        if (settled) return;
+        settled = true;
+        this.connecting = null;
+        if (isSshAuthError(err)) {
+          reject(new Error(describeSshAuthFailure(this.config, err.message)));
+          return;
+        }
         reject(err);
       });
 
-      this.client!.connect({
+      client.on("close", () => {
+        resetClient();
+        if (settled) return;
+        settled = true;
+        this.connecting = null;
+        reject(new Error("SSH connection closed before ready"));
+      });
+
+      client.on("end", () => {
+        resetClient();
+      });
+
+      client.connect({
         host: this.config.host,
         port: this.config.port ?? 22,
         username: this.config.username ?? "root",
+        password: this.config.password,
         privateKey: this.config.privateKey,
         passphrase: this.config.privateKeyPassphrase,
         agent: this.config.sshAgent,
         tryKeyboard: false,
       });
-    });
+      });
+    })();
+
+    return this.connecting;
   }
 
   /** Get an SFTP session from the active connection. */
@@ -338,10 +514,66 @@ export class SshExecutor implements CommandExecutor {
   }
 
   async dispose(): Promise<void> {
+    this.connecting = null;
     if (this.client) {
       this.client.end();
       this.client = null;
     }
+  }
+
+  /**
+   * Pipe a local command's stdout into a remote command via SSH.
+   * Used internally by transferIn to stream tar archives.
+   */
+  private async pipeLocal(
+    localCmd: string,
+    remoteCmd: string,
+    onLog?: (log: LogEntry) => void,
+  ): Promise<{ code: number }> {
+    const client = await this.connect();
+
+    return new Promise((resolve, reject) => {
+      client.exec(remoteCmd, (err, channel) => {
+        if (err) return reject(err);
+
+        const local = spawn("sh", ["-c", localCmd], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+
+        local.stdout.pipe(channel);
+
+        local.stderr.on("data", (data: Buffer) => {
+          const text = data.toString().trim();
+          if (text && onLog) onLog(logEntry(text, "warn"));
+        });
+
+        channel.stderr.on("data", (data: Buffer) => {
+          const text = data.toString().trim();
+          if (text && onLog) onLog(logEntry(text, "warn"));
+        });
+
+        channel.on("close", (code: number) => {
+          resolve({ code: code ?? 1 });
+        });
+
+        local.on("error", (e) => {
+          reject(new Error(`Local process failed: ${e.message}`));
+        });
+      });
+    });
+  }
+
+  async transferIn(
+    localPath: string,
+    remotePath: string,
+    onLog?: (log: LogEntry) => void,
+  ): Promise<void> {
+    const { code } = await this.pipeLocal(
+      `tar czf - -C ${sq(localPath)} --exclude=node_modules --exclude=.git .`,
+      `mkdir -p ${sq(remotePath)} && tar xzf - -C ${sq(remotePath)}`,
+      onLog,
+    );
+    if (code !== 0) throw new Error("Failed to transfer files to remote server");
   }
 }
 

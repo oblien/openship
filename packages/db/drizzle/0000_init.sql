@@ -1,5 +1,6 @@
--- Full schema: squashed from TypeScript source of truth
--- Generated from packages/db/src/schema/*
+-- Full schema: squashed from TypeScript source of truth (packages/db/src/schema/*)
+
+-- ── Auth (Better Auth core) ─────────────────────────────────────────────────
 
 CREATE TABLE "user" (
 	"id" text PRIMARY KEY NOT NULL,
@@ -8,6 +9,7 @@ CREATE TABLE "user" (
 	"email_verified" boolean DEFAULT false NOT NULL,
 	"image" text,
 	"role" text DEFAULT 'user' NOT NULL,
+	"auto_provisioned" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "user_email_unique" UNIQUE("email")
@@ -50,6 +52,41 @@ CREATE TABLE "verification" (
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
+
+-- ── Settings ────────────────────────────────────────────────────────────────
+
+CREATE TABLE "instance_settings" (
+	"id" text PRIMARY KEY DEFAULT 'default' NOT NULL,
+	"ssh_host" text,
+	"ssh_port" integer DEFAULT 22,
+	"ssh_user" text DEFAULT 'root',
+	"ssh_auth_method" text,
+	"ssh_password" text,
+	"ssh_key_path" text,
+	"ssh_key_passphrase" text,
+	"ssh_jump_host" text,
+	"ssh_args" text,
+	"tunnel_provider" text,
+	"tunnel_token" text,
+	"auth_mode" text DEFAULT 'none' NOT NULL,
+	"default_build_mode" text DEFAULT 'auto' NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "user_settings" (
+	"id" text PRIMARY KEY NOT NULL,
+	"user_id" text NOT NULL,
+	"build_mode" text DEFAULT 'auto' NOT NULL,
+	"cloud_session_token" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "user_settings_user_id_unique" UNIQUE("user_id")
+);
+--> statement-breakpoint
+
+-- ── Projects ────────────────────────────────────────────────────────────────
+
 CREATE TABLE "project" (
 	"id" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
@@ -67,6 +104,7 @@ CREATE TABLE "project" (
 	"install_command" text,
 	"build_command" text,
 	"output_directory" text,
+	"production_paths" text,
 	"root_directory" text,
 	"start_command" text,
 	"build_image" text,
@@ -94,6 +132,9 @@ CREATE TABLE "env_var" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+
+-- ── Deployments ─────────────────────────────────────────────────────────────
+
 CREATE TABLE "deployment" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
@@ -127,6 +168,9 @@ CREATE TABLE "build_session" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+
+-- ── Domains ─────────────────────────────────────────────────────────────────
+
 CREATE TABLE "domain" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
@@ -144,6 +188,9 @@ CREATE TABLE "domain" (
 	CONSTRAINT "domain_hostname_unique" UNIQUE("hostname")
 );
 --> statement-breakpoint
+
+-- ── Git ─────────────────────────────────────────────────────────────────────
+
 CREATE TABLE "git_installation" (
 	"id" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
@@ -158,9 +205,14 @@ CREATE TABLE "git_installation" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+
+-- ── Foreign keys ────────────────────────────────────────────────────────────
+
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "user_settings" ADD CONSTRAINT "user_settings_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "project" ADD CONSTRAINT "project_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint

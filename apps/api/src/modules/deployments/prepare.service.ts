@@ -6,11 +6,12 @@
  */
 
 import * as githubService from "../github/github.service";
-import { detectStack, type RepoFile, type StackResult } from "../../lib/stack-detector";
+import { detectStack, MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
 import { parseComposeFile, type ComposeService } from "../../lib/compose-parser";
 import type { ProjectType } from "@repo/core";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename } from "node:path";
+import { env } from "../../config";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ export interface ProjectInfo {
   startCommand: string;
   buildImage: string;
   outputDirectory: string;
+  productionPaths: string[];
   port: number;
   services?: ComposeService[];
 }
@@ -52,6 +54,12 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
   if (input.source === "github") {
     return resolveFromGitHub(input.userId, input.owner, input.repo);
   }
+
+  // Local filesystem access — blocked in cloud mode
+  if (env.CLOUD_MODE) {
+    throw new Error("Local project resolution is not available in cloud mode");
+  }
+
   return resolveFromLocal(input.path);
 }
 
@@ -112,7 +120,21 @@ async function resolveFromGitHub(userId: string, owner: string, repo: string): P
     }
   }
 
-  return toProjectInfo(repository, files, packageJson, composeContent);
+  // Read manifest files for deep stack detection
+  const manifests: Record<string, string> = {};
+  const manifestReads = MANIFEST_FILES
+    .filter((name) => files.some((f) => f.name.toLowerCase() === name.toLowerCase()))
+    .map(async (name) => {
+      try {
+        const file = await githubService.getFileContent(userId, owner, repo, name, {
+          branch: repository.default_branch,
+        });
+        if (file?.content) manifests[name] = file.content;
+      } catch { /* skip */ }
+    });
+  await Promise.all(manifestReads);
+
+  return toProjectInfo(repository, files, packageJson, composeContent, manifests);
 }
 
 // ─── Local filesystem ────────────────────────────────────────────────────────
@@ -149,6 +171,16 @@ async function resolveFromLocal(dirPath: string): Promise<ProjectInfo> {
     }
   }
 
+  // Read manifest files for deep stack detection
+  const manifests: Record<string, string> = {};
+  await Promise.all(
+    MANIFEST_FILES.map(async (name) => {
+      try {
+        manifests[name] = await readFile(`${dirPath}/${name}`, "utf-8");
+      } catch { /* skip */ }
+    }),
+  );
+
   const dirName = (packageJson?.name as string) ?? basename(dirPath);
 
   const repoShape = {
@@ -159,7 +191,7 @@ async function resolveFromLocal(dirPath: string): Promise<ProjectInfo> {
     default_branch: "main",
   } as const;
 
-  return toProjectInfo(repoShape, files, packageJson, composeContent);
+  return toProjectInfo(repoShape, files, packageJson, composeContent, manifests);
 }
 
 // ─── Shared mapper ───────────────────────────────────────────────────────────
@@ -178,8 +210,9 @@ function toProjectInfo(
   files: RepoFile[],
   packageJson?: Record<string, unknown>,
   composeContent?: string,
+  fileContents?: Record<string, string>,
 ): ProjectInfo {
-  const stack = detectStack(files, packageJson);
+  const stack = detectStack(files, packageJson, fileContents);
 
   // Parse compose file if detected as a services project
   let services: ComposeService[] | undefined;
@@ -212,6 +245,7 @@ function toProjectInfo(
     startCommand: stack.startCommand,
     buildImage: stack.buildImage,
     outputDirectory: stack.outputDirectory,
+    productionPaths: stack.productionPaths,
     port: stack.port,
     ...(services && { services }),
   };

@@ -50,8 +50,8 @@ export class CloudRuntime implements RuntimeAdapter {
 
   private readonly client: Oblien;
 
-  constructor(clientId: string, clientSecret: string) {
-    this.client = new Oblien({ clientId, clientSecret });
+  constructor(client: Oblien) {
+    this.client = client;
   }
 
   supports(cap: RuntimeCapability): boolean {
@@ -65,6 +65,39 @@ export class CloudRuntime implements RuntimeAdapter {
   /** Get a scoped workspace handle. */
   private ws(workspaceId: string): WorkspaceHandle {
     return this.client.workspace(workspaceId);
+  }
+
+  // ── File transfer ──────────────────────────────────────────────────────
+
+  /**
+   * Upload files from a local path on the API server into a cloud workspace.
+   *
+   * Single implementation, two call sites:
+   *   - Build preflight: upload source when buildStrategy="server" + localPath
+   *   - Deploy phase:    upload build output when buildStrategy="local" (future)
+   *
+   * Tars the local directory, uploads via Oblien transfer API.
+   */
+  async uploadLocal(
+    localPath: string,
+    rt: Awaited<ReturnType<WorkspaceHandle["runtime"]>>,
+    destPath: string,
+    logger: BuildLogger,
+  ): Promise<void> {
+    logger.log(`Uploading ${localPath} → ${destPath}...\n`);
+
+    const { execSync } = await import("node:child_process");
+    const tarBuffer = execSync(
+      `tar czf - -C '${localPath.replace(/'/g, "'\\''")}' --exclude=node_modules --exclude=.git .`,
+      { maxBuffer: 500 * 1024 * 1024 },
+    );
+
+    const result = await rt.transfer.upload({
+      body: tarBuffer,
+      dest: destPath,
+    });
+
+    logger.log(`Uploaded ${result.files_extracted} files.\n`);
   }
 
   // ── Build lifecycle ────────────────────────────────────────────────────
@@ -95,6 +128,10 @@ export class CloudRuntime implements RuntimeAdapter {
       hasNativeEnv: true,
       exec: async (command, logCb) => {
         await this.execAndStream(rt, ["sh", "-c", command], logCb);
+      },
+      preflight: async (cfg, plog) => {
+        if (!cfg.localPath) return;
+        await this.uploadLocal(cfg.localPath, rt, "/app", plog);
       },
     };
 
@@ -132,7 +169,7 @@ export class CloudRuntime implements RuntimeAdapter {
     );
 
     const wsData = await this.client.workspaces.create({
-      name: `build-${config.projectId}-${config.sessionId.slice(0, 8)}`,
+      name: config.slug ?? `build-${config.projectId.slice(0, 20)}`,
       image: config.buildImage,
       mode: "temporary",
       config: {
@@ -194,7 +231,7 @@ export class CloudRuntime implements RuntimeAdapter {
 
   // ── Deploy lifecycle ───────────────────────────────────────────────────
 
-  async deploy(config: DeployConfig): Promise<DeploymentResult> {
+  async deploy(config: DeployConfig, onLog?: LogCallback): Promise<DeploymentResult> {
     const workspaceId = config.imageRef;
     if (!workspaceId) {
       return {
@@ -212,17 +249,83 @@ export class CloudRuntime implements RuntimeAdapter {
       throw new Error(`Failed to make workspace permanent: ${err instanceof Error ? err.message : err}`);
     }
 
-    try {
-      // 2. Resize CPU/memory to production levels
-      //    Disk is NOT resized down — VMs don't support disk shrink.
-      //    The build disk size carries over (harmless, just extra space).
-      await ws.resources.update({
-        cpus: config.resources.cpuCores,
-        memory_mb: config.resources.memoryMb,
-        apply: true,
-      });
-    } catch (err) {
-      throw new Error(`Failed to resize workspace: ${err instanceof Error ? err.message : err}`);
+    // TODO: temporarily disabled — testing without resource shrink
+    // try {
+    //   // 2. Resize CPU/memory to production levels
+    //   //    Disk is NOT resized down — VMs don't support disk shrink.
+    //   //    The build disk size carries over (harmless, just extra space).
+    //   await ws.resources.update({
+    //     cpus: config.resources.cpuCores,
+    //     memory_mb: config.resources.memoryMb,
+    //     apply: true,
+    //   });
+    // } catch (err) {
+    //   throw new Error(`Failed to resize workspace: ${err instanceof Error ? err.message : err}`);
+    // }
+
+    // 2. Prepare production directory — copy only what's needed at runtime
+    const prodPaths = config.productionPaths;
+    const workDir = prodPaths?.length ? "/app/production" : "/app";
+
+    if (prodPaths?.length) {
+      try {
+        const rt = await ws.runtime();
+        const logCb: LogCallback = onLog ?? (() => {});
+
+        // Sanitize paths — reject anything that could escape /app/
+        const safePaths = prodPaths.filter((p) => {
+          const normalized = p.replace(/\/+/g, "/").replace(/^\/|\/$/g, "");
+          return normalized.length > 0
+            && normalized !== ".."
+            && !normalized.startsWith("../")
+            && !normalized.includes("/../")
+            && !normalized.includes("\\");
+        });
+
+        if (safePaths.length === 0) {
+          throw new Error("No valid production paths after sanitization");
+        }
+
+        // Shell-escape a string for use inside single quotes
+        const sq = (s: string) => s.replace(/'/g, "'\\''");
+
+        // Build an atomic shell script:
+        //   1. Create staging dir
+        //   2. Move each path (skip missing with warning)
+        //   3. Rename staging → production (atomic on same filesystem)
+        //   4. On any error, clean up staging dir
+        const moveLines = safePaths.map((p) => {
+          const e = sq(p);
+          return `if [ -e '/app/${e}' ]; then
+  d=$(dirname '${e}')
+  mkdir -p "/app/.staging/$d"
+  mv '/app/${e}' '/app/.staging/${e}'
+  echo "  moved ${e}"
+else
+  echo "  skip ${e} (not found)"
+fi`;
+        }).join("\n");
+
+        const script = `set -e
+cleanup() { echo "Cleaning up staging dir"; rm -rf /app/.staging; }
+echo "Preparing production directory..."
+rm -rf /app/.staging
+mkdir -p /app/.staging
+${moveLines}
+if [ "$(ls -A /app/.staging)" ]; then
+  rm -rf /app/production
+  mv /app/.staging /app/production
+  echo "Production directory ready"
+else
+  cleanup
+  echo "ERROR: no files were moved — check production paths"
+  exit 1
+fi`;
+
+        await this.execAndStream(rt, ["sh", "-c", script], logCb);
+      } catch (err) {
+        throw new Error(`Failed to prepare production directory: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     // 3. Create a workload for the application process
@@ -237,8 +340,8 @@ export class CloudRuntime implements RuntimeAdapter {
     try {
       await ws.workloads.create({
         name: "app",
-        cmd: [startCommand],
-        working_dir: "/app",
+        cmd: ["sh", "-c", `cd ${workDir} && ${startCommand}`],
+        working_dir: workDir,
         env: [
           ...envArray,
           `PORT=${config.port}`,
@@ -250,30 +353,40 @@ export class CloudRuntime implements RuntimeAdapter {
       throw new Error(`Failed to create workload: ${err instanceof Error ? err.message : err}`);
     }
 
-    // 4. Expose the application port with free subdomain (slug.opsh.io)
+    // 4. Expose via custom domain OR free subdomain — not both
     let url: string | undefined;
-    try {
-      const exposeParams: { port: number; slug?: string; domain?: string } = {
-        port: config.port,
-        domain: "opsh.io",
-      };
-      if (config.slug) exposeParams.slug = config.slug;
-      const exposeResult = await ws.publicAccess.expose(exposeParams);
-      url = (exposeResult as Record<string, unknown>).url as string | undefined;
-    } catch (err) {
-      throw new Error(`Failed to expose port ${config.port}: ${err instanceof Error ? err.message : err}`);
-    }
 
-    // 5. Connect custom domain if provided (separate from free subdomain)
     if (config.customDomain) {
       try {
+        // publicAccess.expose() opens the firewall implicitly, but with
+        // custom domain we skip it — so allow the port via network instead
+        await ws.network.update({ ingress_ports: [config.port] });
+
         await ws.domains.connect({
           domain: config.customDomain,
           port: config.port,
         });
+        url = `https://${config.customDomain}`;
       } catch (err) {
-        // Non-fatal: custom domain can be retried later
+        // Fall back to free subdomain if custom domain fails
         console.error(`Failed to connect custom domain ${config.customDomain}: ${err instanceof Error ? err.message : err}`);
+        const exposeResult = await ws.publicAccess.expose({
+          port: config.port,
+          domain: "opsh.io",
+          slug: config.slug,
+        });
+        url = exposeResult.url as string | undefined;
+      }
+    } else {
+      try {
+        const exposeResult = await ws.publicAccess.expose({
+          port: config.port,
+          domain: "opsh.io",
+          slug: config.slug,
+        });
+        url = exposeResult.url as string | undefined;
+      } catch (err) {
+        throw new Error(`Failed to expose port ${config.port}: ${err instanceof Error ? err.message : err}`);
       }
     }
 
@@ -306,52 +419,87 @@ export class CloudRuntime implements RuntimeAdapter {
       ? config.outputDirectory
       : `/app/${config.outputDirectory}`;
 
-    const slug = `${config.projectId.slice(0, 20)}-${config.deploymentId.slice(0, 8)}`
-      .toLowerCase()
-      .replace(/[^a-z0-9-]/g, "-");
+      console.log(`Deploying static site from workspace ${workspaceId}, output path ${outputPath}...`);
 
-    const pageData = await this.client._http.request<{
-      id: string;
-      url?: string;
-      slug?: string;
-    }>({
-      method: "POST",
-      path: "/pages",
-      body: {
+    const slug = config.slug
+      ?? `${config.projectId.slice(0, 20)}-${config.deploymentId.slice(0, 8)}`
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "-");
+
+    let page: { slug: string; url?: string | null };
+
+    if (config.customDomain) {
+      // Deploy with custom domain only — no free subdomain
+      const { page: pg } = await this.client.pages.create({
         workspace_id: workspaceId,
         path: outputPath,
         name: config.projectName ?? slug,
         slug,
-      },
-    });
+      });
 
-    // 2. Delete the workspace — page lives independently on the edge
+      await this.client.pages.connectDomain(pg.slug, {
+        domain: config.customDomain,
+      }).catch(() => {
+        // Non-fatal: page can still be accessed via slug if domain isn't verified yet
+      });
+
+      page = { ...pg, url: pg.url ?? `https://${config.customDomain}` };
+    } else {
+      // Deploy with free subdomain (slug.opsh.io)
+      const { page: pg } = await this.client.pages.create({
+        workspace_id: workspaceId,
+        path: outputPath,
+        name: config.projectName ?? slug,
+        slug,
+        domain: 'opsh.io',
+      });
+
+      page = pg;
+    }
+
+    // // 3. Delete the workspace — page lives independently on the edge
     await this.ws(workspaceId).delete().catch(() => {
       // Non-fatal: workspace has TTL and will auto-cleanup
     });
 
     return {
       deploymentId: config.deploymentId,
-      containerId: `page:${pageData.id}`,
-      url: pageData.url ?? undefined,
+      containerId: `page:${page.slug}`,
+      url: page.url ?? undefined,
       status: "running",
     };
   }
 
   async stop(containerId: string): Promise<void> {
-    await this.ws(containerId).stop();
+    if (containerId.startsWith("page:")) {
+      await this.client.pages.disable(containerId.slice(5));
+    } else {
+      await this.ws(containerId).stop();
+    }
   }
 
   async start(containerId: string): Promise<void> {
-    await this.ws(containerId).start();
+    if (containerId.startsWith("page:")) {
+      await this.client.pages.enable(containerId.slice(5));
+    } else {
+      await this.ws(containerId).start();
+    }
   }
 
   async restart(containerId: string): Promise<void> {
+    if (containerId.startsWith("page:")) {
+      // Pages are static — no process to restart
+      return;
+    }
     await this.ws(containerId).restart();
   }
 
   async destroy(containerId: string): Promise<void> {
-    await this.ws(containerId).delete();
+    if (containerId.startsWith("page:")) {
+      await this.client.pages.delete(containerId.slice(5));
+    } else {
+      await this.ws(containerId).delete();
+    }
   }
 
   // ── Observability ──────────────────────────────────────────────────────
@@ -376,25 +524,69 @@ export class CloudRuntime implements RuntimeAdapter {
   }
 
   async getRuntimeLogs(containerId: string, tail?: number): Promise<LogEntry[]> {
-    const result = await this.ws(containerId).logs.get({
-      source: "cmd",
-      tail_lines: tail ?? 100,
-    });
+    try {
+      const result = await this.ws(containerId).workloads.logs("app");
+      const raw = result as Record<string, unknown>;
 
-    const lines = (result as Record<string, unknown>).logs;
-    if (!Array.isArray(lines)) return [];
-
-    return lines.map((line: unknown) => {
-      if (typeof line === "string") {
-        return { timestamp: now(), message: line, level: "info" as const };
+      // Oblien returns { logs: "<big string with newlines>" }
+      // Each line: [timestamp] stream: message
+      if (typeof raw.logs === "string") {
+        const logStr = raw.logs as string;
+        return logStr.split("\n").filter(Boolean).map((line) => {
+          // Parse "[2026-03-14T06:09:25Z] stdout: actual message"
+          const match = line.match(/^\[([^\]]+)\]\s+(stdout|stderr):\s?(.*)/);
+          if (match) {
+            return {
+              timestamp: match[1],
+              message: match[3],
+              level: match[2] === "stderr" ? "warn" as const : "info" as const,
+            };
+          }
+          return { timestamp: now(), message: line, level: "info" as const };
+        });
       }
-      const entry = line as Record<string, unknown>;
-      return {
-        timestamp: (entry.timestamp as string) ?? now(),
-        message: (entry.message as string) ?? String(line),
-        level: "info" as const,
-      };
-    });
+
+      // Fallback: array shapes
+      const lines = Array.isArray(raw.logs) ? raw.logs
+        : Array.isArray(raw.entries) ? raw.entries
+        : Array.isArray(result) ? result as unknown[]
+        : [];
+      if (lines.length === 0) return [];
+
+      return lines.map((line: unknown) => {
+        if (typeof line === "string") {
+          return { timestamp: now(), message: line, level: "info" as const };
+        }
+        const entry = line as Record<string, unknown>;
+        const message = (entry.message as string) ?? (entry.data as string) ?? String(line);
+        return {
+          timestamp: (entry.timestamp as string) ?? now(),
+          message,
+          level: entry.stream === "stderr" ? "warn" as const : "info" as const,
+        };
+      }).filter(e => e.message);
+    } catch {
+      // Workload may not exist yet — fall back to workspace cmd logs
+      const result = await this.ws(containerId).logs.get({
+        source: "cmd",
+        tail_lines: tail ?? 100,
+      });
+
+      const lines = (result as Record<string, unknown>).logs;
+      if (!Array.isArray(lines)) return [];
+
+      return lines.map((line: unknown) => {
+        if (typeof line === "string") {
+          return { timestamp: now(), message: line, level: "info" as const };
+        }
+        const entry = line as Record<string, unknown>;
+        return {
+          timestamp: (entry.timestamp as string) ?? now(),
+          message: (entry.message as string) ?? String(line),
+          level: "info" as const,
+        };
+      });
+    }
   }
 
   async streamRuntimeLogs(
@@ -404,19 +596,54 @@ export class CloudRuntime implements RuntimeAdapter {
   ): Promise<() => void> {
     let cancelled = false;
 
+    const emitText = (text: string, level: LogEntry["level"], timestamp?: string) => {
+      if (!text) return; // skip empty entries
+      const rawData = Buffer.from(text).toString("base64");
+      onLog({ timestamp: timestamp ?? now(), message: text, level, rawData });
+    };
+
     const run = async () => {
       try {
-        const stream = this.ws(containerId).logs.streamCmd({
-          tail_lines: opts?.tail ?? 100,
-        });
+        // 1. Replay existing logs so the terminal isn't blank
+        try {
+          const history = await this.getRuntimeLogs(containerId, opts?.tail ?? 100);
+          for (const entry of history) {
+            if (cancelled) return;
+            if (!entry.message) continue;
+            const rawData = entry.rawData ?? Buffer.from(entry.message).toString("base64");
+            onLog({ ...entry, rawData });
+          }
+        } catch {
+          // Historical fetch failed — non-fatal, continue to live stream
+        }
 
-        for await (const event of stream) {
-          if (cancelled) break;
-          onLog({
-            timestamp: event.timestamp ?? now(),
-            message: event.message,
-            level: "info",
-          });
+        if (cancelled) return;
+
+        // 2. Follow new output from the workload process
+        try {
+          const stream = this.ws(containerId).workloads.logsStream("app");
+
+          for await (const event of stream) {
+            if (cancelled) break;
+            const ev = event as Record<string, unknown>;
+            const text = (ev.message as string) ?? event.data ?? "";
+            emitText(text, event.stream === "stderr" ? "warn" : "info", event.timestamp);
+          }
+        } catch {
+          // Workload stream unavailable — fall back to workspace cmd logs
+          if (cancelled) return;
+          try {
+            const stream = this.ws(containerId).logs.streamCmd({
+              tail_lines: opts?.tail ?? 100,
+            });
+
+            for await (const event of stream) {
+              if (cancelled) break;
+              emitText(event.message, "info", event.timestamp);
+            }
+          } catch {
+            // Stream ended or was cancelled
+          }
         }
       } catch {
         // Stream ended or was cancelled
@@ -453,24 +680,33 @@ export class CloudRuntime implements RuntimeAdapter {
     return this.client.workspaces.getQuota();
   }
 
-  // ── Domain validation ──────────────────────────────────────────────────
+  // ── Domain / Slug checks ───────────────────────────────────────────────
 
   /**
-   * Validate DNS for a custom domain.
-   * Uses Oblien's standalone `domain.validate()` — no workspace needed.
-   * Called by preflight before deploy starts.
+   * Check whether a subdomain slug is available on opsh.io.
+   * Uses Oblien's standalone `domain.checkSlug()` — no workspace needed.
    */
-  async validateDomain(domain: string): Promise<{
+  async checkSlug(slug: string, domain = "opsh.io"): Promise<{ available: boolean; url: string }> {
+    const result = await this.client.domain.checkSlug({ slug, domain });
+    console.log("Slug check result:", result);
+    return { available: result.available, url: result.url };
+  }
+
+  /**
+   * Verify DNS records for a custom domain.
+   * Uses Oblien's standalone `domain.verify()` — no workspace needed.
+   */
+  async verifyDomain(domain: string, resourceId?: string): Promise<{
     verified: boolean;
     cname: boolean;
     ownership: boolean | null;
     errors: string[];
     requiredRecords: {
       cname: { host: string; target: string };
-      txt: { host: string; value: string };
+      txt?: { host: string; value: string };
     };
   }> {
-    const result = await this.client.domain.validate({ domain });
+    const result = await this.client.domain.verify({ domain, resource_id: resourceId });
     return {
       verified: result.verified,
       cname: result.cname,
@@ -497,13 +733,22 @@ export class CloudRuntime implements RuntimeAdapter {
     rt: Awaited<ReturnType<WorkspaceHandle["runtime"]>>,
     cmd: string[],
     onLog: LogCallback,
+    timeoutSeconds?: number,
   ): Promise<void> {
-    const stream: AsyncGenerator<ExecStreamEvent> = rt.exec.stream(cmd);
+    const params = timeoutSeconds ? { timeoutSeconds } : undefined;
+    const stream: AsyncGenerator<ExecStreamEvent> = rt.exec.stream(cmd, params);
+
+    /** Collect recent output for error diagnostics */
+    const recentOutput: string[] = [];
+    const MAX_OUTPUT_LINES = 50;
 
     /** Emit a chunk — raw base64 passes straight through to SSE/terminal. */
     const emit = (b64: string, level: LogEntry["level"]) => {
       const message = Buffer.from(b64, "base64").toString("utf-8");
       onLog({ timestamp: now(), message, level, rawData: b64 });
+      // Keep tail of output for error messages
+      recentOutput.push(message);
+      if (recentOutput.length > MAX_OUTPUT_LINES) recentOutput.shift();
     };
 
     let exitCode: number | undefined;
@@ -527,7 +772,9 @@ export class CloudRuntime implements RuntimeAdapter {
     }
 
     if (exitCode !== undefined && exitCode !== 0) {
-      throw new Error(`Command failed with exit code ${exitCode}: ${cmd.join(" ")}`);
+      const output = recentOutput.join("").trim();
+      const detail = output ? `\n${output}` : "";
+      throw new Error(`Command failed with exit code ${exitCode}${detail}`);
     }
   }
 }

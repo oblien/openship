@@ -62,10 +62,12 @@ export interface PlatformConfig {
   bare?: import("./runtime/bare").BareRuntimeOptions;
   /** Traefik provider options (only for selfhosted target) */
   traefik?: Omit<import("./infra/traefik").TraefikProviderOptions, "executor">;
-  /** Oblien client ID (only for cloud target) */
+  /** Oblien client ID (cloud target — master creds) */
   cloudClientId?: string;
-  /** Oblien client secret (only for cloud target) */
+  /** Oblien client secret (cloud target — master creds) */
   cloudClientSecret?: string;
+  /** Oblien namespace-scoped token (cloud target — local instances) */
+  cloudToken?: string;
   /**
    * SSH config for remote server management (self-hosted only).
    *
@@ -136,17 +138,23 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 }
 
 async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
+  const { Oblien } = await import("oblien");
   const { CloudRuntime } = await import("./runtime/cloud");
   const { CloudInfraProvider } = await import("./infra/cloud");
 
-  const clientId = config.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "";
-  const clientSecret = config.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "";
+  // Single Oblien client — either from token or master creds
+  const client = config.cloudToken
+    ? new Oblien({ token: config.cloudToken })
+    : new Oblien({
+        clientId: config.cloudClientId ?? process.env.OBLIEN_CLIENT_ID ?? "",
+        clientSecret: config.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
+      });
 
   return {
     target: "cloud",
-    runtime: new CloudRuntime(clientId, clientSecret),
-    routing: new CloudInfraProvider(clientId, clientSecret),
-    ssl: new CloudInfraProvider(clientId, clientSecret),
+    runtime: new CloudRuntime(client),
+    routing: new CloudInfraProvider(client),
+    ssl: new CloudInfraProvider(client),
     system: null,
     executor: null,
   };

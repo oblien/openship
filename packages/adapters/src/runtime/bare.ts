@@ -34,6 +34,7 @@ import type {
 } from "../types";
 
 import { LocalExecutor } from "../system/executor";
+import { checkToolchainForStack, installTools } from "../toolchain";
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
 import { BuildLogger, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
 
@@ -149,6 +150,28 @@ export class BareRuntime implements RuntimeAdapter {
     }
   }
 
+  // ── File transfer ──────────────────────────────────────────────────────
+
+  /**
+   * Transfer files from a local path on the API server into the build/deploy dir.
+   *
+   * Delegates entirely to the executor — LocalExecutor does cp,
+   * SshExecutor does tar+pipe. No branching here.
+   *
+   * Two call sites:
+   *   - Build preflight: transfer source when localPath is set
+   *   - Deploy phase:    transfer build output when buildStrategy="local" (future)
+   */
+  async transferFiles(
+    localPath: string,
+    remotePath: string,
+    logger: BuildLogger,
+  ): Promise<void> {
+    logger.log(`Transferring ${localPath} → ${remotePath}...\n`);
+    await this.executor.transferIn(localPath, remotePath, logger.callback);
+    logger.log("Transfer complete.\n");
+  }
+
   // ── Build lifecycle ────────────────────────────────────────────────────
 
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
@@ -167,6 +190,27 @@ export class BareRuntime implements RuntimeAdapter {
         if (abort.signal.aborted) throw new Error("Build cancelled");
         if (code !== 0) {
           throw new Error(`Command failed with exit code ${code}`);
+        }
+      },
+      preflight: async (cfg, plog) => {
+        if (abort.signal.aborted) throw new Error("Build cancelled");
+
+        // Toolchain validation — ensure language runtime is available
+        const toolcheck = await checkToolchainForStack(this.executor, cfg.stack);
+        if (!toolcheck.ready) {
+          plog.log(`Missing toolchain: ${toolcheck.missing.join(", ")}\n`);
+          const results = await installTools(this.executor, toolcheck.missing, plog.callback);
+          const failed = results.filter((r) => !r.success);
+          if (failed.length > 0) {
+            throw new Error(
+              `Failed to install required tools: ${failed.map((f) => `${f.tool} (${f.error})`).join(", ")}`,
+            );
+          }
+        }
+
+        // Transfer source files for local projects
+        if (cfg.localPath) {
+          await this.transferFiles(cfg.localPath, dir, plog);
         }
       },
     };
@@ -206,7 +250,7 @@ export class BareRuntime implements RuntimeAdapter {
    * a log file, and stores the PID. Works identically via local shell
    * or SSH — no node:child_process spawn() needed.
    */
-  async deploy(config: DeployConfig): Promise<DeploymentResult> {
+  async deploy(config: DeployConfig, _onLog?: LogCallback): Promise<DeploymentResult> {
     const dir = this.projectDir(config.projectId);
     const logPath = this.logFile(config.deploymentId);
 

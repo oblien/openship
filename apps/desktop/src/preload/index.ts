@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld("desktop", {
   app: {
     version: () => ipcRenderer.invoke("app:version"),
     platform: process.platform,
+    cloudUrls: () => ipcRenderer.invoke("app:cloud-urls"),
+    localUrls: () => ipcRenderer.invoke("app:local-urls"),
   },
 
   /** Navigation */
@@ -30,20 +32,55 @@ contextBridge.exposeInMainWorld("desktop", {
 
   /** Onboarding helpers */
   onboarding: {
-    /** Test if an API server is reachable */
-    testConnection: (apiUrl: string, auth?: Record<string, string>) =>
-      ipcRenderer.invoke("onboarding:test-connection", apiUrl, auth),
-
-    /** Mark onboarding as done, save URLs, and load the dashboard */
-    complete: (apiUrl: string, dashboardUrl: string) =>
-      ipcRenderer.invoke("onboarding:complete", apiUrl, dashboardUrl),
+    /** Mark onboarding as done, push settings to API, and load the dashboard */
+    complete: (
+      apiUrl: string,
+      dashboardUrl: string,
+      sshPayload?: Record<string, unknown> | null,
+      buildMode?: string,
+    ) =>
+      ipcRenderer.invoke(
+        "onboarding:complete",
+        apiUrl,
+        dashboardUrl,
+        sshPayload,
+        buildMode,
+      ),
 
     /** Open a URL in the system browser */
     openExternal: (url: string) =>
       ipcRenderer.invoke("onboarding:open-external", url),
 
+    /** Start cloud authentication flow (opens system browser) */
+    cloudAuth: () => ipcRenderer.invoke("onboarding:cloud-auth"),
+
+    /** Poll for cloud auth completion — returns { status: "pending" | "resolved" | "expired" } */
+    cloudAuthPoll: (nonce: string) =>
+      ipcRenderer.invoke("onboarding:cloud-auth-poll", nonce),
+
     /** Browse for a file (e.g. SSH key) */
     browseFile: () => ipcRenderer.invoke("onboarding:browse-file"),
+  },
+
+  /** System utilities */
+  system: {
+    /** Native folder picker — returns absolute path or null */
+    browseFolder: () => ipcRenderer.invoke("system:browse-folder"),
+
+    /** Get local system settings (SSH creds, etc.) */
+    getSettings: () => ipcRenderer.invoke("system:get-settings"),
+
+    /** Update local system settings (partial merge) */
+    updateSettings: (settings: Record<string, unknown>) =>
+      ipcRenderer.invoke("system:update-settings", settings),
+  },
+
+  /** Cloud connection from settings (reconnect without onboarding side-effects) */
+  cloud: {
+    /** Start cloud connect flow — opens system browser with PKCE */
+    connect: () => ipcRenderer.invoke("cloud:connect"),
+    /** Poll for connect completion */
+    connectPoll: (nonce: string) => ipcRenderer.invoke("cloud:connect-poll", nonce),
   },
 
   /** Reset config and return to onboarding */

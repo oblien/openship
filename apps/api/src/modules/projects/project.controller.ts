@@ -12,9 +12,11 @@ import { streamSSE } from "hono/streaming";
 import { getUserId, param } from "../../lib/controller-helpers";
 import * as projectService from "./project.service";
 import type { TCreateProjectBody, TUpdateProjectBody, TSetEnvVarsBody, TUpdateResourcesBody } from "./project.schema";
-import { detectStack, type RepoFile } from "../../lib/stack-detector";
+import { detectStack, MANIFEST_FILES, type RepoFile } from "../../lib/stack-detector";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { repos } from "@repo/db";
+import * as domainService from "../domains/domain.service";
+import { env } from "../../config";
 
 // ─── Ensure project ──────────────────────────────────────────────────────────
 
@@ -154,6 +156,8 @@ export async function updateResources(c: Context) {
 
 /** Scan a local directory and detect framework/stack */
 export async function scanLocal(c: Context) {
+  if (env.CLOUD_MODE) return c.notFound();
+
   const { path: dirPath } = await c.req.json<{ path: string }>();
   if (!dirPath) return c.json({ error: "path is required" }, 400);
 
@@ -181,7 +185,17 @@ export async function scanLocal(c: Context) {
     // No package.json or invalid — that's fine
   }
 
-  const result = detectStack(files, packageJson);
+  // Read manifest files for deep stack detection
+  const manifests: Record<string, string> = {};
+  await Promise.all(
+    MANIFEST_FILES.map(async (name) => {
+      try {
+        manifests[name] = await readFile(`${dirPath}/${name}`, "utf-8");
+      } catch { /* skip */ }
+    }),
+  );
+
+  const result = detectStack(files, packageJson, manifests);
   const dirName = dirPath.split("/").filter(Boolean).pop() ?? "project";
 
   return c.json({
@@ -194,6 +208,8 @@ export async function scanLocal(c: Context) {
 
 /** Import a local folder as a project */
 export async function importLocal(c: Context) {
+  if (env.CLOUD_MODE) return c.notFound();
+
   const userId = getUserId(c);
   const body = await c.req.json<TCreateProjectBody & { localPath: string }>();
 
@@ -217,6 +233,8 @@ export async function importLocal(c: Context) {
 
 /** List only local projects for the current user */
 export async function listLocal(c: Context) {
+  if (env.CLOUD_MODE) return c.notFound();
+
   const userId = getUserId(c);
   try {
     const result = await projectService.listProjects(userId, { page: 1, perPage: 100 });
@@ -261,7 +279,13 @@ export async function runtimeLogStream(c: Context) {
       cleanup = await projectService.streamRuntimeLogs(id, userId, (entry) => {
         void sseStream.writeSSE({
           event: "log",
-          data: JSON.stringify(entry),
+          data: JSON.stringify({
+            type: "log",
+            data: entry.rawData,
+            message: entry.message,
+            timestamp: entry.timestamp,
+            level: entry.level,
+          }),
         });
       }, { tail });
 
@@ -402,6 +426,7 @@ export async function getInfo(c: Context) {
   const options = {
     buildCommand: project.buildCommand ?? '',
     outputDirectory: project.outputDirectory ?? '',
+    productionPaths: project.productionPaths ?? '',
     installCommand: project.installCommand ?? '',
     startCommand: '',
     productionPort: String(project.port ?? 3000),
@@ -439,4 +464,35 @@ export async function updatePost(c: Context) {
   const body = await c.req.json<TUpdateProjectBody>();
   const project = await projectService.updateProject(id, userId, body);
   return c.json({ data: project });
+}
+
+// ─── Connect custom domain ─────────────────────────────────────────────────────
+
+export async function connectDomain(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const body = await c.req.json<{ domain: string; includeWww?: boolean }>();
+
+  if (!body.domain?.trim()) {
+    return c.json({ success: false, error: "Domain is required" }, 400);
+  }
+
+  try {
+    const result = await domainService.addDomain(userId, {
+      projectId: id,
+      hostname: body.domain.trim(),
+      isPrimary: true,
+    });
+
+    return c.json({
+      success: true,
+      domain: result.domain,
+      records: result.records,
+    });
+  } catch (err) {
+    if (err instanceof Error) {
+      return c.json({ success: false, error: err.message, message: err.message }, 400);
+    }
+    throw err;
+  }
 }

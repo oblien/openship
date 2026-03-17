@@ -75,6 +75,7 @@ interface GitData {
 interface BuildData {
   buildCommand: string;
   outputDirectory: string;
+  productionPaths: string;
   installCommand: string;
   startCommand: string;
   productionPort: string;
@@ -204,6 +205,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   const [buildData, setBuildData] = useState<BuildData>({
     buildCommand: '',
     outputDirectory: '.',
+    productionPaths: '',
     installCommand: 'bun install',
     startCommand: 'npm start',
     productionPort: '3000',

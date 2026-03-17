@@ -71,6 +71,23 @@ export function isNetworkError(err: unknown): boolean {
   return err instanceof TypeError;
 }
 
+/**
+ * Extract the most useful server-side message from an API error.
+ */
+export function getApiErrorMessage(
+  err: unknown,
+  fallback = "Request failed",
+): string {
+  if (err instanceof ApiError) {
+    const body = err.body as Record<string, unknown> | undefined;
+    if (body && typeof body.message === "string") return body.message;
+    if (body && typeof body.error === "string") return body.error;
+    return err.message || fallback;
+  }
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Request helper                                                    */
 /* ------------------------------------------------------------------ */

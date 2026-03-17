@@ -8,7 +8,7 @@ import DockerSettings from "@/components/import-project/DockerSettings";
 import ComposeServices from "@/components/import-project/ComposeServices";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import Sidebar from "./components/Sidebar";
-import { decodeRepoSlug } from "@/utils/repoSlug";
+import { decodeSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
@@ -47,7 +47,7 @@ const DeployRepository: React.FC = () => {
     const params = useParams();
     const router = useRouter();
     const slug = params.slug as string;
-    const { config, initializeFromRepo } = useDeployment();
+    const { config, initializeFromRepo, initializeFromLocal } = useDeployment();
     const searchParams = useSearchParams();
     const force = searchParams.get("force") || undefined;
     
@@ -60,7 +60,7 @@ const DeployRepository: React.FC = () => {
             if (hasInitialized.current || !slug) return;
             hasInitialized.current = true;
 
-            const decoded = decodeRepoSlug(slug);
+            const decoded = decodeSlug(slug);
 
             if (!decoded) {
                 setError({
@@ -72,13 +72,16 @@ const DeployRepository: React.FC = () => {
                 return;
             }
 
-            const { owner, repo } = decoded;
-            const result = await initializeFromRepo(owner, repo, force);
+            let result;
+            if (decoded.kind === "local") {
+                result = await initializeFromLocal(decoded.path);
+            } else {
+                result = await initializeFromRepo(decoded.owner, decoded.repo, force);
+            }
 
             if (!result.success) {
                 // If build is already in progress, redirect to build page (handled elsewhere)
-                if (result.buildInProgress) {
-                    // Build in progress handling - typically redirected by parent component
+                if ('buildInProgress' in result && result.buildInProgress) {
                     setLoading(false);
                     return;
                 }
@@ -87,15 +90,16 @@ const DeployRepository: React.FC = () => {
                 if (result.error) {
                     setError({
                         type: result.errorType === 'api_error' ? 'repo_not_found' : 'initialization_failed',
-                        message: 'Failed to Load Repository',
+                        message: decoded.kind === 'local' ? 'Failed to Load Project' : 'Failed to Load Repository',
                         details: result.error
                     });
                 } else {
-                    // Generic fallback error
                     setError({
                         type: 'initialization_failed',
-                        message: 'Failed to Load Repository',
-                        details: 'We couldn\'t load this repository. It might be private, doesn\'t exist, or you don\'t have access to it.'
+                        message: decoded.kind === 'local' ? 'Failed to Load Project' : 'Failed to Load Repository',
+                        details: decoded.kind === 'local'
+                            ? 'We couldn\'t scan this folder. Make sure the path is correct and accessible.'
+                            : 'We couldn\'t load this repository. It might be private, doesn\'t exist, or you don\'t have access to it.'
                     });
                 }
             }

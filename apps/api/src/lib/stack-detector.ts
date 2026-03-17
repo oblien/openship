@@ -19,7 +19,7 @@
  *   Generic: Node.js, static, Docker
  */
 
-import { STACKS, OUTPUT_DIRECTORIES, getProjectType, getBuildImage, type StackId, type ProjectType } from "@repo/core";
+import { STACKS, OUTPUT_DIRECTORIES, getProjectType, getBuildImage, type StackId, type ProjectType, type StackDefinition } from "@repo/core";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -39,8 +39,27 @@ export interface StackResult {
   startCommand: string;
   buildImage: string;
   outputDirectory: string;
+  productionPaths: string[];
   port: number;
 }
+
+// ─── Manifest files to read for deep detection ───────────────────────────────
+
+/** Manifest filenames callers should try to read and pass to detectStack */
+export const MANIFEST_FILES = [
+  "requirements.txt",
+  "pyproject.toml",
+  "Pipfile",
+  "go.mod",
+  "Cargo.toml",
+  "Gemfile",
+  "composer.json",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "mix.exs",
+  "Dockerfile",
+] as const;
 
 // ─── Package manager detection ───────────────────────────────────────────────
 
@@ -114,8 +133,8 @@ interface FrameworkRule {
   stack: StackId;
   fileMatch: (fs: Set<string>) => boolean;
   depMatch?: (deps: Record<string, string>) => boolean;
-  /** Match against text content of specific files (e.g. Cargo.toml) */
-  contentMatch?: (content: string) => boolean;
+  /** Match against file contents map (lowercase filename → content) */
+  contentMatch?: (fileContents: Record<string, string>) => boolean;
 }
 
 /**
@@ -315,12 +334,16 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
       fs.has("pom.xml") || fs.has("build.gradle") || fs.has("build.gradle.kts"),
     depMatch: (d) =>
       !!d["org.springframework.boot:spring-boot-starter-web"] || !!d["spring-boot"],
+    contentMatch: (fc) =>
+      /spring[-.]boot/i.test((fc["pom.xml"] ?? "") + (fc["build.gradle"] ?? "") + (fc["build.gradle.kts"] ?? "")),
   },
   {
     stack: "quarkus",
     fileMatch: (fs) =>
       fs.has("pom.xml") || fs.has("build.gradle") || fs.has("build.gradle.kts"),
     depMatch: (d) => !!d["io.quarkus:quarkus-core"] || !!d.quarkus,
+    contentMatch: (fc) =>
+      /io\.quarkus/i.test((fc["pom.xml"] ?? "") + (fc["build.gradle"] ?? "") + (fc["build.gradle.kts"] ?? "")),
   },
 
   // ── C# / .NET ─────────────────────────────────────────────────────────────
@@ -390,11 +413,181 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
   },
 ];
 
+// ─── Port detection from package.json scripts ────────────────────────────────
+
+/**
+ * Scan package.json scripts for explicit --port / -p flags.
+ * Returns the port number if found, or null to fall back to framework default.
+ */
+function detectPortFromScripts(packageJson?: Record<string, unknown>): number | null {
+  const scripts = (packageJson?.scripts ?? {}) as Record<string, string>;
+
+  // Check start, dev, serve, preview — in priority order
+  for (const key of ["start", "dev", "serve", "preview"]) {
+    const script = scripts[key];
+    if (!script) continue;
+
+    // Match --port 8080, --port=8080, -p 8080, -p=8080
+    const match = script.match(/(?:--port|--PORT|-p)[\s=](\d{2,5})\b/);
+    if (match) {
+      const port = parseInt(match[1], 10);
+      if (port > 0 && port <= 65535) return port;
+    }
+  }
+
+  return null;
+}
+
+// ─── Manifest parsers ────────────────────────────────────────────────────────
+
+/** Parse Python requirements.txt into a deps map (lowercase keys) */
+function parseRequirementsTxt(content: string): Record<string, string> {
+  const deps: Record<string, string> = {};
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("-")) continue;
+    const m = line.match(/^([A-Za-z0-9][A-Za-z0-9._-]*)/);
+    if (m) deps[m[1].toLowerCase().replace(/-/g, "_")] = line.slice(m[1].length) || "*";
+  }
+  return deps;
+}
+
+/** Parse pyproject.toml — PEP 621 [project].dependencies + Poetry [tool.poetry.dependencies] */
+function parsePyprojectToml(content: string): Record<string, string> {
+  const deps: Record<string, string> = {};
+
+  // PEP 621: dependencies = ["flask>=2.0", "sqlalchemy"]
+  const pep621 = content.match(/\[project\][^[]*?dependencies\s*=\s*\[([\s\S]*?)\]/);
+  if (pep621) {
+    const items = pep621[1].matchAll(/["']([^"']+)["']/g);
+    for (const item of items) {
+      const m = item[1].match(/^([A-Za-z0-9][A-Za-z0-9._-]*)/);
+      if (m) deps[m[1].toLowerCase().replace(/-/g, "_")] = "*";
+    }
+  }
+
+  // Poetry: [tool.poetry.dependencies]
+  const poetry = content.match(/\[tool\.poetry\.dependencies\]([\s\S]*?)(?=\[|$)/);
+  if (poetry) {
+    for (const line of poetry[1].split("\n")) {
+      const m = line.match(/^([A-Za-z0-9][A-Za-z0-9_-]*)\s*=/);
+      if (m && m[1] !== "python") deps[m[1].toLowerCase().replace(/-/g, "_")] = "*";
+    }
+  }
+
+  // Optional dependencies groups: [project.optional-dependencies.*]
+  const optGroups = content.matchAll(/\[project\.optional-dependencies\.[^\]]+\]([\s\S]*?)(?=\[|$)/g);
+  for (const group of optGroups) {
+    const items = group[1].matchAll(/["']([^"']+)["']/g);
+    for (const item of items) {
+      const m = item[1].match(/^([A-Za-z0-9][A-Za-z0-9._-]*)/);
+      if (m) deps[m[1].toLowerCase().replace(/-/g, "_")] = "*";
+    }
+  }
+
+  return deps;
+}
+
+/** Parse Pipfile [packages] + [dev-packages] sections */
+function parsePipfile(content: string): Record<string, string> {
+  const deps: Record<string, string> = {};
+  const sections = content.matchAll(/\[(packages|dev-packages)\]([\s\S]*?)(?=\[|$)/g);
+  for (const section of sections) {
+    for (const line of section[2].split("\n")) {
+      const m = line.match(/^([A-Za-z0-9][A-Za-z0-9_-]*)\s*=/);
+      if (m) deps[m[1].toLowerCase().replace(/-/g, "_")] = "*";
+    }
+  }
+  return deps;
+}
+
+/** Parse go.mod require blocks into deps map */
+function parseGoMod(content: string): Record<string, string> {
+  const deps: Record<string, string> = {};
+  // Multi-line require blocks
+  const blocks = content.matchAll(/require\s*\(([\s\S]*?)\)/g);
+  for (const block of blocks) {
+    for (const line of block[1].split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("//")) continue;
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 2) {
+        deps[parts[0]] = parts[1];
+        // Strip major version suffix: github.com/foo/bar/v2 → github.com/foo/bar
+        const base = parts[0].replace(/\/v\d+$/, "");
+        if (base !== parts[0]) deps[base] = parts[1];
+      }
+    }
+  }
+  // Single-line requires
+  for (const m of content.matchAll(/^require\s+([\S]+)\s+([\S]+)/gm)) {
+    deps[m[1]] = m[2];
+    const base = m[1].replace(/\/v\d+$/, "");
+    if (base !== m[1]) deps[base] = m[2];
+  }
+  return deps;
+}
+
+/** Parse Cargo.toml [dependencies] / [dev-dependencies] / [build-dependencies] */
+function parseCargoToml(content: string): Record<string, string> {
+  const deps: Record<string, string> = {};
+  const sections = content.matchAll(/\[(?:workspace\.)?(?:dev-|build-)?dependencies\]([\s\S]*?)(?=\[|$)/g);
+  for (const section of sections) {
+    for (const line of section[1].split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const m = trimmed.match(/^([A-Za-z0-9_-]+)\s*=/);
+      if (m) deps[m[1]] = "*";
+    }
+  }
+  return deps;
+}
+
+/** Parse Gemfile gem declarations */
+function parseGemfile(content: string): Record<string, string> {
+  const deps: Record<string, string> = {};
+  for (const m of content.matchAll(/gem\s+['"]([^'"]+)['"]/g)) {
+    deps[m[1].toLowerCase()] = "*";
+  }
+  return deps;
+}
+
+/** Parse composer.json require + require-dev */
+function parseComposerJson(content: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(content);
+    return { ...(parsed.require ?? {}), ...(parsed["require-dev"] ?? {}) };
+  } catch {
+    return {};
+  }
+}
+
+/** Parse Elixir mix.exs deps ({:phoenix, "~> 1.7"}) */
+function parseMixExs(content: string): Record<string, string> {
+  const deps: Record<string, string> = {};
+  for (const m of content.matchAll(/\{:([\w]+),/g)) {
+    deps[m[1]] = "*";
+  }
+  return deps;
+}
+
+/** Extract EXPOSE port from Dockerfile */
+function parseDockerfilePort(content?: string): number | null {
+  if (!content) return null;
+  const m = content.match(/^EXPOSE\s+(\d{2,5})/m);
+  if (m) {
+    const port = parseInt(m[1], 10);
+    if (port > 0 && port <= 65535) return port;
+  }
+  return null;
+}
+
 // ─── Main detection ──────────────────────────────────────────────────────────
 
 export function detectStack(
   files: RepoFile[],
   packageJson?: Record<string, unknown>,
+  fileContents?: Record<string, string>,
 ): StackResult {
   const fileSet = new Set(files.map((f) => f.name.toLowerCase()));
   const deps: Record<string, string> = {
@@ -402,15 +595,33 @@ export function detectStack(
     ...((packageJson?.devDependencies as Record<string, string>) ?? {}),
   };
 
+  // Normalize file content keys to lowercase for consistent lookups
+  const fc: Record<string, string> = {};
+  if (fileContents) {
+    for (const [k, v] of Object.entries(fileContents)) fc[k.toLowerCase()] = v;
+  }
+
+  // Merge deps from language-specific manifests
+  if (fc["requirements.txt"]) Object.assign(deps, parseRequirementsTxt(fc["requirements.txt"]));
+  if (fc["pyproject.toml"]) Object.assign(deps, parsePyprojectToml(fc["pyproject.toml"]));
+  if (fc["pipfile"]) Object.assign(deps, parsePipfile(fc["pipfile"]));
+  if (fc["go.mod"]) Object.assign(deps, parseGoMod(fc["go.mod"]));
+  if (fc["cargo.toml"]) Object.assign(deps, parseCargoToml(fc["cargo.toml"]));
+  if (fc["gemfile"]) Object.assign(deps, parseGemfile(fc["gemfile"]));
+  if (fc["composer.json"]) Object.assign(deps, parseComposerJson(fc["composer.json"]));
+  if (fc["mix.exs"]) Object.assign(deps, parseMixExs(fc["mix.exs"]));
+
   let matched: StackId = "unknown";
 
   for (const rule of FRAMEWORK_RULES) {
-    if (rule.fileMatch(fileSet)) {
-      if (!rule.depMatch || rule.depMatch(deps)) {
-        matched = rule.stack;
-        break;
-      }
-    }
+    if (!rule.fileMatch(fileSet)) continue;
+
+    const hasGates = !!(rule.depMatch || rule.contentMatch);
+    if (!hasGates) { matched = rule.stack; break; }
+
+    const depOk = rule.depMatch?.(deps) ?? false;
+    const contentOk = rule.contentMatch?.(fc) ?? false;
+    if (depOk || contentOk) { matched = rule.stack; break; }
   }
 
   const pm = detectPackageManager(files, packageJson as Record<string, unknown> & {
@@ -432,7 +643,8 @@ export function detectStack(
     startCommand: getStartCommand(pm, matched, packageJson),
     buildImage: getBuildImage(matched, pm),
     outputDirectory: OUTPUT_DIRECTORIES[matched] ?? "dist",
-    port: stackDef.defaultPort,
+    productionPaths: (stackDef as StackDefinition).productionPaths ? [...(stackDef as StackDefinition).productionPaths!] : [],
+    port: detectPortFromScripts(packageJson) ?? parseDockerfilePort(fc["dockerfile"]) ?? stackDef.defaultPort,
   };
 }
 
@@ -444,7 +656,7 @@ export function getInstallCommand(pm: string): string {
     case "pnpm": return "pnpm install --frozen-lockfile";
     case "yarn": return "yarn install --frozen-lockfile";
     case "bun": return "bun install --frozen-lockfile";
-    case "npm": return "npm ci";
+    case "npm": return "npm i --force";
     case "go": return "go mod download";
     case "cargo": return "";  // cargo build handles deps
     case "pip": return "pip install -r requirements.txt";

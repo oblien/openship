@@ -74,15 +74,40 @@ const envSchema = z.object({
   /* ---------- Dashboard ---------- */
   DASHBOARD_URL: z.string().default("http://localhost:3001"),
 
+  /* ---------- Network (self-hosted) ---------- */
+  /** Public IP of the server — used for A record instructions in self-hosted mode. */
+  SERVER_IP: z.string().optional(),
+
   /* ---------- Oblien Cloud ---------- */
   OBLIEN_CLIENT_ID: z.string().optional(),
   OBLIEN_CLIENT_SECRET: z.string().optional(),
 
+  /** Openship Cloud API URL — used by local instances to fetch namespace tokens */
+  OPENSHIP_CLOUD_URL: z.string().default("https://api.openship.io"),
+
+  /** Openship Cloud dashboard URL — used for external auth redirect (desktop + cloud connect) */
+  OPENSHIP_CLOUD_DASHBOARD_URL: z.string().default("https://app.openship.io"),
+
   /* ---------- Screenshots (optional) ---------- */
   SCREENSHOT_SERVICE_URL: z.string().optional(),
   CDN_UPLOAD_URL: z.string().optional(),
+
+  /* ---------- Internal (Electron ↔ API) ---------- */
+  /** Shared secret for Electron → API calls (set by desktop app on startup) */
+  INTERNAL_TOKEN: z.string().optional(),
+
+  /** Enables verbose timing logs for SSH/system checks and environment detection */
+  SYSTEM_DEBUG_LOGS: z
+    .enum(["true", "false", "1", "0", ""])
+    .default("")
+    .transform((v) => v === "true" || v === "1"),
 });
 
 export type Env = z.infer<typeof envSchema>;
 
 export const env = envSchema.parse(process.env);
+
+/** Parsed trusted origins — single source of truth for CORS + Better Auth */
+export const trustedOrigins = env.TRUSTED_ORIGINS
+  ? env.TRUSTED_ORIGINS.split(",")
+  : ["http://localhost:3000", "http://localhost:3001"];

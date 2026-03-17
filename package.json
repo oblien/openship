@@ -15,6 +15,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:api": "turbo run dev --filter=@repo/api...",
+    "dev:saas": "turbo run dev:saas --filter=@repo/api --filter=@repo/dashboard --concurrency=10",
     "dev:dashboard": "turbo run dev --filter=@repo/dashboard",
     "dev:desktop": "turbo run dev --filter=@repo/desktop",
     "dev:web": "turbo run dev --filter=@repo/web",
@@ -38,6 +39,7 @@
   },
   "dependencies": {
     "@octokit/auth-oauth-device": "^8.0.3",
-    "api": "^6.1.3"
+    "api": "^6.1.3",
+    "oblien": "^2.1.7"
   }
 }

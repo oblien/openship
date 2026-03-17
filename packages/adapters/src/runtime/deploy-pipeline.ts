@@ -17,7 +17,7 @@
  * Self-hosted: activate creates container, resolveTargetUrl + routing wire Traefik.
  */
 
-import type { DeployConfig, RouteConfig } from "../types";
+import type { DeployConfig, LogCallback, RouteConfig } from "../types";
 import type { BuildLogger } from "./build-pipeline";
 
 // ─── Deploy environment abstraction ─────────────────────────────────────────
@@ -37,7 +37,7 @@ export interface DeployEnvironment {
   preflight?(config: DeployConfig): Promise<void>;
 
   /** Spin up the new deployment (container / workload / process). */
-  activate(config: DeployConfig): Promise<{ containerId: string; url?: string }>;
+  activate(config: DeployConfig, onLog: LogCallback): Promise<{ containerId: string; url?: string }>;
 
   /** Destroy a previous deployment (release slug, domain, resources). */
   deactivate(containerId: string): Promise<void>;
@@ -109,7 +109,8 @@ export async function runDeployPipeline(
     }
 
     // ── Step 2: Activate new deployment ──────────────────────────────
-    const { containerId, url } = await env.activate(config);
+    const onLog: LogCallback = (entry) => logger.log(entry.message, entry.level);
+    const { containerId, url } = await env.activate(config, onLog);
 
     if (!containerId) {
       throw new Error("Deploy completed but no container was created");

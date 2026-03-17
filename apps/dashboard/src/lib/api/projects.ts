@@ -25,6 +25,7 @@ export const projectsApi = {
     installCommand?: string;
     buildCommand?: string;
     outputDirectory?: string;
+    productionPaths?: string;
     rootDirectory?: string;
     startCommand?: string;
     buildImage?: string;

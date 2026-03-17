@@ -92,6 +92,7 @@
       "resendFailed": "فشل إعادة الإرسال. يرجى المحاولة مرة أخرى.",
       "verificationSent": "تم إرسال بريد التحقق!"
     },
+    "back": "رجوع",
     "toggleTheme": "تبديل السمة",
     "showPassword": "إظهار كلمة المرور",
     "hidePassword": "إخفاء كلمة المرور"
@@ -126,11 +127,13 @@
       "deployments": "عمليات النشر",
       "domains": "النطاقات",
       "monitoring": "المراقبة",
+      "servers": "الخوادم",
       "settings": "الإعدادات",
       "billing": "الفوترة",
       "sections": {
         "main": "الرئيسية",
         "settings": "الإعدادات",
+        "infrastructure": "البنية التحتية",
         "account": "الحساب"
       }
     },
@@ -179,6 +182,7 @@
       "deployments": { "title": "عمليات النشر", "description": "عرض وإدارة سجل النشر." },
       "domains": { "title": "النطاقات", "description": "إدارة النطاقات المخصصة وسجلات DNS." },
       "monitoring": { "title": "المراقبة", "description": "السجلات والمقاييس وفحوصات الصحة لخدماتك." },
+      "servers": { "title": "الخوادم", "description": "إدارة خوادم النشر والبنية التحتية." },
       "settings": { "title": "الإعدادات", "description": "إعدادات الحساب والفريق والمنصة." },
       "billing": { "title": "الفوترة", "description": "إدارة اشتراكك واستخدامك وطرق الدفع." }
     },

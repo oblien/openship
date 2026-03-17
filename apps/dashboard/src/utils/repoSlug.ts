@@ -3,15 +3,17 @@
  * Uses base64url encoding (URL-safe base64) for owner/repo format
  */
 
+const LOCAL_PREFIX = "local:";
+
+type DecodedSlug =
+  | { kind: "repo"; owner: string; repo: string }
+  | { kind: "local"; path: string };
+
 /**
  * Encodes owner and repo into a URL-safe base64 slug
- * @param owner - Repository owner/organization name
- * @param repo - Repository name
- * @returns URL-safe base64 encoded slug
  */
 export function encodeRepoSlug(owner: string, repo: string): string {
   const data = `${owner}/${repo}`;
-  // Convert to base64 and make it URL-safe
   const base64 = Buffer.from(data).toString('base64');
   return base64
     .replace(/\+/g, '-')
@@ -20,34 +22,53 @@ export function encodeRepoSlug(owner: string, repo: string): string {
 }
 
 /**
- * Decodes a repository slug back to owner and repo
- * @param slug - URL-safe base64 encoded slug
- * @returns Object with owner and repo, or null if invalid
+ * Encodes a local path into a URL-safe base64 slug (prefixed with "local:")
  */
-export function decodeRepoSlug(slug: string): { owner: string; repo: string } | null {
+export function encodeLocalSlug(path: string): string {
+  const data = LOCAL_PREFIX + path;
+  const base64 = Buffer.from(data).toString('base64');
+  return base64
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+/**
+ * Decodes a slug back to either a repo or local path
+ */
+export function decodeSlug(slug: string): DecodedSlug | null {
   try {
-    // Restore base64 padding and characters
     let base64 = slug
       .replace(/-/g, '+')
       .replace(/_/g, '/');
-    
-    // Add padding if needed
+
     while (base64.length % 4) {
       base64 += '=';
     }
-    
+
     const decoded = Buffer.from(base64, 'base64').toString('utf-8');
-    const [owner, repo] = decoded.split('/');
-    
-    if (!owner || !repo) {
-      return null;
+
+    if (decoded.startsWith(LOCAL_PREFIX)) {
+      const path = decoded.slice(LOCAL_PREFIX.length);
+      return path ? { kind: "local", path } : null;
     }
-    
-    return { owner, repo };
-  } catch (error) {
-    console.error('Failed to decode repo slug:', error);
+
+    const [owner, repo] = decoded.split('/');
+    if (!owner || !repo) return null;
+    return { kind: "repo", owner, repo };
+  } catch {
     return null;
   }
+}
+
+/**
+ * Decodes a repository slug back to owner and repo
+ * @deprecated Use decodeSlug() instead
+ */
+export function decodeRepoSlug(slug: string): { owner: string; repo: string } | null {
+  const result = decodeSlug(slug);
+  if (!result || result.kind !== "repo") return null;
+  return { owner: result.owner, repo: result.repo };
 }
 
 /**

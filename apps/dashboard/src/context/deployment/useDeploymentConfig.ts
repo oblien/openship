@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import type { FrameworkId } from "@/components/import-project/types";
 import { deployApi } from "@/lib/api";
+import { STACKS, type StackDefinition } from "@repo/core";
 import type { DeploymentConfig } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 
@@ -44,8 +45,9 @@ export function useDeploymentConfig() {
 
         const repoName = response.repository.name || repo;
         const detectedStack = (response.stack || "nextjs") as FrameworkId;
-        const hasServer = response.category !== "static";
-        const hasBuild = !!(response.buildCommand);
+        const stackDef = STACKS[detectedStack as keyof typeof STACKS] as StackDefinition | undefined;
+        const hasServer = !!response.startCommand;
+        const hasBuild = !!response.buildCommand;
 
         setConfig((prev) => ({
           ...prev,
@@ -56,6 +58,7 @@ export function useDeploymentConfig() {
           domain: repoName.toLowerCase(),
           framework: detectedStack,
           detectedFramework: detectedStack,
+          buildStrategy: stackDef?.defaultBuildStrategy ?? "server",
           packageManager: response.packageManager || "npm",
           buildImage: response.buildImage || "node:22",
           branch: response.repository.default_branch || "main",
@@ -65,6 +68,9 @@ export function useDeploymentConfig() {
             buildCommand: response.buildCommand || "",
             installCommand: response.installCommand || "",
             outputDirectory: response.outputDirectory || "",
+            productionPaths: Array.isArray(response.productionPaths)
+              ? response.productionPaths.join(", ")
+              : response.productionPaths || "",
             startCommand: response.startCommand || "",
             productionPort: String(response.port || 3000),
             rootDirectory: "./",
@@ -95,8 +101,9 @@ export function useDeploymentConfig() {
 
         const name = response.repository.name || path.split("/").pop() || "project";
         const detectedStack = (response.stack || "nextjs") as FrameworkId;
-        const hasServer = response.category !== "static";
-        const hasBuild = !!(response.buildCommand);
+        const stackDef = STACKS[detectedStack as keyof typeof STACKS] as StackDefinition | undefined;
+        const hasServer = !!response.startCommand;
+        const hasBuild = !!response.buildCommand;
 
         setConfig((prev) => ({
           ...prev,
@@ -107,6 +114,7 @@ export function useDeploymentConfig() {
           domain: name.toLowerCase().replace(/[^a-z0-9-]/g, ""),
           framework: detectedStack,
           detectedFramework: detectedStack,
+          buildStrategy: stackDef?.defaultBuildStrategy ?? "server",
           packageManager: response.packageManager || "npm",
           buildImage: response.buildImage || "node:22",
           branch: "main",
@@ -116,6 +124,9 @@ export function useDeploymentConfig() {
             buildCommand: response.buildCommand || "",
             installCommand: response.installCommand || "",
             outputDirectory: response.outputDirectory || "",
+            productionPaths: Array.isArray(response.productionPaths)
+              ? response.productionPaths.join(", ")
+              : response.productionPaths || "",
             startCommand: response.startCommand || "",
             productionPort: String(response.port || 3000),
             rootDirectory: path,
