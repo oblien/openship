@@ -63,6 +63,10 @@ if (env.CLOUD_MODE) {
   const { systemRoutes } = await import("./modules/system");
   app.route("/api/system", systemRoutes);
 
+  /** Mail server setup — self-hosted iRedMail wizard */
+  const { mailRoutes } = await import("./modules/mail");
+  app.route("/api/mail", mailRoutes);
+
   /** Cloud account management — connect/disconnect to Openship Cloud */
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud.routes");
   app.route("/api/cloud", cloudLocalRoutes);

@@ -28,6 +28,8 @@ import { hostname } from "node:os";
  * Platform preferences (build mode) are stored on the API server.
  */
 interface SystemSettings {
+  /** Friendly name shown in the UI for this server */
+  serverName?: string;
   /** SSH host for self-hosted deployments */
   sshHost?: string;
   /** SSH port (default 22) */
@@ -156,6 +158,7 @@ async function pushInstanceSettings(
   // SSH creds
   if (settings.system) {
     const s = settings.system;
+    payload.serverName = s.serverName || null;
     payload.sshHost = s.sshHost;
     payload.sshPort = s.sshPort || 22;
     payload.sshUser = s.sshUser || "root";

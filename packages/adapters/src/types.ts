@@ -6,6 +6,9 @@
  * routing configs, and SSL results.
  */
 
+import type { BuildStrategy } from "@repo/core";
+export type { BuildStrategy } from "@repo/core";
+
 // ─── Resource configuration ──────────────────────────────────────────────────
 
 export interface ResourceConfig {
@@ -41,8 +44,6 @@ export type ContainerStatus =
   | "stopped"
   | "failed"
   | "cancelled";
-
-export type BuildStrategy = "server" | "local";
 
 export interface BuildConfig {
   /** Unique build session id */

@@ -274,6 +274,9 @@ export function useDeploymentBuild(
         envVars: Object.keys(envVarsMap).length > 0 ? envVarsMap : undefined,
         customDomain: config.domainType === "custom" && config.customDomain ? config.customDomain : undefined,
         buildStrategy: config.buildStrategy,
+        deployTarget: config.deployTarget,
+        serverId: config.serverId,
+        runtimeMode: config.runtimeMode,
       });
 
       if (data.success && data.deployment_id) {

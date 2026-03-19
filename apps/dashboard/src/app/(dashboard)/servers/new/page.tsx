@@ -14,9 +14,10 @@ import {
   Info,
 } from "lucide-react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
-import type { ComponentStatus, SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
+import type { ComponentStatus, SetupComponentProgress, SetupLogEvent, ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useSetupStream } from "@/hooks/useSetupStream";
+import { AutoSetupFlow } from "./_components/auto-setup-flow";
 import { CheckingState } from "./_components/checking-state";
 import { ChooseMode } from "./_components/choose-mode";
 import { ErrorBanner } from "./_components/error-banner";
@@ -77,6 +78,8 @@ export default function AddServerPage() {
   const { showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const [serverName, setServerName] = useState("");
@@ -89,12 +92,12 @@ export default function AddServerPage() {
   const [sshPassword, setSshPassword] = useState("");
   const [sshKeyPath, setSshKeyPath] = useState("");
   const [sshKeyPassphrase, setSshKeyPassphrase] = useState("");
-  const [tunnelProvider, setTunnelProvider] = useState<string>("");
-  const [tunnelToken, setTunnelToken] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [jumpHost, setJumpHost] = useState("");
   const [extraArgs, setExtraArgs] = useState("");
   const [hasExistingServer, setHasExistingServer] = useState(false);
+  const [existingServerId, setExistingServerId] = useState<string | null>(null);
+  const [initialServer, setInitialServer] = useState<ServerInfo | null>(null);
 
   const [step, setStep] = useState<Step | null>(null);
   const [mode, setMode] = useState<SetupMode>(null);
@@ -110,7 +113,9 @@ export default function AddServerPage() {
       // After streaming finishes, run a final health check
       void (async () => {
         try {
-          const result = await systemApi.checkServer();
+          const currentServerId = existingServerId ?? initialServer?.id ?? null;
+          if (!currentServerId) return;
+          const result = await systemApi.checkServer(currentServerId);
           setComponents((current) => buildComponentStates(result.components, current));
           setOverallReady(result.ready);
         } catch {
@@ -125,31 +130,41 @@ export default function AddServerPage() {
     },
   });
 
+  const activeServerId = existingServerId ?? initialServer?.id ?? null;
+
   const serverHostLabel = sshHost.trim() || serverName.trim() || "your server";
 
   useEffect(() => {
     (async () => {
       try {
-        const settings = await systemApi.getSettings();
-        if (settings?.configured && settings.sshHost) {
+        // Load existing servers from the servers table
+        const servers = await systemApi.listServers();
+        if (servers.length === 1) {
+          const existing = servers[0];
           setHasExistingServer(true);
-          setServerName(settings.serverName ?? "");
-          setSshHost(settings.sshHost);
-          setSshPort(String(settings.sshPort ?? 22));
-          setSshUser(settings.sshUser ?? "root");
-          setSshAuthMethod(settings.sshAuthMethod === "key" ? "key" : "password");
-          setSshKeyPath(settings.sshKeyPath ?? "");
-          setJumpHost(settings.sshJumpHost ?? "");
-          setExtraArgs(settings.sshArgs ?? "");
-          setTunnelProvider(settings.tunnelProvider ?? "");
-          if (settings.sshJumpHost || settings.sshArgs || settings.tunnelProvider) {
+          setExistingServerId(existing.id);
+          setInitialServer(existing);
+          setServerName(existing.name ?? "");
+          setSshHost(existing.sshHost);
+          setSshPort(String(existing.sshPort ?? 22));
+          setSshUser(existing.sshUser ?? "root");
+          setSshAuthMethod(existing.sshAuthMethod === "key" ? "key" : "password");
+          setSshKeyPath(existing.sshKeyPath ?? "");
+          setJumpHost(existing.sshJumpHost ?? "");
+          setExtraArgs(existing.sshArgs ?? "");
+          if (existing.sshJumpHost || existing.sshArgs) {
             setShowAdvanced(true);
           }
 
           // Check if there's an active install session (page reload recovery)
           try {
             const session = await systemApi.getInstallSession();
-            if (session.active && session.status === "running" && session.sessionId) {
+            if (
+              session.active &&
+              session.status === "running" &&
+              session.sessionId &&
+              session.serverId === existing.id
+            ) {
               setStep("installing");
               void setupStream.attachToSession(session.sessionId);
             }
@@ -174,14 +189,33 @@ export default function AddServerPage() {
   }
 
   async function runSetupChecks(selectedMode: SetupMode) {
+    if (!activeServerId) {
+      showToast("Save the server before running setup", "error", "Server Setup");
+      return;
+    }
+
     setMode(selectedMode);
     setSetupError(null);
     setStep("checking");
 
     try {
-      const result = await systemApi.checkServer();
-      setComponents((current) => buildComponentStates(result.components, current));
+      const result = await systemApi.checkServer(activeServerId);
+      let newComponents: ComponentState[] = [];
+      setComponents((current) => {
+        newComponents = buildComponentStates(result.components, current);
+        return newComponents;
+      });
       setOverallReady(result.ready);
+
+      // Auto mode: skip results screen and install immediately
+      if (selectedMode === "auto" && !result.ready) {
+        const missing = getMissingComponentNames(newComponents);
+        if (missing.length > 0) {
+          void installComponents(missing);
+          return;
+        }
+      }
+
       setStep("results");
     } catch (err) {
       const message = getApiErrorMessage(err, "Health check failed");
@@ -193,6 +227,11 @@ export default function AddServerPage() {
   }
 
   async function installComponents(targetNames?: string[]) {
+    if (!activeServerId) {
+      showToast("Save the server before installing components", "error", "Server Setup");
+      return;
+    }
+
     const names = (targetNames?.length ? targetNames : getMissingComponentNames(components))
       .filter((name, index, list) => list.indexOf(name) === index);
 
@@ -206,7 +245,7 @@ export default function AddServerPage() {
     setStep("installing");
 
     try {
-      await setupStream.startInstall(names);
+      await setupStream.startInstall(activeServerId, names);
     } catch (err) {
       const message = getApiErrorMessage(err, "Failed to start installation");
       setSetupError(message);
@@ -220,32 +259,76 @@ export default function AddServerPage() {
       return;
     }
 
+    const isEditing = hasExistingServer && !!existingServerId;
+    const currentPort = parseInt(sshPort, 10) || 22;
+    const trimmedServerName = serverName.trim();
+    const trimmedHost = sshHost.trim();
+    const trimmedUser = sshUser.trim() || "root";
+    const trimmedJumpHost = jumpHost.trim();
+    const trimmedExtraArgs = extraArgs.trim();
+
+    if (sshAuthMethod === "password" && (!isEditing || initialServer?.sshAuthMethod !== "password") && !sshPassword) {
+      showToast("Password is required when switching to password auth", "error", "Server");
+      return;
+    }
+
+    if (sshAuthMethod === "key" && (!isEditing || initialServer?.sshAuthMethod !== "key") && !sshKeyPath) {
+      showToast("Key path is required when switching to SSH key auth", "error", "Server");
+      return;
+    }
+
     setSaving(true);
     try {
-      const patch: Record<string, unknown> = {
-        serverName: serverName.trim() || null,
-        sshHost: sshHost.trim(),
-        sshPort: parseInt(sshPort, 10) || 22,
-        sshUser: sshUser.trim() || "root",
+      const data: Record<string, unknown> = {
+        name: trimmedServerName || null,
+        sshHost: trimmedHost,
+        sshPort: currentPort,
+        sshUser: trimmedUser,
         sshAuthMethod,
-        tunnelProvider: tunnelProvider || null,
-        sshJumpHost: jumpHost.trim() || null,
-        sshArgs: extraArgs.trim() || null,
+        sshJumpHost: trimmedJumpHost || null,
+        sshArgs: trimmedExtraArgs || null,
       };
 
       if (sshAuthMethod === "password" && sshPassword) {
-        patch.sshPassword = sshPassword;
+        data.sshPassword = sshPassword;
       }
       if (sshAuthMethod === "key") {
-        patch.sshKeyPath = sshKeyPath || null;
-        if (sshKeyPassphrase) patch.sshKeyPassphrase = sshKeyPassphrase;
-      }
-      if (tunnelProvider && tunnelProvider !== "edge" && tunnelToken) {
-        patch.tunnelToken = tunnelToken;
+        if (sshKeyPath) data.sshKeyPath = sshKeyPath;
+        if (sshKeyPassphrase) data.sshKeyPassphrase = sshKeyPassphrase;
       }
 
-      await systemApi.updateSettings(patch);
+      let savedServerId = existingServerId!;
+      let savedCreatedAt = initialServer?.createdAt ?? new Date().toISOString();
+
+      if (isEditing) {
+        await systemApi.updateServerEntry(existingServerId!, data);
+      } else {
+        const created = await systemApi.createServerEntry(data);
+        savedServerId = created.id;
+        savedCreatedAt = created.createdAt;
+        setExistingServerId(created.id);
+      }
+
       setHasExistingServer(true);
+      setInitialServer({
+        id: savedServerId,
+        name: trimmedServerName || null,
+        sshHost: trimmedHost,
+        sshPort: currentPort,
+        sshUser: trimmedUser,
+        sshAuthMethod,
+        sshKeyPath: sshKeyPath || null,
+        sshJumpHost: trimmedJumpHost || null,
+        sshArgs: trimmedExtraArgs || null,
+        createdAt: savedCreatedAt,
+      });
+
+      if (isEditing) {
+        showToast("Server updated", "success", "Server");
+        router.push("/servers");
+        return;
+      }
+
       resetSetup();
       setStep("choose");
       showToast("Server saved", "success", "Server");
@@ -260,10 +343,58 @@ export default function AddServerPage() {
     }
   }
 
+  async function handleTestConnection() {
+    if (!sshHost.trim()) {
+      showToast("Server IP address is required", "error", "Server");
+      return;
+    }
+
+    if (sshAuthMethod === "password" && !sshPassword && !(hasExistingServer && initialServer?.sshAuthMethod === "password")) {
+      showToast("Password is required to test connection", "error", "Server");
+      return;
+    }
+
+    if (sshAuthMethod === "key" && !sshKeyPath && !(hasExistingServer && initialServer?.sshAuthMethod === "key")) {
+      showToast("Key path is required to test connection", "error", "Server");
+      return;
+    }
+
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const payload: Record<string, unknown> = {
+        sshHost: sshHost.trim(),
+        sshPort: parseInt(sshPort, 10) || 22,
+        sshUser: sshUser.trim() || "root",
+        sshAuthMethod,
+      };
+      if (sshAuthMethod === "password" && sshPassword) {
+        payload.sshPassword = sshPassword;
+      }
+      if (sshAuthMethod === "key") {
+        if (sshKeyPath) payload.sshKeyPath = sshKeyPath;
+        if (sshKeyPassphrase) payload.sshKeyPassphrase = sshKeyPassphrase;
+      }
+      const result = await systemApi.testConnection(payload as Parameters<typeof systemApi.testConnection>[0]);
+      setTestResult(result);
+      if (result.ok) {
+        showToast("Connection successful", "success", "Server");
+      } else {
+        showToast(result.message || "Connection failed", "error", "Server");
+      }
+    } catch (err) {
+      const message = getApiErrorMessage(err, "Connection test failed");
+      setTestResult({ ok: false, message });
+      showToast(message, "error", "Server");
+    } finally {
+      setTesting(false);
+    }
+  }
+
   function handleSetupBack() {
     if (step === "installing" && !setupStream.isDone) return;
     if (step === "installing" && setupStream.isDone) {
-      router.push("/servers/primary");
+      router.push(activeServerId ? `/servers/${activeServerId}` : "/servers");
       return;
     }
     if (step === "choose") {
@@ -303,35 +434,17 @@ export default function AddServerPage() {
             />
           )}
 
-          {step === "checking" && <CheckingState />}
-
-          {step === "results" && (
-            <ResultsPanel
+          {mode === "auto" && step !== "choose" ? (
+            <AutoSetupFlow
+              step={step}
               components={components}
-              serverHost={serverHostLabel}
               overallReady={overallReady}
-              mode={mode ?? "manual"}
-              onAutoInstall={() => {
-                void installComponents();
-              }}
-              onManualContinue={() => {
-                void installComponents();
-              }}
-              onRecheck={() => {
-                void runSetupChecks(mode ?? "manual");
-              }}
-              onDone={() => router.push("/servers/primary")}
-            />
-          )}
-
-          {step === "installing" && (
-            <InstallingPanel
-              components={setupStream.components}
-              logs={setupStream.logs}
               serverHost={serverHostLabel}
-              isDone={setupStream.isDone}
-              finalStatus={setupStream.finalStatus}
-              onDone={() => router.push("/servers/primary")}
+              streamComponents={setupStream.components}
+              streamLogs={setupStream.logs}
+              streamDone={setupStream.isDone}
+              streamFinalStatus={setupStream.finalStatus}
+              onDone={() => router.push(activeServerId ? `/servers/${activeServerId}` : "/servers")}
               onRetry={() => {
                 const failedNames = setupStream.components
                   .filter((c) => c.status === "failed")
@@ -341,6 +454,48 @@ export default function AddServerPage() {
                 }
               }}
             />
+          ) : (
+            <>
+              {step === "checking" && <CheckingState />}
+
+              {step === "results" && (
+                <ResultsPanel
+                  components={components}
+                  serverHost={serverHostLabel}
+                  overallReady={overallReady}
+                  mode={mode ?? "manual"}
+                  onAutoInstall={() => {
+                    void installComponents();
+                  }}
+                  onManualContinue={() => {
+                    void installComponents();
+                  }}
+                  onRecheck={() => {
+                    void runSetupChecks(mode ?? "manual");
+                  }}
+                  onDone={() => router.push(activeServerId ? `/servers/${activeServerId}` : "/servers")}
+                />
+              )}
+
+              {step === "installing" && (
+                <InstallingPanel
+                  components={setupStream.components}
+                  logs={setupStream.logs}
+                  serverHost={serverHostLabel}
+                  isDone={setupStream.isDone}
+                  finalStatus={setupStream.finalStatus}
+                  onDone={() => router.push(activeServerId ? `/servers/${activeServerId}` : "/servers")}
+                  onRetry={() => {
+                    const failedNames = setupStream.components
+                      .filter((c) => c.status === "failed")
+                      .map((c) => c.name);
+                    if (failedNames.length > 0) {
+                      void installComponents(failedNames);
+                    }
+                  }}
+                />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -394,11 +549,14 @@ export default function AddServerPage() {
                     type="text"
                     value={serverName}
                     onChange={(e) => setServerName(e.target.value)}
-                    placeholder="e.g. Production, Staging, Dev..."
+                    placeholder={sshHost.trim() || "e.g. Production, Staging, Dev..."}
                     spellCheck={false}
                     autoComplete="off"
                     className={INPUT}
                   />
+                  <p className="text-xs text-muted-foreground/60 mt-1.5">
+                    Optional label shown in the server list and header.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-3">
@@ -527,45 +685,6 @@ export default function AddServerPage() {
 
                 {showAdvanced && (
                   <div className="space-y-[18px]">
-                    <div>
-                      <label className={LABEL}>Tunnel Provider</label>
-                      <div className="relative">
-                        <select
-                          value={tunnelProvider}
-                          onChange={(e) => setTunnelProvider(e.target.value)}
-                          className="w-full px-3.5 py-2.5 pr-9 rounded-xl border border-border/50 bg-muted/30 text-sm text-foreground appearance-none outline-none transition-all focus:ring-2 focus:ring-primary/20"
-                        >
-                          <option value="">None (public IP)</option>
-                          <option value="edge">Openship Edge (managed)</option>
-                          <option value="cloudflare">Cloudflare Tunnel</option>
-                          <option value="ngrok">ngrok</option>
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-                      </div>
-
-                      {tunnelProvider && tunnelProvider !== "edge" && (
-                        <div className="mt-[18px]">
-                          <label className={LABEL}>
-                            {tunnelProvider === "cloudflare"
-                              ? "Cloudflare Tunnel Token"
-                              : "ngrok Auth Token"}
-                          </label>
-                          <input
-                            type="password"
-                            value={tunnelToken}
-                            onChange={(e) => setTunnelToken(e.target.value)}
-                            placeholder={
-                              tunnelProvider === "cloudflare"
-                                ? "eyJhIjoi..."
-                                : "2abc123def..."
-                            }
-                            autoComplete="off"
-                            className={INPUT}
-                          />
-                        </div>
-                      )}
-                    </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className={LABEL}>
@@ -605,7 +724,24 @@ export default function AddServerPage() {
                   </div>
                 )}
 
-                <div className="pt-1">
+                <div className="pt-1 space-y-2.5">
+                  <button
+                    onClick={handleTestConnection}
+                    disabled={testing || saving || !sshHost.trim()}
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 border border-border/50 bg-muted/30 text-foreground text-sm font-medium rounded-xl hover:bg-muted/60 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {testing ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : testResult?.ok ? (
+                      <Check className="size-4 text-emerald-500" />
+                    ) : (
+                      <Network className="size-4" />
+                    )}
+                    {testing ? "Testing…" : testResult?.ok ? "Connected" : "Test Connection"}
+                  </button>
+                  {testResult && !testResult.ok && (
+                    <p className="text-xs text-red-500 text-center">{testResult.message}</p>
+                  )}
                   <button
                     onClick={handleSave}
                     disabled={saving || !sshHost.trim()}
@@ -616,7 +752,7 @@ export default function AddServerPage() {
                     ) : (
                       <Check className="size-4" />
                     )}
-                    Save &amp; Continue to Setup
+                    {hasExistingServer ? "Save Changes" : "Save & Continue to Setup"}
                   </button>
                 </div>
               </div>

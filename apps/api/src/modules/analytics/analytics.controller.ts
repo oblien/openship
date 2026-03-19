@@ -4,7 +4,8 @@
 
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { getUserId, platform } from "../../lib/controller-helpers";
+import { getUserId } from "../../lib/controller-helpers";
+import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { repos } from "@repo/db";
 import * as analyticsService from "./analytics.service";
 import type { TAnalyticsQuery, TUsageQuery, TUsageStreamQuery } from "./analytics.schema";
@@ -75,7 +76,7 @@ export async function usageStream(c: Context) {
     return c.json({ error: "No active container" }, 404);
   }
 
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
 
   return streamSSE(c, async (sseStream) => {
     const intervalMs = 5_000; // 5 seconds

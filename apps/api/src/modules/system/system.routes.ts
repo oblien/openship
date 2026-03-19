@@ -13,6 +13,7 @@ import { authMiddleware, internalAuth, localOnly } from "../../middleware";
 import * as fs from "./filesystem.controller";
 import * as setup from "./setup.controller";
 import * as serverCheck from "./server-check.controller";
+import * as serversCtrl from "./servers.controller";
 
 export const systemRoutes = new Hono();
 
@@ -27,7 +28,15 @@ systemRoutes.get("/settings", authMiddleware, setup.getSetup);
 systemRoutes.patch("/settings", authMiddleware, setup.updateSettings);
 systemRoutes.delete("/settings", authMiddleware, setup.deleteSettings);
 
+/* ── Servers CRUD ───────────────────────────────────────────────── */
+systemRoutes.get("/servers", authMiddleware, serversCtrl.listServers);
+systemRoutes.get("/servers/:id", authMiddleware, serversCtrl.getServer);
+systemRoutes.post("/servers", authMiddleware, serversCtrl.createServer);
+systemRoutes.patch("/servers/:id", authMiddleware, serversCtrl.updateServer);
+systemRoutes.delete("/servers/:id", authMiddleware, serversCtrl.deleteServer);
+
 /* ── Server check & install (dashboard setup wizard) ────────────── */
+systemRoutes.post("/test-connection", authMiddleware, serverCheck.testConnection);
 systemRoutes.post("/check", authMiddleware, serverCheck.checkServer);
 systemRoutes.post("/install", authMiddleware, serverCheck.installComponent);
 systemRoutes.post("/install/stream", authMiddleware, serverCheck.installStream);

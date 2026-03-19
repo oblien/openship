@@ -1,6 +1,6 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
-import type { ProjectType } from "@repo/core";
+import type { ProjectType, BuildStrategy, DeployTarget, RuntimeMode } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 
 // ─── Screenshots ─────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ export interface ComposeServiceInfo {
 
 // ─── Build Strategy ──────────────────────────────────────────────────────────
 
-export type BuildStrategy = "server" | "local";
+export type { BuildStrategy, RuntimeMode, DeployTarget } from "@repo/core";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -44,6 +44,12 @@ export interface DeploymentConfig {
   localPath?: string;
   /** Where the build runs: "server" (default, build in cloud/workspace) or "local" (build on host machine) */
   buildStrategy: BuildStrategy;
+  /** Where the app deploys to: "local" (this machine), "server" (remote SSH), or "cloud" (Oblien) */
+  deployTarget: DeployTarget;
+  /** Which server to deploy to when deployTarget === "server" */
+  serverId?: string;
+  /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
+  runtimeMode: RuntimeMode;
   projectType: ProjectType;
   framework: FrameworkId;
   detectedFramework: FrameworkId | null;
@@ -75,6 +81,8 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   owner: "",
   localPath: undefined,
   buildStrategy: "server",
+  deployTarget: "cloud",
+  runtimeMode: "bare",
   projectType: "app",
   framework: "nextjs",
   detectedFramework: null,

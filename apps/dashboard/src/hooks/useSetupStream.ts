@@ -25,7 +25,7 @@ export interface UseSetupStreamCallbacks {
 
 export interface UseSetupStreamReturn {
   /** Start a new install session */
-  startInstall: (components: string[], config?: Record<string, unknown>) => Promise<void>;
+  startInstall: (serverId: string, components: string[], config?: Record<string, unknown>) => Promise<void>;
   /** Attach to an existing session */
   attachToSession: (sessionId?: string) => Promise<void>;
   /** Disconnect */
@@ -180,12 +180,14 @@ export function useSetupStream(
   }, [processSSEBuffer]);
 
   const startInstall = useCallback(async (
+    serverId: string,
     componentNames: string[],
     config?: Record<string, unknown>,
   ) => {
     const baseUrl = getApiBaseUrl();
     const url = `${baseUrl}system/install/stream`;
     await connectToStream(url, "POST", {
+      serverId,
       components: componentNames,
       ...(config ? { config } : {}),
     });

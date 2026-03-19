@@ -21,7 +21,7 @@ import {
   writeFile as fsWriteFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { CommandExecutor, LogEntry, SshConfig } from "../types";
 import { systemDebug } from "./debug";
@@ -33,6 +33,29 @@ import { isSshAuthError } from "./errors";
 function sq(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
+
+const LOCAL_BUILD_ENV_KEYS = [
+  "HOME",
+  "PATH",
+  "SHELL",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "COLORTERM",
+  "SSH_AUTH_SOCK",
+  "SSH_AGENT_PID",
+  "GIT_SSH_COMMAND",
+  "GIT_ASKPASS",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+] as const;
 
 function logEntry(
   message: string,
@@ -88,6 +111,58 @@ function parseKnownHostsEntries(text: string): Set<string> {
   }
 
   return entries;
+}
+
+function getLocalShellPath(): string {
+  return process.env.SHELL?.trim() || "/bin/sh";
+}
+
+function getLocalShellArgs(command: string): string[] {
+  const shellName = basename(getLocalShellPath());
+
+  // Use the user's shell when possible so local bare builds behave like
+  // a normal terminal command, but avoid assuming every shell supports -l.
+  if (shellName === "bash" || shellName === "zsh") {
+    return ["-lc", command];
+  }
+
+  return ["-c", command];
+}
+
+function getLocalExecEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, DEBIAN_FRONTEND: "noninteractive" };
+}
+
+function buildIsolatedLocalEnv(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { DEBIAN_FRONTEND: "noninteractive" };
+
+  for (const key of LOCAL_BUILD_ENV_KEYS) {
+    const value = process.env[key];
+    if (value) {
+      env[key] = value;
+    }
+  }
+
+  if (overrides) {
+    for (const [key, value] of Object.entries(overrides)) {
+      if (typeof value === "string") {
+        env[key] = value;
+      }
+    }
+  }
+
+  return env;
+}
+
+export function wrapLocalBuildCommand(command: string, envOverrides?: NodeJS.ProcessEnv): string {
+  const shellPath = getLocalShellPath();
+  const envVars = buildIsolatedLocalEnv(envOverrides);
+  const envAssignments = Object.entries(envVars)
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    .map(([key, value]) => `${key}=${sq(value)}`)
+    .join(" ");
+
+  return `env -i ${envAssignments} ${sq(shellPath)} ${getLocalShellArgs(command).map(sq).join(" ")}`;
 }
 
 async function reconcileKnownHosts(config: SshConfig): Promise<void> {
@@ -168,9 +243,14 @@ async function reconcileKnownHosts(config: SshConfig): Promise<void> {
 export class LocalExecutor implements CommandExecutor {
   async exec(command: string, opts?: { timeout?: number }): Promise<string> {
     return new Promise((resolve, reject) => {
+      const shell = getLocalShellPath();
       exec(
         command,
-        { timeout: opts?.timeout ?? 30_000 },
+        {
+          timeout: opts?.timeout ?? 30_000,
+          shell,
+          env: getLocalExecEnv(),
+        },
         (err, stdout, stderr) => {
           if (err) reject(new Error(stderr.trim() || err.message));
           else resolve(stdout.trim());
@@ -184,14 +264,10 @@ export class LocalExecutor implements CommandExecutor {
     onLog: (log: LogEntry) => void,
   ): Promise<{ code: number; output: string }> {
     return new Promise((resolve) => {
-      const child = spawn("sh", ["-c", command], {
+      const child = spawn(getLocalShellPath(), getLocalShellArgs(command), {
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, DEBIAN_FRONTEND: "noninteractive" },
-        detached: true,
+        env: getLocalExecEnv(),
       });
-
-      // Detach from parent event loop so the process doesn't hold it open
-      child.unref();
 
       const chunks: string[] = [];
 
@@ -540,6 +616,7 @@ export class SshExecutor implements CommandExecutor {
 
         const local = spawn("sh", ["-c", localCmd], {
           stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env, COPYFILE_DISABLE: "1" },
         });
 
         local.stdout.pipe(channel);
@@ -573,9 +650,12 @@ export class SshExecutor implements CommandExecutor {
   ): Promise<void> {
     const excludes = options?.excludes ?? ["node_modules", ".git"];
     const excludeFlags = excludes.map((e) => `--exclude=${sq(e)}`).join(" ");
+    // --no-mac-metadata strips .apple.provenance / xattr headers on macOS;
+    // harmless on GNU tar (unknown flag is silently ignored by the piped extraction).
+    const macFlags = process.platform === "darwin" ? "--no-mac-metadata " : "";
     const tarCmd = excludeFlags
-      ? `tar czf - -C ${sq(localPath)} ${excludeFlags} .`
-      : `tar czf - -C ${sq(localPath)} .`;
+      ? `tar ${macFlags}czf - -C ${sq(localPath)} ${excludeFlags} .`
+      : `tar ${macFlags}czf - -C ${sq(localPath)} .`;
     const { code } = await this.pipeLocal(
       tarCmd,
       `mkdir -p ${sq(remotePath)} && tar xzf - -C ${sq(remotePath)}`,

@@ -18,13 +18,15 @@ import { env } from "../../config";
 import {
   checkAllComponents,
   checkComponents,
+  type CommandExecutor,
+  createExecutor,
   COMPONENT_INSTALLERS,
   isSshAuthError,
   SYSTEM_COMPONENTS,
   getSystemComponentDefinition,
 } from "@repo/adapters";
 import { formatDuration, systemDebug } from "@/lib/system-debug";
-import { sshManager } from "../../lib/ssh-manager";
+import { sshManager, buildSshConfig } from "../../lib/ssh-manager";
 import {
   createSetupSession,
   getSetupSession,
@@ -50,10 +52,76 @@ const ALLOWED_COMPONENTS = new Set(
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
 /**
+ * POST /system/test-connection
+ *
+ * Test an SSH connection using credentials from the request body
+ * **without** persisting them to the database. Used by the server
+ * form to validate before saving.
+ *
+ * Body: { sshHost, sshPort?, sshUser?, sshAuthMethod, sshPassword?, sshKeyPath?, sshKeyPassphrase? }
+ * Returns: { ok: boolean, message: string }
+ */
+export async function testConnection(c: Context) {
+  if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
+
+  const startedAt = Date.now();
+  const result = await buildEphemeralExecutor(c);
+
+  if (result instanceof Response) return result; // validation error already sent
+  const executor = result;
+
+  try {
+    debugSystemRequest(`test-connection:start`);
+    const output = await executor.exec("echo ok", { timeout: 15_000 });
+    const success = output.trim() === "ok";
+    debugSystemRequest(`test-connection:done ok=${success} (${formatDuration(startedAt)})`);
+    return c.json({ ok: success, message: success ? "Connection successful" : "Unexpected response" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to connect";
+    debugSystemRequest(`test-connection:failed ${message} (${formatDuration(startedAt)})`);
+
+    if (isSshAuthError(err)) {
+      return c.json({ ok: false, message: "Authentication failed — check your credentials" }, 400);
+    }
+    return c.json({ ok: false, message }, 502);
+  } finally {
+    await executor.dispose();
+  }
+}
+
+/**
+ * Build an ephemeral SshExecutor from request body credentials.
+ * Returns the executor on success, or sends an error response and returns null.
+ */
+async function buildEphemeralExecutor(c: Context) {
+  const body = await c.req.json().catch(() => ({}));
+  const host = (body.sshHost as string)?.trim();
+  if (!host) {
+    return c.json({ ok: false, message: "SSH host is required" }, 400);
+  }
+
+  const config = await buildSshConfig({
+    sshHost: host,
+    sshPort: body.sshPort ? Number(body.sshPort) : null,
+    sshUser: (body.sshUser as string) || null,
+    sshAuthMethod: body.sshAuthMethod as string,
+    sshPassword: body.sshPassword as string ?? null,
+    sshKeyPath: body.sshKeyPath as string ?? null,
+    sshKeyPassphrase: body.sshKeyPassphrase as string ?? null,
+  });
+
+  if (!config) {
+    return c.json({ ok: false, message: "Invalid auth configuration" }, 400);
+  }
+
+  return createExecutor(config);
+}
+
+/**
  * POST /system/check
  *
- * Run system health checks against the configured remote server.
- * Optionally accepts { components: ["docker", "git"] } to check a subset.
+ * Run system health checks against a specific server.
+ * Body: { serverId: string, components?: ["docker", "git"] }
  *
  * Returns: { components: ComponentStatus[], ready: boolean, missing: string[] }
  */
@@ -64,9 +132,12 @@ export async function checkServer(c: Context) {
 
   try {
     const body = await c.req.json().catch(() => ({}));
+    const serverId = body.serverId as string | undefined;
+    if (!serverId) return c.json({ error: "serverId is required" }, 400);
+
     const requestedComponents = body.components as string[] | undefined;
     debugSystemRequest(
-      `check:start ${requestedComponents?.length ? requestedComponents.join(",") : "all"}`,
+      `check:start server=${serverId} ${requestedComponents?.length ? requestedComponents.join(",") : "all"}`,
     );
 
     let components;
@@ -76,11 +147,11 @@ export async function checkServer(c: Context) {
       if (valid.length === 0) {
         return c.json({ error: "Invalid component names" }, 400);
       }
-      components = await sshManager.withExecutor((executor) =>
+      components = await sshManager.withExecutor(serverId, (executor) =>
         checkComponents(executor, valid),
       );
     } else {
-      components = await sshManager.withExecutor((executor) =>
+      components = await sshManager.withExecutor(serverId, (executor) =>
         checkAllComponents(executor),
       );
     }
@@ -117,8 +188,8 @@ export async function checkServer(c: Context) {
 /**
  * POST /system/install
  *
- * Install a specific component on the configured remote server.
- * Body: { component: "docker" | "traefik" | "git" | "node" | "bun", config?: InstallerConfig }
+ * Install a specific component on a server.
+ * Body: { serverId: string, component: "docker" | "traefik" | ..., config?: InstallerConfig }
  *
  * Returns: { success: boolean, component: string, version?: string, error?: string }
  */
@@ -126,6 +197,9 @@ export async function installComponent(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
   const body = await c.req.json().catch(() => ({}));
+  const serverId = body.serverId as string | undefined;
+  if (!serverId) return c.json({ error: "serverId is required" }, 400);
+
   const componentName = body.component as string;
 
   if (!componentName || !ALLOWED_COMPONENTS.has(componentName)) {
@@ -140,7 +214,7 @@ export async function installComponent(c: Context) {
 
   try {
     const logs: string[] = [];
-    const installResult = await sshManager.withExecutor((executor) =>
+    const installResult = await sshManager.withExecutor(serverId, (executor) =>
       installerFn(
         executor,
         (log) => logs.push(log.message),
@@ -172,7 +246,7 @@ export async function installComponent(c: Context) {
  * POST /system/install/stream
  *
  * Install multiple components with real-time SSE log streaming.
- * Body: { components: ["docker", "traefik", ...], config?: InstallerConfig }
+ * Body: { serverId: string, components: ["docker", "traefik", ...], config?: InstallerConfig }
  *
  * Returns an SSE stream with events:
  *   - progress: component status updates
@@ -184,6 +258,9 @@ export async function installStream(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
 
   const body = await c.req.json().catch(() => ({}));
+  const serverId = body.serverId as string | undefined;
+  if (!serverId) return c.json({ error: "serverId is required" }, 400);
+
   const requestedComponents = body.components as string[] | undefined;
   const config = body.config ?? {};
 
@@ -208,7 +285,7 @@ export async function installStream(c: Context) {
     const def = getSystemComponentDefinition(name);
     return { name, label: def.label };
   });
-  const session = createSetupSession(componentMeta);
+  const session = createSetupSession(componentMeta, serverId);
 
   return streamSSE(c, async (sseStream) => {
     let closed = false;
@@ -244,7 +321,7 @@ export async function installStream(c: Context) {
         updateComponentProgress(session.id, name, "installing");
 
         try {
-          const result = await sshManager.withExecutor((executor) =>
+          const result = await sshManager.withExecutor(serverId, (executor) =>
             installerFn(
               executor,
               (log) => appendSetupLog(session.id, name, log.message, log.level),
@@ -314,6 +391,7 @@ export async function getInstallSession(c: Context) {
   return c.json({
     active: true,
     sessionId: session.id,
+    serverId: session.serverId,
     status: session.status,
     components: session.components,
     startedAt: session.startedAt,
@@ -427,9 +505,14 @@ const STATS_COMMAND = [
  * SSE stream that emits system stats every few seconds.
  * Runs a lightweight stats command via SSH on an interval.
  * Stops when the client disconnects.
+ *
+ * Query: ?serverId=<uuid>
  */
 export async function monitorStream(c: Context) {
   if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
+
+  const serverId = c.req.query("serverId");
+  if (!serverId) return c.json({ error: "serverId query param is required" }, 400);
 
   const POLL_INTERVAL = 3_000;
 
@@ -440,7 +523,9 @@ export async function monitorStream(c: Context) {
     const poll = async () => {
       if (closed) return;
       try {
-        const raw = await sshManager.withExecutor((executor) =>
+        const raw = await sshManager.withExecutor<string>(
+          serverId,
+          (executor: CommandExecutor) =>
           executor.exec(STATS_COMMAND, { timeout: 5_000 }),
         );
         if (closed) return;

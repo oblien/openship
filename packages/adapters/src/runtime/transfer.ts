@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import type { WorkspaceHandle } from "oblien";
 
 import type { CommandExecutor } from "../types";
-import { BuildLogger } from "./build-pipeline";
+import { BuildLogger, sq } from "./build-pipeline";
 
 export interface DirectoryTransferOptions {
   excludes?: string[];
@@ -34,7 +34,9 @@ export async function transferLocalDirectory(
 
   if (target.kind === "executor") {
     await target.executor.transferIn(localPath, target.path, logger.callback, options);
-    logger.log("Transfer complete.\n");
+
+    // Validate transfer: verify the target directory is non-empty
+    await verifyExecutorTransfer(target.executor, target.path, logger);
     return;
   }
 
@@ -44,7 +46,42 @@ export async function transferLocalDirectory(
     dest: target.path,
   });
 
+  if (!result.files_extracted || result.files_extracted === 0) {
+    throw new Error("Transfer produced 0 files — upload may have failed silently");
+  }
+
   logger.log(`Uploaded ${result.files_extracted} files.\n`);
+}
+
+/**
+ * Verify that a transfer via CommandExecutor actually produced files.
+ * Checks for non-empty directory and the presence of at least one
+ * expected marker file (package.json, index.html, etc.).
+ */
+async function verifyExecutorTransfer(
+  executor: CommandExecutor,
+  targetPath: string,
+  logger: BuildLogger,
+): Promise<void> {
+  // Quick check: is the target directory non-empty?
+  try {
+    const countOutput = await executor.exec(
+      `find ${sq(targetPath)} -maxdepth 1 -not -name '.' | head -5 | wc -l`,
+    );
+    const fileCount = parseInt(countOutput.trim(), 10);
+    if (fileCount === 0) {
+      throw new Error(
+        `Transfer target ${targetPath} is empty — files were not copied`,
+      );
+    }
+    logger.log(`Transfer verified (${fileCount}+ entries in target).\n`);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("is empty")) throw err;
+    // If the count command itself fails (e.g. dir doesn't exist), that's a transfer failure
+    throw new Error(
+      `Transfer verification failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 async function createTarball(
@@ -52,7 +89,14 @@ async function createTarball(
   options?: DirectoryTransferOptions,
 ): Promise<Buffer> {
   const excludes = options?.excludes ?? [...DEFAULT_SOURCE_EXCLUDES];
-  const args = ["czf", "-", "-C", localPath];
+  const args: string[] = [];
+
+  // Strip macOS extended attributes (.apple.provenance, resource forks)
+  if (process.platform === "darwin") {
+    args.push("--no-mac-metadata");
+  }
+
+  args.push("czf", "-", "-C", localPath);
 
   for (const exclude of excludes) {
     args.push(`--exclude=${exclude}`);
@@ -67,6 +111,7 @@ async function createTarball(
       {
         encoding: "buffer",
         maxBuffer: TAR_MAX_BUFFER,
+        env: { ...process.env, COPYFILE_DISABLE: "1" },
       },
       (err, stdout, stderr) => {
         if (err) {

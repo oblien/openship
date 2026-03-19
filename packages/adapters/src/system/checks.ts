@@ -192,7 +192,7 @@ export const COMPONENT_CHECKS: Record<string, CheckFn> = {
   node: checkNode,
 };
 
-/** Run every registered check in parallel. */
+/** Run every registered check sequentially to avoid SSH channel contention. */
 export async function checkAll(
   executor: CommandExecutor,
 ): Promise<ComponentStatus[]> {
@@ -204,9 +204,12 @@ export async function checkAll(
     "checks",
     `checkAll:start [${entries.map(([name]) => name).join(", ")}]`,
   );
-  const result = await Promise.all(entries.map(([, fn]) => fn(executor)));
+  const results: ComponentStatus[] = [];
+  for (const [, fn] of entries) {
+    results.push(await fn(executor));
+  }
   systemDebug("checks", `checkAll:done (${formatDuration(startedAt)})`);
-  return result;
+  return results;
 }
 
 /** Run checks for a specific set of components. */
@@ -219,10 +222,13 @@ export async function checkComponents(
     .map((name) => COMPONENT_CHECKS[name])
     .filter(Boolean);
   systemDebug("checks", `checkComponents:start [${names.join(", ")}]`);
-  const result = await Promise.all(fns.map((fn) => fn(executor)));
+  const results: ComponentStatus[] = [];
+  for (const fn of fns) {
+    results.push(await fn(executor));
+  }
   systemDebug(
     "checks",
     `checkComponents:done [${names.join(", ")}] (${formatDuration(startedAt)})`,
   );
-  return result;
+  return results;
 }

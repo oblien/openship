@@ -31,6 +31,28 @@ export type PackageManager = string;
 
 export type ProductionMode = "host" | "static" | "standalone";
 
+/**
+ * Build strategy — where the build process runs.
+ *   "server" → Build in the workspace/cloud (default)
+ *   "local"  → Build on the host machine
+ */
+export type BuildStrategy = "server" | "local";
+
+/**
+ * Deploy target — where the application runs after build.
+ *   "local"  → This machine (desktop/dev)
+ *   "server" → User's remote server via SSH (selfhosted)
+ *   "cloud"  → Oblien cloud workspace
+ */
+export type DeployTarget = "local" | "server" | "cloud";
+
+/**
+ * Runtime mode — how the application process is managed.
+ *   "bare"   → Direct process on the host (pm2 / systemd / nohup)
+ *   "docker" → Container-based via Docker daemon
+ */
+export type RuntimeMode = "bare" | "docker";
+
 export type AdapterType = "docker" | "oblien";
 
 export type SleepMode = "auto_sleep" | "always_on";

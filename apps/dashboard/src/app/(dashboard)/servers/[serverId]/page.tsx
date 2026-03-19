@@ -23,7 +23,7 @@ import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
 import { useSetupStream } from "@/hooks/useSetupStream";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
-import type { InstanceSettings, ComponentStatus, SetupLogEvent } from "@/lib/api/system";
+import type { ServerInfo, ComponentStatus, SetupLogEvent } from "@/lib/api/system";
 import { OverviewTab } from "./_components/overview-tab";
 import { ComponentsTab } from "./_components/components-tab";
 import { TerminalTab } from "./_components/terminal-tab";
@@ -45,7 +45,7 @@ export default function ServerDetailPage({
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const [serverId, setServerId] = useState<string>("");
-  const [settings, setSettings] = useState<InstanceSettings | null>(null);
+  const [server, setServer] = useState<ServerInfo | null>(null);
   const [components, setComponents] = useState<ComponentStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -59,7 +59,8 @@ export default function ServerDetailPage({
       // Re-run health check after install finishes
       void (async () => {
         try {
-          const result = await systemApi.checkServer();
+          if (!serverId) return;
+          const result = await systemApi.checkServer(serverId);
           setComponents(result.components);
           if (event.status === "completed") {
             showToast("Missing components installed", "success", "Server Setup");
@@ -78,29 +79,31 @@ export default function ServerDetailPage({
     },
   });
 
-  const monitor = useMonitorStream(activeTab === "overview");
+  const monitor = useMonitorStream(serverId || null, activeTab === "overview");
 
   useEffect(() => {
     params.then((p) => setServerId(p.serverId));
   }, [params]);
 
   const fetchData = useCallback(async () => {
+    if (!serverId) return;
     try {
       setLoading(true);
-      const s = await systemApi.getSettings();
-      setSettings(s);
+      const s = await systemApi.getServerById(serverId);
+      setServer(s);
     } catch {
-      setSettings(null);
+      setServer(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [serverId]);
 
   const runHealthCheck = useCallback(async () => {
+    if (!serverId) return;
     setChecking(true);
     setCheckError(null);
     try {
-      const result = await systemApi.checkServer();
+      const result = await systemApi.checkServer(serverId);
       setComponents(result.components);
     } catch (err) {
       const message = getApiErrorMessage(err, "Health check failed");
@@ -110,7 +113,7 @@ export default function ServerDetailPage({
     } finally {
       setChecking(false);
     }
-  }, [showToast]);
+  }, [serverId, showToast]);
 
   const installMissingComponents = useCallback(async () => {
     const missing = components.filter(
@@ -128,7 +131,11 @@ export default function ServerDetailPage({
     setActiveTab("components");
 
     try {
-      await setupStream.startInstall(missing.map((c) => c.name));
+      if (!serverId) {
+        showToast("Server is missing", "error", "Server Setup");
+        return;
+      }
+      await setupStream.startInstall(serverId, missing.map((c) => c.name));
     } catch (err) {
       const message = getApiErrorMessage(err, "Failed to start installation");
       setCheckError(message);
@@ -137,6 +144,7 @@ export default function ServerDetailPage({
   }, [components, showToast, setupStream]);
 
   useEffect(() => {
+    if (!serverId) return;
     fetchData();
     runHealthCheck();
 
@@ -144,7 +152,12 @@ export default function ServerDetailPage({
     void (async () => {
       try {
         const session = await systemApi.getInstallSession();
-        if (session.active && session.status === "running" && session.sessionId) {
+        if (
+          session.active &&
+          session.status === "running" &&
+          session.sessionId &&
+          session.serverId === serverId
+        ) {
           setActiveTab("components");
           void setupStream.attachToSession(session.sessionId);
         }
@@ -152,7 +165,7 @@ export default function ServerDetailPage({
         // No active session
       }
     })();
-  }, [fetchData, runHealthCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [serverId, fetchData, runHealthCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDelete = useCallback(() => {
     const modalId = showModal({
@@ -171,7 +184,7 @@ export default function ServerDetailPage({
           variant: "danger",
           onClick: async () => {
             try {
-              await systemApi.deleteServer();
+              await systemApi.deleteServerEntry(serverId);
               hideModal(modalId);
               showToast("Server removed", "success", "Server");
               router.push("/servers");
@@ -196,7 +209,7 @@ export default function ServerDetailPage({
     );
   }
 
-  if (!settings?.configured || !settings.sshHost) {
+  if (!server) {
     return (
       <div className="min-h-screen bg-background">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -239,7 +252,7 @@ export default function ServerDetailPage({
                 className="text-2xl font-medium text-foreground/80 truncate"
                 style={{ letterSpacing: "-0.2px" }}
               >
-                {settings.serverName || settings.sshHost}
+                {server.name || server.sshHost}
               </h1>
               {allHealthy ? (
                 <div className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium rounded-full">
@@ -254,12 +267,12 @@ export default function ServerDetailPage({
               ) : null}
             </div>
             <p className="text-sm text-muted-foreground/70 mt-1 font-mono">
-              {settings.sshUser ?? "root"}@{settings.sshHost}:{settings.sshPort ?? 22}
+              {server.sshUser ?? "root"}@{server.sshHost}:{server.sshPort ?? 22}
             </p>
           </div>
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => router.push("/servers/new")}
+              onClick={() => router.push(`/servers/${serverId}/edit`)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
             >
               <Settings2 className="size-4" />
@@ -373,7 +386,7 @@ export default function ServerDetailPage({
                     <span className="text-sm text-muted-foreground">Host</span>
                   </div>
                   <span className="text-sm font-medium text-foreground font-mono truncate ml-3 max-w-[140px]">
-                    {settings.sshHost}
+                    {server.sshHost}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -384,7 +397,7 @@ export default function ServerDetailPage({
                     <span className="text-sm text-muted-foreground">User</span>
                   </div>
                   <span className="text-sm font-medium text-foreground font-mono">
-                    {settings.sshUser ?? "root"}
+                    {server.sshUser ?? "root"}
                   </span>
                 </div>
 
@@ -398,35 +411,9 @@ export default function ServerDetailPage({
                     <span className="text-sm text-muted-foreground">Auth</span>
                   </div>
                   <span className="text-sm font-medium text-foreground">
-                    {settings.sshAuthMethod === "key" ? "SSH Key" : "Password"}
+                    {server.sshAuthMethod === "key" ? "SSH Key" : "Password"}
                   </span>
                 </div>
-                {settings.defaultBuildMode && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center">
-                        <Blocks className="size-4 text-muted-foreground" />
-                      </div>
-                      <span className="text-sm text-muted-foreground">Build</span>
-                    </div>
-                    <span className="text-sm font-medium text-foreground capitalize">
-                      {settings.defaultBuildMode}
-                    </span>
-                  </div>
-                )}
-                {settings.tunnelProvider && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center">
-                        <Globe className="size-4 text-muted-foreground" />
-                      </div>
-                      <span className="text-sm text-muted-foreground">Tunnel</span>
-                    </div>
-                    <span className="text-sm font-medium text-foreground capitalize">
-                      {settings.tunnelProvider}
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
           </div>

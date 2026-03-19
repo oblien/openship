@@ -1,35 +1,30 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Server,
   Loader2,
   Check,
   KeyRound,
   Lock,
-  Network,
   ChevronDown,
   Pencil,
   X,
 } from "lucide-react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
-import type { InstanceSettings } from "@/lib/api/system";
+import type { ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
 
-/* ── Tunnel label helper ────────────────────────────────────────── */
-
-const TUNNEL_LABELS: Record<string, string> = {
-  edge: "Openship Edge",
-  cloudflare: "Cloudflare Tunnel",
-  ngrok: "ngrok",
-};
 
 /* ── Component ──────────────────────────────────────────────────── */
 
 export function ServerConnection() {
+  const router = useRouter();
   const { showToast } = useToast();
-  const [settings, setSettings] = useState<InstanceSettings | null>(null);
+  const [server, setServer] = useState<ServerInfo | null>(null);
+  const [serverCount, setServerCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -42,21 +37,22 @@ export function ServerConnection() {
   const [sshPassword, setSshPassword] = useState("");
   const [sshKeyPath, setSshKeyPath] = useState("");
   const [sshKeyPassphrase, setSshKeyPassphrase] = useState("");
-  const [tunnelProvider, setTunnelProvider] = useState<string>("");
-  const [tunnelToken, setTunnelToken] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await systemApi.getSettings();
-      setSettings(res);
-      if (res?.configured) {
-        setSshHost(res.sshHost ?? "");
-        setSshPort(String(res.sshPort ?? 22));
-        setSshUser(res.sshUser ?? "root");
-        setSshAuthMethod(res.sshAuthMethod ?? "password");
-        setTunnelProvider(res.tunnelProvider ?? "");
+      const servers = await systemApi.listServers();
+      setServerCount(servers.length);
+      if (servers.length === 1) {
+        setServer(servers[0]);
+        const s = servers[0];
+        setSshHost(s.sshHost ?? "");
+        setSshPort(String(s.sshPort ?? 22));
+        setSshUser(s.sshUser ?? "root");
+        setSshAuthMethod(s.sshAuthMethod === "key" ? "key" : "password");
+      } else {
+        setServer(null);
       }
     } catch {
       /* silent — may not be available in cloud mode */
@@ -75,18 +71,16 @@ export function ServerConnection() {
     setSshPassword("");
     setSshKeyPath("");
     setSshKeyPassphrase("");
-    setTunnelToken("");
   }
 
   function cancelEdit() {
     setEditing(false);
-    // Restore from settings
-    if (settings?.configured) {
-      setSshHost(settings.sshHost ?? "");
-      setSshPort(String(settings.sshPort ?? 22));
-      setSshUser(settings.sshUser ?? "root");
-      setSshAuthMethod(settings.sshAuthMethod ?? "password");
-      setTunnelProvider(settings.tunnelProvider ?? "");
+    // Restore from server
+    if (server) {
+      setSshHost(server.sshHost ?? "");
+      setSshPort(String(server.sshPort ?? 22));
+      setSshUser(server.sshUser ?? "root");
+      setSshAuthMethod(server.sshAuthMethod === "key" ? "key" : "password");
     }
   }
 
@@ -98,27 +92,27 @@ export function ServerConnection() {
 
     setSaving(true);
     try {
-      const patch: Record<string, unknown> = {
+      const data: Record<string, unknown> = {
         sshHost: sshHost.trim(),
         sshPort: parseInt(sshPort, 10) || 22,
         sshUser: sshUser.trim() || "root",
         sshAuthMethod,
-        tunnelProvider: tunnelProvider || null,
       };
 
       // Only send secrets if user provided them
       if (sshAuthMethod === "password" && sshPassword) {
-        patch.sshPassword = sshPassword;
+        data.sshPassword = sshPassword;
       }
       if (sshAuthMethod === "key" && sshKeyPath) {
-        patch.sshKeyPath = sshKeyPath;
-        if (sshKeyPassphrase) patch.sshKeyPassphrase = sshKeyPassphrase;
-      }
-      if (tunnelProvider && tunnelProvider !== "edge" && tunnelToken) {
-        patch.tunnelToken = tunnelToken;
+        data.sshKeyPath = sshKeyPath;
+        if (sshKeyPassphrase) data.sshKeyPassphrase = sshKeyPassphrase;
       }
 
-      await systemApi.updateSettings(patch);
+      if (server) {
+        await systemApi.updateServerEntry(server.id, data);
+      } else {
+        await systemApi.createServerEntry(data);
+      }
       showToast("Server settings updated", "success", "Settings");
       setEditing(false);
       fetchSettings();
@@ -133,11 +127,14 @@ export function ServerConnection() {
     }
   }
 
-  const configured = settings?.configured;
+  const configured = !!server;
+  const hasMultipleServers = serverCount > 1;
   const description = loading
     ? "Loading…"
+    : hasMultipleServers
+      ? `${serverCount} servers configured`
     : configured
-      ? settings.sshHost ?? "Configured"
+      ? server.sshHost ?? "Configured"
       : "Not configured";
 
   return (
@@ -153,6 +150,22 @@ export function ServerConnection() {
           <Loader2 className="size-4 animate-spin" />
           Loading server settings…
         </div>
+      ) : hasMultipleServers ? (
+        <div className="rounded-xl border border-border/50 p-4 bg-muted/20">
+          <p className="text-sm text-foreground mb-2">
+            Server connections are managed in the Servers section.
+          </p>
+          <p className="text-xs text-muted-foreground mb-4">
+            This settings panel only supports the legacy single-server shortcut. You have {serverCount} configured servers.
+          </p>
+          <button
+            onClick={() => router.push("/servers")}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
+          >
+            <Server className="size-4" />
+            Open Servers
+          </button>
+        </div>
       ) : !editing ? (
         /* ── Read-only view ── */
         <>
@@ -166,10 +179,10 @@ export function ServerConnection() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-foreground">
-                      {settings.sshHost}:{settings.sshPort ?? 22}
+                      {server.sshHost}:{server.sshPort ?? 22}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {settings.sshUser ?? "root"}@host
+                      {server.sshUser ?? "root"}@host
                     </p>
                   </div>
                 </div>
@@ -177,7 +190,7 @@ export function ServerConnection() {
                 {/* Auth method */}
                 <div className="flex items-center gap-3 rounded-xl border border-border/50 p-4">
                   <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-                    {settings.sshAuthMethod === "key" ? (
+                    {server.sshAuthMethod === "key" ? (
                       <KeyRound className="size-4 text-muted-foreground" />
                     ) : (
                       <Lock className="size-4 text-muted-foreground" />
@@ -185,26 +198,11 @@ export function ServerConnection() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-foreground">
-                      {settings.sshAuthMethod === "key" ? "SSH Key" : "Password"}
+                      {server.sshAuthMethod === "key" ? "SSH Key" : "Password"}
                     </p>
                     <p className="text-xs text-muted-foreground">Authentication method</p>
                   </div>
                 </div>
-
-                {/* Tunnel */}
-                {settings.tunnelProvider && (
-                  <div className="flex items-center gap-3 rounded-xl border border-border/50 p-4">
-                    <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-                      <Network className="size-4 text-muted-foreground" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {TUNNEL_LABELS[settings.tunnelProvider] ?? settings.tunnelProvider}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Tunnel provider</p>
-                    </div>
-                  </div>
-                )}
               </div>
 
               <button
@@ -332,36 +330,6 @@ export function ServerConnection() {
                   className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50"
                 />
               </div>
-            )}
-          </div>
-
-          {/* Tunnel provider */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-              Tunnel Provider
-            </label>
-            <div className="relative">
-              <select
-                value={tunnelProvider}
-                onChange={(e) => setTunnelProvider(e.target.value)}
-                className="w-full h-10 px-3 pr-8 rounded-lg border border-border bg-background text-sm text-foreground appearance-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50"
-              >
-                <option value="">None (public IP)</option>
-                <option value="edge">Openship Edge (managed)</option>
-                <option value="cloudflare">Cloudflare Tunnel</option>
-                <option value="ngrok">ngrok</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-            </div>
-
-            {tunnelProvider && tunnelProvider !== "edge" && (
-              <input
-                type="password"
-                value={tunnelToken}
-                onChange={(e) => setTunnelToken(e.target.value)}
-                placeholder={`${TUNNEL_LABELS[tunnelProvider] ?? tunnelProvider} auth token`}
-                className="w-full h-10 px-3 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 mt-3"
-              />
             )}
           </div>
 

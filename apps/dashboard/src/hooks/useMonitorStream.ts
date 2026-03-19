@@ -24,6 +24,7 @@ export interface UseMonitorStreamReturn {
 }
 
 export function useMonitorStream(
+  serverId: string | null,
   /** Set to false to disable streaming (e.g. when tab is not visible) */
   enabled = true,
 ): UseMonitorStreamReturn {
@@ -44,6 +45,13 @@ export function useMonitorStream(
   }, []);
 
   const connect = useCallback(async () => {
+    if (!serverId) {
+      setStats(null);
+      setError(null);
+      setIsConnected(false);
+      return;
+    }
+
     disconnect();
 
     const abort = new AbortController();
@@ -51,7 +59,8 @@ export function useMonitorStream(
     bufferRef.current = "";
 
     const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}${endpoints.system.monitorStream}`;
+    const params = new URLSearchParams({ serverId });
+    const url = `${baseUrl}${endpoints.system.monitorStream}?${params.toString()}`;
 
     try {
       const res = await fetch(url, {
@@ -122,7 +131,7 @@ export function useMonitorStream(
         setIsConnected(false);
       }
     }
-  }, [disconnect]);
+  }, [disconnect, serverId]);
 
   const reconnect = useCallback(() => {
     if (enabledRef.current) void connect();
@@ -140,7 +149,7 @@ export function useMonitorStream(
       clearTimeout(id);
       disconnect();
     };
-  }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, serverId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { stats, isConnected, error, reconnect, disconnect };
 }

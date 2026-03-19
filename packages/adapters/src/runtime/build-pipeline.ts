@@ -213,7 +213,12 @@ export async function runBuildPipeline(
 export function sq(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
-
+/** Detect log level from a raw log line. Shared across all runtimes. */
+export function parseLogLevel(message: string): LogEntry["level"] {
+  if (/\b(error|fatal|panic)\b/i.test(message)) return "error";
+  if (/\bwarn(ing)?\b/i.test(message)) return "warn";
+  return "info";
+}
 /**
  * Inject a token into an HTTPS git URL for private repo access.
  *

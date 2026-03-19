@@ -5,24 +5,16 @@
  * All operations go through a CommandExecutor, so the bare runtime
  * works identically on the local machine and on remote servers via SSH.
  *
- * Good for:
- *   - Development environments
- *   - Simple single-app servers where Docker is overkill
- *   - Edge deployments (low-resource machines)
- *   - Desktop app (local development)
+ * Architecture:
+ *   BUILD  → BareRuntime owns clone/install/build (via executor + build-pipeline)
+ *   DEPLOY → delegated to a ProcessSupervisor (systemd on Linux, nohup on macOS)
  *
- * Process lifecycle:
- *   build()   → clone repo, install deps, build (via executor or locally)
- *   deploy()  → spawn a long-running process, track via PID file
- *   stop()    → SIGTERM → SIGKILL fallback
- *   start()   → re-spawn the process
- *   destroy() → kill + remove working directory
+ * The supervisor is auto-detected at construction time based on the
+ * target machine's capabilities — no per-deploy branching.
  *
  * buildStrategy support:
  *   "server" → clone + build on the target machine (via executor)
  *   "local"  → clone + build on the API host, then transfer output to target
- *
- * No containers, no images, no Docker dependency at all.
  */
 
 import type {
@@ -37,12 +29,14 @@ import type {
   ResourceUsage,
 } from "../types";
 
-import { LocalExecutor } from "../system/executor";
+import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
 import { checkToolchainForStack, installTools } from "../toolchain";
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
-import { BuildLogger, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
+import { BuildLogger, runBuildPipeline, type BuildEnvironment } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
+import type { ProcessSupervisor } from "./supervisor/types";
+import { detectSupervisor } from "./supervisor/detect";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -87,6 +81,9 @@ export class BareRuntime implements RuntimeAdapter {
   private readonly ownsExecutor: boolean;
   /** Track active builds by sessionId for cancellation */
   private readonly activeBuilds = new Map<string, AbortController>();
+  /** Process lifecycle delegate — resolved lazily on first deploy/stop/etc. */
+  private _supervisor: ProcessSupervisor | null = null;
+  private _supervisorPromise: Promise<ProcessSupervisor> | null = null;
 
   constructor(opts?: BareRuntimeOptions) {
     this.workDir = opts?.workDir ?? DEFAULT_WORK_DIR;
@@ -99,6 +96,18 @@ export class BareRuntime implements RuntimeAdapter {
       this.executor = new LocalExecutor();
       this.ownsExecutor = true;
     }
+  }
+
+  /** Get or lazily initialise the process supervisor. */
+  private async supervisor(): Promise<ProcessSupervisor> {
+    if (this._supervisor) return this._supervisor;
+    if (!this._supervisorPromise) {
+      this._supervisorPromise = detectSupervisor(this.executor, this.workDir).then((s) => {
+        this._supervisor = s;
+        return s;
+      });
+    }
+    return this._supervisorPromise;
   }
 
   supports(cap: RuntimeCapability): boolean {
@@ -119,68 +128,6 @@ export class BareRuntime implements RuntimeAdapter {
 
   private buildDir(sessionId: string): string {
     return `${this.workDir}/.builds/${sessionId}`;
-  }
-
-  private pidFile(processId: string): string {
-    return `${this.workDir}/.pids/${processId}.pid`;
-  }
-
-  private logFile(processId: string): string {
-    return `${this.workDir}/.logs/${processId}.log`;
-  }
-
-  private artifactFile(processId: string): string {
-    return `${this.workDir}/.artifacts/${processId}.path`;
-  }
-
-  // ─── PID management (via executor) ───────────────────────────────────
-
-  private async readPid(processId: string): Promise<number | null> {
-    try {
-      const content = await this.executor.readFile(this.pidFile(processId));
-      const pid = parseInt(content.trim(), 10);
-      return isNaN(pid) ? null : pid;
-    } catch {
-      return null;
-    }
-  }
-
-  private async writePid(processId: string, pid: number): Promise<void> {
-    await this.executor.mkdir(`${this.workDir}/.pids`);
-    await this.executor.writeFile(this.pidFile(processId), String(pid));
-  }
-
-  private async removePid(processId: string): Promise<void> {
-    await this.executor.rm(this.pidFile(processId));
-  }
-
-  private async readArtifactPath(processId: string): Promise<string | null> {
-    try {
-      const content = await this.executor.readFile(this.artifactFile(processId));
-      const path = content.trim();
-      return path || null;
-    } catch {
-      return null;
-    }
-  }
-
-  private async writeArtifactPath(processId: string, artifactPath: string): Promise<void> {
-    await this.executor.mkdir(`${this.workDir}/.artifacts`);
-    await this.executor.writeFile(this.artifactFile(processId), artifactPath);
-  }
-
-  private async removeArtifactPath(processId: string): Promise<void> {
-    await this.executor.rm(this.artifactFile(processId));
-  }
-
-  /** Check if a PID is alive on the target machine. */
-  private async isAlive(pid: number): Promise<boolean> {
-    try {
-      await this.executor.exec(`kill -0 ${pid} 2>/dev/null`);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   // ── File transfer ──────────────────────────────────────────────────────
@@ -241,35 +188,45 @@ export class BareRuntime implements RuntimeAdapter {
     log.log("Build strategy: local (build on API host, transfer to server)\n");
     const remoteDir = this.projectDir(config.projectId);
 
-    const result = await runLocalBuild({
-      config,
-      logger: log,
-      abort: abort.signal,
-      preflight: async (cfg, plog, localExec) => {
-        await this.ensureToolchain(localExec, cfg.stack, plog);
-        plog.log("Checking runtime tools on target server...\n");
-        await this.ensureToolchain(this.executor, cfg.stack, plog);
-      },
-      transferOutput: async (buildDir) => {
-        await this.executor.rm(remoteDir);
-        await this.executor.mkdir(remoteDir);
-        await transferLocalDirectory(
-          buildDir,
-          {
-            kind: "executor",
-            executor: this.executor,
-            path: remoteDir,
-          },
-          log,
-          { excludes: [] },
-        );
-      },
-    });
+    let result: Awaited<ReturnType<typeof runLocalBuild>>;
+    try {
+      result = await runLocalBuild({
+        config,
+        logger: log,
+        abort: abort.signal,
+        preflight: async (cfg, plog, localExec) => {
+          await this.ensureToolchain(localExec, cfg.stack, plog);
+          plog.log("Checking runtime tools on target server...\n");
+          await this.ensureToolchain(this.executor, cfg.stack, plog);
+        },
+        transferOutput: async (buildDir) => {
+          await this.executor.rm(remoteDir);
+          await this.executor.mkdir(remoteDir);
+          await transferLocalDirectory(
+            buildDir,
+            {
+              kind: "executor",
+              executor: this.executor,
+              path: remoteDir,
+            },
+            log,
+            { excludes: [] },
+          );
+        },
+      });
+    } catch (err) {
+      log.log(`Failed to transfer local build output: ${err instanceof Error ? err.message : String(err)}`, "error");
+      return {
+        sessionId: config.sessionId,
+        status: "failed",
+        imageRef: remoteDir,
+      };
+    }
 
     return {
       sessionId: config.sessionId,
       status: result.status,
-      imageRef: result.status === "deploying" ? remoteDir : undefined,
+      imageRef: remoteDir,
       durationMs: result.durationMs,
     };
   }
@@ -289,7 +246,10 @@ export class BareRuntime implements RuntimeAdapter {
       projectDir: dir,
       exec: async (command, logCb) => {
         if (abort.signal.aborted) throw new Error("Build cancelled");
-        const { code } = await this.executor.streamExec(command, logCb);
+        const effectiveCommand = this.executor instanceof LocalExecutor
+          ? wrapLocalBuildCommand(command)
+          : command;
+        const { code } = await this.executor.streamExec(effectiveCommand, logCb);
         if (abort.signal.aborted) throw new Error("Build cancelled");
         if (code !== 0) {
           throw new Error(`Command failed with exit code ${code}`);
@@ -308,7 +268,7 @@ export class BareRuntime implements RuntimeAdapter {
     return {
       sessionId: config.sessionId,
       status: result.status,
-      imageRef: result.status === "deploying" ? dir : undefined,
+      imageRef: dir,
       durationMs: result.durationMs,
     };
   }
@@ -361,47 +321,26 @@ export class BareRuntime implements RuntimeAdapter {
 
   // ── Deploy lifecycle ───────────────────────────────────────────────────
 
-  /**
-   * Deploy by spawning a detached background process on the target server.
-   *
-   * Uses `nohup` + `&` to background the process, redirects output to
-   * a log file, and stores the PID. Works identically via local shell
-   * or SSH — no node:child_process spawn() needed.
-   */
   async deploy(config: DeployConfig, _onLog?: LogCallback): Promise<DeploymentResult> {
     const dir = config.imageRef ?? this.projectDir(config.projectId);
-    const logPath = this.logFile(config.deploymentId);
+    const sv = await this.supervisor();
 
-    // Ensure log directory exists
-    await this.executor.mkdir(`${this.workDir}/.logs`);
-
-    // Build env string
-    const envEntries = {
-      ...config.envVars,
+    const env: Record<string, string> = {
+      ...Object.fromEntries(
+        Object.entries(config.envVars ?? {}).map(([k, v]) => [k, String(v)]),
+      ),
       PORT: String(config.port),
       NODE_ENV: config.environment === "production" ? "production" : "development",
     };
-    const envPrefix = Object.entries(envEntries)
-      .map(([k, v]) => `${k}=${sq(v)}`)
-      .join(" ");
 
-    const startCommand = config.startCommand || "npm start";
-
-    // Spawn detached process in its own process group via setsid.
-    // This ensures `kill -- -PGID` can clean up the entire tree.
-    const spawnCmd = [
-      `cd ${sq(dir)}`,
-      `setsid ${envPrefix} nohup ${startCommand} >> ${sq(logPath)} 2>&1 &`,
-      `echo $!`,
-    ].join(" && ");
-
-    const pidStr = await this.executor.exec(spawnCmd);
-    const pid = parseInt(pidStr.trim(), 10);
-
-    if (!isNaN(pid) && pid > 0) {
-      await this.writePid(config.deploymentId, pid);
-    }
-    await this.writeArtifactPath(config.deploymentId, dir);
+    await sv.deploy({
+      deploymentId: config.deploymentId,
+      projectId: config.projectId,
+      workDir: dir,
+      startCommand: config.startCommand || "npm start",
+      port: config.port,
+      env,
+    });
 
     return {
       deploymentId: config.deploymentId,
@@ -411,30 +350,13 @@ export class BareRuntime implements RuntimeAdapter {
   }
 
   async stop(containerId: string): Promise<void> {
-    const pid = await this.readPid(containerId);
-    if (!pid) return;
-
-    if (await this.isAlive(pid)) {
-      // Kill the entire process group so child processes don't become orphans.
-      // PGID equals the leader PID when spawned with setsid.
-      await this.executor.exec(`kill -- -${pid} 2>/dev/null || kill ${pid} 2>/dev/null || true`);
-
-      // Wait up to 10s for graceful shutdown
-      const deadline = Date.now() + 10_000;
-      while (Date.now() < deadline && (await this.isAlive(pid))) {
-        await new Promise((r) => setTimeout(r, 500));
-      }
-
-      // SIGKILL the whole group if still alive
-      if (await this.isAlive(pid)) {
-        await this.executor.exec(`kill -9 -- -${pid} 2>/dev/null || kill -9 ${pid} 2>/dev/null || true`);
-      }
-    }
+    const sv = await this.supervisor();
+    await sv.stop(containerId);
   }
 
   async start(containerId: string): Promise<void> {
-    const pid = await this.readPid(containerId);
-    if (pid && (await this.isAlive(pid))) return;
+    const sv = await this.supervisor();
+    if (await sv.isRunning(containerId)) return;
 
     throw new Error(
       "BareRuntime.start() requires a redeploy. Use restart() for running " +
@@ -443,8 +365,8 @@ export class BareRuntime implements RuntimeAdapter {
   }
 
   async restart(containerId: string): Promise<void> {
-    await this.stop(containerId);
-    // The service layer is responsible for calling deploy() again
+    const sv = await this.supervisor();
+    await sv.restart(containerId);
   }
 
   async destroy(containerId: string): Promise<void> {
@@ -453,22 +375,15 @@ export class BareRuntime implements RuntimeAdapter {
       return;
     }
 
-    await this.stop(containerId);
-    await this.removePid(containerId);
-    await this.executor.rm(this.logFile(containerId));
-
-    const artifactPath = await this.readArtifactPath(containerId);
-    if (artifactPath) {
-      await this.executor.rm(artifactPath);
-    }
-    await this.removeArtifactPath(containerId);
+    const sv = await this.supervisor();
+    await sv.destroy(containerId);
   }
 
   // ── Observability ──────────────────────────────────────────────────────
 
   async getContainerInfo(containerId: string): Promise<ContainerInfo> {
-    const pid = await this.readPid(containerId);
-    const running = pid !== null && (await this.isAlive(pid));
+    const sv = await this.supervisor();
+    const running = await sv.isRunning(containerId);
 
     return {
       containerId,
@@ -477,30 +392,8 @@ export class BareRuntime implements RuntimeAdapter {
   }
 
   async getRuntimeLogs(containerId: string, tail?: number): Promise<LogEntry[]> {
-    const logPath = this.logFile(containerId);
-
-    try {
-      // Use `tail` command instead of reading entire file — efficient for
-      // large log files and works the same over SSH.
-      const lines = tail
-        ? await this.executor.exec(`tail -n ${tail} ${sq(logPath)}`)
-        : await this.executor.readFile(logPath);
-
-      return lines
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => ({
-          timestamp: new Date().toISOString(),
-          message: line,
-          level: /\b(error|fatal|panic)\b/i.test(line)
-            ? ("error" as const)
-            : /\bwarn(ing)?\b/i.test(line)
-              ? ("warn" as const)
-              : ("info" as const),
-        }));
-    } catch {
-      return [];
-    }
+    const sv = await this.supervisor();
+    return sv.getLogs(containerId, tail);
   }
 
   async streamRuntimeLogs(
@@ -508,54 +401,15 @@ export class BareRuntime implements RuntimeAdapter {
     onLog: LogCallback,
     opts?: { tail?: number },
   ): Promise<() => void> {
-    const logPath = this.logFile(containerId);
-    const tailN = opts?.tail ?? 100;
-
-    // Use streamExec with tail -f for real-time streaming
-    let stopped = false;
-    const promise = this.executor.streamExec(
-      `tail -n ${tailN} -f ${sq(logPath)}`,
-      (entry) => {
-        if (!stopped) onLog(entry);
-      },
-    );
-
-    // The stream resolves when tail exits (which normally won't happen
-    // until the cleanup function kills it). Swallow errors from kill.
-    promise.catch(() => {});
-
-    return () => {
-      stopped = true;
-      // Kill the tail process watching this specific log file
-      this.executor.exec(`pkill -f ${sq(`tail.*${logPath}`)} 2>/dev/null || true`).catch(() => {});
-    };
+    const sv = await this.supervisor();
+    return sv.streamLogs(containerId, onLog, opts);
   }
 
-  async getUsage(containerId: string): Promise<ResourceUsage> {
-    // Try to get basic stats from /proc on Linux
-    try {
-      const pid = await this.readPid(containerId);
-      if (!pid || !(await this.isAlive(pid))) {
-        return { cpuPercent: 0, memoryMb: 0, diskMb: 0, networkRxBytes: 0, networkTxBytes: 0 };
-      }
-
-      // RSS from /proc (Linux only — gracefully fails elsewhere)
-      const statm = await this.executor.exec(
-        `cat /proc/${pid}/statm 2>/dev/null || echo "0 0"`,
-      );
-      const rssPages = parseInt(statm.split(" ")[1] ?? "0", 10);
-      const memoryMb = (rssPages * 4096) / (1024 * 1024);
-
-      return {
-        cpuPercent: 0,
-        memoryMb: Math.round(memoryMb * 100) / 100,
-        diskMb: 0,
-        networkRxBytes: 0,
-        networkTxBytes: 0,
-      };
-    } catch {
-      return { cpuPercent: 0, memoryMb: 0, diskMb: 0, networkRxBytes: 0, networkTxBytes: 0 };
-    }
+  async getUsage(_containerId: string): Promise<ResourceUsage> {
+    // Resource usage monitoring is supervisor-independent — systemd can use
+    // cgroup stats, nohup can use /proc. For now return zeros; the dashboard
+    // already handles this gracefully.
+    return { cpuPercent: 0, memoryMb: 0, diskMb: 0, networkRxBytes: 0, networkTxBytes: 0 };
   }
 
   // ── Network ────────────────────────────────────────────────────────────

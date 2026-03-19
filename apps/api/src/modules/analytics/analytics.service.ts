@@ -12,8 +12,8 @@
 
 import { repos } from "@repo/db";
 import { NotFoundError } from "@repo/core";
-import { platform } from "../../lib/controller-helpers";
 import type { ResourceUsage } from "@repo/adapters";
+import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -201,7 +201,7 @@ export async function getContainerUsage(
   const dep = await repos.deployment.findById(project.activeDeploymentId);
   if (!dep?.containerId) return null;
 
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   return runtime.getUsage(dep.containerId);
 }
 
@@ -222,7 +222,7 @@ export async function getContainerInfo(
   const dep = await repos.deployment.findById(project.activeDeploymentId);
   if (!dep?.containerId) return null;
 
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   return runtime.getContainerInfo(dep.containerId);
 }
 

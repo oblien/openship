@@ -3,11 +3,12 @@
  */
 
 import { repos, type Project, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError, BUILD_ENV_VARS, SYSTEM, STACKS, type StackId } from "@repo/core";
-import type { BuildConfig, BuildStrategy, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
+import { NotFoundError, ForbiddenError, BUILD_ENV_VARS, SYSTEM, STACKS, type StackId, type DeployTarget, type BuildStrategy } from "@repo/core";
+import type { BuildConfig, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
 import { BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, runDeployPipeline, createPlatform } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
 import { env } from "../../config";
+import { resolveTargetPlatform } from "../../lib/deployment-runtime";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { withDefaults } from "../../lib/resources";
 import { resolveToken } from "../github/github.auth";
@@ -80,6 +81,31 @@ function collapseTerminalLogs(entries: LogEntry[]): LogEntry[] {
   return result;
 }
 
+function buildScopedEnvVars(
+  envVars: Record<string, string>,
+  opts?: { forceProductionNodeEnv?: boolean },
+): {
+  envVars: Record<string, string>;
+  ignoredNodeEnv?: string;
+} {
+  const scoped = { ...envVars };
+  let ignoredNodeEnv: string | undefined;
+
+  if (opts?.forceProductionNodeEnv) {
+    ignoredNodeEnv = scoped.NODE_ENV;
+    delete scoped.NODE_ENV;
+  }
+
+  return {
+    envVars: {
+      ...BUILD_ENV_VARS,
+      ...scoped,
+      ...(opts?.forceProductionNodeEnv ? { NODE_ENV: "production" } : {}),
+    },
+    ignoredNodeEnv,
+  };
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /** Config snapshot stored in deployment.meta — self-contained build+deploy config. */
@@ -108,6 +134,12 @@ export interface DeploymentConfigSnapshot {
   localPath?: string;
   /** Build strategy: "server" (build in workspace) or "local" (build on host) */
   buildStrategy?: BuildStrategy;
+  /** Deploy target: "local" (this machine), "server" (remote SSH), or "cloud" (Oblien) */
+  deployTarget?: DeployTarget;
+  /** Target server ID when deployTarget is "server" */
+  serverId?: string;
+  /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
+  runtimeMode?: "bare" | "docker";
 }
 
 export interface BuildAccessInput {
@@ -117,6 +149,9 @@ export interface BuildAccessInput {
   envVars?: Record<string, string>;
   customDomain?: string;
   buildStrategy?: BuildStrategy;
+  deployTarget?: DeployTarget;
+  serverId?: string;
+  runtimeMode?: "bare" | "docker";
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -263,7 +298,7 @@ export { subscribe as subscribeToBuildSession } from "./session-manager";
  * Project MUST exist before calling this.
  */
 export async function requestBuildAccess(userId: string, input: BuildAccessInput) {
-  const { projectId, branch, environment, envVars, customDomain, buildStrategy } = input;
+  const { projectId, branch, environment, envVars, customDomain, buildStrategy, deployTarget, serverId, runtimeMode } = input;
 
   const project = await repos.project.findById(projectId);
   if (!project || project.userId !== userId) {
@@ -280,6 +315,17 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
     snapshot.framework,
     buildStrategy ?? snapshot.buildStrategy,
   );
+
+  // Persist deploy target from the UI (desktop-only picker)
+  if (deployTarget) {
+    snapshot.deployTarget = deployTarget;
+  }
+  if (serverId) {
+    snapshot.serverId = serverId;
+  }
+  if (runtimeMode) {
+    snapshot.runtimeMode = runtimeMode;
+  }
 
   // ── Preflight: validate config + domain before creating any resources ──
   const preflight = await runPreflightChecks(snapshot, {
@@ -555,20 +601,13 @@ async function executeBuildAndDeploy(
   dep: Deployment,
   buildSessionId: string,
 ) {
-  // In cloud mode the singleton platform has master creds.
-  // In local mode deploying to cloud, we fetch a namespace token
-  // from the SaaS API and create a per-deploy cloud platform.
   const plat = platform();
   let { runtime, routing } = plat;
 
-  if (!env.CLOUD_MODE && plat.target === "cloud") {
-    const { getCloudToken } = await import("../../lib/cloud-client");
-    const result = await getCloudToken(dep.userId);
-    if (result) {
-      const cloudPlatform = await createPlatform({ target: "cloud", cloudToken: result.token });
-      runtime = cloudPlatform.runtime;
-      routing = cloudPlatform.routing;
-    }
+  // ── Read config snapshot early so we can resolve the runtime ──────
+  const snapshot = dep.meta as DeploymentConfigSnapshot | null;
+  if (!snapshot) {
+    throw new Error("Deployment has no config snapshot (meta is empty)");
   }
 
   const logs: LogEntry[] = [];
@@ -597,10 +636,37 @@ async function executeBuildAndDeploy(
   };
 
   try {
-    // ── Read config from deployment snapshot ─────────────────────────
-    const snapshot = dep.meta as DeploymentConfigSnapshot | null;
-    if (!snapshot) {
-      throw new Error("Deployment has no config snapshot (meta is empty)");
+    // ── Resolve the correct runtime based on deploy target ───────────
+    // Desktop: user picks cloud or server → snapshot.deployTarget
+    // Cloud SaaS with master creds: already on the right runtime
+    // Non-SaaS cloud target: needs per-user token
+    const effectiveTarget = plat.target === "desktop"
+      ? snapshot.deployTarget ?? "cloud"
+      : plat.target;
+
+    const needsCloudSwitch =
+      effectiveTarget === "cloud" && !env.CLOUD_MODE && plat.target !== "cloud";
+    const needsCloudToken = needsCloudSwitch || (!env.CLOUD_MODE && plat.target === "cloud");
+
+    if (needsCloudToken) {
+      const { getCloudToken } = await import("../../lib/cloud-client");
+      const result = await getCloudToken(dep.userId);
+      if (!result) {
+        throw new Error("Cannot deploy to cloud: no cloud account linked. Connect your Oblien account in Settings.");
+      }
+      const cloudPlatform = await createPlatform({ target: "cloud", cloudToken: result.token });
+      runtime = cloudPlatform.runtime;
+      routing = cloudPlatform.routing;
+      ctx.runtime = runtime;
+    }
+
+    // Server or local target: resolve the right Platform (bare/docker × local/SSH)
+    if ((effectiveTarget === "server" || effectiveTarget === "local") && plat.target === "desktop") {
+      const runtimeMode = snapshot.runtimeMode ?? "bare";
+      const targetPlat = await resolveTargetPlatform(effectiveTarget, runtimeMode, snapshot.serverId);
+      runtime = targetPlat.runtime;
+      routing = targetPlat.routing;
+      ctx.runtime = runtime;
     }
 
     // ── Build phase ──────────────────────────────────────────────────
@@ -619,6 +685,17 @@ async function executeBuildAndDeploy(
 
     // Decrypt env vars from deployment (self-contained)
     const envMap = decryptEnvVars(dep.envVars);
+    const isLocalBuild = snapshot.buildStrategy === "local";
+    const buildEnv = buildScopedEnvVars(envMap, {
+      forceProductionNodeEnv: isLocalBuild,
+    });
+
+    if (isLocalBuild && buildEnv.ignoredNodeEnv && buildEnv.ignoredNodeEnv !== "production") {
+      logger.log(
+        `Ignoring deployment NODE_ENV=${buildEnv.ignoredNodeEnv} during local build and forcing NODE_ENV=production.`,
+        "warn",
+      );
+    }
 
     // Resolve a fresh GitHub token for cloning (private repos)
     const gitToken = await resolveToken({
@@ -641,7 +718,7 @@ async function executeBuildAndDeploy(
       installCommand: snapshot.hasBuild ? snapshot.installCommand : "",
       buildCommand: snapshot.hasBuild ? snapshot.buildCommand : "",
       outputDirectory: snapshot.outputDirectory,
-      envVars: { ...BUILD_ENV_VARS, ...envMap },
+      envVars: buildEnv.envVars,
       resources: buildResources,
       gitToken: gitToken ?? undefined,
     };

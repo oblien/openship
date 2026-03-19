@@ -8,12 +8,18 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type { RuntimeAdapter, RuntimeCapability } from "./types";
 export { assertCapability } from "./types";
-export { runBuildPipeline, BuildLogger, type BuildEnvironment } from "./build-pipeline";
+export { runBuildPipeline, BuildLogger, parseLogLevel, type BuildEnvironment } from "./build-pipeline";
 
 // ─── Runtime classes ─────────────────────────────────────────────────────────
 export { DockerRuntime, type DockerConnectionOptions } from "./docker";
 export { BareRuntime, type BareRuntimeOptions } from "./bare";
 export { CloudRuntime } from "./cloud";
+
+// ─── Supervisor ──────────────────────────────────────────────────────────────
+export type { ProcessSupervisor, SupervisorDeployOpts } from "./supervisor/types";
+export { NohupSupervisor } from "./supervisor/nohup";
+export { SystemdSupervisor } from "./supervisor/systemd";
+export { detectSupervisor } from "./supervisor/detect";
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
 

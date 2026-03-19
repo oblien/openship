@@ -1,7 +1,6 @@
 import {
   pgTable,
   text,
-  integer,
   timestamp,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
@@ -12,26 +11,14 @@ import { user } from "./auth";
  * Machine-level configuration for this Openship installation.
  *
  * Single row — not per-user. Set by the desktop app (or installer) during
- * onboarding via the internal API. Covers SSH credentials, tunnel config,
- * and the default build mode for the instance.
+ * onboarding via the internal API.
+ *
+ * SSH server config lives in the `servers` table (single source of truth).
+ * This table only stores instance-level preferences: auth strategy,
+ * tunnel provider, and default build mode.
  */
 export const instanceSettings = pgTable("instance_settings", {
   id: text("id").primaryKey().default("default"), // single row
-
-  /** Human-readable label — defaults to sshHost when not set */
-  serverName: text("server_name"),
-
-  // ── SSH credentials ────────────────────────────────────────────────────────
-
-  sshHost: text("ssh_host"),
-  sshPort: integer("ssh_port").default(22),
-  sshUser: text("ssh_user").default("root"),
-  sshAuthMethod: text("ssh_auth_method"), // "password" | "key"
-  sshPassword: text("ssh_password"),
-  sshKeyPath: text("ssh_key_path"),
-  sshKeyPassphrase: text("ssh_key_passphrase"),
-  sshJumpHost: text("ssh_jump_host"),
-  sshArgs: text("ssh_args"),
 
   // ── Tunnel / connectivity ──────────────────────────────────────────────────
 

@@ -96,11 +96,26 @@ export const endpoints = {
   system: {
     browse: "system/browse",
     settings: "system/settings",
+    testConnection: "system/test-connection",
     check: "system/check",
     install: "system/install",
     installStream: "system/install/stream",
     installSession: "system/install/session",
     monitorStream: "system/monitor/stream",
+    servers: "system/servers",
+    server: (id: string) => `system/servers/${id}`,
+  },
+
+  /* ---------------------------------------------------------------- */
+  /*  Mail server setup (self-hosted only)                            */
+  /* ---------------------------------------------------------------- */
+  mail: {
+    steps: "mail/steps",
+    status: "mail/status",
+    setup: "mail/setup",
+    cancelSetup: "mail/setup/cancel",
+    portsCheck: "mail/ports/check",
+    portsResolve: "mail/ports/resolve",
   },
 
   /* ---------------------------------------------------------------- */

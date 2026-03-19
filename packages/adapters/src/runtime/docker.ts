@@ -30,7 +30,7 @@ import type {
 } from "../types";
 
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
-import { BuildLogger } from "./build-pipeline";
+import { BuildLogger, parseLogLevel } from "./build-pipeline";
 
 // ─── Connection config ───────────────────────────────────────────────────────
 
@@ -311,13 +311,7 @@ export class DockerRuntime implements RuntimeAdapter {
         const timestamp = spaceIdx > 0 ? line.slice(0, spaceIdx) : new Date().toISOString();
         const message = spaceIdx > 0 ? line.slice(spaceIdx + 1) : line;
 
-        const level = /\b(error|fatal|panic)\b/i.test(message)
-          ? "error" as const
-          : /\bwarn(ing)?\b/i.test(message)
-            ? "warn" as const
-            : "info" as const;
-
-        return { timestamp, message, level };
+        return { timestamp, message, level: parseLogLevel(message) };
       });
   }
 
@@ -337,12 +331,7 @@ export class DockerRuntime implements RuntimeAdapter {
 
     let destroyed = false;
 
-    const parseLevel = (msg: string) =>
-      /\b(error|fatal|panic)\b/i.test(msg)
-        ? "error" as const
-        : /\bwarn(ing)?\b/i.test(msg)
-          ? "warn" as const
-          : "info" as const;
+
 
     // Docker multiplexed streams prepend an 8-byte frame header per chunk
     // when both stdout and stderr are attached. Strip it before parsing.
@@ -367,13 +356,13 @@ export class DockerRuntime implements RuntimeAdapter {
         const spaceIdx = line.indexOf(" ");
         const timestamp = spaceIdx > 0 ? line.slice(0, spaceIdx) : new Date().toISOString();
         const message = spaceIdx > 0 ? line.slice(spaceIdx + 1) : line;
-        onLog({ timestamp, message, level: parseLevel(message) });
+        onLog({ timestamp, message, level: parseLogLevel(message) });
       }
     });
 
     stream.on("end", () => {
       if (buffer && !destroyed) {
-        onLog({ timestamp: new Date().toISOString(), message: buffer, level: parseLevel(buffer) });
+        onLog({ timestamp: new Date().toISOString(), message: buffer, level: parseLogLevel(buffer) });
         buffer = "";
       }
     });

@@ -21,7 +21,6 @@ interface ServerEntry {
   port: number;
   user: string;
   status: "connected" | "error" | "unknown";
-  tunnelProvider?: string | null;
 }
 
 export default function ServersPage() {
@@ -32,22 +31,17 @@ export default function ServersPage() {
   const fetchServers = useCallback(async () => {
     try {
       setLoading(true);
-      const settings = await systemApi.getSettings();
-      if (settings?.configured && settings.sshHost) {
-        setServers([
-          {
-            id: "primary",
-            name: settings.serverName || settings.sshHost,
-            host: settings.sshHost,
-            port: settings.sshPort ?? 22,
-            user: settings.sshUser ?? "root",
-            status: "connected",
-            tunnelProvider: settings.tunnelProvider,
-          },
-        ]);
-      } else {
-        setServers([]);
-      }
+      const list = await systemApi.listServers();
+      setServers(
+        list.map((s) => ({
+          id: s.id,
+          name: s.name || s.sshHost,
+          host: s.sshHost,
+          port: s.sshPort ?? 22,
+          user: s.sshUser ?? "root",
+          status: "connected" as const,
+        })),
+      );
     } catch {
       setServers([]);
     } finally {
@@ -220,16 +214,6 @@ export default function ServersPage() {
                         </div>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {server.user}@{server.host}:{server.port}
-                          {server.tunnelProvider && (
-                            <span className="ml-2 inline-flex items-center gap-1">
-                              <Wifi className="size-3" />
-                              {server.tunnelProvider === "edge"
-                                ? "Openship Edge"
-                                : server.tunnelProvider === "cloudflare"
-                                  ? "Cloudflare Tunnel"
-                                  : server.tunnelProvider}
-                            </span>
-                          )}
                         </p>
                       </div>
                       <ExternalLink className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />

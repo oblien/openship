@@ -14,16 +14,22 @@ export interface BrowseResult {
 
 export interface InstanceSettings {
   configured: boolean;
-  serverName?: string | null;
-  sshHost?: string | null;
-  sshPort?: number;
-  sshUser?: string;
-  sshAuthMethod?: "password" | "key" | null;
-  sshKeyPath?: string | null;
-  sshJumpHost?: string | null;
-  sshArgs?: string | null;
+  authMode?: "none" | "cloud" | "local";
   tunnelProvider?: "edge" | "cloudflare" | "ngrok" | null;
   defaultBuildMode?: "auto" | "server" | "local";
+}
+
+export interface ServerInfo {
+  id: string;
+  name: string | null;
+  sshHost: string;
+  sshPort: number;
+  sshUser: string;
+  sshAuthMethod: string | null;
+  sshKeyPath: string | null;
+  sshJumpHost: string | null;
+  sshArgs: string | null;
+  createdAt: string;
 }
 
 /** True when running inside the Electron desktop shell */
@@ -67,6 +73,7 @@ export interface SetupComponentProgress {
 export interface SetupSessionInfo {
   active: boolean;
   sessionId?: string;
+  serverId?: string;
   status?: "running" | "completed" | "failed";
   components?: SetupComponentProgress[];
   startedAt?: number;
@@ -138,15 +145,29 @@ export const systemApi = {
   deleteServer: () =>
     api.delete<{ ok: boolean }>(endpoints.system.settings),
 
-  /** Run system health checks on the configured server */
-  checkServer: (components?: string[]) =>
+  /** Test SSH connection with credentials (without saving) */
+  testConnection: (data: {
+    sshHost: string;
+    sshPort?: number;
+    sshUser?: string;
+    sshAuthMethod: string;
+    sshPassword?: string;
+    sshKeyPath?: string;
+    sshKeyPassphrase?: string;
+  }) =>
+    api.post<{ ok: boolean; message: string }>(endpoints.system.testConnection, data),
+
+  /** Run system health checks on a specific server */
+  checkServer: (serverId: string, components?: string[]) =>
     api.post<ServerCheckResult>(endpoints.system.check, {
+      serverId,
       ...(components?.length ? { components } : {}),
     }),
 
-  /** Install a component on the configured server */
-  installComponent: (component: string, config?: Record<string, unknown>) =>
+  /** Install a component on a specific server */
+  installComponent: (serverId: string, component: string, config?: Record<string, unknown>) =>
     api.post<InstallResultResponse>(endpoints.system.install, {
+      serverId,
       component,
       ...(config ? { config } : {}),
     }),
@@ -156,4 +177,26 @@ export const systemApi = {
     api.get<SetupSessionInfo>(endpoints.system.installSession, {
       params: sessionId ? { id: sessionId } : undefined,
     }),
+
+  // ── Servers CRUD ─────────────────────────────────────────────────────────
+
+  /** List all configured servers */
+  listServers: () =>
+    api.get<ServerInfo[]>(endpoints.system.servers),
+
+  /** Get a single server by ID */
+  getServerById: (id: string) =>
+    api.get<ServerInfo>(endpoints.system.server(id)),
+
+  /** Create a new server */
+  createServerEntry: (data: Record<string, unknown>) =>
+    api.post<ServerInfo>(endpoints.system.servers, data),
+
+  /** Update a server */
+  updateServerEntry: (id: string, data: Record<string, unknown>) =>
+    api.patch<ServerInfo>(endpoints.system.server(id), data),
+
+  /** Delete a server */
+  deleteServerEntry: (id: string) =>
+    api.delete<{ ok: boolean }>(endpoints.system.server(id)),
 };

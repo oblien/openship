@@ -1,6 +1,6 @@
 {
   "name": "openship",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open-source, self-hostable deployment platform",
   "license": "MIT",
   "repository": {
@@ -26,7 +26,8 @@
     "db:generate": "turbo run db:generate --filter=@repo/db",
     "db:push": "turbo run db:push --filter=@repo/db",
     "db:migrate": "turbo run db:migrate --filter=@repo/db",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "clean:modules": "find apps packages -name node_modules -type d -prune -exec rm -rf {} + && rm -rf node_modules"
   },
   "devDependencies": {
     "prettier": "^3.8.1",
@@ -40,6 +41,6 @@
   "dependencies": {
     "@octokit/auth-oauth-device": "^8.0.3",
     "api": "^6.1.3",
-    "oblien": "^2.1.7"
+    "oblien": "^2.2.0"
   }
 }

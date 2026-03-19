@@ -28,6 +28,7 @@ export interface SetupLogEntry {
 
 export interface SetupSessionState {
   id: string;
+  serverId: string;
   status: SetupSessionStatus;
   components: ComponentProgress[];
   logs: SetupLogEntry[];
@@ -66,10 +67,12 @@ if (heartbeatTimer.unref) heartbeatTimer.unref();
 /** Create a new setup session. */
 export function createSetupSession(
   componentNames: { name: string; label: string }[],
+  serverId: string,
 ): SetupSessionState {
   const id = `setup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const state: SetupSessionState = {
     id,
+    serverId,
     status: "running",
     components: componentNames.map((c) => ({
       name: c.name,

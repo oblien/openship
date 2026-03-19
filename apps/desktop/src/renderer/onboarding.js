@@ -16,6 +16,7 @@ var els = {
   btnSelfhost: $("#btn-selfhost"),
   btnBack: $("#btn-back"),
   btnConnect: $("#btn-connect"),
+  inputServerName: $("#input-server-name"),
   inputServerIp: $("#input-server-ip"),
   inputServerUser: $("#input-server-user"),
   inputServerPassword: $("#input-server-password"),
@@ -281,6 +282,7 @@ els.linkTutorial.addEventListener("click", function (e) {
 
 // Save self-hosted server details and continue
 els.btnConnect.addEventListener("click", async function () {
+  var serverName = els.inputServerName.value.trim();
   var ip = els.inputServerIp.value.trim();
   var user = els.inputServerUser.value.trim() || "root";
 
@@ -296,6 +298,7 @@ els.btnConnect.addEventListener("click", async function () {
   }
 
   var authPayload = { method: authMethod, user: user };
+  if (serverName) authPayload.serverName = serverName;
 
   // Advanced options
   var port = els.inputSshPort.value.trim();
@@ -355,6 +358,7 @@ els.inputServerPassword.addEventListener("keydown", function (e) {
 function buildSshSettings() {
   if (!pendingSshPayload) return null;
   var settings = {
+    serverName: pendingSshPayload.serverName || null,
     sshHost: pendingSshPayload.host || pendingApiUrl.replace(/^https?:\/\//, "").replace(/:\d+$/, ""),
     sshPort: pendingSshPayload.port || 22,
     sshUser: pendingSshPayload.user || "root",

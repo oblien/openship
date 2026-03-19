@@ -8,7 +8,7 @@
 import { repos } from "@repo/db";
 import { NotFoundError, ForbiddenError } from "@repo/core";
 import type { LogEntry } from "@repo/adapters";
-import { platform } from "../../lib/controller-helpers";
+import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 
 // ─── List deployments ────────────────────────────────────────────────────────
 
@@ -74,7 +74,7 @@ export async function deleteDeployment(deploymentId: string, userId: string) {
 
   // Stop and destroy running container if any
   if (dep.containerId) {
-    const { runtime } = platform();
+    const runtime = await resolveDeploymentRuntime(dep);
     await runtime.stop(dep.containerId).catch(() => {});
     await runtime.destroy(dep.containerId).catch(() => {});
   }
@@ -103,7 +103,7 @@ export async function rollbackDeployment(deploymentId: string, userId: string) {
   if (project.activeDeploymentId && project.activeDeploymentId !== deploymentId) {
     const current = await repos.deployment.findById(project.activeDeploymentId);
     if (current?.containerId) {
-      const { runtime } = platform();
+      const runtime = await resolveDeploymentRuntime(current);
       await runtime.stop(current.containerId).catch(() => {});
     }
   }
@@ -111,7 +111,7 @@ export async function rollbackDeployment(deploymentId: string, userId: string) {
   await repos.project.setActiveDeployment(project.id, deploymentId);
 
   if (dep.containerId) {
-    const { runtime } = platform();
+    const runtime = await resolveDeploymentRuntime(dep);
     await runtime.start(dep.containerId);
   }
 
@@ -129,7 +129,7 @@ export async function getDeploymentLogs(deploymentId: string, userId: string, ta
   }
 
   if (dep.containerId) {
-    const { runtime } = platform();
+    const runtime = await resolveDeploymentRuntime(dep);
     return runtime.getRuntimeLogs(dep.containerId, tail);
   }
 
@@ -148,7 +148,7 @@ export async function restartDeployment(deploymentId: string, userId: string) {
     throw new ForbiddenError("Deployment has no container");
   }
 
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   await runtime.stop(dep.containerId);
   await runtime.start(dep.containerId);
 
@@ -162,7 +162,7 @@ export async function getContainerInfo(deploymentId: string, userId: string) {
   if (!dep.containerId) {
     throw new ForbiddenError("Deployment has no container");
   }
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   return runtime.getContainerInfo(dep.containerId);
 }
 
@@ -173,7 +173,7 @@ export async function getContainerUsage(deploymentId: string, userId: string) {
   if (!dep.containerId) {
     throw new ForbiddenError("Deployment has no container");
   }
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   return runtime.getUsage(dep.containerId);
 }
 

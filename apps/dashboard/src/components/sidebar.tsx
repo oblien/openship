@@ -19,6 +19,7 @@ import {
   PanelLeftOpen,
   Plus,
   Server,
+  Mail,
 } from "lucide-react";
 import { signOut } from "@/lib/auth-client";
 import { useTheme } from "@/components/theme-provider";
@@ -57,6 +58,7 @@ function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection[] {
   const infraItems: NavItem[] = [];
   if (selfHosted) {
     infraItems.push({ key: "servers", href: "/servers", icon: Server });
+    infraItems.push({ key: "emails", href: "/emails", icon: Mail });
   }
   infraItems.push(
     { key: "monitoring", href: "/monitoring", icon: Activity },

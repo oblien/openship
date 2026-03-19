@@ -8,8 +8,10 @@ import DockerSettings from "@/components/import-project/DockerSettings";
 import ComposeServices from "@/components/import-project/ComposeServices";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import Sidebar from "./components/Sidebar";
+import DeployTargetStep, { DeployTargetSummary, useDesktopTargets } from "./components/DeployTargetStep";
 import { decodeSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
+import { useGitHub } from "@/context/GitHubContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -48,12 +50,21 @@ const DeployRepository: React.FC = () => {
     const router = useRouter();
     const slug = params.slug as string;
     const { config, initializeFromRepo, initializeFromLocal } = useDeployment();
+    const { deployMode } = useGitHub();
     const searchParams = useSearchParams();
     const force = searchParams.get("force") || undefined;
+    const isDesktop = deployMode === "desktop";
     
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<DeployError | null>(null);
     const hasInitialized = useRef<boolean>(false);
+
+    // Desktop-only: resolve available deploy targets (server / cloud)
+    const targets = useDesktopTargets();
+
+    // Step: "target" = pick build/deploy target, "config" = project settings
+    // Only desktop gets step 1. Non-desktop skips straight to config.
+    const [step, setStep] = useState<"target" | "config">(isDesktop ? "target" : "config");
 
     useEffect(() => {
         const initialize = async () => {
@@ -133,34 +144,61 @@ const DeployRepository: React.FC = () => {
     return (
         <div className="min-h-screen bg-background">
             <PageContainer>
-                <div className="grid lg:grid-cols-[1fr_340px] gap-6">
-                    <div className="space-y-5">
-                        {/* App flow: framework picker + build settings */}
-                        {config.projectType === "app" && (
-                            <>
-                                <ProjectSettings />
-                                <BuildSettings />
-                            </>
-                        )}
-
-                        {/* Docker flow: single Dockerfile, just port */}
-                        {config.projectType === "docker" && (
-                            <DockerSettings />
-                        )}
-
-                        {/* Services flow: compose parsed services (env is per-service) */}
-                        {config.projectType === "services" && (
-                            <ComposeServices />
-                        )}
-
-                        {/* Global env vars — app & docker only (compose has per-service env) */}
-                        {config.projectType !== "services" && (
-                            <EnvironmentVariables />
-                        )}
-                        <ProjectName />
+                {/* Step 1: Deploy target picker — centered onboarding style (desktop only) */}
+                {step === "target" && isDesktop && (
+                    <div className="flex items-center justify-center min-h-[calc(100vh-8rem)]">
+                        <div className="w-full max-w-lg">
+                            <DeployTargetStep targets={targets} onContinue={() => setStep("config")} />
+                        </div>
                     </div>
-                    <Sidebar />
-                </div>
+                )}
+
+                {/* Step 2: Project configuration */}
+                {step === "config" && (
+                    <div className="grid lg:grid-cols-[1fr_340px] gap-6">
+                        <div className="space-y-5">
+                            {/* Target summary bar — click to go back to step 1 (desktop only) */}
+                            {isDesktop && (
+                                <DeployTargetSummary
+                                    deployTarget={config.deployTarget}
+                                    buildStrategy={config.buildStrategy}
+                                    serverName={
+                                      config.serverId
+                                        ? (targets.servers.find((s) => s.id === config.serverId)?.name ??
+                                           targets.servers.find((s) => s.id === config.serverId)?.sshHost ?? null)
+                                        : null
+                                    }
+                                    onEdit={() => setStep("target")}
+                                />
+                            )}
+
+                            {/* App flow: framework picker + build settings */}
+                            {config.projectType === "app" && (
+                                <>
+                                    <ProjectSettings />
+                                    <BuildSettings />
+                                </>
+                            )}
+
+                            {/* Docker flow: single Dockerfile, just port */}
+                            {config.projectType === "docker" && (
+                                <DockerSettings />
+                            )}
+
+                            {/* Services flow: compose parsed services (env is per-service) */}
+                            {config.projectType === "services" && (
+                                <ComposeServices />
+                            )}
+
+                            {/* Global env vars — app & docker only (compose has per-service env) */}
+                            {config.projectType !== "services" && (
+                                <EnvironmentVariables />
+                            )}
+                            <ProjectName />
+                        </div>
+                        <Sidebar />
+                    </div>
+                )}
             </PageContainer>
         </div>
     );

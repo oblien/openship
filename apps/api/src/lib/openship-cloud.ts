@@ -37,33 +37,31 @@ function getClient(): Oblien {
 /** Cache: userId → namespace slug */
 const namespaceCache = new Map<string, string>();
 
+function namespaceSlugForUser(userId: string): string {
+  return `os-${userId.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`;
+}
+
 /**
  * Ensure an Oblien namespace exists for a user.
  *
- * Slug: `os-{userId}`. Idempotent — 409 on duplicate is handled.
+ * Slug: normalized `os-{userId}` in lowercase.
+ * Uses Oblien's native idempotent `namespaces.ensure` API.
  */
 export async function ensureNamespace(userId: string): Promise<string> {
   const cached = namespaceCache.get(userId);
   if (cached) return cached;
 
   const client = getClient();
-  const slug = `os-${userId}`;
+  const slug = namespaceSlugForUser(userId);
 
-  try {
-    const res = await client.namespaces.create({ name: `Openship ${userId}`, slug });
-    const nsSlug = res.data.slug ?? slug;
-    namespaceCache.set(userId, nsSlug);
-    return nsSlug;
-  } catch (err: unknown) {
-    const status = (err as { status?: number }).status;
-    if (status !== 409) throw err;
+  const ensured = await client.namespaces.ensure({
+    name: `Openship ${userId}`,
+    slug,
+  });
 
-    // Already exists — fetch and cache
-    const existing = await client.namespaces.get(slug);
-    const nsSlug = existing.data.slug ?? slug;
-    namespaceCache.set(userId, nsSlug);
-    return nsSlug;
-  }
+  const namespace = ensured.data.slug || slug;
+  namespaceCache.set(userId, namespace);
+  return namespace;
 }
 
 // ─── Token minting ───────────────────────────────────────────────────────────
@@ -87,15 +85,21 @@ export async function issueNamespaceToken(userId: string): Promise<NamespaceToke
   const client = getClient();
   const namespace = await ensureNamespace(userId);
 
-  const result = await client.tokens.create({
-    scope: "namespace",
-    namespace,
-    ttl: 1800,
-  });
+  try {
+    const result = await client.tokens.create({
+      scope: "namespace",
+      namespace,
+      ttl: 1800,
+    });
 
-  return {
-    token: result.token,
-    namespace,
-    expiresAt: result.expiresAt,
-  };
+    return {
+      token: result.token,
+      namespace,
+      expiresAt: result.expiresAt,
+    };
+  } catch (err: unknown) {
+    console.error("Oblien SDK token issuance error", err);
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to issue Oblien namespace token for ${namespace}: ${message}`);
+  }
 }

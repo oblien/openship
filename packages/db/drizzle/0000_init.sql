@@ -57,7 +57,18 @@ CREATE TABLE "verification" (
 
 CREATE TABLE "instance_settings" (
 	"id" text PRIMARY KEY DEFAULT 'default' NOT NULL,
-	"ssh_host" text,
+	"tunnel_provider" text,
+	"tunnel_token" text,
+	"auth_mode" text DEFAULT 'none' NOT NULL,
+	"default_build_mode" text DEFAULT 'auto' NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "servers" (
+	"id" text PRIMARY KEY NOT NULL,
+	"name" text,
+	"ssh_host" text NOT NULL,
 	"ssh_port" integer DEFAULT 22,
 	"ssh_user" text DEFAULT 'root',
 	"ssh_auth_method" text,
@@ -66,10 +77,6 @@ CREATE TABLE "instance_settings" (
 	"ssh_key_passphrase" text,
 	"ssh_jump_host" text,
 	"ssh_args" text,
-	"tunnel_provider" text,
-	"tunnel_token" text,
-	"auth_mode" text DEFAULT 'none' NOT NULL,
-	"default_build_mode" text DEFAULT 'auto' NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );

@@ -98,22 +98,39 @@ export class CloudRuntime implements RuntimeAdapter {
     if (buildLocally) {
       log.log("Build strategy: local (build on API host, upload to cloud)\n");
 
-      const result = await runLocalBuild({
-        config,
-        logger: log,
-        transferOutput: async (buildDir) => {
-          await transferLocalDirectory(
-            buildDir,
-            {
-              kind: "cloud-runtime",
-              runtime: rt,
-              path: "/app",
-            },
-            log,
-            { excludes: [] },
-          );
-        },
-      });
+      let result: Awaited<ReturnType<typeof runLocalBuild>>;
+      try {
+        result = await runLocalBuild({
+          config,
+          logger: log,
+          transferOutput: async (buildDir) => {
+            // Exclude node_modules — native binaries compiled on the local
+            // host (e.g. macOS) won't work on the cloud (Linux).
+            // A production install runs on the cloud side after transfer.
+            await transferLocalDirectory(
+              buildDir,
+              {
+                kind: "cloud-runtime",
+                runtime: rt,
+                path: "/app",
+              },
+              log,
+            );
+
+            // Install production dependencies with correct platform binaries
+            log.log("Installing production dependencies on cloud...\n");
+            const installCmd = config.installCommand || "npm install";
+            await this.execAndStream(rt, ["sh", "-c", `cd /app && ${installCmd}`], log.callback);
+          },
+        });
+      } catch (err) {
+        log.log(`Failed to upload local build output: ${err instanceof Error ? err.message : String(err)}`, "error");
+        return {
+          sessionId: config.sessionId,
+          status: "failed",
+          imageRef: wsId,
+        };
+      }
 
       return {
         sessionId: config.sessionId,

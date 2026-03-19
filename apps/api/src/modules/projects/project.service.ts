@@ -9,6 +9,7 @@ import { repos, type Project } from "@repo/db";
 import { slugify, NotFoundError, ConflictError, ValidationError, ForbiddenError, SYSTEM } from "@repo/core";
 import type { ResourceConfig } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
+import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { encodeResources, decodeResources, withDefaults } from "../../lib/resources";
 import { env } from "../../config";
@@ -195,13 +196,14 @@ export async function deleteProject(projectId: string, userId: string) {
   const p = await repos.project.findById(projectId);
   if (!p || p.userId !== userId) throw new NotFoundError("Project", projectId);
 
-  const { runtime, routing } = platform();
+  const { routing } = platform();
 
   // Destroy ALL deployment containers (not just active)
   try {
     const { rows: allDeps } = await repos.deployment.listByProject(projectId, { perPage: 1000 });
     for (const dep of allDeps) {
       if (dep.containerId) {
+        const runtime = await resolveDeploymentRuntime(dep);
         await runtime.destroy(dep.containerId).catch((err) => {
           console.error(`[PROJECT] Failed to destroy container ${dep.containerId}:`, err);
         });
@@ -334,7 +336,7 @@ export async function getRuntimeLogs(projectId: string, userId: string, tail?: n
     throw new NotFoundError("No running container for project", projectId);
   }
 
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   return runtime.getRuntimeLogs(dep.containerId, tail);
 }
 
@@ -356,7 +358,7 @@ export async function streamRuntimeLogs(
     throw new NotFoundError("No running container for project", projectId);
   }
 
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   return runtime.streamRuntimeLogs(dep.containerId, onLog, opts);
 }
 
@@ -439,7 +441,7 @@ export async function enableProject(projectId: string, userId: string) {
     throw new ValidationError("No container found for active deployment");
   }
 
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   await runtime.start(dep.containerId);
   return { success: true, message: "Project enabled" };
 }
@@ -457,7 +459,7 @@ export async function disableProject(projectId: string, userId: string) {
     return { success: true, message: "No container to stop" };
   }
 
-  const { runtime } = platform();
+  const runtime = await resolveDeploymentRuntime(dep);
   await runtime.stop(dep.containerId);
   return { success: true, message: "Project disabled" };
 }

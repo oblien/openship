@@ -36,6 +36,17 @@ export { settingsApi } from "./settings";
 export type { BuildMode, UserSettingsResponse } from "./settings";
 export { cloudApi } from "./cloud";
 export type { CloudStatus } from "./cloud";
+export { mailApi } from "./mail";
+export type {
+  MailSetupStep,
+  MailStepStatus,
+  MailSetupStatus,
+  DnsRecords,
+  MailSSEEvent,
+  PortConflict,
+  PortResolution,
+  PortUsage,
+} from "./mail";
 
 /* --- Auth helpers -------------------------------------------------- */
 export { getAuthToken } from "./auth";
