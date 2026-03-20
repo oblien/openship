@@ -169,6 +169,15 @@ export async function containerUsage(c: Context) {
   return c.json({ data: usage });
 }
 
+export async function buildRespond(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const body = await c.req.json<{ action: string }>();
+  if (!body.action) return c.json({ success: false, error: "Missing action" }, 400);
+  const result = await buildService.respondToPrompt(id, userId, body.action);
+  return c.json({ success: result });
+}
+
 // ─── Prepare (resolve project info) ────────────────────────────────────────────
 
 /**

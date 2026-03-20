@@ -32,7 +32,7 @@ import type {
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
 import { checkToolchainForStack, installTools } from "../toolchain";
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
-import { BuildLogger, runBuildPipeline, type BuildEnvironment } from "./build-pipeline";
+import { BuildLogger, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
 import type { ProcessSupervisor } from "./supervisor/types";
@@ -41,7 +41,7 @@ import { detectSupervisor } from "./supervisor/detect";
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export interface BareRuntimeOptions {
-  /** Base directory for project working directories (default: /tmp/openship) */
+  /** Base directory for project working directories (default: /opt/openship) */
   workDir?: string;
   /** Max time for build commands in ms (default: 10 min) */
   buildTimeout?: number;
@@ -55,7 +55,7 @@ export interface BareRuntimeOptions {
   executor?: CommandExecutor;
 }
 
-const DEFAULT_WORK_DIR = "/tmp/openship";
+const DEFAULT_WORK_DIR = "/opt/openship";
 const DEFAULT_BUILD_TIMEOUT = 10 * 60 * 1000;
 
 // ─── Bare runtime ────────────────────────────────────────────────────────────
@@ -130,6 +130,23 @@ export class BareRuntime implements RuntimeAdapter {
     return `${this.workDir}/.builds/${sessionId}`;
   }
 
+  private releaseDir(deploymentId: string): string {
+    return `${this.workDir}/releases/${deploymentId}`;
+  }
+
+  private async promoteBuildArtifact(
+    artifactPath: string,
+    deploymentId: string,
+  ): Promise<string> {
+    const releaseDir = this.releaseDir(deploymentId);
+    if (artifactPath === releaseDir) return releaseDir;
+
+    await this.executor.mkdir(`${this.workDir}/releases`);
+    await this.executor.rm(releaseDir);
+    await this.executor.exec(`mv ${sq(artifactPath)} ${sq(releaseDir)}`);
+    return releaseDir;
+  }
+
   // ── File transfer ──────────────────────────────────────────────────────
 
   /**
@@ -186,7 +203,7 @@ export class BareRuntime implements RuntimeAdapter {
     abort: AbortController,
   ): Promise<BuildResult> {
     log.log("Build strategy: local (build on API host, transfer to server)\n");
-    const remoteDir = this.projectDir(config.projectId);
+    const remoteDir = this.buildDir(config.sessionId);
 
     let result: Awaited<ReturnType<typeof runLocalBuild>>;
     try {
@@ -322,7 +339,10 @@ export class BareRuntime implements RuntimeAdapter {
   // ── Deploy lifecycle ───────────────────────────────────────────────────
 
   async deploy(config: DeployConfig, _onLog?: LogCallback): Promise<DeploymentResult> {
-    const dir = config.imageRef ?? this.projectDir(config.projectId);
+    const stagedDir = config.imageRef ?? this.projectDir(config.projectId);
+    const workDir = config.imageRef
+      ? await this.promoteBuildArtifact(stagedDir, config.deploymentId)
+      : stagedDir;
     const sv = await this.supervisor();
 
     const env: Record<string, string> = {
@@ -333,14 +353,22 @@ export class BareRuntime implements RuntimeAdapter {
       NODE_ENV: config.environment === "production" ? "production" : "development",
     };
 
-    await sv.deploy({
-      deploymentId: config.deploymentId,
-      projectId: config.projectId,
-      workDir: dir,
-      startCommand: config.startCommand || "npm start",
-      port: config.port,
-      env,
-    });
+    try {
+      await sv.deploy({
+        deploymentId: config.deploymentId,
+        projectId: config.projectId,
+        workDir,
+        startCommand: config.startCommand || "npm start",
+        port: config.port,
+        env,
+      });
+    } catch (err) {
+      if (workDir !== stagedDir) {
+        await sv.destroy(config.deploymentId).catch(() => {});
+        await this.executor.rm(workDir).catch(() => {});
+      }
+      throw err;
+    }
 
     return {
       deploymentId: config.deploymentId,
@@ -357,11 +385,7 @@ export class BareRuntime implements RuntimeAdapter {
   async start(containerId: string): Promise<void> {
     const sv = await this.supervisor();
     if (await sv.isRunning(containerId)) return;
-
-    throw new Error(
-      "BareRuntime.start() requires a redeploy. Use restart() for running " +
-        "processes or trigger a new deployment.",
-    );
+    await sv.start(containerId);
   }
 
   async restart(containerId: string): Promise<void> {

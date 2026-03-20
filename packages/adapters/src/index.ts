@@ -51,8 +51,14 @@ export {
   type DeployRouting,
   type DeployPipelineInput,
   type DeployPipelineResult,
+  type PromptUserFn,
   runDeployPipeline,
 } from "./runtime/deploy-pipeline";
+export {
+  type PortOccupant,
+  probeListeningPort,
+  ensurePortAvailable,
+} from "./runtime/port-conflict";
 export {
   type RuntimeMode,
   type CreateRuntimeOptions,

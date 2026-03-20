@@ -14,7 +14,11 @@ import { SSEMessage, SSEMessageProcessor } from '@/hooks/useSSEStream';
 // ============================================================================
 
 export interface BuildMessage extends SSEMessage {
-  type: 'log' | 'success' | 'failure' | 'phase' | 'progress' | 'reconnected' | 'complete' | 'end' | 'connected' | 'started' | 'error' | 'cancelled' | 'unknown';
+  type: 'log' | 'success' | 'failure' | 'phase' | 'progress' | 'reconnected' | 'complete' | 'end' | 'connected' | 'started' | 'error' | 'cancelled' | 'prompt' | 'unknown';
+  promptId?: string;
+  title?: string;
+  actions?: Array<{ id: string; label: string; variant?: string }>;
+  details?: Record<string, unknown>;
   data?: string;
   success?: boolean;
   message?: string;
@@ -25,17 +29,26 @@ export interface BuildMessage extends SSEMessage {
   eventId?: number;
   exitCode?: number;
   running?: boolean;
+  errorCode?: string;
+  errorDetails?: Record<string, unknown>;
 }
 
 export interface BuildMessageCallbacks {
   onLog?: (message: BuildMessage, rawText?: string, rawBytes?: Uint8Array) => void;
   onSuccess?: (data?: any) => void;
-  onFailure?: (message?: string) => void;
+  onFailure?: (message?: string, errorCode?: string, errorDetails?: Record<string, unknown>) => void;
   onCanceled?: (message?: string) => void;
   onPhaseChange?: (phase: string) => void;
   onProgress?: (currentStep: number, progress: number) => void;
   onReconnected?: () => void;
   onContainerExit?: (exitCode: number, message?: string) => void;
+  onPrompt?: (prompt: {
+    promptId: string;
+    title: string;
+    message: string;
+    actions: Array<{ id: string; label: string; variant?: string }>;
+    details?: Record<string, unknown>;
+  }) => void;
 }
 
 export const createBuildMessageProcessor = (
@@ -61,6 +74,11 @@ export const createBuildMessageProcessor = (
       // Container error message
       if (jsonData?.type === 'error' && !jsonData?.success) {
         return { type: 'error', ...jsonData };
+      }
+
+      // Prompt message (pipeline waiting for user decision)
+      if (jsonData?.type === 'prompt') {
+        return { type: 'prompt', ...jsonData };
       }
 
       // Reconnected message
@@ -119,7 +137,11 @@ export const createBuildMessageProcessor = (
           if (message.success === true) {
             callbacks.onSuccess?.(message);
           } else if (message.success === false) {
-            callbacks.onFailure?.(message.message || message.error || 'Build completed with errors');
+            callbacks.onFailure?.(
+              message.message || message.error || 'Build completed with errors',
+              message.errorCode,
+              message.errorDetails,
+            );
           }
           break;
 
@@ -143,7 +165,7 @@ export const createBuildMessageProcessor = (
           break;
 
         case 'failure':
-          callbacks.onFailure?.(message.message || message.error);
+          callbacks.onFailure?.(message.message || message.error, message.errorCode, message.errorDetails);
           break;
 
         case 'cancelled':
@@ -184,7 +206,19 @@ export const createBuildMessageProcessor = (
 
         case 'error':
           const errorMsg = message.error || message.message || 'Container error occurred';
-          callbacks.onFailure?.(errorMsg);
+          callbacks.onFailure?.(errorMsg, message.errorCode, message.errorDetails);
+          break;
+
+        case 'prompt':
+          if (message.promptId && message.message) {
+            callbacks.onPrompt?.({
+              promptId: message.promptId,
+              title: message.title || 'Action Required',
+              message: message.message,
+              actions: message.actions || [],
+              details: message.details,
+            });
+          }
           break;
 
         case 'started':

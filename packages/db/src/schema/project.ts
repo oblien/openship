@@ -78,6 +78,8 @@ export const project = pgTable("project", {
   buildResources: jsonb("build_resources"),
   /** Sleep mode: auto_sleep | always_on */
   sleepMode: text("sleep_mode").default("auto_sleep"),
+  /** Number of previous successful releases to retain for rollback (null = use instance default) */
+  rollbackWindow: integer("rollback_window"),
 
   /* ── State ──────────────────────────────────────────────────────────── */
   /** Currently active deployment ID */

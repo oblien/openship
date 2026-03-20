@@ -32,6 +32,7 @@ deploymentRoutes.post("/:id/rollback", ctrl.rollback);
 deploymentRoutes.post("/:id/cancel", ctrl.cancel);
 deploymentRoutes.delete("/:id", ctrl.remove);
 deploymentRoutes.post("/:id/restart", ctrl.restart);
+deploymentRoutes.post("/:id/build/respond", ctrl.buildRespond);
 deploymentRoutes.get("/:id/info", ctrl.containerInfo);
 deploymentRoutes.get("/:id/usage", ctrl.containerUsage);
 

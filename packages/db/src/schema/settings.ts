@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   timestamp,
+  integer,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
@@ -46,6 +47,8 @@ export const instanceSettings = pgTable("instance_settings", {
 
   /** Default build mode for new users on this instance */
   defaultBuildMode: text("default_build_mode").notNull().default("auto"),
+  /** Default number of previous successful bare releases to retain for rollback */
+  defaultRollbackWindow: integer("default_rollback_window").notNull().default(5),
 
   // ── Timestamps ─────────────────────────────────────────────────────────────
 

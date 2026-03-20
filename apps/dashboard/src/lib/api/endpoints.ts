@@ -54,6 +54,7 @@ export const endpoints = {
     buildRedeploy: (id: string) => `deployments/${id}/redeploy`,
     sslStatus: "deployments/ssl/status",
     sslRenew: "deployments/ssl/renew",
+    buildRespond: (id: string) => `deployments/${id}/build/respond`,
   },
 
   /* ---------------------------------------------------------------- */

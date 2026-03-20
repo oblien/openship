@@ -47,3 +47,20 @@ export class ConflictError extends AppError {
     this.name = "ConflictError";
   }
 }
+
+/**
+ * Deployment-specific error with a machine-readable code.
+ *
+ * Codes:
+ *   PORT_IN_USE — target port is occupied by another process
+ */
+export class DeployError extends AppError {
+  constructor(
+    message: string,
+    code: string,
+    public details?: Record<string, unknown>,
+  ) {
+    super(message, 500, code);
+    this.name = "DeployError";
+  }
+}

@@ -17,6 +17,8 @@
 import type { CommandExecutor, LogEntry, LogCallback } from "../../types";
 import type { ProcessSupervisor, SupervisorDeployOpts } from "./types";
 import { sq, parseLogLevel } from "../build-pipeline";
+import { probeListeningPort } from "../port-conflict";
+import { DeployError } from "@repo/core";
 
 export class NohupSupervisor implements ProcessSupervisor {
   readonly name = "nohup";
@@ -131,6 +133,18 @@ export class NohupSupervisor implements ProcessSupervisor {
         hint = tail.trim();
       } catch { /* log may not exist yet */ }
 
+      // Detect EADDRINUSE — another process is holding the port
+      if (hint.includes("EADDRINUSE")) {
+        const occupant = await probeListeningPort(this.executor, opts.port);
+        throw new DeployError(
+          `Port ${opts.port} is already in use` +
+            (occupant ? ` by ${occupant.command}` : "") +
+            ". Stop the existing process before deploying.",
+          "PORT_IN_USE",
+          { port: opts.port, pid: occupant?.pid, command: occupant?.command },
+        );
+      }
+
       const msg = hint
         ? `Process exited immediately after spawn. Last output:\n${hint}`
         : "Process exited immediately after spawn (no output captured)";
@@ -157,6 +171,12 @@ export class NohupSupervisor implements ProcessSupervisor {
         await this.executor.exec(`kill -9 -- -${pid} 2>/dev/null || kill -9 ${pid} 2>/dev/null || true`);
       }
     }
+  }
+
+  async start(_deploymentId: string): Promise<void> {
+    throw new Error(
+      "Nohup processes cannot be started after stopping. Trigger a new deployment.",
+    );
   }
 
   async restart(deploymentId: string): Promise<void> {

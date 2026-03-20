@@ -97,7 +97,7 @@ export function useDeploymentBuild(
   }, []);
 
   const handleFailureMessage = useCallback(
-    (message?: string) => {
+    (message?: string, errorCode?: string, errorDetails?: Record<string, unknown>) => {
       const errorMessage = message || "Build failed. Check logs for details.";
       const now = Date.now();
 
@@ -115,6 +115,8 @@ export function useDeploymentBuild(
         deploymentSuccess: false,
         isDeploying: false,
         failureMessage: errorMessage,
+        errorCode: errorCode || "",
+        errorDetails: errorDetails || null,
       }));
 
       const textEncoder = new TextEncoder();
@@ -181,9 +183,21 @@ export function useDeploymentBuild(
         }
         buildStream.disconnect();
       },
-      onFailure: (message) => {
-        handleFailureMessage(message);
+      onFailure: (message, errorCode, errorDetails) => {
+        handleFailureMessage(message, errorCode, errorDetails);
         buildStream.disconnect();
+      },
+      onPrompt: (prompt) => {
+        setState((prev) => ({
+          ...prev,
+          pendingPrompt: {
+            promptId: prompt.promptId,
+            title: prompt.title,
+            message: prompt.message,
+            actions: prompt.actions,
+            details: prompt.details,
+          },
+        }));
       },
       onCanceled: (message) => {
         buildStream.disconnect();
@@ -226,6 +240,9 @@ export function useDeploymentBuild(
       deploymentFailed: false,
       deploymentCanceled: false,
       failureMessage: "",
+      errorCode: "",
+      errorDetails: null,
+      pendingPrompt: null,
       screenshots: [],
     }));
 
@@ -382,6 +399,8 @@ export function useDeploymentBuild(
           isDeploying: isActive,
           screenshots: !isActive ? (data.screenshots || []) : [],
           failureMessage: !isActive ? (data.failureMessage || "") : "",
+          errorCode: !isActive ? (data.errorCode || "") : "",
+          errorDetails: null,
           buildLogs,
           buildDurationMs: data.buildDurationMs ?? null,
           buildStartedAt: data.buildStartedAt ?? null,
@@ -400,7 +419,7 @@ export function useDeploymentBuild(
           handleSuccessMessage({ screenshots: data.screenshots, project_id: data.project_id });
           showToast("Build completed successfully", "success", "Success");
         } else if (status === "failed") {
-          handleFailureMessage(data.failureMessage || "Build failed");
+          handleFailureMessage(data.failureMessage || "Build failed", data.errorCode);
         } else if (status === "cancelled") {
           handleCanceled(data.failureMessage || "Build was cancelled");
         }
@@ -464,8 +483,9 @@ export function useDeploymentBuild(
           deploymentFailed: false,
           deploymentCanceled: false,
           failureMessage: "",
-          buildLogs: [],
-          currentProgress: 0,
+          errorCode: "",
+          errorDetails: null,
+        pendingPrompt: null,
           currentStepIndex: 0,
           screenshots: [],
         }));
@@ -532,6 +552,17 @@ export function useDeploymentBuild(
     }));
   }, []);
 
+  const respondToPrompt = useCallback(async (action: string) => {
+    if (!state.deploymentId) return;
+    setState((prev) => ({ ...prev, pendingPrompt: null }));
+    try {
+      await deployApi.buildRespond(state.deploymentId, action);
+    } catch (err) {
+      console.error("[Deployment] Failed to respond to prompt:", err);
+      showToast("Failed to respond to prompt", "error", "Error");
+    }
+  }, [state.deploymentId, showToast]);
+
   return {
     state,
     terminalRef,
@@ -545,6 +576,7 @@ export function useDeploymentBuild(
     redeploy,
     reset,
     onTerminalReady,
+    respondToPrompt,
     _setContainerFailed,
   };
 }

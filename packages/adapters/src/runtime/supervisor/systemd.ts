@@ -16,6 +16,8 @@
 import type { CommandExecutor, LogEntry, LogCallback } from "../../types";
 import type { ProcessSupervisor, SupervisorDeployOpts } from "./types";
 import { sq, parseLogLevel } from "../build-pipeline";
+import { probeListeningPort } from "../port-conflict";
+import { DeployError } from "@repo/core";
 
 /** Prefix for all openship systemd units */
 const UNIT_PREFIX = "openship";
@@ -122,6 +124,18 @@ WantedBy=multi-user.target
         hint = tail.trim();
       } catch { /* journal may not be readable */ }
 
+      // Detect EADDRINUSE — another process is holding the port
+      if (hint.includes("EADDRINUSE")) {
+        const occupant = await probeListeningPort(this.executor, opts.port);
+        throw new DeployError(
+          `Port ${opts.port} is already in use` +
+            (occupant ? ` by ${occupant.command}` : "") +
+            ". Stop the existing process before deploying.",
+          "PORT_IN_USE",
+          { port: opts.port, pid: occupant?.pid, command: occupant?.command },
+        );
+      }
+
       const msg = hint
         ? `Process exited immediately after start. Last output:\n${hint}`
         : "Process exited immediately after start (no output captured)";
@@ -136,6 +150,11 @@ WantedBy=multi-user.target
     } catch {
       // Unit may not exist — that's OK
     }
+  }
+
+  async start(deploymentId: string): Promise<void> {
+    const unitName = this.unitName(deploymentId);
+    await this.executor.exec(`systemctl start ${sq(unitName)}`);
   }
 
   async restart(deploymentId: string): Promise<void> {
@@ -215,7 +234,13 @@ WantedBy=multi-user.target
     const promise = this.executor.streamExec(
       `journalctl -u ${sq(unitName)} -n ${tailN} -f --no-pager -o short-iso 2>/dev/null`,
       (entry) => {
-        if (!stopped) onLog({ ...entry, message: entry.message + "\r\n" });
+        if (stopped) return;
+        // Strip journalctl prefix: "TIMESTAMP HOSTNAME UNIT[PID]: MESSAGE" → keep timestamp + message
+        const match = entry.message.match(/^(\S+)\s+\S+\s+\S+\s+(.*)/);
+        const cleaned = match
+          ? { ...entry, timestamp: match[1], message: match[2] + "\r\n" }
+          : { ...entry, message: entry.message + "\r\n" };
+        onLog(cleaned);
       },
     );
     promise.catch(() => {});

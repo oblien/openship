@@ -19,6 +19,21 @@
 
 import type { DeployConfig, LogCallback, RouteConfig } from "../types";
 import type { BuildLogger } from "./build-pipeline";
+import { DeployError } from "@repo/core";
+
+// ─── Prompt callback ────────────────────────────────────────────────────────
+
+/**
+ * Callback that pauses the pipeline and asks the user for a decision.
+ * Returns the action string chosen by the user.
+ */
+export type PromptUserFn = (prompt: {
+  promptId: string;
+  title: string;
+  message: string;
+  actions: Array<{ id: string; label: string; variant?: string }>;
+  details?: Record<string, unknown>;
+}) => Promise<string>;
 
 // ─── Deploy environment abstraction ─────────────────────────────────────────
 
@@ -26,15 +41,12 @@ export interface DeployEnvironment {
   /**
    * Optional pre-deploy validation — fail fast before committing resources.
    *
-   * Examples:
-   *   - Self-hosted Docker: is the Docker daemon reachable?
-   *   - Self-hosted Bare: is the target server accessible via SSH?
-   *   - Routing: is nginx/traefik/caddy installed and running?
-   *   - Cloud: does the account have capacity / valid credentials?
+   * Receives `promptUser` so it can pause the pipeline and ask the user
+   * for a decision (e.g. "port is occupied — free it or abort?").
    *
    * Throw to abort with a descriptive error message.
    */
-  preflight?(config: DeployConfig): Promise<void>;
+  preflight?(config: DeployConfig, promptUser: PromptUserFn): Promise<void>;
 
   /** Spin up the new deployment (container / workload / process). */
   activate(config: DeployConfig, onLog: LogCallback): Promise<{ containerId: string; url?: string }>;
@@ -67,6 +79,8 @@ export interface DeployPipelineInput {
   domains: Array<{ hostname: string; tls: boolean }>;
   /** Routing provider — omit when routing is handled by the runtime (cloud). */
   routing?: DeployRouting;
+  /** Callback to pause and prompt the user — required for interactive preflight. */
+  promptUser?: PromptUserFn;
 }
 
 export interface DeployPipelineResult {
@@ -74,6 +88,10 @@ export interface DeployPipelineResult {
   containerId?: string;
   url?: string;
   error?: string;
+  /** Machine-readable error code (e.g. PORT_IN_USE) for UI-driven recovery. */
+  errorCode?: string;
+  /** Structured details about the error (e.g. { port, pid, command }). */
+  errorDetails?: Record<string, unknown>;
 }
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
@@ -93,19 +111,29 @@ export async function runDeployPipeline(
   input: DeployPipelineInput,
   logger: BuildLogger,
 ): Promise<DeployPipelineResult> {
-  const { config, previousContainerId, domains, routing } = input;
+  const { config, previousContainerId, domains, routing, promptUser } = input;
 
   try {
     logger.step("deploy", "running", "Deploying...");
 
     // ── Pre-deploy validation ────────────────────────────────────────
     if (env.preflight) {
-      await env.preflight(config);
+      const noopPrompt: PromptUserFn = async () => "abort";
+      await env.preflight(config, promptUser ?? noopPrompt);
     }
 
     // ── Step 1: Destroy previous deployment (release slug/domain) ──────
     if (previousContainerId) {
-      await env.deactivate(previousContainerId).catch(() => {});
+      try {
+        logger.log("Stopping previous deployment…\n");
+        await env.deactivate(previousContainerId);
+        // Give the OS a moment to release the port / socket.
+        await new Promise((r) => setTimeout(r, 1000));
+      } catch (err) {
+        // Log but don't abort — best-effort teardown so we can still try the new deploy.
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.log(`Warning: failed to stop previous deployment: ${msg}\n`, "warn");
+      }
     }
 
     // ── Step 2: Activate new deployment ──────────────────────────────
@@ -139,8 +167,10 @@ export async function runDeployPipeline(
     return { status: "ready", containerId, url };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const errorCode = err instanceof DeployError ? err.code : undefined;
+    const errorDetails = err instanceof DeployError ? err.details : undefined;
     logger.step("deploy", "failed", `Deploy failed: ${msg}`);
     logger.log(`\x1b[1;31mDeploy failed: ${msg}\x1b[0m\n`, "error");
-    return { status: "failed", error: msg };
+    return { status: "failed", error: msg, errorCode, errorDetails };
   }
 }

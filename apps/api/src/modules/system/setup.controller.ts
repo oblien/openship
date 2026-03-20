@@ -14,6 +14,7 @@ import type { Context } from "hono";
 import { repos } from "@repo/db";
 import { env } from "../../config";
 import { clearAuthModeCache } from "../../lib/auth-mode";
+import { normalizeRollbackWindow } from "../../lib/release-retention";
 import { sshManager } from "../../lib/ssh-manager";
 
 /** Guard — returns 404 in cloud mode (defense-in-depth) */
@@ -38,6 +39,7 @@ export async function setup(c: Context) {
     tunnelProvider: body.tunnelProvider || null,
     tunnelToken: body.tunnelToken || null,
     defaultBuildMode: body.defaultBuildMode || "auto",
+    defaultRollbackWindow: normalizeRollbackWindow(body.defaultRollbackWindow),
   });
 
   // SSH server config → servers table (single source of truth)
@@ -98,6 +100,7 @@ export async function getSetup(c: Context) {
     authMode: settings?.authMode ?? "none",
     tunnelProvider: settings?.tunnelProvider ?? null,
     defaultBuildMode: settings?.defaultBuildMode ?? "auto",
+    defaultRollbackWindow: normalizeRollbackWindow(settings?.defaultRollbackWindow),
   });
 }
 
@@ -114,6 +117,9 @@ export async function updateSettings(c: Context) {
   if (body.tunnelProvider !== undefined) patch.tunnelProvider = body.tunnelProvider || null;
   if (body.tunnelToken !== undefined) patch.tunnelToken = body.tunnelToken || null;
   if (body.defaultBuildMode !== undefined) patch.defaultBuildMode = body.defaultBuildMode || "auto";
+  if (body.defaultRollbackWindow !== undefined) {
+    patch.defaultRollbackWindow = normalizeRollbackWindow(body.defaultRollbackWindow);
+  }
 
   if (Object.keys(patch).length === 0) {
     return c.json({ error: "No fields to update" }, 400);

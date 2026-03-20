@@ -150,6 +150,7 @@ export function appendLog(sessionId: string, entry: LogEntry): void {
 export function updateStatus(
   sessionId: string,
   status: BuildSessionState["status"],
+  meta?: { errorCode?: string; errorDetails?: Record<string, unknown> },
 ): void {
   const session = sessions.get(sessionId);
   if (!session) return;
@@ -168,6 +169,8 @@ export function updateStatus(
       type: "complete",
       success: false,
       message: lastError?.message || "Build failed",
+      ...(meta?.errorCode && { errorCode: meta.errorCode }),
+      ...(meta?.errorDetails && { errorDetails: meta.errorDetails }),
     });
     for (const writer of session.subscribers) {
       writer("complete", payload);
@@ -280,4 +283,83 @@ export function removeSession(sessionId: string): void {
     session.subscribers.clear();
   }
   sessions.delete(sessionId);
+  // Clean up any pending prompt — reject so the pipeline doesn't hang
+  rejectPendingPrompt(sessionId, "Session removed");
+}
+
+// ─── Interactive prompts (pipeline ↔ user) ───────────────────────────────────
+
+/**
+ * Pending prompt — the pipeline blocks on `promise` while the user
+ * sees the prompt in the dashboard. Resolved/rejected via respondToPrompt.
+ */
+interface PendingPrompt {
+  resolve: (action: string) => void;
+  reject: (reason: Error) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
+
+const pendingPrompts = new Map<string, PendingPrompt>();
+
+/** Default timeout for prompts — if the user doesn't respond, the pipeline aborts. */
+const PROMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Broadcast a prompt SSE event and block until the user responds.
+ *
+ * Called from the deploy pipeline's preflight (via build.service).
+ * Returns the user's chosen action string (e.g. "free_port", "abort").
+ */
+export async function promptUser(
+  sessionId: string,
+  prompt: {
+    promptId: string;
+    title: string;
+    message: string;
+    actions: Array<{ id: string; label: string; variant?: string }>;
+    details?: Record<string, unknown>;
+  },
+): Promise<string> {
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error("No active session for prompt");
+
+  // Broadcast prompt to all subscribers
+  const payload = JSON.stringify({ type: "prompt", ...prompt });
+  for (const writer of session.subscribers) {
+    writer("prompt", payload);
+  }
+
+  // Create a promise the pipeline will await
+  return new Promise<string>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      pendingPrompts.delete(sessionId);
+      reject(new Error("Prompt timed out — no response from user"));
+    }, PROMPT_TIMEOUT_MS);
+
+    pendingPrompts.set(sessionId, { resolve, reject, timeoutId });
+  });
+}
+
+/**
+ * Resolve a pending prompt with the user's chosen action.
+ * Called from the API route handler.
+ */
+export function respondToPrompt(sessionId: string, action: string): boolean {
+  const pending = pendingPrompts.get(sessionId);
+  if (!pending) return false;
+
+  clearTimeout(pending.timeoutId);
+  pendingPrompts.delete(sessionId);
+  pending.resolve(action);
+  return true;
+}
+
+/** Reject a pending prompt (cleanup helper). */
+function rejectPendingPrompt(sessionId: string, reason: string): void {
+  const pending = pendingPrompts.get(sessionId);
+  if (!pending) return;
+
+  clearTimeout(pending.timeoutId);
+  pendingPrompts.delete(sessionId);
+  pending.reject(new Error(reason));
 }

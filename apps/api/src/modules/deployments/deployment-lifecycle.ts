@@ -46,6 +46,7 @@ export async function onFailure(
   ctx: LifecycleContext,
   error?: string,
   durationMs?: number,
+  errorMeta?: { errorCode?: string; errorDetails?: Record<string, unknown> },
 ): Promise<void> {
   const { runtime, project, dep, buildSessionId, persistLogs, provisioned } = ctx;
 
@@ -75,7 +76,7 @@ export async function onFailure(
   const collapsed = persistLogs();
   await repos.deployment.updateStatus(dep.id, "failed", { errorMessage });
   await repos.deployment.finishBuildSession(buildSessionId, "failed", durationMs ?? 0, collapsed);
-  sessionManager.updateStatus(dep.id, "failed");
+  sessionManager.updateStatus(dep.id, "failed", errorMeta);
 
   // 3. Notify
   const user = await repos.user.findById(dep.userId);

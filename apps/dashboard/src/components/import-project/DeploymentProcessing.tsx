@@ -14,15 +14,40 @@ import { useRouter } from "next/navigation";
 import { encodeRepoSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useTheme } from "@/components/theme-provider";
+import { useModal } from "@/context/ModalContext";
 
 interface DeploymentProcessingProps {
   onRedeploy: () => void; // Keep this as it updates URL
 }
 
 const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy }) => {
-  const { config, state, terminalRef, onTerminalReady, stopDeployment, steps, deploymentStatus } = useDeployment();
+  const { config, state, terminalRef, onTerminalReady, stopDeployment, respondToPrompt, steps, deploymentStatus } = useDeployment();
   const { resolvedTheme } = useTheme();
+  const { showModal, hideModal } = useModal();
   const router = useRouter();
+  const promptModalRef = React.useRef<string | null>(null);
+
+  // ── Pipeline prompt modal (e.g. port conflict) ─────────────────────────
+  useEffect(() => {
+    if (!state.pendingPrompt) return;
+    const { promptId, title, message, actions } = state.pendingPrompt;
+    if (promptModalRef.current === promptId) return;
+    promptModalRef.current = promptId;
+
+    const modalId = showModal({
+      title,
+      icon: "error%20triangle-16-1662499385.png",
+      message,
+      buttons: actions.map((action) => ({
+        label: action.label,
+        variant: (action.variant || "secondary") as "secondary" | "danger" | "primary",
+        onClick: () => {
+          hideModal(modalId);
+          respondToPrompt(action.id);
+        },
+      })),
+    });
+  }, [state.pendingPrompt, showModal, hideModal, respondToPrompt]);
 
   // Build domain for display
   const domain = config.domainType === "free"

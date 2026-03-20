@@ -64,6 +64,7 @@ export const CreateProjectBody = Type.Object({
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
   hasServer: Type.Optional(Type.Boolean({ default: true })),
   hasBuild: Type.Optional(Type.Boolean({ default: true })),
+  rollbackWindow: Type.Optional(Type.Number({ minimum: 0, maximum: 20 })),
 });
 
 export const UpdateProjectBody = Type.Partial(CreateProjectBody);
@@ -102,6 +103,6 @@ export const UpdateResourcesBody = Type.Object({
 export type TProjectIdParam = Static<typeof ProjectIdParam>;
 export type TListProjectsQuery = Static<typeof ListProjectsQuery>;
 export type TCreateProjectBody = Static<typeof CreateProjectBody>;
-export type TUpdateProjectBody = Static<typeof UpdateProjectBody>;
+export type TUpdateProjectBody = Static<typeof UpdateProjectBody> & { rollbackWindow?: number | null };
 export type TSetEnvVarsBody = Static<typeof SetEnvVarsBody>;
 export type TUpdateResourcesBody = Static<typeof UpdateResourcesBody>;

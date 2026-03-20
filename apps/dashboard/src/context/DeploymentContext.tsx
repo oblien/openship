@@ -38,6 +38,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     redeploy,
     reset,
     onTerminalReady,
+    respondToPrompt,
     _setContainerFailed,
   } = useDeploymentBuild(config, setConfig);
 
@@ -57,6 +58,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     redeploy,
     reset,
     onTerminalReady,
+    respondToPrompt,
     steps,
     deploymentStatus,
     _setContainerFailed,

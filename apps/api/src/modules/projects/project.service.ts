@@ -12,6 +12,7 @@ import { platform } from "../../lib/controller-helpers";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { encodeResources, decodeResources, withDefaults } from "../../lib/resources";
+import { normalizeRollbackWindow } from "../../lib/release-retention";
 import { env } from "../../config";
 import type { TCreateProjectBody, TUpdateProjectBody, TSetEnvVarsBody, TUpdateResourcesBody } from "./project.schema";
 
@@ -66,6 +67,9 @@ export async function ensureProject(userId: string, data: TCreateProjectBody) {
       port: data.port ?? 3000,
       hasServer: data.hasServer ?? true,
       hasBuild: data.hasBuild ?? true,
+      rollbackWindow: data.rollbackWindow !== undefined
+        ? normalizeRollbackWindow(data.rollbackWindow)
+        : null,
     });
     created = true;
   } else {
@@ -87,6 +91,11 @@ export async function ensureProject(userId: string, data: TCreateProjectBody) {
     if (data.hasServer !== undefined) update.hasServer = data.hasServer;
     if (data.hasBuild !== undefined) update.hasBuild = data.hasBuild;
     if (data.slug !== undefined) update.slug = data.slug;
+    if (data.rollbackWindow !== undefined) {
+      update.rollbackWindow = data.rollbackWindow === null
+        ? null
+        : normalizeRollbackWindow(data.rollbackWindow);
+    }
 
     if (Object.keys(update).length > 0) {
       await repos.project.update(project.id, update);
@@ -154,6 +163,9 @@ export async function createProject(userId: string, data: TCreateProjectBody) {
     rootDirectory: data.rootDirectory,
     productionMode: data.productionMode ?? "host",
     port: data.port ?? 3000,
+    rollbackWindow: data.rollbackWindow !== undefined
+      ? normalizeRollbackWindow(data.rollbackWindow)
+      : null,
   });
 
   return enrichProject(p);
@@ -183,6 +195,12 @@ export async function updateProject(projectId: string, userId: string, data: TUp
     if (owner && repo) {
       update.gitUrl = `https://github.com/${owner}/${repo}.git`;
     }
+  }
+
+  if (data.rollbackWindow !== undefined) {
+    update.rollbackWindow = data.rollbackWindow === null
+      ? null
+      : normalizeRollbackWindow(data.rollbackWindow);
   }
 
   await repos.project.update(projectId, update);

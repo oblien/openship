@@ -43,6 +43,9 @@ export interface ProcessSupervisor {
   /** Stop a running process (graceful → force) */
   stop(deploymentId: string): Promise<void>;
 
+  /** Start a previously stopped process (unit/config must still exist) */
+  start(deploymentId: string): Promise<void>;
+
   /** Restart a process (stop + start with same config) */
   restart(deploymentId: string): Promise<void>;
 

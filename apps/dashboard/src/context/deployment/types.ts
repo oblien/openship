@@ -118,6 +118,8 @@ export interface DeploymentState {
   deploymentFailed: boolean;
   deploymentCanceled: boolean;
   failureMessage: string;
+  errorCode: string;
+  errorDetails: Record<string, unknown> | null;
   buildLogs: BuildLog[];
   currentProgress: number;
   currentStepIndex: number;
@@ -127,6 +129,14 @@ export interface DeploymentState {
   buildDurationMs: number | null;
   /** ISO timestamp when the build started (for elapsed timer). */
   buildStartedAt: string | null;
+  /** Active pipeline prompt waiting for user response. */
+  pendingPrompt: {
+    promptId: string;
+    title: string;
+    message: string;
+    actions: Array<{ id: string; label: string; variant?: string }>;
+    details?: Record<string, unknown>;
+  } | null;
 }
 
 export const INITIAL_STATE: DeploymentState = {
@@ -137,6 +147,8 @@ export const INITIAL_STATE: DeploymentState = {
   deploymentFailed: false,
   deploymentCanceled: false,
   failureMessage: "",
+  errorCode: "",
+  errorDetails: null,
   buildLogs: [],
   currentProgress: 0,
   currentStepIndex: 0,
@@ -144,6 +156,7 @@ export const INITIAL_STATE: DeploymentState = {
   projectId: null,
   buildDurationMs: null,
   buildStartedAt: null,
+  pendingPrompt: null,
 };
 
 // ─── Status ──────────────────────────────────────────────────────────────────
@@ -179,6 +192,7 @@ export interface DeploymentContextType {
   loadBuildSession: (deploymentId: string) => Promise<{ success: boolean; error?: string }>;
   stopDeployment: () => Promise<void>;
   redeploy: (deploymentId: string) => Promise<string | null>;
+  respondToPrompt: (action: string) => Promise<void>;
   reset: () => void;
 
   // Terminal

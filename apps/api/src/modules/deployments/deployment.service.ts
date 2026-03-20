@@ -99,6 +99,9 @@ export async function rollbackDeployment(deploymentId: string, userId: string) {
 
   const project = await repos.project.findById(dep.projectId);
   if (!project) throw new NotFoundError("Project", dep.projectId);
+  if (!dep.containerId) {
+    throw new ForbiddenError("Rollback artifact is no longer retained for this deployment");
+  }
 
   if (project.activeDeploymentId && project.activeDeploymentId !== deploymentId) {
     const current = await repos.deployment.findById(project.activeDeploymentId);
@@ -110,10 +113,8 @@ export async function rollbackDeployment(deploymentId: string, userId: string) {
 
   await repos.project.setActiveDeployment(project.id, deploymentId);
 
-  if (dep.containerId) {
-    const runtime = await resolveDeploymentRuntime(dep);
-    await runtime.start(dep.containerId);
-  }
+  const runtime = await resolveDeploymentRuntime(dep);
+  await runtime.start(dep.containerId);
 
   return dep;
 }
@@ -149,8 +150,7 @@ export async function restartDeployment(deploymentId: string, userId: string) {
   }
 
   const runtime = await resolveDeploymentRuntime(dep);
-  await runtime.stop(dep.containerId);
-  await runtime.start(dep.containerId);
+  await runtime.restart(dep.containerId);
 
   return dep;
 }
@@ -188,3 +188,5 @@ export async function getBuildLogs(deploymentId: string, userId: string) {
   }
   return buildSession.logs as LogEntry[];
 }
+
+

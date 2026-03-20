@@ -3,15 +3,16 @@
  */
 
 import { repos, type Project, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError, BUILD_ENV_VARS, SYSTEM, STACKS, type StackId, type DeployTarget, type BuildStrategy } from "@repo/core";
-import type { BuildConfig, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
-import { BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, runDeployPipeline, createPlatform } from "@repo/adapters";
+import { NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, type StackId, type DeployTarget, type BuildStrategy } from "@repo/core";
+import type { BuildConfig, CommandExecutor, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
+import { BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, ensurePortAvailable, runDeployPipeline, createPlatform } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
 import { env } from "../../config";
-import { resolveTargetPlatform } from "../../lib/deployment-runtime";
+import { resolveDeploymentRuntime, resolveTargetPlatform } from "../../lib/deployment-runtime";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { withDefaults } from "../../lib/resources";
 import { resolveToken } from "../github/github.auth";
+import { pruneRetainedBareReleases } from "./release-retention";
 import * as sessionManager from "./session-manager";
 import { onFailure, onSuccess, onCancelled, type LifecycleContext } from "./deployment-lifecycle";
 import { runPreflightChecks } from "./preflight";
@@ -297,6 +298,17 @@ export { subscribe as subscribeToBuildSession } from "./session-manager";
  *
  * Project MUST exist before calling this.
  */
+
+/** Resolve a pending pipeline prompt (e.g. port conflict). */
+export async function respondToPrompt(
+  deploymentId: string,
+  userId: string,
+  action: string,
+): Promise<boolean> {
+  await loadDeploymentForUser(deploymentId, userId);
+  return sessionManager.respondToPrompt(deploymentId, action);
+}
+
 export async function requestBuildAccess(userId: string, input: BuildAccessInput) {
   const { projectId, branch, environment, envVars, customDomain, buildStrategy, deployTarget, serverId, runtimeMode } = input;
 
@@ -452,6 +464,10 @@ export async function getBuildSessionStatus(deploymentId: string, userId: string
     screenshots: [],
     buildDurationMs: buildSessionRow?.durationMs ?? null,
     buildStartedAt: buildSessionRow?.startedAt?.toISOString() ?? null,
+    failureMessage: dep.errorMessage || "",
+    errorCode: dep.errorMessage?.includes("PORT_IN_USE") || dep.errorMessage?.includes("EADDRINUSE")
+      ? "PORT_IN_USE"
+      : undefined,
   };
 }
 
@@ -644,11 +660,10 @@ async function executeBuildAndDeploy(
       ? snapshot.deployTarget ?? "cloud"
       : plat.target;
 
-    const needsCloudSwitch =
-      effectiveTarget === "cloud" && !env.CLOUD_MODE && plat.target !== "cloud";
-    const needsCloudToken = needsCloudSwitch || (!env.CLOUD_MODE && plat.target === "cloud");
+    const isSaasCloudRuntime = env.CLOUD_MODE && plat.target === "cloud";
+    const needsUserScopedCloudPlatform = effectiveTarget === "cloud" && !isSaasCloudRuntime;
 
-    if (needsCloudToken) {
+    if (needsUserScopedCloudPlatform) {
       const { getCloudToken } = await import("../../lib/cloud-client");
       const result = await getCloudToken(dep.userId);
       if (!result) {
@@ -661,12 +676,17 @@ async function executeBuildAndDeploy(
     }
 
     // Server or local target: resolve the right Platform (bare/docker × local/SSH)
+    let targetExecutor: CommandExecutor | null = null;
     if ((effectiveTarget === "server" || effectiveTarget === "local") && plat.target === "desktop") {
       const runtimeMode = snapshot.runtimeMode ?? "bare";
       const targetPlat = await resolveTargetPlatform(effectiveTarget, runtimeMode, snapshot.serverId);
       runtime = targetPlat.runtime;
       routing = targetPlat.routing;
+      targetExecutor = targetPlat.executor;
       ctx.runtime = runtime;
+    } else if (plat.target === "selfhosted") {
+      // Self-hosted mode: the platform executor is already the right one
+      targetExecutor = plat.executor;
     }
 
     // ── Build phase ──────────────────────────────────────────────────
@@ -811,14 +831,25 @@ async function executeBuildAndDeploy(
           : undefined,
       };
 
+      // Gather inputs for the deploy pipeline
+      const prevDep = project.activeDeploymentId
+        ? await repos.deployment.findById(project.activeDeploymentId)
+        : null;
+      const previousRuntime = prevDep?.containerId
+        ? await resolveDeploymentRuntime(prevDep).catch(() => runtime)
+        : runtime;
+
       // Compose deploy environment from runtime adapter
       const deployEnv: DeployEnvironment = {
+        preflight: targetExecutor
+          ? async (cfg, promptUser) => ensurePortAvailable(targetExecutor, cfg.port, logger, promptUser)
+          : undefined,
         activate: async (cfg, onLog) => {
           const r = await runtime.deploy(cfg, onLog);
           if (!r.containerId) throw new Error("Deploy produced no container");
           return { containerId: r.containerId, url: r.url };
         },
-        deactivate: (id) => runtime.destroy(id),
+        deactivate: (id) => previousRuntime.name === "bare" ? previousRuntime.stop(id) : previousRuntime.destroy(id),
         resolveTargetUrl: runtime.supports("containerIp")
           ? async (id, port) => {
               const ip = await runtime.getContainerIp(id);
@@ -826,11 +857,6 @@ async function executeBuildAndDeploy(
             }
           : undefined,
       };
-
-      // Gather inputs for the deploy pipeline
-      const prevDep = project.activeDeploymentId
-        ? await repos.deployment.findById(project.activeDeploymentId)
-        : null;
 
       // Attach custom domain from snapshot (passed through from input)
       if (snapshot.customDomain) {
@@ -846,10 +872,14 @@ async function executeBuildAndDeploy(
         previousContainerId: prevDep?.containerId ?? undefined,
         domains: verifiedDomains,
         routing,
+        promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
       }, logger);
 
       if (deployResult.status === "failed") {
-        await onFailure(ctx, deployResult.error, buildResult.durationMs);
+        await onFailure(ctx, deployResult.error, buildResult.durationMs, {
+          errorCode: deployResult.errorCode,
+          errorDetails: deployResult.errorDetails,
+        });
         return;
       }
 
@@ -859,6 +889,12 @@ async function executeBuildAndDeploy(
         url: deployResult.url,
         durationMs: buildResult.durationMs ?? 0,
       });
+
+      if (runtime.name === "bare") {
+        await pruneRetainedBareReleases(project, dep).catch((err) => {
+          console.error(`[DEPLOY] Failed to prune retained releases for ${dep.id}:`, err);
+        });
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
