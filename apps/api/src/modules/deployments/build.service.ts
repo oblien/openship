@@ -9,6 +9,7 @@ import { BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, ensurePortAva
 import { platform } from "../../lib/controller-helpers";
 import { env } from "../../config";
 import { resolveDeploymentRuntime, resolveTargetPlatform } from "../../lib/deployment-runtime";
+import { ensureManagedEdgeProxy } from "../../lib/managed-edge-proxy";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { withDefaults } from "../../lib/resources";
 import { resolveToken } from "../github/github.auth";
@@ -618,7 +619,7 @@ async function executeBuildAndDeploy(
   buildSessionId: string,
 ) {
   const plat = platform();
-  let { runtime, routing } = plat;
+  let { runtime, routing, ssl, system } = plat;
 
   // ── Read config snapshot early so we can resolve the runtime ──────
   const snapshot = dep.meta as DeploymentConfigSnapshot | null;
@@ -659,6 +660,9 @@ async function executeBuildAndDeploy(
     const effectiveTarget = plat.target === "desktop"
       ? snapshot.deployTarget ?? "cloud"
       : plat.target;
+    const usesManagedRouting =
+      plat.target === "selfhosted" ||
+      (plat.target === "desktop" && (effectiveTarget === "server" || effectiveTarget === "local"));
 
     const isSaasCloudRuntime = env.CLOUD_MODE && plat.target === "cloud";
     const needsUserScopedCloudPlatform = effectiveTarget === "cloud" && !isSaasCloudRuntime;
@@ -672,6 +676,8 @@ async function executeBuildAndDeploy(
       const cloudPlatform = await createPlatform({ target: "cloud", cloudToken: result.token });
       runtime = cloudPlatform.runtime;
       routing = cloudPlatform.routing;
+      ssl = cloudPlatform.ssl;
+      system = cloudPlatform.system;
       ctx.runtime = runtime;
     }
 
@@ -682,6 +688,8 @@ async function executeBuildAndDeploy(
       const targetPlat = await resolveTargetPlatform(effectiveTarget, runtimeMode, snapshot.serverId);
       runtime = targetPlat.runtime;
       routing = targetPlat.routing;
+      ssl = targetPlat.ssl;
+      system = targetPlat.system;
       targetExecutor = targetPlat.executor;
       ctx.runtime = runtime;
     } else if (plat.target === "selfhosted") {
@@ -842,7 +850,23 @@ async function executeBuildAndDeploy(
       // Compose deploy environment from runtime adapter
       const deployEnv: DeployEnvironment = {
         preflight: targetExecutor
-          ? async (cfg, promptUser) => ensurePortAvailable(targetExecutor, cfg.port, logger, promptUser)
+          ? async (cfg, promptUser) => {
+              if (system) {
+                const systemLog = (entry: { message: string; level: "info" | "warn" | "error" }) => {
+                  logger.log(`${entry.message}\n`, entry.level);
+                };
+
+                await system.ensureFeature("deploy", systemLog);
+                if (domains.length > 0) {
+                  await system.ensureFeature("routing", systemLog);
+                }
+                if (domains.some((d) => d.provisionSsl)) {
+                  await system.ensureFeature("ssl", systemLog);
+                }
+              }
+
+              await ensurePortAvailable(targetExecutor, cfg.port, logger, promptUser);
+            }
           : undefined,
         activate: async (cfg, onLog) => {
           const r = await runtime.deploy(cfg, onLog);
@@ -863,15 +887,62 @@ async function executeBuildAndDeploy(
         deployConfig.customDomain = snapshot.customDomain;
       }
 
-      const verifiedDomains = snapshot.customDomain
-        ? [{ hostname: snapshot.customDomain, tls: true }]
-        : [];
+      // ── Gather all domains that need routing ───────────────────────
+      // Sources: custom domain, verified DB domains, free host subdomain.
+      // Every domain gets an nginx route; SSL is provisioned only for
+      // custom domains — the free host subdomain skips SSL (user manages it).
+      const projectDomains = await repos.domain.listByProject(project.id);
+      const seen = new Set<string>();
+      const domains: Array<{ hostname: string; tls: boolean; provisionSsl: boolean; isCloud: boolean }> = [];
+
+      const addDomain = (hostname: string, skipSsl = false) => {
+        const key = hostname.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        const isCloud = hostname.endsWith(`.${SYSTEM.DOMAINS.CLOUD_DOMAIN}`);
+        // SSL only for custom domains on bare runtime (skip for cloud & host domains)
+        const provisionSsl = runtime.name === "bare" && !isCloud && !skipSsl;
+        domains.push({ hostname, tls: true, provisionSsl, isCloud });
+      };
+
+      if (snapshot.customDomain) addDomain(snapshot.customDomain);
+      for (const d of projectDomains) {
+        if (d.verified) addDomain(d.hostname);
+      }
+
+      // Free subdomain: slug.baseDomain — always route on self-hosted, skip SSL.
+      // HOST_DOMAIN overrides the default cloud domain (opsh.io).
+      if (project.slug && usesManagedRouting) {
+        const baseDomain = env.HOST_DOMAIN || SYSTEM.DOMAINS.CLOUD_DOMAIN;
+        addDomain(`${project.slug}.${baseDomain}`, true);
+      }
+
+      // Wrap ssl to persist cert status in DB after provisioning
+      const deploySsl = domains.some((d) => d.provisionSsl)
+        ? {
+            provisionCert: async (hostname: string) => {
+              const result = await ssl.provisionCert(hostname);
+              const domainRecord = projectDomains.find(
+                (d) => d.hostname.toLowerCase() === hostname.toLowerCase(),
+              );
+              if (domainRecord) {
+                await repos.domain.updateSsl(domainRecord.id, {
+                  sslStatus: result.expiresAt ? "active" : "provisioning",
+                  sslIssuer: result.issuer,
+                  sslExpiresAt: result.expiresAt ? new Date(result.expiresAt) : undefined,
+                });
+              }
+              return result;
+            },
+          }
+        : ssl;
 
       const deployResult = await runDeployPipeline(deployEnv, {
         config: deployConfig,
         previousContainerId: prevDep?.containerId ?? undefined,
-        domains: verifiedDomains,
+        domains,
         routing,
+        ssl: deploySsl,
         promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
       }, logger);
 
@@ -881,6 +952,15 @@ async function executeBuildAndDeploy(
           errorDetails: deployResult.errorDetails,
         });
         return;
+      }
+
+      if (usesManagedRouting) {
+        for (const domain of domains.filter((d) => d.isCloud)) {
+          logger.log(`Syncing managed edge proxy for ${domain.hostname}...\n`);
+          await ensureManagedEdgeProxy(dep.userId, project.slug ?? "", {
+            serverId: snapshot.serverId,
+          });
+        }
       }
 
       // ── Success ──────────────────────────────────────────────────────

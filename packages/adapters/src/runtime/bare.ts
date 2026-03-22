@@ -30,6 +30,7 @@ import type {
 } from "../types";
 
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
+import { STACKS, TRANSFER_EXCLUDES, type StackId, type StackDefinition } from "@repo/core";
 import { checkToolchainForStack, installTools } from "../toolchain";
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
 import { BuildLogger, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
@@ -57,6 +58,8 @@ export interface BareRuntimeOptions {
 
 const DEFAULT_WORK_DIR = "/opt/openship";
 const DEFAULT_BUILD_TIMEOUT = 10 * 60 * 1000;
+
+
 
 // ─── Bare runtime ────────────────────────────────────────────────────────────
 
@@ -205,6 +208,8 @@ export class BareRuntime implements RuntimeAdapter {
     log.log("Build strategy: local (build on API host, transfer to server)\n");
     const remoteDir = this.buildDir(config.sessionId);
 
+    const stackDef: StackDefinition | undefined = STACKS[config.stack as StackId];
+
     let result: Awaited<ReturnType<typeof runLocalBuild>>;
     try {
       result = await runLocalBuild({
@@ -219,16 +224,43 @@ export class BareRuntime implements RuntimeAdapter {
         transferOutput: async (buildDir) => {
           await this.executor.rm(remoteDir);
           await this.executor.mkdir(remoteDir);
-          await transferLocalDirectory(
-            buildDir,
-            {
-              kind: "executor",
-              executor: this.executor,
-              path: remoteDir,
-            },
-            log,
-            { excludes: [] },
-          );
+
+          if (stackDef?.productionPaths?.length) {
+            // Compiled stacks (Go, Rust, .NET, etc.) — transfer only production artifacts
+            log.log(`Transferring production paths: ${stackDef.productionPaths.join(", ")}\n`);
+            await transferLocalDirectory(
+              buildDir,
+              { kind: "executor", executor: this.executor, path: remoteDir },
+              log,
+              { includes: [...stackDef.productionPaths] },
+            );
+          } else {
+            // Runtime stacks (JS/TS, Python, etc.) — transfer everything except deps & caches
+            const excludes = [
+              ...TRANSFER_EXCLUDES,
+              ...(stackDef?.cacheDirs ?? []),
+            ];
+            await transferLocalDirectory(
+              buildDir,
+              { kind: "executor", executor: this.executor, path: remoteDir },
+              log,
+              { excludes },
+            );
+          }
+
+          // Install production dependencies on target if needed
+          const installCmd = config.installCommand?.trim();
+          if (installCmd) {
+            log.log("Installing production dependencies on target...\n");
+            const { code } = await this.executor.streamExec(
+              `cd ${sq(remoteDir)} && ${installCmd}`,
+              log.callback,
+            );
+            if (code !== 0) {
+              throw new Error("Failed to install production dependencies on target");
+            }
+            log.log("Production dependencies installed.\n");
+          }
         },
       });
     } catch (err) {

@@ -14,15 +14,21 @@ export const SYSTEM_COMPONENTS: SystemComponentDefinition[] = [
     installable: true,
   },
   {
-    name: "git",
-    label: "Git",
-    description: "Version control for source code",
+    name: "nginx",
+    label: "Nginx",
+    description: "Reverse proxy with certbot for SSL",
     installable: true,
   },
   {
-    name: "node",
-    label: "Node.js",
-    description: "JavaScript runtime for build and app tasks",
+    name: "certbot",
+    label: "Certbot",
+    description: "Let's Encrypt certificate provisioning for Nginx",
+    installable: true,
+  },
+  {
+    name: "git",
+    label: "Git",
+    description: "Version control for source code",
     installable: true,
   },
 ];

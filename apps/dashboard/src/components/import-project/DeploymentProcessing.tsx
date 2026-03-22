@@ -13,6 +13,7 @@ import { generateIcon } from "@/utils/icons";
 import { useRouter } from "next/navigation";
 import { encodeRepoSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useTheme } from "@/components/theme-provider";
 import { useModal } from "@/context/ModalContext";
 
@@ -22,36 +23,92 @@ interface DeploymentProcessingProps {
 
 const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy }) => {
   const { config, state, terminalRef, onTerminalReady, stopDeployment, respondToPrompt, steps, deploymentStatus } = useDeployment();
+  const { hostDomain } = usePlatform();
+  const baseDomain = hostDomain || "opsh.io";
   const { resolvedTheme } = useTheme();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
   const promptModalRef = React.useRef<string | null>(null);
 
+  const renderPromptDetails = useCallback((details?: Record<string, unknown>) => {
+    if (!details) return null;
+
+    const rows: Array<{ label: string; value: string | null }> = [
+      { label: "Port", value: details.port != null ? String(details.port) : null },
+      { label: "Process", value: typeof details.command === "string" ? details.command : null },
+      { label: "PID", value: details.pid != null ? String(details.pid) : null },
+      { label: "Systemd Unit", value: typeof details.systemdUnit === "string" ? details.systemdUnit : null },
+      { label: "Unit Description", value: typeof details.systemdDescription === "string" ? details.systemdDescription : null },
+      { label: "Openship Deployment", value: typeof details.deploymentId === "string" ? details.deploymentId : null },
+    ].filter((row): row is { label: string; value: string } => Boolean(row.value));
+
+    if (rows.length === 0) return null;
+
+    return (
+      <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-3">
+        {rows.map((row) => (
+          <div key={row.label} className="flex flex-col gap-1">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">{row.label}</span>
+            <span className="text-sm text-foreground break-all">{row.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }, []);
+
   // ── Pipeline prompt modal (e.g. port conflict) ─────────────────────────
   useEffect(() => {
     if (!state.pendingPrompt) return;
-    const { promptId, title, message, actions } = state.pendingPrompt;
+    const { promptId, title, message, actions, details } = state.pendingPrompt;
     if (promptModalRef.current === promptId) return;
     promptModalRef.current = promptId;
 
     const modalId = showModal({
       title,
       icon: "error%20triangle-16-1662499385.png",
-      message,
-      buttons: actions.map((action) => ({
-        label: action.label,
-        variant: (action.variant || "secondary") as "secondary" | "danger" | "primary",
-        onClick: () => {
-          hideModal(modalId);
-          respondToPrompt(action.id);
-        },
-      })),
+      customContent: (
+        <div className="p-6 space-y-5">
+          <div className="space-y-2">
+            <h3 className="text-xl font-bold text-foreground">{title}</h3>
+            <p className="text-sm leading-relaxed text-muted-foreground">{message}</p>
+          </div>
+
+          {renderPromptDetails(details)}
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            {actions.map((action) => {
+              const variant = (action.variant || "secondary") as "secondary" | "danger" | "primary";
+              const styles = variant === "danger"
+                ? "bg-red-600 text-white hover:bg-red-700"
+                : variant === "primary"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "border border-border bg-muted text-foreground hover:bg-muted/80";
+
+              return (
+                <button
+                  key={action.id}
+                  type="button"
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${styles}`}
+                  onClick={() => {
+                    hideModal(modalId);
+                    respondToPrompt(action.id);
+                  }}
+                >
+                  {action.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ),
+      width: "560px",
+      maxWidth: "92vw",
     });
-  }, [state.pendingPrompt, showModal, hideModal, respondToPrompt]);
+  }, [state.pendingPrompt, showModal, hideModal, respondToPrompt, renderPromptDetails]);
 
   // Build domain for display
   const domain = config.domainType === "free"
-    ? `${config.domain || config.projectName}.opsh.io`
+    ? `${config.domain || config.projectName}.${baseDomain}`
     : config.customDomain;
 
   const handleTerminalReady = useCallback((terminal: Terminal) => {
@@ -436,6 +493,8 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
 
 const DeploymentDetails = memo(() => {
   const { state, deploymentStatus, config } = useDeployment();
+  const { hostDomain } = usePlatform();
+  const baseDomain = hostDomain || "opsh.io";
   const [buildTime, setBuildTime] = useState<number>(() => {
     // Initialize from persisted duration if available
     if (state.buildDurationMs) return Math.round(state.buildDurationMs / 1000);
@@ -510,7 +569,7 @@ const DeploymentDetails = memo(() => {
         </div>
         <div className="flex justify-between items-center py-1.5 border-b border-border/50">
           <span className="text-sm text-muted-foreground">Domain</span>
-          <span className="text-sm font-normal text-foreground">{config.domainType === "free" ? `${config.domain || config.projectName}.opsh.io` : config.customDomain}</span>
+          <span className="text-sm font-normal text-foreground">{config.domainType === "free" ? `${config.domain || config.projectName}.${baseDomain}` : config.customDomain}</span>
         </div>
         <div className="flex justify-between items-center py-1.5 border-b border-border/50">
           <span className="text-sm text-muted-foreground">Branch</span>

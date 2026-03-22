@@ -14,6 +14,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { STACK_ICONS } from "@repo/core";
 import type { ComposeServiceInfo } from "@/context/deployment/types";
 import EnvironmentVariables from "./EnvironmentVariables";
@@ -47,6 +48,8 @@ const ServiceDomainSection: React.FC<{
   projectName: string;
   onChange: (updates: Partial<ComposeServiceInfo>) => void;
 }> = ({ service, projectName, onChange }) => {
+  const { hostDomain } = usePlatform();
+  const baseDomain = hostDomain || "opsh.io";
   const hasPorts = service.ports.length > 0;
   const isDb = isDbService(service);
 
@@ -170,7 +173,7 @@ const ServiceDomainSection: React.FC<{
                   className="w-full px-3.5 py-2.5 pr-16 bg-background border border-border/50 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                  .opsh.io
+                  .{baseDomain}
                 </span>
               </div>
             ) : (
@@ -205,6 +208,8 @@ const ServiceCard: React.FC<{
   onEnvChange: (env: Record<string, string>) => void;
 }> = ({ service, projectName, onUpdate, onEnvChange }) => {
   const [expanded, setExpanded] = useState(false);
+  const { hostDomain } = usePlatform();
+  const baseDomain = hostDomain || "opsh.io";
 
   const isDb = isDbService(service);
   const ServiceIcon = isDb ? Database : service.build ? Container : Server;
@@ -218,7 +223,7 @@ const ServiceCard: React.FC<{
   const domainDisplay = service.exposed
     ? service.domainType === "custom" && service.customDomain
       ? service.customDomain
-      : `${service.domain || service.name}.opsh.io`
+      : `${service.domain || service.name}.${baseDomain}`
     : null;
 
   /** Bridge: EnvironmentVariables uses {key,value,visible}[] — our service uses Record<string,string> */

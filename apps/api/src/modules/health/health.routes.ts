@@ -41,5 +41,6 @@ healthRoutes.get("/env", async (c) => {
     authMode,
     cloudAuthUrl: env.OPENSHIP_CLOUD_DASHBOARD_URL,
     ...(machineName && { machineName }),
+    ...(env.HOST_DOMAIN && { hostDomain: env.HOST_DOMAIN }),
   });
 });

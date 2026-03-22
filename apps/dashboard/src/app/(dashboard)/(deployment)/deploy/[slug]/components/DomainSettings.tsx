@@ -16,6 +16,7 @@ interface DomainSettingsProps {
   setCustomDomain: (domain: string) => void;
   domainType: "free" | "custom";
   setDomainType: (type: "free" | "custom") => void;
+  hostDomain?: string;
 }
 
 const RECORD_LABELS: Record<string, string> = {
@@ -32,7 +33,9 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
   setCustomDomain,
   domainType,
   setDomainType,
+  hostDomain,
 }) => {
+  const baseDomain = hostDomain || "opsh.io";
   const [showDnsModal, setShowDnsModal] = useState(false);
   const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
   const [dnsMode, setDnsMode] = useState<"cloud" | "selfhosted">("cloud");
@@ -124,14 +127,14 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
                 className="flex-1 px-3 py-2 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
               />
               <div className="px-3 py-2 bg-muted/60 border-l border-border">
-                <span className="text-sm font-semibold text-foreground">.opsh.io</span>
+                <span className="text-sm font-semibold text-foreground">.{baseDomain}</span>
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
               <Shield className="size-3 text-emerald-500 shrink-0" />
               SSL included &mdash; live at{" "}
               <span className="font-medium text-foreground ml-0.5">
-                {domain || projectName || "my-project"}.opsh.io
+                {domain || projectName || "my-project"}.{baseDomain}
               </span>
             </p>
           </div>

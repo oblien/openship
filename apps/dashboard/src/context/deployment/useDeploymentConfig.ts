@@ -130,6 +130,7 @@ export function useDeploymentConfig() {
           ...prev,
           repo: name,
           owner: "local",
+          localPath: path,
           projectName: name,
           projectType: response.projectType || "app",
           domain: name.toLowerCase().replace(/[^a-z0-9-]/g, ""),

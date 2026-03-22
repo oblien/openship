@@ -61,37 +61,6 @@ function gitInstallPlan(profile: EnvironmentProfile): InstallPlan {
   };
 }
 
-function nodeInstallPlan(profile: EnvironmentProfile): InstallPlan {
-  if (profile.packageManager === "apt") {
-    return {
-      supported: true,
-      installCommand:
-        "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs",
-      verifyCommand: "node --version",
-    };
-  }
-
-  const fallbacks: Record<string, string> = {
-    dnf: "dnf install -y nodejs",
-    yum: "yum install -y nodejs",
-    brew: "brew install node",
-  };
-
-  const fallback = fallbacks[profile.packageManager];
-  if (!fallback) {
-    return {
-      supported: false,
-      unsupportedReason: "No supported package manager found for Node.js installation",
-    };
-  }
-
-  return {
-    supported: true,
-    installCommand: fallback,
-    verifyCommand: "node --version",
-  };
-}
-
 function traefikDockerPlan(
   _profile: EnvironmentProfile,
   config?: InstallerConfig,
@@ -141,6 +110,54 @@ function traefikBinaryPlan(profile: EnvironmentProfile): InstallPlan {
   };
 }
 
+function nginxInstallPlan(profile: EnvironmentProfile): InstallPlan {
+  const commands: Record<string, string> = {
+    apt: "apt-get update -qq && apt-get install -y -qq nginx certbot python3-certbot-nginx",
+    dnf: "dnf install -y nginx certbot python3-certbot-nginx",
+    yum: "yum install -y nginx certbot python3-certbot-nginx",
+  };
+
+  const installCommand = commands[profile.packageManager];
+  if (!installCommand) {
+    return {
+      supported: false,
+      unsupportedReason: "Nginx installation is only supported on Linux with apt, dnf, or yum",
+    };
+  }
+
+  return {
+    supported: true,
+    installCommand,
+    startCommand:
+      profile.serviceManager === "systemd"
+        ? "systemctl enable nginx && systemctl start nginx"
+        : undefined,
+    verifyCommand: "nginx -v 2>&1",
+  };
+}
+
+function certbotInstallPlan(profile: EnvironmentProfile): InstallPlan {
+  const commands: Record<string, string> = {
+    apt: "apt-get update -qq && apt-get install -y -qq certbot python3-certbot-nginx",
+    dnf: "dnf install -y certbot python3-certbot-nginx",
+    yum: "yum install -y certbot python3-certbot-nginx",
+  };
+
+  const installCommand = commands[profile.packageManager];
+  if (!installCommand) {
+    return {
+      supported: false,
+      unsupportedReason: "Certbot installation is only supported on Linux with apt, dnf, or yum",
+    };
+  }
+
+  return {
+    supported: true,
+    installCommand,
+    verifyCommand: "certbot --version 2>/dev/null",
+  };
+}
+
 export const systemCatalog = {
   checks: {
     docker: {
@@ -167,22 +184,33 @@ export const systemCatalog = {
       missingMessage: "Traefik is not installed",
       notRunningMessage: "Traefik is installed but not running",
     },
+    nginx: {
+      versionCommand: "nginx -v 2>&1",
+      runningCommands: [
+        "pgrep -x nginx",
+      ],
+      parseVersion: (output: string) =>
+        output.match(/nginx\/(\S+)/)?.[1] ?? output,
+      missingMessage: "Nginx is not installed",
+      notRunningMessage: "Nginx is installed but not running",
+    },
+    certbot: {
+      versionCommand: "certbot --version 2>/dev/null",
+      parseVersion: (output: string) => output.match(/certbot\s+(\S+)/)?.[1] ?? output,
+      missingMessage: "Certbot is not installed",
+    },
     git: {
       versionCommand: "git --version",
       parseVersion: (output: string) => output.match(/git version (\S+)/)?.[1] ?? output,
       missingMessage: "Git is not installed",
     },
-    node: {
-      versionCommand: "node --version",
-      parseVersion: (output: string) => output.replace(/^v/, ""),
-      missingMessage: "Node.js is not installed",
-    },
   },
   installs: {
     docker: dockerInstallPlan,
     git: gitInstallPlan,
-    node: nodeInstallPlan,
     traefikDocker: traefikDockerPlan,
     traefikBinary: traefikBinaryPlan,
+    nginx: nginxInstallPlan,
+    certbot: certbotInstallPlan,
   },
 };

@@ -2,13 +2,14 @@
  * Infrastructure provider interfaces — routing and SSL.
  *
  * Routing and SSL are separate from the runtime because:
- *   - Docker is a runtime, not a reverse proxy. Traefik/Caddy/Nginx handle routing.
+ *   - Docker is a runtime, not a reverse proxy. Traefik/Nginx handle routing.
  *   - SSL is managed by ACME resolvers (Traefik, certbot), not by Docker.
  *   - Cloud routing uses a completely different mechanism (API calls).
  *   - Desktop/dev doesn't need routing or SSL at all.
  *
  * Implementations:
  *   - TraefikProvider  → Traefik file provider + ACME (self-hosted)
+ *   - NginxProvider    → Nginx server blocks + certbot (self-hosted)
  *   - CloudInfra       → Oblien API (cloud)
  *   - NoopInfra        → No-op (desktop/dev)
  */

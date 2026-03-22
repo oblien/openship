@@ -1,16 +1,18 @@
 /**
  * Cloud routes — mounted at /api/cloud in app.ts.
  *
- * Two route sets from the same module:
- *   cloudSaasRoutes  (CLOUD_MODE)  — POST /token
- *   cloudLocalRoutes (!CLOUD_MODE) — POST /connect, POST /disconnect, GET /status
+ * Two route sets, each importing only from their own controller:
+ *   cloudSaasRoutes  (CLOUD_MODE)  — token, handoffs, edge-proxy
+ *   cloudLocalRoutes (!CLOUD_MODE) — disconnect, status, connect-callback
  */
 
 import type { Context, Next } from "hono";
 import { Hono } from "hono";
+import { db, schema, eq } from "@repo/db";
 import { authMiddleware } from "../../middleware";
 import { rateLimiter } from "../../middleware/rate-limiter";
-import * as ctrl from "./cloud.controller";
+import * as saas from "./cloud-saas.controller";
+import * as local from "./cloud-local.controller";
 
 /**
  * Bearer-token session auth — used by the /token route.
@@ -26,7 +28,6 @@ async function bearerSessionAuth(c: Context, next: Next) {
   }
   const token = header.slice(7);
 
-  const { db, schema, eq } = await import("@repo/db");
   const [row] = await db
     .select()
     .from(schema.session)
@@ -50,30 +51,23 @@ async function bearerSessionAuth(c: Context, next: Next) {
   return next();
 }
 
-/** SaaS routes — mints namespace tokens for local instances + desktop OAuth handoff */
+/** SaaS routes — top-level imports, no per-request overhead */
 export const cloudSaasRoutes = new Hono();
 
-// Desktop OAuth handoff — localhost only, PKCE + state
-cloudSaasRoutes.get("/desktop-handoff", ctrl.desktopHandoff);
-// Self-hosted connect handoff — HTTPS only
-cloudSaasRoutes.get("/connect-handoff", ctrl.connectHandoff);
-// Code exchange — no auth (code is the credential), rate-limited
+cloudSaasRoutes.get("/desktop-handoff", saas.desktopHandoff);
+cloudSaasRoutes.get("/connect-handoff", saas.connectHandoff);
 cloudSaasRoutes.use("/exchange-code", rateLimiter);
-cloudSaasRoutes.post("/exchange-code", ctrl.exchangeCode);
+cloudSaasRoutes.post("/exchange-code", saas.exchangeCode);
 
-// Token minting — accepts Bearer session token from local/desktop instances
 cloudSaasRoutes.use("/token", bearerSessionAuth);
-cloudSaasRoutes.post("/token", ctrl.getToken);
+cloudSaasRoutes.post("/token", saas.getToken);
 
-/** Local routes — manage connection to Openship Cloud */
+cloudSaasRoutes.use("/edge-proxy", bearerSessionAuth);
+cloudSaasRoutes.post("/edge-proxy", saas.syncEdgeProxy);
+
+/** Local routes — dynamic imports for security isolation */
 export const cloudLocalRoutes = new Hono();
 cloudLocalRoutes.use("*", authMiddleware);
-cloudLocalRoutes.post("/disconnect", ctrl.disconnect);
-cloudLocalRoutes.get("/status", ctrl.status);
-
-/**
- * Cloud connect callback — used by self-hosted settings page.
- * After the user authenticates on Openship Cloud, they're redirected
- * here with a one-time code. We exchange it and store the cloud token.
- */
-cloudLocalRoutes.get("/connect-callback", ctrl.connectCallback);
+cloudLocalRoutes.post("/disconnect", local.disconnect);
+cloudLocalRoutes.get("/status", local.status);
+cloudLocalRoutes.get("/connect-callback", local.connectCallback);

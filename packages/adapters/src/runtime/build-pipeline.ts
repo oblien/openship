@@ -184,9 +184,13 @@ export async function runBuildPipeline(
 
     // ── Step 2: Install ────────────────────────────────────────────
     currentStep = "install";
-    await logger.runStep("install", `Installing dependencies (${config.packageManager})`, async () => {
-      await exec(inDir(config.installCommand));
-    });
+    if (config.installCommand) {
+      await logger.runStep("install", `Installing dependencies (${config.packageManager})`, async () => {
+        await exec(inDir(config.installCommand));
+      });
+    } else {
+      logger.step("install", "skipped", "No install command configured");
+    }
 
     // ── Step 3: Build ──────────────────────────────────────────────
     if (config.buildCommand) {

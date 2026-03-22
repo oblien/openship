@@ -5,6 +5,7 @@ import { generateIcon } from "@/utils/icons";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { projectsApi, deployApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { usePlatform } from "@/context/PlatformContext";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -107,8 +108,10 @@ export const DomainSettings = () => {
     navigator.clipboard.writeText(text);
   };
 
-  // Check if primary domain is .opsh.io
-  const isObleeDomain = primaryDomain?.domain?.endsWith('.opsh.io');
+  // Check if primary domain is a host/cloud domain (skip SSL renewal UI)
+  const { hostDomain } = usePlatform();
+  const baseDomain = hostDomain || "opsh.io";
+  const isObleeDomain = primaryDomain?.domain?.endsWith(`.${baseDomain}`);
 
   const handleRenewSSL = async () => {
     if (!primaryDomain?.domain) return;
@@ -271,7 +274,7 @@ export const DomainSettings = () => {
                       Free SSL Included
                     </div>
                     <div className="text-xs text-indigo-900">
-                      Your .opsh.io domain includes free SSL with no expiration. Certificate renewal is available for custom domains.
+                      Your free domain includes SSL managed by the host. Certificate renewal is available for custom domains.
                     </div>
                   </div>
                 </div>

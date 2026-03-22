@@ -235,61 +235,92 @@ export async function installGit(
   }
 }
 
-// ─── Node.js ─────────────────────────────────────────────────────────────────
+// ─── Nginx ────────────────────────────────────────────────────────────────────
 
-export async function installNode(
+export async function installNginx(
   executor: CommandExecutor,
   onLog: SystemLogCallback,
 ): Promise<InstallResult> {
   const profile = await resolveEnvironment(executor);
-  const plan = systemCatalog.installs.node(profile);
+  const plan = systemCatalog.installs.nginx(profile);
   if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
     return {
-      component: "node",
+      component: "nginx",
       success: false,
-      error: plan.unsupportedReason ?? "Node.js installation is not supported on this environment",
+      error: plan.unsupportedReason ?? "Nginx installation is not supported on this environment",
     };
   }
 
-  onLog(log("Installing Node.js (LTS)..."));
+  onLog(log("Installing Nginx and certbot..."));
 
   try {
     const { code } = await executor.streamExec(
       plan.installCommand,
       onLog as (log: LogEntry) => void,
     );
-
     if (code !== 0) {
-      if (!plan.fallbackInstallCommands?.length) {
-        return { component: "node", success: false, error: "Node.js installation failed" };
-      }
-
-      let recovered = false;
-      for (const fallback of plan.fallbackInstallCommands) {
-        const result = await executor.streamExec(
-          fallback,
-          onLog as (log: LogEntry) => void,
-        );
-        if (result.code === 0) {
-          recovered = true;
-          break;
-        }
-      }
-
-      if (!recovered) {
-        return { component: "node", success: false, error: "Node.js installation failed" };
-      }
+      return { component: "nginx", success: false, error: "Nginx installation failed" };
     }
 
-    const version = await executor.exec(plan.verifyCommand);
-    const parsed = systemCatalog.checks.node.parseVersion(version);
+    if (plan.startCommand) {
+      onLog(log("Enabling and starting Nginx service..."));
+      await executor.streamExec(
+        plan.startCommand,
+        onLog as (log: LogEntry) => void,
+      );
+    }
 
-    onLog(log(`Node.js ${parsed} installed`));
-    return { component: "node", success: true, version: parsed };
+    // Ensure sites-enabled directory exists
+    await executor.mkdir("/etc/nginx/sites-enabled");
+
+    onLog(log("Verifying Nginx installation..."));
+    const version = await executor.exec(plan.verifyCommand);
+    const parsed = systemCatalog.checks.nginx.parseVersion(version);
+
+    onLog(log(`Nginx ${parsed} installed with certbot`));
+    return { component: "nginx", success: true, version: parsed };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    onLog(log(`Node.js installation failed: ${msg}`, "error"));
-    return { component: "node", success: false, error: msg };
+    onLog(log(`Nginx installation failed: ${msg}`, "error"));
+    return { component: "nginx", success: false, error: msg };
+  }
+}
+
+export async function installCertbot(
+  executor: CommandExecutor,
+  onLog: SystemLogCallback,
+): Promise<InstallResult> {
+  const profile = await resolveEnvironment(executor);
+  const plan = systemCatalog.installs.certbot(profile);
+  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
+    return {
+      component: "certbot",
+      success: false,
+      error: plan.unsupportedReason ?? "Certbot installation is not supported on this environment",
+    };
+  }
+
+  onLog(log("Installing certbot..."));
+
+  try {
+    const { code } = await executor.streamExec(
+      plan.installCommand,
+      onLog as (log: LogEntry) => void,
+    );
+    if (code !== 0) {
+      return { component: "certbot", success: false, error: "Certbot installation failed" };
+    }
+
+    onLog(log("Verifying certbot installation..."));
+    const version = await executor.exec(plan.verifyCommand);
+    const parsed = systemCatalog.checks.certbot.parseVersion(version);
+
+    onLog(log(`Certbot ${parsed} installed`));
+    return { component: "certbot", success: true, version: parsed };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    onLog(log(`Certbot installation failed: ${msg}`, "error"));
+    return { component: "certbot", success: false, error: msg };
   }
 }
 
@@ -305,6 +336,7 @@ type InstallerFn = (
 export const COMPONENT_INSTALLERS: Record<string, InstallerFn> = {
   docker: (exec, log) => installDocker(exec, log),
   traefik: installTraefik,
+  nginx: (exec, log) => installNginx(exec, log),
+  certbot: (exec, log) => installCertbot(exec, log),
   git: (exec, log) => installGit(exec, log),
-  node: (exec, log) => installNode(exec, log),
 };

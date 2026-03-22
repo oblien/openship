@@ -10,13 +10,13 @@ import {
 } from "lucide-react";
 import { cloudApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
-import { useGitHub } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 
 /* ── Component ──────────────────────────────────────────────────── */
 
 export function CloudConnection() {
-  const { authMode, deployMode } = useGitHub();
+  const { authMode, deployMode } = usePlatform();
   const {
     connected: cloudConnected,
     cloudUser,

@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { githubApi } from "@/lib/api";
 import { openAuthWindow } from "@/utils/authWindow";
+import { usePlatform } from "@/context/PlatformContext";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -45,11 +46,6 @@ interface GitHubContextValue {
   connecting: boolean;
   loading: boolean;
   mode: GitHubMode;
-  selfHosted: boolean;
-  deployMode: string;
-  authMode: "cloud" | "local" | "none";
-  cloudAuthUrl: string;
-  machineName?: string;
   connect: () => Promise<void>;
 
   /* CLI / Device flow */
@@ -84,23 +80,14 @@ export function useGitHub() {
 
 interface GitHubProviderProps {
   children: React.ReactNode;
-  initialSelfHosted?: boolean;
-  initialDeployMode?: string;
-  initialAuthMode?: "cloud" | "local" | "none";
-  initialCloudAuthUrl?: string;
-  initialMachineName?: string;
 }
 
-export function GitHubProvider({ children, initialSelfHosted = true, initialDeployMode = "docker", initialAuthMode = "local", initialCloudAuthUrl = "", initialMachineName }: GitHubProviderProps) {
+export function GitHubProvider({ children }: GitHubProviderProps) {
+  const { setSelfHosted } = usePlatform();
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<GitHubMode>("cloud");
-  const [selfHosted, setSelfHosted] = useState(initialSelfHosted);
-  const [deployMode] = useState(initialDeployMode);
-  const [authMode] = useState(initialAuthMode);
-  const [cloudAuthUrl] = useState(initialCloudAuthUrl);
-  const [machineName] = useState(initialMachineName);
   const [cliAction, setCliAction] = useState<CliAction | null>(null);
   const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
   const [userLogin, setUserLogin] = useState("");
@@ -265,11 +252,6 @@ export function GitHubProvider({ children, initialSelfHosted = true, initialDepl
         connecting,
         loading,
         mode,
-        selfHosted,
-        deployMode,
-        authMode,
-        cloudAuthUrl,
-        machineName,
         connect,
         cliAction,
         accounts,

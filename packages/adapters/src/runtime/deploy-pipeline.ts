@@ -17,7 +17,7 @@
  * Self-hosted: activate creates container, resolveTargetUrl + routing wire Traefik.
  */
 
-import type { DeployConfig, LogCallback, RouteConfig } from "../types";
+import type { DeployConfig, LogCallback, RouteConfig, SslResult } from "../types";
 import type { BuildLogger } from "./build-pipeline";
 import { DeployError } from "@repo/core";
 
@@ -69,6 +69,10 @@ export interface DeployRouting {
   registerRoute(route: RouteConfig): Promise<void>;
 }
 
+export interface DeploySsl {
+  provisionCert(domain: string): Promise<SslResult>;
+}
+
 // ─── Pipeline input / output ────────────────────────────────────────────────
 
 export interface DeployPipelineInput {
@@ -76,9 +80,11 @@ export interface DeployPipelineInput {
   /** Container ID of the currently-active deployment (to deactivate). */
   previousContainerId?: string;
   /** Verified domains that need routing. */
-  domains: Array<{ hostname: string; tls: boolean }>;
+  domains: Array<{ hostname: string; tls: boolean; provisionSsl?: boolean }>;
   /** Routing provider — omit when routing is handled by the runtime (cloud). */
   routing?: DeployRouting;
+  /** SSL provider — used when a domain needs cert provisioning/checks. */
+  ssl?: DeploySsl;
   /** Callback to pause and prompt the user — required for interactive preflight. */
   promptUser?: PromptUserFn;
 }
@@ -111,7 +117,7 @@ export async function runDeployPipeline(
   input: DeployPipelineInput,
   logger: BuildLogger,
 ): Promise<DeployPipelineResult> {
-  const { config, previousContainerId, domains, routing, promptUser } = input;
+  const { config, previousContainerId, domains, routing, ssl, promptUser } = input;
 
   try {
     logger.step("deploy", "running", "Deploying...");
@@ -150,16 +156,17 @@ export async function runDeployPipeline(
 
       if (targetUrl) {
         for (const d of domains) {
-          await routing
-            .registerRoute({ domain: d.hostname, targetUrl, tls: d.tls })
-            .catch((err) => {
-              console.error(
-                `[DEPLOY] Failed to register route for ${d.hostname}:`,
-                err,
-              );
-            });
+          logger.log(`Registering route for ${d.hostname}...\n`);
+          await routing.registerRoute({ domain: d.hostname, targetUrl, tls: d.tls });
+
+          if (d.provisionSsl && ssl) {
+            logger.log(`Checking SSL for ${d.hostname}...\n`);
+            await ssl.provisionCert(d.hostname);
+          }
         }
       }
+    } else if (domains.length === 0) {
+      logger.log("No domains configured — skipping routing for this deployment.\n", "warn");
     }
 
     logger.step("deploy", "completed", "Deployed successfully");

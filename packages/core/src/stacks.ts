@@ -154,6 +154,11 @@ export interface StackDefinition {
    */
   productionPaths?: readonly string[];
   /**
+   * Directories created during build that can be excluded from transfer.
+   * Only framework-specific caches — generic ones (.git) are always excluded.
+   */
+  cacheDirs?: readonly string[];
+  /**
    * Preferred build location for this stack.
    * "server" = build in the cloud/workspace (default if omitted).
    * "local"  = build on the host machine, then transfer the artifact.
@@ -176,6 +181,7 @@ export const STACKS = {
     defaultBuildCommand: "next build",
     defaultStartCommand: "next start",
     requiredToolVersions: { node: "20.9.0" },
+    cacheDirs: [".next/cache"],
     defaultBuildStrategy: "local",
   },
   nuxt: {
@@ -186,6 +192,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "nuxt build",
     defaultStartCommand: "node .output/server/index.mjs",
+    cacheDirs: [".nuxt"],
     defaultBuildStrategy: "local",
   },
   sveltekit: {
@@ -246,6 +253,7 @@ export const STACKS = {
     defaultPort: 8000,
     defaultBuildCommand: "gatsby build",
     defaultStartCommand: "gatsby serve",
+    cacheDirs: [".cache"],
     defaultBuildStrategy: "local",
   },
   cra: {
@@ -598,6 +606,7 @@ export const STACKS = {
     name: "Static Site",
     language: "multi",
     category: "static",
+    buildImage: "node:22",
     runtimeImage: "nginx:alpine",
     outputDirectory: ".",
     defaultPort: 80,
@@ -648,6 +657,12 @@ export const LANGUAGE_IDS = Object.keys(LANGUAGES) as Language[];
 export const ALL_PACKAGE_MANAGERS: string[] = [
   ...new Set(Object.values(LANGUAGES).flatMap((l) => l.packageManagers)),
 ];
+
+/**
+ * Paths always excluded when transferring project files (source or build output).
+ * Framework-specific caches (e.g. `.next/cache`) are defined per-stack via `cacheDirs`.
+ */
+export const TRANSFER_EXCLUDES: readonly string[] = ["node_modules", ".git", ".turbo"];
 
 /** Output directories keyed by stack — derived from STACKS */
 export const OUTPUT_DIRECTORIES: Record<string, string> = Object.fromEntries(

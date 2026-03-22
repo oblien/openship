@@ -11,7 +11,7 @@ import Sidebar from "./components/Sidebar";
 import DeployTargetStep, { DeployTargetSummary, useDesktopTargets } from "./components/DeployTargetStep";
 import { decodeSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
-import { useGitHub } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -50,7 +50,7 @@ const DeployRepository: React.FC = () => {
     const router = useRouter();
     const slug = params.slug as string;
     const { config, initializeFromRepo, initializeFromLocal } = useDeployment();
-    const { deployMode } = useGitHub();
+    const { deployMode } = usePlatform();
     const searchParams = useSearchParams();
     const force = searchParams.get("force") || undefined;
     const isDesktop = deployMode === "desktop";

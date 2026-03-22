@@ -250,9 +250,9 @@ export function useDeploymentBuild(
       // Step 1: Ensure project exists
       const projectData = await projectsApi.ensure({
         name: config.projectName || config.repo || config.localPath?.split("/").pop() || "project",
-        gitOwner: config.owner || undefined,
-        gitRepo: config.repo || undefined,
-        gitBranch: config.branch || undefined,
+        gitOwner: isLocal ? undefined : config.owner || undefined,
+        gitRepo: isLocal ? undefined : config.repo || undefined,
+        gitBranch: isLocal ? undefined : config.branch || undefined,
         localPath: config.localPath || undefined,
         framework: config.framework,
         packageManager: config.packageManager,
@@ -289,7 +289,9 @@ export function useDeploymentBuild(
         projectId: projectData.project_id,
         branch: config.branch || undefined,
         envVars: Object.keys(envVarsMap).length > 0 ? envVarsMap : undefined,
-        customDomain: config.domainType === "custom" && config.customDomain ? config.customDomain : undefined,
+        customDomain: config.domainType === "custom" && config.customDomain
+          ? config.customDomain
+          : undefined,
         buildStrategy: config.buildStrategy,
         deployTarget: config.deployTarget,
         serverId: config.serverId,
@@ -346,9 +348,11 @@ export function useDeploymentBuild(
         // Restore config from session
         if (data.config) {
           const apiConfig = data.config;
+          // Strip domain suffix (e.g. "myapp.opsh.io" → "myapp", "myapp.example.com" → "myapp")
           let cleanDomain = apiConfig.domain || "";
-          if (cleanDomain.endsWith(".opsh.io")) {
-            cleanDomain = cleanDomain.replace(".opsh.io", "");
+          const dotIdx = cleanDomain.indexOf(".");
+          if (dotIdx > 0) {
+            cleanDomain = cleanDomain.slice(0, dotIdx);
           }
 
           setConfig((prev) => ({

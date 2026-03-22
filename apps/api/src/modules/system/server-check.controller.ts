@@ -16,7 +16,6 @@ import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { env } from "../../config";
 import {
-  checkAllComponents,
   checkComponents,
   type CommandExecutor,
   createExecutor,
@@ -48,6 +47,18 @@ const ALLOWED_COMPONENTS = new Set(
     (component) => component.name,
   ),
 );
+
+/**
+ * Resolve which components are required for the current deployment mode.
+ * Only these are checked / shown on the server page.
+ */
+function resolveRequiredComponents(): string[] {
+  const mode = env.DEPLOY_MODE;
+  if (mode === "docker") return ["docker", "git", "traefik"];
+  if (mode === "bare") return ["git", "nginx", "certbot"];
+  // desktop / cloud — minimal
+  return ["git"];
+}
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 
@@ -151,8 +162,10 @@ export async function checkServer(c: Context) {
         checkComponents(executor, valid),
       );
     } else {
+      // Only check components relevant to the current deployment mode
+      const required = resolveRequiredComponents();
       components = await sshManager.withExecutor(serverId, (executor) =>
-        checkAllComponents(executor),
+        checkComponents(executor, required),
       );
     }
 

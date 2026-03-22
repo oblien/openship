@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { useGitHub } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { useToast } from "@/context/ToastContext";
 
@@ -12,7 +12,7 @@ import { CloudConnection } from "./_components/CloudConnection";
 import { InstanceInfo } from "./_components/InstanceInfo";
 
 export default function SettingsPage() {
-  const { selfHosted, authMode } = useGitHub();
+  const { selfHosted, authMode } = usePlatform();
   const { refresh } = useCloud();
   const { showToast } = useToast();
   const searchParams = useSearchParams();

@@ -26,7 +26,7 @@ import { useTheme } from "@/components/theme-provider";
 import { useI18n } from "@/components/i18n-provider";
 import { Logo } from "@/components/logo";
 import { useAuth } from "@/context/AuthContext";
-import { useGitHub } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 
 interface NavItem {
@@ -74,7 +74,7 @@ function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection[] {
 
 export function Sidebar() {
   const { user } = useAuth();
-  const { selfHosted, deployMode, authMode, machineName } = useGitHub();
+  const { selfHosted, deployMode, authMode, machineName } = usePlatform();
   const { connected: cloudConnected, cloudUser } = useCloud();
   const isDesktop = deployMode === "desktop";
 

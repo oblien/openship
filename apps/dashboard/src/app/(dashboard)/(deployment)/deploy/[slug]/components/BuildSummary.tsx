@@ -1,11 +1,14 @@
 import React from "react";
 import { Terminal, FolderOutput, Server, Globe, Container, Layers, Hash, Cloud, Monitor } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { STACKS, STACK_ICONS } from "@repo/core";
 
 const BuildSummary: React.FC = () => {
   const { config } = useDeployment();
+  const { hostDomain } = usePlatform();
+  const baseDomain = hostDomain || "opsh.io";
   const isApp = config.projectType === "app";
   const isDocker = config.projectType === "docker";
   const isServices = config.projectType === "services";
@@ -44,9 +47,8 @@ const BuildSummary: React.FC = () => {
     !isServices && (config.domainType === "custom" && config.customDomain
       ? config.customDomain
       : config.domain
-        ? `${config.domain}.opsh.io`
-        : null);
-
+          ? `${config.domain}.${baseDomain}`
+          : null);
   return (
     <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 via-primary/3 to-transparent border border-primary/10 space-y-3">
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">

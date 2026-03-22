@@ -4,7 +4,7 @@
 
 import { repos } from "@repo/db";
 import { NotFoundError } from "@repo/core";
-import { platform } from "../../lib/controller-helpers";
+import { manageDomainSsl } from "../../lib/domain-ssl";
 
 /**
  * Check SSL status for a domain.
@@ -33,36 +33,11 @@ export async function getStatus(hostname: string, userId: string) {
  * Renew (or provision) an SSL certificate for a domain.
  */
 export async function renew(hostname: string, userId: string, includeWww = false) {
-  const domainRecord = await repos.domain.findByHostname(hostname);
-  if (!domainRecord) throw new NotFoundError("Domain", hostname);
-
-  const project = await repos.project.findById(domainRecord.projectId);
-  if (!project || project.userId !== userId) {
-    throw new NotFoundError("Domain", hostname);
-  }
-
-  const { ssl } = platform();
-  const result = await ssl.renewCert(hostname);
-
-  await repos.domain.updateSsl(domainRecord.id, {
-    sslStatus: "active",
-    sslIssuer: result.issuer,
-    sslExpiresAt: new Date(result.expiresAt),
+  const result = await manageDomainSsl(hostname, {
+    action: "renew",
+    userId,
+    includeWww,
   });
-
-  // Optionally renew www subdomain
-  if (includeWww) {
-    const wwwHostname = `www.${hostname}`;
-    const wwwRecord = await repos.domain.findByHostname(wwwHostname);
-    if (wwwRecord) {
-      const wwwResult = await ssl.renewCert(wwwHostname);
-      await repos.domain.updateSsl(wwwRecord.id, {
-        sslStatus: "active",
-        sslIssuer: wwwResult.issuer,
-        sslExpiresAt: new Date(wwwResult.expiresAt),
-      });
-    }
-  }
 
   return {
     success: true,

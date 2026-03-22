@@ -13,9 +13,11 @@ import { SlidingToggle } from "@/components/ui/SlidingToggle";
 import { Grid3x3, List } from "lucide-react";
 import { SectionContainer } from "@/components/ui/SectionContainer";
 import { useI18n } from "@/components/i18n-provider";
+import { usePlatform } from "@/context/PlatformContext";
 
 export default function DeploymentDashboard() {
   const { t } = useI18n();
+  const { hostDomain } = usePlatform();
   const [projects, setProjects] = useState<Project[]>([]);
   const [pinnedProjects, setPinnedProjects] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -56,7 +58,7 @@ export default function DeploymentDashboard() {
               name: project.name || 'Unnamed Project',
               description: project.commitMessage || project.description || `Production deployment`,
               framework: project.framework || 'unknown',
-              url: project.activeDeploymentId ? `https://${project.slug}.opsh.io` : '',
+              url: project.activeDeploymentId ? `https://${project.slug}.${hostDomain || "opsh.io"}` : '',
               status,
               lastDeployed: project.updatedAt || project.createdAt,
               domain: project.slug || '',

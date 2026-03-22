@@ -68,6 +68,7 @@ export {
 // ─── Infrastructure layer ────────────────────────────────────────────────────
 export type { RoutingProvider, SslProvider } from "./infra/types";
 export { TraefikProvider, type TraefikProviderOptions } from "./infra/traefik";
+export { NginxProvider, type NginxProviderOptions } from "./infra/nginx";
 export { CloudInfraProvider } from "./infra/cloud";
 export { NoopInfraProvider } from "./infra/noop";
 
@@ -112,17 +113,19 @@ export { LocalExecutor, SshExecutor, createExecutor } from "./system/executor";
 export {
   checkAll as checkAllComponents,
   checkComponents,
+  checkCertbot,
   checkDocker,
   checkGit,
-  checkNode,
+  checkNginx,
   checkTraefik,
   COMPONENT_CHECKS,
 } from "./system/checks";
 export {
   COMPONENT_INSTALLERS,
+  installCertbot,
   installDocker,
   installGit,
-  installNode,
+  installNginx,
   installTraefik,
 } from "./system/installer";
 export { SystemManager, type SystemManagerOptions } from "./system/setup";

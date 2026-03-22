@@ -25,6 +25,41 @@ interface TokenCache {
 const tokenCache = new Map<string, TokenCache>();
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+// ─── Authenticated cloud fetch ───────────────────────────────────────────────
+
+/**
+ * Make an authenticated request to the SaaS API using the stored cloud session.
+ *
+ * Handles: read session → decrypt → Bearer auth → 401 session cleanup.
+ * Returns the Response, or null if not connected.
+ */
+async function cloudFetch(
+  userId: string,
+  path: string,
+  init?: RequestInit,
+): Promise<Response | null> {
+  const settings = await repos.settings.findByUser(userId);
+  if (!settings?.cloudSessionToken) return null;
+
+  const sessionToken = decrypt(settings.cloudSessionToken);
+
+  const res = await fetch(`${env.OPENSHIP_CLOUD_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+      Authorization: `Bearer ${sessionToken}`,
+    },
+  });
+
+  if (res.status === 401) {
+    await repos.settings.update(userId, { cloudSessionToken: null });
+    tokenCache.delete(userId);
+  }
+
+  return res;
+}
+
 // ─── Cloud session management ────────────────────────────────────────────────
 
 /**
@@ -62,30 +97,8 @@ export async function getCloudToken(
     return { token: cached.token, namespace: cached.namespace };
   }
 
-  // Read stored session from DB
-  const settings = await repos.settings.findByUser(userId);
-  if (!settings?.cloudSessionToken) return null;
-
-  const sessionToken = decrypt(settings.cloudSessionToken);
-
-  // Fetch namespace token from SaaS API
-  const url = `${env.OPENSHIP_CLOUD_URL}/api/cloud/token`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${sessionToken}`,
-    },
-  });
-
-  if (!res.ok) {
-    // If 401, the stored session is expired — clear it
-    if (res.status === 401) {
-      await repos.settings.update(userId, { cloudSessionToken: null });
-      tokenCache.delete(userId);
-    }
-    return null;
-  }
+  const res = await cloudFetch(userId, "/api/cloud/token", { method: "POST" });
+  if (!res || !res.ok) return null;
 
   const json = (await res.json()) as {
     data: { token: string; namespace: string; expiresAt: string };
@@ -100,4 +113,31 @@ export async function getCloudToken(
   });
 
   return { token, namespace };
+}
+
+// ─── Edge proxy sync ─────────────────────────────────────────────────────────
+
+/**
+ * Ask the SaaS to create/update an Oblien edge proxy for a managed domain.
+ *
+ * Sends just the slug + target IP — the SaaS constructs the full domain.
+ */
+export async function syncEdgeProxy(
+  userId: string,
+  slug: string,
+  target: string,
+): Promise<void> {
+  const res = await cloudFetch(userId, "/api/cloud/edge-proxy", {
+    method: "POST",
+    body: JSON.stringify({ slug, target }),
+  });
+
+  if (!res) {
+    throw new Error("Cannot sync edge proxy: no cloud account linked");
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Edge proxy sync failed (${res.status}): ${text}`);
+  }
 }

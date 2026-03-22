@@ -11,7 +11,7 @@ import {
 } from "react";
 import { Cloud, ExternalLink, X, Rocket, Shield, Globe, Zap, Loader2 } from "lucide-react";
 import { cloudApi } from "@/lib/api";
-import { useGitHub } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { Button } from "@/components/ui/button";
 import { openAuthWindow } from "@/utils/authWindow";
 
@@ -74,7 +74,7 @@ const FEATURES = [
 ];
 
 export function CloudProvider({ children }: { children: ReactNode }) {
-  const { selfHosted, cloudAuthUrl } = useGitHub();
+  const { selfHosted, cloudAuthUrl } = usePlatform();
 
   const [connected, setConnected] = useState(false);
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);

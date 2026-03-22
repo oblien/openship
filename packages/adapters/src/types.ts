@@ -261,8 +261,8 @@ export interface CommandExecutor {
    * SshExecutor:   tar locally → pipe through SSH → extract remotely.
    *
    * By default SshExecutor excludes `node_modules` and `.git` (source transfer).
-   * Pass `options.excludes` to override (e.g. `[]` to include everything for
-   * build output transfer).
+   * Pass `options.excludes` to override, or `options.includes` to transfer only
+   * specific paths (e.g. compiled binaries from productionPaths).
    *
    * Rejects on failure.
    */
@@ -270,7 +270,7 @@ export interface CommandExecutor {
     localPath: string,
     remotePath: string,
     onLog?: (log: LogEntry) => void,
-    options?: { excludes?: string[] },
+    options?: { excludes?: string[]; includes?: string[] },
   ): Promise<void>;
 
   /** Clean up connections / resources. */

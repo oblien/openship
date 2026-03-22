@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { FolderOpen, Github, Link2, Sparkles } from "lucide-react";
 import { useGitHub } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { ConnectPrompt } from "./components/ConnectPrompt";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { RepositoryList } from "./components/RepositoryList";
@@ -32,8 +33,8 @@ export default function LibraryPage() {
     repos,
     loadingRepos,
     refresh,
-    selfHosted,
   } = useGitHub();
+  const { selfHosted } = usePlatform();
 
   const [activeTab, setActiveTab] = useState<Tab>(selfHosted ? "local" : "repositories");
 

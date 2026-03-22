@@ -36,12 +36,12 @@ export async function ensureProject(userId: string, data: TCreateProjectBody) {
   let created = false;
 
   if (!project) {
+    const safeLocalPath = data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
+
     let gitUrl: string | undefined;
-    if (data.gitOwner && data.gitRepo) {
+    if (!safeLocalPath && data.gitOwner && data.gitRepo) {
       gitUrl = `https://github.com/${data.gitOwner}/${data.gitRepo}.git`;
     }
-
-    const safeLocalPath = data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
 
     project = await repos.project.create({
       userId,
@@ -91,6 +91,14 @@ export async function ensureProject(userId: string, data: TCreateProjectBody) {
     if (data.hasServer !== undefined) update.hasServer = data.hasServer;
     if (data.hasBuild !== undefined) update.hasBuild = data.hasBuild;
     if (data.slug !== undefined) update.slug = data.slug;
+    if (data.localPath !== undefined) {
+      const safePath = data.localPath && !env.CLOUD_MODE ? data.localPath : null;
+      update.localPath = safePath;
+      if (safePath) {
+        update.gitProvider = "local";
+        update.gitUrl = null;
+      }
+    }
     if (data.rollbackWindow !== undefined) {
       update.rollbackWindow = data.rollbackWindow === null
         ? null
@@ -134,14 +142,14 @@ export async function createProject(userId: string, data: TCreateProjectBody) {
   const existing = await repos.project.findBySlug(userId, slug);
   if (existing) throw new ConflictError(`Project "${data.name}" already exists`);
 
-  // Build git clone URL if repo info provided
-  let gitUrl: string | undefined;
-  if (data.gitOwner && data.gitRepo) {
-    gitUrl = `https://github.com/${data.gitOwner}/${data.gitRepo}.git`;
-  }
-
   // Only allow localPath in non-cloud modes (enforced at route level too)
   const safeLocalPath = data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
+
+  // Build git clone URL if repo info provided
+  let gitUrl: string | undefined;
+  if (!safeLocalPath && data.gitOwner && data.gitRepo) {
+    gitUrl = `https://github.com/${data.gitOwner}/${data.gitRepo}.git`;
+  }
 
   const p = await repos.project.create({
     userId,

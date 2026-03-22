@@ -132,7 +132,16 @@ WantedBy=multi-user.target
             (occupant ? ` by ${occupant.command}` : "") +
             ". Stop the existing process before deploying.",
           "PORT_IN_USE",
-          { port: opts.port, pid: occupant?.pid, command: occupant?.command },
+          {
+            port: opts.port,
+            pid: occupant?.pid,
+            command: occupant?.command,
+            rawCommand: occupant?.rawCommand,
+            systemdUnit: occupant?.systemdUnit,
+            systemdDescription: occupant?.systemdDescription,
+            deploymentId: occupant?.deploymentId,
+            isManagedDeployment: occupant?.isManagedDeployment,
+          },
         );
       }
 

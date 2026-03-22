@@ -245,7 +245,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const handleDeployTargetChange = (target: DeployTarget) => {
     const updates: Partial<typeof config> = { deployTarget: target };
     if (target === "cloud") {
-      updates.buildStrategy = "server";
       updates.serverId = undefined;
     }
     if (target === "server" && isSingleServer) {
@@ -315,8 +314,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     },
   ];
 
-  const showBuildPicker = config.options.hasBuild;
-
   // Determine the selected server name for continue button context
   const selectedServer = servers.find((s) => s.id === config.serverId);
   const canContinue = config.deployTarget === "cloud" ||
@@ -360,32 +357,33 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         </div>
       )}
 
-      {/* Build location — always shown when project has a build step */}
-      {showBuildPicker && (
-        <div className="space-y-3">
-          <div>
-            <h3 className="text-base font-semibold text-foreground">
-              Where do you want to build?
-            </h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Choose where the build process runs
-            </p>
-          </div>
-          <div className="space-y-2">
-            {buildOptions.map((opt) => (
-              <OptionCard
-                key={opt.value}
-                value={opt.value}
-                selected={config.buildStrategy === opt.value}
-                onSelect={() => updateConfig({ buildStrategy: opt.value })}
-                icon={opt.icon}
-                label={opt.label}
-                description={opt.description}
-              />
-            ))}
-          </div>
+      {/* Build location — always shown on desktop because strategy still matters
+          even for source-only deployments (clone/stage/transfer path). */}
+      <div className="space-y-3">
+        <div>
+          <h3 className="text-base font-semibold text-foreground">
+            {config.options.hasBuild ? "Where do you want to build?" : "Where do you want to prepare it?"}
+          </h3>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {config.options.hasBuild
+              ? "Choose where the build process runs"
+              : "Choose where the repository is cloned and staged before deploy"}
+          </p>
         </div>
-      )}
+        <div className="space-y-2">
+          {buildOptions.map((opt) => (
+            <OptionCard
+              key={opt.value}
+              value={opt.value}
+              selected={config.buildStrategy === opt.value}
+              onSelect={() => updateConfig({ buildStrategy: opt.value })}
+              icon={opt.icon}
+              label={opt.label}
+              description={opt.description}
+            />
+          ))}
+        </div>
+      </div>
 
       {/* Continue */}
       <button

@@ -41,30 +41,46 @@ import type {
   SystemLogCallback,
   SystemLog,
 } from "./types";
-
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 /** How long cached state is considered valid before re-verification (24h). */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-const DOCKER_RULES: PrerequisiteRule[] = [
-  { feature: "build", requires: ["git", "docker"], message: "Build requires Git and Docker" },
-  { feature: "deploy", requires: ["docker"], message: "Deploy requires Docker" },
-  { feature: "routing", requires: ["traefik"], message: "Routing requires Traefik" },
-  { feature: "ssl", requires: ["traefik"], message: "SSL requires Traefik with ACME" },
-];
+/**
+ * Resolve prerequisite rules for a given runtime mode.
+ *
+ * The runtime mode deterministically implies everything:
+ *   - docker → Docker + Git + Traefik (all containerized)
+ *   - bare   → Git + Nginx (system-level; language runtimes are per-stack)
+ *
+ * Note: Node.js / Go / Python / etc. are NOT system prerequisites.
+ * They are installed on-demand by the toolchain layer (ensureToolchain)
+ * based on what each stack's language requires.
+ */
+function resolveRules(mode: RuntimeMode): PrerequisiteRule[] {
+  if (mode === "docker") {
+    return [
+      { feature: "build", requires: ["git", "docker"], message: "Build requires Git and Docker" },
+      { feature: "deploy", requires: ["docker"], message: "Deploy requires Docker" },
+      { feature: "routing", requires: ["traefik"], message: "Routing requires Traefik" },
+      { feature: "ssl", requires: ["traefik"], message: "SSL requires Traefik with ACME" },
+    ];
+  }
 
-const BARE_RULES: PrerequisiteRule[] = [
-  { feature: "build", requires: ["git", "node"], message: "Build requires Git and Node.js" },
-  { feature: "deploy", requires: ["node"], message: "Deploy requires Node.js" },
-  { feature: "routing", requires: ["traefik"], message: "Routing requires Traefik" },
-  { feature: "ssl", requires: ["traefik"], message: "SSL requires Traefik with ACME" },
-];
+  // bare mode — language runtimes handled per-stack by toolchain layer
+  return [
+    { feature: "build", requires: ["git"], message: "Build requires Git" },
+    { feature: "routing", requires: ["nginx"], message: "Routing requires Nginx" },
+    { feature: "ssl", requires: ["nginx", "certbot"], message: "SSL requires Nginx and certbot" },
+  ];
+}
 
-const REQUIRED_COMPONENTS: Record<RuntimeMode, string[]> = {
-  docker: ["docker", "git", "traefik"],
-  bare: ["node", "git", "traefik"],
-};
+/** Resolve which system components must be installed for a given runtime mode. */
+function resolveRequired(mode: RuntimeMode): string[] {
+  return mode === "docker"
+    ? ["docker", "git", "traefik"]
+    : ["git", "nginx", "certbot"];
+}
 
 // ─── SystemManager ───────────────────────────────────────────────────────────
 
@@ -95,8 +111,8 @@ export class SystemManager {
   constructor(mode: RuntimeMode, opts: SystemManagerOptions) {
     this.mode = mode;
     this.executor = opts.executor;
-    this.rules = mode === "docker" ? DOCKER_RULES : BARE_RULES;
-    this.required = REQUIRED_COMPONENTS[mode];
+    this.rules = resolveRules(mode);
+    this.required = resolveRequired(mode);
     this.stateStore = opts.stateStore ?? new FileStateStore(opts.executor);
     this.installerConfig = opts.installerConfig ?? {};
   }
@@ -217,6 +233,42 @@ export class SystemManager {
     }
   }
 
+  /**
+   * Ensure a feature is ready: check prerequisites, install missing ones, re-validate.
+   *
+   * This is the operational path used by deploy/build flows when they can safely
+   * self-heal missing system components instead of hard-failing immediately.
+   */
+  async ensureFeature(
+    feature: Feature,
+    onLog?: SystemLogCallback,
+    config?: InstallerConfig,
+  ): Promise<void> {
+    const logFn = onLog ?? (() => {});
+    const installerConfig = config ?? this.installerConfig;
+
+    const readiness = await this.checkFeature(feature);
+    if (readiness.ready) return;
+
+    logFn(info(`Checking required system components for ${feature}...`));
+    logFn(info(`Missing: ${readiness.missing.map((c) => c.name).join(", ")}`));
+
+    const { failed } = await this.installMany(
+      readiness.missing.map((component) => component.name),
+      logFn,
+      installerConfig,
+      true,
+    );
+    if (failed.length > 0) {
+      throw new Error(failed[0].error ?? `Failed to install ${failed[0].component}`);
+    }
+
+    const finalReadiness = await this.checkFeature(feature);
+    if (!finalReadiness.ready) {
+      throw new Error(finalReadiness.message);
+    }
+  }
+
   // ── Installation ─────────────────────────────────────────────────────
 
   /**
@@ -227,21 +279,7 @@ export class SystemManager {
     onLog?: SystemLogCallback,
   ): Promise<InstallResult> {
     const logFn = onLog ?? (() => {});
-
-    const installer = COMPONENT_INSTALLERS[name];
-    if (!installer) {
-      logFn(info(`No installer available for "${name}"`));
-      return { component: name, success: false, error: `No installer for "${name}"` };
-    }
-
-    const result = await installer(this.executor, logFn, this.installerConfig);
-
-    // Update state for this component
-    if (result.success) {
-      await this.markComponentInstalled(name, result.version);
-    }
-
-    return result;
+    return this.runInstaller(name, logFn, this.installerConfig);
   }
 
   /**
@@ -279,29 +317,12 @@ export class SystemManager {
     logFn(info(`Missing: ${initial.missing.join(", ")}`));
 
     // Phase 2: Install each missing component
-    const installed: InstallResult[] = [];
-    const failed: InstallResult[] = [];
-
-    for (const name of initial.missing) {
-      logFn(info(`\n── Installing ${name} ${"─".repeat(50)}`));
-
-      const installer = COMPONENT_INSTALLERS[name];
-      if (!installer) {
-        const result = { component: name, success: false, error: `No installer for "${name}"` };
-        failed.push(result);
-        continue;
-      }
-
-      const result = await installer(this.executor, logFn, installerConfig);
-
-      if (result.success) {
-        installed.push(result);
-        await this.markComponentInstalled(name, result.version);
-      } else {
-        failed.push(result);
-        logFn(info(`Failed to install ${name}: ${result.error}`));
-      }
-    }
+    const { installed, failed } = await this.installMany(
+      initial.missing,
+      logFn,
+      installerConfig,
+      false,
+    );
 
     // Phase 3: Validate
     logFn(info("\nValidating installation..."));
@@ -432,6 +453,50 @@ export class SystemManager {
       components: {},
       updatedAt: new Date().toISOString(),
     };
+  }
+
+  private async runInstaller(
+    name: string,
+    logFn: SystemLogCallback,
+    installerConfig: InstallerConfig,
+  ): Promise<InstallResult> {
+    const installer = COMPONENT_INSTALLERS[name];
+    if (!installer) {
+      logFn(info(`No installer available for "${name}"`));
+      return { component: name, success: false, error: `No installer for "${name}"` };
+    }
+
+    const result = await installer(this.executor, logFn, installerConfig);
+    if (result.success) {
+      await this.markComponentInstalled(name, result.version);
+    }
+    return result;
+  }
+
+  private async installMany(
+    names: string[],
+    logFn: SystemLogCallback,
+    installerConfig: InstallerConfig,
+    stopOnFailure: boolean,
+  ): Promise<{ installed: InstallResult[]; failed: InstallResult[] }> {
+    const installed: InstallResult[] = [];
+    const failed: InstallResult[] = [];
+
+    for (const name of names) {
+      logFn(info(`\n── Installing ${name} ${"─".repeat(50)}`));
+
+      const result = await this.runInstaller(name, logFn, installerConfig);
+      if (result.success) {
+        installed.push(result);
+        continue;
+      }
+
+      failed.push(result);
+      logFn(info(`Failed to install ${name}: ${result.error}`));
+      if (stopOnFailure) break;
+    }
+
+    return { installed, failed };
   }
 }
 

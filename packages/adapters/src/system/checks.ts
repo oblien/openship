@@ -167,18 +167,53 @@ export async function checkGit(
   return healthy("git", parsed);
 }
 
-export async function checkNode(
+export async function checkNginx(
   executor: CommandExecutor,
 ): Promise<ComponentStatus> {
   const startedAt = Date.now();
-  const recipe = systemCatalog.checks.node;
+  const recipe = systemCatalog.checks.nginx;
+  const version = await tryExec(executor, recipe.versionCommand);
+
+  let parsed: string | undefined;
+  if (version) {
+    parsed = recipe.parseVersion(version);
+  }
+
+  const runningChecks = await Promise.all(
+    recipe.runningCommands!.map((command) => tryExec(executor, command)),
+  );
+  const running = runningChecks.some(Boolean);
+
+  if (!parsed && !running) {
+    systemDebug("checks", `nginx:missing (${formatDuration(startedAt)})`);
+    return unhealthy("nginx", recipe.missingMessage);
+  }
+
+  if (!running) {
+    systemDebug("checks", `nginx:not-running (${formatDuration(startedAt)})`);
+    return unhealthy("nginx", recipe.notRunningMessage!, {
+      version: parsed,
+      running: false,
+    });
+  }
+
+  systemDebug("checks", `nginx:healthy (${formatDuration(startedAt)})`);
+  return healthy("nginx", parsed ?? "unknown", true);
+}
+
+export async function checkCertbot(
+  executor: CommandExecutor,
+): Promise<ComponentStatus> {
+  const startedAt = Date.now();
+  const recipe = systemCatalog.checks.certbot;
   const version = await tryExec(executor, recipe.versionCommand);
   if (!version) {
-    systemDebug("checks", `node:missing (${formatDuration(startedAt)})`);
-    return unhealthy("node", recipe.missingMessage);
+    systemDebug("checks", `certbot:missing (${formatDuration(startedAt)})`);
+    return unhealthy("certbot", recipe.missingMessage);
   }
-  systemDebug("checks", `node:healthy (${formatDuration(startedAt)})`);
-  return healthy("node", recipe.parseVersion(version));
+  const parsed = recipe.parseVersion(version);
+  systemDebug("checks", `certbot:healthy (${formatDuration(startedAt)})`);
+  return healthy("certbot", parsed);
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────
@@ -188,8 +223,9 @@ type CheckFn = (executor: CommandExecutor) => Promise<ComponentStatus>;
 export const COMPONENT_CHECKS: Record<string, CheckFn> = {
   docker: checkDocker,
   traefik: checkTraefik,
+  nginx: checkNginx,
+  certbot: checkCertbot,
   git: checkGit,
-  node: checkNode,
 };
 
 /** Run every registered check sequentially to avoid SSH channel contention. */

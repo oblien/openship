@@ -2,6 +2,7 @@
 
 import { GitHubProvider } from "@/context/GitHubContext";
 import { CloudProvider } from "@/context/CloudContext";
+import { PlatformProvider } from "@/context/PlatformContext";
 
 interface DashboardProvidersProps {
   children: React.ReactNode;
@@ -10,14 +11,17 @@ interface DashboardProvidersProps {
   authMode: "cloud" | "local" | "none";
   cloudAuthUrl: string;
   machineName?: string;
+  hostDomain?: string;
 }
 
-export function DashboardProviders({ children, selfHosted, deployMode, authMode, cloudAuthUrl, machineName }: DashboardProvidersProps) {
+export function DashboardProviders({ children, selfHosted, deployMode, authMode, cloudAuthUrl, machineName, hostDomain }: DashboardProvidersProps) {
   return (
-    <GitHubProvider initialSelfHosted={selfHosted} initialDeployMode={deployMode} initialAuthMode={authMode} initialCloudAuthUrl={cloudAuthUrl} initialMachineName={machineName}>
-      <CloudProvider>
-        {children}
-      </CloudProvider>
-    </GitHubProvider>
+    <PlatformProvider selfHosted={selfHosted} deployMode={deployMode} authMode={authMode} cloudAuthUrl={cloudAuthUrl} machineName={machineName} hostDomain={hostDomain}>
+      <GitHubProvider>
+        <CloudProvider>
+          {children}
+        </CloudProvider>
+      </GitHubProvider>
+    </PlatformProvider>
   );
 }

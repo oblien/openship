@@ -1,13 +1,13 @@
 "use client";
 
 import { Info, MonitorSmartphone, Shield } from "lucide-react";
-import { useGitHub } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useAuth } from "@/context/AuthContext";
 import { SettingsSection } from "./SettingsSection";
 
 export function InstanceInfo() {
   const { user } = useAuth();
-  const { authMode, deployMode } = useGitHub();
+  const { authMode, deployMode } = usePlatform();
   const isDesktop = authMode === "none";
   const isCloudSaas = deployMode === "cloud";
 

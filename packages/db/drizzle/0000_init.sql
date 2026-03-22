@@ -61,6 +61,7 @@ CREATE TABLE "instance_settings" (
 	"tunnel_token" text,
 	"auth_mode" text DEFAULT 'none' NOT NULL,
 	"default_build_mode" text DEFAULT 'auto' NOT NULL,
+	"default_rollback_window" integer DEFAULT 5 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
@@ -122,6 +123,7 @@ CREATE TABLE "project" (
 	"resources" jsonb,
 	"build_resources" jsonb,
 	"sleep_mode" text DEFAULT 'auto_sleep',
+	"rollback_window" integer,
 	"active_deployment_id" text,
 	"deleted_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,

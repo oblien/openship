@@ -24,6 +24,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
 import type { CommandExecutor, LogEntry, SshConfig } from "../types";
+import { TRANSFER_EXCLUDES } from "@repo/core";
 import { systemDebug } from "./debug";
 import { isSshAuthError } from "./errors";
 
@@ -338,9 +339,22 @@ export class LocalExecutor implements CommandExecutor {
     localPath: string,
     remotePath: string,
     onLog?: (log: LogEntry) => void,
-    _options?: { excludes?: string[] },
+    options?: { excludes?: string[]; includes?: string[] },
   ): Promise<void> {
     const log = onLog ?? (() => {});
+
+    if (options?.includes?.length) {
+      // Include mode: copy only specific paths
+      for (const p of options.includes) {
+        const { code } = await this.streamExec(
+          `cp -a ${sq(localPath + "/" + p)} ${sq(remotePath + "/" + p)}`,
+          log,
+        );
+        if (code !== 0) throw new Error(`Failed to copy ${p}`);
+      }
+      return;
+    }
+
     const { code } = await this.streamExec(
       `cp -a ${sq(localPath + "/")}. ${sq(remotePath)}`,
       log,
@@ -646,16 +660,24 @@ export class SshExecutor implements CommandExecutor {
     localPath: string,
     remotePath: string,
     onLog?: (log: LogEntry) => void,
-    options?: { excludes?: string[] },
+    options?: { excludes?: string[]; includes?: string[] },
   ): Promise<void> {
-    const excludes = options?.excludes ?? ["node_modules", ".git"];
-    const excludeFlags = excludes.map((e) => `--exclude=${sq(e)}`).join(" ");
-    // --no-mac-metadata strips .apple.provenance / xattr headers on macOS;
-    // harmless on GNU tar (unknown flag is silently ignored by the piped extraction).
     const macFlags = process.platform === "darwin" ? "--no-mac-metadata " : "";
-    const tarCmd = excludeFlags
-      ? `tar ${macFlags}czf - -C ${sq(localPath)} ${excludeFlags} .`
-      : `tar ${macFlags}czf - -C ${sq(localPath)} .`;
+    let tarCmd: string;
+
+    if (options?.includes?.length) {
+      // Include mode: only transfer specific paths
+      const paths = options.includes.map((p) => sq(p)).join(" ");
+      tarCmd = `tar ${macFlags}-czf - -C ${sq(localPath)} ${paths}`;
+    } else {
+      // Exclude mode (default)
+      const excludes = options?.excludes ?? [...TRANSFER_EXCLUDES];
+      const excludeFlags = excludes.map((e) => `--exclude=${sq(e)}`).join(" ");
+      tarCmd = excludeFlags
+        ? `tar ${macFlags}-czf - -C ${sq(localPath)} ${excludeFlags} .`
+        : `tar ${macFlags}-czf - -C ${sq(localPath)} .`;
+    }
+
     const { code } = await this.pipeLocal(
       tarCmd,
       `mkdir -p ${sq(remotePath)} && tar xzf - -C ${sq(remotePath)}`,

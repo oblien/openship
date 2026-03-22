@@ -199,7 +199,7 @@ export default function ServerDetailPage({
         },
       ],
     });
-  }, [router, showToast, showModal, hideModal]);
+  }, [serverId, router, showToast, showModal, hideModal]);
 
   if (loading) {
     return (

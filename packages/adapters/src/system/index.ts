@@ -38,19 +38,21 @@ export { LocalExecutor, SshExecutor, createExecutor } from "./executor";
 export {
   checkAll,
   checkComponents,
+  checkCertbot,
   checkDocker,
   checkGit,
-  checkNode,
+  checkNginx,
   checkTraefik,
   COMPONENT_CHECKS,
 } from "./checks";
 
-// ─── Installers ──────────────────────────────────────────────────────────────
+// ─── Installers ───────────────────────────────────────────────────────────────
 export {
   COMPONENT_INSTALLERS,
+  installCertbot,
   installDocker,
   installGit,
-  installNode,
+  installNginx,
   installTraefik,
 } from "./installer";
 

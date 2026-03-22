@@ -18,7 +18,7 @@ import { env } from "../config/env";
 
 let _client: Oblien | null = null;
 
-function getClient(): Oblien {
+export function getOblienClient(): Oblien {
   if (_client) return _client;
 
   const clientId = env.OBLIEN_CLIENT_ID;
@@ -51,7 +51,7 @@ export async function ensureNamespace(userId: string): Promise<string> {
   const cached = namespaceCache.get(userId);
   if (cached) return cached;
 
-  const client = getClient();
+  const client = getOblienClient();
   const slug = namespaceSlugForUser(userId);
 
   const ensured = await client.namespaces.ensure({
@@ -82,7 +82,7 @@ export interface NamespaceTokenResult {
  * TTL: 30 minutes (covers build + deploy + some buffer).
  */
 export async function issueNamespaceToken(userId: string): Promise<NamespaceTokenResult> {
-  const client = getClient();
+  const client = getOblienClient();
   const namespace = await ensureNamespace(userId);
 
   try {

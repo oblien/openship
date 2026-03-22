@@ -5,12 +5,15 @@ import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useCloud } from "@/context/CloudContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useRouter } from "next/navigation";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
 
 const ComposeChecklist: React.FC = () => {
   const { config } = useDeployment();
+  const { hostDomain } = usePlatform();
+  const baseDomain = hostDomain || "opsh.io";
   const services = config.services || [];
   if (services.length === 0) return null;
 
@@ -123,7 +126,7 @@ const ComposeChecklist: React.FC = () => {
             const domain =
               svc.domainType === "custom" && svc.customDomain
                 ? svc.customDomain
-                : `${svc.domain || svc.name}.opsh.io`;
+                : `${svc.domain || svc.name}.${baseDomain}`;
             return (
               <div key={svc.name} className="flex items-center gap-2">
                 <Globe className="size-3 text-primary" />
@@ -143,6 +146,7 @@ const ComposeChecklist: React.FC = () => {
 const Sidebar: React.FC = () => {
   const { config, state, updateConfig, startDeployment } = useDeployment();
   const { requireCloud } = useCloud();
+  const { hostDomain } = usePlatform();
   const router = useRouter();
   const isServices = config.projectType === "services";
 
@@ -211,6 +215,7 @@ const Sidebar: React.FC = () => {
           setCustomDomain={(val) => updateConfig({ customDomain: val })}
           domainType={config.domainType}
           setDomainType={(val) => updateConfig({ domainType: val })}
+          hostDomain={hostDomain}
         />
       )}
 

@@ -9,10 +9,12 @@
 
 import { createHmac } from "node:crypto";
 import dns from "node:dns/promises";
-import { repos, type Domain } from "@repo/db";
+import { repos, type Domain, type Project } from "@repo/db";
 import { NotFoundError, ConflictError, ForbiddenError } from "@repo/core";
 import { platform } from "../../lib/controller-helpers";
+import { manageDomainSsl } from "../../lib/domain-ssl";
 import { env } from "../../config/env";
+import { resolveProjectServerHost } from "../../lib/server-target";
 import type { TAddDomainBody } from "./domain.schema";
 import type { CloudRuntime } from "@repo/adapters";
 
@@ -66,7 +68,7 @@ export async function addDomain(userId: string, data: TAddDomainBody) {
     await repos.domain.setPrimary(data.projectId, domain.id);
   }
 
-  const records = await buildRecords(domain.hostname, token);
+  const records = await buildRecords(domain.hostname, token, project);
   return { domain, records };
 }
 
@@ -80,9 +82,9 @@ export async function previewRecords(hostname: string) {
 // ─── Get DNS records (existing domain) ───────────────────────────────────────
 
 export async function getDomainRecords(domainId: string, userId: string) {
-  const domain = await getDomainWithAuth(domainId, userId);
+  const { domain, project } = await getDomainWithAuth(domainId, userId);
   const token = domain.verificationToken ?? generateToken(domain.hostname);
-  return buildRecords(domain.hostname, token);
+  return buildRecords(domain.hostname, token, project);
 }
 
 // ─── Verify ──────────────────────────────────────────────────────────────────
@@ -90,7 +92,7 @@ export async function getDomainRecords(domainId: string, userId: string) {
 // Only checks DNS records. Does NOT provision SSL or register routes.
 
 export async function verifyDomain(domainId: string, userId: string) {
-  const domain = await getDomainWithAuth(domainId, userId);
+  const { domain, project } = await getDomainWithAuth(domainId, userId);
 
   if (domain.verified) {
     return { verified: true, cnameVerified: true, txtVerified: true, message: "Already verified" };
@@ -102,7 +104,7 @@ export async function verifyDomain(domainId: string, userId: string) {
   // 1. Routing record — cloud: CNAME via Oblien, self-hosted: A record
   const routeOk = target === "cloud"
     ? await verifyCname(domain.hostname)
-    : await verifyARecord(domain.hostname);
+    : await verifyARecord(domain.hostname, project);
 
   // 2. Ownership — TXT record with verification hash
   const txtOk = await verifyTxt(domain.hostname, token);
@@ -123,7 +125,7 @@ export async function verifyDomain(domainId: string, userId: string) {
 // ─── Remove ──────────────────────────────────────────────────────────────────
 
 export async function removeDomain(domainId: string, userId: string) {
-  const domain = await getDomainWithAuth(domainId, userId);
+  const { domain } = await getDomainWithAuth(domainId, userId);
 
   try {
     const { routing } = platform();
@@ -138,24 +140,16 @@ export async function removeDomain(domainId: string, userId: string) {
 // ─── SSL ─────────────────────────────────────────────────────────────────────
 
 export async function renewDomainSsl(domainId: string, userId: string) {
-  const domain = await getDomainWithAuth(domainId, userId);
+  const { domain } = await getDomainWithAuth(domainId, userId);
 
-  if (!domain.verified) {
-    throw new ForbiddenError("Domain must be verified before SSL can be renewed");
-  }
-
-  const { ssl } = platform();
-  const result = await ssl.renewCert(domain.hostname);
-
-  await repos.domain.updateSsl(domainId, {
-    sslStatus: "active",
-    sslExpiresAt: new Date(result.expiresAt),
-    sslIssuer: result.issuer,
+  const result = await manageDomainSsl(domain.hostname, {
+    action: "renew",
+    userId,
   });
 
   return {
     domain: domain.hostname,
-    sslStatus: "active",
+    sslStatus: result.expiresAt ? "active" : "provisioning",
     expiresAt: result.expiresAt,
     issuer: result.issuer,
   };
@@ -187,7 +181,7 @@ export async function renewUserCerts(userId: string) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function getDomainWithAuth(domainId: string, userId: string): Promise<Domain> {
+async function getDomainWithAuth(domainId: string, userId: string): Promise<{ domain: Domain; project: Project }> {
   const domain = await repos.domain.findById(domainId);
   if (!domain) throw new NotFoundError("Domain", domainId);
 
@@ -196,7 +190,7 @@ async function getDomainWithAuth(domainId: string, userId: string): Promise<Doma
     throw new NotFoundError("Domain", domainId);
   }
 
-  return domain;
+  return { domain, project };
 }
 
 // ── DNS resolution (Google DNS-over-HTTPS → node:dns fallback) ───────────────
@@ -261,8 +255,8 @@ async function verifyCname(hostname: string): Promise<boolean> {
 }
 
 /** Self-hosted: check if an A record resolves to our server IP. */
-async function verifyARecord(hostname: string): Promise<boolean> {
-  const serverIp = await getServerIp();
+async function verifyARecord(hostname: string, project?: Project): Promise<boolean> {
+  const serverIp = await resolveProjectServerHost(project);
   if (!serverIp) return false;
 
   const records = await resolveRecords(hostname, "A");
@@ -273,46 +267,6 @@ async function verifyARecord(hostname: string): Promise<boolean> {
 async function verifyTxt(hostname: string, token: string): Promise<boolean> {
   const records = await resolveRecords(`_openship-challenge.${hostname}`, "TXT");
   return records.some((v) => v === token);
-}
-
-// ── Server IP detection ──────────────────────────────────────────────────────
-
-let cachedServerIp: string | null = null;
-
-/** Resolve the server's public IP: SERVER_IP env → ipify API → BETTER_AUTH_URL. */
-async function getServerIp(): Promise<string | null> {
-  if (cachedServerIp) return cachedServerIp;
-
-  // 1. Explicit env
-  if (env.SERVER_IP) {
-    cachedServerIp = env.SERVER_IP;
-    return cachedServerIp;
-  }
-
-  // 2. Auto-detect via ipify
-  try {
-    const res = await fetch("https://api.ipify.org?format=json", {
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (res.ok) {
-      const { ip } = (await res.json()) as { ip: string };
-      if (ip) {
-        cachedServerIp = ip;
-        return cachedServerIp;
-      }
-    }
-  } catch { /* ipify unreachable */ }
-
-  // 3. Fallback — parse BETTER_AUTH_URL hostname if it's an IP
-  try {
-    const host = new URL(env.BETTER_AUTH_URL).hostname;
-    if (host !== "localhost" && host !== "127.0.0.1" && host !== "0.0.0.0") {
-      cachedServerIp = host;
-      return cachedServerIp;
-    }
-  } catch { /* invalid URL */ }
-
-  return null;
 }
 
 // ── Record generation ────────────────────────────────────────────────────────
@@ -332,6 +286,7 @@ type DnsRecord =
 async function buildRecords(
   hostname: string,
   token: string,
+  project?: Project,
 ): Promise<{ mode: "cloud" | "selfhosted"; records: DnsRecord[] }> {
   const { target, runtime } = platform();
 
@@ -352,7 +307,7 @@ async function buildRecords(
   }
 
   // Self-hosted — A record
-  const serverIp = await getServerIp();
+  const serverIp = await resolveProjectServerHost(project);
   return {
     mode: "selfhosted",
     records: [{ type: "A", host: "@", value: serverIp ?? "" }, txt],

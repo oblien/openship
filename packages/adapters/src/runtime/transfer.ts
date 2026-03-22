@@ -2,11 +2,14 @@ import { execFile } from "node:child_process";
 
 import type { WorkspaceHandle } from "oblien";
 
+import { TRANSFER_EXCLUDES } from "@repo/core";
 import type { CommandExecutor } from "../types";
 import { BuildLogger, sq } from "./build-pipeline";
 
 export interface DirectoryTransferOptions {
   excludes?: string[];
+  /** When set, only these paths are transferred (overrides excludes). */
+  includes?: string[];
 }
 
 export type LocalDirectoryTarget =
@@ -21,7 +24,6 @@ export type LocalDirectoryTarget =
       path: string;
     };
 
-const DEFAULT_SOURCE_EXCLUDES = ["node_modules", ".git"] as const;
 const TAR_MAX_BUFFER = 500 * 1024 * 1024;
 
 export async function transferLocalDirectory(
@@ -88,7 +90,6 @@ async function createTarball(
   localPath: string,
   options?: DirectoryTransferOptions,
 ): Promise<Buffer> {
-  const excludes = options?.excludes ?? [...DEFAULT_SOURCE_EXCLUDES];
   const args: string[] = [];
 
   // Strip macOS extended attributes (.apple.provenance, resource forks)
@@ -96,13 +97,18 @@ async function createTarball(
     args.push("--no-mac-metadata");
   }
 
-  args.push("czf", "-", "-C", localPath);
+  args.push("-czf", "-", "-C", localPath);
 
-  for (const exclude of excludes) {
-    args.push(`--exclude=${exclude}`);
+  if (options?.includes?.length) {
+    // Include mode: only pack specific paths
+    args.push(...options.includes);
+  } else {
+    const excludes = options?.excludes ?? [...TRANSFER_EXCLUDES];
+    for (const exclude of excludes) {
+      args.push(`--exclude=${exclude}`);
+    }
+    args.push(".");
   }
-
-  args.push(".");
 
   return new Promise((resolve, reject) => {
     execFile(

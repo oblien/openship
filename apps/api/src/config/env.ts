@@ -77,6 +77,12 @@ const envSchema = z.object({
   /* ---------- Network (self-hosted) ---------- */
   /** Public IP of the server — used for A record instructions in self-hosted mode. */
   SERVER_IP: z.string().optional(),
+  /**
+   * Base domain for the self-hosted instance (e.g. "example.com").
+   * Deployments get a free subdomain: slug.HOST_DOMAIN (e.g. "myapp.example.com").
+   * SSL is NOT auto-provisioned for these — only for custom domains.
+   */
+  HOST_DOMAIN: z.string().optional(),
 
   /* ---------- Oblien Cloud ---------- */
   OBLIEN_CLIENT_ID: z.string().optional(),

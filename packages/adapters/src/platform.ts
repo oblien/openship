@@ -3,14 +3,17 @@
  *
  * Same codebase, three deployment targets:
  *
- *   ┌──────────────┬──────────────┬──────────────┬────────────────┐
- *   │              │  cloud       │  selfhosted  │  desktop       │
- *   ├──────────────┼──────────────┼──────────────┼────────────────┤
- *   │  Runtime     │  CloudAPI    │  Docker/Bare │  Bare          │
- *   │  Routing     │  CloudAPI    │  Traefik     │  No-op         │
- *   │  SSL         │  CloudAPI    │  Traefik LE  │  No-op         │
- *   │  System      │  —           │  ✓ (checks)  │  —             │
- *   └──────────────┴──────────────┴──────────────┴────────────────┘
+ *   ┌──────────────┬──────────────┬─────────────────────────────┬────────────────┐
+ *   │              │  cloud       │  selfhosted                 │  desktop       │
+ *   ├──────────────┼──────────────┼──────────────┬──────────────┼────────────────┤
+ *   │              │              │  docker      │  bare        │                │
+ *   ├──────────────┼──────────────┼──────────────┼──────────────┼────────────────┤
+ *   │  Runtime     │  CloudAPI    │  Docker      │  Bare        │  Bare          │
+ *   │  Routing     │  CloudAPI    │  Traefik     │  Nginx       │  No-op         │
+ *   │  SSL         │  CloudAPI    │  ACME        │  certbot     │  No-op         │
+ *   │  System      │  —           │  docker, git │  git, nginx  │  —             │
+ *   │  Toolchain   │  —           │  —           │  per-stack   │  —             │
+ *   └──────────────┴──────────────┴──────────────┴──────────────┴────────────────┘
  *
  * Build-time separation:
  *   All code exists in the same codebase. The `createPlatform()` factory
@@ -52,16 +55,20 @@ export interface PlatformConfig {
   target: PlatformTarget;
   /**
    * Runtime mode for self-hosted (ignored for cloud/desktop).
-   * - "docker" → Docker Engine (default for selfhosted)
-   * - "bare"   → Direct process management
+   *
+   * This is the ONLY choice for self-hosted — everything else follows:
+   *   - "docker" → Docker containers + Traefik + ACME (default)
+   *   - "bare"   → Node.js processes + Nginx + certbot
    */
   runtime?: "docker" | "bare";
   /** Docker connection options (only for docker runtime) */
   docker?: import("./runtime/docker").DockerConnectionOptions;
   /** Bare runtime options (only for bare runtime) */
   bare?: import("./runtime/bare").BareRuntimeOptions;
-  /** Traefik provider options (only for selfhosted target) */
+  /** Traefik provider options (docker mode only) */
   traefik?: Omit<import("./infra/traefik").TraefikProviderOptions, "executor">;
+  /** Nginx provider options (bare mode only) */
+  nginx?: Omit<import("./infra/nginx").NginxProviderOptions, "executor">;
   /** Oblien client ID (cloud target — master creds) */
   cloudClientId?: string;
   /** Oblien client secret (cloud target — master creds) */
@@ -175,6 +182,28 @@ async function createDesktopPlatform(config: PlatformConfig): Promise<Platform> 
   };
 }
 
+/**
+ * Create the routing + SSL provider based on runtime mode.
+ *
+ * Docker mode → Traefik (Docker-native, auto-discovery, built-in ACME)
+ * Bare mode   → Nginx (system-level, certbot for SSL)
+ */
+async function createInfraProvider(
+  mode: "docker" | "bare",
+  config: PlatformConfig,
+  executor: CommandExecutor,
+): Promise<{ routing: RoutingProvider; ssl: SslProvider }> {
+  if (mode === "bare") {
+    const { NginxProvider } = await import("./infra/nginx");
+    const nginx = new NginxProvider({ ...config.nginx, executor });
+    return { routing: nginx, ssl: nginx };
+  }
+
+  const { TraefikProvider } = await import("./infra/traefik");
+  const traefik = new TraefikProvider({ ...config.traefik, executor });
+  return { routing: traefik, ssl: traefik };
+}
+
 async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platform> {
   const runtimeMode = config.runtime ?? "docker";
 
@@ -192,11 +221,10 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     runtime = new DockerRuntime(config.docker);
   }
 
-  // Infrastructure — pass executor for dual-path file operations
-  const { TraefikProvider } = await import("./infra/traefik");
-  const traefik = new TraefikProvider({ ...config.traefik, executor });
+  // Infrastructure — runtime implies the reverse proxy
+  const { routing, ssl } = await createInfraProvider(runtimeMode, config, executor);
 
-  // System — pass executor and state store
+  // System — runtime mode determines all required components
   const { SystemManager } = await import("./system/setup");
   const system = new SystemManager(runtimeMode, {
     executor,
@@ -207,8 +235,8 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   return {
     target: "selfhosted",
     runtime,
-    routing: traefik,
-    ssl: traefik,
+    routing,
+    ssl,
     system,
     executor,
   };

@@ -27,6 +27,7 @@ import type { RuntimeAdapter, RuntimeCapability } from "./types";
 import { BuildLogger, runBuildPipeline, type BuildEnvironment } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
+import { STACKS, TRANSFER_EXCLUDES, type StackId, type StackDefinition } from "@repo/core";
 
 function now(): string {
   return new Date().toISOString();
@@ -97,6 +98,7 @@ export class CloudRuntime implements RuntimeAdapter {
 
     if (buildLocally) {
       log.log("Build strategy: local (build on API host, upload to cloud)\n");
+      const stackDef: StackDefinition | undefined = STACKS[config.stack as StackId];
 
       let result: Awaited<ReturnType<typeof runLocalBuild>>;
       try {
@@ -104,23 +106,35 @@ export class CloudRuntime implements RuntimeAdapter {
           config,
           logger: log,
           transferOutput: async (buildDir) => {
-            // Exclude node_modules — native binaries compiled on the local
-            // host (e.g. macOS) won't work on the cloud (Linux).
-            // A production install runs on the cloud side after transfer.
-            await transferLocalDirectory(
-              buildDir,
-              {
-                kind: "cloud-runtime",
-                runtime: rt,
-                path: "/app",
-              },
-              log,
-            );
+            if (stackDef?.productionPaths?.length) {
+              // Compiled stacks — transfer only production artifacts
+              log.log(`Transferring production paths: ${stackDef.productionPaths.join(", ")}\n`);
+              await transferLocalDirectory(
+                buildDir,
+                { kind: "cloud-runtime", runtime: rt, path: "/app" },
+                log,
+                { includes: [...stackDef.productionPaths] },
+              );
+            } else {
+              // Runtime stacks — transfer everything except deps & caches
+              const excludes = [
+                ...TRANSFER_EXCLUDES,
+                ...(stackDef?.cacheDirs ?? []),
+              ];
+              await transferLocalDirectory(
+                buildDir,
+                { kind: "cloud-runtime", runtime: rt, path: "/app" },
+                log,
+                { excludes },
+              );
+            }
 
             // Install production dependencies with correct platform binaries
-            log.log("Installing production dependencies on cloud...\n");
-            const installCmd = config.installCommand || "npm install";
-            await this.execAndStream(rt, ["sh", "-c", `cd /app && ${installCmd}`], log.callback);
+            const installCmd = config.installCommand?.trim();
+            if (installCmd) {
+              log.log("Installing production dependencies on cloud...\n");
+              await this.execAndStream(rt, ["sh", "-c", `cd /app && ${installCmd}`], log.callback);
+            }
           },
         });
       } catch (err) {

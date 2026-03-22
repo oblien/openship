@@ -75,6 +75,7 @@ export type DeploymentInfo = {
   authMode: "cloud" | "local" | "none";
   cloudAuthUrl: string;
   machineName?: string;
+  hostDomain?: string;
 };
 
 let _deploymentInfo: DeploymentInfo | null = null;
