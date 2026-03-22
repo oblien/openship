@@ -41,6 +41,10 @@ import { detectSupervisor } from "./supervisor/detect";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
+interface BareSystemManager {
+  ensureComponents(names: string[], onLog?: (log: LogEntry) => void): Promise<void>;
+}
+
 export interface BareRuntimeOptions {
   /** Base directory for project working directories (default: /opt/openship) */
   workDir?: string;
@@ -54,6 +58,8 @@ export interface BareRuntimeOptions {
    * When omitted, a LocalExecutor is created automatically (same machine).
    */
   executor?: CommandExecutor;
+  /** Optional system manager for ensuring remote runtime prerequisites. */
+  systemManager?: BareSystemManager;
 }
 
 const DEFAULT_WORK_DIR = "/opt/openship";
@@ -80,6 +86,7 @@ export class BareRuntime implements RuntimeAdapter {
   private readonly workDir: string;
   private readonly buildTimeout: number;
   private executor: CommandExecutor;
+  private readonly systemManager: BareSystemManager | null;
   /** True if we created the executor ourselves (must dispose on cleanup) */
   private readonly ownsExecutor: boolean;
   /** Track active builds by sessionId for cancellation */
@@ -99,6 +106,8 @@ export class BareRuntime implements RuntimeAdapter {
       this.executor = new LocalExecutor();
       this.ownsExecutor = true;
     }
+
+    this.systemManager = opts?.systemManager ?? null;
   }
 
   /** Get or lazily initialise the process supervisor. */
@@ -220,6 +229,10 @@ export class BareRuntime implements RuntimeAdapter {
           await this.ensureToolchain(localExec, cfg.stack, plog);
           plog.log("Checking runtime tools on target server...\n");
           await this.ensureToolchain(this.executor, cfg.stack, plog);
+          if (this.systemManager) {
+            plog.log("Ensuring rsync is installed on target server...\n");
+            await this.systemManager.ensureComponents(["rsync"], (entry) => plog.callback(entry));
+          }
         },
         transferOutput: async (buildDir) => {
           await this.executor.rm(remoteDir);

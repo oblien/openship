@@ -18,12 +18,23 @@ import { getUserId } from "../../lib/controller-helpers";
 import { auth } from "../../lib/auth";
 import { issueNamespaceToken, getOblienClient } from "../../lib/openship-cloud";
 import { generateHandoffCode, exchangeHandoffCode } from "../../lib/cloud-auth-proxy";
+import { runCloudPreflight } from "../../lib/cloud-preflight";
 
 // ─── Namespace token minting ─────────────────────────────────────────────────
 
 export async function getToken(c: Context) {
   const userId = getUserId(c);
   const result = await issueNamespaceToken(userId);
+  return c.json({ data: result });
+}
+
+export async function preflight(c: Context) {
+  const userId = getUserId(c);
+  const body = await c.req.json<{ slug?: string; customDomain?: string }>();
+  const result = await runCloudPreflight(userId, {
+    slug: body.slug,
+    customDomain: body.customDomain,
+  });
   return c.json({ data: result });
 }
 

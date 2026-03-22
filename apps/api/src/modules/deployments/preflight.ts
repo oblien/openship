@@ -5,21 +5,17 @@
  * If any check fails, the deployment is rejected with actionable errors —
  * no resources are provisioned, no build session started.
  *
- * Checks are mode-aware (determined by snapshot flags):
- *   - hasBuild=true:   validate install/build commands
- *   - hasServer=true:  validate port + start command
- *   - Both false:      plain static files, minimal checks
- *
- * Domain check: if a custom domain is provided, verifies the CNAME record
- * points to edge.openship.io before allowing the build to start.
+ * Cloud checks are SaaS-owned:
+ *   - SaaS mode calls the shared cloud preflight service directly
+ *   - Desktop/local mode calls the SaaS preflight endpoint
+ *   - Local/desktop never talks to Oblien directly for preflight
  */
 
 import type { DeploymentConfigSnapshot } from "./build.service";
 import { platform } from "../../lib/controller-helpers";
-import type { CloudRuntime } from "@repo/adapters";
 import { SYSTEM } from "@repo/core";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import { getCloudPreflight } from "../../lib/cloud-client";
+import type { CloudPreflightData } from "../../lib/cloud-preflight";
 
 export interface PreflightCheck {
     id: string;
@@ -35,13 +31,37 @@ export interface PreflightResult {
 
 export interface PreflightOptions {
     customDomain?: string;
-    /** Free subdomain slug to validate format (e.g. "my-app" → my-app.opsh.io) */
     slug?: string;
+    userId?: string;
 }
 
-// ─── Individual checks ──────────────────────────────────────────────────────
+async function resolveCloudPreflight(
+    snapshot: DeploymentConfigSnapshot,
+    opts?: PreflightOptions,
+): Promise<CloudPreflightData | null> {
+    const plat = platform();
+    const effectiveTarget = plat.target === "desktop"
+        ? snapshot.deployTarget ?? "cloud"
+        : plat.target;
 
-/** Validate that all required config fields are present based on mode. */
+    if (effectiveTarget !== "cloud" || !opts?.userId) {
+        return null;
+    }
+
+    if (plat.target === "cloud") {
+        const { runCloudPreflight } = await import("../../lib/cloud-preflight");
+        return runCloudPreflight(opts.userId, {
+            slug: opts.slug,
+            customDomain: opts.customDomain,
+        });
+    }
+
+    return getCloudPreflight(opts.userId, {
+        slug: opts.slug,
+        customDomain: opts.customDomain,
+    });
+}
+
 function checkConfig(snapshot: DeploymentConfigSnapshot): PreflightCheck {
     const missing: string[] = [];
 
@@ -49,12 +69,10 @@ function checkConfig(snapshot: DeploymentConfigSnapshot): PreflightCheck {
     if (!snapshot.branch && !snapshot.localPath) missing.push("branch");
     if (!snapshot.buildImage) missing.push("build image");
 
-    // Build mode requires install command
-    if (snapshot.hasBuild) {
-        if (!snapshot.installCommand) missing.push("install command");
+    if (snapshot.hasBuild && !snapshot.installCommand) {
+        missing.push("install command");
     }
 
-    // Server mode requires start command and port
     if (snapshot.hasServer) {
         if (!snapshot.startCommand) missing.push("start command");
         if (!snapshot.port) missing.push("port");
@@ -72,14 +90,13 @@ function checkConfig(snapshot: DeploymentConfigSnapshot): PreflightCheck {
     return { id: "config", label: "Build configuration", status: "pass" };
 }
 
-/** Validate stack-specific requirements based on hasBuild + hasServer. */
 function checkStack(snapshot: DeploymentConfigSnapshot): PreflightCheck {
     if (!snapshot.hasServer && snapshot.startCommand) {
         return {
             id: "stack",
             label: "Stack configuration",
             status: "warn",
-            message: "Static site has a start command configured — it will be ignored. Files will be served from the edge.",
+            message: "Static site has a start command configured - it will be ignored. Files will be served from the edge.",
         };
     }
 
@@ -88,7 +105,7 @@ function checkStack(snapshot: DeploymentConfigSnapshot): PreflightCheck {
             id: "stack",
             label: "Stack configuration",
             status: "warn",
-            message: "Build is enabled but no build command configured — deployment will use source files directly.",
+            message: "Build is enabled but no build command configured - deployment will use source files directly.",
         };
     }
 
@@ -97,107 +114,13 @@ function checkStack(snapshot: DeploymentConfigSnapshot): PreflightCheck {
             id: "stack",
             label: "Stack configuration",
             status: "warn",
-            message: "Build is disabled but a build command exists — it will be skipped.",
+            message: "Build is disabled but a build command exists - it will be skipped.",
         };
     }
 
     return { id: "stack", label: "Stack configuration", status: "pass" };
 }
 
-/**
- * Check subdomain slug availability via Oblien's checkSlug API.
- * Cloud only — skipped in self-hosted mode.
- */
-async function checkSlug(slug: string): Promise<PreflightCheck> {
-    const { target, runtime } = platform();
-    if (target !== "cloud") {
-        return { id: "slug-available", label: "Subdomain availability", status: "pass" };
-    }
-
-    try {
-        const cloud = runtime as CloudRuntime;
-        const result = await cloud.checkSlug(slug);
-
-        console.log("Slug check result:", result);
-        if (result.available) {
-            return { id: "slug-available", label: "Subdomain availability", status: "pass" };
-        }
-
-        return {
-            id: "slug-available",
-            label: "Subdomain availability",
-            status: "fail",
-            message: `"${slug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}" is already taken. Choose a different subdomain.`,
-        };
-    } catch {
-        // Don't block deploy if the check itself fails — conflict will surface at expose time
-        return { id: "slug-available", label: "Subdomain availability", status: "warn", message: "Could not verify subdomain availability" };
-    }
-}
-
-/**
- * Verify a custom domain's DNS configuration via Oblien's verify API.
- * Falls back to local DNS CNAME check in self-hosted mode.
- */
-async function checkCustomDomain(customDomain: string): Promise<PreflightCheck> {
-    const { target, runtime } = platform();
-
-    // Cloud mode: use Oblien SDK for DNS validation
-    if (target === "cloud") {
-        try {
-            const cloud = runtime as CloudRuntime;
-            const result = await cloud.verifyDomain(customDomain);
-
-            if (result.verified) {
-                return { id: "domain", label: "Domain DNS", status: "pass" };
-            }
-
-            const errorMsg = result.errors.length > 0
-                ? result.errors.join("; ")
-                : `DNS not configured for ${customDomain}. Add a CNAME record pointing to ${result.requiredRecords.cname.target}`;
-
-            return {
-                id: "domain",
-                label: "Domain DNS",
-                status: "fail",
-                message: errorMsg,
-            };
-        } catch {
-            // Fall through to local check if Oblien validation fails
-        }
-    }
-
-    // Self-hosted / fallback: local DNS CNAME check
-    try {
-        const dns = await import("node:dns/promises");
-        const records = await dns.resolveCname(customDomain);
-        const pointsToEdge = records.some(
-            (r) => r.toLowerCase() === "edge.openship.io",
-        );
-
-        if (pointsToEdge) {
-            return { id: "domain", label: "Domain DNS", status: "pass" };
-        }
-
-        return {
-            id: "domain",
-            label: "Domain DNS",
-            status: "fail",
-            message: `CNAME for ${customDomain} does not point to edge.openship.io. Current target: ${records.join(", ") || "none"}`,
-        };
-    } catch {
-        return {
-            id: "domain",
-            label: "Domain DNS",
-            status: "fail",
-            message: `No CNAME record found for ${customDomain}. Add a CNAME record pointing to edge.openship.io`,
-        };
-    }
-}
-
-// ─── Main entry point ───────────────────────────────────────────────────────
-
-/** Validate slug format for subdomain use (slug.opsh.io). */
 function checkSlugFormat(slug: string): PreflightCheck {
     if (slug.length < 1 || slug.length > 63) {
         return {
@@ -220,61 +143,126 @@ function checkSlugFormat(slug: string): PreflightCheck {
     return { id: "slug", label: "Subdomain", status: "pass" };
 }
 
-/** Verify that cloud runtime credentials are valid and the account is active. */
-async function checkCloudRuntime(): Promise<PreflightCheck> {
-    const { target, runtime } = platform();
-    if (target !== "cloud") {
-        return { id: "runtime", label: "Runtime", status: "pass" };
+async function checkSlug(slug: string, cloud: CloudPreflightData | null): Promise<PreflightCheck> {
+    if (!cloud) {
+        return { id: "slug-available", label: "Subdomain availability", status: "pass" };
+    }
+
+    if (!cloud.runtime.ok) {
+        return {
+            id: "slug-available",
+            label: "Subdomain availability",
+            status: "warn",
+            message: "Could not verify subdomain availability",
+        };
+    }
+
+    if (cloud.slug?.available === false) {
+        return {
+            id: "slug-available",
+            label: "Subdomain availability",
+            status: "fail",
+            message: cloud.slug.message ?? `"${slug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}" is already taken. Choose a different subdomain.`,
+        };
+    }
+
+    if (cloud.slug?.message) {
+        return {
+            id: "slug-available",
+            label: "Subdomain availability",
+            status: "warn",
+            message: cloud.slug.message,
+        };
+    }
+
+    return { id: "slug-available", label: "Subdomain availability", status: "pass" };
+}
+
+async function checkCustomDomain(
+    customDomain: string,
+    cloud: CloudPreflightData | null,
+): Promise<PreflightCheck> {
+    if (cloud?.runtime.ok && cloud.customDomain) {
+        if (cloud.customDomain.verified) {
+            if (cloud.customDomain.message) {
+                return { id: "domain", label: "Domain DNS", status: "warn", message: cloud.customDomain.message };
+            }
+            return { id: "domain", label: "Domain DNS", status: "pass" };
+        }
+
+        return {
+            id: "domain",
+            label: "Domain DNS",
+            status: "fail",
+            message: cloud.customDomain.message ?? `DNS not configured for ${customDomain}`,
+        };
     }
 
     try {
-        const cloud = runtime as CloudRuntime;
-        await cloud.getQuota();
-        return { id: "runtime", label: "Cloud runtime", status: "pass" };
-    } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const dns = await import("node:dns/promises");
+        const records = await dns.resolveCname(customDomain);
+        const pointsToEdge = records.some((record) => record.toLowerCase() === "edge.openship.io");
+
+        if (pointsToEdge) {
+            return { id: "domain", label: "Domain DNS", status: "pass" };
+        }
+
         return {
-            id: "runtime",
-            label: "Cloud runtime",
+            id: "domain",
+            label: "Domain DNS",
             status: "fail",
-            message: `Cannot connect to cloud runtime: ${msg}`,
+            message: `CNAME for ${customDomain} does not point to edge.openship.io. Current target: ${records.join(", ") || "none"}`,
+        };
+    } catch {
+        return {
+            id: "domain",
+            label: "Domain DNS",
+            status: "fail",
+            message: `No CNAME record found for ${customDomain}. Add a CNAME record pointing to edge.openship.io`,
         };
     }
 }
 
-/**
- * Run all pre-deploy checks for a config snapshot.
- *
- * Returns { ok, checks } — ok is false if ANY check has status "fail".
- * Warnings don't block deployment.
- */
+async function checkCloudRuntime(cloud: CloudPreflightData | null): Promise<PreflightCheck> {
+    if (!cloud) {
+        return { id: "runtime", label: "Runtime", status: "pass" };
+    }
+
+    if (cloud.runtime.ok) {
+        return { id: "runtime", label: "Cloud runtime", status: "pass" };
+    }
+
+    return {
+        id: "runtime",
+        label: "Cloud runtime",
+        status: "fail",
+        message: cloud.runtime.message,
+    };
+}
+
 export async function runPreflightChecks(
     snapshot: DeploymentConfigSnapshot,
     opts?: PreflightOptions,
 ): Promise<PreflightResult> {
+    const cloudPreflight = await resolveCloudPreflight(snapshot, opts);
     const checks: PreflightCheck[] = [
         checkConfig(snapshot),
         checkStack(snapshot),
     ];
 
-    // Validate slug format + availability — skip when using custom domain
-    // since the free subdomain won't be exposed
     if (opts?.slug && !opts?.customDomain) {
         checks.push(checkSlugFormat(opts.slug));
-        checks.push(await checkSlug(opts.slug));
+        checks.push(await checkSlug(opts.slug, cloudPreflight));
     }
 
-    // Verify cloud runtime credentials are working
-    checks.push(await checkCloudRuntime());
+    checks.push(await checkCloudRuntime(cloudPreflight));
 
-    // Verify custom domain DNS records
     if (opts?.customDomain) {
-        checks.push(await checkCustomDomain(opts.customDomain));
+        checks.push(await checkCustomDomain(opts.customDomain, cloudPreflight));
     }
-    
 
     return {
-        ok: checks.every((c) => c.status !== "fail"),
+        ok: checks.every((check) => check.status !== "fail"),
         checks,
     };
 }

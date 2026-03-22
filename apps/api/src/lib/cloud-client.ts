@@ -11,6 +11,7 @@
  */
 
 import { repos } from "@repo/db";
+import type { CloudPreflightData } from "./cloud-preflight";
 import { env } from "../config/env";
 import { decrypt } from "./encryption";
 
@@ -113,6 +114,21 @@ export async function getCloudToken(
   });
 
   return { token, namespace };
+}
+
+export async function getCloudPreflight(
+  userId: string,
+  input: { slug?: string; customDomain?: string },
+): Promise<CloudPreflightData | null> {
+  const res = await cloudFetch(userId, "/api/cloud/preflight", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+
+  if (!res || !res.ok) return null;
+
+  const json = (await res.json()) as { data: CloudPreflightData };
+  return json.data;
 }
 
 // ─── Edge proxy sync ─────────────────────────────────────────────────────────

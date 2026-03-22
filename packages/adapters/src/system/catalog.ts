@@ -61,6 +61,29 @@ function gitInstallPlan(profile: EnvironmentProfile): InstallPlan {
   };
 }
 
+function rsyncInstallPlan(profile: EnvironmentProfile): InstallPlan {
+  const commands: Record<string, string> = {
+    apt: "apt-get update -qq && apt-get install -y -qq rsync",
+    dnf: "dnf install -y rsync",
+    yum: "yum install -y rsync",
+    brew: "brew install rsync",
+  };
+
+  const installCommand = commands[profile.packageManager];
+  if (!installCommand) {
+    return {
+      supported: false,
+      unsupportedReason: "No supported package manager found for rsync installation",
+    };
+  }
+
+  return {
+    supported: true,
+    installCommand,
+    verifyCommand: "rsync --version | head -n 1",
+  };
+}
+
 function traefikDockerPlan(
   _profile: EnvironmentProfile,
   config?: InstallerConfig,
@@ -204,10 +227,16 @@ export const systemCatalog = {
       parseVersion: (output: string) => output.match(/git version (\S+)/)?.[1] ?? output,
       missingMessage: "Git is not installed",
     },
+    rsync: {
+      versionCommand: "rsync --version | head -n 1",
+      parseVersion: (output: string) => output.match(/rsync\s+version\s+(\S+)/i)?.[1] ?? output,
+      missingMessage: "rsync is not installed",
+    },
   },
   installs: {
     docker: dockerInstallPlan,
     git: gitInstallPlan,
+    rsync: rsyncInstallPlan,
     traefikDocker: traefikDockerPlan,
     traefikBinary: traefikBinaryPlan,
     nginx: nginxInstallPlan,

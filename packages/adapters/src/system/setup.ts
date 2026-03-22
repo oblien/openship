@@ -250,23 +250,29 @@ export class SystemManager {
     const readiness = await this.checkFeature(feature);
     if (readiness.ready) return;
 
-    logFn(info(`Checking required system components for ${feature}...`));
-    logFn(info(`Missing: ${readiness.missing.map((c) => c.name).join(", ")}`));
-
-    const { failed } = await this.installMany(
+    await this.ensureNamedComponents(
       readiness.missing.map((component) => component.name),
       logFn,
       installerConfig,
-      true,
+      `Checking required system components for ${feature}...`,
+      (names) => `${this.rules.find((rule) => rule.feature === feature)?.message ?? feature} — missing: ${names.join(", ")}`,
     );
-    if (failed.length > 0) {
-      throw new Error(failed[0].error ?? `Failed to install ${failed[0].component}`);
-    }
+  }
 
-    const finalReadiness = await this.checkFeature(feature);
-    if (!finalReadiness.ready) {
-      throw new Error(finalReadiness.message);
-    }
+  async ensureComponents(
+    names: string[],
+    onLog?: SystemLogCallback,
+    config?: InstallerConfig,
+  ): Promise<void> {
+    const logFn = onLog ?? (() => {});
+    const installerConfig = config ?? this.installerConfig;
+    await this.ensureNamedComponents(
+      names,
+      logFn,
+      installerConfig,
+      "Checking required system components...",
+      (missingNames) => `Required components are still not ready: ${missingNames.join(", ")}`,
+    );
   }
 
   // ── Installation ─────────────────────────────────────────────────────
@@ -497,6 +503,43 @@ export class SystemManager {
     }
 
     return { installed, failed };
+  }
+
+  private async ensureNamedComponents(
+    names: string[],
+    logFn: SystemLogCallback,
+    installerConfig: InstallerConfig,
+    heading: string,
+    errorMessage: (missingNames: string[]) => string,
+  ): Promise<void> {
+    const statuses = await checkComponents(this.executor, names);
+    const missing = statuses.filter((status) => !status.healthy);
+    if (missing.length === 0) {
+      await this.updateStateFromChecks(statuses);
+      return;
+    }
+
+    logFn(info(heading));
+    logFn(info(`Missing: ${missing.map((component) => component.name).join(", ")}`));
+
+    const { failed } = await this.installMany(
+      missing.map((component) => component.name),
+      logFn,
+      installerConfig,
+      true,
+    );
+
+    if (failed.length > 0) {
+      throw new Error(failed[0].error ?? `Failed to install ${failed[0].component}`);
+    }
+
+    const recheck = await checkComponents(this.executor, names);
+    await this.updateStateFromChecks(recheck);
+
+    const unhealthy = recheck.filter((status) => !status.healthy);
+    if (unhealthy.length > 0) {
+      throw new Error(errorMessage(unhealthy.map((status) => status.name)));
+    }
   }
 }
 

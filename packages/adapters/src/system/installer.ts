@@ -235,6 +235,43 @@ export async function installGit(
   }
 }
 
+export async function installRsync(
+  executor: CommandExecutor,
+  onLog: SystemLogCallback,
+): Promise<InstallResult> {
+  const profile = await resolveEnvironment(executor);
+  const plan = systemCatalog.installs.rsync(profile);
+  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
+    return {
+      component: "rsync",
+      success: false,
+      error: plan.unsupportedReason ?? "rsync installation is not supported on this environment",
+    };
+  }
+
+  onLog(log("Installing rsync..."));
+
+  try {
+    const { code } = await executor.streamExec(
+      plan.installCommand,
+      onLog as (log: LogEntry) => void,
+    );
+    if (code !== 0) {
+      return { component: "rsync", success: false, error: "rsync installation failed" };
+    }
+
+    const version = await executor.exec(plan.verifyCommand);
+    const parsed = systemCatalog.checks.rsync.parseVersion(version);
+
+    onLog(log(`rsync ${parsed} installed`));
+    return { component: "rsync", success: true, version: parsed };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    onLog(log(`rsync installation failed: ${msg}`, "error"));
+    return { component: "rsync", success: false, error: msg };
+  }
+}
+
 // ─── Nginx ────────────────────────────────────────────────────────────────────
 
 export async function installNginx(
@@ -339,4 +376,5 @@ export const COMPONENT_INSTALLERS: Record<string, InstallerFn> = {
   nginx: (exec, log) => installNginx(exec, log),
   certbot: (exec, log) => installCertbot(exec, log),
   git: (exec, log) => installGit(exec, log),
+  rsync: (exec, log) => installRsync(exec, log),
 };

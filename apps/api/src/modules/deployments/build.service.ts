@@ -344,6 +344,7 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
   const preflight = await runPreflightChecks(snapshot, {
     customDomain: snapshot.customDomain,
     slug: project.slug,
+    userId,
   });
   if (!preflight.ok) {
     const failures = preflight.checks
@@ -572,7 +573,7 @@ export async function triggerDeployment(userId: string, data: { projectId: strin
   const snapshot = buildConfigSnapshot(project, branch);
 
   // ── Preflight: validate config before creating any resources ────
-  const preflight = await runPreflightChecks(snapshot, { slug: project.slug });
+  const preflight = await runPreflightChecks(snapshot, { slug: project.slug, userId });
   if (!preflight.ok) {
     const failures = preflight.checks
       .filter((c) => c.status === "fail")

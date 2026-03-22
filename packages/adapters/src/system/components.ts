@@ -31,6 +31,12 @@ export const SYSTEM_COMPONENTS: SystemComponentDefinition[] = [
     description: "Version control for source code",
     installable: true,
   },
+  {
+    name: "rsync",
+    label: "rsync",
+    description: "Fast directory sync for remote local-build transfers",
+    installable: true,
+  },
 ];
 
 export const SYSTEM_COMPONENTS_BY_NAME = new Map(

@@ -211,19 +211,6 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   const { createExecutor } = await import("./system/executor");
   const executor = createExecutor(config.ssh);
 
-  // Runtime
-  let runtime: RuntimeAdapter;
-  if (runtimeMode === "bare") {
-    const { BareRuntime } = await import("./runtime/bare");
-    runtime = new BareRuntime({ ...config.bare, executor });
-  } else {
-    const { DockerRuntime } = await import("./runtime/docker");
-    runtime = new DockerRuntime(config.docker);
-  }
-
-  // Infrastructure — runtime implies the reverse proxy
-  const { routing, ssl } = await createInfraProvider(runtimeMode, config, executor);
-
   // System — runtime mode determines all required components
   const { SystemManager } = await import("./system/setup");
   const system = new SystemManager(runtimeMode, {
@@ -231,6 +218,19 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     stateStore: config.stateStore,
     installerConfig: config.installerConfig,
   });
+
+  // Runtime
+  let runtime: RuntimeAdapter;
+  if (runtimeMode === "bare") {
+    const { BareRuntime } = await import("./runtime/bare");
+    runtime = new BareRuntime({ ...config.bare, executor, systemManager: system });
+  } else {
+    const { DockerRuntime } = await import("./runtime/docker");
+    runtime = new DockerRuntime(config.docker);
+  }
+
+  // Infrastructure — runtime implies the reverse proxy
+  const { routing, ssl } = await createInfraProvider(runtimeMode, config, executor);
 
   return {
     target: "selfhosted",

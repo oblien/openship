@@ -42,6 +42,7 @@ export {
   checkDocker,
   checkGit,
   checkNginx,
+  checkRsync,
   checkTraefik,
   COMPONENT_CHECKS,
 } from "./checks";
@@ -53,6 +54,7 @@ export {
   installDocker,
   installGit,
   installNginx,
+  installRsync,
   installTraefik,
 } from "./installer";
 

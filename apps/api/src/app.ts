@@ -48,7 +48,7 @@ app.route("/api/settings", settingsRoutes);
 
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
-  const { cloudSaasRoutes } = await import("./modules/cloud/cloud.routes");
+  const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");
   app.route("/api/cloud", cloudSaasRoutes);
   app.route("/api/billing", billingRoutes);
 } else {
@@ -68,6 +68,6 @@ if (env.CLOUD_MODE) {
   app.route("/api/mail", mailRoutes);
 
   /** Cloud account management — connect/disconnect to Openship Cloud */
-  const { cloudLocalRoutes } = await import("./modules/cloud/cloud.routes");
+  const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
   app.route("/api/cloud", cloudLocalRoutes);
 }

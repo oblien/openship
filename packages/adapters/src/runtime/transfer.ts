@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import type { WorkspaceHandle } from "oblien";
 
 import { TRANSFER_EXCLUDES } from "@repo/core";
+import { getTarCreateArgs, getTarCreateEnv } from "../archive";
 import type { CommandExecutor } from "../types";
 import { BuildLogger, sq } from "./build-pipeline";
 
@@ -90,25 +91,10 @@ async function createTarball(
   localPath: string,
   options?: DirectoryTransferOptions,
 ): Promise<Buffer> {
-  const args: string[] = [];
-
-  // Strip macOS extended attributes (.apple.provenance, resource forks)
-  if (process.platform === "darwin") {
-    args.push("--no-mac-metadata");
-  }
-
-  args.push("-czf", "-", "-C", localPath);
-
-  if (options?.includes?.length) {
-    // Include mode: only pack specific paths
-    args.push(...options.includes);
-  } else {
-    const excludes = options?.excludes ?? [...TRANSFER_EXCLUDES];
-    for (const exclude of excludes) {
-      args.push(`--exclude=${exclude}`);
-    }
-    args.push(".");
-  }
+  const args = getTarCreateArgs(localPath, {
+    excludes: options?.excludes ?? [...TRANSFER_EXCLUDES],
+    includes: options?.includes,
+  });
 
   return new Promise((resolve, reject) => {
     execFile(
@@ -117,7 +103,7 @@ async function createTarball(
       {
         encoding: "buffer",
         maxBuffer: TAR_MAX_BUFFER,
-        env: { ...process.env, COPYFILE_DISABLE: "1" },
+        env: getTarCreateEnv(),
       },
       (err, stdout, stderr) => {
         if (err) {

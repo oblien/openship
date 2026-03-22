@@ -167,6 +167,21 @@ export async function checkGit(
   return healthy("git", parsed);
 }
 
+export async function checkRsync(
+  executor: CommandExecutor,
+): Promise<ComponentStatus> {
+  const startedAt = Date.now();
+  const recipe = systemCatalog.checks.rsync;
+  const version = await tryExec(executor, recipe.versionCommand);
+  if (!version) {
+    systemDebug("checks", `rsync:missing (${formatDuration(startedAt)})`);
+    return unhealthy("rsync", recipe.missingMessage);
+  }
+  const parsed = recipe.parseVersion(version);
+  systemDebug("checks", `rsync:healthy (${formatDuration(startedAt)})`);
+  return healthy("rsync", parsed);
+}
+
 export async function checkNginx(
   executor: CommandExecutor,
 ): Promise<ComponentStatus> {
@@ -226,6 +241,7 @@ export const COMPONENT_CHECKS: Record<string, CheckFn> = {
   nginx: checkNginx,
   certbot: checkCertbot,
   git: checkGit,
+  rsync: checkRsync,
 };
 
 /** Run every registered check sequentially to avoid SSH channel contention. */
