@@ -185,6 +185,13 @@ export class DockerRuntime implements RuntimeAdapter {
           status as "running" | "completed" | "skipped",
           line,
         );
+
+        // After the last step completes, Docker still needs to commit the
+        // layer and run the runtime stage (COPY, etc.). Log so users know.
+        if (status === "completed" && (step === "build" || step === "install")) {
+          logger.log("Packaging image...");
+        }
+
         return null;
       }
 

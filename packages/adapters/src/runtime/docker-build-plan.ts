@@ -61,17 +61,30 @@ function runtimeCopyDirectives(config: BuildConfig, sourceDir: string): string[]
   return [`COPY --from=builder ${sourceDir} /app`];
 }
 
+function needsMultiStage(config: BuildConfig): boolean {
+  return config.buildImage !== config.runtimeImage;
+}
+
 export function generateDockerfile(config: BuildConfig): string {
   const sourceDir = builderSourceDir(
     normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
   );
+  const multiStage = needsMultiStage(config);
   const envPrefix = buildEnvPrefix(config.envVars);
-  const lines: string[] = [
-    `FROM ${config.buildImage} AS builder`,
-    `WORKDIR /workspace`,
-    `COPY . /workspace`,
-    `WORKDIR ${sourceDir}`,
-  ];
+
+  const lines: string[] = multiStage
+    ? [
+        `FROM ${config.buildImage} AS builder`,
+        `WORKDIR /workspace`,
+        `COPY . /workspace`,
+        `WORKDIR ${sourceDir}`,
+      ]
+    : [
+        `FROM ${config.runtimeImage}`,
+        `WORKDIR /workspace`,
+        `COPY . /workspace`,
+        `WORKDIR ${sourceDir}`,
+      ];
 
   // Single RUN for install+build — avoids costly Docker layer commits between steps.
   // Each step emits markers so the UI stepper can track progress.
@@ -93,11 +106,11 @@ export function generateDockerfile(config: BuildConfig): string {
     lines.push(`RUN ${steps.join(" && ")}`);
   }
 
-  lines.push(`FROM ${config.runtimeImage} AS runtime`);
-
-  lines.push(...runtimeCopyDirectives(config, sourceDir));
-
-  lines.push(`WORKDIR /app`);
+  if (multiStage) {
+    lines.push(`FROM ${config.runtimeImage} AS runtime`);
+    lines.push(...runtimeCopyDirectives(config, sourceDir));
+    lines.push(`WORKDIR /app`);
+  }
   lines.push(`EXPOSE ${config.port}`);
   if (config.startCommand) {
     lines.push(`CMD ["sh", "-c", ${JSON.stringify(config.startCommand)}]`);
