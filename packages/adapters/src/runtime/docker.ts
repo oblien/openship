@@ -3,14 +3,21 @@
  *
  * Supports three connection modes:
  *   - Local socket (default, zero config)
- *   - Remote via SSH (key auth, built-in ssh2)
+ *   - Remote via SSH tunnel (ssh2 streamlocal forwarding to Docker socket)
  *   - Remote via TCP + mutual TLS
  *
- * This is ONLY the runtime. Routing (Traefik) and SSL (ACME) are separate
+ * This is ONLY the runtime. Routing (Nginx) and SSL (certbot) are separate
  * infrastructure providers — see `infra/`.
  *
+ * Build strategy:
+ *   Builds from a staged source context sent to the Docker daemon. If the
+ *   repository already provides a Dockerfile, that becomes the source of
+ *   truth. Otherwise Openship generates a minimal builder Dockerfile.
+ *   Deploy creates a container from the resulting image.
+ *
  * SECURITY MODEL:
- *   - SSH: key-based auth ONLY. Password auth is deliberately not supported.
+ *   - SSH: uses the same configured credentials as the standard SSH executor
+ *     (password, private key, or SSH agent).
  *   - SSH keys should be encrypted at rest and decrypted in memory only.
  *   - Host fingerprints can be pinned via `hostVerifier` (TOFU or strict).
  *   - TCP: mutual TLS (client cert + CA) — no plaintext TCP.
@@ -28,98 +35,22 @@ import type {
   ContainerInfo,
   ResourceUsage,
 } from "../types";
+import type { Feature, SystemLog } from "../system/types";
 
 import type { RuntimeAdapter, RuntimeCapability } from "./types";
 import { BuildLogger, parseLogLevel } from "./build-pipeline";
+import { createDockerBuildContext } from "./docker-build-context";
+import {
+  type DockerConnectionOptions,
+  type DockerTransport,
+  resolveDockerTransport,
+} from "./docker-transport";
 
 // ─── Connection config ───────────────────────────────────────────────────────
+export type { DockerConnectionOptions } from "./docker-transport";
 
-export interface DockerConnectionOptions {
-  /** Transport type */
-  transport: "socket" | "ssh" | "tcp";
-
-  /** Host for SSH / TCP transports */
-  host?: string;
-  /** Port (SSH default 22, TCP default 2376) */
-  port?: number;
-
-  /** SSH username (key auth only — no password) */
-  username?: string;
-  /**
-   * Decrypted SSH private key (PEM string).
-   * Should be the in-memory decrypted key, never read from disk.
-   */
-  privateKey?: string;
-  /** Passphrase for the SSH private key (if the key itself is encrypted) */
-  privateKeyPassphrase?: string;
-  /** SSH agent socket path (alternative to privateKey) */
-  sshAgent?: string;
-  /**
-   * Custom host key verifier for SSH connections.
-   * Return `true` to accept, `false` to reject.
-   */
-  hostVerifier?: (hostKey: Buffer) => boolean;
-
-  /** TLS CA certificate (for TCP transport) */
-  ca?: string | Buffer;
-  /** TLS client certificate (for TCP transport) */
-  cert?: string | Buffer;
-  /** TLS client key (for TCP transport) */
-  key?: string | Buffer;
-
-  /** Docker API request timeout in ms (default: 30 000) */
-  timeout?: number;
-}
-
-/** Build a Dockerode options object from our connection config */
-function toDockerodeOptions(opts?: DockerConnectionOptions): Dockerode.DockerOptions {
-  if (!opts || opts.transport === "socket") {
-    return { socketPath: "/var/run/docker.sock" };
-  }
-
-  if (opts.transport === "ssh") {
-    if (!opts.privateKey && !opts.sshAgent) {
-      throw new Error(
-        "SSH transport requires either a privateKey or sshAgent. " +
-          "Password authentication is not supported for security reasons.",
-      );
-    }
-
-    return {
-      protocol: "ssh",
-      host: opts.host,
-      port: opts.port ?? 22,
-      username: opts.username,
-      sshOptions: {
-        privateKey: opts.privateKey,
-        passphrase: opts.privateKeyPassphrase,
-        agent: opts.sshAgent,
-        tryKeyboard: false,
-        hostVerifier: opts.hostVerifier
-          ? (key: Buffer) => opts.hostVerifier!(key)
-          : undefined,
-      },
-      timeout: opts.timeout ?? 30_000,
-    };
-  }
-
-  // TCP + mutual TLS
-  if (!opts.ca || !opts.cert || !opts.key) {
-    throw new Error(
-      "TCP transport requires ca, cert, and key for mutual TLS. " +
-        "Plaintext TCP connections are not supported for security reasons.",
-    );
-  }
-
-  return {
-    protocol: "https",
-    host: opts.host,
-    port: opts.port ?? 2376,
-    ca: opts.ca as string | undefined,
-    cert: opts.cert as string | undefined,
-    key: opts.key as string | undefined,
-    timeout: opts.timeout ?? 30_000,
-  };
+interface DockerSystemManager {
+  ensureFeature(feature: Feature, onLog?: (log: SystemLog) => void): Promise<void>;
 }
 
 // ─── Docker runtime ──────────────────────────────────────────────────────────
@@ -144,10 +75,15 @@ export class DockerRuntime implements RuntimeAdapter {
   readonly docker: Dockerode;
   /** Connection config this runtime was created with */
   readonly connectionOptions?: DockerConnectionOptions;
+  /** Resolved transport — single switch point for socket / ssh / tcp */
+  readonly transport: DockerTransport;
+  private readonly systemManager: DockerSystemManager | null;
 
-  constructor(opts?: DockerConnectionOptions) {
+  constructor(opts?: DockerConnectionOptions, systemManager?: DockerSystemManager | null) {
     this.connectionOptions = opts;
-    this.docker = new Dockerode(toDockerodeOptions(opts));
+    this.transport = resolveDockerTransport(opts);
+    this.docker = new Dockerode(this.transport.dockerodeOptions);
+    this.systemManager = systemManager ?? null;
   }
 
   supports(cap: RuntimeCapability): boolean {
@@ -163,6 +99,8 @@ export class DockerRuntime implements RuntimeAdapter {
   /** Ping the Docker daemon — useful for connection testing */
   async ping(): Promise<boolean> {
     try {
+      await this.ensureDockerFeature();
+      await this.transport.preflight();
       await this.docker.ping();
       return true;
     } catch {
@@ -170,26 +108,266 @@ export class DockerRuntime implements RuntimeAdapter {
     }
   }
 
+  private async ensureDockerFeature(logger?: BuildLogger): Promise<void> {
+    if (!this.systemManager) {
+      return;
+    }
+
+    await this.systemManager.ensureFeature("deploy", (entry) => {
+      logger?.log(entry.message, entry.level);
+    });
+  }
+
   /** Get Docker daemon info (version, platform, etc.) */
   async info(): Promise<Record<string, unknown>> {
     return this.docker.info();
   }
 
+  // ── Image naming ────────────────────────────────────────────────────────
+
+  /** Canonical image tag for a build session. */
+  private imageTag(slug: string | undefined, sessionId: string): string {
+    const name = slug ? `openship/${slug}` : `openship/build`;
+    return `${name}:${sessionId}`;
+  }
+
+  /** Labels applied to both build images and deploy containers. */
+  private labels(config: { deploymentId?: string; projectId: string; sessionId?: string }) {
+    const l: Record<string, string> = {
+      "openship.project": config.projectId,
+    };
+    if (config.deploymentId) l["openship.deployment"] = config.deploymentId;
+    if (config.sessionId) l["openship.build"] = config.sessionId;
+    return l;
+  }
+
   // ── Build lifecycle ────────────────────────────────────────────────────
 
+  private emitDockerStep(
+    logger: BuildLogger,
+    step: "clone" | "install" | "build",
+    status: "running" | "completed" | "skipped",
+    message: string,
+  ): void {
+    logger.step(step, status, message);
+  }
+
+  private handleBuildEvent(
+    event: {
+      stream?: string;
+      error?: string;
+      errorDetail?: { message?: string };
+      status?: string;
+      id?: string;
+      progress?: string;
+      aux?: unknown;
+    },
+    logger: BuildLogger,
+  ): string | null {
+    const errorMessage = event.errorDetail?.message ?? event.error;
+    if (errorMessage) {
+      logger.log(errorMessage, "error");
+      return errorMessage;
+    }
+
+    if (event.stream) {
+      const line = event.stream.trim();
+      if (!line) return null;
+
+      const marker = line.match(
+        /^\[openship-build\]\s+step=(clone|install|build)\s+status=(running|completed|skipped)$/,
+      );
+      if (marker) {
+        const [, step, status] = marker;
+        this.emitDockerStep(
+          logger,
+          step as "clone" | "install" | "build",
+          status as "running" | "completed" | "skipped",
+          line,
+        );
+        return null;
+      }
+
+      if (this.isLowSignalDockerLine(line)) {
+        return null;
+      }
+
+      logger.log(line, parseLogLevel(line));
+      return this.extractBuildFailureHint(line);
+    }
+
+    if (event.status) {
+      const parts = [event.id, event.status, event.progress]
+        .filter((p): p is string => Boolean(p?.trim()))
+        .map((p) => p.trim());
+      if (parts.length) logger.log(parts.join(" "));
+    }
+
+    return null;
+  }
+
+  private static readonly DOCKER_BUILDER_NOISE: RegExp[] = [
+    /^Step \d+\/\d+\s*:/i,       // Step 3/12 : RUN ...
+    /^--->/i,                     // ---> abc123def
+    /^Running in\s+[a-f0-9]{6,}$/i,
+    /^Removing intermediate container\s+[a-f0-9]{6,}$/i,
+    /^Successfully built\s+[a-f0-9]{6,}$/i,
+    /^Successfully tagged\s+/i,
+  ];
+
+  private isLowSignalDockerLine(line: string): boolean {
+    return DockerRuntime.DOCKER_BUILDER_NOISE.some((p) => p.test(line));
+  }
+
+  private extractBuildFailureHint(line: string): string | null {
+    if (/returned a non-zero code:\s*\d+/i.test(line)) {
+      return line;
+    }
+
+    if (/\/workspace\/package\.json/i.test(line) && /ENOENT/i.test(line)) {
+      return "Docker build ran from /workspace but package.json was not found there. The configured rootDirectory is likely empty or incorrect.";
+    }
+
+    if (/failed to solve|executor failed running|error: build/i.test(line)) {
+      return line;
+    }
+
+    return null;
+  }
+
+  private formatDockerConnectivityError(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (/^Cannot reach Docker daemon:/i.test(message)) {
+      return message;
+    }
+
+    return `Cannot reach Docker daemon: ${message}. ${this.transport.unreachableHint}`;
+  }
+
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
-    // TODO: Build implementation using:
-    //   1. Clone repo into temp dir or use `docker.buildImage()` with tar context
-    //   2. Stream build output via logger
-    //   3. Tag the resulting image
     const log = logger ?? new BuildLogger();
-    log.log("Build queued");
-    return { sessionId: config.sessionId, status: "queued" };
+    const startTime = Date.now();
+    const tag = this.imageTag(config.slug, config.sessionId);
+
+    try {
+      log.log(`Build strategy: docker (${this.transport.description})\n`);
+
+      // Verify Docker daemon connectivity before doing any work
+      log.log("Verifying Docker daemon connectivity...");
+      try {
+        await this.ensureDockerFeature(log);
+        await this.transport.preflight();
+        log.log("Docker daemon reachable");
+      } catch (pingErr) {
+        throw new Error(this.formatDockerConnectivityError(pingErr));
+      }
+
+      this.emitDockerStep(log, "clone", "running", "Preparing Docker build context...");
+
+      const buildContext = await createDockerBuildContext(config);
+      this.emitDockerStep(log, "clone", "completed", "Docker build context ready");
+
+      if (buildContext.rootDirectory) {
+        log.log(`Using Docker build root: ${buildContext.rootDirectory}`);
+      }
+
+      if (buildContext.usesRepositoryDockerfile) {
+        this.emitDockerStep(
+          log,
+          "install",
+          "skipped",
+          "Repository Dockerfile owns dependency installation",
+        );
+        this.emitDockerStep(
+          log,
+          "build",
+          "running",
+          "Building image from repository Dockerfile...",
+        );
+      }
+
+      if (!buildContext.usesRepositoryDockerfile && !config.installCommand) {
+        this.emitDockerStep(log, "install", "skipped", "No install command configured");
+      }
+      if (!buildContext.usesRepositoryDockerfile && !config.buildCommand) {
+        this.emitDockerStep(log, "build", "skipped", "No build command configured");
+      }
+
+      log.log(`Building image ${tag}...`);
+
+      let stream: NodeJS.ReadableStream;
+      try {
+        stream = await this.docker.buildImage(
+          { context: buildContext.contextDir, src: buildContext.contextEntries },
+          {
+            t: tag,
+            dockerfile: buildContext.dockerfileName,
+            labels: this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
+            buildargs: {
+              ...config.envVars,
+              NODE_ENV: "production",
+            },
+            forcerm: true,
+          },
+        );
+      } finally {
+        await buildContext.cleanup();
+      }
+
+      log.log("Connected to Docker daemon, streaming build output...");
+      let fatalBuildError: string | null = null;
+
+      // followProgress is dockerode's documented approach for build output
+      await new Promise<void>((resolve, reject) => {
+        this.docker.modem.followProgress(
+          stream,
+          (err: Error | null) => (err ? reject(err) : resolve()),
+          (event: {
+            stream?: string;
+            error?: string;
+            errorDetail?: { message?: string };
+            status?: string;
+            id?: string;
+            progress?: string;
+            aux?: unknown;
+          }) => {
+            fatalBuildError ??= this.handleBuildEvent(event, log);
+          },
+        );
+      });
+
+      if (fatalBuildError) {
+        throw new Error(fatalBuildError);
+      }
+
+      try {
+        await this.docker.getImage(tag).inspect();
+      } catch {
+        throw new Error(`Docker build finished but the image ${tag} was not created`);
+      }
+
+      log.step("build", "completed", `Image ${tag} built successfully`);
+      const durationMs = Date.now() - startTime;
+      return { sessionId: config.sessionId, status: "deploying", imageRef: tag, durationMs };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.step("build", "failed", `Docker build failed: ${msg}`);
+      return { sessionId: config.sessionId, status: "failed", durationMs: Date.now() - startTime };
+    }
   }
 
   async cancelBuild(sessionId: string): Promise<void> {
-    // TODO: Kill the build container by session label
-    void sessionId;
+    // Attempt to find and kill the build container by label
+    const containers = await this.docker.listContainers({
+      all: true,
+      filters: { label: [`openship.build=${sessionId}`] },
+    });
+    for (const c of containers) {
+      try {
+        await this.docker.getContainer(c.Id).remove({ force: true });
+      } catch { /* already removed */ }
+    }
   }
 
   async getBuildLogs(sessionId: string): Promise<LogEntry[]> {
@@ -199,11 +377,75 @@ export class DockerRuntime implements RuntimeAdapter {
 
   // ── Deploy lifecycle ───────────────────────────────────────────────────
 
-  async deploy(config: DeployConfig, _onLog?: LogCallback): Promise<DeploymentResult> {
-    // TODO: Create and start a container using:
-    //   this.docker.createContainer({ Image, Env, HostConfig, Labels, ... })
-    //   container.start()
-    return { deploymentId: config.deploymentId, status: "queued" };
+  async deploy(config: DeployConfig, onLog?: LogCallback): Promise<DeploymentResult> {
+    const log = onLog ?? (() => {});
+    const imageRef = config.imageRef;
+    if (!imageRef) {
+      throw new Error("Docker deploy requires an imageRef (built image tag)");
+    }
+
+    const containerName = `openship-${config.slug || config.projectId}-${config.deploymentId}`;
+
+    // Environment variables
+    const env = [
+      `PORT=${config.port}`,
+      `NODE_ENV=${config.environment === "production" ? "production" : "development"}`,
+      ...Object.entries(config.envVars).map(([k, v]) => `${k}=${v}`),
+    ];
+
+    // Start command — if provided, split into Cmd array
+    const cmd = config.startCommand
+      ? ["sh", "-c", config.startCommand]
+      : undefined;
+
+    // Restart policy
+    const restartMap: Record<string, { Name: string; MaximumRetryCount: number }> = {
+      always: { Name: "always", MaximumRetryCount: 0 },
+      "on-failure": { Name: "on-failure", MaximumRetryCount: 5 },
+      no: { Name: "no", MaximumRetryCount: 0 },
+    };
+    const restartPolicy = restartMap[config.restartPolicy ?? "always"];
+
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Creating container ${containerName} from ${imageRef}...\n`,
+      level: "info",
+    });
+
+    const container = await this.docker.createContainer({
+      name: containerName,
+      Image: imageRef,
+      Cmd: cmd,
+      Env: env,
+      Labels: this.labels({
+        deploymentId: config.deploymentId,
+        projectId: config.projectId,
+      }),
+      ExposedPorts: { [`${config.port}/tcp`]: {} },
+      HostConfig: {
+        RestartPolicy: restartPolicy,
+        Memory: config.resources.memoryMb * 1024 * 1024,
+        CpuShares: Math.round(config.resources.cpuCores * 1024),
+        // Expose port for Nginx upstream routing or direct access
+        PortBindings: {
+          [`${config.port}/tcp`]: [{ HostPort: "" }], // random host port
+        },
+      },
+    });
+
+    await container.start();
+
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Container ${container.id.slice(0, 12)} started.\n`,
+      level: "info",
+    });
+
+    return {
+      deploymentId: config.deploymentId,
+      containerId: container.id,
+      status: "running",
+    };
   }
 
   async stop(containerId: string): Promise<void> {

@@ -607,11 +607,11 @@ export const STACKS = {
     language: "multi",
     category: "static",
     buildImage: "node:22",
-    runtimeImage: "nginx:alpine",
     outputDirectory: ".",
-    defaultPort: 80,
+    defaultPort: 3000,
     defaultBuildCommand: "",
     defaultStartCommand: "",
+    defaultBuildStrategy: "local",
   },
   docker: {
     name: "Dockerfile",

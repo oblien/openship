@@ -215,7 +215,9 @@ export function useDeploymentBuild(
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-  const startDeployment = useCallback(async (): Promise<string | null> => {
+  const startDeployment = useCallback(async (
+    overrides?: { runtimeMode?: DeploymentConfig["runtimeMode"] },
+  ): Promise<string | null> => {
     const isLocal = !!config.localPath;
     if (!isLocal && (!config.repo || !config.owner || !config.branch)) {
       showToast("Repository data is incomplete", "error", "Error");
@@ -295,7 +297,7 @@ export function useDeploymentBuild(
         buildStrategy: config.buildStrategy,
         deployTarget: config.deployTarget,
         serverId: config.serverId,
-        runtimeMode: config.runtimeMode,
+        runtimeMode: overrides?.runtimeMode ?? config.runtimeMode,
       });
 
       if (data.success && data.deployment_id) {

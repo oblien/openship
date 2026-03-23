@@ -1,7 +1,7 @@
 /**
  * Setup state persistence — avoids running system checks on every operation.
  *
- * The system layer checks whether Docker, Traefik, Git, etc. are installed.
+ * The system layer checks whether Docker, Nginx, Git, etc. are installed.
  * Running these checks on every deploy/build request is wasteful. Instead,
  * we store the setup state and only re-check when:
  *   - First boot (no state exists)
@@ -22,6 +22,8 @@ import type { CommandExecutor } from "../types";
 export interface ComponentState {
   installed: boolean;
   version?: string;
+  running?: boolean;
+  healthy?: boolean;
   installedAt?: string;
 }
 

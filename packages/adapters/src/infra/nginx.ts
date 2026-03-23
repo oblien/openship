@@ -146,6 +146,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
     const slug = this.domainSlug(route.domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
+    const locationBody = "staticRoot" in route
+      ? `root ${route.staticRoot};\n        index index.html;\n        try_files $uri $uri/ /index.html;`
+      : `proxy_pass ${route.targetUrl};\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";`;
 
     let serverBlock: string;
 
@@ -168,14 +171,7 @@ server {
     ssl_certificate_key ${keyPath};
 
     location / {
-        proxy_pass ${route.targetUrl};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+      ${locationBody}
     }
 }
 `;
@@ -187,14 +183,7 @@ server {
     server_name ${route.domain};
 
     location / {
-        proxy_pass ${route.targetUrl};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
+      ${locationBody}
     }
 }
 `;
@@ -255,10 +244,16 @@ server {
 
     try {
       const existing = await this._readFile(configPath);
-      // Extract the proxy_pass target from existing config
       const targetMatch = existing.match(/proxy_pass\s+([^;]+);/);
       if (targetMatch) {
         await this.registerRoute({ domain, targetUrl: targetMatch[1], tls: true });
+        return this.readCertInfo(domain);
+      }
+
+      const rootMatch = existing.match(/root\s+([^;]+);/);
+      if (rootMatch) {
+        await this.registerRoute({ domain, staticRoot: rootMatch[1], tls: true });
+        return this.readCertInfo(domain);
       }
     } catch {
       // Config doesn't exist — cert provisioned but no route yet

@@ -38,6 +38,7 @@ import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
 import type { ProcessSupervisor } from "./supervisor/types";
 import { detectSupervisor } from "./supervisor/detect";
+import { posix as pathPosix } from "node:path";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -420,6 +421,37 @@ export class BareRuntime implements RuntimeAdapter {
       containerId: config.deploymentId,
       status: "running",
     };
+  }
+
+  async deployStatic(config: DeployConfig & { outputDirectory: string }): Promise<DeploymentResult> {
+    const stagedDir = config.imageRef ?? this.projectDir(config.projectId);
+    const workDir = config.imageRef
+      ? await this.promoteBuildArtifact(stagedDir, config.deploymentId)
+      : stagedDir;
+    const staticRoot = this.resolveStaticRoot(workDir, config.outputDirectory);
+
+    if (!(await this.executor.exists(staticRoot))) {
+      if (workDir !== stagedDir) {
+        await this.executor.rm(workDir).catch(() => {});
+      }
+      throw new Error(`Static output directory does not exist: ${staticRoot}`);
+    }
+
+    return {
+      deploymentId: config.deploymentId,
+      containerId: workDir,
+      status: "running",
+    };
+  }
+
+  resolveStaticRoot(containerId: string, outputDirectory: string): string {
+    if (!outputDirectory || outputDirectory === ".") {
+      return containerId;
+    }
+
+    return outputDirectory.startsWith("/")
+      ? outputDirectory
+      : pathPosix.join(containerId, outputDirectory);
   }
 
   async stop(containerId: string): Promise<void> {

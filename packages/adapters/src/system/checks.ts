@@ -118,40 +118,6 @@ export async function checkDocker(
   return healthy("docker", parsed, true);
 }
 
-export async function checkTraefik(
-  executor: CommandExecutor,
-): Promise<ComponentStatus> {
-  const startedAt = Date.now();
-  const recipe = systemCatalog.checks.traefik;
-  const version = await tryExec(executor, recipe.versionCommand);
-
-  let parsed: string | undefined;
-  if (version) {
-    parsed = recipe.parseVersion(version);
-  }
-
-  const runningChecks = await Promise.all(
-    recipe.runningCommands!.map((command) => tryExec(executor, command)),
-  );
-  const running = runningChecks.some(Boolean);
-
-  if (!parsed && !running) {
-    systemDebug("checks", `traefik:missing (${formatDuration(startedAt)})`);
-    return unhealthy("traefik", recipe.missingMessage);
-  }
-
-  if (!running) {
-    systemDebug("checks", `traefik:not-running (${formatDuration(startedAt)})`);
-    return unhealthy("traefik", recipe.notRunningMessage!, {
-      version: parsed,
-      running: false,
-    });
-  }
-
-  systemDebug("checks", `traefik:healthy (${formatDuration(startedAt)})`);
-  return healthy("traefik", parsed ?? "unknown", true);
-}
-
 export async function checkGit(
   executor: CommandExecutor,
 ): Promise<ComponentStatus> {
@@ -237,7 +203,6 @@ type CheckFn = (executor: CommandExecutor) => Promise<ComponentStatus>;
 
 export const COMPONENT_CHECKS: Record<string, CheckFn> = {
   docker: checkDocker,
-  traefik: checkTraefik,
   nginx: checkNginx,
   certbot: checkCertbot,
   git: checkGit,

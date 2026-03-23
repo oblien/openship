@@ -3,9 +3,11 @@ import { GitBranch, Rocket, Github, Loader2, Globe, Database, Container, Server,
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
+import RuntimeModeModalContent from "./RuntimeModeModalContent";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
+import { useModal } from "@/context/ModalContext";
 import { useRouter } from "next/navigation";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
@@ -147,19 +149,49 @@ const Sidebar: React.FC = () => {
   const { config, state, updateConfig, startDeployment } = useDeployment();
   const { requireCloud } = useCloud();
   const { hostDomain } = usePlatform();
+  const { showModal, hideModal } = useModal();
   const router = useRouter();
   const isServices = config.projectType === "services";
 
-  const handleDeploy = useCallback(async () => {
-    // If deploying to cloud, ensure user is connected to Openship Cloud first
-    if (config.deployTarget === "cloud") {
-      if (!requireCloud("Deploying to Oblien Cloud")) return;
-    }
-    const deploymentId = await startDeployment();
+  // Self-hosted server apps need a runtime mode choice before deploying
+  const needsRuntimeChoice =
+    config.deployTarget !== "cloud" && config.options.hasServer;
+
+  const executeDeploy = useCallback(async (runtimeMode?: typeof config.runtimeMode) => {
+    const deploymentId = await startDeployment(
+      runtimeMode ? { runtimeMode } : undefined,
+    );
     if (deploymentId) {
       router.push(`/build/${deploymentId}`);
     }
-  }, [startDeployment, router, config.deployTarget, requireCloud]);
+  }, [startDeployment, router]);
+
+  const handleDeploy = useCallback(async () => {
+    if (config.deployTarget === "cloud") {
+      if (!requireCloud("Deploying to Oblien Cloud")) return;
+    }
+    if (needsRuntimeChoice) {
+      let modalId = "";
+      modalId = showModal({
+        customContent: (
+          <RuntimeModeModalContent
+            initialRuntimeMode={config.runtimeMode}
+            serverId={config.serverId}
+            onClose={() => hideModal(modalId)}
+            onConfirm={async (runtimeMode) => {
+              updateConfig({ runtimeMode });
+              hideModal(modalId);
+              await executeDeploy(runtimeMode);
+            }}
+          />
+        ),
+        maxWidth: "420px",
+        showCloseButton: false,
+      });
+      return;
+    }
+    await executeDeploy();
+  }, [executeDeploy, config.deployTarget, config.runtimeMode, config.serverId, requireCloud, needsRuntimeChoice, showModal, hideModal, updateConfig]);
 
   return (
     <div className="lg:sticky lg:top-6 h-fit space-y-4">

@@ -26,6 +26,7 @@ export { detectSupervisor } from "./supervisor/detect";
 import type { RuntimeAdapter } from "./types";
 import type { DockerConnectionOptions } from "./docker";
 import type { BareRuntimeOptions } from "./bare";
+import type { SystemManager } from "../system/setup";
 
 export type RuntimeMode = "docker" | "bare" | "cloud";
 
@@ -33,6 +34,8 @@ export interface CreateRuntimeOptions {
   mode: RuntimeMode;
   /** Docker connection config (only used when mode="docker") */
   docker?: DockerConnectionOptions;
+  /** Optional shared system manager for prerequisite checks */
+  systemManager?: SystemManager | null;
   /** Bare runtime config (only used when mode="bare") */
   bare?: BareRuntimeOptions;
   /** Oblien client ID (cloud — master creds) */
@@ -54,7 +57,7 @@ export async function createRuntime(opts: CreateRuntimeOptions): Promise<Runtime
   switch (opts.mode) {
     case "docker": {
       const { DockerRuntime } = await import("./docker");
-      return new DockerRuntime(opts.docker);
+      return new DockerRuntime(opts.docker, opts.systemManager);
     }
     case "bare": {
       const { BareRuntime } = await import("./bare");

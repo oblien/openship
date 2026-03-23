@@ -54,7 +54,7 @@ const ALLOWED_COMPONENTS = new Set(
  */
 function resolveRequiredComponents(): string[] {
   const mode = env.DEPLOY_MODE;
-  if (mode === "docker") return ["docker", "git", "traefik"];
+  if (mode === "docker") return ["docker", "git", "nginx", "certbot"];
   if (mode === "bare") return ["git", "nginx", "certbot"];
   // desktop / cloud — minimal
   return ["git"];
@@ -202,7 +202,7 @@ export async function checkServer(c: Context) {
  * POST /system/install
  *
  * Install a specific component on a server.
- * Body: { serverId: string, component: "docker" | "traefik" | ..., config?: InstallerConfig }
+ * Body: { serverId: string, component: "docker" | "nginx" | ..., config?: InstallerConfig }
  *
  * Returns: { success: boolean, component: string, version?: string, error?: string }
  */
@@ -259,7 +259,7 @@ export async function installComponent(c: Context) {
  * POST /system/install/stream
  *
  * Install multiple components with real-time SSE log streaming.
- * Body: { serverId: string, components: ["docker", "traefik", ...], config?: InstallerConfig }
+ * Body: { serverId: string, components: ["docker", "nginx", ...], config?: InstallerConfig }
  *
  * Returns an SSE stream with events:
  *   - progress: component status updates

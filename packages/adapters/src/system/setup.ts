@@ -50,8 +50,8 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
  * Resolve prerequisite rules for a given runtime mode.
  *
  * The runtime mode deterministically implies everything:
- *   - docker → Docker + Git + Traefik (all containerized)
- *   - bare   → Git + Nginx (system-level; language runtimes are per-stack)
+ *   - docker → Docker + Git + Nginx + certbot
+ *   - bare   → Git + Nginx + certbot
  *
  * Note: Node.js / Go / Python / etc. are NOT system prerequisites.
  * They are installed on-demand by the toolchain layer (ensureToolchain)
@@ -62,8 +62,8 @@ function resolveRules(mode: RuntimeMode): PrerequisiteRule[] {
     return [
       { feature: "build", requires: ["git", "docker"], message: "Build requires Git and Docker" },
       { feature: "deploy", requires: ["docker"], message: "Deploy requires Docker" },
-      { feature: "routing", requires: ["traefik"], message: "Routing requires Traefik" },
-      { feature: "ssl", requires: ["traefik"], message: "SSL requires Traefik with ACME" },
+      { feature: "routing", requires: ["nginx"], message: "Routing requires Nginx" },
+      { feature: "ssl", requires: ["nginx", "certbot"], message: "SSL requires Nginx and certbot" },
     ];
   }
 
@@ -78,7 +78,7 @@ function resolveRules(mode: RuntimeMode): PrerequisiteRule[] {
 /** Resolve which system components must be installed for a given runtime mode. */
 function resolveRequired(mode: RuntimeMode): string[] {
   return mode === "docker"
-    ? ["docker", "git", "traefik"]
+    ? ["docker", "git", "nginx", "certbot"]
     : ["git", "nginx", "certbot"];
 }
 
@@ -198,7 +198,7 @@ export class SystemManager {
     const state = await this.loadState();
     if (state?.setupComplete) {
       const allPresent = rule.requires.every(
-        (name) => state.components[name]?.installed,
+        (name) => state.components[name]?.healthy === true,
       );
       if (allPresent) {
         return { feature, ready: true, missing: [], message: `${feature} is ready` };
@@ -409,6 +409,8 @@ export class SystemManager {
       existing.components[c.name] = {
         installed: c.installed,
         version: c.version,
+        running: c.running,
+        healthy: c.healthy,
         installedAt: existing.components[c.name]?.installedAt,
       };
     }
@@ -434,6 +436,7 @@ export class SystemManager {
     state.components[name] = {
       installed: true,
       version,
+      healthy: false,
       installedAt: new Date().toISOString(),
     };
     state.updatedAt = new Date().toISOString();

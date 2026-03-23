@@ -133,7 +133,7 @@ export default function ServersPage() {
                 </h3>
                 <p className="text-sm text-muted-foreground/70 max-w-sm mx-auto mb-8 leading-relaxed">
                   Connect a server via SSH and Openship will handle the rest —
-                  Docker, Traefik, SSL, and deployments all set up automatically.
+                  Docker, Nginx, SSL, and deployments all set up automatically.
                 </p>
 
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-10">
@@ -163,7 +163,7 @@ export default function ServersPage() {
                       <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-3">
                         <Shield className="size-4 text-muted-foreground" />
                       </div>
-                      <p className="text-sm font-medium text-foreground">Traefik</p>
+                      <p className="text-sm font-medium text-foreground">Nginx</p>
                       <p className="text-xs text-muted-foreground mt-0.5">Reverse proxy & SSL</p>
                     </div>
                     <div className="bg-card border border-border/50 rounded-xl p-4 text-left">

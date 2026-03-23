@@ -45,6 +45,11 @@ const STEP_PROGRESS: Record<string, number> = {
   deploy: 75,
 };
 
+function progressForStep(step: string, stepStatus?: LogEntry["stepStatus"]): number {
+  const base = STEP_PROGRESS[step] ?? 0;
+  return stepStatus === "completed" ? base + 10 : base;
+}
+
 /** Convert a LogEntry into the JSON payload the frontend expects. */
 function formatLogPayload(entry: LogEntry, eventId: number): string {
   // Use native base64 when available (cloud adapter), otherwise encode.
@@ -133,12 +138,12 @@ export function appendLog(sessionId: string, entry: LogEntry): void {
     for (const w of dead) session.subscribers.delete(w);
   }
 
-  // Emit a progress event when a new step starts
-  if (entry.step && entry.stepStatus === "running" && entry.step in STEP_INDEX) {
+  // Emit a progress event for every step metadata update so the UI stays in sync
+  if (entry.step && entry.stepStatus && entry.step in STEP_INDEX) {
     const progressPayload = JSON.stringify({
       type: "progress",
       currentStep: STEP_INDEX[entry.step],
-      progress: STEP_PROGRESS[entry.step],
+      progress: progressForStep(entry.step, entry.stepStatus),
     });
     for (const writer of session.subscribers) {
       writer("progress", progressPayload);

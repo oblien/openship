@@ -8,12 +8,6 @@ export const SYSTEM_COMPONENTS: SystemComponentDefinition[] = [
     installable: true,
   },
   {
-    name: "traefik",
-    label: "Traefik",
-    description: "Reverse proxy and SSL certificates",
-    installable: true,
-  },
-  {
     name: "nginx",
     label: "Nginx",
     description: "Reverse proxy with certbot for SSL",

@@ -3,12 +3,12 @@
  */
 
 import { repos, type Project, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, type StackId, type DeployTarget, type BuildStrategy } from "@repo/core";
+import { NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, getRuntimeImage, type StackId, type DeployTarget, type BuildStrategy } from "@repo/core";
 import type { BuildConfig, CommandExecutor, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
-import { BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, ensurePortAvailable, runDeployPipeline, createPlatform } from "@repo/adapters";
+import { BareRuntime, BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, ensurePortAvailable, runDeployPipeline, createPlatform } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
 import { env } from "../../config";
-import { resolveDeploymentRuntime, resolveTargetPlatform } from "../../lib/deployment-runtime";
+import { resolveDeploymentRuntime, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
 import { ensureManagedEdgeProxy } from "../../lib/managed-edge-proxy";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { withDefaults } from "../../lib/resources";
@@ -116,6 +116,7 @@ export interface DeploymentConfigSnapshot {
   branch: string;
   framework: string;
   buildImage: string;
+  runtimeImage: string;
   packageManager: string;
   installCommand: string;
   buildCommand: string;
@@ -161,11 +162,14 @@ export interface BuildAccessInput {
 /** Build a config snapshot from the project — pure pass-through, no fallbacks.
  *  All values must be set by prepare / ensureProject before this is called. */
 function buildConfigSnapshot(project: Project, branch?: string, customDomain?: string): DeploymentConfigSnapshot {
+  const runtimeImage = resolveRuntimeImage(project);
+
   return {
     repoUrl: project.gitUrl ?? "",
     branch: branch || project.gitBranch || "main",
     framework: project.framework!,
     buildImage: project.buildImage!,
+    runtimeImage,
     packageManager: project.packageManager!,
     installCommand: project.installCommand!,
     buildCommand: project.buildCommand!,
@@ -176,11 +180,24 @@ function buildConfigSnapshot(project: Project, branch?: string, customDomain?: s
     startCommand: project.startCommand!,
     resources: (project.resources as ResourceConfig) || null,
     buildResources: (project.buildResources as ResourceConfig) || null,
-    hasServer: !!project.startCommand?.trim(),
+    hasServer: project.hasServer ?? !!project.startCommand?.trim(),
     hasBuild: project.hasBuild ?? true,
     customDomain: customDomain || undefined,
     localPath: project.localPath || undefined,
   };
+}
+
+function resolveRuntimeImage(project: Project): string {
+  const hasServer = project.hasServer ?? !!project.startCommand?.trim();
+  const stackId = (project.framework && project.framework in STACKS
+    ? project.framework
+    : "unknown") as StackId;
+
+  if (!hasServer) {
+    return getRuntimeImage("static", project.packageManager ?? undefined);
+  }
+
+  return getRuntimeImage(stackId, project.packageManager ?? undefined);
 }
 
 /** Parse productionPaths from DB text (comma-separated) with STACKS fallback. */
@@ -654,49 +671,21 @@ async function executeBuildAndDeploy(
   };
 
   try {
-    // ── Resolve the correct runtime based on deploy target ───────────
-    // Desktop: user picks cloud or server → snapshot.deployTarget
-    // Cloud SaaS with master creds: already on the right runtime
-    // Non-SaaS cloud target: needs per-user token
-    const effectiveTarget = plat.target === "desktop"
-      ? snapshot.deployTarget ?? "cloud"
-      : plat.target;
-    const usesManagedRouting =
-      plat.target === "selfhosted" ||
-      (plat.target === "desktop" && (effectiveTarget === "server" || effectiveTarget === "local"));
+    // ── Resolve the full execution platform from deployment snapshot ──
+    const resolved = await resolveDeploymentPlatform(snapshot, {
+      userId: dep.userId,
+      basePlatform: plat,
+    });
 
-    const isSaasCloudRuntime = env.CLOUD_MODE && plat.target === "cloud";
-    const needsUserScopedCloudPlatform = effectiveTarget === "cloud" && !isSaasCloudRuntime;
+    runtime = resolved.platform.runtime;
+    routing = resolved.platform.routing;
+    ssl = resolved.platform.ssl;
+    system = resolved.platform.system;
+    ctx.runtime = runtime;
 
-    if (needsUserScopedCloudPlatform) {
-      const { getCloudToken } = await import("../../lib/cloud-client");
-      const result = await getCloudToken(dep.userId);
-      if (!result) {
-        throw new Error("Cannot deploy to cloud: no cloud account linked. Connect your Oblien account in Settings.");
-      }
-      const cloudPlatform = await createPlatform({ target: "cloud", cloudToken: result.token });
-      runtime = cloudPlatform.runtime;
-      routing = cloudPlatform.routing;
-      ssl = cloudPlatform.ssl;
-      system = cloudPlatform.system;
-      ctx.runtime = runtime;
-    }
-
-    // Server or local target: resolve the right Platform (bare/docker × local/SSH)
-    let targetExecutor: CommandExecutor | null = null;
-    if ((effectiveTarget === "server" || effectiveTarget === "local") && plat.target === "desktop") {
-      const runtimeMode = snapshot.runtimeMode ?? "bare";
-      const targetPlat = await resolveTargetPlatform(effectiveTarget, runtimeMode, snapshot.serverId);
-      runtime = targetPlat.runtime;
-      routing = targetPlat.routing;
-      ssl = targetPlat.ssl;
-      system = targetPlat.system;
-      targetExecutor = targetPlat.executor;
-      ctx.runtime = runtime;
-    } else if (plat.target === "selfhosted") {
-      // Self-hosted mode: the platform executor is already the right one
-      targetExecutor = plat.executor;
-    }
+    const effectiveTarget = resolved.effectiveTarget;
+    const usesManagedRouting = resolved.usesManagedRouting;
+    const targetExecutor: CommandExecutor | null = resolved.platform.executor;
 
     // ── Build phase ──────────────────────────────────────────────────
     await repos.deployment.updateStatus(dep.id, "building");
@@ -743,10 +732,16 @@ async function executeBuildAndDeploy(
       buildStrategy: snapshot.buildStrategy,
       stack: snapshot.framework,
       buildImage: snapshot.buildImage,
+      runtimeImage: snapshot.runtimeImage,
       packageManager: snapshot.packageManager,
       installCommand: snapshot.hasBuild ? snapshot.installCommand : "",
       buildCommand: snapshot.hasBuild ? snapshot.buildCommand : "",
       outputDirectory: snapshot.outputDirectory,
+      port: snapshot.port,
+      startCommand: snapshot.startCommand,
+      productionPaths: snapshot.productionPaths,
+      rootDirectory: snapshot.rootDirectory,
+      hasServer: snapshot.hasServer,
       envVars: buildEnv.envVars,
       resources: buildResources,
       gitToken: gitToken ?? undefined,
@@ -822,6 +817,11 @@ async function executeBuildAndDeploy(
       });
     } else {
       // ── Server deploy (existing VM pipeline) ───────────────────────
+      // Static sites are always served directly from the web server (Nginx)
+      // via file-backed routes — Docker is only for server apps.
+      const staticBareRuntime = !snapshot.hasServer && runtime instanceof BareRuntime ? runtime : null;
+      const isStaticSelfHosted = staticBareRuntime !== null;
+
       const deployConfig: DeployConfig = {
         deploymentId: dep.id,
         projectId: project.id,
@@ -833,8 +833,9 @@ async function executeBuildAndDeploy(
         stack: snapshot.framework,
         envVars: envMap,
         resources: prodResources,
-        restartPolicy: "always",
+        restartPolicy: isStaticSelfHosted ? "no" : "always",
         slug: project.slug,
+        outputDirectory: snapshot.outputDirectory,
         productionPaths: snapshot.productionPaths.length
           ? snapshot.productionPaths
           : undefined,
@@ -857,7 +858,9 @@ async function executeBuildAndDeploy(
                   logger.log(`${entry.message}\n`, entry.level);
                 };
 
-                await system.ensureFeature("deploy", systemLog);
+                if (!isStaticSelfHosted) {
+                  await system.ensureFeature("deploy", systemLog);
+                }
                 if (domains.length > 0) {
                   await system.ensureFeature("routing", systemLog);
                 }
@@ -866,15 +869,29 @@ async function executeBuildAndDeploy(
                 }
               }
 
-              await ensurePortAvailable(targetExecutor, cfg.port, logger, promptUser);
+              if (!isStaticSelfHosted) {
+                await ensurePortAvailable(targetExecutor, cfg.port, logger, promptUser);
+              }
             }
           : undefined,
         activate: async (cfg, onLog) => {
-          const r = await runtime.deploy(cfg, onLog);
+          const r = isStaticSelfHosted
+            ? await staticBareRuntime.deployStatic({
+                ...cfg,
+                outputDirectory: cfg.outputDirectory ?? snapshot.outputDirectory,
+              })
+            : await runtime.deploy(cfg, onLog);
           if (!r.containerId) throw new Error("Deploy produced no container");
           return { containerId: r.containerId, url: r.url };
         },
-        deactivate: (id) => previousRuntime.name === "bare" ? previousRuntime.stop(id) : previousRuntime.destroy(id),
+        deactivate: (id) => (previousRuntime.name === "bare" && !id.includes("/"))
+          ? previousRuntime.stop(id)
+          : previousRuntime.destroy(id),
+        resolveRoute: isStaticSelfHosted
+          ? async (id, cfg) => ({
+              staticRoot: staticBareRuntime.resolveStaticRoot(id, cfg.outputDirectory ?? snapshot.outputDirectory),
+            })
+          : undefined,
         resolveTargetUrl: runtime.supports("containerIp")
           ? async (id, port) => {
               const ip = await runtime.getContainerIp(id);

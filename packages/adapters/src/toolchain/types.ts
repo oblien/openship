@@ -3,7 +3,7 @@
  *
  * The toolchain layer ensures a bare-metal server has the right
  * language runtimes installed BEFORE a build starts. It mirrors
- * the system component catalog (Docker/Traefik/Git) but for
+ * the system component catalog (Docker/Nginx/Git) but for
  * language-specific tools (Node, Go, Rust, Python, etc.).
  *
  * The source of truth for WHICH tools a language needs lives in

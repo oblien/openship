@@ -41,7 +41,7 @@ export interface ComponentStatus {
   installable: boolean;
   installed: boolean;
   version?: string;
-  /** Whether the daemon is actively running (Docker, Traefik) */
+  /** Whether the daemon is actively running (Docker, Nginx) */
   running?: boolean;
   /** installed AND running (when applicable) */
   healthy: boolean;
@@ -61,8 +61,8 @@ export interface SystemCheckResult {
 /**
  * High-level features. Prerequisites vary by runtime mode.
  *
- * Docker mode:  build → [git, docker], deploy → [docker], routing → [traefik], ssl → [traefik]
- * Bare mode:    build → [git, node],   deploy → [node],   routing → [traefik], ssl → [traefik]
+ * Docker mode:  build → [git, docker], deploy → [docker], routing → [nginx], ssl → [nginx, certbot]
+ * Bare mode:    build → [git],         deploy → [stack runtime], routing → [nginx], ssl → [nginx, certbot]
  */
 export type Feature = "build" | "deploy" | "routing" | "ssl";
 
@@ -107,8 +107,6 @@ export interface InstallerConfig {
   acmeEmail?: string;
   /** Primary domain for the platform */
   domain?: string;
-  /** Traefik install mode: Docker container or standalone binary */
-  traefikMode?: "docker" | "binary";
 }
 
 // ─── Runtime mode ────────────────────────────────────────────────────────────

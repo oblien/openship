@@ -9,8 +9,8 @@
  *   │              │              │  docker      │  bare        │                │
  *   ├──────────────┼──────────────┼──────────────┼──────────────┼────────────────┤
  *   │  Runtime     │  CloudAPI    │  Docker      │  Bare        │  Bare          │
- *   │  Routing     │  CloudAPI    │  Traefik     │  Nginx       │  No-op         │
- *   │  SSL         │  CloudAPI    │  ACME        │  certbot     │  No-op         │
+ *   │  Routing     │  CloudAPI    │  Nginx       │  Nginx       │  No-op         │
+ *   │  SSL         │  CloudAPI    │  certbot     │  certbot     │  No-op         │
  *   │  System      │  —           │  docker, git │  git, nginx  │  —             │
  *   │  Toolchain   │  —           │  —           │  per-stack   │  —             │
  *   └──────────────┴──────────────┴──────────────┴──────────────┴────────────────┘
@@ -45,7 +45,7 @@ import type { SystemManager } from "./system/setup";
  * Deployment target — determines which providers are used.
  *
  *   "cloud"      → Everything managed by Oblien API. No local setup.
- *   "selfhosted" → Docker or Bare runtime + Traefik routing/SSL. System checks.
+ *   "selfhosted" → Docker or Bare runtime + Nginx routing/SSL. System checks.
  *   "desktop"    → Bare runtime, no routing/SSL, no system setup.
  */
 export type PlatformTarget = "cloud" | "selfhosted" | "desktop";
@@ -57,17 +57,15 @@ export interface PlatformConfig {
    * Runtime mode for self-hosted (ignored for cloud/desktop).
    *
    * This is the ONLY choice for self-hosted — everything else follows:
-   *   - "docker" → Docker containers + Traefik + ACME (default)
-   *   - "bare"   → Node.js processes + Nginx + certbot
+  *   - "docker" → Docker containers + Nginx + certbot (default)
+  *   - "bare"   → Node.js processes + Nginx + certbot
    */
   runtime?: "docker" | "bare";
   /** Docker connection options (only for docker runtime) */
   docker?: import("./runtime/docker").DockerConnectionOptions;
   /** Bare runtime options (only for bare runtime) */
   bare?: import("./runtime/bare").BareRuntimeOptions;
-  /** Traefik provider options (docker mode only) */
-  traefik?: Omit<import("./infra/traefik").TraefikProviderOptions, "executor">;
-  /** Nginx provider options (bare mode only) */
+  /** Nginx provider options for self-hosted routing + SSL */
   nginx?: Omit<import("./infra/nginx").NginxProviderOptions, "executor">;
   /** Oblien client ID (cloud target — master creds) */
   cloudClientId?: string;
@@ -78,7 +76,7 @@ export interface PlatformConfig {
   /**
    * SSH config for remote server management (self-hosted only).
    *
-   * When provided, all system checks, installations, and Traefik file
+  * When provided, all system checks, installations, and Nginx file
    * operations run on the remote server via SSH instead of locally.
    * When omitted, everything runs on the current machine.
    */
@@ -183,25 +181,18 @@ async function createDesktopPlatform(config: PlatformConfig): Promise<Platform> 
 }
 
 /**
- * Create the routing + SSL provider based on runtime mode.
+ * Create the routing + SSL provider for self-hosted deployments.
  *
- * Docker mode → Traefik (Docker-native, auto-discovery, built-in ACME)
- * Bare mode   → Nginx (system-level, certbot for SSL)
+ * Both Docker and Bare runtimes use the same Nginx + certbot path.
  */
 async function createInfraProvider(
-  mode: "docker" | "bare",
+  _mode: "docker" | "bare",
   config: PlatformConfig,
   executor: CommandExecutor,
 ): Promise<{ routing: RoutingProvider; ssl: SslProvider }> {
-  if (mode === "bare") {
-    const { NginxProvider } = await import("./infra/nginx");
-    const nginx = new NginxProvider({ ...config.nginx, executor });
-    return { routing: nginx, ssl: nginx };
-  }
-
-  const { TraefikProvider } = await import("./infra/traefik");
-  const traefik = new TraefikProvider({ ...config.traefik, executor });
-  return { routing: traefik, ssl: traefik };
+  const { NginxProvider } = await import("./infra/nginx");
+  const nginx = new NginxProvider({ ...config.nginx, executor });
+  return { routing: nginx, ssl: nginx };
 }
 
 async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platform> {
@@ -226,7 +217,7 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     runtime = new BareRuntime({ ...config.bare, executor, systemManager: system });
   } else {
     const { DockerRuntime } = await import("./runtime/docker");
-    runtime = new DockerRuntime(config.docker);
+    runtime = new DockerRuntime(config.docker, system);
   }
 
   // Infrastructure — runtime implies the reverse proxy

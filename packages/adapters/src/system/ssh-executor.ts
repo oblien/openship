@@ -9,8 +9,7 @@ import {
   transferRemoteDirectoryWithRsync,
   transferRemoteDirectoryWithTar,
 } from "./remote-transfer";
-import { describeSshAuthFailure, reconcileKnownHosts } from "./ssh-support";
-import { isSshAuthError } from "./errors";
+import { connectSshClient, openSftp } from "./ssh-client";
 
 /**
  * Runs commands on a remote server via SSH.
@@ -33,63 +32,21 @@ export class SshExecutor implements CommandExecutor {
     if (this.connecting) return this.connecting;
 
     this.connecting = (async () => {
-      await reconcileKnownHosts(this.config);
+      const client = await connectSshClient(this.config);
 
-      const { Client } = await import("ssh2");
-      const client = new Client();
+      const resetClient = () => {
+        if (this.client === client) {
+          this.client = null;
+        }
+      };
 
-      return new Promise<import("ssh2").Client>((resolve, reject) => {
-        let settled = false;
+      client.on("close", resetClient);
+      client.on("end", resetClient);
+      client.on("error", resetClient);
 
-        const resetClient = () => {
-          if (this.client === client) {
-            this.client = null;
-          }
-        };
-
-        client.on("ready", () => {
-          if (settled) return;
-          settled = true;
-          this.client = client;
-          this.connecting = null;
-          resolve(client);
-        });
-
-        client.on("error", (err) => {
-          resetClient();
-          if (settled) return;
-          settled = true;
-          this.connecting = null;
-          if (isSshAuthError(err)) {
-            reject(new Error(describeSshAuthFailure(this.config, err.message)));
-            return;
-          }
-          reject(err);
-        });
-
-        client.on("close", () => {
-          resetClient();
-          if (settled) return;
-          settled = true;
-          this.connecting = null;
-          reject(new Error("SSH connection closed before ready"));
-        });
-
-        client.on("end", () => {
-          resetClient();
-        });
-
-        client.connect({
-          host: this.config.host,
-          port: this.config.port ?? 22,
-          username: this.config.username ?? "root",
-          password: this.config.password,
-          privateKey: this.config.privateKey,
-          passphrase: this.config.privateKeyPassphrase,
-          agent: this.config.sshAgent,
-          tryKeyboard: false,
-        });
-      });
+      this.client = client;
+      this.connecting = null;
+      return client;
     })();
 
     return this.connecting;
@@ -97,12 +54,7 @@ export class SshExecutor implements CommandExecutor {
 
   private async sftp(): Promise<import("ssh2").SFTPWrapper> {
     const client = await this.connect();
-    return new Promise((resolve, reject) => {
-      client.sftp((err, sftp) => {
-        if (err) reject(err);
-        else resolve(sftp);
-      });
-    });
+    return openSftp(client);
   }
 
   async exec(command: string, opts?: { timeout?: number }): Promise<string> {

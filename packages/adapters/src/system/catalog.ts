@@ -1,4 +1,3 @@
-import type { InstallerConfig } from "./types";
 import type { EnvironmentProfile } from "./environment";
 
 export interface ComponentCheckCatalogEntry {
@@ -84,55 +83,6 @@ function rsyncInstallPlan(profile: EnvironmentProfile): InstallPlan {
   };
 }
 
-function traefikDockerPlan(
-  _profile: EnvironmentProfile,
-  config?: InstallerConfig,
-): InstallPlan {
-  const acmeEmail = config?.acmeEmail ?? "admin@localhost";
-  const args = [
-    "docker run -d",
-    "--name traefik",
-    "--restart unless-stopped",
-    "--network host",
-    "-v /var/run/docker.sock:/var/run/docker.sock:ro",
-    "-v /etc/traefik:/etc/traefik",
-    "traefik:v3.4",
-    "--providers.file.directory=/etc/traefik/dynamic",
-    "--providers.file.watch=true",
-    "--entrypoints.web.address=:80",
-    "--entrypoints.websecure.address=:443",
-    `--certificatesresolvers.letsencrypt.acme.email=${acmeEmail}`,
-    "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json",
-    "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web",
-  ];
-
-  return {
-    supported: true,
-    installCommand: "docker pull traefik:v3.4",
-    startCommand: args.join(" "),
-    verifyCommand: "traefik version --format json 2>/dev/null || traefik version 2>/dev/null || echo unknown",
-  };
-}
-
-function traefikBinaryPlan(profile: EnvironmentProfile): InstallPlan {
-  if (profile.os !== "linux") {
-    return {
-      supported: false,
-      unsupportedReason: "Traefik binary installation is only supported on Linux servers",
-    };
-  }
-
-  const arch = profile.arch === "arm64" ? "arm64" : "amd64";
-  const url = `https://github.com/traefik/traefik/releases/latest/download/traefik_linux_${arch}`;
-
-  return {
-    supported: true,
-    installCommand:
-      `curl -fsSL -o /tmp/traefik \"${url}\" && chmod +x /tmp/traefik && mv /tmp/traefik /usr/local/bin/traefik`,
-    verifyCommand: "traefik version 2>/dev/null || echo unknown",
-  };
-}
-
 function nginxInstallPlan(profile: EnvironmentProfile): InstallPlan {
   const commands: Record<string, string> = {
     apt: "apt-get update -qq && apt-get install -y -qq nginx certbot python3-certbot-nginx",
@@ -191,22 +141,6 @@ export const systemCatalog = {
       missingMessage: "Docker is not installed",
       notRunningMessage: "Docker is installed but the daemon is not running",
     },
-    traefik: {
-      versionCommand: "traefik version --format json 2>/dev/null",
-      runningCommands: [
-        "pgrep -x traefik",
-        "docker ps --filter name=traefik --format '{{.Names}}' 2>/dev/null",
-      ],
-      parseVersion: (output: string) => {
-        try {
-          return JSON.parse(output).Version;
-        } catch {
-          return output.match(/Version:\s*(\S+)/)?.[1] ?? output;
-        }
-      },
-      missingMessage: "Traefik is not installed",
-      notRunningMessage: "Traefik is installed but not running",
-    },
     nginx: {
       versionCommand: "nginx -v 2>&1",
       runningCommands: [
@@ -237,8 +171,6 @@ export const systemCatalog = {
     docker: dockerInstallPlan,
     git: gitInstallPlan,
     rsync: rsyncInstallPlan,
-    traefikDocker: traefikDockerPlan,
-    traefikBinary: traefikBinaryPlan,
     nginx: nginxInstallPlan,
     certbot: certbotInstallPlan,
   },

@@ -43,7 +43,6 @@ export {
   checkGit,
   checkNginx,
   checkRsync,
-  checkTraefik,
   COMPONENT_CHECKS,
 } from "./checks";
 
@@ -55,7 +54,6 @@ export {
   installGit,
   installNginx,
   installRsync,
-  installTraefik,
 } from "./installer";
 
 // ─── Manager ─────────────────────────────────────────────────────────────────

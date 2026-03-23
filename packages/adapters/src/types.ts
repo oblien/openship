@@ -74,6 +74,18 @@ export interface BuildConfig {
   buildCommand: string;
   /** Output directory to collect after build */
   outputDirectory: string;
+  /** Port the generated runtime image should listen on. */
+  port: number;
+  /** Runtime image for generated Docker recipes. */
+  runtimeImage: string;
+  /** Start command for generated runtime images. */
+  startCommand?: string;
+  /** Files/directories needed at runtime for generated Docker recipes. */
+  productionPaths?: string[];
+  /** Root directory within the repo for monorepo builds. */
+  rootDirectory?: string;
+  /** Whether the deployment needs a long-running server process. */
+  hasServer?: boolean;
   /** Environment variables injected at build time */
   envVars: Record<string, string>;
   /** Resources allocated for the build container */
@@ -112,6 +124,8 @@ export interface DeployConfig {
   /** Files/directories to copy into /app/production/ before starting the workload.
    *  When set, the workload runs from /app/production/ instead of /app/. */
   productionPaths?: string[];
+  /** Build output directory used for static deployments. */
+  outputDirectory?: string;
 }
 
 export interface BuildResult {
@@ -167,14 +181,26 @@ export interface ResourceUsage {
   networkTxBytes: number;
 }
 
-export interface RouteConfig {
+interface BaseRouteConfig {
   /** External domain (e.g. "my-app.example.com") */
   domain: string;
-  /** Target container IP + port */
-  targetUrl: string;
   /** Whether TLS is enabled */
   tls: boolean;
 }
+
+export interface ProxyRouteConfig extends BaseRouteConfig {
+  /** Target container IP + port */
+  targetUrl: string;
+  staticRoot?: never;
+}
+
+export interface StaticRouteConfig extends BaseRouteConfig {
+  /** Absolute path on the target machine to serve via Nginx root. */
+  staticRoot: string;
+  targetUrl?: never;
+}
+
+export type RouteConfig = ProxyRouteConfig | StaticRouteConfig;
 
 export interface SslResult {
   domain: string;
@@ -193,7 +219,7 @@ export type LogCallback = (entry: LogEntry) => void;
  *
  * Used by:
  *   - System layer: execute setup commands on remote servers
- *   - Infra layer: write Traefik config on remote servers
+ *   - Infra layer: write Nginx config on remote servers
  *   - Platform: wires SSH config to both layers
  *
  * Security:
@@ -204,6 +230,8 @@ export interface SshConfig {
   host: string;
   port?: number;
   username?: string;
+  /** Optional host key verifier for SSH connections. */
+  hostVerifier?: (hostKey: Buffer) => boolean;
   /** SSH password for password-based auth */
   password?: string;
   /** Decrypted PEM private key — never stored in plaintext on disk */
@@ -223,7 +251,7 @@ export interface SshConfig {
  *   - LocalExecutor  → child_process + fs (same machine)
  *   - SshExecutor    → ssh2 (remote server)
  *
- * Used by the system layer (checks, installers) and infra layer (Traefik
+ * Used by the system layer (checks, installers) and infra layer (Nginx
  * config writes) to support both local and remote server management.
  */
 export interface CommandExecutor {

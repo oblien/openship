@@ -42,6 +42,7 @@ Each layer has a single responsibility. They are composed by the Platform, never
 | `CloudRuntime` | HTTP API calls (Oblien SDK) | Oblien cloud |
 
 - Docker has its **own** SSH transport via dockerode — separate from the shared executor
+- Docker uses dockerode as the control plane and may reach the daemon via local socket, SSH socket tunnel, or TLS — separate from the shared executor
 - Bare uses the **shared** executor for everything (git, npm, nohup, kill, PID files)
 - Cloud makes **zero** local calls — pure API stubs
 

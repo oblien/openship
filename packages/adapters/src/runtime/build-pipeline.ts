@@ -135,6 +135,7 @@ export async function runBuildPipeline(
   let currentStep: BuildStep = "clone";
 
   const exec = (command: string) => env.exec(command, logger.callback);
+  const buildDir = resolveBuildDirectory(env.projectDir, config.rootDirectory);
 
   // Only show machine specs for cloud builds where resources are allocated
   if (env.hasNativeEnv) {
@@ -178,7 +179,7 @@ export async function runBuildPipeline(
           .join(" && ");
 
     const inDir = (cmd: string) => {
-      const full = `cd ${sq(env.projectDir)} && ${cmd}`;
+      const full = `cd ${sq(buildDir)} && ${cmd}`;
       return envPrefix ? `${envPrefix} && ${full}` : full;
     };
 
@@ -213,6 +214,15 @@ export async function runBuildPipeline(
   }
 }
 
+function resolveBuildDirectory(projectDir: string, rootDirectory?: string): string {
+  const normalized = rootDirectory?.trim().replace(/^\/+|\/+$/g, "");
+  if (!normalized || normalized === ".") {
+    return projectDir;
+  }
+
+  return `${projectDir}/${normalized}`;
+}
+
 /** Shell-quote a value for use in `sh -c` commands. */
 export function sq(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -223,6 +233,7 @@ export function parseLogLevel(message: string): LogEntry["level"] {
   if (/\bwarn(ing)?\b/i.test(message)) return "warn";
   return "info";
 }
+
 /**
  * Inject a token into an HTTPS git URL for private repo access.
  *
@@ -232,7 +243,7 @@ export function parseLogLevel(message: string): LogEntry["level"] {
  * Returns the original URL unchanged if no token is provided or
  * the URL is not HTTPS (e.g. ssh://).
  */
-function injectGitToken(repoUrl: string, token?: string): string {
+export function injectGitToken(repoUrl: string, token?: string): string {
   if (!token) return repoUrl;
   try {
     const url = new URL(repoUrl);

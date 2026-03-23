@@ -18,12 +18,7 @@
  */
 
 import type { CommandExecutor, LogEntry } from "../types";
-import type {
-  InstallerConfig,
-  InstallResult,
-  SystemLogCallback,
-  SystemLog,
-} from "./types";
+import type { InstallerConfig, InstallResult, SystemLogCallback, SystemLog } from "./types";
 import { systemCatalog } from "./catalog";
 import { resolveEnvironment } from "./environment";
 
@@ -34,16 +29,6 @@ function log(
   level: SystemLog["level"] = "info",
 ): SystemLog {
   return { timestamp: new Date().toISOString(), message, level };
-}
-
-/** Validate an email for ACME — basic sanity check. */
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-/** Validate a domain — basic sanity check, no shell-unsafe chars. */
-function isValidDomain(domain: string): boolean {
-  return /^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(domain);
 }
 
 // ─── Docker ──────────────────────────────────────────────────────────────────
@@ -92,108 +77,6 @@ export async function installDocker(
     onLog(log(`Docker installation failed: ${msg}`, "error"));
     return { component: "docker", success: false, error: msg };
   }
-}
-
-// ─── Traefik ─────────────────────────────────────────────────────────────────
-
-export async function installTraefik(
-  executor: CommandExecutor,
-  onLog: SystemLogCallback,
-  config?: InstallerConfig,
-): Promise<InstallResult> {
-  const mode = config?.traefikMode ?? "docker";
-  const profile = await resolveEnvironment(executor);
-
-  try {
-    if (mode === "docker") {
-      return await installTraefikDocker(executor, onLog, profile, config);
-    }
-    return await installTraefikBinary(executor, onLog, profile);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    onLog(log(`Traefik installation failed: ${msg}`, "error"));
-    return { component: "traefik", success: false, error: msg };
-  }
-}
-
-async function installTraefikDocker(
-  executor: CommandExecutor,
-  onLog: SystemLogCallback,
-  profile: Awaited<ReturnType<typeof resolveEnvironment>>,
-  config?: InstallerConfig,
-): Promise<InstallResult> {
-  if (config?.acmeEmail && !isValidEmail(config.acmeEmail)) {
-    return { component: "traefik", success: false, error: "Invalid ACME email" };
-  }
-
-  const plan = systemCatalog.installs.traefikDocker(profile, config);
-  if (!plan.supported || !plan.installCommand || !plan.startCommand) {
-    return {
-      component: "traefik",
-      success: false,
-      error: plan.unsupportedReason ?? "Traefik Docker installation is not supported on this environment",
-    };
-  }
-
-  onLog(log("Pulling Traefik Docker image..."));
-  const { code } = await executor.streamExec(
-    plan.installCommand,
-    onLog as (log: LogEntry) => void,
-  );
-  if (code !== 0) {
-    return { component: "traefik", success: false, error: "Failed to pull Traefik image" };
-  }
-
-  onLog(log("Creating Traefik configuration directories..."));
-  await executor.mkdir("/etc/traefik/dynamic");
-  await executor.mkdir("/etc/traefik/acme");
-
-  onLog(log("Starting Traefik container..."));
-  const { code: runCode } = await executor.streamExec(
-    plan.startCommand,
-    onLog as (log: LogEntry) => void,
-  );
-  if (runCode !== 0) {
-    return { component: "traefik", success: false, error: "Failed to start Traefik container" };
-  }
-
-  onLog(log("Traefik v3.4 running in Docker"));
-  return { component: "traefik", success: true, version: "3.4" };
-}
-
-async function installTraefikBinary(
-  executor: CommandExecutor,
-  onLog: SystemLogCallback,
-  profile: Awaited<ReturnType<typeof resolveEnvironment>>,
-): Promise<InstallResult> {
-  onLog(log("Downloading Traefik binary..."));
-
-  const plan = systemCatalog.installs.traefikBinary(profile);
-  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
-    return {
-      component: "traefik",
-      success: false,
-      error: plan.unsupportedReason ?? "Traefik binary installation is not supported on this environment",
-    };
-  }
-
-  const { code } = await executor.streamExec(
-    plan.installCommand,
-    onLog as (log: LogEntry) => void,
-  );
-  if (code !== 0) {
-    return { component: "traefik", success: false, error: "Failed to download Traefik binary" };
-  }
-
-  let version = "unknown";
-  try {
-    version = await executor.exec(plan.verifyCommand);
-  } catch {
-    // keep "unknown"
-  }
-
-  onLog(log(`Traefik ${version} installed to /usr/local/bin`));
-  return { component: "traefik", success: true, version };
 }
 
 // ─── Git ─────────────────────────────────────────────────────────────────────
@@ -372,7 +255,6 @@ type InstallerFn = (
 /** All available component installers, keyed by component name. */
 export const COMPONENT_INSTALLERS: Record<string, InstallerFn> = {
   docker: (exec, log) => installDocker(exec, log),
-  traefik: installTraefik,
   nginx: (exec, log) => installNginx(exec, log),
   certbot: (exec, log) => installCertbot(exec, log),
   git: (exec, log) => installGit(exec, log),

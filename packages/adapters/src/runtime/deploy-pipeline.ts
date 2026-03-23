@@ -14,7 +14,7 @@
  *   - routing:          routing.registerRoute()   → reverse-proxy config
  *
  * Cloud:       activate handles expose (URL returned), no resolveTargetUrl.
- * Self-hosted: activate creates container, resolveTargetUrl + routing wire Traefik.
+ * Self-hosted: activate creates container, resolveTargetUrl + routing wire Nginx.
  */
 
 import type { DeployConfig, LogCallback, RouteConfig, SslResult } from "../types";
@@ -61,6 +61,9 @@ export interface DeployEnvironment {
    * Omit entirely when routing is handled by activate() (cloud expose).
    */
   resolveTargetUrl?(containerId: string, port: number): Promise<string | null>;
+
+  /** Resolve a route target directly for proxy or static-file routing. */
+  resolveRoute?(containerId: string, config: DeployConfig): Promise<Omit<RouteConfig, "domain" | "tls"> | null>;
 }
 
 // ─── Routing abstraction (subset of RoutingProvider) ────────────────────────
@@ -151,13 +154,29 @@ export async function runDeployPipeline(
     }
 
     // ── Step 3: Register routes ──────────────────────────────────────
-    if (routing && env.resolveTargetUrl && domains.length > 0) {
-      const targetUrl = await env.resolveTargetUrl(containerId, config.port);
+    if (routing && domains.length > 0) {
+      const routeTarget = env.resolveRoute
+        ? await env.resolveRoute(containerId, config)
+        : env.resolveTargetUrl
+          ? await env.resolveTargetUrl(containerId, config.port).then((targetUrl) => targetUrl ? { targetUrl } : null)
+          : null;
 
-      if (targetUrl) {
+      if (routeTarget) {
         for (const d of domains) {
           logger.log(`Registering route for ${d.hostname}...\n`);
-          await routing.registerRoute({ domain: d.hostname, targetUrl, tls: d.tls });
+          let routeConfig: RouteConfig;
+          const targetUrl = (routeTarget as { targetUrl?: string }).targetUrl;
+          const staticRoot = (routeTarget as { staticRoot?: string }).staticRoot;
+
+          if (typeof targetUrl === "string") {
+            routeConfig = { domain: d.hostname, tls: d.tls, targetUrl };
+          } else if (typeof staticRoot === "string") {
+            routeConfig = { domain: d.hostname, tls: d.tls, staticRoot };
+          } else {
+            throw new DeployError("Resolved route target is invalid", "INVALID_ROUTE_TARGET");
+          }
+
+          await routing.registerRoute(routeConfig);
 
           if (d.provisionSsl && ssl) {
             logger.log(`Checking SSL for ${d.hostname}...\n`);

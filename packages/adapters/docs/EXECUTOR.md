@@ -123,11 +123,12 @@ The platform does this automatically — you don't call `createExecutor()` direc
 
 ## Important: Docker is Different
 
-`DockerRuntime` does **NOT** use `CommandExecutor`. It uses dockerode's built-in SSH transport:
+`DockerRuntime` does **NOT** use `CommandExecutor`. It uses dockerode as the Docker control plane and, for SSH targets, tunnels directly to the remote Docker socket:
 
 ```typescript
 // DockerRuntime connects to Docker Engine directly
-new Dockerode({ protocol: "ssh", host, username, sshOptions: { privateKey } })
+new Dockerode({ socketPath: "/var/run/docker.sock" })
+// or over a socket-like SSH tunnel to the remote Docker socket
 ```
 
 This is correct because:

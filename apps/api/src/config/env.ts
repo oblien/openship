@@ -17,8 +17,8 @@ const envSchema = z.object({
     .transform((v) => v === "true" || v === "1"),
   /**
    * Deployment mode — determines the runtime + infrastructure combination:
-   *   - "docker"  (default) → Docker runtime + Traefik routing/SSL (self-hosted)
-   *   - "bare"              → Process runtime + Traefik routing/SSL (self-hosted)
+    *   - "docker"  (default) → Docker runtime + Nginx routing/SSL (self-hosted)
+    *   - "bare"              → Process runtime + Nginx routing/SSL (self-hosted)
    *   - "cloud"             → Oblien cloud API for everything (auto-set when CLOUD_MODE=true)
    *   - "desktop"           → Bare runtime, no routing/SSL (desktop app)
    */
