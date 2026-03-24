@@ -569,7 +569,15 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     };
   }, []); // Empty deps - only run on mount/unmount
 
-  const [activeTab, setActiveTab] = useState(slug?.[0] || "error");
+  // Map legacy tab IDs to new ones
+  const resolveTab = (tab?: string) => {
+    if (tab === "general") return "overview";
+    if (tab === "git") return "source";
+    if (tab === "settings" || tab === "build") return "runtime";
+    return tab || "overview";
+  };
+
+  const [activeTab, setActiveTab] = useState(resolveTab(slug?.[0]) || "overview");
 
   // Initial load - only fetch once on mount since id shouldn't change
   useEffect(() => {
@@ -579,17 +587,19 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   // Sync activeTab with slug changes (for browser back/forward navigation)
   const slugTab = slug?.[0];
   useEffect(() => {
-    if (slugTab && slugTab !== activeTab) {
-      setActiveTab(slugTab);
+    const resolved = resolveTab(slugTab);
+    if (resolved && resolved !== activeTab) {
+      setActiveTab(resolved);
     }
   }, [slugTab]); // Only watch slug[0] to avoid array reference issues
 
   const tabs = [
-    { id: "general", label: "General", icon: 'setting-100-1658432731.png' },
+    { id: "overview", label: "Overview", icon: 'setting-100-1658432731.png' },
+    { id: "monitoring", label: "Monitoring", icon: 'heart%20rate-118-1658433496.png' },
     { id: "domains", label: "Domains", icon: 'server-59-1658435258.png' },
     { id: "deployments", label: "Deployments", icon: 'heart%20rate-118-1658433496.png' },
-    // { id: "git", label: "Git", icon: 'git%20branch-159-1658431404.png' },
-    { id: "settings", label: "Settings", icon: 'setting-40-1662364403.png' },
+    { id: "source", label: "Source", icon: 'git%20branch-159-1658431404.png' },
+    { id: "runtime", label: "Runtime", icon: 'setting-40-1662364403.png' },
     { id: "logs", label: "Logs", icon: 'terminal-184-1658431404.png' },
     { id: "advanced", label: "Advanced", icon: 'error%20triangle-81-1658234612.png' },
   ];

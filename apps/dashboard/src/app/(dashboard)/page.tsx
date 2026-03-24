@@ -11,7 +11,6 @@ import {
   Plus,
   ExternalLink,
   Clock,
-  Zap,
   BookOpen,
   Terminal,
   GitBranch,
@@ -22,21 +21,31 @@ import {
 } from "lucide-react";
 import { projectsApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import HomeTipCard from "@/components/overview/HomeTipCard";
 import { useI18n } from "@/components/i18n-provider";
 import { generateIcon } from "@/utils/icons";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
+import { getProjectStatus, PROJECT_STATUS_META } from "@/utils/project-status";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
-interface Project {
+interface HomeProject {
   id: string;
   name: string;
-  domain: string;
+  slug: string;
   framework: string;
-  active: boolean;
-  updated_at: string;
+  activeDeploymentId?: string | null;
+  latestDeploymentId?: string | null;
+  latestDeploymentStatus?: string | null;
+  gitOwner?: string | null;
+  gitRepo?: string | null;
+  localPath?: string | null;
+  hasServer?: boolean;
+  productionMode?: string | null;
+  updatedAt: string;
+  createdAt: string;
 }
 
 interface DashboardNumbers {
@@ -70,7 +79,7 @@ export default function DashboardHome() {
   const { user } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<HomeProject[]>([]);
   const [numbers, setNumbers] = useState<DashboardNumbers>({});
   const [loading, setLoading] = useState(true);
 
@@ -237,6 +246,8 @@ export default function DashboardHome() {
                 <div className="divide-y divide-border/50">
                   {projects.slice(0, 6).map((p) => {
                     const fw = getFrameworkConfig(p.framework);
+                    const status = getProjectStatus(p);
+                    const statusMeta = PROJECT_STATUS_META[status];
                     return (
                       <div
                         key={p.id}
@@ -255,24 +266,17 @@ export default function DashboardHome() {
                             {p.name}
                           </p>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-xs text-muted-foreground truncate">{p.domain}</p>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-muted/60 text-[10px] text-muted-foreground">{fw.name}</span>
                             <span className="text-muted-foreground/40">·</span>
-                            <span className="text-xs text-muted-foreground">{timeAgo(p.updated_at)}</span>
+                            <span className="text-xs text-muted-foreground">{timeAgo(p.updatedAt || p.createdAt)}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                              p.active
-                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                            }`}
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${statusMeta.badge}`}
                           >
-                            <span
-                              className="w-1.5 h-1.5 rounded-full"
-                              style={{ backgroundColor: p.active ? "#10b981" : "#f59e0b" }}
-                            />
-                            {p.active ? "Live" : "Paused"}
+                            <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dot}`} />
+                            {statusMeta.label}
                           </span>
                           <ArrowRight className="size-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
                         </div>
@@ -390,24 +394,7 @@ export default function DashboardHome() {
               </div>
             </div>
 
-            {/* Quick Tips */}
-            <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <Zap className="size-4 text-primary" />
-                <h3 className="font-semibold text-foreground text-sm">Quick Tip</h3>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Connect your GitHub repository for automatic deployments on every push. 
-                Set up preview deployments for pull requests.
-              </p>
-              <Link
-                href="/settings/git"
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 mt-3 transition-colors"
-              >
-                Connect GitHub
-                <ArrowRight className="size-3.5" />
-              </Link>
-            </div>
+            <HomeTipCard projectCount={projects.length} loading={loading} />
 
             {/* Recent Activity */}
             <div className="bg-card rounded-2xl border border-border/50 p-5">
@@ -436,27 +423,28 @@ export default function DashboardHome() {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {projects.slice(0, 4).map((p) => (
-                    <div
-                      key={p.id}
-                      onClick={() => router.push(`/projects/${p.id}`)}
-                      className="flex items-center gap-3 cursor-pointer group"
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${
-                          p.active ? "bg-emerald-500" : "bg-amber-500"
-                        }`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-foreground truncate group-hover:text-primary transition-colors">
-                          {p.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {timeAgo(p.updated_at)}
-                        </p>
+                  {projects.slice(0, 4).map((p) => {
+                    const status = getProjectStatus(p);
+                    const statusMeta = PROJECT_STATUS_META[status];
+
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => router.push(`/projects/${p.id}`)}
+                        className="flex items-center gap-3 cursor-pointer group"
+                      >
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${statusMeta.dot}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-foreground truncate group-hover:text-primary transition-colors">
+                            {p.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {statusMeta.label} • {timeAgo(p.updatedAt || p.createdAt)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -13,20 +13,21 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { GeneralSettings } from "../components/GeneralSettings";
 import { DomainSettings } from "../components/DomainSettings";
 import { GitSettings } from "../components/GitSettings";
 import { BuildSettings } from "../components/BuildSettings";
 import { LogsSettings } from "../components/LogsSettings";
 import { Deployments } from "../components/Deployments";
 import { AdvancedSettings } from "../components/AdvancedSettings";
+import { OverviewTab } from "../components/OverviewTab";
+import { MonitoringTab } from "../components/MonitoringTab";
+import { ProjectSidebar, ProjectMobileTabs } from "../components/ProjectSidebar";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/context/ToastContext";
 import { projectsApi } from "@/lib/api";
 import ErrorState from "@/components/shared/ErrorState";
-import { ProductionUrlSkeleton, ProjectIdentitySkeleton, ProjectInfoSkeleton, StatsCardsSkeleton, TopPathsSkeleton, TrafficChartSkeleton } from "../components/general";
 import { SectionContainer } from "@/components/ui/SectionContainer";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import { encodeRepoSlug } from "@/utils/repoSlug";
@@ -97,14 +98,18 @@ const ProjectSettingsContent = () => {
 
   const renderTabContent = () => {
     switch (activeTab) {
-      case "general":
-        return <GeneralSettings />;
+      case "overview":
+        return <OverviewTab />;
+      case "monitoring":
+        return <MonitoringTab />;
       case "domains":
         return <DomainSettings />;
       case "deployments":
         return <Deployments />;
+      case "source":
       case "git":
         return <GitSettings />;
+      case "runtime":
       case "settings":
         return <BuildSettings />;
       case "logs":
@@ -112,7 +117,7 @@ const ProjectSettingsContent = () => {
       case "advanced":
         return <AdvancedSettings onDeleteProject={handleDeleteProject} />;
       default:
-        return <GeneralSettings />;
+        return <OverviewTab />;
     }
   };
 
@@ -122,13 +127,13 @@ const ProjectSettingsContent = () => {
 
   const isDraft = !isLoadingAnalytics && !projectData.activeDeploymentId;
 
-  if (isDraft && (activeTab === "general" || activeTab === "error")) {
+  if (isDraft && (activeTab === "overview" || activeTab === "error")) {
     const deploySlug = projectData.gitOwner && projectData.gitRepo
       ? encodeRepoSlug(projectData.gitOwner, projectData.gitRepo)
       : null;
 
     return (
-      <div className="min-h-screen bg-[#fafafa] pb-32">
+      <div className="min-h-screen bg-background">
         <SectionContainer>
           <div className="py-20 text-center">
             {/* SVG Illustration */}
@@ -177,7 +182,7 @@ const ProjectSettingsContent = () => {
             </div>
 
             {/* Draft Badge */}
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 mb-4">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 mb-4">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
               Draft
             </span>
@@ -212,7 +217,7 @@ const ProjectSettingsContent = () => {
 
             <button
               onClick={handleDeleteProject}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
             >
               <Trash2 className="size-3.5" />
               Delete Project
@@ -226,57 +231,83 @@ const ProjectSettingsContent = () => {
   if (isLoadingAnalytics) {
     return (
       <SectionContainer>
-        {/* Main Grid Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Left Column - 2 cols */}
-          <div className="lg:col-span-2 space-y-5">
-            <TrafficChartSkeleton />
-            <StatsCardsSkeleton />
-            <ProjectIdentitySkeleton />
+        <div className="space-y-5 py-6">
+          {/* Skeleton cards */}
+          <div className="bg-card rounded-2xl border border-border/50 p-6 animate-pulse">
+            <div className="h-5 w-48 bg-muted rounded-lg mb-2" />
+            <div className="h-4 w-32 bg-muted/60 rounded-lg" />
           </div>
-
-          {/* Right Column - 1 col */}
-          <div className="space-y-5">
-            <TopPathsSkeleton />
-            <ProductionUrlSkeleton />
-            <ProjectInfoSkeleton />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-card rounded-2xl border border-border/50 p-5 animate-pulse">
+                <div className="h-3 w-20 bg-muted rounded mb-4" />
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((j) => (
+                    <div key={j} className="flex justify-between">
+                      <div className="h-3 w-16 bg-muted/60 rounded" />
+                      <div className="h-3 w-24 bg-muted/60 rounded" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </SectionContainer>
     );
   }
   return (
-    <div className="min-h-screen bg-[#fafafa] pb-32">
+    <div className="min-h-screen bg-background">
       <SectionContainer>
-        {/* Compact Header - Hide when project not found */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <div className="flex items-center space-x-2 text-sm text-black/40 mb-2">
-              <Link href="/" className="hover:text-black transition-colors font-medium">
-                Dashboard
-              </Link>
-              <span>/</span>
-              <Link href={`/projects/${projectData.id || 'projectId'}`} className="hover:text-black transition-colors font-medium">
-                {projectData.custom_domain || projectData.domain || projectData.name || 'Project'}
-              </Link>
-              <span>/</span>
-              <span className="text-black font-medium">Settings</span>
-            </div>
-            <h1 className="text-2xl font-semibold text-black">
-              {tabs.find(t => t.id === activeTab)?.label}
-            </h1>
+        {/* Compact Header */}
+        <div className="mb-6">
+          <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-2">
+            <Link href="/" className="hover:text-foreground transition-colors font-medium">
+              Dashboard
+            </Link>
+            <span>/</span>
+            <Link href={`/projects/${projectData.id || 'projectId'}/overview`} className="hover:text-foreground transition-colors font-medium">
+              {projectData.name || 'Project'}
+            </Link>
+            {activeTab !== "overview" && (
+              <>
+                <span>/</span>
+                <span className="text-foreground font-medium">
+                  {tabs.find(t => t.id === activeTab)?.label}
+                </span>
+              </>
+            )}
           </div>
 
-          {/* Help & Share Menu */}
-          <DropdownMenu
-            actions={helpMenuActions}
-            trigger={<MoreVertical className="w-5 h-5 text-gray-600" />}
-            align="right"
-          />
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold text-foreground truncate">
+                {tabs.find(t => t.id === activeTab)?.label || "Overview"}
+              </h1>
+            </div>
+
+            {/* Help & Share Menu */}
+            <DropdownMenu
+              actions={helpMenuActions}
+              trigger={<MoreVertical className="w-5 h-5 text-muted-foreground" />}
+              align="right"
+            />
+          </div>
         </div>
 
         {/* Content */}
-        {renderTabContent()}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+          {/* ── LEFT COLUMN ── */}
+          <div className="space-y-6 min-w-0">
+            <ProjectMobileTabs />
+            {renderTabContent()}
+          </div>
+
+          {/* ── RIGHT COLUMN ── */}
+          <div className="hidden lg:block">
+            <ProjectSidebar />
+          </div>
+        </div>
       </SectionContainer>
 
     </div>

@@ -23,7 +23,7 @@ export const LogsActions: React.FC<LogsActionsProps> = ({
       {/* Copy */}
       <button
         onClick={onCopy}
-        className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 border border-black/10 hover:border-black/20 rounded-lg transition-all text-xs font-medium text-black shadow-sm"
+        className="flex items-center gap-1.5 px-3.5 py-2 bg-card hover:bg-muted/40 border border-border hover:border-border rounded-lg transition-all text-xs font-medium text-foreground shadow-sm"
       >
         {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
         {copied ? "Copied" : "Copy"}
@@ -32,7 +32,7 @@ export const LogsActions: React.FC<LogsActionsProps> = ({
       {/* Download */}
       <button
         onClick={onDownload}
-        className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 border border-black/10 hover:border-black/20 rounded-lg transition-all text-xs font-medium text-black shadow-sm"
+        className="flex items-center gap-1.5 px-3.5 py-2 bg-card hover:bg-muted/40 border border-border hover:border-border rounded-lg transition-all text-xs font-medium text-foreground shadow-sm"
       >
         <Download className="w-3.5 h-3.5" />
         Download
@@ -41,7 +41,7 @@ export const LogsActions: React.FC<LogsActionsProps> = ({
       {/* Clear */}
       <button
         onClick={onClear}
-        className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-red-50 border border-red-200 hover:border-red-300 text-red-600 hover:text-red-700 rounded-lg transition-all text-xs font-medium shadow-sm"
+        className="flex items-center gap-1.5 px-3.5 py-2 bg-card hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/30 text-red-600 hover:text-red-500 rounded-lg transition-all text-xs font-medium shadow-sm"
       >
         <RefreshCw className="w-3.5 h-3.5" />
         Clear

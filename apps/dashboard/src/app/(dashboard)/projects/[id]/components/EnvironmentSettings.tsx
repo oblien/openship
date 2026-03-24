@@ -154,40 +154,40 @@ export const EnvironmentSettings: React.FC = () => {
     return (
       <div className="space-y-4">
         {/* Security Notice Skeleton */}
-        <div className="bg-gradient-to-r from-gray-100 to-gray-50 border border-gray-200 rounded-xl p-4 flex items-start gap-3 animate-pulse">
-          <div className="h-5 w-5 bg-gray-300/30 rounded-full mt-0.5 flex-shrink-0"></div>
+        <div className="bg-gradient-to-r from-muted to-muted/40 border border-border rounded-xl p-4 flex items-start gap-3 animate-pulse">
+          <div className="h-5 w-5 bg-muted-foreground/20 rounded-full mt-0.5 flex-shrink-0"></div>
           <div className="flex-1 space-y-2">
-            <div className="h-4 bg-gray-300/30 rounded-full w-40"></div>
-            <div className="h-3 bg-gray-200/30 rounded-full w-full"></div>
-            <div className="h-3 bg-gray-200/30 rounded-full w-3/4"></div>
+            <div className="h-4 bg-muted-foreground/20 rounded-full w-40"></div>
+            <div className="h-3 bg-muted/70 rounded-full w-full"></div>
+            <div className="h-3 bg-muted/70 rounded-full w-3/4"></div>
           </div>
         </div>
 
         {/* Environment Variables Container Skeleton */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
+        <div className="bg-card border border-border rounded-xl p-6 space-y-4">
           {/* Header Skeleton */}
-          <div className="flex items-center justify-between pb-4 border-b border-gray-200">
-            <div className="h-6 bg-gray-300/30 rounded-full w-48 animate-pulse"></div>
-            <div className="h-10 bg-gray-300/30 rounded-full w-32 animate-pulse"></div>
+          <div className="flex items-center justify-between pb-4 border-b border-border">
+            <div className="h-6 bg-muted-foreground/20 rounded-full w-48 animate-pulse"></div>
+            <div className="h-10 bg-muted-foreground/20 rounded-full w-32 animate-pulse"></div>
           </div>
 
           {/* Environment Variable Items Skeleton */}
           {[1, 2, 3].map((i) => (
-            <div key={i} className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg animate-pulse">
+            <div key={i} className="flex items-center gap-3 p-4 bg-muted/40 rounded-lg animate-pulse">
               <div className="flex-1 space-y-2">
-                <div className="h-4 bg-gray-300/30 rounded-full w-32"></div>
-                <div className="h-3 bg-gray-200/30 rounded-full w-48"></div>
+                <div className="h-4 bg-muted-foreground/20 rounded-full w-32"></div>
+                <div className="h-3 bg-muted/70 rounded-full w-48"></div>
               </div>
               <div className="flex gap-2">
-                <div className="h-8 w-8 bg-gray-300/30 rounded-full"></div>
-                <div className="h-8 w-8 bg-gray-300/30 rounded-full"></div>
+                <div className="h-8 w-8 bg-muted-foreground/20 rounded-full"></div>
+                <div className="h-8 w-8 bg-muted-foreground/20 rounded-full"></div>
               </div>
             </div>
           ))}
 
           {/* Add Button Skeleton */}
           <div className="flex justify-center pt-4">
-            <div className="h-10 bg-gray-300/30 rounded-full w-48 animate-pulse"></div>
+            <div className="h-10 bg-muted-foreground/20 rounded-full w-48 animate-pulse"></div>
           </div>
         </div>
       </div>
@@ -198,13 +198,13 @@ export const EnvironmentSettings: React.FC = () => {
   if (environmentData.error) {
     return (
       <div className="space-y-4">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3">
           <div className="flex-1">
-            <h4 className="font-semibold text-red-900 mb-1">Error Loading Environment</h4>
-            <p className="text-sm text-red-800">{environmentData.error}</p>
+            <h4 className="font-semibold text-red-700 dark:text-red-300 mb-1">Error Loading Environment</h4>
+            <p className="text-sm text-red-700/80 dark:text-red-300/80">{environmentData.error}</p>
             <button
               onClick={refreshEnvironment}
-              className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              className="mt-3 px-4 py-2 bg-destructive text-destructive-foreground rounded-lg hover:opacity-90 transition-opacity"
             >
               Retry
             </button>
@@ -217,13 +217,13 @@ export const EnvironmentSettings: React.FC = () => {
   return (
     <div className="space-y-4" style={{ opacity: isSaving ? 0.5 : 1, transition: 'opacity 0.3s', pointerEvents: isSaving ? 'none' : 'auto' }}>
       {/* Security Notice */}
-      <div className="bg-gradient-to-r from-green-50 to-emerald-50 border relative border-green-200 rounded-xl p-4 flex items-start gap-3">
-        <div className="w-10 h-10 bg-green-100 rounded-xl absolute flex items-center justify-center border border-green-200">
-          {generateIcon('shield-123-1691989638.png', 24, 'var(--color-green-600)')}
+      <div className="bg-gradient-to-r from-emerald-500/10 to-green-500/10 border relative border-emerald-500/20 rounded-xl p-4 flex items-start gap-3">
+        <div className="w-10 h-10 bg-emerald-500/10 rounded-xl absolute flex items-center justify-center border border-emerald-500/20">
+          {generateIcon('shield-123-1691989638.png', 24, 'hsl(var(--primary))')}
         </div>
         <div className="ml-14">
-          <h4 className="font-semibold text-green-900 mb-1">Secure & Encrypted</h4>
-          <p className="text-sm text-green-800">
+          <h4 className="font-semibold text-emerald-700 dark:text-emerald-300 mb-1">Secure & Encrypted</h4>
+          <p className="text-sm text-emerald-700/80 dark:text-emerald-300/80">
             All environment variables are stored with end-to-end encryption. We don't have access to your environment variables, and no third party can access them.
           </p>
         </div>

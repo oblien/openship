@@ -126,19 +126,19 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
   }, [logsStrings]); // Remove onLogsChange from deps to prevent infinite loop
 
   const getStatusColor = useCallback((code: number) => {
-    if (code >= 200 && code < 300) return 'text-emerald-600 bg-emerald-50';
-    if (code >= 300 && code < 400) return 'text-blue-600 bg-blue-50';
-    if (code >= 400 && code < 500) return 'text-amber-600 bg-amber-50';
-    return 'text-red-600 bg-red-50';
+    if (code >= 200 && code < 300) return 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10';
+    if (code >= 300 && code < 400) return 'text-blue-600 dark:text-blue-400 bg-blue-500/10';
+    if (code >= 400 && code < 500) return 'text-amber-600 dark:text-amber-400 bg-amber-500/10';
+    return 'text-red-600 dark:text-red-400 bg-red-500/10';
   }, []);
 
   const getMethodColor = useCallback((method: string) => {
     switch (method) {
-      case 'GET': return 'text-blue-600 bg-blue-50';
-      case 'POST': return 'text-emerald-600 bg-emerald-50';
-      case 'PUT': return 'text-amber-600 bg-amber-50';
-      case 'DELETE': return 'text-red-600 bg-red-50';
-      default: return 'text-gray-600 bg-gray-50';
+      case 'GET': return 'text-blue-600 dark:text-blue-400 bg-blue-500/10';
+      case 'POST': return 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10';
+      case 'PUT': return 'text-amber-600 dark:text-amber-400 bg-amber-500/10';
+      case 'DELETE': return 'text-red-600 dark:text-red-400 bg-red-500/10';
+      default: return 'text-muted-foreground bg-muted/60';
     }
   }, []);
 
@@ -147,18 +147,18 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <Server className="w-5 h-5 text-indigo-600" />
-          <h3 className="text-lg font-semibold text-black">Realtime requests logs</h3>
+          <Server className="w-5 h-5 text-primary" />
+          <h3 className="text-lg font-semibold text-foreground">Realtime requests logs</h3>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-          <span className="text-sm text-black/60 font-medium">Live</span>
+          <span className="text-sm text-muted-foreground font-medium">Live</span>
         </div>
       </div>
 
       {/* Logs Container with White Frame */}
-      <div className="bg-white rounded-[24px] p-6 border border-black/5">
-        <div className="bg-gray-50 rounded-[16px] overflow-hidden border border-black/5">
+      <div className="bg-card rounded-3xl p-6 border border-border/50">
+        <div className="bg-muted/40 rounded-2xl overflow-hidden border border-border/50">
           {/* Logs List */}
           <div className="max-h-[500px] overflow-y-auto server-logs-scroll pr-2">
             {serverLogsData.logs.length === 0 ? (
@@ -167,52 +167,52 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
                   {Array.from({ length: 8 }).map((_, idx) => (
                     <div key={idx} className="animate-pulse">
                       <div className="flex items-center gap-3 mb-2">
-                        <div className="w-12 h-5 rounded-md bg-gray-200" />
-                        <div className="flex-1 h-4 rounded-md bg-gray-200" />
-                        <div className="w-12 h-5 rounded-md bg-gray-200" />
-                        <div className="w-10 h-4 rounded-md bg-gray-200" />
+                        <div className="w-12 h-5 rounded-md bg-muted" />
+                        <div className="flex-1 h-4 rounded-md bg-muted" />
+                        <div className="w-12 h-5 rounded-md bg-muted" />
+                        <div className="w-10 h-4 rounded-md bg-muted" />
                       </div>
                       <div className="flex items-center gap-4">
-                        <div className="w-44 h-3 rounded-md bg-gray-200" />
-                        <div className="w-32 h-3 rounded-md bg-gray-200" />
-                        <div className="flex-1 h-3 rounded-md bg-gray-200" />
+                        <div className="w-44 h-3 rounded-md bg-muted" />
+                        <div className="w-32 h-3 rounded-md bg-muted" />
+                        <div className="flex-1 h-3 rounded-md bg-muted" />
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-20">
-                  <Server className="w-16 h-16 mb-4 text-gray-300" />
-                  <p className="text-base text-gray-400">No server logs yet</p>
+                  <Server className="w-16 h-16 mb-4 text-muted-foreground/30" />
+                  <p className="text-base text-muted-foreground">No server logs yet</p>
                 </div>
               )
             ) : (
               <div className="divide-y divide-black/5">
                 {serverLogsData.logs.map((log) => (
-                  <div key={log.id} className="p-4 hover:bg-white/50 transition-colors">
+                  <div key={log.id} className="p-4 hover:bg-card/50 transition-colors">
                     {/* First Row - Method, Path, Status */}
                     <div className="flex items-center gap-3 mb-2">
                       <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getMethodColor(log.method)}`}>
                         {log.method}
                       </span>
                       <div className="flex-1 flex items-center justify-between gap-3 min-w-0">
-                        <span className="text-sm font-medium text-black font-mono truncate">
+                        <span className="text-sm font-medium text-foreground font-mono truncate">
                           {log.path}
                         </span>
-                        <span className="text-[11px] text-black/50 font-mono whitespace-nowrap">
+                        <span className="text-[11px] text-muted-foreground font-mono whitespace-nowrap">
                           {formatBytes(log.requestSize)} → {formatBytes(log.responseSize)}
                         </span>
                       </div>
                       <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${getStatusColor(log.statusCode)}`}>
                         {log.statusCode}
                       </span>
-                      <span className="text-xs text-black/40 font-mono">
+                      <span className="text-xs text-muted-foreground/70 font-mono">
                         {log.responseTime}ms
                       </span>
                     </div>
 
                     {/* Second Row - Timestamp, IP, User Agent */}
-                    <div className="flex items-center gap-4 text-xs text-black/50">
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5" />
                         <span className="font-mono">

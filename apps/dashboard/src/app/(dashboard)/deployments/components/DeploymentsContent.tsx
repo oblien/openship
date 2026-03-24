@@ -29,11 +29,15 @@ interface DeploymentsContentProps {
   /** When set, scope to this project and hide the project selector */
   projectId?: string;
   projectName?: string;
+  hideHeader?: boolean;
+  hideSidebar?: boolean;
 }
 
 export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
   projectId,
   projectName,
+  hideHeader = false,
+  hideSidebar = false,
 }) => {
   const isProject = !!projectId;
 
@@ -112,28 +116,30 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
   return (
     <div>
       {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-            <Rocket className="size-[18px] text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-foreground" style={{ letterSpacing: "-0.2px" }}>
-              Deployments
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {isLoading
-                ? "Loading..."
-                : isProject
-                  ? `${deployments.length} deployment${deployments.length !== 1 ? "s" : ""}`
-                  : `${deployments.length} total across ${projects.length} project${projects.length !== 1 ? "s" : ""}`}
-            </p>
+      {!hideHeader && (
+        <div className="mb-6">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+              <Rocket className="size-[18px] text-primary" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-foreground" style={{ letterSpacing: "-0.2px" }}>
+                Deployments
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                {isLoading
+                  ? "Loading..."
+                  : isProject
+                    ? `${deployments.length} deployment${deployments.length !== 1 ? "s" : ""}`
+                    : `${deployments.length} total across ${projects.length} project${projects.length !== 1 ? "s" : ""}`}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+      <div className={hideSidebar ? "" : "grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6"}>
         {/* LEFT COLUMN */}
         <div className="space-y-4 min-w-0">
           {isLoading ? (
@@ -165,6 +171,7 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
         </div>
 
         {/* RIGHT COLUMN (Sticky) */}
+        {!hideSidebar && (
         <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
           {/* Activity Overview */}
           <div className="bg-card rounded-2xl border border-border/50 p-5">
@@ -318,6 +325,7 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

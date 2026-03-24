@@ -1,5 +1,4 @@
 import { ProjectSettingsProvider } from "@/context/ProjectSettingsContext";
-import ProjectsBottomNavigation from "../components/ProjectsBottomNavigation";
 
 const ProjectSettingsWrapper = async ({
   params,
@@ -14,7 +13,6 @@ const ProjectSettingsWrapper = async ({
   return (
     <ProjectSettingsProvider slug={slug} id={id}>
       {children}
-      <ProjectsBottomNavigation />
     </ProjectSettingsProvider>
   );
 };

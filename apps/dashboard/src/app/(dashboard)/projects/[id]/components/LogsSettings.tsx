@@ -69,14 +69,14 @@ export const LogsSettings = () => {
         {buildData.hasServer && <button
           onClick={() => setActiveTab('terminal')}
           className={`relative flex items-center gap-2.5 px-5 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === 'terminal'
-            ? 'bg-white text-black shadow-md border border-black/10'
-            : 'bg-transparent text-black/50 hover:text-black/70 hover:bg-white/50'
+            ? 'bg-card text-foreground shadow-md border border-border'
+            : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-card/50'
             }`}
         >
           {activeTab === 'terminal' && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-indigo-500 rounded-r-full"></div>
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-r-full"></div>
           )}
-          <div className={`w-2 h-2 rounded-full transition-colors ${activeTab === 'terminal' ? 'bg-indigo-500' : 'bg-black/20'
+          <div className={`w-2 h-2 rounded-full transition-colors ${activeTab === 'terminal' ? 'bg-primary' : 'bg-muted-foreground/30'
             }`}></div>
           <Terminal className="w-4 h-4" />
           Terminal Logs
@@ -84,14 +84,14 @@ export const LogsSettings = () => {
         <button
           onClick={() => setActiveTab('server')}
           className={`relative flex items-center gap-2.5 px-5 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === 'server'
-            ? 'bg-white text-black shadow-md border border-black/10'
-            : 'bg-transparent text-black/50 hover:text-black/70 hover:bg-white/50'
+            ? 'bg-card text-foreground shadow-md border border-border'
+            : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-card/50'
             }`}
         >
           {activeTab === 'server' && (
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-emerald-500 rounded-r-full"></div>
           )}
-          <div className={`w-2 h-2 rounded-full transition-colors ${activeTab === 'server' ? 'bg-emerald-500' : 'bg-black/20'
+          <div className={`w-2 h-2 rounded-full transition-colors ${activeTab === 'server' ? 'bg-emerald-500' : 'bg-muted-foreground/30'
             }`}></div>
           <Server className="w-4 h-4" />
           Server Logs
@@ -117,7 +117,7 @@ export const LogsSettings = () => {
       </div>
 
       {/* Actions Bar - Bottom */}
-      <div className="bg-gradient-to-r from-gray-50 to-gray-100/50 rounded-2xl px-6 py-4 border border-black/5 shadow-sm">
+      <div className="bg-muted/40 rounded-2xl px-6 py-4 border border-border/50 shadow-sm">
         <div className="flex items-center justify-center">
           <LogsActions
             onCopy={copyLogs}

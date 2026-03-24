@@ -67,29 +67,29 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   return (
     <div className="space-y-6">
       {/* Project Status Control */}
-      <div className="bg-white rounded-[20px] border border-black/5 p-6">
+      <div className="bg-card rounded-2xl border border-border/50 p-6">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center border border-indigo-200">
+          <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
 
-            {generateIcon('setting-100-1658432731.png', 24, 'rgb(79, 70, 229)')}
+            {generateIcon('setting-100-1658432731.png', 24, 'hsl(var(--primary))')}
           </div>
-          <h3 className="text-lg font-semibold text-black">Project Status</h3>
+          <h3 className="text-lg font-semibold text-foreground">Project Status</h3>
         </div>
 
         <div className="space-y-4">
           {/* Enable/Disable */}
-          <div className="flex items-center justify-between p-4 bg-black/5 rounded-xl hover:bg-black/10 transition-all">
+          <div className="flex items-center justify-between p-4 bg-muted/60 rounded-xl hover:bg-muted transition-all">
             <div className="flex items-center gap-3">
               {isProjectActive ? (
-                generateIcon('pause-279-1658234823.png', 24, 'var(--color-emerald-600)')
+                generateIcon('pause-279-1658234823.png', 24, 'rgb(16, 185, 129)')
               ) : (
-                generateIcon('play-287-1658234823.png', 24, 'var(--color-amber-600)')
+                generateIcon('play-287-1658234823.png', 24, 'rgb(245, 158, 11)')
               )}
               <div>
-                <p className="text-sm font-semibold text-black">
+                <p className="text-sm font-semibold text-foreground">
                   {isProjectActive ? 'Project Active' : 'Project Disabled'}
                 </p>
-                <p className="text-xs text-black/50">
+                <p className="text-xs text-muted-foreground">
                   {isProjectActive ? 'Project is live and accessible' : 'Project is paused and not accessible'}
                 </p>
               </div>
@@ -99,7 +99,7 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
               disabled={loading.disableProject}
               className={`px-5 py-2.5 rounded-full font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all ${isProjectActive
                 ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                : 'bg-black hover:bg-black/80 text-white'
+                : 'bg-foreground hover:bg-foreground/80 text-background'
                 }`}
             >
               {isProjectActive ? 'Disable' : 'Enable'}
@@ -107,25 +107,25 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
           </div>
 
           {/* Visibility */}
-          {/* <div className="flex items-center justify-between p-4 bg-black/5 rounded-xl hover:bg-black/10 transition-all">
+          {/* <div className="flex items-center justify-between p-4 bg-muted/60 rounded-xl hover:bg-muted transition-all">
             <div className="flex items-center gap-3">
               {isProjectPublic ? (
-                <Eye className="w-5 h-5 text-indigo-600" />
+                <Eye className="w-5 h-5 text-primary" />
               ) : (
-                <EyeOff className="w-5 h-5 text-black/50" />
+                <EyeOff className="w-5 h-5 text-muted-foreground" />
               )}
               <div>
-                <p className="text-sm font-semibold text-black">
+                <p className="text-sm font-semibold text-foreground">
                   {isProjectPublic ? 'Public Project' : 'Private Project'}
                 </p>
-                <p className="text-xs text-black/50">
+                <p className="text-xs text-muted-foreground">
                   {isProjectPublic ? 'Visible in public listings' : 'Hidden from public view'}
                 </p>
               </div>
             </div>
             <button
               onClick={handleToggleVisibility}
-              className="px-5 py-2.5 rounded-full bg-black/5 hover:bg-black/10 text-black font-medium text-sm transition-all"
+              className="px-5 py-2.5 rounded-full bg-muted/60 hover:bg-muted text-foreground font-medium text-sm transition-all"
             >
               {isProjectPublic ? 'Make Private' : 'Make Public'}
             </button>
@@ -146,32 +146,32 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
       />
 
       {/* Security Settings */}
-      <div className="bg-white rounded-[20px] border border-black/5 p-6">
+      <div className="bg-card rounded-2xl border border-border/50 p-6">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center border border-indigo-200">
-            {generateIcon('record%20circle-69-1663753435.png', 24, 'rgb(79, 70, 229)')}
+          <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
+            {generateIcon('record%20circle-69-1663753435.png', 24, 'hsl(var(--primary))')}
           </div>
 
-          <h3 className="text-lg font-semibold text-black">Cache</h3>
+          <h3 className="text-lg font-semibold text-foreground">Cache</h3>
         </div>
 
         <div className="flex items-center gap-4 ">
-          <button onClick={handleClearInstallCache} disabled={loading.clearInstallCache} className="w-full flex items-center justify-between p-4 bg-black/5 hover:bg-black/10 rounded-xl transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed">
+          <button onClick={handleClearInstallCache} disabled={loading.clearInstallCache} className="w-full flex items-center justify-between p-4 bg-muted/60 hover:bg-muted rounded-xl transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed">
             <div className="flex items-center gap-3">
-              {generateIcon('npm-184-1693375161.png', 20, 'rgb(79, 70, 229)')}
+              {generateIcon('npm-184-1693375161.png', 20, 'hsl(var(--primary))')}
               <div>
-                <p className="text-sm font-semibold text-black">Clear Install Cache</p>
-                <p className="text-xs text-black/50">Clear the node_modules cache for the project</p>
+                <p className="text-sm font-semibold text-foreground">Clear Install Cache</p>
+                <p className="text-xs text-muted-foreground">Clear the node_modules cache for the project</p>
               </div>
             </div>
           </button>
 
-          <button onClick={handleClearBuildCache} disabled={loading.clearBuildCache} className="w-full flex items-center justify-between p-4 bg-black/5 hover:bg-black/10 rounded-xl transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed">
+          <button onClick={handleClearBuildCache} disabled={loading.clearBuildCache} className="w-full flex items-center justify-between p-4 bg-muted/60 hover:bg-muted rounded-xl transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed">
             <div className="flex items-center gap-3">
-              {generateIcon('tools-118-1658432731.png', 24, 'rgb(79, 70, 229)')}
+              {generateIcon('tools-118-1658432731.png', 24, 'hsl(var(--primary))')}
               <div>
-                <p className="text-sm font-semibold text-black">Clear Build Cache</p>
-                <p className="text-xs text-black/50">Remove all cached build files</p>
+                <p className="text-sm font-semibold text-foreground">Clear Build Cache</p>
+                <p className="text-xs text-muted-foreground">Remove all cached build files</p>
               </div>
             </div>
           </button>
@@ -179,16 +179,16 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
       </div>
 
       {/* Danger Zone - Delete */}
-      <div className="bg-red-50/50 rounded-[20px] border border-red-200/50 p-6">
+      <div className="bg-red-500/5 rounded-2xl border border-red-500/20 p-6">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center border border-red-200">
-            {generateIcon('fire-82-1689139787.png', 24, 'var(--color-red-600)')}
+          <div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center border border-red-500/20">
+            {generateIcon('fire-82-1689139787.png', 24, 'rgb(239, 68, 68)')}
           </div>
-          <h3 className="text-lg font-semibold text-red-900">Danger Zone</h3>
+          <h3 className="text-lg font-semibold text-red-600 dark:text-red-400">Danger Zone</h3>
         </div>
 
         <div className="mb-5">
-          <h4 className="text-base font-semibold text-red-900 mb-2">
+          <h4 className="text-base font-semibold text-red-600 dark:text-red-400 mb-2">
             Delete This Project
           </h4>
           <p className="text-sm text-red-800/80 leading-relaxed mb-4">

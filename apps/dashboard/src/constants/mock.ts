@@ -1,26 +1,43 @@
 /**
  * Shared domain types used across the dashboard.
  *
- * Lightweight Project / Deployment shapes used by listing pages and
- * card components. Richer deployment data lives in
- *   @/app/(dashboard)/deployments/types.ts
+ * Project shape matches the API response from /projects/home
+ * (full DB row + latest-deployment enrichments).
  */
 
 export interface Project {
   id: string;
   name: string;
-  description: string;
+  slug: string;
+
+  /* ── Source ──────────────────────────────────────────────── */
+  localPath?: string | null;
+  gitProvider?: string | null;
+  gitOwner?: string | null;
+  gitRepo?: string | null;
+  gitBranch?: string | null;
+
+  /* ── Build configuration ────────────────────────────────── */
   framework: string;
-  url: string;
-  status: "live" | "paused" | "draft";
-  lastDeployed: string;
-  domain: string;
-  isCustomDomain: boolean;
-  deploymentCount: number;
-  visitors: string;
-  repo: string;
-  /** Latest deployment ID (any status) — used to navigate drafts */
+  packageManager?: string | null;
+  installCommand?: string | null;
+  buildCommand?: string | null;
+  outputDirectory?: string | null;
+  rootDirectory?: string | null;
+  startCommand?: string | null;
+  buildImage?: string | null;
+  productionMode?: string | null;
+  port?: number | null;
+  hasServer?: boolean;
+  hasBuild?: boolean;
+
+  /* ── State ──────────────────────────────────────────────── */
+  activeDeploymentId?: string | null;
   latestDeploymentId?: string | null;
+  latestDeploymentStatus?: string | null;
+
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Simplified deployment record used in project-scoped deployment cards. */

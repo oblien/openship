@@ -148,15 +148,15 @@ export const ResourceSettings: React.FC<ResourceSettingsProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-[20px] border border-black/5 p-6">
+    <div className="bg-card rounded-2xl border border-border/50 p-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-5">
-        <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center border border-indigo-200">
-          {generateIcon('cpu%20processor%203-115-1658236937.png', 24, 'rgb(79, 70, 229)')}
+        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
+          {generateIcon('cpu%20processor%203-115-1658236937.png', 24, 'hsl(var(--primary))')}
         </div>
         <div>
-        <h3 className="text-lg font-semibold text-black">Machine Power</h3>
-          <p className="text-xs text-black/50">
+        <h3 className="text-lg font-semibold text-foreground">Machine Power</h3>
+          <p className="text-xs text-muted-foreground">
             Configure the machine power for your project.
           </p>
         </div>
@@ -173,33 +173,33 @@ export const ResourceSettings: React.FC<ResourceSettingsProps> = ({
               disabled={loading}
               className={`relative flex items-center gap-3 p-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 isSelected
-                  ? 'bg-indigo-50 border-2 border-indigo-500'
-                  : 'bg-black/5 hover:bg-black/10 border-2 border-transparent'
+                  ? 'bg-primary/10 border-2 border-primary'
+                  : 'bg-muted/60 hover:bg-muted border-2 border-transparent'
               }`}
             >
               {isSelected && (
                 <div className="absolute top-2 right-2">
-                  <div className="w-4 h-4 bg-indigo-500 rounded-full flex items-center justify-center">
+                  <div className="w-4 h-4 bg-primary/100 rounded-full flex items-center justify-center">
                     {generateIcon('checkmark-7-1662452248.png', 12, 'white')}
                   </div>
                 </div>
               )}
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-indigo-500' : 'bg-black/10'}`}>
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-primary' : 'bg-muted'}`}>
                 {generateIcon(tier.icon, 24, isSelected ? 'white' : 'rgb(0, 0, 0, 0.5)')}
               </div>
               <div className="flex-1 text-left">
-                <p className={`text-sm font-semibold mb-0.5 ${isSelected ? 'text-indigo-900' : 'text-black'}`}>
+                <p className={`text-sm font-semibold mb-0.5 ${isSelected ? 'text-foreground' : 'text-foreground'}`}>
                   {tier.name}
                 </p>
-                <p className={`text-[11px] ${isSelected ? 'text-indigo-700/80' : 'text-black/50'}`}>
+                <p className={`text-[11px] ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
                   {tier.description}
                 </p>
                 <div className="flex items-center gap-3 mt-1.5">
-                  <div className={`text-[11px] ${isSelected ? 'text-indigo-900/70' : 'text-black/60'}`}>
+                  <div className={`text-[11px] ${isSelected ? 'text-foreground/70' : 'text-muted-foreground'}`}>
                     <span className="font-medium">{tier.cpu}</span>
                   </div>
-                  <div className="w-1 h-1 rounded-full bg-black/20"></div>
-                  <div className={`text-[11px] ${isSelected ? 'text-indigo-900/70' : 'text-black/60'}`}>
+                  <div className="w-1 h-1 rounded-full bg-muted-foreground/30"></div>
+                  <div className={`text-[11px] ${isSelected ? 'text-foreground/70' : 'text-muted-foreground'}`}>
                     <span className="font-medium">{tier.memory}</span>
                   </div>
                 </div>
@@ -219,8 +219,8 @@ export const ResourceSettings: React.FC<ResourceSettingsProps> = ({
           disabled={loading}
           className={`relative flex items-center gap-3 p-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
             selectedTier === 'custom'
-              ? 'bg-indigo-50 border-2 border-indigo-500'
-              : 'bg-black/5 hover:bg-black/10 border-2 border-transparent'
+              ? 'bg-primary/10 border-2 border-primary'
+              : 'bg-muted/60 hover:bg-muted border-2 border-transparent'
           }`}
         >
           {selectedTier === 'custom' && (
@@ -230,37 +230,37 @@ export const ResourceSettings: React.FC<ResourceSettingsProps> = ({
                   e.stopPropagation();
                   setShowCustomEdit(true);
                 }}
-                className="w-7 h-7 bg-indigo-500 hover:bg-indigo-600 rounded-full flex items-center justify-center transition-all cursor-pointer"
+                className="w-7 h-7 bg-primary/100 hover:bg-primary rounded-full flex items-center justify-center transition-all cursor-pointer"
               >
                 {generateIcon('edit-1648128800.png', 14, 'white')}
               </div>
-              <div className="w-4 h-4 bg-indigo-500 rounded-full flex items-center justify-center">
+              <div className="w-4 h-4 bg-primary/100 rounded-full flex items-center justify-center">
                 {generateIcon('checkmark-7-1662452248.png', 12, 'white')}
               </div>
             </div>
           )}
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${selectedTier === 'custom' ? 'bg-indigo-500' : 'bg-black/10'}`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${selectedTier === 'custom' ? 'bg-primary' : 'bg-muted'}`}>
             {generateIcon('setting-100-1658432731.png', 24, selectedTier === 'custom' ? 'white' : 'rgb(0, 0, 0, 0.5)')}
           </div>
           <div className="flex-1 text-left">
-            <p className={`text-sm font-semibold mb-0.5 ${selectedTier === 'custom' ? 'text-indigo-900' : 'text-black'}`}>
+            <p className={`text-sm font-semibold mb-0.5 ${selectedTier === 'custom' ? 'text-foreground' : 'text-foreground'}`}>
               Custom
             </p>
-            <p className={`text-[11px] ${selectedTier === 'custom' ? 'text-indigo-700/80' : 'text-black/50'}`}>
+            <p className={`text-[11px] ${selectedTier === 'custom' ? 'text-primary' : 'text-muted-foreground'}`}>
               Define your own resources
             </p>
             {selectedTier === 'custom' ? (
               <div className="flex items-center gap-3 mt-1.5">
-                <div className={`text-[11px] ${selectedTier === 'custom' ? 'text-indigo-900/70' : 'text-black/60'}`}>
+                <div className={`text-[11px] ${selectedTier === 'custom' ? 'text-foreground/70' : 'text-muted-foreground'}`}>
                   <span className="font-medium">{customCpu} vCPU</span>
                 </div>
-                <div className="w-1 h-1 rounded-full bg-black/20"></div>
-                <div className={`text-[11px] ${selectedTier === 'custom' ? 'text-indigo-900/70' : 'text-black/60'}`}>
+                <div className="w-1 h-1 rounded-full bg-muted-foreground/30"></div>
+                <div className={`text-[11px] ${selectedTier === 'custom' ? 'text-foreground/70' : 'text-muted-foreground'}`}>
                   <span className="font-medium">{formatMemory(customMemory)}</span>
                 </div>
               </div>
             ) : (
-              <div className={`text-[11px] mt-1.5 ${selectedTier === 'custom' ? 'text-indigo-900/70' : 'text-black/60'}`}>
+              <div className={`text-[11px] mt-1.5 ${selectedTier === 'custom' ? 'text-foreground/70' : 'text-muted-foreground'}`}>
                 Click to configure
               </div>
             )}
@@ -270,19 +270,19 @@ export const ResourceSettings: React.FC<ResourceSettingsProps> = ({
 
       {/* Custom Edit Panel */}
       {showCustomEdit && selectedTier === 'custom' && (
-        <div className="mt-3 p-4 bg-indigo-50 rounded-xl border border-indigo-200 space-y-4">
+        <div className="mt-3 p-4 bg-primary/10 rounded-xl border border-primary/20 space-y-4">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-semibold text-indigo-900">Configure Custom Resources</h4>
+            <h4 className="text-sm font-semibold text-foreground">Configure Custom Resources</h4>
             <button
               onClick={() => setShowCustomEdit(false)}
-              className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-indigo-100 transition-all"
+              className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-primary/10 transition-all"
             >
-              {generateIcon('x-29-1658234823.png', 14, 'rgb(79, 70, 229)')}
+              {generateIcon('x-29-1658234823.png', 14, 'hsl(var(--primary))')}
             </button>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-indigo-900/70 mb-2 block">CPU Cores</label>
+              <label className="text-xs font-medium text-foreground/70 mb-2 block">CPU Cores</label>
               <input
                 type="number"
                 min="0.25"
@@ -290,13 +290,13 @@ export const ResourceSettings: React.FC<ResourceSettingsProps> = ({
                 step="0.25"
                 value={customCpu}
                 onChange={(e) => setCustomCpu(parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 bg-card border border-primary/20 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
                 placeholder="0.50"
               />
-              <p className="text-xs text-indigo-700/60 mt-1">Range: 0.25 - 4.00</p>
+              <p className="text-xs text-primary/60 mt-1">Range: 0.25 - 4.00</p>
             </div>
             <div>
-              <label className="text-xs font-medium text-indigo-900/70 mb-2 block">Memory (MB)</label>
+              <label className="text-xs font-medium text-foreground/70 mb-2 block">Memory (MB)</label>
               <input
                 type="number"
                 min="128"
@@ -304,24 +304,24 @@ export const ResourceSettings: React.FC<ResourceSettingsProps> = ({
                 step="128"
                 value={customMemory}
                 onChange={(e) => setCustomMemory(parseInt(e.target.value) || 0)}
-                className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 bg-card border border-primary/20 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
                 placeholder="512"
               />
-              <p className="text-xs text-indigo-700/60 mt-1">Range: 128 - 8192</p>
+              <p className="text-xs text-primary/60 mt-1">Range: 128 - 8192</p>
             </div>
           </div>
           <div className="flex gap-3">
             <button
               onClick={() => setShowCustomEdit(false)}
               disabled={loading}
-              className="flex-1 px-4 py-2.5 bg-white border border-indigo-200 hover:bg-indigo-50 text-indigo-900 font-medium text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2.5 bg-card border border-primary/20 hover:bg-primary/10 text-foreground font-medium text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               onClick={handleCustomSave}
               disabled={loading}
-              className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Saving...' : 'Save Configuration'}
             </button>

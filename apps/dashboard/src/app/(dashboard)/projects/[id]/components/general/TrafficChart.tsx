@@ -32,13 +32,13 @@ export const TrafficChart: React.FC<Props> = ({
   }
 
   return (
-    <div className="bg-white rounded-[20px] border border-black/5 p-4 sm:p-6 h-[280px] sm:h-[320px] flex flex-col">
+    <div className="bg-card rounded-2xl border border-border/50 p-4 sm:p-6 h-[280px] sm:h-[320px] flex flex-col">
       <div className="flex items-center justify-between gap-2 sm:gap-0 mb-4 sm:mb-5">
         <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-          {generateIcon('chart%204%20line-5-1666004410.png', 24, 'rgb(79, 70, 229)')}
+          {generateIcon('chart%204%20line-5-1666004410.png', 24, 'hsl(var(--primary))')}
           <div className="min-w-0">
-            <h3 className="text-sm sm:text-lg font-semibold text-black truncate">Traffic Overview</h3>
-            <p className="text-[10px] sm:text-sm text-black/40 truncate">{dateRange || 'Last 24 hours'}</p>
+            <h3 className="text-sm sm:text-lg font-semibold text-foreground truncate">Traffic Overview</h3>
+            <p className="text-[10px] sm:text-sm text-muted-foreground/70 truncate">{dateRange || 'Last 24 hours'}</p>
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
@@ -59,10 +59,10 @@ export const TrafficChart: React.FC<Props> = ({
             value={chartType}
             onChange={(value) => setChartType(value as 'bar' | 'area')}
             variant="rounded"
-            selectedBg="bg-indigo-600"
-            selectedTextColor="text-white"
-            unselectedTextColor="text-black/60"
-            backgroundColor="bg-white"
+            selectedBg="bg-primary"
+            selectedTextColor="text-primary-foreground"
+            unselectedTextColor="text-muted-foreground"
+            backgroundColor="bg-card"
             size="sm"
           />
          
@@ -72,7 +72,7 @@ export const TrafficChart: React.FC<Props> = ({
       {/* Traffic Chart */}
       {isLoading ? (
         <div className="flex items-center justify-center flex-1">
-          <div className="text-sm text-gray-400">Loading analytics...</div>
+          <div className="text-sm text-muted-foreground/70">Loading analytics...</div>
         </div>
       ) : (
         <div className="flex-1 flex flex-col">
@@ -80,8 +80,8 @@ export const TrafficChart: React.FC<Props> = ({
             <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1000 160" preserveAspectRatio="none">
               <defs>
                 <linearGradient id="trafficGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset={`${chartType == 'bar' ? 100 : 20}%`} stopColor="rgb(99, 102, 241)" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="rgb(99, 102, 241)" stopOpacity="0.1" />
+                  <stop offset={`${chartType == 'bar' ? 100 : 20}%`} stopColor="hsl(var(--primary))" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.1" />
                 </linearGradient>
               </defs>
 
@@ -136,7 +136,7 @@ export const TrafficChart: React.FC<Props> = ({
                       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
                     }).join(' ')}`}
                     fill="none"
-                    stroke="rgb(99, 102, 241)"
+                    stroke="hsl(var(--primary))"
                     strokeWidth="0.5"
                   />
                 </>
@@ -145,7 +145,7 @@ export const TrafficChart: React.FC<Props> = ({
           </div>
 
           {/* Hour Labels */}
-          <div className="flex items-center justify-between mt-2 text-[9px] sm:text-[10px] text-gray-500">
+          <div className="flex items-center justify-between mt-2 text-[9px] sm:text-[10px] text-muted-foreground">
             {trafficData.filter((_, i) => i % 4 === 0).map((d, i) => (
               <span key={i}>{d.hour}:00</span>
             ))}

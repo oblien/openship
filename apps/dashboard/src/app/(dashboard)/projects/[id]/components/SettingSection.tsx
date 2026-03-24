@@ -22,19 +22,19 @@ export const SettingSection = ({
   onCancel,
   showEditButton = false
 }: Props) => (
-  <div className="bg-white border border-gray-200 rounded-xl mb-6 shadow-sm overflow-hidden">
-    <div className="bg-gradient-to-r from-gray-50 to-white p-6 border-b border-gray-200">
+  <div className="bg-card border border-border rounded-xl mb-6 shadow-sm overflow-hidden">
+    <div className="bg-muted/40 p-6 border-b border-border">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-black mb-1">{title}</h3>
-          {description && <p className="text-sm text-gray-600">{description}</p>}
+          <h3 className="text-lg font-semibold text-foreground mb-1">{title}</h3>
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
         </div>
         {showEditButton && (
           <div className="flex gap-2">
             {!isEditing ? (
               <button
                 onClick={onEdit}
-                className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-all duration-200 font-medium text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-200 font-medium text-sm"
               >
                 <Edit2 className="w-4 h-4" />
                 Edit
@@ -50,7 +50,7 @@ export const SettingSection = ({
                 </button>
                 <button
                   onClick={onCancel}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all duration-200 font-medium text-sm"
+                  className="flex items-center gap-2 px-4 py-2 bg-muted text-foreground/70 rounded-lg hover:bg-muted/80 transition-all duration-200 font-medium text-sm"
                 >
                   <X className="w-4 h-4" />
                   Cancel
@@ -61,6 +61,6 @@ export const SettingSection = ({
         )}
       </div>
     </div>
-    <div className="p-6 bg-white">{children}</div>
+    <div className="p-6 bg-card">{children}</div>
   </div>
 );

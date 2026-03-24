@@ -60,17 +60,17 @@ export const ProjectIdentity: React.FC = () => {
 
 
   return (
-    <div className="bg-white rounded-[20px] border border-black/5 p-6">
+    <div className="bg-card rounded-2xl border border-border/50 p-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        {generateIcon('layers-363-1658238246.png', 28, 'rgb(79, 70, 229)')}
-        <h3 className="text-lg font-semibold text-black">Project Identity</h3>
+        {generateIcon('layers-363-1658238246.png', 28, 'hsl(var(--primary))')}
+        <h3 className="text-lg font-semibold text-foreground">Project Identity</h3>
       </div>
       
       <div className="flex flex-col lg:flex-row gap-5 lg:gap-6">
         {/* Project Name */}
         <div className="flex-1">
-          <label className="text-sm font-medium text-black/70 mb-2 block">Project Name</label>
+          <label className="text-sm font-medium text-muted-foreground mb-2 block">Project Name</label>
           
           {isEditingName ? (
             <div className="space-y-3">
@@ -79,30 +79,30 @@ export const ProjectIdentity: React.FC = () => {
                 value={tempData.name}
                 onChange={(e) => setTempData((prev) => ({ ...prev, name: e.target.value }))}
                 placeholder="my-awesome-project"
-                className="w-full px-4 py-2.5 bg-black/5 border border-transparent rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/20 focus:bg-white outline-none text-sm transition-all"
+                className="w-full px-4 py-2.5 bg-muted/60 border border-transparent rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary/20 focus:bg-card outline-none text-sm transition-all"
                 autoFocus
               />
               <div className="flex gap-2">
                 <button 
                   onClick={handleSaveName} 
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-full transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save
                 </button>
                 <button 
                   onClick={handleCancelName} 
-                  className="px-4 py-2 bg-black/5 hover:bg-black/10 text-black rounded-full transition-all text-sm font-medium"
+                  className="px-4 py-2 bg-muted/60 hover:bg-muted text-foreground rounded-full transition-all text-sm font-medium"
                 >
                   Cancel
                 </button>
               </div>
             </div>
           ) : (
-            <div className="relative p-4 bg-black/5 rounded-xl group hover:bg-black/10 transition-all">
-              <p className="text-sm font-medium text-black pr-8">{projectData.name || 'Unnamed Project'}</p>
+            <div className="relative p-4 bg-muted/60 rounded-xl group hover:bg-muted transition-all">
+              <p className="text-sm font-medium text-foreground pr-8">{projectData.name || 'Unnamed Project'}</p>
               <button
                 onClick={() => setIsEditingName(true)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-black/40 hover:text-indigo-600 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground hover:text-primary transition-colors"
               >
                 {generateIcon("pen-411-1658238246.png", 18, "currentColor")}
               </button>
@@ -112,7 +112,7 @@ export const ProjectIdentity: React.FC = () => {
 
         {/* Description */}
         <div className="flex-1">
-          <label className="text-sm font-medium text-black/70 mb-2 block">Description</label>
+          <label className="text-sm font-medium text-muted-foreground mb-2 block">Description</label>
           
           {isEditingDescription ? (
             <div className="space-y-3">
@@ -121,32 +121,32 @@ export const ProjectIdentity: React.FC = () => {
                 onChange={(e) => setTempData((prev) => ({ ...prev, description: e.target.value }))}
                 rows={3}
                 placeholder="A modern web application built with..."
-                className="w-full px-4 py-2.5 bg-black/5 border border-transparent rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/20 focus:bg-white outline-none resize-none text-sm transition-all"
+                className="w-full px-4 py-2.5 bg-muted/60 border border-transparent rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary/20 focus:bg-card outline-none resize-none text-sm transition-all"
                 autoFocus
               />
               <div className="flex gap-2">
                 <button 
                   onClick={handleSaveDescription} 
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-full transition-all text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Save
                 </button>
                 <button 
                   onClick={handleCancelDescription} 
-                  className="px-4 py-2 bg-black/5 hover:bg-black/10 text-black rounded-full transition-all text-sm font-medium"
+                  className="px-4 py-2 bg-muted/60 hover:bg-muted text-foreground rounded-full transition-all text-sm font-medium"
                 >
                   Cancel
                 </button>
               </div>
             </div>
           ) : (
-            <div className="relative p-4 bg-black/5 rounded-xl group hover:bg-black/10 transition-all">
-              <p className="text-sm text-black/70 pr-8">
+            <div className="relative p-4 bg-muted/60 rounded-xl group hover:bg-muted transition-all">
+              <p className="text-sm text-muted-foreground pr-8">
                 {projectData.description || 'No description provided'}
               </p>
               <button
                 onClick={() => setIsEditingDescription(true)}
-                className="absolute right-3 top-3 p-1.5 text-black/40 hover:text-indigo-600 transition-colors"
+                className="absolute right-3 top-3 p-1.5 text-muted-foreground hover:text-primary transition-colors"
               >
                 {generateIcon("pen-411-1658238246.png", 18, "currentColor")}
               </button>
