@@ -5,6 +5,7 @@ export { createGitInstallationRepo, type GitInstallation, type NewGitInstallatio
 export { createProjectRepo, type Project, type NewProject, type EnvVar, type NewEnvVar } from "./project.repo";
 export { createDeploymentRepo, type Deployment, type NewDeployment, type BuildSession, type NewBuildSession } from "./deployment.repo";
 export { createDomainRepo, type Domain, type NewDomain } from "./domain.repo";
+export { createServiceRepo, type Service, type NewService, type ServiceDeployment, type NewServiceDeployment } from "./service.repo";
 export { createSettingsRepo, type UserSettings, type NewUserSettings } from "./settings.repo";
 export { createInstanceSettingsRepo, type InstanceSettings, type NewInstanceSettings } from "./instance-settings.repo";
 export { createServerRepo, type Server, type NewServer } from "./server.repo";
@@ -19,6 +20,7 @@ import { createGitInstallationRepo } from "./git-installation.repo";
 import { createProjectRepo } from "./project.repo";
 import { createDeploymentRepo } from "./deployment.repo";
 import { createDomainRepo } from "./domain.repo";
+import { createServiceRepo } from "./service.repo";
 import { createSettingsRepo } from "./settings.repo";
 import { createInstanceSettingsRepo } from "./instance-settings.repo";
 import { createServerRepo } from "./server.repo";
@@ -40,6 +42,7 @@ export const repos = {
   project: createProjectRepo(db),
   deployment: createDeploymentRepo(db),
   domain: createDomainRepo(db),
+  service: createServiceRepo(db),
   settings: createSettingsRepo(db),
   instanceSettings: createInstanceSettingsRepo(db),
   server: createServerRepo(db),

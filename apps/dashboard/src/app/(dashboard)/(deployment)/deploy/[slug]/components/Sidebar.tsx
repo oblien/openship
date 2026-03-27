@@ -152,10 +152,11 @@ const Sidebar: React.FC = () => {
   const { showModal, hideModal } = useModal();
   const router = useRouter();
   const isServices = config.projectType === "services";
+  const isDockerRuntimeProject = config.projectType === "docker" || config.projectType === "services";
 
   // Self-hosted server apps need a runtime mode choice before deploying
   const needsRuntimeChoice =
-    config.deployTarget !== "cloud" && config.options.hasServer;
+    config.deployTarget !== "cloud" && config.options.hasServer && !isDockerRuntimeProject;
 
   const executeDeploy = useCallback(async (runtimeMode?: typeof config.runtimeMode) => {
     const deploymentId = await startDeployment(

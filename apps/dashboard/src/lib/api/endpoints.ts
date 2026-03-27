@@ -41,6 +41,24 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  Services (compose / multi-service projects)                     */
+  /* ---------------------------------------------------------------- */
+  services: {
+    list: (projectId: string | number) => `projects/${projectId}/services`,
+    get: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}`,
+    update: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}`,
+    sync: (projectId: string | number) => `projects/${projectId}/services/sync`,
+    containers: (projectId: string | number) =>
+      `projects/${projectId}/services/containers`,
+    envGet: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/env`,
+    envSet: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/env`,
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Deploy / Build                                                  */
   /* ---------------------------------------------------------------- */
   deploy: {

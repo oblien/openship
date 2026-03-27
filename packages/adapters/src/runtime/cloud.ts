@@ -93,6 +93,7 @@ export class CloudRuntime implements RuntimeAdapter {
         sessionId: config.sessionId,
         status: "failed" as const,
         durationMs: 0,
+        errorMessage: `Failed to provision build environment: ${msg}`,
       };
     }
 
@@ -138,11 +139,13 @@ export class CloudRuntime implements RuntimeAdapter {
           },
         });
       } catch (err) {
-        log.log(`Failed to upload local build output: ${err instanceof Error ? err.message : String(err)}`, "error");
+        const msg = err instanceof Error ? err.message : String(err);
+        log.log(`Failed to upload local build output: ${msg}`, "error");
         return {
           sessionId: config.sessionId,
           status: "failed",
           imageRef: wsId,
+          errorMessage: `Failed to upload build output: ${msg}`,
         };
       }
 
@@ -151,6 +154,7 @@ export class CloudRuntime implements RuntimeAdapter {
         status: result.status,
         imageRef: wsId,
         durationMs: result.durationMs,
+        errorMessage: result.errorMessage,
       };
     }
 
@@ -185,6 +189,7 @@ export class CloudRuntime implements RuntimeAdapter {
       status: result.status,
       imageRef: wsId,
       durationMs: result.durationMs,
+      errorMessage: result.errorMessage,
     };
   }
 

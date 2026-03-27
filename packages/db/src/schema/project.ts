@@ -103,6 +103,8 @@ export const envVar = pgTable("env_var", {
   projectId: text("project_id")
     .notNull()
     .references(() => project.id, { onDelete: "cascade" }),
+  /** Service ID for service-scoped env vars (null = project-level / all services) */
+  serviceId: text("service_id"),
 
   /** Variable key (e.g. "DATABASE_URL") */
   key: text("key").notNull(),

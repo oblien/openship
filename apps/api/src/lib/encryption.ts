@@ -100,3 +100,23 @@ export function encryptJson<T>(value: T): string {
 export function decryptJson<T = unknown>(sealed: string): T {
   return JSON.parse(decrypt(sealed)) as T;
 }
+
+/**
+ * Decrypt a Record<string, encryptedValue> → Record<string, plaintext>.
+ * On decryption failure for a key, that key is omitted (not silently passed through).
+ */
+export function decryptEnvMap(
+  encrypted: Record<string, string>,
+  onError?: (key: string, err: unknown) => void,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(encrypted)) {
+    try {
+      result[k] = decrypt(v);
+    } catch (err) {
+      onError?.(k, err);
+      // Omit keys that fail decryption — never leak ciphertext into containers
+    }
+  }
+  return result;
+}

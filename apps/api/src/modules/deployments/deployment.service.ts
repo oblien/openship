@@ -9,6 +9,12 @@ import { repos } from "@repo/db";
 import { NotFoundError, ForbiddenError } from "@repo/core";
 import type { LogEntry } from "@repo/adapters";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { isComposeProject } from "./compose";
+
+async function listComposeContainerIds(deploymentId: string): Promise<string[]> {
+  const rows = await repos.service.listByDeployment(deploymentId);
+  return [...new Set(rows.map((row) => row.containerId).filter((id): id is string => !!id))];
+}
 
 // ─── List deployments ────────────────────────────────────────────────────────
 
@@ -72,15 +78,22 @@ export async function deleteDeployment(deploymentId: string, userId: string) {
     throw new ForbiddenError("Cannot delete a deployment that is in progress. Cancel it first.");
   }
 
-  // Stop and destroy running container if any
-  if (dep.containerId) {
+  const project = await repos.project.findById(dep.projectId);
+  const containerIds = project && isComposeProject(project)
+    ? await listComposeContainerIds(dep.id)
+    : dep.containerId
+      ? [dep.containerId]
+      : [];
+
+  if (containerIds.length > 0) {
     const runtime = await resolveDeploymentRuntime(dep);
-    await runtime.stop(dep.containerId).catch(() => {});
-    await runtime.destroy(dep.containerId).catch(() => {});
+    for (const containerId of containerIds) {
+      await runtime.stop(containerId).catch(() => {});
+      await runtime.destroy(containerId).catch(() => {});
+    }
   }
 
   // If this is the active deployment, clear it from the project
-  const project = await repos.project.findById(dep.projectId);
   if (project && project.activeDeploymentId === deploymentId) {
     await repos.project.setActiveDeployment(project.id, null);
   }
@@ -99,22 +112,36 @@ export async function rollbackDeployment(deploymentId: string, userId: string) {
 
   const project = await repos.project.findById(dep.projectId);
   if (!project) throw new NotFoundError("Project", dep.projectId);
-  if (!dep.containerId) {
+  const targetContainerIds = isComposeProject(project)
+    ? await listComposeContainerIds(dep.id)
+    : dep.containerId
+      ? [dep.containerId]
+      : [];
+  if (targetContainerIds.length === 0) {
     throw new ForbiddenError("Rollback artifact is no longer retained for this deployment");
   }
 
   if (project.activeDeploymentId && project.activeDeploymentId !== deploymentId) {
     const current = await repos.deployment.findById(project.activeDeploymentId);
-    if (current?.containerId) {
+    if (current) {
       const runtime = await resolveDeploymentRuntime(current);
-      await runtime.stop(current.containerId).catch(() => {});
+      const currentContainerIds = isComposeProject(project)
+        ? await listComposeContainerIds(current.id)
+        : current.containerId
+          ? [current.containerId]
+          : [];
+      for (const containerId of currentContainerIds) {
+        await runtime.stop(containerId).catch(() => {});
+      }
     }
   }
 
   await repos.project.setActiveDeployment(project.id, deploymentId);
 
   const runtime = await resolveDeploymentRuntime(dep);
-  await runtime.start(dep.containerId);
+  for (const containerId of targetContainerIds) {
+    await runtime.start(containerId);
+  }
 
   return dep;
 }
@@ -145,12 +172,20 @@ export async function restartDeployment(deploymentId: string, userId: string) {
   if (dep.status !== "ready") {
     throw new ForbiddenError("Can only restart a running deployment");
   }
-  if (!dep.containerId) {
+  const project = await repos.project.findById(dep.projectId);
+  const containerIds = project && isComposeProject(project)
+    ? await listComposeContainerIds(dep.id)
+    : dep.containerId
+      ? [dep.containerId]
+      : [];
+  if (containerIds.length === 0) {
     throw new ForbiddenError("Deployment has no container");
   }
 
   const runtime = await resolveDeploymentRuntime(dep);
-  await runtime.restart(dep.containerId);
+  for (const containerId of containerIds) {
+    await runtime.restart(containerId);
+  }
 
   return dep;
 }

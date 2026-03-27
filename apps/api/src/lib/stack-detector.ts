@@ -653,9 +653,9 @@ export function detectStack(
 /** Install command per package manager */
 export function getInstallCommand(pm: string): string {
   switch (pm) {
-    case "pnpm": return "pnpm install --frozen-lockfile";
-    case "yarn": return "yarn install --frozen-lockfile";
-    case "bun": return "bun install --frozen-lockfile";
+    case "pnpm": return "pnpm install";
+    case "yarn": return "yarn install";
+    case "bun": return "bun install";
     case "npm": return "npm i --force";
     case "go": return "go mod download";
     case "cargo": return "";  // cargo build handles deps

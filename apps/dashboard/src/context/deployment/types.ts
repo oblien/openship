@@ -18,16 +18,32 @@ export interface ComposeServiceInfo {
   name: string;
   image?: string;
   build?: string;
+  dockerfile?: string;
   ports: string[];
   dependsOn: string[];
   environment: Record<string, string>;
   volumes: string[];
+  command?: string;
+  restart?: string;
   // Per-service exposure settings (set by user in UI)
   exposed?: boolean;
   exposedPort?: string;
   domain?: string;
   customDomain?: string;
   domainType?: "free" | "custom";
+}
+
+// ─── Per-service deployment status (live from SSE or loaded from DB) ─────────
+
+export interface ServiceDeployStatus {
+  serviceId: string;
+  serviceName: string;
+  status: "pending" | "building" | "built" | "deploying" | "running" | "failed";
+  error?: string;
+  containerId?: string;
+  hostPort?: number;
+  image?: string;
+  build?: string;
 }
 
 // ─── Build Strategy ──────────────────────────────────────────────────────────
@@ -118,6 +134,7 @@ export interface DeploymentState {
   deploymentFailed: boolean;
   deploymentCanceled: boolean;
   failureMessage: string;
+  warningMessage: string;
   errorCode: string;
   errorDetails: Record<string, unknown> | null;
   buildLogs: BuildLog[];
@@ -137,6 +154,8 @@ export interface DeploymentState {
     actions: Array<{ id: string; label: string; variant?: string }>;
     details?: Record<string, unknown>;
   } | null;
+  /** Per-service deployment statuses for compose projects. */
+  serviceStatuses: ServiceDeployStatus[];
 }
 
 export const INITIAL_STATE: DeploymentState = {
@@ -147,6 +166,7 @@ export const INITIAL_STATE: DeploymentState = {
   deploymentFailed: false,
   deploymentCanceled: false,
   failureMessage: "",
+  warningMessage: "",
   errorCode: "",
   errorDetails: null,
   buildLogs: [],
@@ -157,6 +177,7 @@ export const INITIAL_STATE: DeploymentState = {
   buildDurationMs: null,
   buildStartedAt: null,
   pendingPrompt: null,
+  serviceStatuses: [],
 };
 
 // ─── Status ──────────────────────────────────────────────────────────────────

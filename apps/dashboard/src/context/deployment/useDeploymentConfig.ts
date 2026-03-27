@@ -45,6 +45,26 @@ export function useDeploymentConfig() {
     return stackDef?.defaultBuildStrategy ?? "server";
   }, []);
 
+  const normalizeBuildStrategy = useCallback(
+    (projectType: DeploymentConfig["projectType"], stackDef: StackDefinition | undefined): BuildStrategy => {
+      if (projectType === "docker" || projectType === "services") {
+        return "server";
+      }
+      return resolveInitialStrategy(stackDef);
+    },
+    [resolveInitialStrategy],
+  );
+
+  const normalizeRuntimeMode = useCallback(
+    (projectType: DeploymentConfig["projectType"]): DeploymentConfig["runtimeMode"] => {
+      if (projectType === "docker" || projectType === "services") {
+        return "docker";
+      }
+      return DEFAULT_CONFIG.runtimeMode;
+    },
+    [],
+  );
+
   // ── Prepare from GitHub repo ───────────────────────────────────────────────
 
   const initializeFromRepo = useCallback(
@@ -65,6 +85,7 @@ export function useDeploymentConfig() {
         }
 
         const repoName = response.repository.name || repo;
+        const projectType = response.projectType || "app";
         const detectedStack = (response.stack || "nextjs") as FrameworkId;
         const stackDef = STACKS[detectedStack as keyof typeof STACKS] as StackDefinition | undefined;
         const hasServer = !!response.startCommand;
@@ -75,11 +96,12 @@ export function useDeploymentConfig() {
           repo: repoName,
           owner: response.repository.owner?.login || owner,
           projectName: repoName,
-          projectType: response.projectType || "app",
+          projectType,
           domain: repoName.toLowerCase(),
           framework: detectedStack,
           detectedFramework: detectedStack,
-          buildStrategy: resolveInitialStrategy(stackDef),
+          buildStrategy: normalizeBuildStrategy(projectType, stackDef),
+          runtimeMode: normalizeRuntimeMode(projectType),
           packageManager: response.packageManager || "npm",
           buildImage: response.buildImage || "node:22",
           branch: response.repository.default_branch || "main",
@@ -121,6 +143,7 @@ export function useDeploymentConfig() {
         }
 
         const name = response.repository.name || path.split("/").pop() || "project";
+        const projectType = response.projectType || "app";
         const detectedStack = (response.stack || "nextjs") as FrameworkId;
         const stackDef = STACKS[detectedStack as keyof typeof STACKS] as StackDefinition | undefined;
         const hasServer = !!response.startCommand;
@@ -132,11 +155,12 @@ export function useDeploymentConfig() {
           owner: "local",
           localPath: path,
           projectName: name,
-          projectType: response.projectType || "app",
+          projectType,
           domain: name.toLowerCase().replace(/[^a-z0-9-]/g, ""),
           framework: detectedStack,
           detectedFramework: detectedStack,
-          buildStrategy: resolveInitialStrategy(stackDef),
+          buildStrategy: normalizeBuildStrategy(projectType, stackDef),
+          runtimeMode: normalizeRuntimeMode(projectType),
           packageManager: response.packageManager || "npm",
           buildImage: response.buildImage || "node:22",
           branch: "main",

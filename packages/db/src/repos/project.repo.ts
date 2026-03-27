@@ -1,4 +1,4 @@
-import { eq, and, isNull, desc, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, type SQL } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { project, envVar } from "../schema";
@@ -9,6 +9,27 @@ export type Project = typeof project.$inferSelect;
 export type NewProject = typeof project.$inferInsert;
 export type EnvVar = typeof envVar.$inferSelect;
 export type NewEnvVar = typeof envVar.$inferInsert;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Build Drizzle conditions for env var queries scoped by project/environment/service */
+function envVarScope(
+  projectId: string,
+  environment?: string,
+  serviceId?: string | null,
+): SQL[] {
+  const conditions: SQL[] = [eq(envVar.projectId, projectId)];
+  if (environment) {
+    conditions.push(eq(envVar.environment, environment));
+  }
+  if (serviceId === null) {
+    // Explicitly project-level only
+    conditions.push(isNull(envVar.serviceId));
+  } else if (serviceId) {
+    conditions.push(eq(envVar.serviceId, serviceId));
+  }
+  return conditions;
+}
 
 // ─── Repository ──────────────────────────────────────────────────────────────
 
@@ -84,17 +105,9 @@ export function createProjectRepo(db: Database) {
 
     // ── Environment variables ──────────────────────────────────────────
 
-    async listEnvVars(projectId: string, environment?: string) {
-      if (environment) {
-        return db.query.envVar.findMany({
-          where: and(
-            eq(envVar.projectId, projectId),
-            eq(envVar.environment, environment),
-          ),
-        });
-      }
+    async listEnvVars(projectId: string, environment?: string, serviceId?: string | null) {
       return db.query.envVar.findMany({
-        where: eq(envVar.projectId, projectId),
+        where: and(...envVarScope(projectId, environment, serviceId)),
       });
     },
 
@@ -116,16 +129,15 @@ export function createProjectRepo(db: Database) {
       await db.delete(envVar).where(eq(envVar.id, id));
     },
 
-    /** Bulk upsert env vars for a project + environment */
+    /** Bulk upsert env vars for a project + environment (optionally scoped to a service) */
     async bulkSetEnvVars(
       projectId: string,
       environment: string,
       vars: { key: string; value: string; isSecret?: boolean }[],
+      serviceId?: string | null,
     ) {
-      // Delete existing for this project+environment, then re-insert
-      await db
-        .delete(envVar)
-        .where(and(eq(envVar.projectId, projectId), eq(envVar.environment, environment)));
+      // Delete existing for this project+environment+service scope, then re-insert
+      await db.delete(envVar).where(and(...envVarScope(projectId, environment, serviceId ?? null)));
 
       if (vars.length === 0) return;
 
@@ -133,6 +145,7 @@ export function createProjectRepo(db: Database) {
         id: generateId("env"),
         projectId,
         environment,
+        serviceId: serviceId ?? null,
         key: v.key,
         value: v.value,
         isSecret: v.isSecret ?? false,
@@ -142,12 +155,9 @@ export function createProjectRepo(db: Database) {
     },
 
     /** Get a map of env vars for injection into builds/containers */
-    async getEnvMap(projectId: string, environment: string): Promise<Record<string, string>> {
+    async getEnvMap(projectId: string, environment: string, serviceId?: string | null): Promise<Record<string, string>> {
       const rows = await db.query.envVar.findMany({
-        where: and(
-          eq(envVar.projectId, projectId),
-          eq(envVar.environment, environment),
-        ),
+        where: and(...envVarScope(projectId, environment, serviceId)),
       });
       const map: Record<string, string> = {};
       for (const row of rows) {

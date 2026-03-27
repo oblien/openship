@@ -12,11 +12,13 @@ import {
   Wrench,
   ScrollText,
   AlertTriangle,
+  Layers,
 } from "lucide-react";
 
 const TAB_ICONS: Record<string, React.ComponentType<{ className?: string; strokeWidth?: number }>> = {
   overview: LayoutDashboard,
   monitoring: Activity,
+  services: Layers,
   domains: Globe,
   deployments: Rocket,
   source: GitBranch,
@@ -39,7 +41,7 @@ export const ProjectSidebar = () => {
     requestAnimationFrame(() => window.scrollTo(0, scrollY));
   };
 
-  if (!projectData.id || !projectData.activeDeploymentId || projectNotFound) {
+  if (!projectData.id || projectNotFound) {
     return null;
   }
 
@@ -123,7 +125,7 @@ export const ProjectMobileTabs = () => {
     requestAnimationFrame(() => window.scrollTo(0, scrollY));
   };
 
-  if (!projectData.id || !projectData.activeDeploymentId || projectNotFound) {
+  if (!projectData.id || projectNotFound) {
     return null;
   }
 

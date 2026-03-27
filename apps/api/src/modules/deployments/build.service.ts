@@ -5,7 +5,7 @@
 import { repos, type Project, type Deployment } from "@repo/db";
 import { NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, getRuntimeImage, type StackId, type DeployTarget, type BuildStrategy } from "@repo/core";
 import type { BuildConfig, CommandExecutor, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
-import { BareRuntime, BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, ensurePortAvailable, runDeployPipeline, createPlatform } from "@repo/adapters";
+import { BareRuntime, BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, ensurePortAvailable, runDeployPipeline, createPlatform, isMultiServiceRuntime } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
 import { env } from "../../config";
 import { resolveDeploymentRuntime, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
@@ -17,7 +17,10 @@ import { pruneRetainedBareReleases } from "./release-retention";
 import * as sessionManager from "./session-manager";
 import { onFailure, onSuccess, onCancelled, type LifecycleContext } from "./deployment-lifecycle";
 import { runPreflightChecks } from "./preflight";
+import { createBuildConfig } from "./build-config";
+import { isComposeProject, executeComposePipeline } from "./compose";
 import * as settingsService from "../settings/settings.service";
+import type { ComposeService } from "../../lib/compose-parser";
 
 // ─── Terminal output collapsing ──────────────────────────────────────────────
 
@@ -143,6 +146,16 @@ export interface DeploymentConfigSnapshot {
   serverId?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode?: "bare" | "docker";
+  /** Parsed compose services captured at deploy request time. */
+  composeServices?: ComposeService[];
+  /** Summary of a compose deployment fan-out, when applicable. */
+  composeDeployment?: {
+    totalServices: number;
+    successfulServices: number;
+    failedServices: number;
+    failedServiceNames: string[];
+    warningMessage?: string;
+  };
 }
 
 export interface BuildAccessInput {
@@ -155,6 +168,7 @@ export interface BuildAccessInput {
   deployTarget?: DeployTarget;
   serverId?: string;
   runtimeMode?: "bare" | "docker";
+  services?: ComposeService[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -328,7 +342,7 @@ export async function respondToPrompt(
 }
 
 export async function requestBuildAccess(userId: string, input: BuildAccessInput) {
-  const { projectId, branch, environment, envVars, customDomain, buildStrategy, deployTarget, serverId, runtimeMode } = input;
+  const { projectId, branch, environment, envVars, customDomain, buildStrategy, deployTarget, serverId, runtimeMode, services } = input;
 
   const project = await repos.project.findById(projectId);
   if (!project || project.userId !== userId) {
@@ -338,6 +352,9 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
   await checkNoActiveBuild(project.id);
 
   const snapshot = buildConfigSnapshot(project, branch, customDomain);
+  if (services?.length) {
+    snapshot.composeServices = services;
+  }
 
   // Resolve effective build strategy via settings service
   snapshot.buildStrategy = await settingsService.resolveStrategy(
@@ -456,6 +473,37 @@ export async function getBuildSessionStatus(deploymentId: string, userId: string
     // For failed/cancelled, keep progress where it stopped
   }
 
+  const projectType = isComposeProject(project)
+    ? "services" as const
+    : snapshot?.runtimeMode === "docker"
+      ? "docker" as const
+      : "app" as const;
+
+  const composeData = projectType === "services"
+    ? await Promise.all([
+        repos.service.listByDeployment(deploymentId).catch(() => []),
+        repos.service.listByProject(project.id).catch(() => []),
+      ]).then(([deploymentServices, projectServices]) => ({
+        composeDeployment: snapshot?.composeDeployment ?? null,
+        serviceStatuses: deploymentServices.map((service) => ({
+          serviceId: service.serviceId,
+          status: service.status,
+          containerId: service.containerId,
+          hostPort: service.hostPort,
+          ip: service.ip,
+          imageRef: service.imageRef,
+        })),
+        services: projectServices
+          .filter((service) => service.enabled)
+          .map((service) => ({
+            serviceId: service.id,
+            serviceName: service.name,
+            image: service.image,
+            build: service.build,
+          })),
+      }))
+    : {};
+
   return {
     success: true,
     deployment_id: dep.id,
@@ -483,10 +531,15 @@ export async function getBuildSessionStatus(deploymentId: string, userId: string
     screenshots: [],
     buildDurationMs: buildSessionRow?.durationMs ?? null,
     buildStartedAt: buildSessionRow?.startedAt?.toISOString() ?? null,
-    failureMessage: dep.errorMessage || "",
+    failureMessage: effectiveStatus === "failed" ? dep.errorMessage || "" : "",
+    warningMessage: effectiveStatus === "ready"
+      ? (snapshot?.composeDeployment?.warningMessage || "")
+      : "",
     errorCode: dep.errorMessage?.includes("PORT_IN_USE") || dep.errorMessage?.includes("EADDRINUSE")
       ? "PORT_IN_USE"
       : undefined,
+    projectType,
+    ...composeData,
   };
 }
 
@@ -721,31 +774,43 @@ async function executeBuildAndDeploy(
       owner: project.gitOwner ?? undefined,
     }).catch(() => null);
 
-    const buildConfig: BuildConfig = {
+    const buildConfig = createBuildConfig({
+      project,
+      dep,
+      snapshot,
       sessionId: buildSessionId,
-      projectId: project.id,
-      slug: project.slug ?? undefined,
-      repoUrl: snapshot.repoUrl,
-      branch: dep.branch,
-      commitSha: dep.commitSha ?? undefined,
-      localPath: snapshot.localPath,
-      buildStrategy: snapshot.buildStrategy,
-      stack: snapshot.framework,
-      buildImage: snapshot.buildImage,
-      runtimeImage: snapshot.runtimeImage,
-      packageManager: snapshot.packageManager,
-      installCommand: snapshot.hasBuild ? snapshot.installCommand : "",
-      buildCommand: snapshot.hasBuild ? snapshot.buildCommand : "",
-      outputDirectory: snapshot.outputDirectory,
-      port: snapshot.port,
-      startCommand: snapshot.startCommand,
-      productionPaths: snapshot.productionPaths,
-      rootDirectory: snapshot.rootDirectory,
-      hasServer: snapshot.hasServer,
       envVars: buildEnv.envVars,
       resources: buildResources,
       gitToken: gitToken ?? undefined,
-    };
+    });
+
+    if (isComposeProject(project) && isMultiServiceRuntime(runtime)) {
+      if (snapshot.composeServices?.length) {
+        await repos.service.syncFromCompose(project.id, snapshot.composeServices);
+      }
+
+      await executeComposePipeline({
+        project,
+        dep,
+        runtime,
+        logger,
+        ctx,
+        snapshot,
+        buildSessionId,
+        buildEnvVars: buildEnv.envVars,
+        buildResources,
+        gitToken: gitToken ?? undefined,
+      });
+      return;
+    }
+
+    if (isComposeProject(project)) {
+      // Compose project on a runtime that doesn't support multi-service yet
+      const msg = `Compose projects are not supported on the "${runtime.name}" runtime yet. Use Docker runtime or deploy as a single app.`;
+      logger.log(msg, "error");
+      await onFailure(ctx, msg);
+      return;
+    }
 
     if (!snapshot.hasBuild) {
       logger.step("build", "completed", "Build disabled — skipping install & build, using source directly");
@@ -760,7 +825,7 @@ async function executeBuildAndDeploy(
     }
 
     if (buildResult.status === "failed") {
-      await onFailure(ctx, undefined, buildResult.durationMs);
+      await onFailure(ctx, buildResult.errorMessage ?? "Build failed", buildResult.durationMs);
       return;
     }
 

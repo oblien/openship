@@ -17,11 +17,24 @@ import type { LogEntry } from "@repo/adapters";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export interface ServiceStatusPayload {
+  serviceName: string;
+  serviceId: string;
+  status: "pending" | "building" | "built" | "deploying" | "running" | "failed";
+  error?: string;
+  containerId?: string;
+  hostPort?: number;
+}
+
 export interface BuildSessionState {
   deploymentId: string;
   projectId: string;
   status: "queued" | "building" | "deploying" | "ready" | "failed" | "cancelled";
   logs: LogEntry[];
+  warningMessage?: string;
+  errorMessage?: string;
+  /** Per-service deployment statuses (compose projects only, for replay on reconnect) */
+  serviceStatuses: Map<string, ServiceStatusPayload>;
   /** SSE writer callbacks for active subscribers */
   subscribers: Set<SseWriter>;
   startedAt: number;
@@ -101,6 +114,7 @@ export function createSession(
     projectId,
     status: "queued",
     logs: [],
+    serviceStatuses: new Map(),
     subscribers: new Set(),
     startedAt: Date.now(),
   };
@@ -151,20 +165,54 @@ export function appendLog(sessionId: string, entry: LogEntry): void {
   }
 }
 
+/** Broadcast per-service deployment status to SSE subscribers (compose projects) */
+export function broadcastServiceStatus(
+  sessionId: string,
+  serviceStatus: ServiceStatusPayload,
+): void {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  // Store for replay on reconnect
+  session.serviceStatuses.set(serviceStatus.serviceId, serviceStatus);
+
+  const payload = JSON.stringify({
+    type: "service-status",
+    ...serviceStatus,
+  });
+  const dead: SseWriter[] = [];
+  for (const writer of session.subscribers) {
+    const ok = writer("service-status", payload);
+    if (!ok) dead.push(writer);
+  }
+  for (const w of dead) session.subscribers.delete(w);
+}
+
 /** Update session status and broadcast typed events */
 export function updateStatus(
   sessionId: string,
   status: BuildSessionState["status"],
-  meta?: { errorCode?: string; errorDetails?: Record<string, unknown> },
+  meta?: {
+    errorCode?: string;
+    errorDetails?: Record<string, unknown>;
+    warningMessage?: string;
+    errorMessage?: string;
+  },
 ): void {
   const session = sessions.get(sessionId);
   if (!session) return;
 
   session.status = status;
+  session.warningMessage = meta?.warningMessage;
+  session.errorMessage = meta?.errorMessage;
 
   // Broadcast typed events matching frontend expectations
   if (status === "ready") {
-    const payload = JSON.stringify({ type: "complete", success: true });
+    const payload = JSON.stringify({
+      type: "complete",
+      success: true,
+      ...(session.warningMessage ? { warningMessage: session.warningMessage } : {}),
+    });
     for (const writer of session.subscribers) {
       writer("complete", payload);
     }
@@ -173,7 +221,7 @@ export function updateStatus(
     const payload = JSON.stringify({
       type: "complete",
       success: false,
-      message: lastError?.message || "Build failed",
+      message: session.errorMessage || lastError?.message || "Build failed",
       ...(meta?.errorCode && { errorCode: meta.errorCode }),
       ...(meta?.errorDetails && { errorDetails: meta.errorDetails }),
     });
@@ -254,16 +302,28 @@ export function subscribe(
     }));
   }
 
+  // Replay per-service statuses (compose projects)
+  for (const svcStatus of session.serviceStatuses.values()) {
+    writer("service-status", JSON.stringify({
+      type: "service-status",
+      ...svcStatus,
+    }));
+  }
+
   // If session already finished, send typed completion + end events
   if (["ready", "failed", "cancelled"].includes(session.status)) {
     if (session.status === "ready") {
-      writer("complete", JSON.stringify({ type: "complete", success: true }));
+      writer("complete", JSON.stringify({
+        type: "complete",
+        success: true,
+        ...(session.warningMessage ? { warningMessage: session.warningMessage } : {}),
+      }));
     } else if (session.status === "failed") {
       const lastError = [...session.logs].reverse().find((l) => l.level === "error");
       writer("complete", JSON.stringify({
         type: "complete",
         success: false,
-        message: lastError?.message || "Build failed",
+        message: session.errorMessage || lastError?.message || "Build failed",
       }));
     } else if (session.status === "cancelled") {
       writer("cancelled", JSON.stringify({ type: "cancelled", message: "Build cancelled" }));

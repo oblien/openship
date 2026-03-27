@@ -4,6 +4,7 @@ import { ArrowRight, GitBranch, Globe, Server, FolderOpen } from "lucide-react";
 import { type Project } from "@/constants/mock";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { getProjectStatus, PROJECT_STATUS_META } from "@/utils/project-status";
+import { getProjectType } from "@repo/core";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
@@ -36,6 +37,13 @@ const ProjectCard: React.FC<Props> = ({ project, hostDomain }) => {
   const hasRepo = !!(project.gitOwner && project.gitRepo);
   const repoSlug = hasRepo ? `${project.gitOwner}/${project.gitRepo}` : null;
   const domain = project.slug ? `${project.slug}.${hostDomain || "opsh.io"}` : null;
+  const isServicesProject = (() => {
+    try {
+      return getProjectType(project.framework as any) === "services";
+    } catch {
+      return false;
+    }
+  })();
 
   const clickTarget = `/projects/${project.id}`;
 
@@ -78,7 +86,12 @@ const ProjectCard: React.FC<Props> = ({ project, hostDomain }) => {
         ) : null}
 
         {/* Build target */}
-        {project.hasServer === false ? (
+        {isServicesProject ? (
+          <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+            <Server className="size-3.5" />
+            Services
+          </span>
+        ) : project.hasServer === false ? (
           <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
             <Globe className="size-3.5" />
             Static

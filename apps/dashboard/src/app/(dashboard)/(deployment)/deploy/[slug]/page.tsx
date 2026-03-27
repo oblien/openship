@@ -162,6 +162,7 @@ const DeployRepository: React.FC = () => {
                                 <DeployTargetSummary
                                     deployTarget={config.deployTarget}
                                     buildStrategy={config.buildStrategy}
+                                                                        showBuildStrategy={config.projectType === "app"}
                                     serverName={
                                       config.serverId
                                         ? (targets.servers.find((s) => s.id === config.serverId)?.name ??

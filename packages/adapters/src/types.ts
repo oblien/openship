@@ -84,6 +84,8 @@ export interface BuildConfig {
   productionPaths?: string[];
   /** Root directory within the repo for monorepo builds. */
   rootDirectory?: string;
+  /** Explicit Dockerfile path relative to the build root/context. */
+  dockerfilePath?: string;
   /** Whether the deployment needs a long-running server process. */
   hasServer?: boolean;
   /** Environment variables injected at build time */
@@ -134,6 +136,8 @@ export interface BuildResult {
   /** Opaque reference to the built image / snapshot */
   imageRef?: string;
   durationMs?: number;
+  /** Human-readable error description when status is "failed" */
+  errorMessage?: string;
 }
 
 export interface DeploymentResult {

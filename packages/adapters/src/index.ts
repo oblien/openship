@@ -40,8 +40,15 @@ export {
 } from "./types";
 
 // ─── Runtime layer ───────────────────────────────────────────────────────────
-export type { RuntimeAdapter, RuntimeCapability } from "./runtime/types";
-export { assertCapability } from "./runtime/types";
+export type {
+  RuntimeAdapter,
+  RuntimeCapability,
+  MultiServiceRuntimeAdapter,
+  MultiServiceGroupHandle,
+  MultiServiceDeployConfig,
+  MultiServiceDeployResult,
+} from "./runtime/types";
+export { assertCapability, isMultiServiceRuntime } from "./runtime/types";
 export { DockerRuntime, type DockerConnectionOptions } from "./runtime/docker";
 export { BareRuntime, type BareRuntimeOptions } from "./runtime/bare";
 export { CloudRuntime } from "./runtime/cloud";

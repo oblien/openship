@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useDeployment } from "@/context/DeploymentContext";
 import DeploymentProcessing from "@/components/import-project/DeploymentProcessing";
+import ComposeDeploymentProcessing from "@/components/import-project/ComposeDeploymentProcessing";
 import BuildSkeleton from "@/components/import-project/BuildSkeleton";
 import { useAuth } from "@/context/AuthContext";
 import { Rocket, ArrowLeft, Home } from "lucide-react";
@@ -15,7 +16,7 @@ const BuildPage: React.FC = () => {
   const router = useRouter();
   const { isLoggedIn } = useAuth();
   const deploymentId = params.id as string;
-  const { state, connectToBuild, loadBuildSession, redeploy } = useDeployment();
+  const { state, config, connectToBuild, loadBuildSession, redeploy } = useDeployment();
   const hasInitialized = useRef(false);
   const [notFound, setNotFound] = useState(false);
 
@@ -154,6 +155,10 @@ const BuildPage: React.FC = () => {
 
   if (!state.deploymentId) {
     return <BuildSkeleton />;
+  }
+
+  if (config.projectType === "services") {
+    return <ComposeDeploymentProcessing onRedeploy={handleRedeploy} />;
   }
 
   return <DeploymentProcessing onRedeploy={handleRedeploy} />;

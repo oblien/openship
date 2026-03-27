@@ -95,12 +95,41 @@ async function pruneContextDirectory(
   }));
 }
 
-async function resolveDockerfileName(contextDir: string, rootDirectory?: string): Promise<string | null> {
+function resolveExplicitDockerfileCandidate(rootDirectory?: string, dockerfilePath?: string): string {
   const normalizedRootDirectory = normalizeRelativePath(rootDirectory);
-  const candidates = [
+  const normalizedDockerfilePath = normalizeRelativePath(dockerfilePath);
+
+  if (!normalizedDockerfilePath) {
+    return "";
+  }
+
+  if (!normalizedRootDirectory) {
+    return normalizedDockerfilePath;
+  }
+
+  if (normalizedDockerfilePath.startsWith(`${normalizedRootDirectory}/`)) {
+    return normalizedDockerfilePath;
+  }
+
+  return `${normalizedRootDirectory}/${normalizedDockerfilePath}`;
+}
+
+function resolveDockerfileCandidates(rootDirectory?: string, explicitDockerfilePath?: string): string[] {
+  const normalizedRootDirectory = normalizeRelativePath(rootDirectory);
+
+  return [
+    resolveExplicitDockerfileCandidate(rootDirectory, explicitDockerfilePath),
     normalizedRootDirectory ? `${normalizedRootDirectory}/Dockerfile` : "Dockerfile",
     "Dockerfile",
-  ].filter((candidate, index, values) => values.indexOf(candidate) === index);
+  ].filter((candidate, index, values) => candidate && values.indexOf(candidate) === index);
+}
+
+async function resolveDockerfileName(
+  contextDir: string,
+  rootDirectory?: string,
+  explicitDockerfilePath?: string,
+): Promise<string | null> {
+  const candidates = resolveDockerfileCandidates(rootDirectory, explicitDockerfilePath);
 
   for (const candidate of candidates) {
     const candidatePath = join(contextDir, ...candidate.split("/"));
@@ -165,9 +194,13 @@ export interface DockerBuildContext {
   cleanup(): Promise<void>;
 }
 
-export async function createDockerBuildContext(config: BuildConfig): Promise<DockerBuildContext> {
+export async function createDockerBuildContext(
+  config: BuildConfig,
+  opts?: { requireRepositoryDockerfile?: boolean },
+): Promise<DockerBuildContext> {
   const contextDir = await mkdtemp(join(tmpdir(), "openship-docker-context-"));
   const excludes = getDockerContextExcludes(config);
+  const requireRepositoryDockerfile = opts?.requireRepositoryDockerfile ?? false;
 
   try {
     if (config.localPath) {
@@ -185,8 +218,19 @@ export async function createDockerBuildContext(config: BuildConfig): Promise<Doc
       config.localPath,
     );
 
-    const repositoryDockerfileName = await resolveDockerfileName(contextDir, resolvedRootDirectory);
+    const repositoryDockerfileName = await resolveDockerfileName(
+      contextDir,
+      resolvedRootDirectory,
+      config.dockerfilePath,
+    );
     const hasRepositoryDockerfile = repositoryDockerfileName !== null;
+
+    if (!hasRepositoryDockerfile && requireRepositoryDockerfile) {
+      const expectedDockerfile = config.dockerfilePath?.trim() || "Dockerfile";
+      throw new Error(
+        `No Dockerfile found for this build context. Expected ${expectedDockerfile}${config.rootDirectory ? ` under ${config.rootDirectory}` : ""}.`,
+      );
+    }
 
     if (!hasRepositoryDockerfile) {
       await writeFile(

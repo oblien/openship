@@ -13,8 +13,17 @@ import { SSEMessage, SSEMessageProcessor } from '@/hooks/useSSEStream';
 // BUILD MESSAGE PROCESSOR
 // ============================================================================
 
+export interface ServiceStatusEvent {
+  serviceName: string;
+  serviceId: string;
+  status: "pending" | "deploying" | "running" | "failed";
+  error?: string;
+  containerId?: string;
+  hostPort?: number;
+}
+
 export interface BuildMessage extends SSEMessage {
-  type: 'log' | 'success' | 'failure' | 'phase' | 'progress' | 'reconnected' | 'complete' | 'end' | 'connected' | 'started' | 'error' | 'cancelled' | 'prompt' | 'unknown';
+  type: 'log' | 'success' | 'failure' | 'phase' | 'progress' | 'reconnected' | 'complete' | 'end' | 'connected' | 'started' | 'error' | 'cancelled' | 'prompt' | 'service-status' | 'unknown';
   promptId?: string;
   title?: string;
   actions?: Array<{ id: string; label: string; variant?: string }>;
@@ -31,6 +40,7 @@ export interface BuildMessage extends SSEMessage {
   running?: boolean;
   errorCode?: string;
   errorDetails?: Record<string, unknown>;
+  warningMessage?: string;
 }
 
 export interface BuildMessageCallbacks {
@@ -49,6 +59,7 @@ export interface BuildMessageCallbacks {
     actions: Array<{ id: string; label: string; variant?: string }>;
     details?: Record<string, unknown>;
   }) => void;
+  onServiceStatus?: (status: ServiceStatusEvent) => void;
 }
 
 export const createBuildMessageProcessor = (
@@ -74,6 +85,11 @@ export const createBuildMessageProcessor = (
       // Container error message
       if (jsonData?.type === 'error' && !jsonData?.success) {
         return { type: 'error', ...jsonData };
+      }
+
+      // Per-service status update (compose projects)
+      if (jsonData?.type === 'service-status') {
+        return { type: 'service-status', ...jsonData };
       }
 
       // Prompt message (pipeline waiting for user decision)
@@ -223,6 +239,17 @@ export const createBuildMessageProcessor = (
 
         case 'started':
           // Build acknowledged — nothing to do, logs will follow
+          break;
+
+        case 'service-status':
+          callbacks.onServiceStatus?.({
+            serviceName: (message as any).serviceName ?? '',
+            serviceId: (message as any).serviceId ?? '',
+            status: (message as any).status ?? 'pending',
+            error: (message as any).error,
+            containerId: (message as any).containerId,
+            hostPort: (message as any).hostPort,
+          });
           break;
       }
 

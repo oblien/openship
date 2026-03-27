@@ -85,6 +85,25 @@ export const frameworks: FrameworkConfig[] = (Object.entries(STACKS) as [StackId
  * Get framework configuration by ID
  */
 export const getFrameworkConfig = (frameworkId: string): FrameworkConfig => {
-  return frameworks.find(fw => fw.id === frameworkId) || frameworks.find(fw => fw.id === "static")!;
+  const existing = frameworks.find((fw) => fw.id === frameworkId);
+  if (existing) return existing;
+
+  const stack = STACKS[frameworkId as StackId];
+  if (stack) {
+    return {
+      id: frameworkId as StackId,
+      name: stack.name,
+      category: stack.category,
+      options: {
+        buildCommand: stack.defaultBuildCommand,
+        installCommand: "",
+        outputDirectory: stack.outputDirectory,
+        isStatic: stack.category === "static" || (stack.category === "frontend" && !stack.defaultStartCommand),
+      },
+      icon: makeIcon(frameworkId as StackId),
+    };
+  }
+
+  return frameworks.find((fw) => fw.id === "static")!;
 };
 

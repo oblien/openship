@@ -278,11 +278,13 @@ export class BareRuntime implements RuntimeAdapter {
         },
       });
     } catch (err) {
-      log.log(`Failed to transfer local build output: ${err instanceof Error ? err.message : String(err)}`, "error");
+      const msg = err instanceof Error ? err.message : String(err);
+      log.log(`Failed to transfer local build output: ${msg}`, "error");
       return {
         sessionId: config.sessionId,
         status: "failed",
         imageRef: remoteDir,
+        errorMessage: `Failed to transfer build output: ${msg}`,
       };
     }
 
@@ -291,6 +293,7 @@ export class BareRuntime implements RuntimeAdapter {
       status: result.status,
       imageRef: remoteDir,
       durationMs: result.durationMs,
+      errorMessage: result.errorMessage,
     };
   }
 
@@ -333,6 +336,7 @@ export class BareRuntime implements RuntimeAdapter {
       status: result.status,
       imageRef: dir,
       durationMs: result.durationMs,
+      errorMessage: result.errorMessage,
     };
   }
 

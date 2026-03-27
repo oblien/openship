@@ -114,6 +114,8 @@ export interface BuildPipelineResult {
   /** Which step failed (undefined if success) */
   failedStep?: BuildStep;
   durationMs: number;
+  /** Human-readable error description when status is "failed" */
+  errorMessage?: string;
 }
 
 /**
@@ -209,8 +211,9 @@ export async function runBuildPipeline(
 
   } catch (err) {
     const durationMs = Date.now() - startTime;
+    const errorMessage = err instanceof Error ? err.message : String(err);
 
-    return { status: "failed", failedStep: currentStep, durationMs };
+    return { status: "failed", failedStep: currentStep, durationMs, errorMessage };
   }
 }
 

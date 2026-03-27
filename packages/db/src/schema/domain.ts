@@ -18,6 +18,8 @@ export const domain = pgTable("domain", {
   projectId: text("project_id")
     .notNull()
     .references(() => project.id, { onDelete: "cascade" }),
+  /** Service ID for service-scoped domain routing (null = project-level / main service) */
+  serviceId: text("service_id"),
 
   /** The custom domain (e.g. "app.example.com") */
   hostname: text("hostname").notNull().unique(),

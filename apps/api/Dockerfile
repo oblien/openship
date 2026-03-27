@@ -1,16 +1,16 @@
 # ─── Build stage ────────────────────────────────────────
-FROM oven/bun:1 AS builder
+FROM oven/bun:1.3.10 AS builder
 WORKDIR /app
 
 COPY package.json bun.lock pnpm-workspace.yaml ./
 COPY packages/ ./packages/
-COPY apps/api/ ./apps/api/
+COPY apps/ ./apps/
 
-RUN bun install --frozen-lockfile
+RUN bun install
 RUN cd apps/api && bun run build
 
 # ─── Production stage ──────────────────────────────────
-FROM oven/bun:1-slim AS runner
+FROM oven/bun:1 AS runner
 WORKDIR /app
 
 COPY --from=builder /app/apps/api/dist ./dist

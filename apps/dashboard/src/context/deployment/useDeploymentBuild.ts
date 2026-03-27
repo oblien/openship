@@ -85,16 +85,27 @@ export function useDeploymentBuild(
   // ── Stream event handlers ─────────────────────────────────────────────────
 
   const handleSuccessMessage = useCallback((data?: any) => {
+    const warningMessage = typeof data?.warningMessage === "string" ? data.warningMessage : "";
+
     setState((prev) => ({
       ...prev,
       deploymentSuccess: true,
+      deploymentFailed: false,
+      deploymentCanceled: false,
       currentProgress: 100,
       currentStepIndex: 4,
       isDeploying: false,
+      failureMessage: "",
+      warningMessage,
       screenshots: data?.screenshots || prev.screenshots,
       projectId: data?.project_id || prev.projectId,
     }));
-  }, []);
+
+    if (warningMessage) {
+      const textEncoder = new TextEncoder();
+      writeToTerminal(textEncoder.encode(`\r\n\x1b[33m Deployment completed with warnings: ${warningMessage}\x1b[0m\r\n`));
+    }
+  }, [writeToTerminal]);
 
   const handleFailureMessage = useCallback(
     (message?: string, errorCode?: string, errorDetails?: Record<string, unknown>) => {
@@ -115,6 +126,7 @@ export function useDeploymentBuild(
         deploymentSuccess: false,
         isDeploying: false,
         failureMessage: errorMessage,
+        warningMessage: "",
         errorCode: errorCode || "",
         errorDetails: errorDetails || null,
       }));
@@ -155,6 +167,7 @@ export function useDeploymentBuild(
         isDeploying: false,
         isStopping: false,
         failureMessage: cancelMessage,
+        warningMessage: "",
       }));
     },
     [],
@@ -199,6 +212,28 @@ export function useDeploymentBuild(
           },
         }));
       },
+      onServiceStatus: (svcStatus) => {
+        setState((prev) => {
+          const existing = prev.serviceStatuses.findIndex(
+            (s) => s.serviceId === svcStatus.serviceId,
+          );
+          const updated = [...prev.serviceStatuses];
+          const entry = {
+            serviceId: svcStatus.serviceId,
+            serviceName: svcStatus.serviceName,
+            status: svcStatus.status,
+            error: svcStatus.error,
+            containerId: svcStatus.containerId,
+            hostPort: svcStatus.hostPort,
+          };
+          if (existing >= 0) {
+            updated[existing] = { ...updated[existing], ...entry };
+          } else {
+            updated.push(entry);
+          }
+          return { ...prev, serviceStatuses: updated };
+        });
+      },
       onCanceled: (message) => {
         buildStream.disconnect();
         handleCanceled(message);
@@ -242,10 +277,12 @@ export function useDeploymentBuild(
       deploymentFailed: false,
       deploymentCanceled: false,
       failureMessage: "",
+      warningMessage: "",
       errorCode: "",
       errorDetails: null,
       pendingPrompt: null,
       screenshots: [],
+      serviceStatuses: [],
     }));
 
     try {
@@ -294,10 +331,27 @@ export function useDeploymentBuild(
         customDomain: config.domainType === "custom" && config.customDomain
           ? config.customDomain
           : undefined,
-        buildStrategy: config.buildStrategy,
+        buildStrategy: config.projectType === "app" ? config.buildStrategy : "server",
         deployTarget: config.deployTarget,
         serverId: config.serverId,
-        runtimeMode: overrides?.runtimeMode ?? config.runtimeMode,
+        runtimeMode:
+          config.projectType === "docker" || config.projectType === "services"
+            ? "docker"
+            : (overrides?.runtimeMode ?? config.runtimeMode),
+        services: config.projectType === "services"
+          ? config.services.map((service) => ({
+              name: service.name,
+              image: service.image,
+              build: service.build,
+              dockerfile: service.dockerfile,
+              ports: service.ports,
+              dependsOn: service.dependsOn,
+              environment: service.environment,
+              volumes: service.volumes,
+              command: service.command,
+              restart: service.restart,
+            }))
+          : undefined,
       });
 
       if (data.success && data.deployment_id) {
@@ -368,6 +422,7 @@ export function useDeploymentBuild(
             framework: apiConfig.framework || prev.framework,
             branch: apiConfig.branch || prev.branch,
             envVars: apiConfig.envVars || prev.envVars,
+            projectType: data.projectType || prev.projectType,
             options: {
               buildCommand: apiConfig.buildCommand || prev.options.buildCommand,
               outputDirectory: apiConfig.outputDirectory || prev.options.outputDirectory,
@@ -405,11 +460,34 @@ export function useDeploymentBuild(
           isDeploying: isActive,
           screenshots: !isActive ? (data.screenshots || []) : [],
           failureMessage: !isActive ? (data.failureMessage || "") : "",
+          warningMessage: !isActive ? (data.warningMessage || "") : "",
           errorCode: !isActive ? (data.errorCode || "") : "",
           errorDetails: null,
           buildLogs,
           buildDurationMs: data.buildDurationMs ?? null,
           buildStartedAt: data.buildStartedAt ?? null,
+          // Restore per-service statuses for compose projects
+          serviceStatuses: data.projectType === "services" && data.services && data.serviceStatuses
+            ? (data.services as any[]).map((svc: any) => {
+                const sd = (data.serviceStatuses as any[]).find((s: any) => s.serviceId === svc.serviceId);
+                const rawStatus = sd?.status ?? "pending";
+                // Map DB statuses to UI statuses (DB may store "running", "failed", "pending", "deploying", "building", "stopped")
+                const status: import("./types").ServiceDeployStatus["status"] =
+                  rawStatus === "running" ? "running"
+                  : rawStatus === "failed" ? "failed"
+                  : rawStatus === "deploying" || rawStatus === "building" ? "deploying"
+                  : "pending";
+                return {
+                  serviceId: svc.serviceId,
+                  serviceName: svc.serviceName,
+                  status,
+                  containerId: sd?.containerId,
+                  hostPort: sd?.hostPort,
+                  image: svc.image,
+                  build: svc.build,
+                } as import("./types").ServiceDeployStatus;
+              })
+            : [],
         }));
 
         // Write existing logs to terminal
@@ -422,8 +500,16 @@ export function useDeploymentBuild(
         if (isActive) {
           await buildStream.connect(deploymentId, false);
         } else if (status === "ready") {
-          handleSuccessMessage({ screenshots: data.screenshots, project_id: data.project_id });
-          showToast("Build completed successfully", "success", "Success");
+          handleSuccessMessage({
+            screenshots: data.screenshots,
+            project_id: data.project_id,
+            warningMessage: data.warningMessage,
+          });
+          if (data.warningMessage) {
+            showToast(data.warningMessage, "success", "Deployment Ready With Warnings");
+          } else {
+            showToast("Build completed successfully", "success", "Success");
+          }
         } else if (status === "failed") {
           handleFailureMessage(data.failureMessage || "Build failed", data.errorCode);
         } else if (status === "cancelled") {
@@ -470,6 +556,7 @@ export function useDeploymentBuild(
           isDeploying: false,
           deploymentFailed: true,
           failureMessage: "Failed to start redeployment",
+          warningMessage: "",
         }));
         return null;
       }
@@ -489,11 +576,13 @@ export function useDeploymentBuild(
           deploymentFailed: false,
           deploymentCanceled: false,
           failureMessage: "",
+          warningMessage: "",
           errorCode: "",
           errorDetails: null,
-        pendingPrompt: null,
+          pendingPrompt: null,
           currentStepIndex: 0,
           screenshots: [],
+          serviceStatuses: [],
         }));
 
         const response = await deployApi.buildRedeploy(deploymentId);
@@ -505,6 +594,7 @@ export function useDeploymentBuild(
             isDeploying: false,
             deploymentFailed: true,
             failureMessage: response.error || "Failed to redeploy",
+            warningMessage: "",
           }));
           return null;
         }
@@ -527,6 +617,7 @@ export function useDeploymentBuild(
           isDeploying: false,
           deploymentFailed: true,
           failureMessage: msg,
+          warningMessage: "",
         }));
         return null;
       }
@@ -555,6 +646,7 @@ export function useDeploymentBuild(
       deploymentFailed: true,
       deploymentSuccess: false,
       failureMessage: message,
+      warningMessage: "",
     }));
   }, []);
 

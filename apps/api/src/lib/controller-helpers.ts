@@ -88,3 +88,20 @@ export async function bootstrapPlatform(): Promise<Platform> {
 export function platform(): Platform {
   return getPlatform();
 }
+
+// ─── Project access ──────────────────────────────────────────────────────────
+
+import { repos, type Project } from "@repo/db";
+
+/**
+ * Verify the project exists and belongs to the user.
+ * Throws a descriptive string ("project-not-found") on failure — callers
+ * catch and map to the appropriate HTTP status.
+ */
+export async function assertProjectAccess(projectId: string, userId: string): Promise<Project> {
+  const project = await repos.project.findById(projectId);
+  if (!project || project.userId !== userId) {
+    throw new Error("project-not-found");
+  }
+  return project;
+}

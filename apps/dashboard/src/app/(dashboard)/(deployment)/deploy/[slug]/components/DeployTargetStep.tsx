@@ -125,6 +125,7 @@ interface CompactSummaryProps {
   deployTarget: DeployTarget;
   buildStrategy: BuildStrategy;
   serverName?: string | null;
+  showBuildStrategy?: boolean;
   onEdit: () => void;
 }
 
@@ -143,6 +144,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   deployTarget,
   buildStrategy,
   serverName,
+  showBuildStrategy = true,
   onEdit,
 }) => {
   const target = targetLabels[deployTarget];
@@ -158,12 +160,16 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
       className="w-full flex items-center gap-3 px-4 py-3 bg-card rounded-xl border border-border/50 hover:border-primary/30 transition-all group"
     >
       <div className="flex items-center gap-4 flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 text-sm">
-          {build.icon}
-          <span className="text-muted-foreground">Build:</span>
-          <span className="font-medium text-foreground">{build.label}</span>
-        </div>
-        <ArrowRight className="size-3 text-muted-foreground/50" />
+        {showBuildStrategy && (
+          <>
+            <div className="flex items-center gap-1.5 text-sm">
+              {build.icon}
+              <span className="text-muted-foreground">Build:</span>
+              <span className="font-medium text-foreground">{build.label}</span>
+            </div>
+            <ArrowRight className="size-3 text-muted-foreground/50" />
+          </>
+        )}
         <div className="flex items-center gap-1.5 text-sm">
           {target.icon}
           <span className="text-muted-foreground">Deploy:</span>
@@ -223,6 +229,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const { servers, hasCloudConnected, hasChoice } = targets;
   const hasServers = servers.length > 0;
   const isSingleServer = servers.length === 1;
+  const showBuildStrategy = config.projectType === "app";
 
   // Auto-set deploy target when there's only one option
   useEffect(() => {
@@ -357,33 +364,33 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         </div>
       )}
 
-      {/* Build location — always shown on desktop because strategy still matters
-          even for source-only deployments (clone/stage/transfer path). */}
-      <div className="space-y-3">
-        <div>
-          <h3 className="text-base font-semibold text-foreground">
-            {config.options.hasBuild ? "Where do you want to build?" : "Where do you want to prepare it?"}
-          </h3>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {config.options.hasBuild
-              ? "Choose where the build process runs"
-              : "Choose where the repository is cloned and staged before deploy"}
-          </p>
+      {showBuildStrategy && (
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">
+              {config.options.hasBuild ? "Where do you want to build?" : "Where do you want to prepare it?"}
+            </h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {config.options.hasBuild
+                ? "Choose where the build process runs"
+                : "Choose where the repository is cloned and staged before deploy"}
+            </p>
+          </div>
+          <div className="space-y-2">
+            {buildOptions.map((opt) => (
+              <OptionCard
+                key={opt.value}
+                value={opt.value}
+                selected={config.buildStrategy === opt.value}
+                onSelect={() => updateConfig({ buildStrategy: opt.value })}
+                icon={opt.icon}
+                label={opt.label}
+                description={opt.description}
+              />
+            ))}
+          </div>
         </div>
-        <div className="space-y-2">
-          {buildOptions.map((opt) => (
-            <OptionCard
-              key={opt.value}
-              value={opt.value}
-              selected={config.buildStrategy === opt.value}
-              onSelect={() => updateConfig({ buildStrategy: opt.value })}
-              icon={opt.icon}
-              label={opt.label}
-              description={opt.description}
-            />
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Continue */}
       <button

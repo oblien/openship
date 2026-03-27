@@ -37,7 +37,13 @@ import type {
 } from "../types";
 import type { Feature, SystemLog } from "../system/types";
 
-import type { RuntimeAdapter, RuntimeCapability } from "./types";
+import type {
+  RuntimeAdapter,
+  RuntimeCapability,
+  MultiServiceGroupHandle,
+  MultiServiceDeployConfig,
+  MultiServiceDeployResult,
+} from "./types";
 import { BuildLogger, parseLogLevel } from "./build-pipeline";
 import { createDockerBuildContext } from "./docker-build-context";
 import {
@@ -53,6 +59,59 @@ interface DockerSystemManager {
   ensureFeature(feature: Feature, onLog?: (log: SystemLog) => void): Promise<void>;
 }
 
+// ─── Shared Docker helpers ───────────────────────────────────────────────────
+
+const RESTART_POLICIES: Record<string, { Name: string; MaximumRetryCount: number }> = {
+  always: { Name: "always", MaximumRetryCount: 0 },
+  "on-failure": { Name: "on-failure", MaximumRetryCount: 5 },
+  "unless-stopped": { Name: "unless-stopped", MaximumRetryCount: 0 },
+  no: { Name: "no", MaximumRetryCount: 0 },
+};
+
+function resolveRestartPolicy(policy?: string) {
+  return RESTART_POLICIES[policy ?? "always"] ?? RESTART_POLICIES.always;
+}
+
+/** Parse port specs ("8080:3000", "3000") into Docker ExposedPorts + PortBindings */
+function parsePortBindings(portSpecs: string[]): {
+  exposedPorts: Record<string, object>;
+  portBindings: Record<string, { HostPort: string }[]>;
+} {
+  const exposedPorts: Record<string, object> = {};
+  const portBindings: Record<string, { HostPort: string }[]> = {};
+  for (const spec of portSpecs) {
+    const parts = spec.split(":");
+    if (parts.length === 2) {
+      const [hostPort, containerPort] = parts;
+      exposedPorts[`${containerPort}/tcp`] = {};
+      portBindings[`${containerPort}/tcp`] = [{ HostPort: hostPort }];
+    } else if (parts.length === 1) {
+      exposedPorts[`${parts[0]}/tcp`] = {};
+      portBindings[`${parts[0]}/tcp`] = [{ HostPort: "" }]; // random host port
+    }
+  }
+  return { exposedPorts, portBindings };
+}
+
+/** Extract first host port and first container IP from an inspected container */
+function extractNetworkInfo(data: { NetworkSettings: any }): {
+  ip?: string;
+  hostPort?: number;
+} {
+  let ip: string | undefined;
+  for (const net of Object.values(data.NetworkSettings.Networks ?? {}) as any[]) {
+    if (net.IPAddress) { ip = net.IPAddress; break; }
+  }
+  let hostPort: number | undefined;
+  for (const bindings of Object.values(data.NetworkSettings.Ports ?? {}) as any[]) {
+    if (bindings?.[0]?.HostPort) {
+      hostPort = parseInt(bindings[0].HostPort, 10);
+      break;
+    }
+  }
+  return { ip, hostPort };
+}
+
 // ─── Docker runtime ──────────────────────────────────────────────────────────
 
 export class DockerRuntime implements RuntimeAdapter {
@@ -60,6 +119,7 @@ export class DockerRuntime implements RuntimeAdapter {
   readonly capabilities: ReadonlySet<RuntimeCapability> = new Set<RuntimeCapability>([
     "build",
     "deploy",
+    "multiServiceDeploy",
     "stop",
     "start",
     "restart",
@@ -260,19 +320,20 @@ export class DockerRuntime implements RuntimeAdapter {
     try {
       log.log(`Build strategy: docker (${this.transport.description})\n`);
 
-      // Verify Docker daemon connectivity before doing any work
-      log.log("Verifying Docker daemon connectivity...");
+      // Ensure the host is provisioned for Docker, but avoid doing a second
+      // SSH bridge handshake before the real build request. The build call
+      // itself is the connectivity check and saves one full round-trip.
       try {
         await this.ensureDockerFeature(log);
-        await this.transport.preflight();
-        log.log("Docker daemon reachable");
-      } catch (pingErr) {
-        throw new Error(this.formatDockerConnectivityError(pingErr));
+      } catch (featureErr) {
+        throw new Error(this.formatDockerConnectivityError(featureErr));
       }
 
       this.emitDockerStep(log, "clone", "running", "Preparing Docker build context...");
 
-      const buildContext = await createDockerBuildContext(config);
+      const buildContext = await createDockerBuildContext(config, {
+        requireRepositoryDockerfile: config.stack === "docker",
+      });
       this.emitDockerStep(log, "clone", "completed", "Docker build context ready");
 
       if (buildContext.rootDirectory) {
@@ -360,7 +421,7 @@ export class DockerRuntime implements RuntimeAdapter {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.step("build", "failed", `Docker build failed: ${msg}`);
-      return { sessionId: config.sessionId, status: "failed", durationMs: Date.now() - startTime };
+      return { sessionId: config.sessionId, status: "failed", durationMs: Date.now() - startTime, errorMessage: `Docker build failed: ${msg}` };
     }
   }
 
@@ -405,13 +466,7 @@ export class DockerRuntime implements RuntimeAdapter {
       ? ["sh", "-c", config.startCommand]
       : undefined;
 
-    // Restart policy
-    const restartMap: Record<string, { Name: string; MaximumRetryCount: number }> = {
-      always: { Name: "always", MaximumRetryCount: 0 },
-      "on-failure": { Name: "on-failure", MaximumRetryCount: 5 },
-      no: { Name: "no", MaximumRetryCount: 0 },
-    };
-    const restartPolicy = restartMap[config.restartPolicy ?? "always"];
+    const restartPolicy = resolveRestartPolicy(config.restartPolicy);
 
     log({
       timestamp: new Date().toISOString(),
@@ -495,21 +550,7 @@ export class DockerRuntime implements RuntimeAdapter {
       ? Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
       : undefined;
 
-    let hostPort: number | undefined;
-    for (const bindings of Object.values(data.NetworkSettings.Ports ?? {})) {
-      if (bindings?.[0]?.HostPort) {
-        hostPort = parseInt(bindings[0].HostPort, 10);
-        break;
-      }
-    }
-
-    let ip: string | undefined;
-    for (const net of Object.values(data.NetworkSettings.Networks ?? {})) {
-      if (net.IPAddress) {
-        ip = net.IPAddress;
-        break;
-      }
-    }
+    const { ip, hostPort } = extractNetworkInfo(data);
 
     return {
       containerId,
@@ -677,5 +718,188 @@ export class DockerRuntime implements RuntimeAdapter {
       if (net.IPAddress) return net.IPAddress;
     }
     return null;
+  }
+
+  // ── Compose / multi-service ────────────────────────────────────────────
+
+  /**
+   * Ensure a project-level Docker network exists.
+   * All services in a compose project share this network and can
+   * reach each other by service name as hostname.
+   */
+  async ensureNetwork(slug: string): Promise<string> {
+    const networkName = `openship-${slug}`;
+    const networks = await this.docker.listNetworks({
+      filters: { name: [networkName] },
+    });
+
+    // listNetworks does substring matching, verify exact name
+    const existing = networks.find((n) => n.Name === networkName);
+    if (existing) return existing.Id;
+
+    const network = await this.docker.createNetwork({
+      Name: networkName,
+      Driver: "bridge",
+      Labels: { "openship.network": slug },
+    });
+    return network.id;
+  }
+
+  async ensureServiceGroup(config: {
+    deploymentId: string;
+    projectId: string;
+    slug: string;
+  }): Promise<MultiServiceGroupHandle> {
+    void config.deploymentId;
+    void config.projectId;
+    return { id: await this.ensureNetwork(config.slug) };
+  }
+
+  /** Remove a project network (best-effort). */
+  async removeNetwork(slug: string): Promise<void> {
+    const networkName = `openship-${slug}`;
+    try {
+      const network = this.docker.getNetwork(networkName);
+      await network.remove();
+    } catch {
+      // Already removed or doesn't exist — fine
+    }
+  }
+
+  /**
+   * Deploy a single service container on a project network.
+   * Unlike `deploy()` which binds to a random host port,
+   * service containers join the project network with their service name as hostname.
+   * External port bindings are only created for services that explicitly expose ports.
+   */
+  async deployServiceWorkload(
+    group: MultiServiceGroupHandle,
+    config: MultiServiceDeployConfig,
+    onLog?: LogCallback,
+  ): Promise<MultiServiceDeployResult> {
+    const log = onLog ?? (() => {});
+    const containerName = `openship-${config.slug}-${config.serviceName}`;
+
+    // Stop and remove any existing container with the same name
+    try {
+      const existing = this.docker.getContainer(containerName);
+      await existing.remove({ force: true });
+    } catch {
+      // Does not exist — fine
+    }
+
+    // Environment variables
+    const env = Object.entries(config.environment).map(([k, v]) => `${k}=${v}`);
+
+    // Command
+    const cmd = config.command
+      ? ["sh", "-c", config.command]
+      : undefined;
+
+    // Port bindings
+    const { exposedPorts, portBindings } = parsePortBindings(config.ports);
+
+    // Parse volumes: pass through directly — Docker handles named volumes and bind mounts
+    const binds = config.volumes.length > 0 ? config.volumes : undefined;
+
+    const restartPolicy = resolveRestartPolicy(config.restart);
+
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Creating service container ${containerName} from ${config.image}...\n`,
+      level: "info",
+    });
+
+    // Pull image if not local
+    if (!config.image.startsWith("openship/")) {
+      try {
+        log({
+          timestamp: new Date().toISOString(),
+          message: `Pulling image ${config.image}...\n`,
+          level: "info",
+        });
+        const stream = await this.docker.pull(config.image);
+        await new Promise<void>((resolve, reject) => {
+          this.docker.modem.followProgress(stream, (err: Error | null) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      } catch (err) {
+        log({
+          timestamp: new Date().toISOString(),
+          message: `Failed to pull ${config.image}: ${err}\n`,
+          level: "error",
+        });
+        throw err;
+      }
+    }
+
+    const container = await this.docker.createContainer({
+      name: containerName,
+      Image: config.image,
+      Cmd: cmd,
+      Env: env,
+      Hostname: config.serviceName,
+      Labels: {
+        ...this.labels({
+          deploymentId: config.deploymentId,
+          projectId: config.projectId,
+        }),
+        "openship.service": config.serviceName,
+      },
+      ExposedPorts: exposedPorts,
+      HostConfig: {
+        RestartPolicy: restartPolicy,
+        ...(config.resources?.memoryMb && {
+          Memory: config.resources.memoryMb * 1024 * 1024,
+        }),
+        ...(config.resources?.cpuCores && {
+          CpuShares: Math.round(config.resources.cpuCores * 1024),
+        }),
+        PortBindings: portBindings,
+        Binds: binds,
+        NetworkMode: group.id,
+      },
+      NetworkingConfig: {
+        EndpointsConfig: {
+          [group.id]: {
+            Aliases: [config.serviceName],
+          },
+        },
+      },
+    });
+
+    try {
+      await container.start();
+    } catch (startErr) {
+      // Clean up the created container so it doesn't become orphaned
+      try { await container.remove({ force: true }); } catch { /* best effort */ }
+      throw startErr;
+    }
+
+    // Get container IP on the project network
+    const data = await container.inspect();
+    const { ip, hostPort } = extractNetworkInfo(data);
+
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Service ${config.serviceName} started (${container.id.slice(0, 12)})${ip ? ` at ${ip}` : ""}.\n`,
+      level: "info",
+    });
+
+    return {
+      containerId: container.id,
+      status: "running",
+      ip,
+      hostPort,
+    };
+  }
+
+  async deployService(
+    config: MultiServiceDeployConfig & { networkId: string },
+    onLog?: LogCallback,
+  ): Promise<MultiServiceDeployResult> {
+    return this.deployServiceWorkload({ id: config.networkId }, config, onLog);
   }
 }

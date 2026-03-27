@@ -13,10 +13,13 @@ export interface ComposeService {
   name: string;
   image?: string;
   build?: string;
+  dockerfile?: string;
   ports: string[];
   dependsOn: string[];
   environment: Record<string, string>;
   volumes: string[];
+  command?: string;
+  restart?: string;
 }
 
 export interface ComposeParseResult {
@@ -40,15 +43,19 @@ export function parseComposeFile(content: string): ComposeParseResult {
   for (const [name, def] of Object.entries(rawServices)) {
     if (!def || typeof def !== "object") continue;
     const svc = def as Record<string, unknown>;
+    const build = parseBuild(svc.build);
 
     services.push({
       name,
       image: typeof svc.image === "string" ? svc.image : undefined,
-      build: parseBuild(svc.build),
+      build: build.context,
+      dockerfile: build.dockerfile,
       ports: parsePorts(svc.ports),
       dependsOn: parseDependsOn(svc.depends_on),
       environment: parseEnvironment(svc.environment),
       volumes: parseVolumes(svc.volumes),
+      command: parseCommand(svc.command),
+      restart: typeof svc.restart === "string" ? svc.restart : undefined,
     });
   }
 
@@ -60,13 +67,16 @@ export function parseComposeFile(content: string): ComposeParseResult {
 
 // ─── Field parsers ───────────────────────────────────────────────────────────
 
-function parseBuild(build: unknown): string | undefined {
-  if (typeof build === "string") return build;
+function parseBuild(build: unknown): { context?: string; dockerfile?: string } {
+  if (typeof build === "string") return { context: build };
   if (build && typeof build === "object") {
     const b = build as Record<string, unknown>;
-    return (typeof b.context === "string" ? b.context : undefined) ?? ".";
+    return {
+      context: (typeof b.context === "string" ? b.context : undefined) ?? ".",
+      dockerfile: typeof b.dockerfile === "string" ? b.dockerfile : undefined,
+    };
   }
-  return undefined;
+  return {};
 }
 
 function parsePorts(ports: unknown): string[] {
@@ -135,4 +145,12 @@ function parseVolumes(vols: unknown): string[] {
     }
     return String(v);
   });
+}
+
+function parseCommand(command: unknown): string | undefined {
+  if (typeof command === "string") return command;
+  if (Array.isArray(command)) {
+    return command.map((part) => String(part)).join(" ");
+  }
+  return undefined;
 }

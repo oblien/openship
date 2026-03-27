@@ -6,8 +6,15 @@
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-export type { RuntimeAdapter, RuntimeCapability } from "./types";
-export { assertCapability } from "./types";
+export type {
+  RuntimeAdapter,
+  RuntimeCapability,
+  MultiServiceRuntimeAdapter,
+  MultiServiceGroupHandle,
+  MultiServiceDeployConfig,
+  MultiServiceDeployResult,
+} from "./types";
+export { assertCapability, isMultiServiceRuntime } from "./types";
 export { runBuildPipeline, BuildLogger, parseLogLevel, type BuildEnvironment } from "./build-pipeline";
 
 // ─── Runtime classes ─────────────────────────────────────────────────────────

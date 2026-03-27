@@ -138,6 +138,8 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
     }
   };
 
+  const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
+
   return (
     <div className="min-h-screen bg-background mx-auto md:px-12">
       {/* Header */}
@@ -154,7 +156,9 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                     ? "Deployment Cancelled"
                     : deploymentStatus === "failed"
                       ? "Deployment Failed"
-                      : deploymentStatus === "ready"
+                      : hasWarning
+                        ? "Deployment Ready With Warnings"
+                        : deploymentStatus === "ready"
                         ? "Deployment Successful"
                         : "Deploying..."}
                 </h1>
@@ -204,6 +208,17 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
             {/* Progress Steps */}
             <div className="bg-card rounded-2xl border border-border/50 p-8 transition-all duration-300">
               <h2 className="text-base font-normal text-foreground mb-6">Deployment Progress</h2>
+
+              {hasWarning && (
+                <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/8 px-4 py-3">
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                    Deployment finished, but some services still need attention.
+                  </p>
+                  <p className="mt-1 text-sm text-amber-700/80 dark:text-amber-300/80">
+                    {state.warningMessage}
+                  </p>
+                </div>
+              )}
 
               {/* Steps */}
               <div className="relative">
@@ -505,6 +520,7 @@ const DeploymentDetails = memo(() => {
     return 0;
   });
   const router = useRouter();
+  const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
 
   // Sync final duration when build completes
   useEffect(() => {
@@ -554,10 +570,20 @@ const DeploymentDetails = memo(() => {
             className={`text-sm font-normal px-3 py-1 rounded-full border 
             ${deploymentStatus === "failed" || deploymentStatus === "cancelled"
                 ? "bg-destructive/10 text-destructive border-destructive/20"
+                : hasWarning
+                  ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20"
                 : "bg-primary/10 text-primary border-primary/20"
               }`}
           >
-            {deploymentStatus === "cancelled" ? "Cancelled" : deploymentStatus === "failed" ? "Failed" : deploymentStatus === "ready" ? "Ready" : "Building"}
+            {deploymentStatus === "cancelled"
+              ? "Cancelled"
+              : deploymentStatus === "failed"
+                ? "Failed"
+                : hasWarning
+                  ? "Ready with warnings"
+                  : deploymentStatus === "ready"
+                    ? "Ready"
+                    : "Building"}
           </span>
         </div>
         <div className="flex justify-between items-center py-1.5 border-b border-border/50">

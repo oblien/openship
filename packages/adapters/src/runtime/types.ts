@@ -34,6 +34,7 @@ import type { BuildLogger } from "./build-pipeline";
 export type RuntimeCapability =
   | "build"
   | "deploy"
+  | "multiServiceDeploy"
   | "stop"
   | "start"
   | "restart"
@@ -119,6 +120,50 @@ export interface RuntimeAdapter {
   getContainerIp(containerId: string): Promise<string | null>;
 }
 
+export interface MultiServiceGroupHandle {
+  /** Opaque runtime-specific group identifier (network ID, workspace ID, etc.) */
+  id: string;
+}
+
+export interface MultiServiceDeployConfig {
+  deploymentId: string;
+  projectId: string;
+  slug: string;
+  serviceName: string;
+  image: string;
+  ports: string[];
+  environment: Record<string, string>;
+  volumes: string[];
+  command?: string;
+  restart?: string;
+  resources?: { cpuCores?: number; memoryMb?: number };
+}
+
+export interface MultiServiceDeployResult {
+  containerId: string;
+  status: string;
+  ip?: string;
+  hostPort?: number;
+}
+
+export interface MultiServiceRuntimeAdapter extends RuntimeAdapter {
+  readonly capabilities: ReadonlySet<RuntimeCapability>;
+
+  /** Prepare shared runtime state for sibling services (network, workspace, mesh, etc.) */
+  ensureServiceGroup(config: {
+    deploymentId: string;
+    projectId: string;
+    slug: string;
+  }): Promise<MultiServiceGroupHandle>;
+
+  /** Deploy one service workload into a prepared group */
+  deployServiceWorkload(
+    group: MultiServiceGroupHandle,
+    config: MultiServiceDeployConfig,
+    onLog?: LogCallback,
+  ): Promise<MultiServiceDeployResult>;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -135,4 +180,10 @@ export function assertCapability(
         `Supported: ${[...runtime.capabilities].join(", ")}`,
     );
   }
+}
+
+export function isMultiServiceRuntime(
+  runtime: RuntimeAdapter,
+): runtime is MultiServiceRuntimeAdapter {
+  return runtime.supports("multiServiceDeploy");
 }

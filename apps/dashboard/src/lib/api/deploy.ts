@@ -36,6 +36,18 @@ export const deployApi = {
     deployTarget?: "local" | "server" | "cloud";
     serverId?: string;
     runtimeMode?: "bare" | "docker";
+    services?: Array<{
+      name: string;
+      image?: string;
+      build?: string;
+      dockerfile?: string;
+      ports?: string[];
+      dependsOn?: string[];
+      environment?: Record<string, string>;
+      volumes?: string[];
+      command?: string;
+      restart?: string;
+    }>;
   }) =>
     api.post<any>(endpoints.deploy.buildAccess, payload),
 

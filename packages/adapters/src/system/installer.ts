@@ -31,6 +31,10 @@ function log(
   return { timestamp: new Date().toISOString(), message, level };
 }
 
+function describeEnvironment(profile: Awaited<ReturnType<typeof resolveEnvironment>>): string {
+  return `Detected environment: os=${profile.os}, arch=${profile.arch}, distro=${profile.distro ?? "n/a"}, packageManager=${profile.packageManager}, serviceManager=${profile.serviceManager}`;
+}
+
 // ─── Docker ──────────────────────────────────────────────────────────────────
 
 export async function installDocker(
@@ -43,7 +47,7 @@ export async function installDocker(
     return {
       component: "docker",
       success: false,
-      error: plan.unsupportedReason ?? "Docker installation is not supported on this environment",
+      error: `${plan.unsupportedReason ?? "Docker installation is not supported on this environment"}. ${describeEnvironment(profile)}`,
     };
   }
 

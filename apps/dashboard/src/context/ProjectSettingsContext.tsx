@@ -1,6 +1,7 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef, useMemo } from "react";
 import { projectsApi } from "@/lib/api";
+import { getProjectType } from "@repo/core";
 
 interface BasicProjectData {
   name: string;
@@ -574,10 +575,38 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     if (tab === "general") return "overview";
     if (tab === "git") return "source";
     if (tab === "settings" || tab === "build") return "runtime";
-    return tab || "overview";
+    return tab || undefined; // let default be set by tab list below
   };
 
-  const [activeTab, setActiveTab] = useState(resolveTab(slug?.[0]) || "overview");
+  const isServicesProject = !!(
+    projectData.framework &&
+    getProjectType(projectData.framework as any) === "services"
+  );
+
+  const tabs = useMemo(() => {
+    if (isServicesProject) {
+      return [
+        { id: "services", label: "Services", icon: "layers.png" },
+        { id: "deployments", label: "Deployments", icon: "heart%20rate-118-1658433496.png" },
+        { id: "logs", label: "Logs", icon: "terminal-184-1658431404.png" },
+        { id: "advanced", label: "Advanced", icon: "error%20triangle-81-1658234612.png" },
+      ];
+    }
+
+    return [
+      { id: "overview", label: "Overview", icon: "setting-100-1658432731.png" },
+      { id: "monitoring", label: "Monitoring", icon: "heart%20rate-118-1658433496.png" },
+      { id: "domains", label: "Domains", icon: "server-59-1658435258.png" },
+      { id: "deployments", label: "Deployments", icon: "heart%20rate-118-1658433496.png" },
+      { id: "source", label: "Source", icon: "git%20branch-159-1658431404.png" },
+      { id: "runtime", label: "Runtime", icon: "setting-40-1662364403.png" },
+      { id: "logs", label: "Logs", icon: "terminal-184-1658431404.png" },
+      { id: "advanced", label: "Advanced", icon: "error%20triangle-81-1658234612.png" },
+    ];
+  }, [isServicesProject]);
+
+  const defaultTab = tabs[0].id;
+  const [activeTab, setActiveTab] = useState(resolveTab(slug?.[0]) || defaultTab);
 
   // Initial load - only fetch once on mount since id shouldn't change
   useEffect(() => {
@@ -587,22 +616,14 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   // Sync activeTab with slug changes (for browser back/forward navigation)
   const slugTab = slug?.[0];
   useEffect(() => {
-    const resolved = resolveTab(slugTab);
-    if (resolved && resolved !== activeTab) {
-      setActiveTab(resolved);
+    const resolved = resolveTab(slugTab) || defaultTab;
+    // If the resolved tab isn't valid for this project type, fall back to default
+    const validIds = tabs.map((t) => t.id);
+    const target = validIds.includes(resolved) ? resolved : defaultTab;
+    if (target !== activeTab) {
+      setActiveTab(target);
     }
-  }, [slugTab]); // Only watch slug[0] to avoid array reference issues
-
-  const tabs = [
-    { id: "overview", label: "Overview", icon: 'setting-100-1658432731.png' },
-    { id: "monitoring", label: "Monitoring", icon: 'heart%20rate-118-1658433496.png' },
-    { id: "domains", label: "Domains", icon: 'server-59-1658435258.png' },
-    { id: "deployments", label: "Deployments", icon: 'heart%20rate-118-1658433496.png' },
-    { id: "source", label: "Source", icon: 'git%20branch-159-1658431404.png' },
-    { id: "runtime", label: "Runtime", icon: 'setting-40-1662364403.png' },
-    { id: "logs", label: "Logs", icon: 'terminal-184-1658431404.png' },
-    { id: "advanced", label: "Advanced", icon: 'error%20triangle-81-1658234612.png' },
-  ];
+  }, [slugTab, defaultTab, tabs]); // Only watch slug[0] to avoid array reference issues
 
   const [deployments, setDeployments] = useState([]);
   const [deploymentsLoading, setDeploymentsLoading] = useState(false);

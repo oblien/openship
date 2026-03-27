@@ -46,7 +46,7 @@ export async function onFailure(
   ctx: LifecycleContext,
   error?: string,
   durationMs?: number,
-  errorMeta?: { errorCode?: string; errorDetails?: Record<string, unknown> },
+  errorMeta?: { errorCode?: string; errorDetails?: Record<string, unknown>; errorMessage?: string },
 ): Promise<void> {
   const { runtime, project, dep, buildSessionId, persistLogs, provisioned } = ctx;
 
@@ -71,12 +71,28 @@ export async function onFailure(
     }
   }
 
+  const serviceDeps = await repos.service.listByDeployment(dep.id).catch(() => []);
+  for (const serviceDep of serviceDeps) {
+    if (!serviceDep.containerId) continue;
+    try {
+      await runtime.destroy(serviceDep.containerId);
+    } catch (destroyErr) {
+      console.error(
+        `[DEPLOY] Failed to destroy service container ${serviceDep.containerId} on failure:`,
+        destroyErr,
+      );
+    }
+  }
+
   // 2. Persist failure state
   const errorMessage = error ? truncateError(error) : undefined;
   const collapsed = persistLogs();
   await repos.deployment.updateStatus(dep.id, "failed", { errorMessage });
   await repos.deployment.finishBuildSession(buildSessionId, "failed", durationMs ?? 0, collapsed);
-  sessionManager.updateStatus(dep.id, "failed", errorMeta);
+  sessionManager.updateStatus(dep.id, "failed", {
+    ...errorMeta,
+    errorMessage,
+  });
 
   // 3. Notify
   const user = await repos.user.findById(dep.userId);
@@ -117,15 +133,28 @@ export async function onCancelled(
 
 export async function onSuccess(
   ctx: LifecycleContext,
-  result: { containerId: string; url?: string; durationMs: number },
+  result: {
+    containerId: string;
+    url?: string;
+    durationMs: number;
+    warningMessage?: string;
+    metaPatch?: Record<string, unknown>;
+  },
 ): Promise<void> {
   const { project, dep, buildSessionId, persistLogs } = ctx;
 
   await repos.deployment.setContainerId(dep.id, result.containerId, result.url);
-  await repos.deployment.updateStatus(dep.id, "ready");
+  await repos.deployment.updateStatus(dep.id, "ready", {
+    errorMessage: null,
+    meta: result.metaPatch
+      ? { ...((dep.meta as Record<string, unknown> | null) ?? {}), ...result.metaPatch }
+      : dep.meta,
+  });
   await repos.project.setActiveDeployment(project.id, dep.id);
   await repos.deployment.finishBuildSession(buildSessionId, "ready", result.durationMs, persistLogs());
-  sessionManager.updateStatus(dep.id, "ready");
+  sessionManager.updateStatus(dep.id, "ready", {
+    warningMessage: result.warningMessage,
+  });
 
   const user = await repos.user.findById(dep.userId);
   if (user?.email) {
