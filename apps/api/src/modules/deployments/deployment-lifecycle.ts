@@ -14,7 +14,7 @@
  */
 
 import { repos, type Project, type Deployment } from "@repo/db";
-import type { LogEntry } from "@repo/adapters";
+import { DockerRuntime, type LogEntry } from "@repo/adapters";
 import type { RuntimeAdapter } from "@repo/adapters";
 import { SYSTEM } from "@repo/core";
 import { notifyDeploySuccess, notifyBuildFailed } from "../../lib/notifications";
@@ -40,6 +40,15 @@ function truncateError(msg: string): string {
   return msg.length > max ? msg.slice(0, max) + "…" : msg;
 }
 
+async function cleanupBuildArtifact(runtime: RuntimeAdapter, artifactRef: string): Promise<void> {
+  if (runtime instanceof DockerRuntime) {
+    await runtime.removeImage(artifactRef);
+    return;
+  }
+
+  await runtime.destroy(artifactRef);
+}
+
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
 export async function onFailure(
@@ -54,7 +63,7 @@ export async function onFailure(
   //    on failure so the user doesn't have to manually clean up.
   if (provisioned.imageRef) {
     try {
-      await runtime.destroy(provisioned.imageRef);
+      await cleanupBuildArtifact(runtime, provisioned.imageRef);
     } catch (destroyErr) {
       console.error(
         `[DEPLOY] Failed to destroy ${provisioned.imageRef} on failure:`,
@@ -62,7 +71,7 @@ export async function onFailure(
       );
       // Retry once after a short delay
       await new Promise((r) => setTimeout(r, 2000));
-      await runtime.destroy(provisioned.imageRef).catch((retryErr) => {
+      await cleanupBuildArtifact(runtime, provisioned.imageRef).catch((retryErr) => {
         console.error(
           `[DEPLOY] Retry destroy also failed for ${provisioned.imageRef}:`,
           retryErr,
@@ -115,14 +124,14 @@ export async function onCancelled(
   // Force destroy provisioned resources
   if (provisioned.imageRef) {
     try {
-      await runtime.destroy(provisioned.imageRef);
+      await cleanupBuildArtifact(runtime, provisioned.imageRef);
     } catch (destroyErr) {
       console.error(
         `[DEPLOY] Failed to destroy ${provisioned.imageRef} on cancel:`,
         destroyErr,
       );
       await new Promise((r) => setTimeout(r, 2000));
-      await runtime.destroy(provisioned.imageRef).catch(() => {});
+      await cleanupBuildArtifact(runtime, provisioned.imageRef).catch(() => {});
     }
   }
 

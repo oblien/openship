@@ -121,7 +121,7 @@ export function Dashboard() {
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-[17px] leading-[1.65] th-text-body">
             Deployments, domains, databases, backups, scaling — manage your entire
-            infrastructure from one desktop app. No terminal, no YAML, no guesswork.
+            infrastructure from one app. Desktop, web, or CLI — your call. No YAML, no guesswork.
           </p>
         </div>
 

@@ -18,6 +18,14 @@ export const deployApi = {
   deleteDeployment: (id: string) =>
     api.delete<any>(endpoints.deploy.delete(id)),
 
+  /** Reject a partial deployment and restore previous active deployment if available */
+  reject: (id: string) =>
+    api.post<any>(endpoints.deploy.reject(id)),
+
+  /** Roll back to a previous successful deployment */
+  rollback: (id: string) =>
+    api.post<any>(endpoints.deploy.rollback(id)),
+
   /** Resolve project info from GitHub repo or local path — detects stack */
   prepare: (body:
     | { source?: "github"; owner: string; repo: string; force?: string | boolean }
@@ -47,6 +55,11 @@ export const deployApi = {
       volumes?: string[];
       command?: string;
       restart?: string;
+      exposed?: boolean;
+      exposedPort?: string;
+      domain?: string;
+      customDomain?: string;
+      domainType?: "free" | "custom";
     }>;
   }) =>
     api.post<any>(endpoints.deploy.buildAccess, payload),

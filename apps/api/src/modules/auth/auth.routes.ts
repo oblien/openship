@@ -154,10 +154,15 @@ if (env.DEPLOY_MODE === "desktop") {
         return c.html(desktopResultPage("Authentication failed", "Could not verify with Openship Cloud. Please return to Openship and try again."));
       }
 
-      const localUserId = await mirrorCloudUser(data.user);
-      await storeCloudSession(localUserId, data.sessionToken);
+      // Always mirror the cloud user for record-keeping
+      const mirroredUserId = await mirrorCloudUser(data.user);
 
-      const session = await createLocalSession(localUserId, "127.0.0.1", "desktop");
+      // Store cloud session against the CURRENTLY LOGGED IN user if available
+      // (cloud:connect flow), otherwise against the mirrored cloud user (onboarding flow)
+      const targetUserId = validated.connectUserId || mirroredUserId;
+      await storeCloudSession(targetUserId, data.sessionToken);
+
+      const session = await createLocalSession(mirroredUserId, "127.0.0.1", "desktop");
 
       // Resolve the pending nonce so Electron can pick up the session via polling
       resolveDesktopAuth(validated.nonce, session.token, session.expiresAt);
@@ -182,8 +187,20 @@ if (env.DEPLOY_MODE === "desktop") {
     if (!nonce || typeof nonce !== "string" || !state || typeof state !== "string" || !codeVerifier || typeof codeVerifier !== "string") {
       return c.json({ error: "missing nonce, state, or code_verifier" }, 400);
     }
+
+    // Try to extract the current dashboard user from the session cookie.
+    // net.fetch in Electron sends cookies automatically, so if the dashboard
+    // is logged in, we can link the cloud session to the right user.
+    let connectUserId: string | undefined;
+    try {
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      connectUserId = session?.user?.id;
+    } catch {
+      // No session — onboarding flow, will mirror cloud user instead
+    }
+
     const { registerDesktopNonce } = await import("../../lib/cloud-auth-proxy");
-    registerDesktopNonce(nonce, state, codeVerifier);
+    registerDesktopNonce(nonce, state, codeVerifier, connectUserId);
     return c.json({ ok: true });
   });
 

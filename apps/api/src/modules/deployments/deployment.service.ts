@@ -146,6 +146,33 @@ export async function rollbackDeployment(deploymentId: string, userId: string) {
   return dep;
 }
 
+// ─── Reject partial deployment ─────────────────────────────────────────────
+
+export async function rejectDeployment(deploymentId: string, userId: string) {
+  const dep = await getDeployment(deploymentId, userId);
+
+  if (dep.status !== "ready") {
+    throw new ForbiddenError("Can only reject a completed deployment");
+  }
+
+  const project = await repos.project.findById(dep.projectId);
+  if (!project) throw new NotFoundError("Project", dep.projectId);
+
+  const meta = (dep.meta as { previousActiveDeploymentId?: string } | null) ?? null;
+  const previousDeploymentId = meta?.previousActiveDeploymentId;
+
+  if (previousDeploymentId && previousDeploymentId !== deploymentId) {
+    await rollbackDeployment(previousDeploymentId, userId);
+  }
+
+  await deleteDeployment(deploymentId, userId);
+
+  return {
+    success: true,
+    restoredDeploymentId: previousDeploymentId ?? null,
+  };
+}
+
 // ─── Deployment logs ─────────────────────────────────────────────────────────
 
 export async function getDeploymentLogs(deploymentId: string, userId: string, tail?: number) {

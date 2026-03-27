@@ -8,12 +8,10 @@ import EmptyState from "@/components/overview/EmptyState";
 import { projectsApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
-import { usePlatform } from "@/context/PlatformContext";
 import { Plus, Search } from "lucide-react";
 
 export default function ProjectsPage() {
   const { t } = useI18n();
-  const { hostDomain } = usePlatform();
   const [projects, setProjects] = useState<Project[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -113,7 +111,6 @@ export default function ProjectsPage() {
                 <ProjectCard
                   key={project.id}
                   project={project}
-                  hostDomain={hostDomain}
                 />
               ))}
             </div>

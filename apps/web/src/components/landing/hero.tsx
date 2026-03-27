@@ -56,7 +56,7 @@ export function Hero() {
 
         {/* Sub */}
         <p className="animate-fade-in-up animate-delay-200 mx-auto mt-6 max-w-[520px] text-[16px] leading-[1.65] th-text-body">
-          Push your code&nbsp;&mdash; AI handles the build, config, and deployment. Use our cloud or connect your own servers. Zero&nbsp;lock&#8209;in, completely&nbsp;open&#8209;source.
+          Push your code&nbsp;&mdash; builds, config, and deployment are handled automatically. Use our cloud or connect your own servers. Zero&nbsp;lock&#8209;in, completely&nbsp;open&#8209;source.
         </p>
 
         {/* CTAs */}

@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { Server, Cloud, Cpu, ArrowRight, Pencil, ChevronDown, CheckCircle2 } from "lucide-react";
+import { Server, Cloud, Cpu, ArrowRight, Pencil, ChevronDown, CheckCircle2, Loader2 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
+import { servicesNeedCloud } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
 import type { ServerInfo } from "@/lib/api/system";
 import type { DeployTarget, BuildStrategy } from "@/context/deployment/types";
@@ -188,6 +190,7 @@ export interface ResolvedTargets {
   /** All configured servers */
   servers: ServerInfo[];
   hasCloudConnected: boolean;
+  hasCloudOption: boolean;
   /** True when there's a real choice to make */
   hasChoice: boolean;
 }
@@ -195,25 +198,28 @@ export interface ResolvedTargets {
 export function useDesktopTargets(): ResolvedTargets {
   const cloud = useCloud();
   const [servers, setServers] = useState<ServerInfo[]>([]);
-  const [ready, setReady] = useState(false);
+  const [serversReady, setServersReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     systemApi.listServers()
       .then((list) => { if (!cancelled) setServers(list); })
       .catch(() => {})
-      .finally(() => { if (!cancelled) setReady(true); });
+      .finally(() => { if (!cancelled) setServersReady(true); });
     return () => { cancelled = true; };
   }, []);
 
   const hasServers = servers.length > 0;
   const hasCloudConnected = cloud.connected;
+  const hasCloudOption = true;
+  const ready = serversReady && !cloud.loading;
 
   return {
     ready,
     servers,
     hasCloudConnected,
-    hasChoice: hasServers && hasCloudConnected,
+    hasCloudOption,
+    hasChoice: ready && Number(hasServers) + Number(hasCloudOption) > 1,
   };
 }
 
@@ -226,28 +232,35 @@ interface DeployTargetStepProps {
 
 const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue }) => {
   const { config, updateConfig } = useDeployment();
-  const { servers, hasCloudConnected, hasChoice } = targets;
+  const { requireCloud } = useCloud();
+  const { baseDomain } = usePlatform();
+  const { ready, servers, hasCloudConnected, hasCloudOption, hasChoice } = targets;
   const hasServers = servers.length > 0;
   const isSingleServer = servers.length === 1;
   const showBuildStrategy = config.projectType === "app";
 
   // Auto-set deploy target when there's only one option
   useEffect(() => {
-    if (!hasChoice) {
-      if (hasServers) {
-        updateConfig({ deployTarget: "server", serverId: servers[0].id });
-      } else {
-        updateConfig({ deployTarget: "cloud" });
-      }
+    if (!ready || hasChoice) {
+      return;
     }
-  }, [hasChoice, hasServers, hasCloudConnected]);
+
+    if (hasServers) {
+      updateConfig({ deployTarget: "server", serverId: servers[0].id });
+      return;
+    }
+
+    if (hasCloudOption) {
+      updateConfig({ deployTarget: "cloud", serverId: undefined });
+    }
+  }, [ready, hasChoice, hasServers, hasCloudOption, servers, updateConfig]);
 
   // Auto-select single server
   useEffect(() => {
     if (isSingleServer && config.deployTarget === "server" && !config.serverId) {
       updateConfig({ serverId: servers[0].id });
     }
-  }, [isSingleServer, config.deployTarget, config.serverId]);
+  }, [isSingleServer, config.deployTarget, config.serverId, servers, updateConfig]);
 
   const handleDeployTargetChange = (target: DeployTarget) => {
     const updates: Partial<typeof config> = { deployTarget: target };
@@ -292,12 +305,14 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     }
   }
 
-  if (hasCloudConnected) {
+  if (hasCloudOption) {
     deployTargetOptions.push({
       value: "cloud",
       icon: <Cloud className="size-5" />,
-      label: "Oblien Cloud",
-      description: "Deploy to managed cloud infrastructure. No server setup needed.",
+      label: "Openship Cloud",
+      description: hasCloudConnected
+        ? "Deploy to managed cloud infrastructure. No server setup needed."
+        : "Connect your Openship Cloud account and deploy to managed infrastructure.",
     });
   }
 
@@ -321,22 +336,59 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     },
   ];
 
-  // Determine the selected server name for continue button context
-  const selectedServer = servers.find((s) => s.id === config.serverId);
-  const canContinue = config.deployTarget === "cloud" ||
-    (config.deployTarget === "server" && !!config.serverId);
+  const hasAnyDeployTarget = deployTargetOptions.length > 0;
+  const canContinue = ready && (
+    config.deployTarget === "cloud" ||
+    (config.deployTarget === "server" && !!config.serverId && hasServers)
+  );
+
+  const handleContinue = () => {
+    if (config.deployTarget === "cloud" && !hasCloudConnected) {
+      if (!requireCloud("Deploying to Openship Cloud")) {
+        return;
+      }
+    }
+
+    // Compose services with free managed domains require cloud
+    if (config.projectType === "services" && servicesNeedCloud(config.services)) {
+      if (!requireCloud(`Using .${baseDomain} domains for your services`)) {
+        return;
+      }
+    }
+
+    onContinue();
+  };
 
   return (
     <div className="space-y-8">
-      {/* Deploy target — only when there's a real choice */}
-      {hasChoice && (
+      {!ready && (
         <div className="space-y-3">
           <div>
             <h3 className="text-base font-semibold text-foreground">
               Where do you want to deploy?
             </h3>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Choose where your application will run
+              Loading your available deploy targets
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-border/50 bg-card px-4 py-8 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Checking servers and cloud connection...
+          </div>
+        </div>
+      )}
+
+      {/* Deploy target */}
+      {ready && hasAnyDeployTarget && (
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">
+              Where do you want to deploy?
+            </h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {hasChoice
+                ? "Choose where your application will run"
+                : "Only one deploy target is currently available"}
             </p>
           </div>
           <div className="space-y-2">
@@ -360,6 +412,22 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                 )}
               </OptionCard>
             ))}
+          </div>
+        </div>
+      )}
+
+      {ready && !hasAnyDeployTarget && (
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">
+              Where do you want to deploy?
+            </h3>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              No deploy target is available yet
+            </p>
+          </div>
+          <div className="rounded-xl border border-border/50 bg-card px-4 py-4 text-sm text-muted-foreground leading-relaxed">
+            Connect Openship Cloud or add a server to continue with this deployment.
           </div>
         </div>
       )}
@@ -395,7 +463,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       {/* Continue */}
       <button
         type="button"
-        onClick={onContinue}
+        onClick={handleContinue}
         disabled={!canContinue}
         className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
       >

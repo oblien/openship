@@ -411,9 +411,9 @@ const FEATURES: {
     {
       title: "Full Backend Stack",
       description:
-        "The app sets up your entire backend — API, database, Redis, WebSocket, workers. AI detects what you need, UI lets you tweak it. No Docker knowledge required.",
+        "The app sets up your entire backend — API, database, Redis, WebSocket, workers. It detects what you need, the UI lets you tweak it. No Docker knowledge required.",
       points: [
-        "AI auto-provisions Postgres, Redis, MongoDB",
+        "Auto-provisions Postgres, Redis, MongoDB",
         "Built-in API gateway, WebSocket & worker support",
         "Private networking between services — configured automatically",
       ],
@@ -424,12 +424,12 @@ const FEATURES: {
       overlay: "rgba(0,0,0,0.82)",
     },
     {
-      title: "AI-Powered Builds",
+      title: "Smart Builds",
       description:
-        "Every build runs locally on your machine. The AI agent watches for errors, diagnoses them, and fixes them before anything touches your server.",
+        "Every build runs locally on your machine. Errors are detected, diagnosed, and fixed automatically before anything touches your server.",
       points: [
         "Automatic error detection and root-cause analysis",
-        "AI applies the fix — broken builds never reach your server",
+        "Fixes applied automatically — broken builds never reach your server",
         "Learns your project patterns over time",
       ],
       Visual: AiVisual,
@@ -471,9 +471,9 @@ const FEATURES: {
     {
       title: "Any Stack, Any Language",
       description:
-        "Node.js, Python, Go, Rust, PHP, Ruby — if it builds, the app ships it. AI detects your framework and configures the build automatically.",
+        "Node.js, Python, Go, Rust, PHP, Ruby — if it builds, the app ships it. Your framework is detected and the build is configured automatically.",
       points: [
-        "AI detects language, framework, and build command",
+        "Auto-detects language, framework, and build command",
         "Full Dockerfile support for custom setups",
         "Monorepo support — deploy any sub-path",
       ],

@@ -14,3 +14,6 @@ export { buildComposeImages, type ComposeBuildImagesResult } from "./build.servi
 
 // Deploy phase
 export { deployComposeServices, isComposeProject, type ComposeDeployResult } from "./deploy.service";
+
+// Shared helpers
+export { normalizeSubdomain, defaultServiceSubdomain, parseServicePort } from "./domain-helpers";

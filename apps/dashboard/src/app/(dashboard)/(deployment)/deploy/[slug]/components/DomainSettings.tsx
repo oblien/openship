@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Globe, Shield, Server, X, Copy, Check, ChevronDown, Info } from "lucide-react";
 import { domainsApi } from "@/lib/api";
+import { usePlatform } from "@/context/PlatformContext";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -16,7 +17,6 @@ interface DomainSettingsProps {
   setCustomDomain: (domain: string) => void;
   domainType: "free" | "custom";
   setDomainType: (type: "free" | "custom") => void;
-  hostDomain?: string;
 }
 
 const RECORD_LABELS: Record<string, string> = {
@@ -33,9 +33,8 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
   setCustomDomain,
   domainType,
   setDomainType,
-  hostDomain,
 }) => {
-  const baseDomain = hostDomain || "opsh.io";
+  const { baseDomain } = usePlatform();
   const [showDnsModal, setShowDnsModal] = useState(false);
   const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
   const [dnsMode, setDnsMode] = useState<"cloud" | "selfhosted">("cloud");

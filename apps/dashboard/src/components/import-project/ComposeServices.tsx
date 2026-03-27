@@ -4,11 +4,9 @@ import React, { useState, useCallback, useMemo } from "react";
 import {
   Layers,
   Globe,
-  Database,
   Server,
   ChevronDown,
   ChevronUp,
-  Hash,
   Container,
   Lock,
   ArrowRight,
@@ -20,11 +18,6 @@ import type { ComposeServiceInfo } from "@/context/deployment/types";
 import EnvironmentVariables from "./EnvironmentVariables";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const isDbService = (svc: ComposeServiceInfo) =>
-  /postgres|mysql|mariadb|mongo|redis|memcached|cassandra|clickhouse|influx|minio/i.test(
-    svc.image || svc.name,
-  );
 
 const getExposedPort = (svc: ComposeServiceInfo) =>
   svc.ports[0]?.split(":").pop()?.split("/")[0];
@@ -48,17 +41,15 @@ const ServiceDomainSection: React.FC<{
   projectName: string;
   onChange: (updates: Partial<ComposeServiceInfo>) => void;
 }> = ({ service, projectName, onChange }) => {
-  const { hostDomain } = usePlatform();
-  const baseDomain = hostDomain || "opsh.io";
+  const { baseDomain } = usePlatform();
   const hasPorts = service.ports.length > 0;
-  const isDb = isDbService(service);
 
-  if (!hasPorts || isDb) {
+  if (!hasPorts) {
     return (
       <div className="flex items-center gap-2.5 px-4 py-3 bg-muted/20 rounded-xl border border-border/30">
         <Lock className="size-4 text-muted-foreground/40" />
         <span className="text-sm text-muted-foreground">
-          {isDb ? "Database — internal only, no public access" : "No ports — internal only"}
+          No ports — internal only
         </span>
       </div>
     );
@@ -208,13 +199,11 @@ const ServiceCard: React.FC<{
   onEnvChange: (env: Record<string, string>) => void;
 }> = ({ service, projectName, onUpdate, onEnvChange }) => {
   const [expanded, setExpanded] = useState(false);
-  const { hostDomain } = usePlatform();
-  const baseDomain = hostDomain || "opsh.io";
+  const { baseDomain } = usePlatform();
 
-  const isDb = isDbService(service);
-  const ServiceIcon = isDb ? Database : service.build ? Container : Server;
-  const iconColor = isDb
-    ? "text-amber-500 bg-amber-500/10"
+  const ServiceIcon = service.exposed ? Globe : service.build ? Container : Server;
+  const iconColor = service.exposed
+    ? "text-primary bg-primary/10"
     : service.build
       ? "text-primary bg-primary/10"
       : "text-muted-foreground bg-muted/60";
@@ -263,16 +252,10 @@ const ServiceCard: React.FC<{
               {domainDisplay}
             </span>
           )}
-          {!service.exposed && exposedPort && !isDb && (
+          {!service.exposed && exposedPort && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/40 border border-dashed border-border/60 text-[11px] text-muted-foreground">
               <Globe className="size-2.5" />
               :{exposedPort}
-            </span>
-          )}
-          {!service.exposed && exposedPort && isDb && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/50 text-[11px] font-mono text-muted-foreground">
-              <Hash className="size-2.5" />
-              {exposedPort}
             </span>
           )}
           {service.dependsOn.length > 0 && (
@@ -388,8 +371,7 @@ const ComposeServices: React.FC = () => {
     [services, updateConfig],
   );
 
-  const appCount = services.filter((s) => s.build && !isDbService(s)).length;
-  const dbCount = services.filter((s) => isDbService(s)).length;
+  const buildCount = services.filter((s) => s.build).length;
   const exposedCount = services.filter((s) => s.exposed).length;
 
   return (
@@ -408,8 +390,7 @@ const ComposeServices: React.FC = () => {
             <h3 className="text-[15px] font-semibold text-foreground">Docker Compose</h3>
             <p className="text-xs text-muted-foreground">
               {services.length} service{services.length !== 1 ? "s" : ""}
-              {appCount > 0 && ` · ${appCount} app${appCount > 1 ? "s" : ""}`}
-              {dbCount > 0 && ` · ${dbCount} db`}
+              {buildCount > 0 && ` · ${buildCount} build`}
               {exposedCount > 0 && ` · ${exposedCount} exposed`}
             </p>
           </div>

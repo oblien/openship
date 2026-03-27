@@ -120,6 +120,11 @@ export async function syncFromCompose(c: Context) {
       volumes?: string[];
       command?: string;
       restart?: string;
+      exposed?: boolean;
+      exposedPort?: string;
+      domain?: string;
+      customDomain?: string;
+      domainType?: "free" | "custom";
     }>;
   }>();
 
@@ -132,6 +137,47 @@ export async function syncFromCompose(c: Context) {
     return c.json({ success: true, services });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to sync services";
+    return c.json({ success: false, error: message }, 400);
+  }
+}
+
+// ─── Per-service container actions ───────────────────────────────────────────
+
+export async function startContainer(c: Context) {
+  const userId = getUserId(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+  try {
+    await serviceService.startServiceContainer(projectId, serviceId, userId);
+    return c.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to start container";
+    return c.json({ success: false, error: message }, 400);
+  }
+}
+
+export async function stopContainer(c: Context) {
+  const userId = getUserId(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+  try {
+    await serviceService.stopServiceContainer(projectId, serviceId, userId);
+    return c.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to stop container";
+    return c.json({ success: false, error: message }, 400);
+  }
+}
+
+export async function restartContainer(c: Context) {
+  const userId = getUserId(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+  try {
+    await serviceService.restartServiceContainer(projectId, serviceId, userId);
+    return c.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to restart container";
     return c.json({ success: false, error: message }, 400);
   }
 }

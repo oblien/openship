@@ -29,6 +29,7 @@ deploymentRoutes.get("/:id/build", ctrl.buildStatus);
 deploymentRoutes.post("/:id/build", ctrl.buildStart);
 deploymentRoutes.post("/:id/redeploy", ctrl.buildRedeploy);
 deploymentRoutes.post("/:id/rollback", ctrl.rollback);
+deploymentRoutes.post("/:id/reject", ctrl.reject);
 deploymentRoutes.post("/:id/cancel", ctrl.cancel);
 deploymentRoutes.delete("/:id", ctrl.remove);
 deploymentRoutes.post("/:id/restart", ctrl.restart);

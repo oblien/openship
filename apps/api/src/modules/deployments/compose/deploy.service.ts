@@ -11,8 +11,7 @@
 
 import { repos, type Deployment, type Project, type Service } from "@repo/db";
 import { getProjectType, type StackId } from "@repo/core";
-import type { LogEntry, MultiServiceRuntimeAdapter } from "@repo/adapters";
-import { BuildLogger } from "@repo/adapters";
+import { BuildLogger, DockerRuntime, type LogEntry, type MultiServiceRuntimeAdapter } from "@repo/adapters";
 import { decryptEnvMap } from "../../../lib/encryption";
 import * as sessionManager from "../session-manager";
 
@@ -124,6 +123,7 @@ export async function deployComposeServices(
   const ordered = topoSort(enabled);
 
   logger.step("deploy", "running", `Deploying ${ordered.length} services...`);
+  logger.log("Preparing shared service group for compose deployment...\n");
 
   // 1. Ensure shared runtime group (Docker network today, cloud workspace later)
   const group = await runtime.ensureServiceGroup({
@@ -240,6 +240,16 @@ export async function deployComposeServices(
         try {
           await runtime.destroy(previous.containerId);
           logger.log(`Replaced previous container for "${svc.name}" (${previous.containerId.slice(0, 12)}).\n`);
+          if (
+            previous.imageRef &&
+            previous.imageRef !== image &&
+            runtime instanceof DockerRuntime
+          ) {
+            await runtime.removeImage(previous.imageRef).catch((err) => {
+              const message = err instanceof Error ? err.message : "Unknown error";
+              logger.log(`Warning: failed to remove previous image for "${svc.name}": ${message}\n`, "warn");
+            });
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : "Unknown error";
           logger.log(`Warning: failed to stop previous container for "${svc.name}": ${message}\n`, "warn");

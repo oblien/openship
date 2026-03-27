@@ -68,6 +68,8 @@ const RESTART_POLICIES: Record<string, { Name: string; MaximumRetryCount: number
   no: { Name: "no", MaximumRetryCount: 0 },
 };
 
+const DOCKER_BUILD_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
 function resolveRestartPolicy(policy?: string) {
   return RESTART_POLICIES[policy ?? "always"] ?? RESTART_POLICIES.always;
 }
@@ -91,6 +93,51 @@ function parsePortBindings(portSpecs: string[]): {
     }
   }
   return { exposedPorts, portBindings };
+}
+
+/**
+ * Detect whether a buffer chunk starts with Docker's 8-byte multiplexed
+ * stream header (stream_type | 0 | 0 | 0 | size_be32).
+ */
+function hasDockerFrameHeader(buf: Buffer, offset = 0): boolean {
+  return (
+    buf.length >= offset + 8 &&
+    (buf[offset] === 1 || buf[offset] === 2) &&
+    buf[offset + 1] === 0 &&
+    buf[offset + 2] === 0 &&
+    buf[offset + 3] === 0
+  );
+}
+
+/** Strip Docker multiplexed frame headers from a complete log buffer. */
+function stripDockerHeaders(buf: Buffer): string {
+  const lines: string[] = [];
+  let offset = 0;
+  while (offset < buf.length) {
+    if (hasDockerFrameHeader(buf, offset)) {
+      const size = buf.readUInt32BE(offset + 4);
+      lines.push(buf.subarray(offset + 8, offset + 8 + size).toString("utf-8"));
+      offset += 8 + size;
+    } else {
+      lines.push(buf.subarray(offset).toString("utf-8"));
+      break;
+    }
+  }
+  return lines.join("");
+}
+
+/** Strip a single Docker frame header from one streaming chunk. */
+function stripDockerChunkHeader(chunk: Buffer): Buffer {
+  return hasDockerFrameHeader(chunk) ? chunk.subarray(8) : chunk;
+}
+
+/** Parse a Docker timestamp-prefixed log line into timestamp + message. */
+function parseTimestampedLine(line: string): { timestamp: string; message: string } {
+  const spaceIdx = line.indexOf(" ");
+  return {
+    timestamp: spaceIdx > 0 ? line.slice(0, spaceIdx) : new Date().toISOString(),
+    message: spaceIdx > 0 ? line.slice(spaceIdx + 1) : line,
+  };
 }
 
 /** Extract first host port and first container IP from an inspected container */
@@ -388,9 +435,52 @@ export class DockerRuntime implements RuntimeAdapter {
 
       // followProgress is dockerode's documented approach for build output
       await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        let idleTimer: NodeJS.Timeout | null = null;
+
+        const clearIdleTimer = () => {
+          if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+          }
+        };
+
+        const fail = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          clearIdleTimer();
+          (stream as any).destroy?.(error);
+          reject(error);
+        };
+
+        const succeed = () => {
+          if (settled) return;
+          settled = true;
+          clearIdleTimer();
+          resolve();
+        };
+
+        const resetIdleTimer = () => {
+          clearIdleTimer();
+          idleTimer = setTimeout(() => {
+            fail(new Error(
+              "Docker build produced no output for 5 minutes. This usually means the remote server cannot reach the package registry, has broken DNS, or the Docker daemon stalled during the build.",
+            ));
+          }, DOCKER_BUILD_IDLE_TIMEOUT_MS);
+          if (idleTimer.unref) idleTimer.unref();
+        };
+
+        resetIdleTimer();
+
         this.docker.modem.followProgress(
           stream,
-          (err: Error | null) => (err ? reject(err) : resolve()),
+          (err: Error | null) => {
+            if (err) {
+              fail(err);
+              return;
+            }
+            succeed();
+          },
           (event: {
             stream?: string;
             error?: string;
@@ -400,10 +490,13 @@ export class DockerRuntime implements RuntimeAdapter {
             progress?: string;
             aux?: unknown;
           }) => {
+            resetIdleTimer();
             fatalBuildError ??= this.handleBuildEvent(event, log);
           },
         );
       });
+
+      log.log("Docker daemon finished streaming build output. Finalizing image...\n");
 
       if (fatalBuildError) {
         throw new Error(fatalBuildError);
@@ -415,6 +508,7 @@ export class DockerRuntime implements RuntimeAdapter {
         throw new Error(`Docker build finished but the image ${tag} was not created`);
       }
 
+      log.log(`Image ${tag} is ready.\n`);
       log.step("build", "completed", `Image ${tag} built successfully`);
       const durationMs = Date.now() - startTime;
       return { sessionId: config.sessionId, status: "deploying", imageRef: tag, durationMs };
@@ -525,6 +619,11 @@ export class DockerRuntime implements RuntimeAdapter {
     await container.restart();
   }
 
+  async removeImage(imageRef: string): Promise<void> {
+    const image = this.docker.getImage(imageRef);
+    await image.remove({ force: true });
+  }
+
   async destroy(containerId: string): Promise<void> {
     const container = this.docker.getContainer(containerId);
     await container.remove({ force: true });
@@ -570,37 +669,13 @@ export class DockerRuntime implements RuntimeAdapter {
       tail: tail ?? 200,
     });
 
-    // Docker multiplexed streams prepend 8-byte frame headers per line.
-    // Strip them before parsing text.
-    const stripHeaders = (buf: Buffer): string => {
-      const lines: string[] = [];
-      let offset = 0;
-      while (offset < buf.length) {
-        if (offset + 8 <= buf.length &&
-            (buf[offset] === 1 || buf[offset] === 2) &&
-            buf[offset + 1] === 0 && buf[offset + 2] === 0 && buf[offset + 3] === 0) {
-          const size = buf.readUInt32BE(offset + 4);
-          lines.push(buf.subarray(offset + 8, offset + 8 + size).toString("utf-8"));
-          offset += 8 + size;
-        } else {
-          // No header — treat rest as raw text
-          lines.push(buf.subarray(offset).toString("utf-8"));
-          break;
-        }
-      }
-      return lines.join("");
-    };
-
-    const raw = stripHeaders(buffer);
+    const raw = stripDockerHeaders(buffer);
 
     return raw
       .split("\n")
       .filter(Boolean)
       .map((line) => {
-        const spaceIdx = line.indexOf(" ");
-        const timestamp = spaceIdx > 0 ? line.slice(0, spaceIdx) : new Date().toISOString();
-        const message = spaceIdx > 0 ? line.slice(spaceIdx + 1) : line;
-
+        const { timestamp, message } = parseTimestampedLine(line);
         return { timestamp, message, level: parseLogLevel(message) };
       });
   }
@@ -621,31 +696,15 @@ export class DockerRuntime implements RuntimeAdapter {
 
     let destroyed = false;
 
-
-
-    // Docker multiplexed streams prepend an 8-byte frame header per chunk
-    // when both stdout and stderr are attached. Strip it before parsing.
-    const stripDockerHeader = (chunk: Buffer): Buffer => {
-      // Header format: [stream_type(1), 0, 0, 0, size(4 big-endian)]
-      // stream_type: 1 = stdout, 2 = stderr
-      if (chunk.length >= 8 && (chunk[0] === 1 || chunk[0] === 2) &&
-          chunk[1] === 0 && chunk[2] === 0 && chunk[3] === 0) {
-        return chunk.subarray(8);
-      }
-      return chunk;
-    };
-
     let buffer = "";
     stream.on("data", (chunk: Buffer) => {
       if (destroyed) return;
-      buffer += stripDockerHeader(chunk).toString("utf-8");
+      buffer += stripDockerChunkHeader(chunk).toString("utf-8");
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       for (const line of lines) {
         if (!line) continue;
-        const spaceIdx = line.indexOf(" ");
-        const timestamp = spaceIdx > 0 ? line.slice(0, spaceIdx) : new Date().toISOString();
-        const message = spaceIdx > 0 ? line.slice(spaceIdx + 1) : line;
+        const { timestamp, message } = parseTimestampedLine(line);
         onLog({ timestamp, message, level: parseLogLevel(message) });
       }
     });
@@ -660,10 +719,7 @@ export class DockerRuntime implements RuntimeAdapter {
     return () => {
       if (!destroyed) {
         destroyed = true;
-        // Destroy the follow stream to stop Docker from sending more data
-        if ("destroy" in stream && typeof (stream as any).destroy === "function") {
-          (stream as any).destroy();
-        }
+        (stream as any).destroy?.();
       }
     };
   }

@@ -74,7 +74,7 @@ const FEATURES = [
 ];
 
 export function CloudProvider({ children }: { children: ReactNode }) {
-  const { selfHosted, cloudAuthUrl } = usePlatform();
+  const { selfHosted, deployMode, cloudAuthUrl } = usePlatform();
 
   const [connected, setConnected] = useState(false);
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
@@ -92,7 +92,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
   // Check cloud status on mount (self-hosted / desktop only)
   const checkStatus = useCallback(async () => {
-    if (!selfHosted) {
+    const canUseCloudConnection = selfHosted || deployMode === "desktop";
+    if (!canUseCloudConnection) {
       setLoading(false);
       return;
     }
@@ -107,7 +108,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [selfHosted]);
+  }, [deployMode, selfHosted]);
 
   useEffect(() => {
     checkStatus();

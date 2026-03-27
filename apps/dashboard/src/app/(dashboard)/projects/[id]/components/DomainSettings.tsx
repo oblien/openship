@@ -109,8 +109,7 @@ export const DomainSettings = () => {
   };
 
   // Check if primary domain is a host/cloud domain (skip SSL renewal UI)
-  const { hostDomain } = usePlatform();
-  const baseDomain = hostDomain || "opsh.io";
+  const { baseDomain } = usePlatform();
   const isObleeDomain = primaryDomain?.domain?.endsWith(`.${baseDomain}`);
 
   const handleRenewSSL = async () => {

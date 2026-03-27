@@ -83,7 +83,8 @@ export async function buildComposeImages(opts: {
     }
   }
 
-  for (const service of buildable) {
+  // ── Build all services in parallel ──────────────────────────────────
+  await Promise.all(buildable.map(async (service) => {
     const context = service.build ?? opts.snapshot.rootDirectory;
     const dockerfileLabel = service.dockerfile ? ` using ${service.dockerfile}` : "";
     opts.logger.log(`Building compose service "${service.name}" from ${context || "."}${dockerfileLabel}...\n`);
@@ -93,6 +94,13 @@ export async function buildComposeImages(opts: {
       serviceName: service.name,
       serviceId: service.id,
       status: "building",
+    });
+
+    // Per-service logger prefixes all output so parallel streams are readable.
+    // Inner step events are forwarded as plain log lines — the outer orchestrator
+    // owns the top-level step lifecycle.
+    const serviceLogger = new BuildLogger((entry) => {
+      opts.logger.log(`[${service.name}] ${entry.message}`, entry.level);
     });
 
     const buildResult = await opts.runtime.build(
@@ -112,7 +120,7 @@ export async function buildComposeImages(opts: {
           hasServer: true,
         },
       }),
-      opts.logger,
+      serviceLogger,
     );
 
     if (buildResult.status === "failed" || !buildResult.imageRef) {
@@ -125,16 +133,17 @@ export async function buildComposeImages(opts: {
         status: "failed",
         error: failureMessage,
       });
-      continue;
+      return;
     }
 
     imageRefs.set(service.id, buildResult.imageRef);
+    opts.logger.log(`Compose service "${service.name}" image ready: ${buildResult.imageRef}\n`);
     sessionManager.broadcastServiceStatus(opts.dep.id, {
       serviceName: service.name,
       serviceId: service.id,
       status: "built",
     });
-  }
+  }));
 
   if (buildable.length > 0) {
     const succeeded = imageRefs.size - external.length;
@@ -143,6 +152,7 @@ export async function buildComposeImages(opts: {
     } else {
       opts.logger.step("build", "completed", `Built ${succeeded}/${buildable.length} images (${buildFailures.size} failed)`);
     }
+    opts.logger.log("Compose image build phase complete. Preparing deployment phase...\n");
   }
 
   return {

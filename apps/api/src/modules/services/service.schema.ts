@@ -21,6 +21,16 @@ export const UpdateServiceBody = Type.Object({
   environment: Type.Optional(Type.Record(Type.String(), Type.String())),
   volumes: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 })),
   command: Type.Optional(Type.String({ maxLength: 1000 })),
+  exposed: Type.Optional(Type.Boolean()),
+  exposedPort: Type.Optional(Type.String({ maxLength: 50 })),
+  domain: Type.Optional(Type.String({ maxLength: 255 })),
+  customDomain: Type.Optional(Type.String({ maxLength: 255 })),
+  domainType: Type.Optional(
+    Type.Union([
+      Type.Literal("free"),
+      Type.Literal("custom"),
+    ]),
+  ),
   restart: Type.Optional(
     Type.Union([
       Type.Literal("no"),

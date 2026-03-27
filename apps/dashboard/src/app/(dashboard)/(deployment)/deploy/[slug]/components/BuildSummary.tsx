@@ -7,8 +7,7 @@ import { STACKS, STACK_ICONS } from "@repo/core";
 
 const BuildSummary: React.FC = () => {
   const { config } = useDeployment();
-  const { hostDomain } = usePlatform();
-  const baseDomain = hostDomain || "opsh.io";
+  const { baseDomain } = usePlatform();
   const isApp = config.projectType === "app";
   const isDocker = config.projectType === "docker";
   const isServices = config.projectType === "services";

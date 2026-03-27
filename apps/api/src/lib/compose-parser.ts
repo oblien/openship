@@ -20,6 +20,11 @@ export interface ComposeService {
   volumes: string[];
   command?: string;
   restart?: string;
+  exposed?: boolean;
+  exposedPort?: string;
+  domain?: string;
+  customDomain?: string;
+  domainType?: "free" | "custom";
 }
 
 export interface ComposeParseResult {

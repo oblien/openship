@@ -47,6 +47,18 @@ export const service = pgTable("service", {
   /** Restart policy: no | always | on-failure | unless-stopped */
   restart: text("restart").default("unless-stopped"),
 
+  /* ── Public routing ─────────────────────────────────────────────── */
+  /** Whether this service should be exposed publicly through routing */
+  exposed: boolean("exposed").notNull().default(false),
+  /** Container port to expose publicly */
+  exposedPort: text("exposed_port"),
+  /** Free subdomain label for managed routing */
+  domain: text("domain"),
+  /** Custom domain bound directly to this service */
+  customDomain: text("custom_domain"),
+  /** Whether the service uses a free or custom domain */
+  domainType: text("domain_type").default("free"),
+
   /* ── State ──────────────────────────────────────────────────────────── */
   /** Whether this service should be deployed (allows disabling individual services) */
   enabled: boolean("enabled").notNull().default(true),

@@ -1,13 +1,8 @@
 <h1 align="center">Openship</h1>
 
 <p align="center">
-  Deploy anything. Own everything.<br>
-  Push your code — build, configure, and deploy from one place.<br>
-  Use our cloud or connect your own servers.
-</p>
-
-<p align="center">
-  Desktop-first. Open-source. Zero lock-in.
+  Open-source deployment platform with built-in CI/CD.<br>
+  Push code, ship containers, manage infrastructure — from a desktop app, web dashboard, or CLI.
 </p>
 
 <p align="center">
@@ -16,159 +11,71 @@
 
 ---
 
-## What Openship Is
+## Quick Start
 
-Openship is a **desktop-first deployment platform with built-in CI/CD and full infrastructure control**.
+```bash
+npm i -g openship
+openship init
+```
 
-It removes the gap between writing code and running it in production.
+That's it. Or if you prefer Docker:
 
-No pipelines to maintain.  
-No YAML to manage.  
-No platform lock-in.
+```bash
+git clone https://github.com/openship/openship.git && cd openship
+cp .env.example .env
+docker compose up -d
+```
 
----
-
-## The Core Idea
-
-Most platforms run everything on your server:
-
-- CI/CD pipelines
-- Build systems
-- Dashboards
-- Databases
-- Your apps
-
-→ Your production resources are shared with tooling.
+Or download the desktop app from [openship.io](https://openship.io).
 
 ---
 
-### Openship
+## What It Does
 
-**Your machine**
-- Desktop app (UI)
-- Build system (local by default)
-- Deployment control
+Point it at a repo. Openship detects your stack, builds it, configures everything, and ships it — zero config files, zero pipelines, zero YAML.
 
-**Your server**
-- Production containers only
+Databases, domains, SSL, CDN, mail, backups — all managed from one place.
 
-→ No resource contention  
-→ Predictable performance  
-→ Clean architecture  
+Works with **Openship Cloud** (managed) or **any Linux server** you own. Solo devs shipping side projects and teams running production — same tool.
 
 ---
 
-## Desktop-First Architecture
+## Features
 
-Openship is not a hosted dashboard.
-
-It’s a **local control plane for your infrastructure**.
-
-- Builds run locally by default
-- Deployments are triggered instantly
-- Works with any VPS or private network
-- No dependency on a remote control layer
-
-Your server stays minimal:
-- No CI runners
-- No dashboards
-- No management services
-
-Only your apps.
-
----
-
-## Built-in CI/CD (Without the Overhead)
-
-CI/CD is fully integrated — without pipelines to configure.
-
-- Deploy on every push
-- Preview environments per branch
-- Staging and production flows
-- Rollbacks built-in
-
-You can still use:
-- CLI workflows
-- External CI if needed
-- Server-side builds (optional)
-
-Default: simple, fast, local.
+| | |
+|---|---|
+| **Built-in CI/CD** | Push-to-deploy, preview environments, staging/prod flows, rollbacks |
+| **Any stack** | Node, Python, Go, Rust, PHP, Ruby, Java, .NET, Docker, monorepos |
+| **Full backend** | Postgres, MySQL, MongoDB, Redis, workers, WebSockets, storage |
+| **Domains & SSL** | Auto Let’s Encrypt, wildcards, unlimited domains, auto-renewal |
+| **CDN** | Edge caching, HTTP/3, Brotli compression, instant purge |
+| **Mail server** | Built-in SMTP with DKIM/SPF/DMARC — no Mailgun/SES needed |
+| **Backups** | Scheduled · databases + volumes · one-click restore · export anytime |
+| **Real-time monitoring** | Live build logs, container metrics, resource usage — streamed to your screen |
+| **Scaling** | Auto-scaling on cloud · multi-node ready on self-hosted |
+| **Portability** | Standard Docker containers — move between providers freely |
+| **Docker Compose** | Deploy existing compose files as-is |
 
 ---
 
 ## Deploy Anywhere
 
-- Openship Cloud (managed)
-- Any VPS or bare metal
-- Any provider, any region
-- Multi-server deployments
+- **Openship Cloud** — managed, auto-scaling, zero setup
+- **Any VPS** — Hetzner, DigitalOcean, Linode, OVH, whatever
+- **Dedicated servers** — bare metal, colo, homelab
+- **Multi-server** — spread workloads across machines
 
-Same app, same flow — everywhere.
-
----
-
-## Full Backend Support
-
-Run complete applications out of the box:
-
-- Databases (Postgres, MySQL, MongoDB)
-- Redis / caching
-- Background workers
-- WebSockets
-- APIs
-- Storage
-
-Provision and manage everything from the app.
+Same interface regardless of where you deploy.
 
 ---
 
-## Any Stack
+## Three Interfaces
 
-If it builds, it ships.
+**Desktop app** — full GUI, real-time logs, one-click everything.
 
-- Node.js, Bun, Deno
-- Python, Go, Rust
-- PHP, Ruby, Java, .NET
-- Docker (full control)
-- Monorepos supported
+**Web dashboard** — same UI, browser-based, for teams.
 
-No lock-in to a runtime.
-
----
-
-## Domains & SSL
-
-- Automatic SSL (Let's Encrypt)
-- Wildcard domains
-- Unlimited domains
-- Auto-renewal
-
-No manual setup.
-
----
-
-## The Desktop App
-
-Everything in one place:
-
-- One-click deploys
-- Live build logs
-- Real-time metrics
-- Domain & DNS management
-- Database control
-- Backups & restore
-- Scaling controls
-
-Replaces:
-- CI dashboards
-- SSH workflows
-- Manual Docker setup
-
----
-
-## Developer Interfaces
-
-### CLI
+**CLI** — scriptable, CI-friendly.
 
 ```bash
 openship deploy
@@ -177,184 +84,43 @@ openship rollback
 openship domains
 ```
 
----
-
-### REST API
-
-Automate everything:
-
-- Deployments
-- Projects
-- Domains
-- Logs
+**REST API** and **MCP** (AI agent protocol) for automation and tooling integration.
 
 ---
 
-### MCP (AI / Agent Control)
+## How Is This Different From Coolify / CapRover / Dokku?
 
-Expose deployment actions to external agents when needed.
+Those tools run their entire control plane on your server — dashboards, build systems, CI runners, databases, and your apps, all competing for the same resources.
 
----
+Openship builds locally and ships production containers. Your server runs your apps and nothing else.
 
-## Backups
+```
+You                           Your server
+┌─────────────────────┐       ┌─────────────────────┐
+│  Desktop / Web UI   │  SSH  │                     │
+│  Builds             │──────→│  Your apps only      │
+│  CLI / API          │       │                     │
+└─────────────────────┘       └─────────────────────┘
+```
 
-- Scheduled backups
-- Databases + volumes
-- One-click restore
-- Export anytime
-
----
-
-## Portability
-
-Move anywhere:
-
-- Cloud ↔ self-host
-- VPS → VPS
-- Full export/import
-
-No proprietary formats:
-- Standard Docker containers
-- Encrypted transfer via SSH
-
----
-
-## Built-in Mail Server
-
-- Unlimited domains
-- Standard email auth (DKIM, SPF, DMARC)
-- No external providers required
-
----
-
-## Global CDN
-
-- Edge caching
-- Compression (HTTP/3, Brotli)
-- Instant cache purge
-
-Works with any deployment.
-
----
-
-## Scaling
-
-### Cloud
-- Auto-scaling
-- Load balancing
-- Zero config
-
-### Self-hosted
-- Upgrade servers anytime
-- Move workloads without redeploy
-- Multi-node ready
-
----
-
-## Architecture Comparison
-
-### Traditional Tools
-
-Server runs:
-- CI/CD
-- Build system
-- Dashboard
-- Reverse proxy
-- Apps
-
-→ Resource contention  
-→ Complex setup  
-
----
-
-### Openship
-
-**Local machine**
-- Builds
-- Control plane
-
-**Server**
-- Production containers only
-
-→ Maximum efficiency  
-→ Minimal overhead  
-
----
-
-## Why Openship
-
-- Desktop-first deployment loop
-- Built-in CI/CD without pipeline overhead
-- No YAML or infra complexity
-- No server-side tooling overhead
-- Works on any Linux server
-- Fully open-source (AGPL-3)
-- No vendor lock-in
-
----
-
-## Example Flow
-
-1. Connect your repo
-2. Connect a server (or use cloud)
-3. Click deploy
-
-Under the hood:
-- Build runs locally
-- Production container is shipped
-- App goes live
-
----
-
-## Philosophy
-
-Infrastructure should be:
-
-- Local-first
-- Transparent
-- Portable
-- Fully owned
-
-Not hidden behind platforms.  
-Not tied to pricing models.  
-Not dependent on proprietary runtimes.
-
----
-
-## Open Source
-
-- AGPL-3 licensed
-- Fully self-hostable
-- No usage limits
-- Community-driven
+You can also run builds on the server if you prefer — it’s a config flag, not a religion.
 
 ---
 
 ## Status
 
-Production-ready core.
+Production-ready core. Actively developed.
 
-Planned:
-- Multi-node clusters
-- Load balancing UI
-- Private networking
-- Advanced monitoring
-- Visual CI/CD pipelines
+**Coming next:** multi-node clusters, load balancing UI, private networking, advanced monitoring, visual CI/CD pipelines.
 
 ---
 
-## Get Started
+## Contributing
 
-- Download the app
-- Connect your repo
-- Deploy in minutes
-
-No lock-in.  
-No complexity.  
-Full control.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## License
 
-AGPL-3
+[AGPL-3.0](LICENSE)

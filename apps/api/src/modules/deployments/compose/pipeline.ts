@@ -12,16 +12,145 @@
  */
 
 import { repos } from "@repo/db";
-import type { Deployment, Project } from "@repo/db";
-import type { ResourceConfig, MultiServiceRuntimeAdapter } from "@repo/adapters";
+import type { Deployment, Project, Service } from "@repo/db";
+import type { ResourceConfig, MultiServiceRuntimeAdapter, RoutingProvider, SslProvider, RoutedDomainInput } from "@repo/adapters";
 import { BuildLogger } from "@repo/adapters";
+import { registerResolvedRoutes } from "@repo/adapters";
+import { SYSTEM } from "@repo/core";
 
 import type { BuildConfigSnapshotLike } from "../build-config";
 import { onFailure, onSuccess, type LifecycleContext } from "../deployment-lifecycle";
 import * as sessionManager from "../session-manager";
+import { env } from "../../../config/env";
+import type { ComposeService } from "../../../lib/compose-parser";
+
+import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 
 import { buildComposeImages } from "./build.service";
 import { deployComposeServices } from "./deploy.service";
+import { normalizeSubdomain, defaultServiceSubdomain, parseServicePort } from "./domain-helpers";
+
+async function registerComposeRoutes(opts: {
+  project: Project;
+  runtime: MultiServiceRuntimeAdapter;
+  routing: RoutingProvider;
+  ssl: SslProvider;
+  logger: BuildLogger;
+  services: Service[];
+  deployedServices: Array<{
+    serviceId: string;
+    serviceName: string;
+    containerId?: string;
+    status: string;
+    ip?: string;
+    hostPort?: number;
+    error?: string;
+  }>;
+  usesManagedRouting: boolean;
+  userId: string;
+  serverId?: string;
+}): Promise<string | undefined> {
+  const { project, runtime, routing, ssl, logger, services, deployedServices, usesManagedRouting, userId, serverId } = opts;
+  const baseDomain = env.HOST_DOMAIN || SYSTEM.DOMAINS.CLOUD_DOMAIN;
+  const byName = new Map(services.map((s) => [s.name, s]));
+  const seenDomains = new Set<string>();
+  let firstPublicUrl: string | undefined;
+
+  const exposedServices = deployedServices.filter((ds) => {
+    const input = byName.get(ds.serviceName);
+    return ds.status === "running" && !!ds.ip && !!input?.exposed;
+  });
+
+  if (exposedServices.length === 0) {
+    logger.log("No compose services are configured for public routing. Skipping route registration.\n");
+    return undefined;
+  }
+
+  // ── Load existing domain records (same as normal deploy) ───────────
+  const projectDomains = await repos.domain.listByProject(project.id);
+  const domainByHostname = new Map(projectDomains.map((d) => [d.hostname.toLowerCase(), d]));
+
+  logger.log(`Configuring public routes for ${exposedServices.length} compose service${exposedServices.length === 1 ? "" : "s"}...\n`);
+
+  for (const deployed of exposedServices) {
+    const input = byName.get(deployed.serviceName);
+    if (!input || !deployed.ip) continue;
+
+    const port = parseServicePort(input.exposedPort ?? undefined) ?? parseServicePort(input.ports?.[0] ?? undefined);
+    if (!port) {
+      logger.log(`Skipping route for service "${deployed.serviceName}" — no routable port configured.\n`, "warn");
+      continue;
+    }
+
+    const hostname = input.domainType === "custom"
+      ? input.customDomain?.trim()
+      : usesManagedRouting
+        ? `${normalizeSubdomain(input.domain || defaultServiceSubdomain(project.slug ?? project.name, input.name))}.${baseDomain}`
+        : undefined;
+
+    if (!hostname) {
+      logger.log(`Skipping route for service "${deployed.serviceName}" — no domain configured.\n`, "warn");
+      continue;
+    }
+
+    const domainKey = hostname.toLowerCase();
+    if (seenDomains.has(domainKey)) continue;
+    seenDomains.add(domainKey);
+
+    // ── Ensure domain record exists in DB (with serviceId) ─────────
+    let domainRecord = domainByHostname.get(domainKey);
+    if (!domainRecord && input.domainType === "custom") {
+      domainRecord = await repos.domain.create({
+        projectId: project.id,
+        serviceId: input.id,
+        hostname,
+        isPrimary: false,
+        status: "active",
+        verified: true,
+        verifiedAt: new Date(),
+      });
+      domainByHostname.set(domainKey, domainRecord);
+      logger.log(`Created domain record for "${hostname}" (service: ${deployed.serviceName}).\n`);
+    }
+
+    const isCloudDomain = hostname.endsWith(`.${baseDomain}`);
+    const provisionSsl = input.domainType === "custom" && runtime.name === "bare";
+
+    // ── Wrap SSL to persist cert status in DB (same as normal) ─────
+    const deploySsl = provisionSsl && domainRecord
+      ? {
+          provisionCert: async (host: string) => {
+            const result = await ssl.provisionCert(host);
+            await repos.domain.updateSsl(domainRecord!.id, {
+              sslStatus: result.expiresAt ? "active" : "provisioning",
+              sslIssuer: result.issuer,
+              sslExpiresAt: result.expiresAt ? new Date(result.expiresAt) : undefined,
+            });
+            return result;
+          },
+        }
+      : ssl;
+
+    const targetUrl = `http://${deployed.ip}:${port}`;
+    const domains: RoutedDomainInput[] = [{ hostname, tls: true, provisionSsl }];
+
+    logger.log(`Configuring public route for service "${deployed.serviceName}" (${targetUrl})...\n`);
+    await registerResolvedRoutes(logger, routing, deploySsl, domains, { targetUrl });
+
+    // ── Sync free subdomains with managed edge proxy ─────────────
+    if (usesManagedRouting && isCloudDomain) {
+      const subdomain = normalizeSubdomain(input.domain || defaultServiceSubdomain(project.slug ?? project.name, input.name));
+      logger.log(`Syncing managed edge proxy for ${hostname}...\n`);
+      await ensureManagedEdgeProxy(userId, subdomain, { serverId });
+    }
+
+    if (!firstPublicUrl) {
+      firstPublicUrl = `https://${hostname}`;
+    }
+  }
+
+  return firstPublicUrl;
+}
 
 async function failPendingServices(
   projectId: string,
@@ -49,9 +178,12 @@ export interface ComposePipelineOpts {
   project: Project;
   dep: Deployment;
   runtime: MultiServiceRuntimeAdapter;
+  routing: RoutingProvider;
+  ssl: SslProvider;
+  usesManagedRouting: boolean;
   logger: BuildLogger;
   ctx: LifecycleContext;
-  snapshot: BuildConfigSnapshotLike;
+  snapshot: BuildConfigSnapshotLike & { composeServices?: ComposeService[]; serverId?: string };
   buildSessionId: string;
   buildEnvVars: Record<string, string>;
   buildResources: ResourceConfig;
@@ -67,7 +199,7 @@ export interface ComposePipelineOpts {
  * after this function completes.
  */
 export async function executeComposePipeline(opts: ComposePipelineOpts): Promise<void> {
-  const { project, dep, runtime, logger, ctx, snapshot, buildSessionId, buildEnvVars, buildResources, gitToken } = opts;
+  const { project, dep, runtime, routing, ssl, usesManagedRouting, logger, ctx, snapshot, buildSessionId, buildEnvVars, buildResources, gitToken } = opts;
 
   // ── Build phase: produce an image for each buildable service ───────
   const composeBuild = await buildComposeImages({
@@ -110,6 +242,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   }
 
   // ── Transition to deploy phase ─────────────────────────────────────
+  logger.log("Build phase complete. Starting compose service deployment...\n");
   await repos.deployment.updateStatus(dep.id, "deploying", {
     buildDurationMs: composeBuild.durationMs,
   });
@@ -127,23 +260,33 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     return;
   }
 
-  // If any build failures exist, the deployment is degraded even if infra deployed
-  const hasBuildFailures = composeBuild.buildFailures.size > 0;
-  if (hasBuildFailures) {
-    const failedNames = [...composeBuild.buildFailures.keys()];
-    const firstError = [...composeBuild.buildFailures.values()][0];
-    await onFailure(
-      ctx,
-      `${composeBuild.buildFailures.size} service build${composeBuild.buildFailures.size === 1 ? "" : "s"} failed: ${firstError}`,
-      composeBuild.durationMs,
-    );
-    return;
+  let publicUrl: string | undefined;
+  const persistedServices = await repos.service.listByProject(project.id);
+  if (persistedServices.length > 0) {
+    try {
+      publicUrl = await registerComposeRoutes({
+        project,
+        runtime,
+        routing,
+        ssl,
+        logger,
+        services: persistedServices,
+        deployedServices: composeResult.services,
+        usesManagedRouting,
+        userId: dep.userId,
+        serverId: snapshot.serverId,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to configure compose service routes";
+      await onFailure(ctx, message, composeBuild.durationMs);
+      return;
+    }
   }
 
   const primary = composeResult.services.find((s) => s.containerId);
   await onSuccess(ctx, {
     containerId: primary?.containerId ?? "compose",
-    url: undefined,
+    url: publicUrl,
     durationMs: composeBuild.durationMs,
     warningMessage: composeResult.warning,
     metaPatch: {

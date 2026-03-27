@@ -43,7 +43,7 @@ export function Footer() {
               </span>
             </Link>
             <p className="th-text-muted mt-4 max-w-xs text-sm leading-relaxed">
-              Open-source desktop app for deploying anything to your server. Download, connect, deploy.
+              Open-source deployment platform. Desktop app, web dashboard, or CLI. Download, connect, deploy.
             </p>
           </div>
 

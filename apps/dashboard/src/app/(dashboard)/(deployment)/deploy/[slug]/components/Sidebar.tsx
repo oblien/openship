@@ -1,10 +1,11 @@
 import React, { useCallback } from "react";
-import { GitBranch, Rocket, Github, Loader2, Globe, Database, Container, Server, Layers, Check, AlertCircle, Key } from "lucide-react";
+import { GitBranch, Rocket, Github, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key } from "lucide-react";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
 import RuntimeModeModalContent from "./RuntimeModeModalContent";
 import { useDeployment } from "@/context/DeploymentContext";
+import { servicesNeedCloud } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
@@ -14,20 +15,12 @@ import { useRouter } from "next/navigation";
 
 const ComposeChecklist: React.FC = () => {
   const { config } = useDeployment();
-  const { hostDomain } = usePlatform();
-  const baseDomain = hostDomain || "opsh.io";
+  const { baseDomain } = usePlatform();
   const services = config.services || [];
   if (services.length === 0) return null;
 
-  const isDb = (svc: { image?: string; name: string }) =>
-    /postgres|mysql|mariadb|mongo|redis|memcached|cassandra|clickhouse|influx|minio/i.test(
-      svc.image || svc.name,
-    );
-
   const exposedServices = services.filter((s) => s.exposed);
-  const exposableServices = services.filter(
-    (s) => s.ports.length > 0 && !isDb(s),
-  );
+  const exposableServices = services.filter((s) => s.ports.length > 0);
   const envConfigured = services.filter(
     (s) => Object.keys(s.environment).length > 0,
   ).length;
@@ -35,7 +28,6 @@ const ComposeChecklist: React.FC = () => {
     (acc, s) => acc + Object.keys(s.environment).length,
     0,
   );
-  const dbServices = services.filter((s) => isDb(s));
   const buildServices = services.filter((s) => s.build);
 
   const checks = [
@@ -60,14 +52,6 @@ const ComposeChecklist: React.FC = () => {
           value: `${buildServices.length} to build`,
           ok: true,
           icon: Container,
-        }]
-      : []),
-    ...(dbServices.length > 0
-      ? [{
-          label: "Databases",
-          value: `${dbServices.length} ${dbServices.length === 1 ? "instance" : "instances"}`,
-          ok: true,
-          icon: Database,
         }]
       : []),
     {
@@ -148,7 +132,7 @@ const ComposeChecklist: React.FC = () => {
 const Sidebar: React.FC = () => {
   const { config, state, updateConfig, startDeployment } = useDeployment();
   const { requireCloud } = useCloud();
-  const { hostDomain } = usePlatform();
+  const { baseDomain } = usePlatform();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
   const isServices = config.projectType === "services";
@@ -167,10 +151,7 @@ const Sidebar: React.FC = () => {
     }
   }, [startDeployment, router]);
 
-  const handleDeploy = useCallback(async () => {
-    if (config.deployTarget === "cloud") {
-      if (!requireCloud("Deploying to Oblien Cloud")) return;
-    }
+  const continueDeploy = useCallback(async () => {
     if (needsRuntimeChoice) {
       let modalId = "";
       modalId = showModal({
@@ -191,8 +172,70 @@ const Sidebar: React.FC = () => {
       });
       return;
     }
+
     await executeDeploy();
-  }, [executeDeploy, config.deployTarget, config.runtimeMode, config.serverId, requireCloud, needsRuntimeChoice, showModal, hideModal, updateConfig]);
+  }, [config.runtimeMode, config.serverId, executeDeploy, hideModal, needsRuntimeChoice, showModal, updateConfig]);
+
+  const handleDeploy = useCallback(async () => {
+    if (config.deployTarget === "cloud") {
+      if (!requireCloud("Deploying to Openship Cloud")) return;
+    }
+
+    // Compose services with free managed domains require cloud
+    if (isServices && servicesNeedCloud(config.services)) {
+      if (!requireCloud(`Using .${baseDomain} domains for your services`)) return;
+    }
+
+    if (isServices && shouldWarnAboutUnreachableServices(config.services)) {
+      let modalId = "";
+      modalId = showModal({
+        customContent: (
+          <div className="p-6 space-y-5">
+            <div className="space-y-2">
+              <h3 className="text-xl font-bold text-foreground">No public service is reachable</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                This stack has app services with ports, but none of them are configured with a public domain.
+                If you deploy now, the services can run internally, but users will not be able to access them from a URL.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Before deploying</p>
+              <ul className="space-y-1.5 text-sm text-muted-foreground">
+                <li>Pick the service that should be public.</li>
+                <li>Enable exposure for that service.</li>
+                <li>Set a subdomain or custom domain and choose the public port.</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                className="rounded-lg border border-border bg-muted px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/80"
+                onClick={() => hideModal(modalId)}
+              >
+                Review Services
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                onClick={async () => {
+                  hideModal(modalId);
+                  await continueDeploy();
+                }}
+              >
+                Deploy Anyway
+              </button>
+            </div>
+          </div>
+        ),
+        maxWidth: "560px",
+      });
+      return;
+    }
+
+    await continueDeploy();
+  }, [baseDomain, config.deployTarget, config.services, continueDeploy, hideModal, isServices, requireCloud, showModal]);
 
   return (
     <div className="lg:sticky lg:top-6 h-fit space-y-4">
@@ -248,7 +291,6 @@ const Sidebar: React.FC = () => {
           setCustomDomain={(val) => updateConfig({ customDomain: val })}
           domainType={config.domainType}
           setDomainType={(val) => updateConfig({ domainType: val })}
-          hostDomain={hostDomain}
         />
       )}
 
@@ -278,3 +320,29 @@ const Sidebar: React.FC = () => {
 };
 
 export default React.memo(Sidebar);
+
+function hasConnectedDomain(service: {
+  exposed?: boolean;
+  domainType?: "free" | "custom";
+  customDomain?: string;
+  domain?: string;
+  name?: string;
+}) {
+  if (!service.exposed) return false;
+  if (service.domainType === "custom") return Boolean(service.customDomain?.trim());
+  return Boolean(service.domain?.trim() || service.name?.trim());
+}
+
+function shouldWarnAboutUnreachableServices(services: Array<{
+  image?: string;
+  name: string;
+  ports: string[];
+  exposed?: boolean;
+  domainType?: "free" | "custom";
+  customDomain?: string;
+  domain?: string;
+}>) {
+  const candidates = services.filter((service) => service.ports.length > 0);
+  if (candidates.length === 0) return false;
+  return candidates.every((service) => !hasConnectedDomain(service));
+}

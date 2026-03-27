@@ -10,6 +10,42 @@ export type NewService = typeof service.$inferInsert;
 export type ServiceDeployment = typeof serviceDeployment.$inferSelect;
 export type NewServiceDeployment = typeof serviceDeployment.$inferInsert;
 
+// ─── Routing normalization ───────────────────────────────────────────────────
+
+function normalizeRoutingFields(input: {
+  exposed?: boolean;
+  exposedPort?: string | null;
+  domain?: string | null;
+  customDomain?: string | null;
+  domainType?: string | null;
+}): {
+  exposed: boolean;
+  exposedPort: string | null;
+  domain: string | null;
+  customDomain: string | null;
+  domainType: string;
+} {
+  const exposed = input.exposed ?? false;
+
+  if (!exposed) {
+    return { exposed: false, exposedPort: null, domain: null, customDomain: null, domainType: "free" };
+  }
+
+  const domainType = input.domainType === "custom" ? "custom" : "free";
+  const trimOrNull = (v?: string | null) => {
+    const t = v?.trim();
+    return t || null;
+  };
+
+  return {
+    exposed: true,
+    exposedPort: trimOrNull(input.exposedPort),
+    domain: domainType === "free" ? trimOrNull(input.domain) : null,
+    customDomain: domainType === "custom" ? trimOrNull(input.customDomain) : null,
+    domainType,
+  };
+}
+
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createServiceRepo(db: Database) {
@@ -67,6 +103,11 @@ export function createServiceRepo(db: Database) {
         volumes?: string[];
         command?: string;
         restart?: string;
+        exposed?: boolean;
+        exposedPort?: string;
+        domain?: string;
+        customDomain?: string;
+        domainType?: string;
       }[],
     ) {
       const existing = await this.listByProject(projectId);
@@ -78,6 +119,14 @@ export function createServiceRepo(db: Database) {
       for (let i = 0; i < parsed.length; i++) {
         const p = parsed[i];
         const ex = existingByName.get(p.name);
+
+        const routing = normalizeRoutingFields({
+          exposed: p.exposed ?? (ex?.exposed || false),
+          exposedPort: p.exposedPort ?? ex?.exposedPort,
+          domain: p.domain ?? ex?.domain,
+          customDomain: p.customDomain ?? ex?.customDomain,
+          domainType: p.domainType ?? ex?.domainType,
+        });
 
         if (ex) {
           // Update existing
@@ -91,10 +140,18 @@ export function createServiceRepo(db: Database) {
             volumes: p.volumes ?? [],
             command: p.command ?? null,
             restart: p.restart ?? "unless-stopped",
+            ...routing,
             enabled: true,
             sortOrder: i,
           });
-          results.push({ ...ex, ...p, enabled: true, sortOrder: i, updatedAt: new Date() } as Service);
+          results.push({
+            ...ex,
+            ...p,
+            ...routing,
+            enabled: true,
+            sortOrder: i,
+            updatedAt: new Date(),
+          } as Service);
         } else {
           // Create new
           const svc = await this.create({
@@ -109,6 +166,7 @@ export function createServiceRepo(db: Database) {
             volumes: p.volumes ?? [],
             command: p.command ?? null,
             restart: p.restart ?? "unless-stopped",
+            ...routing,
             enabled: true,
             sortOrder: i,
           });

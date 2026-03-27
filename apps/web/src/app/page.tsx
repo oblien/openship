@@ -5,16 +5,12 @@ import {
   Dashboard,
   HowItWorks,
   WhyOpenship,
-  AiNative,
   DeveloperExperience,
-  Pricing,
   NoLockin,
   Scaling,
   Backups,
   Portability,
-  MailServer,
-  Cdn,
-  DnsDomains,
+  Infrastructure,
   OpenSourceCta,
   ComingSoon,
   FinalCta,
@@ -31,16 +27,12 @@ export default function HomePage() {
         <Dashboard />
         <HowItWorks />
         <WhyOpenship />
-        <AiNative />
         <DeveloperExperience />
-        <Pricing />
         <NoLockin />
         <Scaling />
         <Backups />
         <Portability />
-        <MailServer />
-        <Cdn />
-        <DnsDomains />
+        <Infrastructure />
         <OpenSourceCta />
         <ComingSoon />
         <FinalCta />

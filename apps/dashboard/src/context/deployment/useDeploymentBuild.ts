@@ -181,6 +181,12 @@ export function useDeploymentBuild(
     callbacks: {
       onLog: (message, _rawText, rawBytes) => {
         if (message.eventId !== undefined) {
+          if (
+            lastEventIdRef.current !== undefined &&
+            message.eventId <= lastEventIdRef.current
+          ) {
+            return;
+          }
           lastEventIdRef.current = message.eventId;
         }
         if (rawBytes) {
@@ -350,6 +356,11 @@ export function useDeploymentBuild(
               volumes: service.volumes,
               command: service.command,
               restart: service.restart,
+              exposed: service.exposed,
+              exposedPort: service.exposedPort,
+              domain: service.domain,
+              customDomain: service.customDomain,
+              domainType: service.domainType,
             }))
           : undefined,
       });
@@ -490,10 +501,13 @@ export function useDeploymentBuild(
             : [],
         }));
 
-        // Write existing logs to terminal only for finished sessions.
-        // Active sessions reconnect via SSE, and the backend replays the
-        // buffered logs on subscribe; writing them here would duplicate them.
-        if (!isActive && buildLogs.length > 0) {
+        // Hydrate current terminal output before subscribing.
+        // For active sessions, track the last replayed event ID so SSE
+        // replay does not duplicate logs after refresh.
+        if (buildLogs.length > 0) {
+          if (isActive && typeof data.lastEventId === "number") {
+            lastEventIdRef.current = data.lastEventId;
+          }
           const textEncoder = new TextEncoder();
           buildLogs.forEach((log) => writeToTerminal(textEncoder.encode(`${log.text}\r\n`)));
         }
@@ -537,7 +551,10 @@ export function useDeploymentBuild(
     try {
       const response = await deployApi.cancel(state.deploymentId);
       if (response.success) {
+        buildStream.disconnect();
+        canStreamContainer.current = false;
         handleCanceled(response.message);
+        showToast(response.message || "Deployment cancelled", "success", "Cancelled");
       } else {
         showToast(response.error || "Failed to stop deployment", "error", "Error");
       }
@@ -547,7 +564,7 @@ export function useDeploymentBuild(
     } finally {
       setState((prev) => ({ ...prev, isStopping: false }));
     }
-  }, [state.deploymentId, state.isStopping, showToast, handleCanceled]);
+  }, [buildStream, canStreamContainer, state.deploymentId, state.isStopping, showToast, handleCanceled]);
 
   const redeploy = useCallback(
     async (deploymentId: string): Promise<string | null> => {

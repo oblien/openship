@@ -33,8 +33,8 @@ const DIFFERENTIATORS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
       </svg>
     ),
-    title: "AI configures. You approve.",
-    desc: "Other tools still expect you to know Docker, NGINX, and reverse proxies. Openship's AI detects your stack, writes the config, sets up SSL, and deploys — you just confirm.",
+    title: "Auto-detected. Auto-configured.",
+    desc: "Other tools still expect you to know Docker, NGINX, and reverse proxies. Openship detects your stack, writes the config, sets up SSL, and deploys — no manual setup, no YAML to write.",
     highlight: "Zero infrastructure knowledge required",
     color: "var(--th-clr-terra)",
     bg: "var(--th-clr-terra-bg)",
@@ -47,8 +47,8 @@ const DIFFERENTIATORS = [
       </svg>
     ),
     title: "Nothing extra installed on your server",
-    desc: "Coolify and CapRover install a web dashboard, build system, and management layer on the server. Openship keeps your server clean — just your apps running in production. Works on any Linux box, VPS, or bare metal.",
-    highlight: "Lowest overhead of any deployment tool",
+    desc: "Coolify and CapRover install a web dashboard, build system, and management layer on the server. Openship keeps your server clean — just your apps running in production. Works on any Linux box or VPS, any provider.",
+    highlight: "Your server only runs what you shipped",
     color: "var(--th-clr-plum)",
     bg: "var(--th-clr-plum-bg)",
     blob: "var(--th-clr-plum-blob)",
@@ -60,7 +60,7 @@ const COMPARE_ROWS: { feature: string; openship: string; others: string; win?: b
   { feature: "Where builds run", openship: "Local (or server when needed)", others: "Always on the server", win: true },
   { feature: "Server overhead", openship: "Your apps only", others: "Dashboard + build system + DB", win: true },
   { feature: "CI/CD", openship: "Built-in (or click to deploy)", others: "Configure pipelines & webhooks", win: true },
-  { feature: "Configuration", openship: "AI auto-detects & configures", others: "Manual YAML / Docker Compose", win: true },
+  { feature: "Configuration", openship: "Auto-detected & configured", others: "Manual YAML / Docker Compose", win: true },
   { feature: "Deployment interface", openship: "Desktop app, web dashboard, or CLI", others: "Web dashboard on server", win: true },
   { feature: "Server resources used for builds", openship: "0% by default", others: "Competes with production", win: true },
   { feature: "Infrastructure knowledge", openship: "None required", others: "Docker, NGINX, SSH", win: true },
@@ -167,7 +167,7 @@ export function WhyOpenship() {
                 <div className="rounded-xl border border-[var(--th-card-bd)] bg-[var(--th-sf-01)] p-4">
                   <p className="text-[11px] font-bold uppercase tracking-[0.08em] th-text-muted">Your machine runs:</p>
                   <div className="mt-2 space-y-1.5">
-                    {["Desktop app (UI + AI)", "Build system (compiles locally)", "Configuration engine"].map((item) => (
+                    {["The app (UI + build engine)", "Build system (compiles locally)", "Configuration engine"].map((item) => (
                       <div key={item} className="flex items-center gap-2 text-[13px]">
                         <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: "var(--th-clr-plum)" }} />
                         <span className="th-text-body">{item}</span>

@@ -15,6 +15,13 @@
       "when": 1742947200000,
       "tag": "0001_services",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1743033600000,
+      "tag": "0002_service_routing",
+      "breakpoints": true
     }
   ]
 }

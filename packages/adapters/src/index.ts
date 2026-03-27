@@ -61,6 +61,7 @@ export {
   type PromptUserFn,
   runDeployPipeline,
 } from "./runtime/deploy-pipeline";
+export { type RoutedDomainInput, registerResolvedRoutes } from "./runtime/route-registration";
 export {
   type PortOccupant,
   probeListeningPort,

@@ -5,6 +5,7 @@ import { type Project } from "@/constants/mock";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { getProjectStatus, PROJECT_STATUS_META } from "@/utils/project-status";
 import { getProjectType } from "@repo/core";
+import { usePlatform } from "@/context/PlatformContext";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
@@ -24,11 +25,11 @@ function timeAgo(dateStr: string): string {
 
 interface Props {
   project: Project;
-  hostDomain?: string;
 }
 
-const ProjectCard: React.FC<Props> = ({ project, hostDomain }) => {
+const ProjectCard: React.FC<Props> = ({ project }) => {
   const router = useRouter();
+  const { baseDomain } = usePlatform();
   const status = getProjectStatus(project);
   const statusMeta = PROJECT_STATUS_META[status];
   const fw = getFrameworkConfig(project.framework);
@@ -36,7 +37,7 @@ const ProjectCard: React.FC<Props> = ({ project, hostDomain }) => {
   const isLocal = !!project.localPath;
   const hasRepo = !!(project.gitOwner && project.gitRepo);
   const repoSlug = hasRepo ? `${project.gitOwner}/${project.gitRepo}` : null;
-  const domain = project.slug ? `${project.slug}.${hostDomain || "opsh.io"}` : null;
+  const domain = project.slug ? `${project.slug}.${baseDomain}` : null;
   const isServicesProject = (() => {
     try {
       return getProjectType(project.framework as any) === "services";

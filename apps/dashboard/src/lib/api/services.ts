@@ -16,6 +16,11 @@ export interface Service {
   volumes: string[] | null;
   command: string | null;
   restart: string | null;
+  exposed: boolean;
+  exposedPort: string | null;
+  domain: string | null;
+  customDomain: string | null;
+  domainType: "free" | "custom" | null;
   enabled: boolean;
   sortOrder: number;
 }
@@ -76,6 +81,11 @@ export const servicesApi = {
       volumes?: string[];
       command?: string;
       restart?: string;
+      exposed?: boolean;
+      exposedPort?: string;
+      domain?: string;
+      customDomain?: string;
+      domainType?: "free" | "custom";
     }>,
   ) =>
     api.post<{ success: boolean; services: Service[] }>(
@@ -107,5 +117,23 @@ export const servicesApi = {
     api.put<{ success: boolean; count: number }>(
       endpoints.services.envSet(projectId, serviceId),
       data,
+    ),
+
+  /** Start a service container */
+  start: (projectId: string | number, serviceId: string) =>
+    api.post<{ success: boolean }>(
+      endpoints.services.start(projectId, serviceId),
+    ),
+
+  /** Stop a service container */
+  stop: (projectId: string | number, serviceId: string) =>
+    api.post<{ success: boolean }>(
+      endpoints.services.stop(projectId, serviceId),
+    ),
+
+  /** Restart a service container */
+  restart: (projectId: string | number, serviceId: string) =>
+    api.post<{ success: boolean }>(
+      endpoints.services.restart(projectId, serviceId),
     ),
 };

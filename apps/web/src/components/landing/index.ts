@@ -12,6 +12,7 @@ export { NoLockin } from "./no-lockin";
 export { MailServer } from "./mail-server";
 export { Cdn } from "./cdn";
 export { DnsDomains } from "./dns-domains";
+export { Infrastructure } from "./infrastructure";
 export { Scaling } from "./scaling";
 export { Backups } from "./backups";
 export { Portability } from "./portability";

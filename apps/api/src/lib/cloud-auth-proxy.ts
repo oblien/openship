@@ -204,7 +204,7 @@ async function exchangeCodeWithCloud(code: string, codeVerifier?: string): Promi
  * After the system browser completes /cloud-callback, the session token
  * is stored against that nonce. Electron polls to pick it up.
  */
-let pendingNonce: { value: string; state: string; codeVerifier: string; registeredAt: number } | null = null;
+let pendingNonce: { value: string; state: string; codeVerifier: string; connectUserId?: string; registeredAt: number } | null = null;
 let resolvedAuth: { nonce: string; claimCode: string } | null = null;
 let pendingClaim: { code: string; token: string; expiresAt: number; createdAt: number } | null = null;
 /** Nonce value preserved after validateDesktopState consumes pendingNonce, used by pollDesktopAuth */
@@ -212,8 +212,8 @@ let activeNonce: string | null = null;
 
 const NONCE_TTL = 5 * 60 * 1000; // 5 minutes
 
-function registerDesktopNonce(nonce: string, state: string, codeVerifier: string): void {
-  pendingNonce = { value: nonce, state, codeVerifier, registeredAt: Date.now() };
+function registerDesktopNonce(nonce: string, state: string, codeVerifier: string, connectUserId?: string): void {
+  pendingNonce = { value: nonce, state, codeVerifier, connectUserId, registeredAt: Date.now() };
   resolvedAuth = null;
   pendingClaim = null;
   activeNonce = nonce;
@@ -239,7 +239,7 @@ function resolveDesktopAuth(nonce: string, token: string, expiresAt: Date): void
  * Returns the code_verifier and nonce if state matches, null otherwise.
  * Consumes the nonce atomically — prevents replay attacks.
  */
-function validateDesktopState(state: string): { codeVerifier: string; nonce: string } | null {
+function validateDesktopState(state: string): { codeVerifier: string; nonce: string; connectUserId?: string } | null {
   if (!pendingNonce) return null;
   if (Date.now() - pendingNonce.registeredAt > NONCE_TTL) {
     pendingNonce = null;
@@ -256,7 +256,7 @@ function validateDesktopState(state: string): { codeVerifier: string; nonce: str
     pendingNonce = null;
     return null;
   }
-  const result = { codeVerifier: pendingNonce.codeVerifier, nonce: pendingNonce.value };
+  const result = { codeVerifier: pendingNonce.codeVerifier, nonce: pendingNonce.value, connectUserId: pendingNonce.connectUserId };
   pendingNonce = null; // consume — one-time use
   return result;
 }

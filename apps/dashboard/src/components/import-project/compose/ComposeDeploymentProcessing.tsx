@@ -12,6 +12,10 @@ import { useRouter } from "next/navigation";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useTheme } from "@/components/theme-provider";
 import { useModal } from "@/context/ModalContext";
+import { useToast } from "@/context/ToastContext";
+import { deployApi } from "@/lib/api";
+
+const warningDismissedKey = (deploymentId: string) => `compose-warning-dismissed:${deploymentId}`;
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -31,8 +35,11 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
   } = useDeployment();
   const { resolvedTheme } = useTheme();
   const { showModal, hideModal } = useModal();
+  const { showToast } = useToast();
   const router = useRouter();
   const promptModalRef = React.useRef<string | null>(null);
+  const warningModalRef = React.useRef<string | null>(null);
+  const handledWarningDeploymentRef = React.useRef<string | null>(null);
 
   const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
   const isFinished = deploymentStatus === "ready" || deploymentStatus === "failed" || deploymentStatus === "cancelled";
@@ -86,6 +93,70 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
       maxWidth: "92vw",
     });
   }, [state.pendingPrompt, showModal, hideModal, respondToPrompt]);
+
+  useEffect(() => {
+    if (deploymentStatus !== "ready" || !state.warningMessage || failed === 0 || !state.deploymentId) {
+      warningModalRef.current = null;
+      handledWarningDeploymentRef.current = null;
+      return;
+    }
+
+    const warningKey = warningDismissedKey(state.deploymentId);
+
+    if (typeof window !== "undefined" && window.sessionStorage.getItem(warningKey) === "1") {
+      handledWarningDeploymentRef.current = state.deploymentId;
+      return;
+    }
+
+    if (handledWarningDeploymentRef.current === state.deploymentId) return;
+    if (warningModalRef.current) return;
+
+    let modalId = "";
+    modalId = showModal({
+      customContent: (
+        <PartialSuccessModalContent
+          failed={failed}
+          total={total}
+          warningMessage={state.warningMessage}
+          onKeep={() => {
+            handledWarningDeploymentRef.current = state.deploymentId;
+            if (typeof window !== "undefined") {
+              window.sessionStorage.setItem(warningKey, "1");
+            }
+            hideModal(modalId);
+          }}
+          onReject={async () => {
+            handledWarningDeploymentRef.current = state.deploymentId;
+            if (typeof window !== "undefined") {
+              window.sessionStorage.setItem(warningKey, "1");
+            }
+
+            await deployApi.reject(state.deploymentId!);
+            hideModal(modalId);
+            showToast("Partial deployment rejected", "success", "Deployment Reverted");
+
+            if (state.projectId) {
+              router.push(`/projects/${state.projectId}`);
+            }
+          }}
+        />
+      ),
+      width: "640px",
+      maxWidth: "92vw",
+      showCloseButton: true,
+      onClose: () => {
+        if (warningModalRef.current === modalId) {
+          warningModalRef.current = null;
+        }
+        handledWarningDeploymentRef.current = state.deploymentId;
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(warningKey, "1");
+        }
+      },
+    });
+
+    warningModalRef.current = modalId;
+  }, [deploymentStatus, failed, hideModal, router, showModal, showToast, state.deploymentId, state.projectId, state.warningMessage, total]);
 
   const handleTerminalReady = useCallback(
     (terminal: Terminal) => {
@@ -273,3 +344,75 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
 };
 
 export default ComposeDeploymentProcessing;
+
+function PartialSuccessModalContent({
+  failed,
+  total,
+  warningMessage,
+  onKeep,
+  onReject,
+}: {
+  failed: number;
+  total: number;
+  warningMessage: string;
+  onKeep: () => void;
+  onReject: () => Promise<void>;
+}) {
+  const [isRejecting, setIsRejecting] = React.useState(false);
+
+  return (
+    <div className="p-6 space-y-5">
+      <div className="space-y-2">
+        <h3 className="text-xl font-bold text-foreground">Deployment finished with failed services</h3>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {failed} of {total} services failed, but the rest of the stack was deployed successfully.
+          You can keep this deployment and fix the failed services later, or reject it and restore the previous deployment.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 p-4 space-y-2">
+        <p className="text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300">Warning</p>
+        <p className="text-sm text-amber-700/90 dark:text-amber-300/90">{warningMessage}</p>
+      </div>
+
+      <div className="rounded-xl border border-border bg-muted/40 p-4">
+        <p className="text-sm text-muted-foreground">
+          Rejecting stops using this partial deployment. If a previous deployment exists, Openship restores it. Otherwise, the new partial deployment is removed.
+        </p>
+      </div>
+
+      <div className="flex items-center justify-end gap-3 pt-2">
+        <button
+          type="button"
+          className="rounded-lg border border-border bg-muted px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/80"
+          onClick={onKeep}
+          disabled={isRejecting}
+        >
+          Keep And Fix Later
+        </button>
+        <button
+          type="button"
+          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+          onClick={async () => {
+            setIsRejecting(true);
+            try {
+              await onReject();
+            } finally {
+              setIsRejecting(false);
+            }
+          }}
+          disabled={isRejecting}
+        >
+          {isRejecting ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Rejecting...
+            </span>
+          ) : (
+            "Reject Deployment"
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}

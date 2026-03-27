@@ -124,6 +124,20 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   envVars: [],
 };
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Whether any compose service uses a managed (free) domain that requires
+ * Openship Cloud. Checks by domain *type*, not by domain string —
+ * works regardless of the configured cloud domain.
+ */
+export function servicesNeedCloud(services?: ComposeServiceInfo[]): boolean {
+  if (!services?.length) return false;
+  return services.some((s) => s.exposed && s.domainType !== "custom");
+}
+
+
+
 // ─── State ───────────────────────────────────────────────────────────────────
 
 export interface DeploymentState {

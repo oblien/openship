@@ -124,6 +124,18 @@ export async function rollback(c: Context) {
   return c.json({ data: dep });
 }
 
+export async function reject(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  try {
+    const result = await deploymentService.rejectDeployment(id, userId);
+    return c.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to reject deployment";
+    return c.json({ success: false, error: message }, 400);
+  }
+}
+
 export async function cancel(c: Context) {
   const userId = getUserId(c);
   const id = param(c, "id");

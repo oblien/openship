@@ -23,8 +23,7 @@ interface DeploymentProcessingProps {
 
 const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy }) => {
   const { config, state, terminalRef, onTerminalReady, stopDeployment, respondToPrompt, steps, deploymentStatus } = useDeployment();
-  const { hostDomain } = usePlatform();
-  const baseDomain = hostDomain || "opsh.io";
+  const { baseDomain } = usePlatform();
   const { resolvedTheme } = useTheme();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
@@ -508,8 +507,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
 
 const DeploymentDetails = memo(() => {
   const { state, deploymentStatus, config } = useDeployment();
-  const { hostDomain } = usePlatform();
-  const baseDomain = hostDomain || "opsh.io";
+  const { baseDomain } = usePlatform();
   const [buildTime, setBuildTime] = useState<number>(() => {
     // Initialize from persisted duration if available
     if (state.buildDurationMs) return Math.round(state.buildDurationMs / 1000);

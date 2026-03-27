@@ -18,6 +18,11 @@ serviceRoutes.post("/sync", ctrl.syncFromCompose);
 serviceRoutes.get("/:serviceId", ctrl.getById);
 serviceRoutes.patch("/:serviceId", ctrl.update);
 
+/* ─── Per-service container actions ─────────────────────────────────────── */
+serviceRoutes.post("/:serviceId/start", ctrl.startContainer);
+serviceRoutes.post("/:serviceId/stop", ctrl.stopContainer);
+serviceRoutes.post("/:serviceId/restart", ctrl.restartContainer);
+
 /* ─── Service environment variables ─────────────────────────────────────── */
 serviceRoutes.get("/:serviceId/env", ctrl.listEnvVars);
 serviceRoutes.put("/:serviceId/env", ctrl.setEnvVars);

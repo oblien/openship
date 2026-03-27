@@ -16,6 +16,8 @@ import { platform } from "../../lib/controller-helpers";
 import { SYSTEM } from "@repo/core";
 import { getCloudPreflight } from "../../lib/cloud-client";
 import type { CloudPreflightData } from "../../lib/cloud-preflight";
+import type { ComposeService } from "../../lib/compose-parser";
+import { normalizeSubdomain, defaultServiceSubdomain } from "./compose/domain-helpers";
 
 export interface PreflightCheck {
     id: string;
@@ -33,6 +35,78 @@ export interface PreflightOptions {
     customDomain?: string;
     slug?: string;
     userId?: string;
+    composeServices?: ComposeService[];
+}
+
+async function checkComposeServiceDomains(
+    composeServices: ComposeService[],
+    projectSlug: string | undefined,
+    cloud: CloudPreflightData | null,
+): Promise<PreflightCheck[]> {
+    const checks: PreflightCheck[] = [];
+    const seen = new Set<string>();
+
+    for (const service of composeServices) {
+        if (!service.exposed) continue;
+
+        if (service.domainType === "custom" && service.customDomain?.trim()) {
+            const domain = service.customDomain.trim().toLowerCase();
+            if (seen.has(domain)) {
+                checks.push({
+                    id: `service-domain-${service.name}`,
+                    label: `Service domain (${service.name})`,
+                    status: "fail",
+                    message: `Duplicate custom domain configured: ${domain}`,
+                });
+                continue;
+            }
+            seen.add(domain);
+
+            const result = await checkCustomDomain(domain, cloud);
+            checks.push({
+                ...result,
+                id: `service-domain-${service.name}`,
+                label: `Service domain (${service.name})`,
+            });
+            continue;
+        }
+
+        const subdomain = normalizeSubdomain(
+            service.domain || defaultServiceSubdomain(projectSlug || "project", service.name),
+        );
+        const fqdn = `${subdomain}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}`;
+
+        // Free subdomains require cloud — fail early if not connected
+        if (!cloud) {
+            checks.push({
+                id: `service-domain-${service.name}`,
+                label: `Service subdomain (${service.name})`,
+                status: "fail",
+                message: `Free subdomain "${subdomain}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}" requires Openship Cloud. Connect your account or switch to a custom domain.`,
+            });
+            continue;
+        }
+
+        if (seen.has(fqdn)) {
+            checks.push({
+                id: `service-domain-${service.name}`,
+                label: `Service domain (${service.name})`,
+                status: "fail",
+                message: `Duplicate service subdomain configured: ${subdomain}`,
+            });
+            continue;
+        }
+        seen.add(fqdn);
+
+        const result = checkSlugFormat(subdomain);
+        checks.push({
+            ...result,
+            id: `service-domain-${service.name}`,
+            label: `Service subdomain (${service.name})`,
+        });
+    }
+
+    return checks;
 }
 
 async function resolveCloudPreflight(
@@ -44,7 +118,15 @@ async function resolveCloudPreflight(
         ? snapshot.deployTarget ?? "cloud"
         : plat.target;
 
-    if (effectiveTarget !== "cloud" || !opts?.userId) {
+    const usesManagedRouting =
+        plat.target === "desktop" && (effectiveTarget === "server" || effectiveTarget === "local");
+    const needsManagedProjectDomain = !!opts?.slug && !opts?.customDomain && usesManagedRouting;
+    const needsManagedComposeDomains =
+        opts?.composeServices?.some((service) => service.exposed && service.domainType !== "custom") ?? false;
+    const needsCloudPreflight =
+        effectiveTarget === "cloud" || needsManagedProjectDomain || needsManagedComposeDomains;
+
+    if (!needsCloudPreflight || !opts?.userId) {
         return null;
     }
 
@@ -223,8 +305,19 @@ async function checkCustomDomain(
     }
 }
 
-async function checkCloudRuntime(cloud: CloudPreflightData | null): Promise<PreflightCheck> {
+async function checkCloudRuntime(
+    cloud: CloudPreflightData | null,
+    requiresCloud: boolean,
+): Promise<PreflightCheck> {
     if (!cloud) {
+        if (requiresCloud) {
+            return {
+                id: "runtime",
+                label: "Cloud runtime",
+                status: "fail",
+                message: "Openship Cloud is required for this deployment, but no cloud account is connected. Connect your account first.",
+            };
+        }
         return { id: "runtime", label: "Runtime", status: "pass" };
     }
 
@@ -245,6 +338,19 @@ export async function runPreflightChecks(
     opts?: PreflightOptions,
 ): Promise<PreflightResult> {
     const cloudPreflight = await resolveCloudPreflight(snapshot, opts);
+
+    // Determine whether this deployment requires cloud directly or via managed routing
+    const plat = platform();
+    const effectiveTarget = plat.target === "desktop"
+        ? snapshot.deployTarget ?? "cloud"
+        : plat.target;
+    const usesManagedRouting =
+        plat.target === "desktop" && (effectiveTarget === "server" || effectiveTarget === "local");
+    const hasManagedProjectDomain = !!opts?.slug && !opts?.customDomain && usesManagedRouting;
+    const hasManagedComposeDomains =
+        opts?.composeServices?.some((service) => service.exposed && service.domainType !== "custom") ?? false;
+    const requiresCloud = effectiveTarget === "cloud" || hasManagedProjectDomain || hasManagedComposeDomains;
+
     const checks: PreflightCheck[] = [
         checkConfig(snapshot),
         checkStack(snapshot),
@@ -255,10 +361,20 @@ export async function runPreflightChecks(
         checks.push(await checkSlug(opts.slug, cloudPreflight));
     }
 
-    checks.push(await checkCloudRuntime(cloudPreflight));
+    checks.push(await checkCloudRuntime(cloudPreflight, requiresCloud));
 
     if (opts?.customDomain) {
         checks.push(await checkCustomDomain(opts.customDomain, cloudPreflight));
+    }
+
+    if (opts?.composeServices?.length) {
+        checks.push(
+            ...(await checkComposeServiceDomains(
+                opts.composeServices,
+                opts.slug,
+                cloudPreflight,
+            )),
+        );
     }
 
     return {

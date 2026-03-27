@@ -52,6 +52,12 @@ export const endpoints = {
     sync: (projectId: string | number) => `projects/${projectId}/services/sync`,
     containers: (projectId: string | number) =>
       `projects/${projectId}/services/containers`,
+    start: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/start`,
+    stop: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/stop`,
+    restart: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/restart`,
     envGet: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env`,
     envSet: (projectId: string | number, serviceId: string) =>
@@ -64,6 +70,8 @@ export const endpoints = {
   deploy: {
     list: "deployments",
     delete: (id: string) => `deployments/${id}`,
+    reject: (id: string) => `deployments/${id}/reject`,
+    rollback: (id: string) => `deployments/${id}/rollback`,
     cancel: (id: string) => `deployments/${id}/cancel`,
     prepare: "deployments/prepare",
     buildAccess: "deployments/build/access",

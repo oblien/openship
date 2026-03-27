@@ -51,7 +51,7 @@ const TRAITS = [
       </svg>
     ),
     label: "Self-Host Anywhere",
-    desc: "Your VPS, bare-metal, or private cloud.",
+    desc: "Any VPS, any provider, or private cloud.",
   },
 ];
 

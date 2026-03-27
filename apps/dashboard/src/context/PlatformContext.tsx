@@ -2,6 +2,9 @@
 
 import React, { createContext, useContext, useState, useCallback } from "react";
 
+/** Default cloud domain — matches SYSTEM.DOMAINS.CLOUD_DOMAIN in @repo/core */
+const DEFAULT_CLOUD_DOMAIN = "opsh.io";
+
 /* ── Types ────────────────────────────────────────────────────────── */
 
 interface PlatformContextValue {
@@ -11,6 +14,8 @@ interface PlatformContextValue {
   cloudAuthUrl: string;
   machineName?: string;
   hostDomain?: string;
+  /** Resolved base domain — hostDomain or the default cloud domain */
+  baseDomain: string;
   setSelfHosted: (v: boolean) => void;
 }
 
@@ -49,6 +54,7 @@ export function PlatformProvider({
   const [cloudAuthUrl] = useState(initialCloudAuthUrl);
   const [machineName] = useState(initialMachineName);
   const [hostDomain] = useState(initialHostDomain);
+  const baseDomain = hostDomain || DEFAULT_CLOUD_DOMAIN;
 
   const setSelfHosted = useCallback((v: boolean) => setSelfHostedState(v), []);
 
@@ -61,6 +67,7 @@ export function PlatformProvider({
         cloudAuthUrl,
         machineName,
         hostDomain,
+        baseDomain,
         setSelfHosted,
       }}
     >

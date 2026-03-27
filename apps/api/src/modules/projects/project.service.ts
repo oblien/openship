@@ -10,6 +10,7 @@ import { slugify, NotFoundError, ConflictError, ValidationError, ForbiddenError,
 import type { ResourceConfig } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { isComposeProject } from "../deployments/compose";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { encodeResources, decodeResources, withDefaults } from "../../lib/resources";
 import { normalizeRollbackWindow } from "../../lib/release-retention";
@@ -223,23 +224,47 @@ export async function deleteProject(projectId: string, userId: string) {
   if (!p || p.userId !== userId) throw new NotFoundError("Project", projectId);
 
   const { routing } = platform();
+  const isCompose = isComposeProject(p);
+  const baseDomain = env.HOST_DOMAIN || SYSTEM.DOMAINS.CLOUD_DOMAIN;
 
-  // Destroy ALL deployment containers (not just active)
+  // ── Destroy ALL deployment containers + compose service containers ──
   try {
     const { rows: allDeps } = await repos.deployment.listByProject(projectId, { perPage: 1000 });
+    const seenImages = new Set<string>();
+
     for (const dep of allDeps) {
+      const runtime = await resolveDeploymentRuntime(dep);
+
+      // Destroy compose service containers (from serviceDeployment table)
+      if (isCompose) {
+        const serviceRows = await repos.service.listByDeployment(dep.id);
+        for (const sd of serviceRows) {
+          if (sd.containerId) {
+            await runtime.destroy(sd.containerId).catch((err) => {
+              console.error(`[PROJECT] Failed to destroy service container ${sd.containerId}:`, err);
+            });
+          }
+        }
+      }
+
+      // Destroy the main deployment container
       if (dep.containerId) {
-        const runtime = await resolveDeploymentRuntime(dep);
         await runtime.destroy(dep.containerId).catch((err) => {
           console.error(`[PROJECT] Failed to destroy container ${dep.containerId}:`, err);
         });
+      }
+
+      // Remove docker images
+      if (dep.imageRef && !seenImages.has(dep.imageRef) && "removeImage" in runtime) {
+        seenImages.add(dep.imageRef);
+        await (runtime as any).removeImage(dep.imageRef).catch(() => {});
       }
     }
   } catch (err) {
     console.error(`[PROJECT] Failed to clean up deployments for ${projectId}:`, err);
   }
 
-  // Remove domain routes
+  // ── Remove domain routes (project-level custom domains) ────────────
   try {
     const domains = await repos.domain.listByProject(projectId);
     for (const d of domains) {
@@ -249,7 +274,27 @@ export async function deleteProject(projectId: string, userId: string) {
     // Best-effort cleanup
   }
 
-  // Delete all deployments + build sessions from DB
+  // ── Remove compose service routes (free subdomains + custom) ───────
+  if (isCompose) {
+    try {
+      const services = await repos.service.listByProject(projectId);
+      for (const svc of services) {
+        if (!svc.exposed) continue;
+
+        if (svc.domainType === "custom" && svc.customDomain) {
+          await routing.removeRoute(svc.customDomain).catch(() => {});
+        } else if (svc.domain || svc.name) {
+          const subdomain = svc.domain || `${p.slug ?? p.name}-${svc.name}`;
+          const hostname = `${subdomain}.${baseDomain}`;
+          await routing.removeRoute(hostname).catch(() => {});
+        }
+      }
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+
+  // ── Delete all deployments + build sessions from DB ────────────────
   await repos.deployment.deleteByProjectId(projectId);
 
   await repos.project.softDelete(projectId);

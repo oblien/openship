@@ -5,7 +5,7 @@
 import { repos, type Project, type Deployment } from "@repo/db";
 import { NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, getRuntimeImage, type StackId, type DeployTarget, type BuildStrategy } from "@repo/core";
 import type { BuildConfig, CommandExecutor, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
-import { BareRuntime, BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, ensurePortAvailable, runDeployPipeline, createPlatform, isMultiServiceRuntime } from "@repo/adapters";
+import { BareRuntime, BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, DockerRuntime, ensurePortAvailable, runDeployPipeline, createPlatform, isMultiServiceRuntime } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
 import { env } from "../../config";
 import { resolveDeploymentRuntime, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
@@ -156,6 +156,7 @@ export interface DeploymentConfigSnapshot {
     failedServiceNames: string[];
     warningMessage?: string;
   };
+  previousActiveDeploymentId?: string;
 }
 
 export interface BuildAccessInput {
@@ -379,6 +380,7 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
     customDomain: snapshot.customDomain,
     slug: project.slug,
     userId,
+    composeServices: snapshot.composeServices,
   });
   if (!preflight.ok) {
     const failures = preflight.checks
@@ -395,7 +397,10 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
     branch: snapshot.branch,
     environment: env,
     framework: snapshot.framework,
-    meta: snapshot,
+    meta: {
+      ...snapshot,
+      previousActiveDeploymentId: project.activeDeploymentId ?? undefined,
+    },
     envVars: encryptEnvVars(envVars),
   });
 
@@ -427,10 +432,21 @@ export async function getBuildSessionStatus(deploymentId: string, userId: string
   const isActive = memSession != null &&
     !["ready", "failed", "cancelled"].includes(memSession.status);
 
-  const logEntries = (buildSessionRow?.logs as LogEntry[] | null) ?? memSession?.logs ?? [];
+  const logEntries = isActive
+    ? (memSession?.logs ?? (buildSessionRow?.logs as LogEntry[] | null) ?? [])
+    : ((buildSessionRow?.logs as LogEntry[] | null) ?? memSession?.logs ?? []);
   // Filter out step-metadata entries — they drive the progress bar, not the terminal
   const terminalEntries = logEntries.filter((l) => !(l.step && l.stepStatus));
   const logsText = terminalEntries.map((l) => l.message).join("\n");
+  const lastEventId = (() => {
+    for (let index = logEntries.length - 1; index >= 0; index--) {
+      const entry = logEntries[index];
+      if (!(entry.step && entry.stepStatus)) {
+        return index;
+      }
+    }
+    return undefined;
+  })();
 
   // In-memory session is real-time truth (updated every phase transition).
   // DB build-session row only moves queued → building → final, so it's stale during deploy.
@@ -511,6 +527,7 @@ export async function getBuildSessionStatus(deploymentId: string, userId: string
     status: effectiveStatus,
     is_active: isActive,
     logs: logsText,
+    lastEventId,
     config: {
       repo: project.gitRepo,
       owner: project.gitOwner,
@@ -535,6 +552,7 @@ export async function getBuildSessionStatus(deploymentId: string, userId: string
     warningMessage: effectiveStatus === "ready"
       ? (snapshot?.composeDeployment?.warningMessage || "")
       : "",
+    previousActiveDeploymentId: snapshot?.previousActiveDeploymentId ?? null,
     errorCode: dep.errorMessage?.includes("PORT_IN_USE") || dep.errorMessage?.includes("EADDRINUSE")
       ? "PORT_IN_USE"
       : undefined,
@@ -586,7 +604,10 @@ export async function redeployBuildSession(deploymentId: string, userId: string)
     branch: oldDep.branch,
     environment: oldDep.environment,
     framework: oldDep.framework || meta.framework,
-    meta,
+    meta: {
+      ...meta,
+      previousActiveDeploymentId: project.activeDeploymentId ?? undefined,
+    },
     envVars: oldDep.envVars as Record<string, string> | null,
   });
 
@@ -663,7 +684,10 @@ export async function triggerDeployment(userId: string, data: { projectId: strin
     commitSha: data.commitSha,
     environment,
     framework: snapshot.framework,
-    meta: snapshot,
+    meta: {
+      ...snapshot,
+      previousActiveDeploymentId: project.activeDeploymentId ?? undefined,
+    },
     envVars: encryptedEnvVars,
   });
 
@@ -793,6 +817,9 @@ async function executeBuildAndDeploy(
         project,
         dep,
         runtime,
+        routing,
+        ssl,
+        usesManagedRouting,
         logger,
         ctx,
         snapshot,
@@ -1044,6 +1071,17 @@ async function executeBuildAndDeploy(
             serverId: snapshot.serverId,
           });
         }
+      }
+
+      if (
+        prevDep?.imageRef &&
+        prevDep.imageRef !== buildResult.imageRef &&
+        previousRuntime instanceof DockerRuntime
+      ) {
+        await previousRuntime.removeImage(prevDep.imageRef).catch((err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.log(`Warning: failed to remove previous image ${prevDep.imageRef}: ${message}\n`, "warn");
+        });
       }
 
       // ── Success ──────────────────────────────────────────────────────
