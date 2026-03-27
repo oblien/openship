@@ -23,6 +23,26 @@ import * as sessionManager from "../session-manager";
 import { buildComposeImages } from "./build.service";
 import { deployComposeServices } from "./deploy.service";
 
+async function failPendingServices(
+  projectId: string,
+  deploymentId: string,
+  failedServiceIds: Set<string>,
+  error: string,
+): Promise<void> {
+  const services = await repos.service.listByProject(projectId);
+
+  for (const service of services) {
+    if (!service.enabled || failedServiceIds.has(service.id)) continue;
+
+    sessionManager.broadcastServiceStatus(deploymentId, {
+      serviceName: service.name,
+      serviceId: service.id,
+      status: "failed",
+      error,
+    });
+  }
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface ComposePipelineOpts {
@@ -72,12 +92,19 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     composeBuild.imageRefs.size <= (composeBuild.externalCount ?? 0);
 
   if (allBuildsFailed) {
-    const failedNames = [...composeBuild.buildFailures.keys()];
     const firstError = [...composeBuild.buildFailures.values()][0];
     const message =
       composeBuild.buildFailures.size === 1
         ? firstError
         : `All ${composeBuild.buildFailures.size} service builds failed. First error: ${firstError}`;
+
+    await failPendingServices(
+      project.id,
+      dep.id,
+      new Set(composeBuild.buildFailures.keys()),
+      "Deployment aborted because all buildable services failed.",
+    );
+
     await onFailure(ctx, message, composeBuild.durationMs);
     return;
   }

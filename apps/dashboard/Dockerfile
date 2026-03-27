@@ -1,8 +1,9 @@
 # ─── Build stage ────────────────────────────────────────
-FROM oven/bun:1.3.10 AS builder
+FROM oven/bun:latest AS builder
 WORKDIR /app
 
 COPY package.json bun.lock pnpm-workspace.yaml ./
+COPY tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY apps/ ./apps/
 

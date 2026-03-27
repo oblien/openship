@@ -151,7 +151,15 @@ export async function resolveDockerRootDirectory(
   rootDirectory?: string,
   localPath?: string,
 ): Promise<string> {
+  const hasExplicitRootDirectory = typeof rootDirectory === "string";
   const normalized = normalizeDockerRootDirectory(rootDirectory, localPath);
+
+  // Explicit values like ".", "./", or "/" mean "use the repo root".
+  // They normalize to an empty string, but must NOT trigger auto-detection.
+  if (hasExplicitRootDirectory) {
+    return normalized;
+  }
+
   if (normalized) {
     return normalized;
   }

@@ -490,8 +490,10 @@ export function useDeploymentBuild(
             : [],
         }));
 
-        // Write existing logs to terminal
-        if (buildLogs.length > 0) {
+        // Write existing logs to terminal only for finished sessions.
+        // Active sessions reconnect via SSE, and the backend replays the
+        // buffered logs on subscribe; writing them here would duplicate them.
+        if (!isActive && buildLogs.length > 0) {
           const textEncoder = new TextEncoder();
           buildLogs.forEach((log) => writeToTerminal(textEncoder.encode(`${log.text}\r\n`)));
         }
