@@ -3,6 +3,7 @@
  */
 
 import { repos } from "@repo/db";
+import type { LogEntry } from "@repo/adapters";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { assertProjectAccess } from "../../lib/controller-helpers";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
@@ -18,6 +19,46 @@ async function assertServiceAccess(projectId: string, serviceId: string, userId:
     throw new Error("service-not-found");
   }
   return { project, svc };
+}
+
+function normalizeRoutingPatch(input: {
+  exposed?: boolean | null;
+  exposedPort?: string | null;
+  domain?: string | null;
+  customDomain?: string | null;
+  domainType?: string | null;
+}): {
+  exposed: boolean;
+  exposedPort: string | null;
+  domain: string | null;
+  customDomain: string | null;
+  domainType: "free" | "custom";
+} {
+  const trimOrNull = (value?: string | null) => {
+    const trimmed = value?.trim();
+    return trimmed || null;
+  };
+
+  const exposed = input.exposed ?? false;
+  if (!exposed) {
+    return {
+      exposed: false,
+      exposedPort: null,
+      domain: null,
+      customDomain: null,
+      domainType: "free",
+    };
+  }
+
+  const domainType = input.domainType === "custom" ? "custom" : "free";
+
+  return {
+    exposed: true,
+    exposedPort: trimOrNull(input.exposedPort),
+    domain: domainType === "free" ? trimOrNull(input.domain) : null,
+    customDomain: domainType === "custom" ? trimOrNull(input.customDomain) : null,
+    domainType,
+  };
 }
 
 // ─── Read ────────────────────────────────────────────────────────────────────
@@ -40,20 +81,30 @@ export async function updateService(
   userId: string,
   data: TUpdateServiceBody,
 ) {
-  await assertServiceAccess(projectId, serviceId, userId);
+  const { svc } = await assertServiceAccess(projectId, serviceId, userId);
 
   // Normalize routing: when exposed is turned off, clear routing fields.
   // When domainType changes, clear the irrelevant domain field.
   const patch = { ...data };
-  if (patch.exposed === false) {
-    patch.exposedPort = undefined;
-    patch.domain = undefined;
-    patch.customDomain = undefined;
-    patch.domainType = "free";
-  } else if (patch.domainType === "custom") {
-    patch.domain = undefined;
-  } else if (patch.domainType === "free") {
-    patch.customDomain = undefined;
+
+  const touchesRouting = ["exposed", "exposedPort", "domain", "customDomain", "domainType"].some(
+    (key) => key in patch,
+  );
+
+  if (touchesRouting) {
+    const normalized = normalizeRoutingPatch({
+      exposed: patch.exposed ?? svc.exposed,
+      exposedPort: patch.exposedPort ?? svc.exposedPort,
+      domain: patch.domain ?? svc.domain,
+      customDomain: patch.customDomain ?? svc.customDomain,
+      domainType: patch.domainType ?? svc.domainType,
+    });
+
+    patch.exposed = normalized.exposed;
+    patch.exposedPort = normalized.exposedPort ?? undefined;
+    patch.domain = normalized.domain ?? undefined;
+    patch.customDomain = normalized.customDomain ?? undefined;
+    patch.domainType = normalized.domainType;
   }
 
   await repos.service.update(serviceId, patch);
@@ -169,4 +220,25 @@ export async function restartServiceContainer(projectId: string, serviceId: stri
   const { runtime, containerId } = await resolveServiceContainer(projectId, serviceId, userId);
   await runtime.restart(containerId);
   return { containerId };
+}
+
+export async function getServiceRuntimeLogs(
+  projectId: string,
+  serviceId: string,
+  userId: string,
+  tail?: number,
+) {
+  const { runtime, containerId } = await resolveServiceContainer(projectId, serviceId, userId);
+  return runtime.getRuntimeLogs(containerId, tail);
+}
+
+export async function streamServiceRuntimeLogs(
+  projectId: string,
+  serviceId: string,
+  userId: string,
+  onLog: (entry: LogEntry) => void,
+  opts?: { tail?: number },
+) {
+  const { runtime, containerId } = await resolveServiceContainer(projectId, serviceId, userId);
+  return runtime.streamRuntimeLogs(containerId, onLog, opts);
 }

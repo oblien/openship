@@ -1,11 +1,14 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { Plus, X, ExternalLink, Check, AlertTriangle, Globe, Shield, Copy, RefreshCw } from "lucide-react";
+import { Plus, ExternalLink, Globe, Copy, RefreshCw, Container, PencilLine, Link2 } from "lucide-react";
 import { generateIcon } from "@/utils/icons";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { projectsApi, deployApi } from "@/lib/api";
+import { projectsApi, deployApi, servicesApi, type Service } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
+import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
+import { getProjectType, resolveServiceHostnameLabel } from "@repo/core";
+import { useSearchParams } from "next/navigation";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -14,8 +17,10 @@ interface DnsRecord {
 }
 
 export const DomainSettings = () => {
-  const { domainsData, updateDomains, id } = useProjectSettings();
+  const { domainsData, updateDomains, id, projectData } = useProjectSettings();
   const { showToast } = useToast();
+  const searchParams = useSearchParams();
+  const isServicesProject = getProjectType(projectData.framework as any) === "services";
 
   const [newDomain, setNewDomain] = useState("");
   const [showCustomDomainSection, setShowCustomDomainSection] = useState(false);
@@ -27,8 +32,14 @@ export const DomainSettings = () => {
   const [isRenewingSSL, setIsRenewingSSL] = useState(false);
   const [dnsRecords, setDnsRecords] = useState<DnsRecord[]>([]);
   const [dnsMode, setDnsMode] = useState<"cloud" | "selfhosted">("cloud");
+  const [services, setServices] = useState<Service[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [savingServiceId, setSavingServiceId] = useState<string | null>(null);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
 
   const primaryDomain = domainsData?.domains?.find((d) => d.primary) || {};
+  const primaryDomainName = typeof primaryDomain?.domain === "string" ? primaryDomain.domain : "";
+  const requestedServiceId = searchParams.get("service");
 
   const addLog = (message: string) => {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
@@ -37,11 +48,12 @@ export const DomainSettings = () => {
   // Fetch SSL status when primary domain changes
   useEffect(() => {
     const fetchSSLStatus = async () => {
-      if (!primaryDomain?.domain) return;
+      if (isServicesProject) return;
+      if (!primaryDomainName) return;
       
       setIsLoadingSSL(true);
       try {
-        const result = await deployApi.sslStatus(primaryDomain.domain);
+        const result = await deployApi.sslStatus(primaryDomainName);
 
         if (result.success) {
           setSSLData(result);
@@ -54,7 +66,60 @@ export const DomainSettings = () => {
     };
 
     fetchSSLStatus();
-  }, [primaryDomain?.domain]);
+  }, [isServicesProject, primaryDomainName]);
+
+  useEffect(() => {
+    if (!isServicesProject) {
+      setServices([]);
+      setServicesLoading(false);
+      setEditingServiceId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchServices = async () => {
+      setServicesLoading(true);
+      try {
+        const result = await servicesApi.list(id);
+        if (!cancelled && result.success) {
+          setServices(result.services ?? []);
+        }
+      } catch (error) {
+        console.error("Failed to load services for domain settings:", error);
+      } finally {
+        if (!cancelled) {
+          setServicesLoading(false);
+        }
+      }
+    };
+
+    void fetchServices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, isServicesProject]);
+
+  useEffect(() => {
+    if (!isServicesProject) return;
+    if (!services.length) {
+      setEditingServiceId(null);
+      return;
+    }
+
+    if (requestedServiceId && services.some((service) => service.id === requestedServiceId)) {
+      setEditingServiceId(requestedServiceId);
+      return;
+    }
+
+    setEditingServiceId((current) => {
+      if (current && services.some((service) => service.id === current)) {
+        return current;
+      }
+      return null;
+    });
+  }, [isServicesProject, requestedServiceId, services]);
 
 
   const handleSubmitDomains = async () => {
@@ -110,19 +175,19 @@ export const DomainSettings = () => {
 
   // Check if primary domain is a host/cloud domain (skip SSL renewal UI)
   const { baseDomain } = usePlatform();
-  const isObleeDomain = primaryDomain?.domain?.endsWith(`.${baseDomain}`);
+  const isObleeDomain = primaryDomainName.endsWith(`.${baseDomain}`);
 
   const handleRenewSSL = async () => {
-    if (!primaryDomain?.domain) return;
+    if (!primaryDomainName) return;
 
     setIsRenewingSSL(true);
     try {
-      const result = await deployApi.sslRenew(primaryDomain.domain, false);
+      const result = await deployApi.sslRenew(primaryDomainName, false);
 
       if (result.success) {
         showToast('SSL certificate renewed successfully', 'success');
         // Refresh SSL status
-        const statusResult = await deployApi.sslStatus(primaryDomain.domain);
+        const statusResult = await deployApi.sslStatus(primaryDomainName);
         if (statusResult.success) {
           setSSLData(statusResult);
         }
@@ -137,188 +202,340 @@ export const DomainSettings = () => {
     }
   };
 
+  const handleServiceUpdate = async (serviceId: string, patch: Partial<Service>) => {
+    setSavingServiceId(serviceId);
+    try {
+      const result = await servicesApi.update(id, serviceId, patch);
+      if (result.success && result.service) {
+        setServices((prev) => prev.map((service) => service.id === serviceId ? result.service : service));
+      }
+    } finally {
+      setSavingServiceId(null);
+    }
+  };
+
+  const projectLabel = projectData.slug || projectData.name || "project";
+
+  const getServiceRouteSummary = (service: Service) => {
+    if (!service.exposed) {
+      return {
+        connected: false,
+        statusLabel: "Not connected",
+        statusClass: "bg-muted/60 text-muted-foreground/70",
+        detail: "Internal only",
+        liveUrl: null as string | null,
+      };
+    }
+
+    const liveUrl = service.domainType === "custom" && service.customDomain
+      ? `https://${service.customDomain}`
+      : `https://${resolveServiceHostnameLabel(projectLabel, service.name, service.domain)}.${baseDomain}`;
+
+    return {
+      connected: true,
+      statusLabel: "Connected",
+      statusClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+      detail: service.domainType === "custom" ? "Custom domain" : "Free subdomain",
+      liveUrl,
+    };
+  };
+
   return (
     <div className="space-y-6">
-      {/* Primary Domain & SSL Status */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Primary Domain Card */}
-        <div className="bg-card rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              {generateIcon("world-229-1658433759.png", 24, "hsl(var(--primary))")}
-            </div>
-            <div>
-              <h3 className=" font-bold text-foreground">Primary Domain</h3>
-              <p className="text-sm text-gray-500">Your main deployment URL</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="p-4 bg-muted/40 rounded-2xl border-2 border-border">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Domain</span>
-              </div>
-              <span className="text-sm text-foreground font-semibold block">
-                {primaryDomain?.domain}
-              </span >
-            </div>
-
-            <div className="flex items-center gap-2">
-              {primaryDomain?.verified ? (
-                <>
-                  {/* <span className="text-sm text-emerald-600 font-medium">Active & Verified</span> */}
-                </>
-              ) : (
-                <>
-                  {generateIcon("error%20triangle-16-1662499385.png", 20, "rgb(245, 158, 11)")}
-                  <span className="text-sm text-amber-600 font-medium">Pending Verification</span>
-                </>
-              )}
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                className="flex items-center justify-center flex-1 bg-foreground hover:bg-foreground/90 gap-2 text-white border-0 font-semibold py-3 rounded-2xl transition-all shadow-md hover:shadow-lg"
-                onClick={() => window.open(`https://${primaryDomain?.domain}`, '_blank')}
-              >
-                {generateIcon("External_link_HtLszLDBXqHilHK674zh2aKoSL7xUhyboAzP.png", 16, "white")}
-                Visit
-              </button>
-
-              <button
-                className="flex items-center justify-center flex-1 font-semibold border-0 text-foreground bg-muted hover:bg-muted py-3 rounded-2xl transition-all gap-2"
-                onClick={() => setShowCustomDomainSection(!showCustomDomainSection)}
-              >
-                {showCustomDomainSection ? (
-                  <>
-                    Cancel
-                  </>
-                ) : (
-                  <>
-                    Add Domain
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* SSL Certificate Card */}
-        <div className="bg-card rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-              {generateIcon("ssl-133-1691989601.png", 24, "rgb(16, 185, 129)")}
-            </div>
-            <div>
-              <h3 className=" font-bold text-foreground">SSL Certificate</h3>
-              <p className="text-sm text-gray-500">Secure HTTPS encryption</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {isLoadingSSL ? (
-              <div className="flex items-center justify-center p-4 bg-muted/40 rounded-2xl border-2 border-border">
-                <span className="text-sm text-gray-500">Loading SSL status...</span>
-              </div>
-            ) : (
-              <div className={`flex items-center justify-between p-4 rounded-2xl border-2 ${
-                sslData?.status === 'expired' 
-                  ? 'bg-red-500/10 border-red-500/20' 
-                  : sslData?.status === 'expiring_soon'
-                  ? 'bg-amber-500/10 border-amber-500/20'
-                  : 'bg-emerald-500/10 border-emerald-500/20'
-              }`}>
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${
-                    sslData?.status === 'expired' 
-                      ? 'bg-red-500/100' 
-                      : sslData?.status === 'expiring_soon'
-                      ? 'bg-amber-500/100 animate-pulse'
-                      : 'bg-emerald-500/100 animate-pulse'
-                  }`}></div>
-                  <span className={`text-sm font-semibold ${
-                    sslData?.status === 'expired' 
-                      ? 'text-red-700' 
-                      : sslData?.status === 'expiring_soon'
-                      ? 'text-amber-700'
-                      : 'text-emerald-700'
-                  }`}>
-                    {sslData?.status === 'expired' 
-                      ? 'Expired - Action Required' 
-                      : sslData?.status === 'expiring_soon'
-                      ? `Expiring Soon (${sslData?.daysUntilExpiry} days)`
-                      : sslData?.enabled ? 'Active' : 'Inactive'}
-                  </span>
+      {!isServicesProject && (
+        <>
+          {/* Primary Domain & SSL Status */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Primary Domain Card */}
+            <div className="bg-card rounded-xl p-6">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  {generateIcon("world-229-1658433759.png", 24, "hsl(var(--primary))")}
                 </div>
-                {isObleeDomain ? (
-                  <span className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full font-semibold">
-                    Included
-                  </span>
-                ) : (
-                  sslData?.autoRenew && (
-                    <span className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full font-medium">
-                      Auto-renew
-                    </span>
-                  )
-                )}
-              </div>
-            )}
-
-            {isObleeDomain ? (
-              <div className="p-5 bg-primary/10 rounded-2xl border-2 border-primary/20">
-                <div className="flex items-start gap-3">
-                  {generateIcon("check%20circle-68-1658234612.png", 32, "hsl(var(--primary))")}
-                  <div>
-                    <div className="text-sm font-semibold text-foreground mb-1">
-                      Free SSL Included
-                    </div>
-                    <div className="text-xs text-foreground">
-                      Your free domain includes SSL managed by the host. Certificate renewal is available for custom domains.
-                    </div>
-                  </div>
+                <div>
+                  <h3 className=" font-bold text-foreground">Primary Domain</h3>
+                  <p className="text-sm text-gray-500">Your main deployment URL</p>
                 </div>
               </div>
-            ) : (
-              <>
+
+              <div className="space-y-4">
                 <div className="p-4 bg-muted/40 rounded-2xl border-2 border-border">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-6 flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Domain</span>
+                  </div>
+                  <span className="text-sm text-foreground font-semibold block">
+                    {primaryDomain?.domain}
+                  </span >
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {primaryDomain?.verified ? (
+                    <>
+                      {/* <span className="text-sm text-emerald-600 font-medium">Active & Verified</span> */}
+                    </>
+                  ) : (
+                    <>
+                      {generateIcon("error%20triangle-16-1662499385.png", 20, "rgb(245, 158, 11)")}
+                      <span className="text-sm text-amber-600 font-medium">Pending Verification</span>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    className="flex items-center justify-center flex-1 bg-foreground hover:bg-foreground/90 gap-2 text-white border-0 font-semibold py-3 rounded-2xl transition-all shadow-md hover:shadow-lg"
+                    onClick={() => window.open(`https://${primaryDomain?.domain}`, '_blank')}
+                  >
+                    {generateIcon("External_link_HtLszLDBXqHilHK674zh2aKoSL7xUhyboAzP.png", 16, "white")}
+                    Visit
+                  </button>
+
+                  <button
+                    className="flex items-center justify-center flex-1 font-semibold border-0 text-foreground bg-muted hover:bg-muted py-3 rounded-2xl transition-all gap-2"
+                    onClick={() => setShowCustomDomainSection(!showCustomDomainSection)}
+                  >
+                    {showCustomDomainSection ? (
+                      <>
+                        Cancel
+                      </>
+                    ) : (
+                      <>
+                        Add Domain
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* SSL Certificate Card */}
+            <div className="bg-card rounded-xl p-6">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                  {generateIcon("ssl-133-1691989601.png", 24, "rgb(16, 185, 129)")}
+                </div>
+                <div>
+                  <h3 className=" font-bold text-foreground">SSL Certificate</h3>
+                  <p className="text-sm text-gray-500">Secure HTTPS encryption</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {isLoadingSSL ? (
+                  <div className="flex items-center justify-center p-4 bg-muted/40 rounded-2xl border-2 border-border">
+                    <span className="text-sm text-gray-500">Loading SSL status...</span>
+                  </div>
+                ) : (
+                  <div className={`flex items-center justify-between p-4 rounded-2xl border-2 ${
+                    sslData?.status === 'expired' 
+                      ? 'bg-red-500/10 border-red-500/20' 
+                      : sslData?.status === 'expiring_soon'
+                      ? 'bg-amber-500/10 border-amber-500/20'
+                      : 'bg-emerald-500/10 border-emerald-500/20'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${
+                        sslData?.status === 'expired' 
+                          ? 'bg-red-500/100' 
+                          : sslData?.status === 'expiring_soon'
+                          ? 'bg-amber-500/100 animate-pulse'
+                          : 'bg-emerald-500/100 animate-pulse'
+                      }`}></div>
+                      <span className={`text-sm font-semibold ${
+                        sslData?.status === 'expired' 
+                          ? 'text-red-700' 
+                          : sslData?.status === 'expiring_soon'
+                          ? 'text-amber-700'
+                          : 'text-emerald-700'
+                      }`}>
+                        {sslData?.status === 'expired' 
+                          ? 'Expired - Action Required' 
+                          : sslData?.status === 'expiring_soon'
+                          ? `Expiring Soon (${sslData?.daysUntilExpiry} days)`
+                          : sslData?.enabled ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    {isObleeDomain ? (
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full font-semibold">
+                        Included
+                      </span>
+                    ) : (
+                      sslData?.autoRenew && (
+                        <span className="text-xs bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full font-medium">
+                          Auto-renew
+                        </span>
+                      )
+                    )}
+                  </div>
+                )}
+
+                {isObleeDomain ? (
+                  <div className="p-5 bg-primary/10 rounded-2xl border-2 border-primary/20">
+                    <div className="flex items-start gap-3">
+                      {generateIcon("check%20circle-68-1658234612.png", 32, "hsl(var(--primary))")}
                       <div>
-                        <div className="text-xs text-gray-500 mb-0.5">Issuer</div>
-                        <div className="text-sm font-semibold text-foreground">{sslData?.issuer || "Let's Encrypt"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 mb-0.5">Expires</div>
-                        <div className="text-sm font-semibold text-foreground">
-                          {sslData?.expiresAt ? new Date(sslData.expiresAt).toLocaleDateString() : 'N/A'}
+                        <div className="text-sm font-semibold text-foreground mb-1">
+                          Free SSL Included
+                        </div>
+                        <div className="text-xs text-foreground">
+                          Your free domain includes SSL managed by the host. Certificate renewal is available for custom domains.
                         </div>
                       </div>
                     </div>
-                    
-                    {sslData?.enabled && (
-                      <button
-                        onClick={handleRenewSSL}
-                        disabled={isRenewingSSL}
-                        title={sslData?.daysUntilExpiry > 7 ? `Renewal available in ${sslData?.daysUntilExpiry - 7} days` : ''}
-                        className={`${
-                          sslData?.status === 'expired' || sslData?.status === 'expiring_soon'
-                            ? 'bg-amber-600 hover:bg-amber-700'
-                            : 'bg-emerald-600 hover:bg-emerald-700'
-                        } text-white text-sm font-semibold border-0 px-4 py-2 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap`}
-                      >
-                        {isRenewingSSL ? 'Renewing...' : (sslData?.status === 'expired' ? 'Renew Now' : 'Renew')}
-                      </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="p-4 bg-muted/40 rounded-2xl border-2 border-border">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-6 flex-1">
+                          <div>
+                            <div className="text-xs text-gray-500 mb-0.5">Issuer</div>
+                            <div className="text-sm font-semibold text-foreground">{sslData?.issuer || "Let's Encrypt"}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-gray-500 mb-0.5">Expires</div>
+                            <div className="text-sm font-semibold text-foreground">
+                              {sslData?.expiresAt ? new Date(sslData.expiresAt).toLocaleDateString() : 'N/A'}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {sslData?.enabled && (
+                          <button
+                            onClick={handleRenewSSL}
+                            disabled={isRenewingSSL}
+                            title={sslData?.daysUntilExpiry > 7 ? `Renewal available in ${sslData?.daysUntilExpiry - 7} days` : ''}
+                            className={`${
+                              sslData?.status === 'expired' || sslData?.status === 'expiring_soon'
+                                ? 'bg-amber-600 hover:bg-amber-700'
+                                : 'bg-emerald-600 hover:bg-emerald-700'
+                            } text-white text-sm font-semibold border-0 px-4 py-2 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap`}
+                          >
+                            {isRenewingSSL ? 'Renewing...' : (sslData?.status === 'expired' ? 'Renew Now' : 'Renew')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isServicesProject && (
+        <div className="bg-card rounded-xl p-6 border border-border/50">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Container className="size-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-bold text-foreground">Service Domains</h3>
+              <p className="text-sm text-gray-500">See which services are connected, then edit one service at a time.</p>
+            </div>
+          </div>
+
+          {servicesLoading ? (
+            <div className="text-sm text-muted-foreground">Loading services...</div>
+          ) : services.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No compose services found for this project.</div>
+          ) : (
+            <div className="space-y-4">
+              {services.map((service) => {
+                const route = getServiceRouteSummary(service);
+                const isEditing = editingServiceId === service.id;
+
+                return (
+                  <div key={service.id} className="rounded-2xl border border-border/50 bg-muted/10 overflow-hidden">
+                    <div className="px-4 py-4 flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="text-sm font-semibold text-foreground">{service.name}</div>
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${route.statusClass}`}>
+                            {route.statusLabel}
+                          </span>
+                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-muted/60 text-muted-foreground">
+                            {route.detail}
+                          </span>
+                        </div>
+
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {service.image || service.build || "Internal service"}
+                        </div>
+
+                        <div className="mt-3 space-y-1.5">
+                          {route.liveUrl ? (
+                            <>
+                              <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                                <Link2 className="size-3.5" />
+                                <span className="font-medium text-foreground">{route.liveUrl.replace("https://", "")}</span>
+                              </div>
+                              <div className="text-[12px] text-muted-foreground">
+                                Port: <span className="text-foreground">{service.exposedPort || "Auto"}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-[12px] text-muted-foreground">
+                              This service is not exposed publicly yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {route.liveUrl && (
+                          <a
+                            href={route.liveUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
+                          >
+                            Open
+                            <ExternalLink className="size-3.5" />
+                          </a>
+                        )}
+                        <button
+                          onClick={() => setEditingServiceId(isEditing ? null : service.id)}
+                          className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+                        >
+                          <PencilLine className="size-3.5" />
+                          {isEditing ? "Close" : "Edit"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {isEditing && (
+                      <div className="border-t border-border/40 p-4">
+                        <RoutingSettingsCard
+                          projectName={projectLabel}
+                          domain={service.domain ?? ""}
+                          customDomain={service.customDomain ?? ""}
+                          domainType={service.domainType === "custom" ? "custom" : "free"}
+                          exposed={service.exposed}
+                          ports={service.ports}
+                          exposedPort={service.exposedPort ?? ""}
+                          disabled={savingServiceId === service.id}
+                          liveUrl={route.liveUrl}
+                          onExposedChange={(value) => handleServiceUpdate(service.id, { exposed: value })}
+                          onDomainTypeChange={(value) => handleServiceUpdate(service.id, { domainType: value })}
+                          onDomainChange={(value) => handleServiceUpdate(service.id, { domain: value })}
+                          onCustomDomainChange={(value) => handleServiceUpdate(service.id, { customDomain: value })}
+                          onExposedPortChange={(value) => handleServiceUpdate(service.id, { exposedPort: value })}
+                          saveMode="explicit"
+                        />
+                      </div>
                     )}
                   </div>
-                </div>
-              </>
-            )}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Custom Domain & DNS Configuration */}
-      {showCustomDomainSection && (
+      {!isServicesProject && showCustomDomainSection && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Add Custom Domain - Left Section */}
           <div className="space-y-6">

@@ -3,8 +3,9 @@
 import React, { useState } from "react";
 import { usePlatform } from "@/context/PlatformContext";
 import { servicesApi, type Service, type ServiceContainer } from "@/lib/api/services";
+import { resolveServiceHostnameLabel } from "@repo/core";
+import { useRouter } from "next/navigation";
 import {
-  X,
   Play,
   Square,
   RefreshCw,
@@ -18,10 +19,9 @@ import {
   ExternalLink,
   Power,
   RotateCw,
-  Eye,
-  EyeOff,
-  Link2,
   Layers,
+  ArrowLeft,
+  Settings2,
 } from "lucide-react";
 
 /* ── Props ──────────────────────────────────────────────────────────── */
@@ -30,6 +30,7 @@ interface ServiceDetailPanelProps {
   service: Service;
   container?: ServiceContainer;
   projectId: string;
+  projectSlugBase: string;
   onClose: () => void;
   onRefresh: () => void;
 }
@@ -40,10 +41,12 @@ export function ServiceDetailPanel({
   service,
   container,
   projectId,
+  projectSlugBase,
   onClose,
   onRefresh,
 }: ServiceDetailPanelProps) {
   const { baseDomain } = usePlatform();
+  const router = useRouter();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const status = container?.status ?? (service.enabled ? "stopped" : "disabled");
@@ -51,9 +54,7 @@ export function ServiceDetailPanel({
   const resolvedUrl = service.exposed
     ? service.domainType === "custom" && service.customDomain
       ? `https://${service.customDomain}`
-      : service.domain
-        ? `https://${service.domain}.${baseDomain}`
-        : null
+      : `https://${resolveServiceHostnameLabel(projectSlugBase, service.name, service.domain)}.${baseDomain}`
     : null;
 
   /* ── Handlers ───────────────────────────────────────────────── */
@@ -80,69 +81,41 @@ export function ServiceDetailPanel({
     }
   };
 
-  const handleToggleExposed = async () => {
-    setSaving(true);
-    try {
-      await servicesApi.update(projectId, service.id, { exposed: !service.exposed });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDomainTypeChange = async (domainType: "free" | "custom") => {
-    setSaving(true);
-    try {
-      await servicesApi.update(projectId, service.id, { domainType });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleDomainSave = async (field: "domain" | "customDomain", value: string) => {
-    setSaving(true);
-    try {
-      await servicesApi.update(projectId, service.id, { [field]: value });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleExposedPortSave = async (port: string) => {
-    setSaving(true);
-    try {
-      await servicesApi.update(projectId, service.id, { exposedPort: port });
-      onRefresh();
-    } finally {
-      setSaving(false);
-    }
-  };
-
   /* ── Render ─────────────────────────────────────────────────── */
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
+    <div className="bg-card rounded-3xl border border-border/50 overflow-hidden shadow-[0_20px_60px_-40px_rgba(0,0,0,0.7)]">
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-border/50">
-        <div className="w-9 h-9 rounded-xl bg-muted/60 flex items-center justify-center shrink-0">
+      <div className="flex items-start gap-3 px-6 py-5 border-b border-border/50">
+        <div className="w-11 h-11 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0 ring-1 ring-primary/15">
           <Container className="size-[18px] text-muted-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-[15px] font-semibold text-foreground truncate">{service.name}</h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-base font-semibold text-foreground truncate">{service.name}</h3>
             <StatusBadge status={status} />
           </div>
-          <p className="text-[12px] text-muted-foreground truncate mt-0.5">
+          <p className="text-[13px] text-muted-foreground truncate mt-1">
             {service.image || service.build || "—"}
           </p>
+          {resolvedUrl && (
+            <a
+              href={resolvedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-blue-500 dark:text-blue-400 hover:underline"
+            >
+              {resolvedUrl.replace("https://", "")}
+              <ExternalLink className="size-3" />
+            </a>
+          )}
         </div>
         <button
           onClick={onClose}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-foreground/[0.06] transition-colors"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-medium text-muted-foreground hover:bg-foreground/[0.06] transition-colors shrink-0"
         >
-          <X className="size-4" />
+          <ArrowLeft className="size-4" />
+          Back
         </button>
       </div>
 
@@ -170,7 +143,7 @@ export function ServiceDetailPanel({
               <button
                 onClick={handleToggleEnabled}
                 disabled={saving}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium transition-colors disabled:opacity-50 ${
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-[12px] font-medium transition-colors disabled:opacity-50 ${
                   service.enabled
                     ? "bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20"
                     : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
@@ -185,52 +158,35 @@ export function ServiceDetailPanel({
 
         {/* ── Routing ───────────────────────────────────────────── */}
         <Section title="Routing" icon={Globe}>
-          {/* Expose toggle */}
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              {service.exposed ? <Eye className="size-3.5 text-blue-500" /> : <EyeOff className="size-3.5 text-muted-foreground" />}
-              <span className="text-[13px] font-medium text-foreground">
-                {service.exposed ? "Publicly exposed" : "Internal only"}
-              </span>
-            </div>
-            <Toggle enabled={service.exposed} onChange={handleToggleExposed} disabled={saving} />
-          </div>
-
-          {/* Domain configuration */}
-          {service.exposed && (
-            <div className="space-y-3 mt-3 pt-3 border-t border-border/20">
-              {/* Type tabs */}
-              <div className="flex items-center gap-2">
-                <TabButton active={service.domainType !== "custom"} disabled={saving} onClick={() => handleDomainTypeChange("free")}>
-                  Free subdomain
-                </TabButton>
-                <TabButton active={service.domainType === "custom"} disabled={saving} onClick={() => handleDomainTypeChange("custom")}>
-                  Custom domain
-                </TabButton>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border/40 bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] font-medium text-foreground">Exposure</span>
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${service.exposed ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "bg-muted/60 text-muted-foreground/70"}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${service.exposed ? "bg-blue-500" : "bg-muted-foreground/40"}`} />
+                  {service.exposed ? "Public" : "Internal"}
+                </span>
               </div>
 
-              {/* Domain input */}
-              {service.domainType === "custom" ? (
-                <InlineInput value={service.customDomain ?? ""} placeholder="app.example.com" saving={saving} onSave={(v) => handleDomainSave("customDomain", v)} />
+              {service.exposed ? (
+                <>
+                  <InfoRow icon={Globe} label="Mode" value={service.domainType === "custom" ? "Custom domain" : "Free subdomain"} />
+                  <InfoRow icon={Hash} label="Port" value={service.exposedPort || "Auto"} />
+                  {resolvedUrl && <InfoRow icon={Globe} label="Live URL" value={resolvedUrl.replace("https://", "")} />}
+                </>
               ) : (
-                <InlineInput value={service.domain ?? ""} suffix={`.${baseDomain}`} placeholder="my-service" saving={saving} onSave={(v) => handleDomainSave("domain", v)} />
-              )}
-
-              {/* Exposed port */}
-              <PortPicker value={service.exposedPort ?? ""} ports={service.ports} saving={saving} onSave={handleExposedPortSave} />
-
-              {/* Live URL */}
-              {resolvedUrl && (
-                <div className="flex items-center gap-2">
-                  <Link2 className="size-3.5 text-emerald-500" />
-                  <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="text-[12px] font-medium text-blue-500 dark:text-blue-400 hover:underline flex items-center gap-1">
-                    {resolvedUrl.replace("https://", "")}
-                    <ExternalLink className="size-3" />
-                  </a>
-                </div>
+                <p className="text-[12px] text-muted-foreground">This service is internal only. Manage public routing from the Domains tab.</p>
               )}
             </div>
-          )}
+
+            <button
+              onClick={() => router.push(`/projects/${projectId}/domains?service=${service.id}`)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-medium bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+            >
+              <Settings2 className="size-4" />
+              Edit In Domains Tab
+            </button>
+          </div>
         </Section>
 
         {/* ── Network ───────────────────────────────────────────── */}
@@ -290,10 +246,10 @@ export function ServiceDetailPanel({
 
 function Section({ title, icon: Icon, children }: { title: string; icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
   return (
-    <div className="px-5 py-4 space-y-3">
+    <div className="px-6 py-5 space-y-4">
       <div className="flex items-center gap-2">
         <Icon className="size-3.5 text-muted-foreground" />
-        <span className="text-[12px] font-medium text-muted-foreground uppercase tracking-wider">{title}</span>
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-[0.18em]">{title}</span>
       </div>
       {children}
     </div>
@@ -331,82 +287,6 @@ function ActionButton({ icon: Icon, label, loading, onClick, variant }: {
       {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Icon className="size-3.5" />}
       {label}
     </button>
-  );
-}
-
-function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: () => void; disabled: boolean }) {
-  return (
-    <button onClick={(e) => { e.stopPropagation(); onChange(); }} disabled={disabled}
-      className={`relative rounded-full transition-colors duration-200 ${enabled ? "bg-blue-500" : "bg-muted-foreground/20"}`}
-      style={{ height: "22px", width: "40px" }}>
-      <span className={`absolute top-0.5 left-0.5 w-[18px] h-[18px] rounded-full bg-white shadow-sm transition-transform duration-200 ${enabled ? "translate-x-[18px]" : "translate-x-0"}`} />
-    </button>
-  );
-}
-
-function TabButton({ active, disabled, onClick, children }: { active: boolean; disabled: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button onClick={onClick} disabled={disabled}
-      className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${active ? "bg-primary/10 text-primary" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}>
-      {children}
-    </button>
-  );
-}
-
-function InlineInput({ value, suffix, placeholder, saving, onSave }: {
-  value: string; suffix?: string; placeholder: string; saving: boolean; onSave: (v: string) => void;
-}) {
-  const [draft, setDraft] = useState(value);
-  const changed = draft !== value;
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 flex items-center rounded-lg border border-border/50 bg-muted/20 overflow-hidden">
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={placeholder}
-          className="flex-1 px-2.5 py-1.5 text-[12px] bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40" />
-        {suffix && <span className="text-[12px] text-muted-foreground pr-2.5 shrink-0">{suffix}</span>}
-      </div>
-      {changed && (
-        <button onClick={() => onSave(draft)} disabled={saving}
-          className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50">
-          {saving ? <Loader2 className="size-3 animate-spin" /> : "Save"}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function PortPicker({ value, ports, saving, onSave }: {
-  value: string; ports: string[] | null; saving: boolean; onSave: (v: string) => void;
-}) {
-  const [draft, setDraft] = useState(value);
-  const changed = draft !== value;
-  const portOptions = (ports ?? []).map((p) => { const parts = p.split(":"); return parts.length === 2 ? parts[1] : parts[0]; });
-
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1.5">
-        <Hash className="size-3 text-muted-foreground" />
-        <span className="text-[11px] text-muted-foreground">Exposed port</span>
-      </div>
-      {portOptions.length > 0 ? (
-        <select value={draft} onChange={(e) => { setDraft(e.target.value); if (e.target.value !== value) onSave(e.target.value); }} disabled={saving}
-          className="px-2 py-1 rounded-lg text-[12px] bg-muted/30 border border-border/40 text-foreground outline-none">
-          <option value="">Auto</option>
-          {portOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-      ) : (
-        <div className="flex items-center gap-2">
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="3000"
-            className="w-20 px-2 py-1 rounded-lg text-[12px] bg-muted/30 border border-border/40 text-foreground outline-none" />
-          {changed && (
-            <button onClick={() => onSave(draft)} disabled={saving}
-              className="px-2 py-1 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground disabled:opacity-50">
-              {saving ? <Loader2 className="size-3 animate-spin" /> : "Save"}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 

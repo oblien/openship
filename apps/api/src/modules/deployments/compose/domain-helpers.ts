@@ -5,21 +5,16 @@
  * and the preflight checks (domain validation before build).
  */
 
+import { defaultServiceHostnameLabel, normalizeServiceLabel } from "@repo/core";
+
 /** Normalize a string into a valid DNS subdomain label. */
 export function normalizeSubdomain(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "service";
+  return normalizeServiceLabel(value);
 }
 
 /** Default subdomain for a compose service: `<project>` for web/app/frontend, `<project>-<service>` otherwise. */
 export function defaultServiceSubdomain(projectSlug: string, serviceName: string): string {
-  const base = normalizeSubdomain(projectSlug);
-  if (["web", "app", "frontend"].includes(serviceName)) {
-    return base;
-  }
-  return `${base}-${normalizeSubdomain(serviceName)}`;
+  return defaultServiceHostnameLabel(projectSlug, serviceName);
 }
 
 /** Parse the last port number from a port spec string (e.g. "8080:3000/tcp" → 3000). */

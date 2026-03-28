@@ -16,6 +16,8 @@ serviceRoutes.get("/", ctrl.list);
 serviceRoutes.get("/containers", ctrl.activeContainers);
 serviceRoutes.post("/sync", ctrl.syncFromCompose);
 serviceRoutes.get("/:serviceId", ctrl.getById);
+serviceRoutes.get("/:serviceId/logs", ctrl.runtimeLogs);
+serviceRoutes.get("/:serviceId/logs/stream", ctrl.runtimeLogStream);
 serviceRoutes.patch("/:serviceId", ctrl.update);
 
 /* ─── Per-service container actions ─────────────────────────────────────── */

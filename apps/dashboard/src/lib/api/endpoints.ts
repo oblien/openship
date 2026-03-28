@@ -58,6 +58,10 @@ export const endpoints = {
       `projects/${projectId}/services/${serviceId}/stop`,
     restart: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/restart`,
+    logs: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/logs`,
+    logsStream: (projectId: string | number, serviceId: string) =>
+      `projects/${projectId}/services/${serviceId}/logs/stream`,
     envGet: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/env`,
     envSet: (projectId: string | number, serviceId: string) =>

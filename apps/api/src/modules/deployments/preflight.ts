@@ -13,11 +13,11 @@
 
 import type { DeploymentConfigSnapshot } from "./build.service";
 import { platform } from "../../lib/controller-helpers";
-import { SYSTEM } from "@repo/core";
+import { resolveServiceHostnameLabel } from "@repo/core";
 import { getCloudPreflight } from "../../lib/cloud-client";
 import type { CloudPreflightData } from "../../lib/cloud-preflight";
 import type { ComposeService } from "../../lib/compose-parser";
-import { normalizeSubdomain, defaultServiceSubdomain } from "./compose/domain-helpers";
+import { getRoutingBaseDomain } from "../../lib/routing-domains";
 
 export interface PreflightCheck {
     id: string;
@@ -45,6 +45,7 @@ async function checkComposeServiceDomains(
 ): Promise<PreflightCheck[]> {
     const checks: PreflightCheck[] = [];
     const seen = new Set<string>();
+    const baseDomain = getRoutingBaseDomain();
 
     for (const service of composeServices) {
         if (!service.exposed) continue;
@@ -71,10 +72,12 @@ async function checkComposeServiceDomains(
             continue;
         }
 
-        const subdomain = normalizeSubdomain(
-            service.domain || defaultServiceSubdomain(projectSlug || "project", service.name),
+        const subdomain = resolveServiceHostnameLabel(
+            projectSlug || "project",
+            service.name,
+            service.domain,
         );
-        const fqdn = `${subdomain}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}`;
+        const fqdn = `${subdomain}.${baseDomain}`;
 
         // Free subdomains require cloud — fail early if not connected
         if (!cloud) {
@@ -82,7 +85,7 @@ async function checkComposeServiceDomains(
                 id: `service-domain-${service.name}`,
                 label: `Service subdomain (${service.name})`,
                 status: "fail",
-                message: `Free subdomain "${subdomain}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}" requires Openship Cloud. Connect your account or switch to a custom domain.`,
+                message: `Free subdomain "${fqdn}" requires Openship Cloud. Connect your account or switch to a custom domain.`,
             });
             continue;
         }
@@ -226,6 +229,8 @@ function checkSlugFormat(slug: string): PreflightCheck {
 }
 
 async function checkSlug(slug: string, cloud: CloudPreflightData | null): Promise<PreflightCheck> {
+    const fqdn = `${slug}.${getRoutingBaseDomain()}`;
+
     if (!cloud) {
         return { id: "slug-available", label: "Subdomain availability", status: "pass" };
     }
@@ -244,7 +249,7 @@ async function checkSlug(slug: string, cloud: CloudPreflightData | null): Promis
             id: "slug-available",
             label: "Subdomain availability",
             status: "fail",
-            message: cloud.slug.message ?? `"${slug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}" is already taken. Choose a different subdomain.`,
+            message: cloud.slug.message ?? `"${fqdn}" is already taken. Choose a different subdomain.`,
         };
     }
 

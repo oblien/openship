@@ -3,6 +3,7 @@
  */
 
 import type { Context } from "hono";
+import { streamSSE } from "hono/streaming";
 import { getUserId, param } from "../../lib/controller-helpers";
 import * as serviceService from "./service.service";
 import type { TUpdateServiceBody, TSetServiceEnvVarsBody } from "./service.schema";
@@ -180,4 +181,56 @@ export async function restartContainer(c: Context) {
     const message = err instanceof Error ? err.message : "Failed to restart container";
     return c.json({ success: false, error: message }, 400);
   }
+}
+
+export async function runtimeLogs(c: Context) {
+  const userId = getUserId(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+  const tail = c.req.query("tail") ? Number(c.req.query("tail")) : undefined;
+
+  try {
+    const entries = await serviceService.getServiceRuntimeLogs(projectId, serviceId, userId, tail);
+    return c.json({ data: entries });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to get logs";
+    return c.json({ error: message }, 400);
+  }
+}
+
+export async function runtimeLogStream(c: Context) {
+  const userId = getUserId(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+  const tail = c.req.query("tail") ? Number(c.req.query("tail")) : undefined;
+
+  return streamSSE(c, async (sseStream) => {
+    let cleanup: (() => void) | null = null;
+
+    try {
+      cleanup = await serviceService.streamServiceRuntimeLogs(projectId, serviceId, userId, (entry) => {
+        void sseStream.writeSSE({
+          event: "log",
+          data: JSON.stringify({
+            type: "log",
+            data: entry.rawData,
+            message: entry.message,
+            timestamp: entry.timestamp,
+            level: entry.level,
+          }),
+        });
+      }, { tail });
+
+      await new Promise<void>((resolve) => {
+        sseStream.onAbort(() => {
+          cleanup?.();
+          resolve();
+        });
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to stream logs";
+      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: message }) });
+      cleanup?.();
+    }
+  });
 }

@@ -13,22 +13,21 @@
 
 import { repos } from "@repo/db";
 import type { Deployment, Project, Service } from "@repo/db";
-import type { ResourceConfig, MultiServiceRuntimeAdapter, RoutingProvider, SslProvider, RoutedDomainInput } from "@repo/adapters";
+import type { ResourceConfig, MultiServiceRuntimeAdapter, RoutingProvider, SslProvider } from "@repo/adapters";
 import { BuildLogger } from "@repo/adapters";
 import { registerResolvedRoutes } from "@repo/adapters";
-import { SYSTEM } from "@repo/core";
 
 import type { BuildConfigSnapshotLike } from "../build-config";
 import { onFailure, onSuccess, type LifecycleContext } from "../deployment-lifecycle";
 import * as sessionManager from "../session-manager";
-import { env } from "../../../config/env";
+import { buildServiceRouteDomain, createTrackedSslProvider, ensureRouteDomainRecord, toRoutedDomainInputs } from "../../../lib/routing-domains";
 import type { ComposeService } from "../../../lib/compose-parser";
 
 import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 
 import { buildComposeImages } from "./build.service";
 import { deployComposeServices } from "./deploy.service";
-import { normalizeSubdomain, defaultServiceSubdomain, parseServicePort } from "./domain-helpers";
+import { parseServicePort } from "./domain-helpers";
 
 async function registerComposeRoutes(opts: {
   project: Project;
@@ -51,7 +50,6 @@ async function registerComposeRoutes(opts: {
   serverId?: string;
 }): Promise<string | undefined> {
   const { project, runtime, routing, ssl, logger, services, deployedServices, usesManagedRouting, userId, serverId } = opts;
-  const baseDomain = env.HOST_DOMAIN || SYSTEM.DOMAINS.CLOUD_DOMAIN;
   const byName = new Map(services.map((s) => [s.name, s]));
   const seenDomains = new Set<string>();
   let firstPublicUrl: string | undefined;
@@ -69,6 +67,7 @@ async function registerComposeRoutes(opts: {
   // ── Load existing domain records (same as normal deploy) ───────────
   const projectDomains = await repos.domain.listByProject(project.id);
   const domainByHostname = new Map(projectDomains.map((d) => [d.hostname.toLowerCase(), d]));
+  const trackedSsl = createTrackedSslProvider(ssl, domainByHostname);
 
   logger.log(`Configuring public routes for ${exposedServices.length} compose service${exposedServices.length === 1 ? "" : "s"}...\n`);
 
@@ -82,70 +81,45 @@ async function registerComposeRoutes(opts: {
       continue;
     }
 
-    const hostname = input.domainType === "custom"
-      ? input.customDomain?.trim()
-      : usesManagedRouting
-        ? `${normalizeSubdomain(input.domain || defaultServiceSubdomain(project.slug ?? project.name, input.name))}.${baseDomain}`
-        : undefined;
+    const route = buildServiceRouteDomain({
+      project,
+      service: input,
+      runtimeName: runtime.name,
+      usesManagedRouting,
+    });
 
-    if (!hostname) {
+    if (!route) {
       logger.log(`Skipping route for service "${deployed.serviceName}" — no domain configured.\n`, "warn");
       continue;
     }
 
-    const domainKey = hostname.toLowerCase();
+    const domainKey = route.hostname.toLowerCase();
     if (seenDomains.has(domainKey)) continue;
     seenDomains.add(domainKey);
 
-    // ── Ensure domain record exists in DB (with serviceId) ─────────
-    let domainRecord = domainByHostname.get(domainKey);
-    if (!domainRecord && input.domainType === "custom") {
-      domainRecord = await repos.domain.create({
-        projectId: project.id,
-        serviceId: input.id,
-        hostname,
-        isPrimary: false,
-        status: "active",
-        verified: true,
-        verifiedAt: new Date(),
-      });
-      domainByHostname.set(domainKey, domainRecord);
-      logger.log(`Created domain record for "${hostname}" (service: ${deployed.serviceName}).\n`);
+    const beforeRecord = domainByHostname.get(domainKey);
+    const domainRecord = await ensureRouteDomainRecord({
+      projectId: project.id,
+      route,
+      domainByHostname,
+    });
+    if (!beforeRecord && domainRecord) {
+      logger.log(`Created domain record for "${route.hostname}" (service: ${deployed.serviceName}).\n`);
     }
 
-    const isCloudDomain = hostname.endsWith(`.${baseDomain}`);
-    const provisionSsl = input.domainType === "custom" && runtime.name === "bare";
-
-    // ── Wrap SSL to persist cert status in DB (same as normal) ─────
-    const deploySsl = provisionSsl && domainRecord
-      ? {
-          provisionCert: async (host: string) => {
-            const result = await ssl.provisionCert(host);
-            await repos.domain.updateSsl(domainRecord!.id, {
-              sslStatus: result.expiresAt ? "active" : "provisioning",
-              sslIssuer: result.issuer,
-              sslExpiresAt: result.expiresAt ? new Date(result.expiresAt) : undefined,
-            });
-            return result;
-          },
-        }
-      : ssl;
-
     const targetUrl = `http://${deployed.ip}:${port}`;
-    const domains: RoutedDomainInput[] = [{ hostname, tls: true, provisionSsl }];
 
     logger.log(`Configuring public route for service "${deployed.serviceName}" (${targetUrl})...\n`);
-    await registerResolvedRoutes(logger, routing, deploySsl, domains, { targetUrl });
+    await registerResolvedRoutes(logger, routing, trackedSsl, toRoutedDomainInputs([route]), { targetUrl });
 
     // ── Sync free subdomains with managed edge proxy ─────────────
-    if (usesManagedRouting && isCloudDomain) {
-      const subdomain = normalizeSubdomain(input.domain || defaultServiceSubdomain(project.slug ?? project.name, input.name));
-      logger.log(`Syncing managed edge proxy for ${hostname}...\n`);
-      await ensureManagedEdgeProxy(userId, subdomain, { serverId });
+    if (usesManagedRouting && route.isCloud && route.managedSubdomain) {
+      logger.log(`Syncing managed edge proxy for ${route.hostname}...\n`);
+      await ensureManagedEdgeProxy(userId, route.managedSubdomain, { serverId });
     }
 
     if (!firstPublicUrl) {
-      firstPublicUrl = `https://${hostname}`;
+      firstPublicUrl = `https://${route.hostname}`;
     }
   }
 

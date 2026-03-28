@@ -13,12 +13,14 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 interface TerminalLogsProps {
     projectId: string;
     projectName: string;
+    streamTarget: string;
     onLogsChange: (logs: string[]) => void;
 }
 
 export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     projectId,
     projectName,
+    streamTarget,
     onLogsChange,
 }) => {
     const { showToast } = useToast();
@@ -424,9 +426,9 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             clearLogs();
             setTerminalStreaming(true);
             try {
-                if (projectId) {
+                if (streamTarget) {
                     // Connect using the clean hook - no more manual connection management!
-                    await logStream.connect(projectId);
+                    await logStream.connect(streamTarget);
                 } else {
                     // Mock stream - add initial message as a log
                     addTerminalLog('[Using Mock Stream - No Project ID]');
@@ -444,6 +446,35 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             }
         }
     };
+
+    useEffect(() => {
+        if (!streamTarget) return;
+
+        const wasStreaming = terminalLogsData.isStreaming;
+
+        logStream.disconnect();
+        if (streamIntervalRef.current) {
+            clearInterval(streamIntervalRef.current);
+            streamIntervalRef.current = null;
+        }
+
+        clearTerminalLogs();
+        lastLogIndexRef.current = 0;
+        if (xtermRef.current?.xterm) {
+            xtermRef.current.xterm.reset();
+        }
+
+        if (!wasStreaming) {
+            setTerminalStreaming(false);
+            return;
+        }
+
+        setTerminalStreaming(true);
+        void logStream.connect(streamTarget).catch((error) => {
+            console.error('Error switching log stream:', error);
+            setTerminalStreaming(false);
+        });
+    }, [streamTarget]);
 
     useEffect(() => {
         return () => {

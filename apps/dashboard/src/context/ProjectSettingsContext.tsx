@@ -587,6 +587,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     if (isServicesProject) {
       return [
         { id: "services", label: "Services", icon: "layers.png" },
+        { id: "domains", label: "Domains", icon: "server-59-1658435258.png" },
         { id: "deployments", label: "Deployments", icon: "heart%20rate-118-1658433496.png" },
         { id: "logs", label: "Logs", icon: "terminal-184-1658431404.png" },
         { id: "advanced", label: "Advanced", icon: "error%20triangle-81-1658234612.png" },

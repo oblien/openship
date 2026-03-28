@@ -34,7 +34,7 @@ export interface UseLogStreamOptions {
 }
 
 export interface UseLogStreamReturn {
-  connect: (projectId: string) => Promise<void>;
+  connect: (target: string) => Promise<void>;
   disconnect: () => void;
   isConnected: boolean;
   isConnecting: boolean;
@@ -108,7 +108,7 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
    */
 
   let isConnectingRef = useRef(false);
-  const connect = useCallback(async (projectId: string) => {
+  const connect = useCallback(async (target: string) => {
     try {
       if(isConnectingRef.current) return
       setIsConnecting(true);
@@ -120,7 +120,11 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
 
       // Connect to runtime logs stream via local API
       const baseUrl = getApiBaseUrl();
-      const url = `${baseUrl}projects/${projectId}/logs/stream`;
+      const url = /^https?:\/\//.test(target)
+        ? target
+        : target.includes("/")
+          ? `${baseUrl}${target}`
+          : `${baseUrl}projects/${target}/logs/stream`;
       
       await sseStream.connect(url, {
         method: 'GET',

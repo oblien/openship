@@ -1,6 +1,6 @@
 import { createPlatform, type CloudRuntime } from "@repo/adapters";
-import { SYSTEM } from "@repo/core";
 import { issueNamespaceToken } from "./openship-cloud";
+import { getRoutingBaseDomain } from "./routing-domains";
 
 export interface CloudPreflightData {
   runtime: { ok: boolean; message?: string };
@@ -13,6 +13,7 @@ export async function runCloudPreflight(
   opts: { slug?: string; customDomain?: string },
 ): Promise<CloudPreflightData> {
   try {
+    const baseDomain = getRoutingBaseDomain();
     const token = await issueNamespaceToken(userId);
     const cloudPlatform = await createPlatform({ target: "cloud", cloudToken: token.token });
     const cloud = cloudPlatform.runtime as CloudRuntime;
@@ -30,7 +31,7 @@ export async function runCloudPreflight(
           ? { available: true }
           : {
               available: false,
-              message: `"${opts.slug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}" is already taken. Choose a different subdomain.`,
+              message: `"${opts.slug}.${baseDomain}" is already taken. Choose a different subdomain.`,
             };
       } catch {
         result.slug = { available: true, message: "Could not verify subdomain availability" };

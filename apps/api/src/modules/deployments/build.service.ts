@@ -11,6 +11,7 @@ import { env } from "../../config";
 import { resolveDeploymentRuntime, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
 import { ensureManagedEdgeProxy } from "../../lib/managed-edge-proxy";
 import { encrypt, decrypt } from "../../lib/encryption";
+import { buildProjectRouteDomains, createTrackedSslProvider, toRoutedDomainInputs } from "../../lib/routing-domains";
 import { withDefaults } from "../../lib/resources";
 import { resolveToken } from "../github/github.auth";
 import { pruneRetainedBareReleases } from "./release-retention";
@@ -941,6 +942,20 @@ async function executeBuildAndDeploy(
         ? await resolveDeploymentRuntime(prevDep).catch(() => runtime)
         : runtime;
 
+      // ── Gather all domains that need routing ───────────────────────
+      // Sources: custom domain, verified DB domains, free host subdomain.
+      // Every domain gets an nginx route; SSL is provisioned only for
+      // custom domains — the free host subdomain skips SSL (user manages it).
+      const projectDomains = await repos.domain.listByProject(project.id);
+      const domainByHostname = new Map(projectDomains.map((domain) => [domain.hostname.toLowerCase(), domain]));
+      const plannedDomains = buildProjectRouteDomains({
+        project,
+        projectDomains,
+        customDomain: snapshot.customDomain,
+        runtimeName: runtime.name,
+        usesManagedRouting,
+      });
+
       // Compose deploy environment from runtime adapter
       const deployEnv: DeployEnvironment = {
         preflight: targetExecutor
@@ -953,10 +968,10 @@ async function executeBuildAndDeploy(
                 if (!isStaticSelfHosted) {
                   await system.ensureFeature("deploy", systemLog);
                 }
-                if (domains.length > 0) {
+                if (plannedDomains.length > 0) {
                   await system.ensureFeature("routing", systemLog);
                 }
-                if (domains.some((d) => d.provisionSsl)) {
+                if (plannedDomains.some((d) => d.provisionSsl)) {
                   await system.ensureFeature("ssl", systemLog);
                 }
               }
@@ -996,61 +1011,14 @@ async function executeBuildAndDeploy(
       if (snapshot.customDomain) {
         deployConfig.customDomain = snapshot.customDomain;
       }
-
-      // ── Gather all domains that need routing ───────────────────────
-      // Sources: custom domain, verified DB domains, free host subdomain.
-      // Every domain gets an nginx route; SSL is provisioned only for
-      // custom domains — the free host subdomain skips SSL (user manages it).
-      const projectDomains = await repos.domain.listByProject(project.id);
-      const seen = new Set<string>();
-      const domains: Array<{ hostname: string; tls: boolean; provisionSsl: boolean; isCloud: boolean }> = [];
-
-      const addDomain = (hostname: string, skipSsl = false) => {
-        const key = hostname.toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
-        const isCloud = hostname.endsWith(`.${SYSTEM.DOMAINS.CLOUD_DOMAIN}`);
-        // SSL only for custom domains on bare runtime (skip for cloud & host domains)
-        const provisionSsl = runtime.name === "bare" && !isCloud && !skipSsl;
-        domains.push({ hostname, tls: true, provisionSsl, isCloud });
-      };
-
-      if (snapshot.customDomain) addDomain(snapshot.customDomain);
-      for (const d of projectDomains) {
-        if (d.verified) addDomain(d.hostname);
-      }
-
-      // Free subdomain: slug.baseDomain — always route on self-hosted, skip SSL.
-      // HOST_DOMAIN overrides the default cloud domain (opsh.io).
-      if (project.slug && usesManagedRouting) {
-        const baseDomain = env.HOST_DOMAIN || SYSTEM.DOMAINS.CLOUD_DOMAIN;
-        addDomain(`${project.slug}.${baseDomain}`, true);
-      }
-
-      // Wrap ssl to persist cert status in DB after provisioning
-      const deploySsl = domains.some((d) => d.provisionSsl)
-        ? {
-            provisionCert: async (hostname: string) => {
-              const result = await ssl.provisionCert(hostname);
-              const domainRecord = projectDomains.find(
-                (d) => d.hostname.toLowerCase() === hostname.toLowerCase(),
-              );
-              if (domainRecord) {
-                await repos.domain.updateSsl(domainRecord.id, {
-                  sslStatus: result.expiresAt ? "active" : "provisioning",
-                  sslIssuer: result.issuer,
-                  sslExpiresAt: result.expiresAt ? new Date(result.expiresAt) : undefined,
-                });
-              }
-              return result;
-            },
-          }
+      const deploySsl = plannedDomains.some((domain) => domain.provisionSsl)
+        ? createTrackedSslProvider(ssl, domainByHostname)
         : ssl;
 
       const deployResult = await runDeployPipeline(deployEnv, {
         config: deployConfig,
         previousContainerId: prevDep?.containerId ?? undefined,
-        domains,
+        domains: toRoutedDomainInputs(plannedDomains),
         routing,
         ssl: deploySsl,
         promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
@@ -1065,9 +1033,9 @@ async function executeBuildAndDeploy(
       }
 
       if (usesManagedRouting) {
-        for (const domain of domains.filter((d) => d.isCloud)) {
+        for (const domain of plannedDomains.filter((d) => d.isCloud && d.managedSubdomain)) {
           logger.log(`Syncing managed edge proxy for ${domain.hostname}...\n`);
-          await ensureManagedEdgeProxy(dep.userId, project.slug ?? "", {
+          await ensureManagedEdgeProxy(dep.userId, domain.managedSubdomain!, {
             serverId: snapshot.serverId,
           });
         }

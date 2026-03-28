@@ -10,6 +10,7 @@ import { slugify, NotFoundError, ConflictError, ValidationError, ForbiddenError,
 import type { ResourceConfig } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { buildServiceRouteDomain } from "../../lib/routing-domains";
 import { isComposeProject } from "../deployments/compose";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { encodeResources, decodeResources, withDefaults } from "../../lib/resources";
@@ -225,7 +226,6 @@ export async function deleteProject(projectId: string, userId: string) {
 
   const { routing } = platform();
   const isCompose = isComposeProject(p);
-  const baseDomain = env.HOST_DOMAIN || SYSTEM.DOMAINS.CLOUD_DOMAIN;
 
   // ── Destroy ALL deployment containers + compose service containers ──
   try {
@@ -279,14 +279,14 @@ export async function deleteProject(projectId: string, userId: string) {
     try {
       const services = await repos.service.listByProject(projectId);
       for (const svc of services) {
-        if (!svc.exposed) continue;
-
-        if (svc.domainType === "custom" && svc.customDomain) {
-          await routing.removeRoute(svc.customDomain).catch(() => {});
-        } else if (svc.domain || svc.name) {
-          const subdomain = svc.domain || `${p.slug ?? p.name}-${svc.name}`;
-          const hostname = `${subdomain}.${baseDomain}`;
-          await routing.removeRoute(hostname).catch(() => {});
+        const route = buildServiceRouteDomain({
+          project: p,
+          service: svc,
+          runtimeName: "bare",
+          usesManagedRouting: true,
+        });
+        if (route) {
+          await routing.removeRoute(route.hostname).catch(() => {});
         }
       }
     } catch {
