@@ -19,6 +19,10 @@ export const systemRoutes = new Hono();
 
 systemRoutes.use("*", localOnly);
 
+/* ── Onboarding (first-run only, no auth) ───────────────────────── */
+systemRoutes.get("/onboarding", setup.onboardingStatus);
+systemRoutes.post("/onboarding", setup.onboardingSetup);
+
 /* ── Internal routes (Electron → API with shared token) ─────────── */
 systemRoutes.post("/setup", internalAuth, setup.setup);
 systemRoutes.get("/setup", internalAuth, setup.getSetup);

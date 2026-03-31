@@ -127,6 +127,7 @@ export const endpoints = {
   system: {
     browse: "system/browse",
     settings: "system/settings",
+    onboarding: "system/onboarding",
     testConnection: "system/test-connection",
     check: "system/check",
     install: "system/install",

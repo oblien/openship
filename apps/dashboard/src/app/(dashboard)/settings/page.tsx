@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
@@ -12,6 +12,20 @@ import { CloudConnection } from "./_components/CloudConnection";
 import { InstanceInfo } from "./_components/InstanceInfo";
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+        </div>
+      </div>
+    }>
+      <SettingsPageInner />
+    </Suspense>
+  );
+}
+
+function SettingsPageInner() {
   const { selfHosted, authMode } = usePlatform();
   const { refresh } = useCloud();
   const { showToast } = useToast();

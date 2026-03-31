@@ -60,6 +60,7 @@ export function RoutingSettingsCard({
   const [copied, setCopied] = useState<string | null>(null);
   const [draftDomain, setDraftDomain] = useState(domain);
   const [draftCustomDomain, setDraftCustomDomain] = useState(customDomain);
+  const [draftPort, setDraftPort] = useState(exposedPort ?? "");
 
   useEffect(() => {
     setDraftDomain(domain);
@@ -68,6 +69,10 @@ export function RoutingSettingsCard({
   useEffect(() => {
     setDraftCustomDomain(customDomain);
   }, [customDomain]);
+
+  useEffect(() => {
+    setDraftPort(exposedPort ?? "");
+  }, [exposedPort]);
 
   const visible = exposed ?? true;
   const hasPortOptions = (ports ?? []).length > 0;
@@ -126,13 +131,19 @@ export function RoutingSettingsCard({
     void onCustomDomainChange(draftCustomDomain.toLowerCase());
   };
 
+  const commitPort = () => {
+    if (onExposedPortChange) {
+      void onExposedPortChange(draftPort);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {typeof exposed === "boolean" && onExposedChange && (
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            {visible ? <Eye className="size-3.5 text-blue-500" /> : <EyeOff className="size-3.5 text-muted-foreground" />}
-            <span className="text-[13px] font-medium text-foreground">
+            {visible ? <Eye className="size-4 text-blue-500" /> : <EyeOff className="size-4 text-muted-foreground" />}
+            <span className="text-sm font-medium text-foreground">
               {visible ? "Publicly exposed" : "Internal only"}
             </span>
           </div>
@@ -154,7 +165,7 @@ export function RoutingSettingsCard({
               type="button"
               onClick={() => void onDomainTypeChange("free")}
               disabled={disabled}
-              className={`px-4 py-2 rounded-2xl text-[13px] font-medium transition-colors ${domainType === "free" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "free" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
             >
               Free subdomain
             </button>
@@ -162,7 +173,7 @@ export function RoutingSettingsCard({
               type="button"
               onClick={() => void onDomainTypeChange("custom")}
               disabled={disabled}
-              className={`px-4 py-2 rounded-2xl text-[13px] font-medium transition-colors ${domainType === "custom" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "custom" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
             >
               Custom domain
             </button>
@@ -183,9 +194,9 @@ export function RoutingSettingsCard({
                       }
                     }}
                     placeholder={projectName || "my-project"}
-                    className="flex-1 px-3.5 py-3 text-[13px] bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
+                    className="flex-1 px-3.5 py-3 text-sm bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
                   />
-                  <span className="text-[13px] text-muted-foreground pr-3.5 shrink-0">.{baseDomain}</span>
+                  <span className="text-sm text-muted-foreground pr-3.5 shrink-0">.{baseDomain}</span>
                 </div>
                 {saveMode === "explicit" && draftDomain !== domain && (
                   <button
@@ -217,7 +228,7 @@ export function RoutingSettingsCard({
                       }
                     }}
                     placeholder="app.example.com"
-                    className="flex-1 px-3.5 py-3 text-[13px] bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
+                    className="flex-1 px-3.5 py-3 text-sm bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
                   />
                 </div>
                 {saveMode === "explicit" && draftCustomDomain !== customDomain && (
@@ -260,17 +271,23 @@ export function RoutingSettingsCard({
           )}
 
           {typeof exposedPort !== "undefined" && onExposedPortChange && (
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <Hash className="size-3 text-muted-foreground" />
-                <span className="text-[11px] text-muted-foreground">Exposed port</span>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Hash className="size-3.5 text-muted-foreground" />
+                <span className="text-[13px] text-muted-foreground font-medium">Exposed port</span>
               </div>
               {hasPortOptions ? (
                 <select
-                  value={exposedPort}
-                  onChange={(event) => void onExposedPortChange(event.target.value)}
+                  value={saveMode === "explicit" ? draftPort : exposedPort}
+                  onChange={(event) => {
+                    if (saveMode === "explicit") {
+                      setDraftPort(event.target.value);
+                    } else {
+                      void onExposedPortChange(event.target.value);
+                    }
+                  }}
                   disabled={disabled}
-                  className="px-3 py-2 rounded-2xl text-[13px] bg-muted/30 border border-border/40 text-foreground outline-none"
+                  className="px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border/40 text-foreground outline-none"
                 >
                   <option value="">Auto</option>
                   {portOptions.map((port) => (
@@ -279,22 +296,37 @@ export function RoutingSettingsCard({
                 </select>
               ) : (
                 <input
-                  value={exposedPort}
-                  onChange={(event) => void onExposedPortChange(event.target.value)}
+                  value={saveMode === "explicit" ? draftPort : exposedPort}
+                  onChange={(event) => {
+                    if (saveMode === "explicit") {
+                      setDraftPort(event.target.value);
+                    } else {
+                      void onExposedPortChange(event.target.value);
+                    }
+                  }}
                   placeholder="3000"
                   disabled={disabled}
-                  className="w-20 px-3 py-2 rounded-2xl text-[13px] bg-muted/30 border border-border/40 text-foreground outline-none"
+                  className="w-24 px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border/40 text-foreground outline-none"
                 />
+              )}
+              {saveMode === "explicit" && draftPort !== (exposedPort ?? "") && (
+                <button
+                  onClick={commitPort}
+                  disabled={disabled}
+                  className="px-3 py-2 rounded-xl text-[12px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                >
+                  Save
+                </button>
               )}
             </div>
           )}
 
           {liveUrl && (
             <div className="flex items-center gap-2">
-              <Link2 className="size-3.5 text-emerald-500" />
-              <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="text-[12px] font-medium text-blue-500 dark:text-blue-400 hover:underline flex items-center gap-1">
+              <Link2 className="size-4 text-emerald-500" />
+              <a href={liveUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-500 dark:text-blue-400 hover:underline flex items-center gap-1.5">
                 {liveUrl.replace("https://", "")}
-                <ExternalLink className="size-3" />
+                <ExternalLink className="size-3.5" />
               </a>
             </div>
           )}

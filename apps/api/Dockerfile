@@ -7,8 +7,7 @@ COPY tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY apps/ ./apps/
 
-RUN bun install
-RUN cd apps/api && bun run build
+RUN bun install && cd apps/api && bun run build
 
 # ─── Production stage ──────────────────────────────────
 FROM oven/bun:latest AS runner

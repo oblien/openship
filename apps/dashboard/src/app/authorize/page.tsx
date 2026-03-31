@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
 import { AuthShell } from "@/components/auth-shell";
@@ -18,6 +18,18 @@ import { Loader2, Monitor, Check } from "lucide-react";
  *   - Authorize → handoff endpoint → redirect back to desktop API
  */
 export default function AuthorizePage() {
+  return (
+    <Suspense fallback={
+      <AuthShell>
+        <div className="flex items-center justify-center py-8"><Loader2 className="size-6 animate-spin text-muted-foreground" /></div>
+      </AuthShell>
+    }>
+      <AuthorizePageInner />
+    </Suspense>
+  );
+}
+
+function AuthorizePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { data: session, isPending } = useSession();

@@ -68,7 +68,7 @@ const RESTART_POLICIES: Record<string, { Name: string; MaximumRetryCount: number
   no: { Name: "no", MaximumRetryCount: 0 },
 };
 
-const DOCKER_BUILD_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const DOCKER_BUILD_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 function resolveRestartPolicy(policy?: string) {
   return RESTART_POLICIES[policy ?? "always"] ?? RESTART_POLICIES.always;
@@ -437,18 +437,19 @@ export class DockerRuntime implements RuntimeAdapter {
       await new Promise<void>((resolve, reject) => {
         let settled = false;
         let idleTimer: NodeJS.Timeout | null = null;
+        let keepaliveTimer: NodeJS.Timeout | null = null;
+        let idleMinutes = 0;
 
-        const clearIdleTimer = () => {
-          if (idleTimer) {
-            clearTimeout(idleTimer);
-            idleTimer = null;
-          }
+        const clearTimers = () => {
+          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+          if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
+          idleMinutes = 0;
         };
 
         const fail = (error: Error) => {
           if (settled) return;
           settled = true;
-          clearIdleTimer();
+          clearTimers();
           (stream as any).destroy?.(error);
           reject(error);
         };
@@ -456,18 +457,26 @@ export class DockerRuntime implements RuntimeAdapter {
         const succeed = () => {
           if (settled) return;
           settled = true;
-          clearIdleTimer();
+          clearTimers();
           resolve();
         };
 
         const resetIdleTimer = () => {
-          clearIdleTimer();
+          clearTimers();
+
+          // Log every 60s of silence so the user knows the build is still alive
+          keepaliveTimer = setInterval(() => {
+            idleMinutes += 1;
+            log.log(`Still building... (no output for ${idleMinutes}m)`);
+          }, 60_000);
+          if ((keepaliveTimer as any).unref) (keepaliveTimer as any).unref();
+
           idleTimer = setTimeout(() => {
             fail(new Error(
-              "Docker build produced no output for 5 minutes. This usually means the remote server cannot reach the package registry, has broken DNS, or the Docker daemon stalled during the build.",
+              "Docker build produced no output for 15 minutes. This usually means the remote server cannot reach the package registry, has broken DNS, or the Docker daemon stalled during the build.",
             ));
           }, DOCKER_BUILD_IDLE_TIMEOUT_MS);
-          if (idleTimer.unref) idleTimer.unref();
+          if ((idleTimer as any).unref) (idleTimer as any).unref();
         };
 
         resetIdleTimer();

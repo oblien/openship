@@ -147,3 +147,37 @@ export async function deleteSettings(c: Context) {
   clearAuthModeCache();
   return c.json({ ok: true });
 }
+
+// ── Onboarding (first-run, no auth required) ─────────────────────────────────
+
+/**
+ * GET /system/onboarding — check whether onboarding is complete.
+ * No auth required — used by CLI polling and first-run detection.
+ */
+export async function onboardingStatus(c: Context) {
+  if (!assertNotCloud(c)) return c.res;
+
+  const servers = await repos.server.list();
+  return c.json({ configured: servers.length > 0 });
+}
+
+/**
+ * POST /system/onboarding — first-run setup from dashboard/browser.
+ *
+ * Same logic as `setup()`, but only allowed when the instance has
+ * no servers configured yet. This avoids requiring auth tokens for
+ * the initial onboarding flow (desktop, CLI, or direct browser).
+ *
+ * After the first server is created this endpoint returns 403.
+ */
+export async function onboardingSetup(c: Context) {
+  if (!assertNotCloud(c)) return c.res;
+
+  const servers = await repos.server.list();
+  if (servers.length > 0) {
+    return c.json({ error: "Instance already configured" }, 403);
+  }
+
+  // Delegate to the shared setup logic
+  return setup(c);
+}

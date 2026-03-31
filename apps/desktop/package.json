@@ -6,7 +6,7 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "npm run build && node scripts/dev.mjs",
-    "build": "rm -rf out && tsc && cp -r src/renderer out/renderer",
+    "build": "rm -rf out && tsc",
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make",
     "lint": "tsc --noEmit",
@@ -22,5 +22,8 @@
     "electron": "^40.8.0",
     "electronmon": "^2.0.4",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@repo/onboarding": "workspace:*"
   }
 }

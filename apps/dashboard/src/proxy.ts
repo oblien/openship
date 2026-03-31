@@ -18,6 +18,7 @@ const PUBLIC_ROUTES = [
   "/reset-password",
   "/verify-email",
   "/authorize",
+  "/onboarding",
 ];
 
 /** Better Auth stores session in this cookie by default */

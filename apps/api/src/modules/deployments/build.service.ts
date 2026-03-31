@@ -572,7 +572,6 @@ export async function cancelBuildSession(deploymentId: string, userId: string) {
   }
 
   const buildSession = await repos.deployment.findBuildSessionByDeploymentId(deploymentId);
-  sessionManager.updateStatus(dep.id, "cancelled");
 
   const { runtime } = platform();
   if (dep.status === "building") {
@@ -582,10 +581,24 @@ export async function cancelBuildSession(deploymentId: string, userId: string) {
     await runtime.destroy(dep.containerId).catch(() => {});
   }
 
+  // Mark all pending/building services as failed so UI stops showing spinners
+  const services = await repos.service.listByProject(dep.projectId).catch(() => []);
+  for (const svc of services) {
+    sessionManager.broadcastServiceStatus(dep.id, {
+      serviceName: svc.name,
+      serviceId: svc.id,
+      status: "failed",
+      error: "Deployment cancelled",
+    });
+  }
+
   await repos.deployment.updateStatus(dep.id, "cancelled");
   if (buildSession) {
     await repos.deployment.finishBuildSession(buildSession.id, "cancelled", 0);
   }
+
+  // Broadcast cancelled AFTER service statuses so UI receives the service updates first
+  sessionManager.updateStatus(dep.id, "cancelled");
 
   return { success: true, message: "Deployment cancelled" };
 }

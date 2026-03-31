@@ -5,8 +5,9 @@
 import { repos } from "@repo/db";
 import type { LogEntry } from "@repo/adapters";
 import { encrypt, decrypt } from "../../lib/encryption";
-import { assertProjectAccess } from "../../lib/controller-helpers";
+import { assertProjectAccess, platform } from "../../lib/controller-helpers";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { buildServiceRouteDomain, getRoutingBaseDomain } from "../../lib/routing-domains";
 import type { TUpdateServiceBody, TSetServiceEnvVarsBody } from "./service.schema";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ export async function updateService(
   userId: string,
   data: TUpdateServiceBody,
 ) {
-  const { svc } = await assertServiceAccess(projectId, serviceId, userId);
+  const { project, svc } = await assertServiceAccess(projectId, serviceId, userId);
 
   // Normalize routing: when exposed is turned off, clear routing fields.
   // When domainType changes, clear the irrelevant domain field.
@@ -108,7 +109,58 @@ export async function updateService(
   }
 
   await repos.service.update(serviceId, patch);
-  return repos.service.findById(serviceId);
+  const updated = await repos.service.findById(serviceId);
+
+  // ── Route management on enable/disable ───────────────────────
+  // When disabling a service that is publicly exposed, remove the route.
+  // When re-enabling a service that is publicly exposed, re-register the route.
+  const enabledChanged = typeof data.enabled === "boolean" && data.enabled !== svc.enabled;
+  const exposedChanged = touchesRouting && (patch.exposed !== svc.exposed);
+
+  if (updated && (enabledChanged || exposedChanged)) {
+    try {
+      const { routing } = platform();
+      const wasRoutable = svc.enabled && svc.exposed;
+      const isRoutable = (updated.enabled ?? svc.enabled) && (updated.exposed ?? svc.exposed);
+
+      if (wasRoutable && !isRoutable) {
+        // Remove route for old hostname
+        const oldRoute = buildServiceRouteDomain({
+          project,
+          service: svc,
+          runtimeName: "docker",
+          usesManagedRouting: true,
+        });
+        if (oldRoute) {
+          await routing.removeRoute(oldRoute.hostname);
+        }
+      } else if (!wasRoutable && isRoutable) {
+        // Re-register route — need the container IP for the target URL
+        const routeDomain = buildServiceRouteDomain({
+          project,
+          service: updated,
+          runtimeName: "docker",
+          usesManagedRouting: true,
+        });
+        if (routeDomain && project.activeDeploymentId) {
+          const rows = await repos.service.listByDeployment(project.activeDeploymentId);
+          const row = rows.find((r) => r.serviceId === serviceId);
+          if (row?.ip) {
+            const port = updated.exposedPort || row.hostPort?.toString() || "80";
+            await routing.registerRoute({
+              domain: routeDomain.hostname,
+              tls: true,
+              targetUrl: `http://${row.ip}:${port}`,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[SERVICE] Failed to update route for ${svc.name}:`, err);
+    }
+  }
+
+  return updated;
 }
 
 // ─── Service Environment Variables ───────────────────────────────────────────

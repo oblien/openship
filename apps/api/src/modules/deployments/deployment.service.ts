@@ -10,6 +10,7 @@ import { NotFoundError, ForbiddenError } from "@repo/core";
 import type { LogEntry } from "@repo/adapters";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { isComposeProject } from "./compose";
+import { collectDeploymentManifest, executeCleanup } from "../projects/project-cleanup.service";
 
 async function listComposeContainerIds(deploymentId: string): Promise<string[]> {
   const rows = await repos.service.listByDeployment(deploymentId);
@@ -79,18 +80,11 @@ export async function deleteDeployment(deploymentId: string, userId: string) {
   }
 
   const project = await repos.project.findById(dep.projectId);
-  const containerIds = project && isComposeProject(project)
-    ? await listComposeContainerIds(dep.id)
-    : dep.containerId
-      ? [dep.containerId]
-      : [];
 
-  if (containerIds.length > 0) {
-    const runtime = await resolveDeploymentRuntime(dep);
-    for (const containerId of containerIds) {
-      await runtime.stop(containerId).catch(() => {});
-      await runtime.destroy(containerId).catch(() => {});
-    }
+  // Collect and destroy runtime resources via shared cleanup orchestrator
+  const manifest = await collectDeploymentManifest(dep, project ?? null);
+  if (manifest.resources.length > 0) {
+    await executeCleanup(manifest);
   }
 
   // If this is the active deployment, clear it from the project

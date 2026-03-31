@@ -1,14 +1,13 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { Plus, ExternalLink, Globe, Copy, RefreshCw, Container, PencilLine, Link2 } from "lucide-react";
+import { Plus, ExternalLink, Globe, Copy, RefreshCw, Container, Link2, ChevronRight } from "lucide-react";
 import { generateIcon } from "@/utils/icons";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { projectsApi, deployApi, servicesApi, type Service } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { getProjectType, resolveServiceHostnameLabel } from "@repo/core";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -20,6 +19,7 @@ export const DomainSettings = () => {
   const { domainsData, updateDomains, id, projectData } = useProjectSettings();
   const { showToast } = useToast();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const isServicesProject = getProjectType(projectData.framework as any) === "services";
 
   const [newDomain, setNewDomain] = useState("");
@@ -34,12 +34,9 @@ export const DomainSettings = () => {
   const [dnsMode, setDnsMode] = useState<"cloud" | "selfhosted">("cloud");
   const [services, setServices] = useState<Service[]>([]);
   const [servicesLoading, setServicesLoading] = useState(false);
-  const [savingServiceId, setSavingServiceId] = useState<string | null>(null);
-  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
 
   const primaryDomain = domainsData?.domains?.find((d) => d.primary) || {};
   const primaryDomainName = typeof primaryDomain?.domain === "string" ? primaryDomain.domain : "";
-  const requestedServiceId = searchParams.get("service");
 
   const addLog = (message: string) => {
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
@@ -72,7 +69,6 @@ export const DomainSettings = () => {
     if (!isServicesProject) {
       setServices([]);
       setServicesLoading(false);
-      setEditingServiceId(null);
       return;
     }
 
@@ -100,26 +96,6 @@ export const DomainSettings = () => {
       cancelled = true;
     };
   }, [id, isServicesProject]);
-
-  useEffect(() => {
-    if (!isServicesProject) return;
-    if (!services.length) {
-      setEditingServiceId(null);
-      return;
-    }
-
-    if (requestedServiceId && services.some((service) => service.id === requestedServiceId)) {
-      setEditingServiceId(requestedServiceId);
-      return;
-    }
-
-    setEditingServiceId((current) => {
-      if (current && services.some((service) => service.id === current)) {
-        return current;
-      }
-      return null;
-    });
-  }, [isServicesProject, requestedServiceId, services]);
 
 
   const handleSubmitDomains = async () => {
@@ -202,27 +178,15 @@ export const DomainSettings = () => {
     }
   };
 
-  const handleServiceUpdate = async (serviceId: string, patch: Partial<Service>) => {
-    setSavingServiceId(serviceId);
-    try {
-      const result = await servicesApi.update(id, serviceId, patch);
-      if (result.success && result.service) {
-        setServices((prev) => prev.map((service) => service.id === serviceId ? result.service : service));
-      }
-    } finally {
-      setSavingServiceId(null);
-    }
-  };
-
   const projectLabel = projectData.slug || projectData.name || "project";
 
   const getServiceRouteSummary = (service: Service) => {
     if (!service.exposed) {
       return {
         connected: false,
-        statusLabel: "Not connected",
+        statusLabel: "Internal",
         statusClass: "bg-muted/60 text-muted-foreground/70",
-        detail: "Internal only",
+        detail: "Not exposed",
         liveUrl: null as string | null,
       };
     }
@@ -233,7 +197,7 @@ export const DomainSettings = () => {
 
     return {
       connected: true,
-      statusLabel: "Connected",
+      statusLabel: "Public",
       statusClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
       detail: service.domainType === "custom" ? "Custom domain" : "Free subdomain",
       liveUrl,
@@ -425,108 +389,75 @@ export const DomainSettings = () => {
       )}
 
       {isServicesProject && (
-        <div className="bg-card rounded-xl p-6 border border-border/50">
-          <div className="flex items-center gap-3 mb-5">
+        <div className="bg-card rounded-xl border border-border/50 overflow-hidden">
+          <div className="flex items-center gap-3 px-6 py-5 border-b border-border/30">
             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
               <Container className="size-5 text-primary" />
             </div>
-            <div>
-              <h3 className="font-bold text-foreground">Service Domains</h3>
-              <p className="text-sm text-gray-500">See which services are connected, then edit one service at a time.</p>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-foreground">Service Routing</h3>
+              <p className="text-sm text-muted-foreground">
+                {services.filter((s) => s.exposed).length} of {services.length} services exposed publicly
+              </p>
             </div>
           </div>
 
           {servicesLoading ? (
-            <div className="text-sm text-muted-foreground">Loading services...</div>
+            <div className="px-6 py-8 text-center text-sm text-muted-foreground">Loading services...</div>
           ) : services.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No compose services found for this project.</div>
+            <div className="px-6 py-8 text-center text-sm text-muted-foreground">No compose services found for this project.</div>
           ) : (
-            <div className="space-y-4">
+            <div className="divide-y divide-border/30">
               {services.map((service) => {
                 const route = getServiceRouteSummary(service);
-                const isEditing = editingServiceId === service.id;
 
                 return (
-                  <div key={service.id} className="rounded-2xl border border-border/50 bg-muted/10 overflow-hidden">
-                    <div className="px-4 py-4 flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className="text-sm font-semibold text-foreground">{service.name}</div>
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${route.statusClass}`}>
-                            {route.statusLabel}
-                          </span>
-                          <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-muted/60 text-muted-foreground">
-                            {route.detail}
-                          </span>
-                        </div>
-
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {service.image || service.build || "Internal service"}
-                        </div>
-
-                        <div className="mt-3 space-y-1.5">
-                          {route.liveUrl ? (
-                            <>
-                              <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                                <Link2 className="size-3.5" />
-                                <span className="font-medium text-foreground">{route.liveUrl.replace("https://", "")}</span>
-                              </div>
-                              <div className="text-[12px] text-muted-foreground">
-                                Port: <span className="text-foreground">{service.exposedPort || "Auto"}</span>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="text-[12px] text-muted-foreground">
-                              This service is not exposed publicly yet.
-                            </div>
-                          )}
-                        </div>
+                  <button
+                    key={service.id}
+                    onClick={() => router.push(`/projects/${id}/services/${service.id}`)}
+                    className="w-full flex items-center gap-4 px-6 py-4 text-left transition-colors hover:bg-foreground/[0.025]"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-foreground">{service.name}</span>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${route.statusClass}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${route.connected ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+                          {route.statusLabel}
+                        </span>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        {route.liveUrl && (
-                          <a
-                            href={route.liveUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
-                          >
-                            Open
-                            <ExternalLink className="size-3.5" />
-                          </a>
-                        )}
-                        <button
-                          onClick={() => setEditingServiceId(isEditing ? null : service.id)}
-                          className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-medium bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
-                        >
-                          <PencilLine className="size-3.5" />
-                          {isEditing ? "Close" : "Edit"}
-                        </button>
-                      </div>
+                      {route.liveUrl ? (
+                        <div className="flex items-center gap-1.5 mt-1.5 text-[12px] text-muted-foreground">
+                          <Link2 className="size-3" />
+                          <span className="truncate">{route.liveUrl.replace("https://", "")}</span>
+                          <span className="text-muted-foreground/50 mx-1">·</span>
+                          <span>Port {service.exposedPort || "Auto"}</span>
+                          <span className="text-muted-foreground/50 mx-1">·</span>
+                          <span>{route.detail}</span>
+                        </div>
+                      ) : (
+                        <p className="text-[12px] text-muted-foreground mt-1.5">
+                          Internal only — open service to configure public routing
+                        </p>
+                      )}
                     </div>
 
-                    {isEditing && (
-                      <div className="border-t border-border/40 p-4">
-                        <RoutingSettingsCard
-                          projectName={projectLabel}
-                          domain={service.domain ?? ""}
-                          customDomain={service.customDomain ?? ""}
-                          domainType={service.domainType === "custom" ? "custom" : "free"}
-                          exposed={service.exposed}
-                          ports={service.ports}
-                          exposedPort={service.exposedPort ?? ""}
-                          disabled={savingServiceId === service.id}
-                          liveUrl={route.liveUrl}
-                          onExposedChange={(value) => handleServiceUpdate(service.id, { exposed: value })}
-                          onDomainTypeChange={(value) => handleServiceUpdate(service.id, { domainType: value })}
-                          onDomainChange={(value) => handleServiceUpdate(service.id, { domain: value })}
-                          onCustomDomainChange={(value) => handleServiceUpdate(service.id, { customDomain: value })}
-                          onExposedPortChange={(value) => handleServiceUpdate(service.id, { exposedPort: value })}
-                          saveMode="explicit"
-                        />
-                      </div>
-                    )}
-                  </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {route.liveUrl && (
+                        <a
+                          href={route.liveUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-blue-500 dark:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                        >
+                          <ExternalLink className="size-3" />
+                          Open
+                        </a>
+                      )}
+                      <ChevronRight className="size-4 text-muted-foreground/40" />
+                    </div>
+                  </button>
                 );
               })}
             </div>

@@ -19,6 +19,15 @@ import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { hostname } from "node:os";
+import {
+  type SystemSettings,
+  type TunnelConfig,
+  buildSetupPayload,
+  CLOUD_API_URL as DEFAULT_CLOUD_API_URL,
+  CLOUD_DASHBOARD_URL as DEFAULT_CLOUD_DASHBOARD_URL,
+  LOCAL_API_URL as DEFAULT_LOCAL_API_URL,
+  LOCAL_DASHBOARD_URL as DEFAULT_LOCAL_DASHBOARD_URL,
+} from "@repo/onboarding";
 
 // ─── Persistent config ───────────────────────────────────────────────────────
 
@@ -26,36 +35,9 @@ import { hostname } from "node:os";
  * System settings — stored locally in the Electron config file.
  * SSH credentials and server connection details never leave the machine.
  * Platform preferences (build mode) are stored on the API server.
+ *
+ * Types imported from @repo/onboarding: SystemSettings, TunnelConfig
  */
-interface SystemSettings {
-  /** Friendly name shown in the UI for this server */
-  serverName?: string;
-  /** SSH host for self-hosted deployments */
-  sshHost?: string;
-  /** SSH port (default 22) */
-  sshPort?: number;
-  /** SSH username (default "root") */
-  sshUser?: string;
-  /** Auth method: "password" | "key" */
-  sshAuthMethod?: string;
-  /** SSH password (encrypted at rest by OS keychain or plain in config) */
-  sshPassword?: string;
-  /** Path to SSH private key */
-  sshKeyPath?: string;
-  /** SSH key passphrase */
-  sshKeyPassphrase?: string;
-  /** Jump/bastion host */
-  sshJumpHost?: string;
-  /** Extra SSH arguments */
-  sshArgs?: string;
-}
-
-interface TunnelConfig {
-  /** Tunnel provider: "edge" | "cloudflare" | "ngrok" */
-  provider: string;
-  /** Auth token for Cloudflare/ngrok (not needed for Edge) */
-  token?: string;
-}
 
 interface AppConfig {
   /** URL of the Openship API server */
@@ -140,6 +122,7 @@ const internalToken = randomBytes(32).toString("base64url");
 /**
  * Push instance settings (SSH, tunnel, build mode) directly to the API.
  * Authenticated with the internal token — no user session needed.
+ * Uses buildSetupPayload from @repo/onboarding for the payload shape.
  */
 async function pushInstanceSettings(
   apiUrl: string,
@@ -150,31 +133,7 @@ async function pushInstanceSettings(
     authMode?: string;
   },
 ) {
-  const payload: Record<string, unknown> = {
-    defaultBuildMode: settings.buildMode || "auto",
-    authMode: settings.authMode || "none",
-  };
-
-  // SSH creds
-  if (settings.system) {
-    const s = settings.system;
-    payload.serverName = s.serverName || null;
-    payload.sshHost = s.sshHost;
-    payload.sshPort = s.sshPort || 22;
-    payload.sshUser = s.sshUser || "root";
-    payload.sshAuthMethod = s.sshAuthMethod;
-    if (s.sshPassword) payload.sshPassword = s.sshPassword;
-    if (s.sshKeyPath) payload.sshKeyPath = s.sshKeyPath;
-    if (s.sshKeyPassphrase) payload.sshKeyPassphrase = s.sshKeyPassphrase;
-    if (s.sshJumpHost) payload.sshJumpHost = s.sshJumpHost;
-    if (s.sshArgs) payload.sshArgs = s.sshArgs;
-  }
-
-  // Tunnel
-  if (settings.tunnel) {
-    payload.tunnelProvider = settings.tunnel.provider;
-    if (settings.tunnel.token) payload.tunnelToken = settings.tunnel.token;
-  }
+  const payload = buildSetupPayload(settings);
 
   try {
     await net.fetch(`${apiUrl}/api/system/setup`, {
@@ -194,12 +153,12 @@ async function pushInstanceSettings(
 
 // ─── Cloud defaults (overridable via env for development) ─────────────────────
 
-const CLOUD_API_URL = process.env.OPENSHIP_CLOUD_URL || "https://api.openship.io";
-const CLOUD_DASHBOARD_URL = process.env.OPENSHIP_CLOUD_DASHBOARD_URL || "https://app.openship.io";
+const CLOUD_API_URL = process.env.OPENSHIP_CLOUD_URL || DEFAULT_CLOUD_API_URL;
+const CLOUD_DASHBOARD_URL = process.env.OPENSHIP_CLOUD_DASHBOARD_URL || DEFAULT_CLOUD_DASHBOARD_URL;
 
 // Local services for desktop cloud mode (API returns authMode:"cloud", dashboard redirects externally)
-const LOCAL_API_URL = process.env.LOCAL_API_URL || "http://localhost:4000";
-const LOCAL_DASHBOARD_URL = process.env.LOCAL_DASHBOARD_URL || "http://localhost:3001";
+const LOCAL_API_URL = process.env.LOCAL_API_URL || DEFAULT_LOCAL_API_URL;
+const LOCAL_DASHBOARD_URL = process.env.LOCAL_DASHBOARD_URL || DEFAULT_LOCAL_DASHBOARD_URL;
 
 // ─── API readiness check ──────────────────────────────────────────────────────
 
@@ -268,6 +227,17 @@ function createWindow() {
     return { action: "deny" };
   });
 
+  // Detect when onboarding completes via dashboard desktop-login redirect
+  mainWindow.webContents.on("did-navigate", (_e, url) => {
+    const u = new URL(url);
+    // desktop-login redirects to dashboard root — mark onboarding complete
+    if (!store.get("onboardingComplete") && u.pathname === "/" && u.origin === LOCAL_DASHBOARD_URL) {
+      store.set("onboardingComplete", true);
+      store.set("apiUrl", LOCAL_API_URL);
+      store.set("dashboardUrl", LOCAL_DASHBOARD_URL);
+    }
+  });
+
   // Save window position on close
   mainWindow.on("close", () => {
     if (mainWindow) {
@@ -284,8 +254,8 @@ function createWindow() {
 
 function loadOnboarding() {
   if (!mainWindow) return;
-
-  mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+  // Load the dashboard onboarding page — unified UI shared by desktop, CLI, and browser
+  mainWindow.loadURL(`${LOCAL_DASHBOARD_URL}/onboarding`);
 }
 
 function loadDashboard() {

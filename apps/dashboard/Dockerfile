@@ -7,8 +7,8 @@ COPY tsconfig.base.json ./
 COPY packages/ ./packages/
 COPY apps/ ./apps/
 
-RUN bun install
-RUN cd apps/dashboard && bun run build
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN bun install && cd apps/dashboard && bun run build
 
 # ─── Production stage ──────────────────────────────────
 FROM node:20-alpine AS runner

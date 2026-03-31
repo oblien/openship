@@ -1,0 +1,25 @@
+{
+  "name": "@repo/onboarding",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}

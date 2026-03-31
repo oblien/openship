@@ -6,6 +6,12 @@
  */
 
 import { contextBridge, ipcRenderer } from "electron";
+import {
+  isPrivateIp,
+  validateServerAddress,
+  validateSshPayload,
+  buildSshSettings,
+} from "@repo/onboarding";
 
 contextBridge.exposeInMainWorld("desktop", {
   /** Whether the app is running inside Electron */
@@ -85,4 +91,12 @@ contextBridge.exposeInMainWorld("desktop", {
 
   /** Reset config and return to onboarding */
   reset: () => ipcRenderer.invoke("app:reset"),
+
+  /** Shared onboarding utilities from @repo/onboarding */
+  utils: {
+    isPrivateIp,
+    validateServerAddress,
+    validateSshPayload,
+    buildSshSettings,
+  },
 });

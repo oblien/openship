@@ -22,8 +22,8 @@ export async function apiRequest(path: string, options?: RequestInit) {
   });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `API error: ${res.status}`);
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    throw new Error((body.error as string) || `API error: ${res.status}`);
   }
 
   return res.json();

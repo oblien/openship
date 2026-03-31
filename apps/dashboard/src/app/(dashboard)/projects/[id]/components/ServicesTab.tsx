@@ -233,7 +233,7 @@ export const ServicesTab = () => {
                   <span className="text-[14px] font-semibold text-foreground truncate">{svc.name}</span>
                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-[0.12em] ${svc.exposed ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted/60 text-muted-foreground/70"}`}>
                     <Globe className="size-2.5" />
-                    {svc.exposed ? "Connected" : "Not Connected"}
+                    {svc.exposed ? "Public" : "Internal"}
                   </span>
                 </div>
                 <p className="text-[12px] text-muted-foreground truncate mt-1">
@@ -242,15 +242,6 @@ export const ServicesTab = () => {
               </div>
 
               <div className="flex items-center gap-3 shrink-0">
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    router.push(`/projects/${id}/domains?service=${svc.id}`);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-medium bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
-                >
-                  Edit
-                </button>
                 <StatusBadge status={status} />
                 <ChevronRight className="size-4 text-muted-foreground/50" />
               </div>

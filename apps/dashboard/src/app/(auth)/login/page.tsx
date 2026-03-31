@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "@/lib/auth-client";
@@ -16,6 +16,18 @@ import { Eye, EyeOff, Loader2, ExternalLink } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <AuthShell>
+        <div className="flex justify-center py-8"><div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" /></div>
+      </AuthShell>
+    }>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();

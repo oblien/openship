@@ -135,6 +135,27 @@ export async function onCancelled(
     }
   }
 
+  // Destroy service containers and broadcast failed status (mirrors onFailure)
+  const serviceDeps = await repos.service.listByDeployment(dep.id).catch(() => []);
+  const services = serviceDeps.length > 0
+    ? await repos.service.listByProject(dep.projectId).catch(() => [])
+    : [];
+  const serviceNameMap = new Map(services.map((s) => [s.id, s.name]));
+
+  for (const serviceDep of serviceDeps) {
+    if (serviceDep.containerId) {
+      await runtime.destroy(serviceDep.containerId).catch((err) => {
+        console.error(`[DEPLOY] Failed to destroy service container ${serviceDep.containerId} on cancel:`, err);
+      });
+    }
+    sessionManager.broadcastServiceStatus(dep.id, {
+      serviceName: serviceNameMap.get(serviceDep.serviceId) ?? serviceDep.serviceId,
+      serviceId: serviceDep.serviceId,
+      status: "failed",
+      error: "Deployment cancelled",
+    });
+  }
+
   await repos.deployment.updateStatus(dep.id, "cancelled");
   await repos.deployment.finishBuildSession(buildSessionId, "cancelled", durationMs ?? 0, persistLogs());
   sessionManager.updateStatus(dep.id, "cancelled");

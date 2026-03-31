@@ -2,20 +2,14 @@
  * Dev script — watches source files and auto-restarts Electron.
  *
  *  1. `tsc --watch` recompiles main + preload on change
- *  2. fs.watch copies renderer files on change
- *  3. `electronmon .` auto-restarts when out/ changes
+ *  2. `electronmon .` auto-restarts when out/ changes
  */
 
 import { spawn } from "node:child_process";
-import { watch, cpSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const src = join(root, "src", "renderer");
-// out/ is already clean — `npm run build` (rm -rf out && tsc && cp renderer)
-// runs before this script, so we just start watchers.
-const dest = join(root, "out", "renderer");
 
 // 1. TypeScript watch for main + preload
 const tsc = spawn("npx", ["tsc", "--watch", "--preserveWatchOutput"], {
@@ -23,16 +17,7 @@ const tsc = spawn("npx", ["tsc", "--watch", "--preserveWatchOutput"], {
   stdio: "inherit",
 });
 
-// 2. Watch renderer files and copy on change
-function syncRenderer() {
-  cpSync(src, dest, { recursive: true });
-}
-
-watch(src, { recursive: true }, () => {
-  syncRenderer();
-});
-
-// 3. Start electronmon (auto-restarts on out/ changes)
+// 2. Start electronmon (auto-restarts on out/ changes)
 // Small delay to let initial tsc --watch settle
 setTimeout(() => {
   const em = spawn("npx", ["electronmon", "."], {

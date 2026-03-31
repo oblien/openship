@@ -13,6 +13,7 @@
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.4",
     "@repo/core": "workspace:*",
+    "@repo/onboarding": "workspace:*",
     "@repo/ui": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
