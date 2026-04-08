@@ -48,10 +48,13 @@ export async function getHome(c: Context) {
     const projects = await Promise.all(
       result.rows.map(async (p) => {
         const latest = await repos.deployment.findLatestByProject(p.id);
+        const domains = await repos.domain.listByProject(p.id);
+        const primaryDomain = domains.find((d) => d.isPrimary)?.hostname ?? domains[0]?.hostname ?? null;
         return {
           ...p,
           latestDeploymentId: latest?.id ?? null,
           latestDeploymentStatus: latest?.status ?? null,
+          primaryDomain,
         };
       }),
     );
@@ -436,7 +439,12 @@ export async function getInfo(c: Context) {
   };
 
   // Fetch domains for this project
-  const domains = await repos.domain.listByProject(id);
+  const rawDomains = await repos.domain.listByProject(id);
+  const domains = rawDomains.map((d) => ({
+    ...d,
+    domain: d.hostname,
+    primary: d.isPrimary,
+  }));
 
   return c.json({
     success: true,

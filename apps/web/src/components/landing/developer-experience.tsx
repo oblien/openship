@@ -142,19 +142,19 @@ export function DeveloperExperience() {
             </div>
             <h2>
               <span className="block text-[clamp(2.75rem,6vw,4.75rem)] font-semibold leading-[1.06] tracking-[-0.035em] th-text-heading">
-                App first.
+                Every interface.
               </span>
               <span
                 className="block text-[clamp(2.75rem,6vw,4.75rem)] font-semibold leading-[1.06] tracking-[-0.035em]"
                 style={{ color: "var(--th-on-40)" }}
               >
-                CLI when you want it.
+                Full power.
               </span>
             </h2>
           </div>
           <p className="max-w-[340px] text-[16px] leading-[1.65] th-text-body lg:mb-1">
-            The app handles everything visually. CLI, MCP, and REST API
-            are there for developers who want deeper control.
+            Terminal, dashboard, or AI agent &mdash; same capabilities everywhere.
+            Use whatever fits your workflow.
           </p>
         </div>
 

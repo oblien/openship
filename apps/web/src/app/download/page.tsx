@@ -72,29 +72,36 @@ const DOWNLOAD_BASE =
 const STEPS = [
   {
     num: "1",
-    title: "Download the app",
-    desc: "Pick your platform above. Install just like any other app.",
+    title: "Install the CLI",
+    desc: "One command. Works with npm, pnpm, yarn, or bun.",
   },
   {
     num: "2",
-    title: "Enter your server",
-    desc: "Type your server IP and credentials. Openship connects over SSH — no agents to install.",
+    title: "Connect your server",
+    desc: "Run openship init — enter your server IP and credentials. Openship connects over SSH — no agents to install.",
   },
   {
     num: "3",
-    title: "Push to production",
-    desc: "Select a project, hit deploy. AI configures everything — TLS, DNS, firewall, databases.",
+    title: "Deploy",
+    desc: "Run openship deploy. AI configures everything — TLS, DNS, firewall, databases.",
   },
 ];
 
 export default function DownloadPage() {
   const { platform: detected } = usePlatform();
   const [downloading, setDownloading] = useState<Platform | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const handleDownload = (platform: Platform, fileName: string) => {
     setDownloading(platform);
     window.location.href = `${DOWNLOAD_BASE}/${fileName}`;
     setTimeout(() => setDownloading(null), 3000);
+  };
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(text);
+    setTimeout(() => setCopied(null), 2000);
   };
 
   return (
@@ -155,20 +162,82 @@ export default function DownloadPage() {
             className="text-[clamp(2.25rem,5vw,3.5rem)] font-semibold leading-[1.1] tracking-[-0.035em]"
             style={{ color: "var(--th-text-heading)" }}
           >
-            Download Openship
+            Install Openship
           </h1>
           <p
             className="mx-auto mt-5 max-w-lg text-[16px] leading-[1.65]"
             style={{ color: "var(--th-text-body)" }}
           >
-            One app. Your server. Full production stack in minutes.
-            <br />
-            Enter your server IP, hit deploy — that&apos;s it.
+            One command. Your server. Full production stack in minutes.
           </p>
         </div>
 
-        {/* ── Platform cards ── */}
-        <div className="mx-auto mt-14 grid max-w-3xl gap-3 sm:grid-cols-2">
+        {/* ── CLI install commands ── */}
+        <div className="mx-auto mt-12 max-w-xl">
+          <div
+            className="overflow-hidden rounded-2xl border"
+            style={{ background: "var(--th-card-bg)", borderColor: "var(--th-card-bd)" }}
+          >
+            <div className="flex items-center gap-2 border-b px-5 py-3" style={{ borderColor: "var(--th-card-bd)", background: "var(--th-sf-02)" }}>
+              <div className="flex gap-1.5">
+                <div className="h-2.5 w-2.5 rounded-full" style={{ background: "var(--th-clr-terra)" }} />
+                <div className="h-2.5 w-2.5 rounded-full" style={{ background: "var(--th-clr-amber)" }} />
+                <div className="h-2.5 w-2.5 rounded-full" style={{ background: "var(--th-clr-sea)" }} />
+              </div>
+              <span className="ml-2 text-[12px] font-medium" style={{ color: "var(--th-text-muted)" }}>Terminal</span>
+            </div>
+            <div className="flex flex-col gap-3 p-5">
+              {[
+                { label: "npm", cmd: "npm i -g openship" },
+                { label: "npx", cmd: "npx openship" },
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  onClick={() => handleCopy(item.cmd)}
+                  className="group flex items-center justify-between rounded-xl px-4 py-3 font-mono text-[14px] transition-all hover:bg-[var(--th-sf-03)]"
+                  style={{ background: "var(--th-sf-01)", border: "1px solid var(--th-on-06)" }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span style={{ color: "var(--th-clr-sea)" }}>$</span>
+                    <span style={{ color: "var(--th-text-heading)" }}>{item.cmd}</span>
+                  </div>
+                  {copied === item.cmd ? (
+                    <svg className="h-4 w-4 shrink-0" style={{ color: "var(--th-clr-sea)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4 shrink-0 opacity-40 transition-opacity group-hover:opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="mt-4 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+            Also available:{" "}
+            <Link href="/docs/cli" className="underline underline-offset-2">
+              pnpm, yarn, bun
+            </Link>
+          </p>
+        </div>
+
+        {/* ── Desktop app ── */}
+        <div className="mx-auto mt-24 max-w-3xl">
+          <h2
+            className="text-center text-[13px] font-semibold uppercase tracking-[0.1em]"
+            style={{ color: "var(--th-text-muted)" }}
+          >
+            Desktop App
+          </h2>
+          <p
+            className="mx-auto mt-3 max-w-md text-center text-[15px] leading-[1.6]"
+            style={{ color: "var(--th-text-body)" }}
+          >
+            Same features, native app. Deploy, monitor, and manage servers visually.
+          </p>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
           {DOWNLOADS.map((dl) => {
             const isDetected = dl.platform === detected;
             const isDownloading = downloading === dl.platform;
@@ -239,25 +308,14 @@ export default function DownloadPage() {
               </button>
             );
           })}
-        </div>
+          </div>
 
-        {/* ── Version + system requirements ── */}
-        <div className="mx-auto mt-6 max-w-3xl text-center">
+          {/* Version + system requirements */}
           <p
-            className="text-[13px]"
+            className="mt-4 text-center text-[13px]"
             style={{ color: "var(--th-text-muted)" }}
           >
             v1.0.0 &middot; Requires macOS 12+, Windows 10+, or Ubuntu 20.04+
-          </p>
-          <p className="mt-1 text-[13px]" style={{ color: "var(--th-text-muted)" }}>
-            Also available:{" "}
-            <Link href="/docs" className="underline underline-offset-2">
-              self-hosted server dashboard
-            </Link>{" "}
-            &middot;{" "}
-            <Link href="/docs/cli" className="underline underline-offset-2">
-              CLI
-            </Link>
           </p>
         </div>
 
@@ -319,12 +377,12 @@ export default function DownloadPage() {
           <div className="mt-12 grid gap-4 sm:grid-cols-3">
             {[
               {
-                label: "Desktop App",
-                tag: "Killer feature",
-                desc: "Download, enter server IP, deploy. From your machine to production — no browser needed.",
+                label: "CLI",
+                tag: "Terminal",
+                desc: "npm i -g openship — deploy, rollback, stream logs, manage domains. All from your terminal.",
                 icon: (
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25A2.25 2.25 0 015.25 3h13.5A2.25 2.25 0 0121 5.25z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0021 18V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v12a2.25 2.25 0 002.25 2.25z" />
                   </svg>
                 ),
               },
@@ -339,12 +397,12 @@ export default function DownloadPage() {
                 ),
               },
               {
-                label: "Openship Cloud",
-                tag: "Managed",
-                desc: "Don't have a server? Use ours. Same interface, we handle the infrastructure.",
+                label: "Desktop App",
+                tag: "Visual",
+                desc: "Full-featured native app. Connect servers, deploy, monitor — all visually.",
                 icon: (
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25A2.25 2.25 0 015.25 3h13.5A2.25 2.25 0 0121 5.25z" />
                   </svg>
                 ),
               },

@@ -1,7 +1,7 @@
 "use client";
 import React, { useCallback, useRef, useState } from "react";
 import { Eye, EyeOff, Trash2, Plus, Upload, X, Key, Pencil } from "lucide-react";
-import { useDeployment } from "@/context/DeploymentContext";
+import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { useToast } from "@/context/ToastContext";
 
 interface EnvironmentVariablesPropsOptional {
@@ -33,7 +33,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   envVars: externalEnvVars,
   onEnvVarsChange,
 }) => {
-  const { config, updateConfig } = useDeployment();
+  const deployment = useOptionalDeployment();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -44,9 +44,17 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   const setIsEditingMode = externalSetIsEditingMode || setInternalIsEditingMode;
 
   // Use external env vars in settings mode, deployment context in deploy mode
-  const currentEnvVars = mode === "settings" && externalEnvVars ? externalEnvVars : config.envVars;
-  const updateEnvVars = mode === "settings" && onEnvVarsChange ? onEnvVarsChange : 
-    (newVars: Array<{ key: string; value: string; visible: boolean }>) => updateConfig({ envVars: newVars });
+  if (mode === "deploy" && !deployment) {
+    throw new Error("EnvironmentVariables in deploy mode must be used within DeploymentProvider");
+  }
+
+  const currentEnvVars = mode === "settings"
+    ? (externalEnvVars ?? [])
+    : (deployment?.config.envVars ?? []);
+
+  const updateEnvVars = mode === "settings" && onEnvVarsChange
+    ? onEnvVarsChange
+    : (newVars: Array<{ key: string; value: string; visible: boolean }>) => deployment?.updateConfig({ envVars: newVars });
 
   const addEnvVar = useCallback(() => {
     const newEnvVars = [...currentEnvVars, { key: "", value: "", visible: false }];

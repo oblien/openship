@@ -37,7 +37,7 @@ const ProjectCard: React.FC<Props> = ({ project }) => {
   const isLocal = !!project.localPath;
   const hasRepo = !!(project.gitOwner && project.gitRepo);
   const repoSlug = hasRepo ? `${project.gitOwner}/${project.gitRepo}` : null;
-  const domain = project.slug ? `${project.slug}.${baseDomain}` : null;
+  const domain = (project as any).primaryDomain || (project.slug ? `${project.slug}.${baseDomain}` : null);
   const isServicesProject = (() => {
     try {
       return getProjectType(project.framework as any) === "services";

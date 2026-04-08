@@ -209,14 +209,20 @@ let resolvedAuth: { nonce: string; claimCode: string } | null = null;
 let pendingClaim: { code: string; token: string; expiresAt: number; createdAt: number } | null = null;
 /** Nonce value preserved after validateDesktopState consumes pendingNonce, used by pollDesktopAuth */
 let activeNonce: string | null = null;
+let activeNonceCreatedAt = 0;
+/** Set when exchange/mirroring fails so polling returns "expired" immediately */
+let failedNonce: string | null = null;
 
 const NONCE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function registerDesktopNonce(nonce: string, state: string, codeVerifier: string, connectUserId?: string): void {
+  console.log(`[desktop-auth] register nonce=${nonce.slice(0, 8)}… state=${state.slice(0, 8)}…`);
   pendingNonce = { value: nonce, state, codeVerifier, connectUserId, registeredAt: Date.now() };
   resolvedAuth = null;
   pendingClaim = null;
   activeNonce = nonce;
+  activeNonceCreatedAt = Date.now();
+  failedNonce = null;
 }
 
 /**
@@ -230,6 +236,7 @@ function resolveDesktopAuth(nonce: string, token: string, expiresAt: Date): void
   const claimCode = randomBytes(16).toString("hex");
   resolvedAuth = { nonce, claimCode };
   pendingClaim = { code: claimCode, token, expiresAt: expiresAt.getTime(), createdAt: Date.now() };
+  console.log(`[desktop-auth] resolved nonce=${nonce.slice(0, 8)}… claimCode=${claimCode.slice(0, 8)}…`);
 }
 
 /**
@@ -240,7 +247,10 @@ function resolveDesktopAuth(nonce: string, token: string, expiresAt: Date): void
  * Consumes the nonce atomically — prevents replay attacks.
  */
 function validateDesktopState(state: string): { codeVerifier: string; nonce: string; connectUserId?: string } | null {
-  if (!pendingNonce) return null;
+  if (!pendingNonce) {
+    console.log(`[desktop-auth] validateState: no pendingNonce`);
+    return null;
+  }
   if (Date.now() - pendingNonce.registeredAt > NONCE_TTL) {
     pendingNonce = null;
     return null;
@@ -261,12 +271,23 @@ function validateDesktopState(state: string): { codeVerifier: string; nonce: str
   return result;
 }
 
+/** Signal that the exchange/mirror step failed so polling stops. */
+function failDesktopAuth(nonce: string): void {
+  failedNonce = nonce;
+  activeNonce = null;
+}
+
 function pollDesktopAuth(nonce: string): { status: "pending" | "resolved" | "expired"; claimCode?: string } {
   if (resolvedAuth && resolvedAuth.nonce === nonce) {
     const result = { status: "resolved" as const, claimCode: resolvedAuth.claimCode };
+    console.log(`[desktop-auth] poll → resolved nonce=${nonce.slice(0, 8)}…`);
     resolvedAuth = null; // one-time read
     activeNonce = null;
     return result;
+  }
+  if (failedNonce === nonce) {
+    failedNonce = null;
+    return { status: "expired" };
   }
   if (pendingNonce && pendingNonce.value === nonce) {
     if (Date.now() - pendingNonce.registeredAt > NONCE_TTL) {
@@ -279,20 +300,34 @@ function pollDesktopAuth(nonce: string): { status: "pending" | "resolved" | "exp
   // Between validateDesktopState (consumes pendingNonce) and resolveDesktopAuth
   // (sets resolvedAuth), both are null. activeNonce keeps "pending" during this window.
   if (activeNonce === nonce) {
+    if (Date.now() - activeNonceCreatedAt > NONCE_TTL) {
+      activeNonce = null;
+      return { status: "expired" };
+    }
     return { status: "pending" };
   }
   return { status: "expired" };
 }
 
 function exchangeDesktopClaim(code: string): { token: string; expiresAt: Date } | null {
-  if (!pendingClaim || pendingClaim.code !== code) return null;
+  if (!pendingClaim || pendingClaim.code !== code) {
+    console.log(`[desktop-auth] claim failed: ${!pendingClaim ? 'no pendingClaim' : 'code mismatch'}`);
+    return null;
+  }
   if (Date.now() - pendingClaim.createdAt > 60_000) {
+    console.log(`[desktop-auth] claim expired (age=${Date.now() - pendingClaim.createdAt}ms)`);
     pendingClaim = null;
     return null;
   }
+  console.log(`[desktop-auth] claim exchanged OK`);
   const result = { token: pendingClaim.token, expiresAt: new Date(pendingClaim.expiresAt) };
   pendingClaim = null; // one-time use
   return result;
+}
+
+/** Read the current active nonce (used by catch blocks that don't have it). */
+function getActiveNonce(): string | null {
+  return activeNonce;
 }
 
 export {
@@ -304,7 +339,9 @@ export {
   exchangeCodeWithCloud,
   registerDesktopNonce,
   resolveDesktopAuth,
+  failDesktopAuth,
   validateDesktopState,
   pollDesktopAuth,
   exchangeDesktopClaim,
+  getActiveNonce,
 };

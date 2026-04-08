@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
+import { buildAuthPageHref, getPostAuthRedirect } from "@/lib/cloud-auth";
 
 export default function RegisterPage() {
   return (
@@ -38,26 +39,8 @@ function RegisterPageInner() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Desktop callback: after signup, redirect to authorize page (has state + PKCE)
-  // Self-hosted connect: after signup, redirect directly to handoff (no state)
-  const callback = searchParams.get("callback");
-  const appParam = searchParams.get("app");
-  const machineParam = searchParams.get("machine");
-  const stateParam = searchParams.get("state");
-  const codeChallengeParam = searchParams.get("code_challenge");
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
-  const postLoginUrl = callback
-    ? stateParam
-      ? `/authorize?${new URLSearchParams({
-          callback,
-          ...(appParam ? { app: appParam } : {}),
-          ...(machineParam ? { machine: machineParam } : {}),
-          ...(stateParam ? { state: stateParam } : {}),
-          ...(codeChallengeParam ? { code_challenge: codeChallengeParam } : {}),
-        }).toString()}`
-      : `${API_URL}/api/cloud/connect-handoff?redirect=${encodeURIComponent(callback)}`
-    : null;
+  const postLoginUrl = getPostAuthRedirect(searchParams, API_URL);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -169,15 +152,7 @@ function RegisterPageInner() {
       <p className="mt-8 text-center text-sm text-muted-foreground">
         {t.auth.register.hasAccount}{" "}
         <Link
-          href={callback
-            ? `/login?${new URLSearchParams({
-                callback,
-                ...(appParam ? { app: appParam } : {}),
-                ...(machineParam ? { machine: machineParam } : {}),
-                ...(stateParam ? { state: stateParam } : {}),
-                ...(codeChallengeParam ? { code_challenge: codeChallengeParam } : {}),
-              }).toString()}`
-            : "/login"}
+          href={buildAuthPageHref("/login", searchParams)}
           className="font-medium text-foreground transition-colors hover:underline"
         >
           {t.auth.register.signIn}

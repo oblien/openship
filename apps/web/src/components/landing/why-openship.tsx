@@ -20,9 +20,9 @@ const DIFFERENTIATORS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
       </svg>
     ),
-    title: "Skip CI/CD. Click deploy.",
-    desc: "No pipelines to configure, no build servers to maintain, no YAML to write. Click deploy in the app — it builds, tests, and ships. When your team needs full CI/CD, it's there too.",
-    highlight: "CI/CD replaced by a button — available when you need it",
+    title: "Skip CI/CD. Just deploy.",
+    desc: "No pipelines to configure, no build servers to maintain, no YAML to write. Run openship deploy — it builds, tests, and ships. When your team needs full CI/CD, it's there too.",
+    highlight: "CI/CD replaced by a single command — available when you need it",
     color: "var(--th-clr-sea)",
     bg: "var(--th-clr-sea-bg)",
     blob: "var(--th-clr-sea-blob)",
@@ -61,7 +61,7 @@ const COMPARE_ROWS: { feature: string; openship: string; others: string; win?: b
   { feature: "Server overhead", openship: "Your apps only", others: "Dashboard + build system + DB", win: true },
   { feature: "CI/CD", openship: "Built-in (or click to deploy)", others: "Configure pipelines & webhooks", win: true },
   { feature: "Configuration", openship: "Auto-detected & configured", others: "Manual YAML / Docker Compose", win: true },
-  { feature: "Deployment interface", openship: "Desktop app, web dashboard, or CLI", others: "Web dashboard on server", win: true },
+  { feature: "Deployment interface", openship: "CLI, web dashboard, or desktop app", others: "Web dashboard on server", win: true },
   { feature: "Server resources used for builds", openship: "0% by default", others: "Competes with production", win: true },
   { feature: "Infrastructure knowledge", openship: "None required", others: "Docker, NGINX, SSH", win: true },
   { feature: "Managed cloud option", openship: "Yes — fully managed", others: "Self-host only", win: true },
@@ -167,7 +167,7 @@ export function WhyOpenship() {
                 <div className="rounded-xl border border-[var(--th-card-bd)] bg-[var(--th-sf-01)] p-4">
                   <p className="text-[11px] font-bold uppercase tracking-[0.08em] th-text-muted">Your machine runs:</p>
                   <div className="mt-2 space-y-1.5">
-                    {["The app (UI + build engine)", "Build system (compiles locally)", "Configuration engine"].map((item) => (
+                    {["CLI or desktop app (UI + build engine)", "Build system (compiles locally)", "Configuration engine"].map((item) => (
                       <div key={item} className="flex items-center gap-2 text-[13px]">
                         <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: "var(--th-clr-plum)" }} />
                         <span className="th-text-body">{item}</span>

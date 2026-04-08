@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { buildAuthPageHref } from "@/lib/cloud-auth";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Loader2, Monitor, Check } from "lucide-react";
@@ -51,16 +52,9 @@ function AuthorizePageInner() {
       }).toString()}`
     : null;
 
-  // Build the login redirect URL preserving all params
-  const loginUrl = callback
-    ? `/login?${new URLSearchParams({
-        callback,
-        ...(searchParams.get("app") ? { app: searchParams.get("app")! } : {}),
-        ...(machine ? { machine } : {}),
-        ...(state ? { state } : {}),
-        ...(codeChallenge ? { code_challenge: codeChallenge } : {}),
-      }).toString()}`
-    : "/login";
+  // Preserve the desktop-cloud flow marker so login/register/OAuth
+  // return to /authorize instead of falling back to the normal app flow.
+  const loginUrl = buildAuthPageHref("/login", searchParams);
 
   // Not logged in → redirect to login
   useEffect(() => {

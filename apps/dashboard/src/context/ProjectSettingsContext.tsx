@@ -264,7 +264,11 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           isLoading: false,
           error: null
         });
-        setDomain(response.data.project.domains?.[0]?.domain || '');
+        setDomain(
+          response.data.project.domains?.find((d: any) => d.primary)?.domain
+          || response.data.project.domains?.[0]?.domain
+          || ''
+        );
 
         // Mark as fetched for this id
         hasFetchedRef.current = true;

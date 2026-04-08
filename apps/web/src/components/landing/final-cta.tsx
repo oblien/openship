@@ -87,7 +87,7 @@ export function FinalCta() {
                 <svg className="h-3.5 w-3.5" style={{ color: "var(--th-clr-sea)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                 </svg>
-                Desktop & web app
+                CLI, web & desktop
               </span>
               <span className="flex items-center gap-1.5">
                 <svg className="h-3.5 w-3.5" style={{ color: "var(--th-clr-sea)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

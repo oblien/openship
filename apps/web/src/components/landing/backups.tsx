@@ -64,7 +64,7 @@ export function Backups() {
               </span>
             </h2>
             <p className="mt-6 max-w-md text-[16px] leading-[1.65] th-text-body">
-              The app ships with automatic scheduled backups — projects,
+              Openship ships with automatic scheduled backups — projects,
               databases, volumes, SSL certs. Restore with one tap or download
               the archive for off-site storage.
             </p>

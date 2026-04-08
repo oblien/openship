@@ -14,6 +14,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2, ExternalLink } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
+import {
+  buildAuthPageHref,
+  buildDesktopAuthorizeUrl,
+  getPostAuthRedirect,
+  startDesktopCloudAuth,
+} from "@/lib/cloud-auth";
 
 export default function LoginPage() {
   return (
@@ -34,8 +40,8 @@ function LoginPageInner() {
   const { t } = useI18n();
   const { authMode, cloudAuthUrl, selfHosted } = useAuthContext();
 
-  const isDesktop = typeof window !== "undefined" && !!(window as any).desktop?.isDesktop;
-  const handleBack = isDesktop ? () => (window as any).desktop.reset() : undefined;
+  const isDesktop = typeof window !== "undefined" && !!window.desktop?.isDesktop;
+  const handleBack = isDesktop ? () => { void window.desktop?.reset?.(); } : undefined;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -44,28 +50,8 @@ function LoginPageInner() {
 
   const callbackError = searchParams.get("error");
 
-  // Desktop callback: after login, redirect to authorize page (has state + PKCE)
-  // Self-hosted connect: after login, redirect directly to handoff (no state)
-  const callback = searchParams.get("callback");
-  const appParam = searchParams.get("app");
-  const machineParam = searchParams.get("machine");
-  const stateParam = searchParams.get("state");
-  const codeChallengeParam = searchParams.get("code_challenge");
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
-  // Desktop flow (state present) → authorize page with explicit consent
-  // Self-hosted connect (no state) → direct handoff
-  const postLoginUrl = callback
-    ? stateParam
-      ? `/authorize?${new URLSearchParams({
-          callback,
-          ...(appParam ? { app: appParam } : {}),
-          ...(machineParam ? { machine: machineParam } : {}),
-          ...(stateParam ? { state: stateParam } : {}),
-          ...(codeChallengeParam ? { code_challenge: codeChallengeParam } : {}),
-        }).toString()}`
-      : `${API_URL}/api/cloud/connect-handoff?redirect=${encodeURIComponent(callback)}`
-    : null;
+  const postLoginUrl = getPostAuthRedirect(searchParams, API_URL);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,6 +69,26 @@ function LoginPageInner() {
       toast("error", isNetworkError(err)
         ? t.auth.errors.serverUnreachable
         : t.auth.errors.generic);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCloudSignIn(cloudLoginUrl: string) {
+    if (!isDesktop || !window.desktop?.onboarding) {
+      window.location.href = cloudLoginUrl;
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await startDesktopCloudAuth({ desktop: window.desktop });
+      if (!result.ok) {
+        toast("error", result.reason === "start_failed"
+          ? "Could not start cloud authentication."
+          : "Authentication failed. Please try again.");
+        return;
+      }
     } finally {
       setLoading(false);
     }
@@ -109,7 +115,7 @@ function LoginPageInner() {
   if (authMode === "cloud") {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
     const callbackUrl = `${apiUrl}/api/auth/cloud-callback`;
-    const cloudLoginUrl = `${cloudAuthUrl}/login?callback=${encodeURIComponent(callbackUrl)}`;
+    const cloudLoginUrl = buildDesktopAuthorizeUrl({ cloudAuthUrl, callbackUrl });
 
     return (
       <AuthShell onBack={handleBack}>
@@ -126,17 +132,20 @@ function LoginPageInner() {
           <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
             {callbackError === "missing_code"
               ? "Authentication was cancelled."
-              : "Authentication failed. Please try again."}
+              : callbackError === "missing_state"
+                ? "Authentication request expired. Please try again."
+                : "Authentication failed. Please try again."}
           </div>
         )}
 
         <Button
           className="w-full"
           size="lg"
-          onClick={() => { window.location.href = cloudLoginUrl; }}
+          disabled={loading}
+          onClick={() => { void handleCloudSignIn(cloudLoginUrl); }}
         >
-          <ExternalLink className="mr-2 size-4" />
-          Sign in with Openship
+          {loading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <ExternalLink className="mr-2 size-4" />}
+          {loading ? "Opening Openship Cloud..." : "Sign in with Openship"}
         </Button>
       </AuthShell>
     );
@@ -213,15 +222,7 @@ function LoginPageInner() {
       <p className="mt-8 text-center text-sm text-muted-foreground">
         {t.auth.login.noAccount}{" "}
         <Link
-          href={callback
-            ? `/register?${new URLSearchParams({
-                callback,
-                ...(appParam ? { app: appParam } : {}),
-                ...(machineParam ? { machine: machineParam } : {}),
-                ...(stateParam ? { state: stateParam } : {}),
-                ...(codeChallengeParam ? { code_challenge: codeChallengeParam } : {}),
-              }).toString()}`
-            : "/register"}
+          href={buildAuthPageHref("/register", searchParams)}
           className="font-medium text-foreground transition-colors hover:underline"
         >
           {t.auth.login.createOne}

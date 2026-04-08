@@ -56,7 +56,7 @@ export function NoLockin() {
           <p className="mx-auto mt-6 max-w-xl text-[17px] leading-[1.65] th-text-body">
             Vercel&apos;s metered CPU time, per-seat pricing, and bandwidth caps
             mean bills grow fast — especially when traffic spikes. With Openship,
-            the app runs on <strong className="th-text-heading">your machine</strong> and deploys to
+            the CLI runs on <strong className="th-text-heading">your machine</strong> and deploys to
             <strong className="th-text-heading"> your server</strong> — you keep 100% of the performance you pay for.
           </p>
         </div>

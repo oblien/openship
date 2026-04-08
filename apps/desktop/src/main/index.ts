@@ -203,7 +203,7 @@ function createWindow() {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
     },
   });
 
@@ -432,7 +432,7 @@ ipcMain.handle("onboarding:cloud-auth", async () => {
   // it redirects to login first, then back to authorize after auth.
   const callbackUrl = `${LOCAL_API_URL}/api/auth/cloud-callback`;
   const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}`;
+  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
   shell.openExternal(cloudAuthUrl);
 
   return { ok: true, cloudAuthUrl, nonce };
@@ -527,7 +527,7 @@ ipcMain.handle("cloud:connect", async () => {
 
   const callbackUrl = `${LOCAL_API_URL}/api/auth/cloud-callback`;
   const machine = hostname();
-  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}`;
+  const cloudAuthUrl = `${CLOUD_DASHBOARD_URL}/authorize?callback=${encodeURIComponent(callbackUrl)}&app=${encodeURIComponent("Openship Desktop")}&machine=${encodeURIComponent(machine)}&state=${encodeURIComponent(state)}&code_challenge=${encodeURIComponent(codeChallenge)}&flow=desktop-cloud`;
   shell.openExternal(cloudAuthUrl);
 
   return { ok: true, cloudAuthUrl, nonce };

@@ -411,7 +411,7 @@ const FEATURES: {
     {
       title: "Full Backend Stack",
       description:
-        "The app sets up your entire backend — API, database, Redis, WebSocket, workers. It detects what you need, the UI lets you tweak it. No Docker knowledge required.",
+        "Openship sets up your entire backend — API, database, Redis, WebSocket, workers. It detects what you need, the dashboard lets you tweak it. No Docker knowledge required.",
       points: [
         "Auto-provisions Postgres, Redis, MongoDB",
         "Built-in API gateway, WebSocket & worker support",
@@ -441,7 +441,7 @@ const FEATURES: {
     {
       title: "Git Push to Deploy",
       description:
-        "Connect your repo inside the app. Every push builds locally and deploys automatically — preview branches and staging environments included.",
+        "Connect your repo and every push builds locally and deploys automatically — preview branches and staging environments included.",
       points: [
         "Automatic deploys on every push to main",
         "Preview deployments for every pull request",
@@ -471,7 +471,7 @@ const FEATURES: {
     {
       title: "Any Stack, Any Language",
       description:
-        "Node.js, Python, Go, Rust, PHP, Ruby — if it builds, the app ships it. Your framework is detected and the build is configured automatically.",
+        "Node.js, Python, Go, Rust, PHP, Ruby — if it builds, Openship ships it. Your framework is detected and the build is configured automatically.",
       points: [
         "Auto-detects language, framework, and build command",
         "Full Dockerfile support for custom setups",

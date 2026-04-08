@@ -106,7 +106,7 @@ export async function resolveDeploymentPlatform(
  *   bare    BareRuntime(LocalExec)   BareRuntime(SshExec)
  *   docker  DockerRuntime(socket)    DockerRuntime(ssh transport)
  *
- * Each cell also gets the matching routing (Nginx) and system manager.
+ * Each cell also gets the matching routing (OpenResty) and system manager.
  * Cloud deployments go through the separate cloud-token flow.
  */
 export async function resolveTargetPlatform(

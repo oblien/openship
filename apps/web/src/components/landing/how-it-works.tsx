@@ -139,7 +139,7 @@ export function HowItWorks() {
             <span className="block" style={{ color: "var(--th-on-40)" }}>in minutes</span>
           </h2>
           <p className="mt-6 mx-auto max-w-[480px] text-[16px] leading-[1.65] th-text-body">
-            Three steps. No terminal. That&apos;s all it takes.
+            Three steps. One terminal. That&apos;s it.
           </p>
         </div>
 

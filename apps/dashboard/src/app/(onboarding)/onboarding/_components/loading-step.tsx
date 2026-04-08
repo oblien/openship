@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import {
-  buildSshSettings,
-  buildSetupPayload,
-} from "@repo/onboarding";
-import { api, getApiBaseUrl } from "@/lib/api";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { OnboardingState } from "@repo/onboarding";
+import { useOnboardingContext } from "../../providers";
+import { runLoadingFlow, type LoadingStatus } from "../_lib/loading-flow";
 
 interface LoadingStepProps {
   state: OnboardingState;
@@ -14,51 +11,50 @@ interface LoadingStepProps {
 }
 
 export function LoadingStep({ state, onBack }: LoadingStepProps) {
+  const { cloudAuthUrl } = useOnboardingContext();
   const [title, setTitle] = useState("Connecting\u2026");
   const [message, setMessage] = useState("Verifying your server");
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const startedAttemptRef = useRef<number | null>(null);
+  const cancelledRef = useRef(false);
+
+  const setStatus = useCallback((status: LoadingStatus) => {
+    setTitle(status.title);
+    setMessage(status.message);
+  }, []);
 
   const run = useCallback(async () => {
+    cancelledRef.current = false;
     setFailed(false);
 
-    if (state.path === "cloud") {
-      setTitle("Redirecting to Openship Cloud\u2026");
-      setMessage("You\u2019ll complete sign-in in a new tab");
-      window.open("https://app.openship.io", "_blank");
-      return;
-    }
-
-    setTitle("Saving configuration\u2026");
-    setMessage("Almost there");
-
-    const system = state.ssh ? buildSshSettings(state.ssh) : undefined;
-    const payload = buildSetupPayload({
-      system,
-      tunnel: state.tunnel,
-      buildMode: state.buildMode,
-      authMode: "none",
+    const result = await runLoadingFlow({
+      state,
+      cloudAuthUrl,
+      setStatus,
+      isCancelled: () => cancelledRef.current,
     });
 
-    try {
-      await api.post("system/onboarding", payload);
-    } catch {
-      setTitle("Could not save configuration");
-      setMessage("The API didn\u2019t respond. Make sure services are running.");
+    if (!cancelledRef.current && !result.ok) {
+      setStatus(result.status);
       setFailed(true);
-      return;
     }
-
-    setTitle("Setting up your account\u2026");
-    setMessage("Creating your session");
-
-    const base = getApiBaseUrl().replace(/\/$/, "");
-    window.location.href = `${base}/auth/desktop-login`;
-  }, [state]);
+  }, [cloudAuthUrl, setStatus, state]);
 
   useEffect(() => {
+    // Reset cancellation flag on every mount — critical for React strict mode
+    // where cleanup sets cancelled=true between unmount/remount, but
+    // startedAttemptRef prevents re-running the async flow.
+    cancelledRef.current = false;
+
+    if (startedAttemptRef.current === attempt) return;
+    startedAttemptRef.current = attempt;
     void run();
-  }, [attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [attempt, run]);
 
   return (
     <div className="ob-screen">
@@ -72,7 +68,10 @@ export function LoadingStep({ state, onBack }: LoadingStepProps) {
           <div className="ob-loading-actions">
             <button
               className="ob-loading-btn ob-loading-btn--accent"
-              onClick={() => setAttempt((n) => n + 1)}
+              onClick={() => {
+                startedAttemptRef.current = null;
+                setAttempt((n) => n + 1);
+              }}
             >
               Retry
             </button>

@@ -520,6 +520,13 @@ const DeploymentDetails = memo(() => {
   const router = useRouter();
   const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
 
+  // Sync elapsed time when buildStartedAt arrives from API (e.g. after refresh)
+  useEffect(() => {
+    if (state.buildStartedAt && !state.deploymentSuccess && !state.deploymentFailed && !state.deploymentCanceled) {
+      setBuildTime(Math.max(0, Math.round((Date.now() - new Date(state.buildStartedAt).getTime()) / 1000)));
+    }
+  }, [state.buildStartedAt, state.deploymentSuccess, state.deploymentFailed, state.deploymentCanceled]);
+
   // Sync final duration when build completes
   useEffect(() => {
     if (state.buildDurationMs && (state.deploymentSuccess || state.deploymentFailed || state.deploymentCanceled)) {

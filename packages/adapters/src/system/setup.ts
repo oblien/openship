@@ -50,8 +50,8 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
  * Resolve prerequisite rules for a given runtime mode.
  *
  * The runtime mode deterministically implies everything:
- *   - docker → Docker + Git + Nginx + certbot
- *   - bare   → Git + Nginx + certbot
+ *   - docker → Docker + Git + OpenResty + certbot
+ *   - bare   → Git + OpenResty + certbot
  *
  * Note: Node.js / Go / Python / etc. are NOT system prerequisites.
  * They are installed on-demand by the toolchain layer (ensureToolchain)
@@ -62,16 +62,16 @@ function resolveRules(mode: RuntimeMode): PrerequisiteRule[] {
     return [
       { feature: "build", requires: ["git", "docker"], message: "Build requires Git and Docker" },
       { feature: "deploy", requires: ["docker"], message: "Deploy requires Docker" },
-      { feature: "routing", requires: ["nginx"], message: "Routing requires Nginx" },
-      { feature: "ssl", requires: ["nginx", "certbot"], message: "SSL requires Nginx and certbot" },
+      { feature: "routing", requires: ["nginx"], message: "Routing requires OpenResty" },
+      { feature: "ssl", requires: ["nginx", "certbot"], message: "SSL requires OpenResty and certbot" },
     ];
   }
 
   // bare mode — language runtimes handled per-stack by toolchain layer
   return [
     { feature: "build", requires: ["git"], message: "Build requires Git" },
-    { feature: "routing", requires: ["nginx"], message: "Routing requires Nginx" },
-    { feature: "ssl", requires: ["nginx", "certbot"], message: "SSL requires Nginx and certbot" },
+    { feature: "routing", requires: ["nginx"], message: "Routing requires OpenResty" },
+    { feature: "ssl", requires: ["nginx", "certbot"], message: "SSL requires OpenResty and certbot" },
   ];
 }
 

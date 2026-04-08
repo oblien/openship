@@ -37,7 +37,7 @@ export const ProjectFilter: React.FC<ProjectFilterProps> = ({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 bg-muted/50 border border-border/50 rounded-lg text-sm font-medium text-foreground/70 hover:bg-muted hover:text-foreground transition-all min-w-[150px] justify-between"
+        className="flex h-10 min-w-[170px] items-center justify-between gap-2 rounded-xl border border-border bg-background px-3.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted/25"
       >
         <div className="flex items-center gap-2">
           <Layers className="size-4 text-muted-foreground" />
@@ -49,20 +49,20 @@ export const ProjectFilter: React.FC<ProjectFilterProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-72 bg-popover border border-border/50 rounded-xl shadow-lg overflow-hidden z-50 max-h-96 overflow-y-auto">
+        <div className="absolute top-full left-0 z-50 mt-2 max-h-96 w-72 overflow-y-auto rounded-xl border border-border/50 bg-popover overflow-hidden">
           {/* All Projects Option */}
           <button
             onClick={() => {
               onProjectChange("all");
               setIsOpen(false);
             }}
-            className={`w-full px-4 py-3 text-left text-sm transition-colors flex items-center gap-3 ${
+            className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors ${
               selectedProjectId === "all"
                 ? "bg-primary/10 text-primary font-semibold"
-                : "text-foreground/70 hover:bg-muted"
+                : "text-foreground/80 hover:bg-muted/40"
             }`}
           >
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
               <Layers className="size-4 text-primary" />
             </div>
             <span>All Projects</span>
@@ -84,13 +84,13 @@ export const ProjectFilter: React.FC<ProjectFilterProps> = ({
                 onProjectChange(project.id);
                 setIsOpen(false);
               }}
-              className={`w-full px-4 py-3 text-left text-sm transition-colors flex items-center gap-3 ${
+              className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition-colors ${
                 selectedProjectId === project.id
                   ? "bg-primary/10 text-primary font-semibold"
-                  : "text-foreground/70 hover:bg-muted"
+                  : "text-foreground/80 hover:bg-muted/40"
               }`}
             >
-              <div className="w-8 h-8 rounded-lg bg-muted border border-border/50 flex items-center justify-center flex-shrink-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/40">
                 <Layers className="size-4 text-muted-foreground" />
               </div>
               <span className="truncate flex-1">{project.name}</span>

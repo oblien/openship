@@ -21,6 +21,7 @@ import type { CommandExecutor, LogEntry } from "../types";
 import type { InstallerConfig, InstallResult, SystemLogCallback, SystemLog } from "./types";
 import { systemCatalog } from "./catalog";
 import { resolveEnvironment } from "./environment";
+import { deployLuaScripts } from "../infra/openresty-lua";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ export async function installRsync(
   }
 }
 
-// ─── Nginx ────────────────────────────────────────────────────────────────────
+// ─── OpenResty ────────────────────────────────────────────────────────────────
 
 export async function installNginx(
   executor: CommandExecutor,
@@ -171,11 +172,11 @@ export async function installNginx(
     return {
       component: "nginx",
       success: false,
-      error: plan.unsupportedReason ?? "Nginx installation is not supported on this environment",
+      error: plan.unsupportedReason ?? "OpenResty installation is not supported on this environment",
     };
   }
 
-  onLog(log("Installing Nginx and certbot..."));
+  onLog(log("Installing OpenResty..."));
 
   try {
     const { code } = await executor.streamExec(
@@ -183,29 +184,45 @@ export async function installNginx(
       onLog as (log: LogEntry) => void,
     );
     if (code !== 0) {
-      return { component: "nginx", success: false, error: "Nginx installation failed" };
+      return { component: "nginx", success: false, error: "OpenResty installation failed" };
     }
 
     if (plan.startCommand) {
-      onLog(log("Enabling and starting Nginx service..."));
+      onLog(log("Enabling and starting OpenResty service..."));
       await executor.streamExec(
         plan.startCommand,
         onLog as (log: LogEntry) => void,
       );
     }
 
-    // Ensure sites-enabled directory exists
-    await executor.mkdir("/etc/nginx/sites-enabled");
+    // Create sites-enabled directory (OpenResty doesn't include this by default)
+    await executor.mkdir("/usr/local/openresty/nginx/conf/sites-enabled");
 
-    onLog(log("Verifying Nginx installation..."));
+    // Create ACME challenge directory for certbot webroot mode
+    await executor.mkdir("/var/www/acme");
+
+    // Include sites-enabled in the main config if not already present
+    await executor.exec(
+      `grep -q 'sites-enabled' /usr/local/openresty/nginx/conf/nginx.conf || ` +
+      `sed -i '/http *{/a \\    include /usr/local/openresty/nginx/conf/sites-enabled/*.conf;' /usr/local/openresty/nginx/conf/nginx.conf`,
+    );
+
+    // Reload after config change
+    await executor.exec("openresty -t && openresty -s reload");
+
+    // Deploy Lua analytics & live-log scripts
+    onLog(log("Deploying analytics scripts..."));
+    await deployLuaScripts(executor);
+
+    onLog(log("Verifying OpenResty installation..."));
     const version = await executor.exec(plan.verifyCommand);
     const parsed = systemCatalog.checks.nginx.parseVersion(version);
 
-    onLog(log(`Nginx ${parsed} installed with certbot`));
+    onLog(log(`OpenResty ${parsed} installed`));
     return { component: "nginx", success: true, version: parsed };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    onLog(log(`Nginx installation failed: ${msg}`, "error"));
+    onLog(log(`OpenResty installation failed: ${msg}`, "error"));
     return { component: "nginx", success: false, error: msg };
   }
 }

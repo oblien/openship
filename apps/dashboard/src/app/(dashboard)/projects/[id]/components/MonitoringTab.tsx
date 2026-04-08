@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { ArrowUpDown, Gauge, Server, Users } from "lucide-react";
 import {
   TrafficChart,
   TopPaths,
@@ -10,6 +11,7 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 
 export const MonitoringTab = () => {
   const { analyticsData, isLoadingAnalytics } = useProjectSettings();
+  const hasAnalytics = !!analyticsData;
 
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -22,33 +24,53 @@ export const MonitoringTab = () => {
         {
           label: "Server Requests",
           value: formatNumber(analyticsData.summary?.uniqueRequests),
-          icon: "server%20transfer-55-1658435258.png",
+          icon: <Server className="size-4" />,
           subtext: `${formatNumber(analyticsData.summary?.totalRequests)} total, ${analyticsData.summary?.avgRequestsPerHour}/hr avg`,
         },
         {
           label: "Unique IPs",
           value: formatNumber(analyticsData.summary?.uniqueIPs),
-          icon: "3%20users-246-1658436041.png",
+          icon: <Users className="size-4" />,
           subtext: `${analyticsData.summary?.uniqueIPsPercentage}% of total`,
         },
         {
           label: "Avg Response",
           value: `${analyticsData.performance?.avgResponseTimeMs?.toFixed(2) || "N/A "}ms`,
-          icon: "flash-109-1689918656.png",
+          icon: <Gauge className="size-4" />,
           subtext: "Response time",
         },
         {
           label: "Bandwidth Out",
           value: analyticsData.bandwidth?.totalOutFormatted || "N/A",
-          icon: "servers%20connect%203-61-1658435258.png",
+          icon: <ArrowUpDown className="size-4" />,
           subtext: `${analyticsData.bandwidth?.totalInFormatted} in`,
         },
       ]
     : [
-        { label: "Server Requests", value: "...", icon: "trend%20up-79-1681196106.png", subtext: "Loading..." },
-        { label: "Unique IPs", value: "...", icon: "3%20users-246-1658436041.png", subtext: "Loading..." },
-        { label: "Avg Response", value: "...", icon: "flash-109-1689918656.png", subtext: "Loading..." },
-        { label: "Bandwidth", value: "...", icon: "servers%20connect%203-61-1658435258.png", subtext: "Loading..." },
+        {
+          label: "Server Requests",
+          value: isLoadingAnalytics ? "..." : "0",
+          icon: <Server className="size-4" />,
+          subtext: isLoadingAnalytics ? "Loading..." : "No traffic recorded yet",
+        },
+        {
+          label: "Unique IPs",
+          value: isLoadingAnalytics ? "..." : "0",
+          icon: <Users className="size-4" />,
+          subtext: isLoadingAnalytics ? "Loading..." : "No visitors yet",
+        },
+        {
+          label: "Avg Response",
+          value: isLoadingAnalytics ? "..." : "N/A",
+          icon: <Gauge className="size-4" />,
+          subtext: isLoadingAnalytics ? "Loading..." : "Waiting for requests",
+        },
+        {
+          label: "Bandwidth",
+          value: isLoadingAnalytics ? "..." : "0 B",
+          icon: <ArrowUpDown className="size-4" />,
+          subtext: isLoadingAnalytics ? "Loading..." : "No transfer yet",
+        },
       ];
 
   const trafficData = analyticsData?.trafficByHour || [];
@@ -59,20 +81,22 @@ export const MonitoringTab = () => {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 space-y-5">
-          <TrafficChart
-            trafficData={trafficData}
-            isLoading={isLoadingAnalytics}
-            dateRange={dateRange}
-            totalRequests={analyticsData?.summary.totalRequests}
-          />
-          <StatsCards stats={stats} />
+      {!isLoadingAnalytics && !hasAnalytics && (
+        <div className="rounded-2xl border border-border/50 bg-card px-5 py-4">
+          <p className="text-sm font-medium text-foreground">No monitoring data yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Analytics will appear here after the deployed app starts receiving traffic.
+          </p>
         </div>
-        <div className="space-y-5">
-          {topPaths.length > 0 && <TopPaths paths={topPaths} />}
-        </div>
-      </div>
+      )}
+      <TrafficChart
+        trafficData={trafficData}
+        isLoading={isLoadingAnalytics}
+        dateRange={dateRange}
+        totalRequests={analyticsData?.summary.totalRequests}
+      />
+      <StatsCards stats={stats} />
+      {topPaths.length > 0 && <TopPaths paths={topPaths} />}
     </div>
   );
 };

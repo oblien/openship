@@ -5,7 +5,7 @@ const PATHS = [
     tagColor: "var(--th-clr-plum)",
     tagBg: "var(--th-clr-plum-bg)",
     title: "Auto-scale. Zero config.",
-    desc: "Deploy to Openship Cloud and scaling is handled for you — containers spin up automatically when traffic spikes and wind down when it drops. Manage it all from the app. You never touch a load balancer.",
+    desc: "Deploy to Openship Cloud and scaling is handled for you — containers spin up automatically when traffic spikes and wind down when it drops. Manage it all from the CLI or dashboard. You never touch a load balancer.",
     features: [
       "Horizontal auto-scaling per service",
       "Built-in load balancing & app controls",
@@ -24,9 +24,9 @@ const PATHS = [
     tagColor: "var(--th-clr-sea)",
     tagBg: "var(--th-clr-sea-bg)",
     title: "One tap. Bigger server.",
-    desc: "Outgrew your VPS? Spin up a larger server and move everything with a single tap in the app. Data, configs, and domains carry over — nothing is lost, ever.",
+    desc: "Outgrew your VPS? Spin up a larger server and move everything with a single command. Data, configs, and domains carry over — nothing is lost, ever.",
     features: [
-      "Export & import from the app or CLI",
+      "Export & import from the CLI or dashboard",
       "All data, certs & configs migrate",
       "Multi-node cluster when you're ready",
       "No re-deploy, no re-config",
@@ -54,7 +54,7 @@ const SCALE_STEPS = [
   {
     num: "2",
     title: "Upgrade the box",
-    desc: "Buy a bigger VPS or add a second node — 60 seconds in the app.",
+    desc: "Buy a bigger VPS or add a second node — 60 seconds from the CLI.",
     icon: (
       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -116,7 +116,7 @@ export function Scaling() {
           <p className="mx-auto mt-6 max-w-xl text-[17px] leading-[1.65] th-text-body">
             Whether you auto-scale on Openship Cloud or upgrade your own VPS,
             scaling never means starting over. Your projects, domains, certs, and
-            data move with you — manage it all from the app.
+            data move with you — manage it all from the CLI or dashboard.
           </p>
         </div>
 

@@ -49,6 +49,13 @@ const ComposeSidebar: React.FC = () => {
     return 0;
   });
 
+  // Sync elapsed time when buildStartedAt arrives from API (e.g. after refresh)
+  useEffect(() => {
+    if (state.buildStartedAt && !state.deploymentSuccess && !state.deploymentFailed && !state.deploymentCanceled) {
+      setElapsed(Math.max(0, Math.round((Date.now() - new Date(state.buildStartedAt).getTime()) / 1000)));
+    }
+  }, [state.buildStartedAt, state.deploymentSuccess, state.deploymentFailed, state.deploymentCanceled]);
+
   useEffect(() => {
     if (state.buildDurationMs && (state.deploymentSuccess || state.deploymentFailed || state.deploymentCanceled)) {
       setElapsed(Math.round(state.buildDurationMs / 1000));

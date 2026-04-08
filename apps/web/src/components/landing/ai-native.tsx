@@ -27,7 +27,7 @@ export function AiNative() {
             <p className="th-text-body mt-6 max-w-lg text-[16px] leading-[1.65]">
               When a build fails, the AI reads the error, identifies the root
               cause, and applies a fix — automatically. You see a green checkmark
-              in the app. Your server never sees the broken build.
+              locally. Your server never sees the broken build.
             </p>
 
             <ul className="mt-8 space-y-4">

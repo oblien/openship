@@ -3,7 +3,7 @@ import Link from "next/link";
 const footerLinks = {
   Product: [
     { label: "Features", href: "/#features" },
-    { label: "Download", href: "/download" },
+    { label: "Install", href: "/download" },
     { label: "Pricing", href: "/pricing" },
     { label: "Docs", href: "/docs" },
   ],
@@ -43,7 +43,7 @@ export function Footer() {
               </span>
             </Link>
             <p className="th-text-muted mt-4 max-w-xs text-sm leading-relaxed">
-              Open-source deployment platform. Desktop app, web dashboard, or CLI. Download, connect, deploy.
+              Open-source deployment platform. CLI, web dashboard, or desktop app. Install, connect, deploy.
             </p>
           </div>
 

@@ -21,13 +21,13 @@ const PUBLIC_ROUTES = [
   "/onboarding",
 ];
 
-/** Better Auth stores session in this cookie by default */
-const SESSION_COOKIE = "better-auth.session_token";
+/** Better Auth session cookie — prefix varies by API mode */
+const SESSION_COOKIE_SUFFIX = ".session_token";
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isPublic = PUBLIC_ROUTES.some((r) => pathname.startsWith(r));
-  const hasCookie = req.cookies.has(SESSION_COOKIE);
+  const hasCookie = req.cookies.getAll().some((c) => c.name.endsWith(SESSION_COOKIE_SUFFIX));
 
   // No cookie + protected route → redirect to login
   if (!hasCookie && !isPublic) {

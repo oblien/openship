@@ -23,6 +23,7 @@ export const TrafficChart: React.FC<Props> = ({
   totalRequests,
 }) => {
   const [chartType, setChartType] = useState<'bar' | 'area'>('area');
+  const hasAnalytics = typeof totalRequests === "number";
   const maxRequests = Math.max(...trafficData.map(d => d.requests), 1);
   if(trafficData.length === 0) {
     trafficData = Array.from({ length: 24 }, (_, i) => ({
@@ -32,7 +33,7 @@ export const TrafficChart: React.FC<Props> = ({
   }
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 p-4 sm:p-6 h-[280px] sm:h-[320px] flex flex-col">
+    <div className="bg-card rounded-2xl border border-border/50 p-4 sm:p-6 h-[320px] sm:h-[380px] flex flex-col">
       <div className="flex items-center justify-between gap-2 sm:gap-0 mb-4 sm:mb-5">
         <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
           {generateIcon('chart%204%20line-5-1666004410.png', 24, 'hsl(var(--primary))')}
@@ -74,14 +75,21 @@ export const TrafficChart: React.FC<Props> = ({
         <div className="flex items-center justify-center flex-1">
           <div className="text-sm text-muted-foreground/70">Loading analytics...</div>
         </div>
+      ) : !hasAnalytics ? (
+        <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/20">
+          <div className="text-center">
+            <p className="text-sm font-medium text-foreground">No traffic data yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">This chart will populate after the app receives requests.</p>
+          </div>
+        </div>
       ) : (
         <div className="flex-1 flex flex-col">
           <div className="relative flex-1">
-            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1000 160" preserveAspectRatio="none">
+            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1000 200" preserveAspectRatio="none">
               <defs>
                 <linearGradient id="trafficGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset={`${chartType == 'bar' ? 100 : 20}%`} stopColor="hsl(var(--primary))" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.1" />
+                  <stop offset={`${chartType == 'bar' ? 100 : 20}%`} stopColor="hsl(var(--primary))" stopOpacity="0.4" />
+                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.05" />
                 </linearGradient>
               </defs>
 
@@ -90,10 +98,11 @@ export const TrafficChart: React.FC<Props> = ({
                 <>
                   {trafficData.map((d, i) => {
                     const containerWidth = 1000;
-                    const containerHeight = 160;
-                    const barWidth = containerWidth / trafficData.length * 0.8;
-                    const x = (i / trafficData.length) * containerWidth + barWidth * 0.1;
-                    const height = (d.requests / maxRequests) * 140;
+                    const containerHeight = 200;
+                    const barWidth = containerWidth / trafficData.length * 0.7;
+                    const gap = containerWidth / trafficData.length * 0.15;
+                    const x = (i / trafficData.length) * containerWidth + gap;
+                    const height = (d.requests / maxRequests) * 180;
                     const y = containerHeight - height;
 
                     return (
@@ -117,27 +126,23 @@ export const TrafficChart: React.FC<Props> = ({
                 <>
                   {/* Area Fill */}
                   <path
-                    d={`M 0 150 ${trafficData.map((d, i) => {
+                    d={`M 0 200 ${trafficData.map((d, i) => {
                       const x = (i / (trafficData.length - 1)) * 1000;
-                      const baseHeight = 110; // Raised baseline for zero state
-                      const maxHeight = 110; // Maximum height for visualization
-                      const y = baseHeight - (d.requests / maxRequests) * maxHeight;
+                      const y = 200 - (d.requests / maxRequests) * 180;
                       return `L ${x} ${y}`;
-                    }).join(' ')} L 1000 150 Z`}
+                    }).join(' ')} L 1000 200 Z`}
                     fill="url(#trafficGradient)"
                   />
-                  {/* Top Border Line - More Visible */}
+                  {/* Top Border Line */}
                   <path
-                    d={`M ${trafficData.map((d, i) => {
+                    d={trafficData.map((d, i) => {
                       const x = (i / (trafficData.length - 1)) * 1000;
-                      const baseHeight = 0;
-                      const maxHeight = 130;
-                      const y = baseHeight - (d.requests / maxRequests) * maxHeight;
+                      const y = 200 - (d.requests / maxRequests) * 180;
                       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-                    }).join(' ')}`}
+                    }).join(' ')}
                     fill="none"
                     stroke="hsl(var(--primary))"
-                    strokeWidth="0.5"
+                    strokeWidth="2"
                   />
                 </>
               )}

@@ -3,41 +3,24 @@
 import React from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
-import { useCloud } from "@/context/CloudContext";
-import { getProjectStatus, PROJECT_STATUS_META } from "@/utils/project-status";
-import { formatDate } from "@/utils/date";
 import {
   ExternalLink,
   GitBranch,
-  Globe,
-  Clock,
-  Cloud,
-  HardDrive,
-  Container,
   Cpu,
-  Moon,
   Zap,
   CheckCircle2,
   XCircle,
-  Server,
-  Hammer,
   Database,
   Plus,
   Layers,
 } from "lucide-react";
 
 export const OverviewTab = () => {
-  const { projectData, domain, gitData, buildData } = useProjectSettings();
-  const { selfHosted, deployMode } = usePlatform();
-  const { connected: cloudConnected } = useCloud();
+  const { projectData, gitData, buildData } = useProjectSettings();
+  const { selfHosted } = usePlatform();
 
-  const status = getProjectStatus(projectData as any);
-  const meta = PROJECT_STATUS_META[status];
-
-  const isCloud = !selfHosted || cloudConnected;
+  const platformLabel = selfHosted ? "Self-hosted" : "Openship Cloud";
   const hasGit = !!(projectData.gitOwner && projectData.gitRepo);
-  const runtimeLabel =
-    deployMode === "desktop" ? "Desktop" : deployMode === "docker" ? "Docker" : "Bare Metal";
   const modeLabel =
     projectData.productionMode === "static"
       ? "Static Site"
@@ -52,11 +35,9 @@ export const OverviewTab = () => {
 
         {/* Infrastructure */}
         <Card title="Infrastructure" icon={Cpu} iconColor="primary">
-          <Item label="Platform" value={isCloud ? "Openship Cloud" : "Self-hosted"} />
-          <Item label="Runtime" value={runtimeLabel} />
+          <Item label="Platform" value={platformLabel} />
           <Item label="Mode" value={modeLabel} />
           <Item label="Port" value={String(projectData.port || 3000)} />
-          <Item label="Sleep"  value={projectData.sleepMode === "always_on" ? "Always On" : "Auto Sleep"} />
         </Card>
 
         {/* Source & CI/CD */}

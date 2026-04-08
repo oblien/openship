@@ -83,18 +83,34 @@ function rsyncInstallPlan(profile: EnvironmentProfile): InstallPlan {
   };
 }
 
-function nginxInstallPlan(profile: EnvironmentProfile): InstallPlan {
-  const commands: Record<string, string> = {
-    apt: "apt-get update -qq && apt-get install -y -qq nginx certbot python3-certbot-nginx",
-    dnf: "dnf install -y nginx certbot python3-certbot-nginx",
-    yum: "yum install -y nginx certbot python3-certbot-nginx",
-  };
-
-  const installCommand = commands[profile.packageManager];
-  if (!installCommand) {
+function openrestyInstallPlan(profile: EnvironmentProfile): InstallPlan {
+  if (profile.os !== "linux") {
     return {
       supported: false,
-      unsupportedReason: "Nginx installation is only supported on Linux with apt, dnf, or yum",
+      unsupportedReason: "OpenResty installation is only supported on Linux servers",
+    };
+  }
+
+  let installCommand: string;
+
+  if (profile.packageManager === "apt") {
+    const distro = profile.distro === "debian" ? "debian" : "ubuntu";
+    installCommand = [
+      "apt-get update -qq && apt-get install -y -qq wget gnupg2 lsb-release",
+      "wget -qO /tmp/openresty-pubkey.gpg https://openresty.org/package/pubkey.gpg",
+      "gpg --yes --dearmor -o /usr/share/keyrings/openresty.gpg /tmp/openresty-pubkey.gpg",
+      `echo "deb [signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/${distro} $(lsb_release -sc) main" > /etc/apt/sources.list.d/openresty.list`,
+      "apt-get update -qq && apt-get install -y -qq openresty",
+    ].join(" && ");
+  } else if (profile.packageManager === "dnf") {
+    const distro = profile.distro === "fedora" ? "fedora" : "centos";
+    installCommand = `wget -qO /etc/yum.repos.d/openresty.repo https://openresty.org/package/${distro}/openresty.repo && dnf install -y openresty`;
+  } else if (profile.packageManager === "yum") {
+    installCommand = "wget -qO /etc/yum.repos.d/openresty.repo https://openresty.org/package/centos/openresty.repo && yum install -y openresty";
+  } else {
+    return {
+      supported: false,
+      unsupportedReason: "OpenResty installation is only supported on Linux with apt, dnf, or yum",
     };
   }
 
@@ -103,17 +119,17 @@ function nginxInstallPlan(profile: EnvironmentProfile): InstallPlan {
     installCommand,
     startCommand:
       profile.serviceManager === "systemd"
-        ? "systemctl enable nginx && systemctl start nginx"
+        ? "systemctl enable openresty && systemctl start openresty"
         : undefined,
-    verifyCommand: "nginx -v 2>&1",
+    verifyCommand: "openresty -v 2>&1",
   };
 }
 
 function certbotInstallPlan(profile: EnvironmentProfile): InstallPlan {
   const commands: Record<string, string> = {
-    apt: "apt-get update -qq && apt-get install -y -qq certbot python3-certbot-nginx",
-    dnf: "dnf install -y certbot python3-certbot-nginx",
-    yum: "yum install -y certbot python3-certbot-nginx",
+    apt: "apt-get update -qq && apt-get install -y -qq certbot",
+    dnf: "dnf install -y certbot",
+    yum: "yum install -y certbot",
   };
 
   const installCommand = commands[profile.packageManager];
@@ -142,14 +158,14 @@ export const systemCatalog = {
       notRunningMessage: "Docker is installed but the daemon is not running",
     },
     nginx: {
-      versionCommand: "nginx -v 2>&1",
+      versionCommand: "openresty -v 2>&1",
       runningCommands: [
         "pgrep -x nginx",
       ],
       parseVersion: (output: string) =>
-        output.match(/nginx\/(\S+)/)?.[1] ?? output,
-      missingMessage: "Nginx is not installed",
-      notRunningMessage: "Nginx is installed but not running",
+        output.match(/openresty\/(\S+)/)?.[1] ?? output.match(/nginx\/(\S+)/)?.[1] ?? output,
+      missingMessage: "OpenResty is not installed",
+      notRunningMessage: "OpenResty is installed but not running",
     },
     certbot: {
       versionCommand: "certbot --version 2>/dev/null",
@@ -171,7 +187,7 @@ export const systemCatalog = {
     docker: dockerInstallPlan,
     git: gitInstallPlan,
     rsync: rsyncInstallPlan,
-    nginx: nginxInstallPlan,
+    nginx: openrestyInstallPlan,
     certbot: certbotInstallPlan,
   },
 };

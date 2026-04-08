@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { auth } from "../../lib/auth";
+import { auth, COOKIE_PREFIX } from "../../lib/auth";
 import { env } from "../../config/env";
 import { setSignedCookie } from "hono/cookie";
 import { internalAuth } from "../../middleware/internal-auth";
@@ -105,7 +105,7 @@ if (env.DEPLOY_MODE === "desktop") {
     const user = await ensureLocalUser();
     const session = await createLocalSession(user.id, "127.0.0.1", "desktop");
 
-    await setSignedCookie(c, "better-auth.session_token", session.token, env.BETTER_AUTH_SECRET, {
+    await setSignedCookie(c, `${COOKIE_PREFIX}.session_token`, session.token, env.BETTER_AUTH_SECRET, {
       httpOnly: true,
       secure: false,
       sameSite: "Lax",
@@ -119,14 +119,11 @@ if (env.DEPLOY_MODE === "desktop") {
   /**
    * GET /cloud-callback — exchange cloud auth code for a local session.
    *
-   * Flow:
-   *   1. User authenticates on app.openship.io (in system browser)
-   *   2. Cloud generates a one-time code and redirects here with ?code=xxx&state=yyy
-   *   3. We validate state (CSRF protection) and retrieve stored code_verifier (PKCE)
-   *   4. We exchange the code + code_verifier for user data + cloud session token
-   *   5. Mirror the cloud user locally, store cloud token, create session
-   *   6. Store session token for Electron to pick up via polling
-   *   7. Show a "success — close this tab" page
+  * Flow:
+  *   1. Preferred desktop flow uses authorize + PKCE and redirects here with ?code=xxx&state=yyy
+  *   2. Compatibility browser flow redirects here with ?code=xxx only
+  *   3. We exchange the code, mirror the cloud user, and create a local session
+  *   4. Desktop PKCE flow additionally resolves the pending nonce for Electron polling
    */
   authRoutes.get("/cloud-callback", async (c) => {
     const code = c.req.query("code");
@@ -134,15 +131,33 @@ if (env.DEPLOY_MODE === "desktop") {
       return c.html(desktopResultPage("Missing authentication code", "Please return to Openship and try again."));
     }
 
-    // Validate state parameter (CSRF) and retrieve PKCE code_verifier
     const state = c.req.query("state");
-    if (!state) {
-      return c.html(desktopResultPage("Missing state parameter", "Please return to Openship and try again."));
-    }
 
     try {
-      const { exchangeCodeWithCloud, mirrorCloudUser, storeCloudSession, createLocalSession, resolveDesktopAuth, validateDesktopState } =
+      const { exchangeCodeWithCloud, mirrorCloudUser, storeCloudSession, createLocalSession, resolveDesktopAuth, validateDesktopState, failDesktopAuth } =
         await import("../../lib/cloud-auth-proxy");
+
+      if (!state) {
+        const data = await exchangeCodeWithCloud(code);
+        if (!data) {
+          return c.html(desktopResultPage("Authentication failed", "Could not verify with Openship Cloud. Please return to Openship and try again."));
+        }
+
+        const mirroredUserId = await mirrorCloudUser(data.user);
+        await storeCloudSession(mirroredUserId, data.sessionToken);
+
+        const session = await createLocalSession(mirroredUserId, "127.0.0.1", "desktop");
+
+        await setSignedCookie(c, `${COOKIE_PREFIX}.session_token`, session.token, env.BETTER_AUTH_SECRET, {
+          httpOnly: true,
+          secure: false,
+          sameSite: "Lax",
+          path: "/",
+          expires: session.expiresAt,
+        });
+
+        return c.redirect(env.DASHBOARD_URL);
+      }
 
       const validated = validateDesktopState(state);
       if (!validated) {
@@ -151,6 +166,7 @@ if (env.DEPLOY_MODE === "desktop") {
 
       const data = await exchangeCodeWithCloud(code, validated.codeVerifier);
       if (!data) {
+        failDesktopAuth(validated.nonce);
         return c.html(desktopResultPage("Authentication failed", "Could not verify with Openship Cloud. Please return to Openship and try again."));
       }
 
@@ -168,7 +184,14 @@ if (env.DEPLOY_MODE === "desktop") {
       resolveDesktopAuth(validated.nonce, session.token, session.expiresAt);
 
       return c.html(desktopResultPage("Signed in to Openship", "You can return to the Openship app now.", true));
-    } catch {
+    } catch (err) {
+      // Signal failure to the polling loop so Electron doesn't hang
+      try {
+        const { failDesktopAuth, getActiveNonce } = await import("../../lib/cloud-auth-proxy");
+        const nonce = getActiveNonce();
+        if (nonce) failDesktopAuth(nonce);
+      } catch { /* best-effort */ }
+      console.error("[cloud-callback] error:", err);
       return c.html(desktopResultPage("Authentication failed", "Something went wrong. Please return to Openship and try again."));
     }
   });
@@ -236,7 +259,7 @@ if (env.DEPLOY_MODE === "desktop") {
       return c.text("Claim expired", 400);
     }
 
-    await setSignedCookie(c, "better-auth.session_token", result.token, env.BETTER_AUTH_SECRET, {
+    await setSignedCookie(c, `${COOKIE_PREFIX}.session_token`, result.token, env.BETTER_AUTH_SECRET, {
       httpOnly: true,
       secure: false,
       sameSite: "Lax",

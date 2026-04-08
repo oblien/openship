@@ -532,6 +532,15 @@ export async function monitorStream(c: Context) {
   return streamSSE(c, async (sseStream) => {
     let closed = false;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let consecutiveWriteErrors = 0;
+
+    const cleanup = () => {
+      closed = true;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
 
     const poll = async () => {
       if (closed) return;
@@ -544,14 +553,30 @@ export async function monitorStream(c: Context) {
         if (closed) return;
         // Validate it's parseable JSON before sending
         JSON.parse(raw);
-        await sseStream.writeSSE({ event: "stats", data: raw });
+        try {
+          await sseStream.writeSSE({ event: "stats", data: raw });
+          consecutiveWriteErrors = 0;
+        } catch {
+          consecutiveWriteErrors++;
+          if (consecutiveWriteErrors >= 2) cleanup();
+          return;
+        }
       } catch (err) {
         if (closed) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        await sseStream.writeSSE({
-          event: "error",
-          data: JSON.stringify({ error: msg }),
-        });
+        try {
+          const msg = err instanceof Error ? err.message : String(err);
+          await sseStream.writeSSE({
+            event: "error",
+            data: JSON.stringify({ error: msg }),
+          });
+          consecutiveWriteErrors = 0;
+        } catch {
+          // Write failed — client likely disconnected
+          consecutiveWriteErrors++;
+          if (consecutiveWriteErrors >= 2) {
+            cleanup();
+          }
+        }
       }
     };
 
@@ -559,13 +584,14 @@ export async function monitorStream(c: Context) {
     await poll();
 
     // Then poll on interval
-    pollTimer = setInterval(() => void poll(), POLL_INTERVAL);
+    if (!closed) {
+      pollTimer = setInterval(() => void poll(), POLL_INTERVAL);
+    }
 
     // Wait until client disconnects
     await new Promise<void>((resolve) => {
       sseStream.onAbort(() => {
-        closed = true;
-        if (pollTimer) clearInterval(pollTimer);
+        cleanup();
         resolve();
       });
     });

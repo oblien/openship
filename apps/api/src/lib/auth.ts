@@ -13,6 +13,10 @@ import { resetPasswordEmail, verifyEmailTemplate } from "./email-templates";
  *
  * Routes are mounted at /api/auth/* in app.ts.
  */
+// Cookie prefix — distinct per mode so desktop API (port 4000) and
+// SaaS API (port 4100) don't collide on localhost (cookies ignore port).
+export const COOKIE_PREFIX = env.CLOUD_MODE ? "openship-cloud" : "openship";
+
 export const auth = betterAuth({
   basePath: "/api/auth",
   baseURL: env.BETTER_AUTH_URL,
@@ -100,6 +104,11 @@ export const auth = betterAuth({
   /* ---------- Security ---------- */
   secret: env.BETTER_AUTH_SECRET,
   trustedOrigins,
+
+  /* ---------- Advanced ---------- */
+  advanced: {
+    cookiePrefix: COOKIE_PREFIX,
+  },
 });
 
 export type Auth = typeof auth;

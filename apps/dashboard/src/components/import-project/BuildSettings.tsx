@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Terminal, FolderOutput, Server, Package, Play, Hash, Settings2, ChevronDown, ChevronUp, Pencil, Hammer, BoxSelect, ShieldCheck } from "lucide-react";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
-import { useDeployment } from "@/context/DeploymentContext";
+import { useOptionalDeployment } from "@/context/DeploymentContext";
 
 interface InputField {
   key: string;
@@ -33,8 +33,12 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   buildConfig,
   updateOptions: externalUpdateOptions
 }) => {
-  const deploymentContext = mode === 'simple' ? useDeployment() : { config: buildConfig || {}, updateOptions: () => { }, updateConfig: () => {} };
-  const { config, updateOptions, updateConfig } = deploymentContext || { config: buildConfig || {}, updateOptions: externalUpdateOptions, updateConfig: () => {} };
+  const deploymentContext = useOptionalDeployment();
+  const fallbackContext = { config: buildConfig || {}, updateOptions: externalUpdateOptions || (() => {}), updateConfig: () => {} };
+  const resolvedContext = mode === 'simple'
+    ? (deploymentContext ?? fallbackContext)
+    : fallbackContext;
+  const { config, updateOptions, updateConfig } = resolvedContext;
 
   const [isEditing] = useState(mode === 'simple');
 

@@ -51,7 +51,7 @@ const CAPABILITIES = [
       </svg>
     ),
     title: "Auto-scale controls",
-    desc: "Toggle auto-scaling per project from the app. Visual resource graphs.",
+    desc: "Toggle auto-scaling per project. Visual resource graphs.",
   },
 ];
 
@@ -105,7 +105,7 @@ export function Dashboard() {
         <div className="mx-auto max-w-3xl text-center">
           <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-[var(--th-on-06)] bg-white/60 px-4 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,.04)] backdrop-blur-sm">
             <span className="text-[12px] font-medium tracking-[0.02em] th-text-secondary">
-              The App
+              The Dashboard
             </span>
           </div>
           <h2>
@@ -116,12 +116,12 @@ export function Dashboard() {
               className="block text-[clamp(2.75rem,6vw,4.75rem)] font-semibold leading-[1.06] tracking-[-0.035em]"
               style={{ color: "var(--th-on-40)" }}
             >
-              One beautiful app.
+              One powerful dashboard.
             </span>
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-[17px] leading-[1.65] th-text-body">
             Deployments, domains, databases, backups, scaling — manage your entire
-            infrastructure from one app. Desktop, web, or CLI — your call. No YAML, no guesswork.
+            infrastructure from one place. CLI, web, or desktop — your call. No YAML, no guesswork.
           </p>
         </div>
 
@@ -293,7 +293,7 @@ export function Dashboard() {
               <span style={{ color: "var(--th-on-40)" }}>AI does it for you.</span>
             </h3>
             <p className="mx-auto mt-5 max-w-xl text-[16px] leading-[1.65] th-text-body">
-              An AI assistant lives inside the app. It can deploy apps, configure security,
+              An AI assistant is built in. It can deploy apps, configure security,
               set up databases, fix failed builds, and manage domains — all by just telling it what you want.
               Zero DevOps knowledge required. Disable it anytime.
             </p>

@@ -15,6 +15,8 @@ export const useDeployment = () => {
   return context;
 };
 
+export const useOptionalDeployment = () => useContext(DeploymentContext);
+
 export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const {
     config,

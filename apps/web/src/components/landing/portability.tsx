@@ -7,7 +7,7 @@ const DIRECTIONS = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
       </svg>
     ),
-    desc: "Want managed scaling? Push your self-hosted instance to Openship Cloud — projects, domains, certs, and databases transfer instantly. Control everything from the app.",
+    desc: "Want managed scaling? Push your self-hosted instance to Openship Cloud — projects, domains, certs, and databases transfer instantly. Control everything from the CLI or dashboard.",
     color: "var(--th-clr-plum)",
     bgWash: "var(--th-clr-plum-bg)",
     blob: "var(--th-clr-plum-blob)",
@@ -81,7 +81,7 @@ export function Portability() {
           <p className="mx-auto mt-6 max-w-xl text-[17px] leading-[1.65] th-text-body">
             Your infrastructure should never be a cage. Transfer between Openship
             Cloud and any self-hosted VPS — or between two servers — in a single
-            tap from the app. No re-deploy, no data loss, no vendor games.
+            tap from the CLI or dashboard. No re-deploy, no data loss, no vendor games.
           </p>
         </div>
 

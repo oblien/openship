@@ -56,6 +56,7 @@ export function buildProjectRouteDomains(opts: {
       provisionSsl: runtimeName === "bare" && !managed.isManaged && !skipSsl,
       isCloud: managed.isManaged,
       managedSubdomain: managed.subdomain,
+      createIfMissing: true,
     });
   };
 
@@ -145,7 +146,7 @@ export async function ensureRouteDomainRecord(opts: {
     projectId,
     serviceId: route.serviceId,
     hostname: route.hostname,
-    isPrimary: false,
+    isPrimary: !route.serviceId && domainByHostname.size === 0,
     status: "active",
     verified: true,
     verifiedAt: new Date(),

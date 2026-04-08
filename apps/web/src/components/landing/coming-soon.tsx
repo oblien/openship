@@ -8,7 +8,7 @@ const ROADMAP = [
       </svg>
     ),
     title: "Load balancer setup",
-    desc: "Visual load balancer configuration right from the app. Route traffic across containers with weighted rules, health checks, and sticky sessions — no HAProxy or NGINX configs.",
+    desc: "Visual load balancer configuration right from the dashboard. Route traffic across containers with weighted rules, health checks, and sticky sessions — no HAProxy or NGINX configs.",
     tag: "Infrastructure",
     color: "var(--th-clr-plum)",
     bg: "var(--th-clr-plum-bg)",
@@ -21,7 +21,7 @@ const ROADMAP = [
       </svg>
     ),
     title: "Cluster management",
-    desc: "Create and manage multi-node clusters from one screen. Add worker nodes, distribute services, view cluster health — all through the app. Scale horizontally in seconds.",
+    desc: "Create and manage multi-node clusters from one screen. Add worker nodes, distribute services, view cluster health — all through the CLI or dashboard. Scale horizontally in seconds.",
     tag: "Scaling",
     color: "var(--th-clr-sea)",
     bg: "var(--th-clr-sea-bg)",
@@ -60,7 +60,7 @@ const ROADMAP = [
       </svg>
     ),
     title: "CI/CD pipelines",
-    desc: "Visual pipeline builder inside the app. Drag-and-drop build stages, run tests, deploy to staging then production — with automatic rollback on failure.",
+    desc: "Visual pipeline builder in the dashboard. Drag-and-drop build stages, run tests, deploy to staging then production — with automatic rollback on failure.",
     tag: "DevOps",
     color: "var(--th-clr-sea)",
     bg: "var(--th-clr-sea-bg)",
@@ -106,13 +106,13 @@ export function ComingSoon() {
               className="block text-[clamp(2.75rem,6vw,4.75rem)] font-semibold leading-[1.06] tracking-[-0.035em]"
               style={{ color: "var(--th-on-40)" }}
             >
-              All from the app.
+              All from the CLI or dashboard.
             </span>
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-[17px] leading-[1.65] th-text-body">
             We&apos;re building the tools teams actually need for real scale —
             load balancers, clusters, private networking, and advanced monitoring.
-            All managed visually in the app, no infrastructure degree required.
+            All managed visually in the dashboard, no infrastructure degree required.
           </p>
         </div>
 

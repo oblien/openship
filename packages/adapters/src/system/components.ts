@@ -9,14 +9,14 @@ export const SYSTEM_COMPONENTS: SystemComponentDefinition[] = [
   },
   {
     name: "nginx",
-    label: "Nginx",
-    description: "Reverse proxy with certbot for SSL",
+    label: "OpenResty",
+    description: "Reverse proxy with Lua scripting for routing and traffic control",
     installable: true,
   },
   {
     name: "certbot",
     label: "Certbot",
-    description: "Let's Encrypt certificate provisioning for Nginx",
+    description: "Let's Encrypt certificate provisioning",
     installable: true,
   },
   {

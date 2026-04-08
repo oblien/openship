@@ -1,6 +1,7 @@
 "use client";
 
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { formatDate } from "@/utils/date";
 import { getProjectStatus, PROJECT_STATUS_META } from "@/utils/project-status";
 import {
@@ -30,9 +31,14 @@ const TAB_ICONS: Record<string, React.ComponentType<{ className?: string; stroke
 
 /** Desktop right-column navigation — matches LibrarySidebar / Home pattern */
 export const ProjectSidebar = () => {
-  const { projectData, projectNotFound, activeTab, tabs, setActiveTab } = useProjectSettings();
+  const { projectData, projectNotFound, activeTab, tabs, setActiveTab, domain } = useProjectSettings();
+  const { selfHosted } = usePlatform();
   const status = getProjectStatus(projectData as any);
   const meta = PROJECT_STATUS_META[status];
+  const localPort = projectData.port || 3000;
+  const localUrl = `localhost:${localPort}`;
+  const displayUrl = domain || localUrl;
+  const isLocal = !domain;
 
   const handleTabChange = (tabId: string) => {
     const scrollY = window.scrollY;
@@ -64,19 +70,17 @@ export const ProjectSidebar = () => {
         </div>
 
         <div className="mt-4 space-y-3">
-          {projectData.domain && (
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-sm text-muted-foreground">Production</span>
-              <a
-                href={`https://${projectData.domain}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="truncate text-sm font-medium text-foreground hover:text-primary transition-colors"
-              >
-                {projectData.domain}
-              </a>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm text-muted-foreground">{isLocal ? "Local" : "Production"}</span>
+            <a
+              href={isLocal ? `http://${displayUrl}` : `https://${displayUrl}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-sm font-medium text-foreground hover:text-primary transition-colors"
+            >
+              {displayUrl}
+            </a>
+          </div>
           {projectData.last_deployed && (
             <div className="flex items-center justify-between gap-4">
               <span className="text-sm text-muted-foreground">Last Deploy</span>

@@ -1,16 +1,16 @@
 /**
- * Nginx infrastructure provider — routing + SSL for self-hosted deployments.
+ * OpenResty infrastructure provider — routing + SSL for self-hosted deployments.
  *
- * Writes server block config files to a directory that Nginx `include`s,
- * then reloads Nginx. SSL is handled by certbot (Let's Encrypt) running
- * as a separate process — Nginx just reads the cert files.
+ * Writes server block config files to a directory that OpenResty `include`s,
+ * then reloads. SSL is handled by certbot (Let's Encrypt) running
+ * as a separate process — OpenResty just reads the cert files.
  *
  * This provider works with BOTH Docker and Bare runtimes.
  *
- * Typical nginx.conf:
+ * Typical nginx.conf inside OpenResty:
  * ```
  * http {
- *   include /etc/nginx/sites-enabled/*;
+ *   include /usr/local/openresty/nginx/conf/sites-enabled/*;
  * }
  * ```
  */
@@ -27,13 +27,14 @@ import { dirname, join } from "node:path";
 
 import type { CommandExecutor, RouteConfig, SslResult } from "../types";
 import type { RoutingProvider, SslProvider } from "./types";
+import { LUA_LOGGER_PATH } from "./openresty-lua";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export interface NginxProviderOptions {
   /**
    * Directory where site server blocks are written.
-   * Default: /etc/nginx/sites-enabled
+   * Default: /usr/local/openresty/nginx/conf/sites-enabled
    */
   sitesDir?: string;
   /**
@@ -53,7 +54,7 @@ export interface NginxProviderOptions {
   executor?: CommandExecutor;
 }
 
-const DEFAULT_SITES_DIR = "/etc/nginx/sites-enabled";
+const DEFAULT_SITES_DIR = "/usr/local/openresty/nginx/conf/sites-enabled";
 const DEFAULT_CERT_DIR = "/etc/letsencrypt/live";
 
 /** Only allow valid domain characters — prevents shell injection. */
@@ -133,9 +134,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   // ── Routing ──────────────────────────────────────────────────────────
 
   /**
-   * Register a route by writing an Nginx server block.
+   * Register a route by writing an OpenResty server block.
    *
-   * Creates a conf file in sites-enabled, then reloads Nginx.
+   * Creates a conf file in sites-enabled, then reloads.
    * If TLS is enabled and certs exist, configures SSL. If certs don't
    * exist yet, writes an HTTP-only block (certbot will add SSL later
    * via provisionCert).
@@ -160,12 +161,23 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 server {
     listen 80;
     server_name ${route.domain};
-    return 301 https://$server_name$request_uri;
+
+    log_by_lua_file ${LUA_LOGGER_PATH};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
 }
 
 server {
     listen 443 ssl;
     server_name ${route.domain};
+
+    log_by_lua_file ${LUA_LOGGER_PATH};
 
     ssl_certificate ${certPath};
     ssl_certificate_key ${keyPath};
@@ -181,6 +193,12 @@ server {
 server {
     listen 80;
     server_name ${route.domain};
+
+    log_by_lua_file ${LUA_LOGGER_PATH};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
 
     location / {
       ${locationBody}
@@ -209,8 +227,9 @@ server {
   /**
    * Provision a TLS certificate using certbot.
    *
-   * Runs `certbot certonly` in standalone or webroot mode, then rewrites
-   * the Nginx config to include SSL and reloads.
+   * Runs `certbot certonly` in webroot mode using the ACME challenge
+   * directory served by OpenResty, then rewrites the config to include
+   * SSL and reloads.
    */
   async provisionCert(domain: string): Promise<SslResult> {
     assertValidDomain(domain);
@@ -220,14 +239,15 @@ server {
       return this.readCertInfo(domain);
     }
 
-    // Run certbot — use nginx plugin if available, else standalone
+    // Run certbot — use webroot mode (OpenResty serves the challenge files),
+    // falling back to standalone if webroot fails
     const emailArgs = this.acmeEmail
       ? ["--email", this.acmeEmail]
       : ["--register-unsafely-without-email"];
 
     try {
       await this._exec("certbot", [
-        "certonly", "--nginx", "-d", domain,
+        "certonly", "--webroot", "-w", "/var/www/acme", "-d", domain,
         ...emailArgs, "--agree-tos", "--non-interactive",
       ]);
     } catch {
@@ -238,7 +258,7 @@ server {
       ]);
     }
 
-    // Rewrite the Nginx config with SSL now that certs exist
+    // Rewrite the config with SSL now that certs exist
     const slug = this.domainSlug(domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
 
@@ -283,8 +303,8 @@ server {
     // Test config first, then reload — two separate commands for safety.
     // These must fail loudly; otherwise deploy can report success while the
     // route never became active.
-    await this._exec("nginx", ["-t"]);
-    await this._exec("nginx", ["-s", "reload"]);
+    await this._exec("openresty", ["-t"]);
+    await this._exec("openresty", ["-s", "reload"]);
   }
 
   private async certsExist(domain: string): Promise<boolean> {

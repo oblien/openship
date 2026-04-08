@@ -23,7 +23,7 @@ export function ChooseMode({
             <p className="text-[15px] font-semibold text-foreground">Automatic Setup</p>
             <p className="text-sm text-muted-foreground mt-0.5">
               Check requirements and install everything automatically.
-              One click — Openship handles Docker, Nginx, and Git.
+              One click — Openship handles Docker, OpenResty, and Git.
             </p>
           </div>
           <ChevronRight className="size-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />

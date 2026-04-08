@@ -11,7 +11,7 @@ import { env } from "../../config";
 import { resolveDeploymentRuntime, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
 import { ensureManagedEdgeProxy } from "../../lib/managed-edge-proxy";
 import { encrypt, decrypt } from "../../lib/encryption";
-import { buildProjectRouteDomains, createTrackedSslProvider, toRoutedDomainInputs } from "../../lib/routing-domains";
+import { buildProjectRouteDomains, createTrackedSslProvider, ensureRouteDomainRecord, toRoutedDomainInputs } from "../../lib/routing-domains";
 import { withDefaults } from "../../lib/resources";
 import { resolveToken } from "../github/github.auth";
 import { pruneRetainedBareReleases } from "./release-retention";
@@ -923,7 +923,7 @@ async function executeBuildAndDeploy(
       });
     } else {
       // ── Server deploy (existing VM pipeline) ───────────────────────
-      // Static sites are always served directly from the web server (Nginx)
+      // Static sites are always served directly from the web server (OpenResty)
       // via file-backed routes — Docker is only for server apps.
       const staticBareRuntime = !snapshot.hasServer && runtime instanceof BareRuntime ? runtime : null;
       const isStaticSelfHosted = staticBareRuntime !== null;
@@ -957,7 +957,7 @@ async function executeBuildAndDeploy(
 
       // ── Gather all domains that need routing ───────────────────────
       // Sources: custom domain, verified DB domains, free host subdomain.
-      // Every domain gets an nginx route; SSL is provisioned only for
+      // Every domain gets an OpenResty route; SSL is provisioned only for
       // custom domains — the free host subdomain skips SSL (user manages it).
       const projectDomains = await repos.domain.listByProject(project.id);
       const domainByHostname = new Map(projectDomains.map((domain) => [domain.hostname.toLowerCase(), domain]));
@@ -968,6 +968,18 @@ async function executeBuildAndDeploy(
         runtimeName: runtime.name,
         usesManagedRouting,
       });
+
+      // Persist domain records for any new planned domains (free subdomain, custom domain)
+      for (const route of plannedDomains) {
+        const created = await ensureRouteDomainRecord({
+          projectId: project.id,
+          route,
+          domainByHostname,
+        });
+        if (created && !projectDomains.some((d) => d.id === created.id)) {
+          logger.log(`Created domain record for "${route.hostname}".\n`);
+        }
+      }
 
       // Compose deploy environment from runtime adapter
       const deployEnv: DeployEnvironment = {

@@ -25,11 +25,11 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onSt
 
   return (
     <div
-      className="px-4 py-3.5 flex items-center gap-4 hover:bg-muted/40 transition-colors cursor-pointer group"
+      className="group flex cursor-pointer items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/25"
       onClick={() => router.push(`/build/${deployment.id}`)}
     >
       {/* Framework icon */}
-      <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/45 transition-colors group-hover:bg-muted/65">
         {frameworkConfig.icon ? (
           frameworkConfig.icon("hsl(var(--foreground))")
         ) : (
@@ -42,11 +42,11 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onSt
       {/* Main info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          <p className="text-sm font-medium text-foreground truncate">
+          <p className="text-sm font-semibold text-foreground truncate">
             {deployment.projectName || "Unknown Project"}
           </p>
           <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${statusConfig.bgColor}`}
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusConfig.bgColor}`}
             style={{ color: statusConfig.color }}
           >
             <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusConfig.color }} />
@@ -54,7 +54,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onSt
           </span>
         </div>
         <div className="flex items-center gap-2 mt-0.5">
-          <p className="text-xs text-muted-foreground truncate max-w-[280px]">
+          <p className="max-w-[320px] truncate text-xs text-muted-foreground">
             {hasCommitMessage ? deployment.commit.message : "Manual deploy"}
           </p>
           <span className="text-muted-foreground/40">·</span>
@@ -97,7 +97,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onSt
                 setIsCommitModalOpen(true);
               }
             }}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors font-mono"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             {deployment.commit.hash.slice(0, 7)}
             {deployment.owner && deployment.repo && <ExternalLink className="size-3" />}
@@ -106,7 +106,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onSt
 
         <DeploymentMenu
           deployment={deployment}
-          triggerClassName="w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
+          triggerClassName="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground"
           onStatusChange={onStatusChange}
         />
       </div>
