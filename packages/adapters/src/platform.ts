@@ -82,6 +82,15 @@ export interface PlatformConfig {
    */
   ssh?: SshConfig;
   /**
+   * Pre-built command executor (self-hosted only).
+   *
+   * When provided, this executor is used instead of creating a new one
+   * from `ssh`. Use this to inject a managed/pooled executor (e.g. from
+   * SshConnectionManager) so all server operations share a single
+   * connection per server.
+   */
+  executor?: CommandExecutor;
+  /**
    * Custom state store for caching setup results.
    * Defaults to FileStateStore. The API layer can provide a DB-backed store.
    */
@@ -207,9 +216,14 @@ async function createInfraProvider(
 async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platform> {
   const runtimeMode = config.runtime ?? "docker";
 
-  // Executor — local or SSH based on config
-  const { createExecutor } = await import("./system/executor");
-  const executor = createExecutor(config.ssh);
+  // Executor — use injected (managed/pooled) executor, or create a fresh one
+  let executor: CommandExecutor;
+  if (config.executor) {
+    executor = config.executor;
+  } else {
+    const { createExecutor } = await import("./system/executor");
+    executor = createExecutor(config.ssh);
+  }
 
   // System — runtime mode determines all required components
   const { SystemManager } = await import("./system/setup");

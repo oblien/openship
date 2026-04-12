@@ -282,8 +282,13 @@ export async function runtimeLogStream(c: Context) {
 
   return streamSSE(c, async (sseStream) => {
     let cleanup: (() => void) | null = null;
+    let heartbeat: NodeJS.Timeout | null = null;
 
     try {
+      heartbeat = setInterval(() => {
+        void sseStream.writeSSE({ event: "ping", data: JSON.stringify({ ok: true }) }).catch(() => {});
+      }, 15_000);
+
       cleanup = await projectService.streamRuntimeLogs(id, userId, (entry) => {
         void sseStream.writeSSE({
           event: "log",
@@ -300,6 +305,7 @@ export async function runtimeLogStream(c: Context) {
       // Keep the stream open until client disconnects
       await new Promise<void>((resolve) => {
         sseStream.onAbort(() => {
+          if (heartbeat) clearInterval(heartbeat);
           cleanup?.();
           resolve();
         });
@@ -307,6 +313,7 @@ export async function runtimeLogStream(c: Context) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to stream logs";
       await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: message }) });
+      if (heartbeat) clearInterval(heartbeat);
       cleanup?.();
     }
   });
@@ -339,6 +346,7 @@ export async function serverLogStream(c: Context) {
 
   return streamSSE(c, async (sseStream) => {
     let executor: Awaited<ReturnType<typeof sshManager.acquire>>;
+    let heartbeat: NodeJS.Timeout | null = null;
     try {
       executor = await sshManager.acquire(serverId);
     } catch (err) {
@@ -373,7 +381,14 @@ export async function serverLogStream(c: Context) {
       return;
     }
 
-    sseStream.onAbort(() => { proc.kill(); });
+    heartbeat = setInterval(() => {
+      void sseStream.writeSSE({ event: "ping", data: JSON.stringify({ ok: true }) }).catch(() => {});
+    }, 15_000);
+
+    sseStream.onAbort(() => {
+      if (heartbeat) clearInterval(heartbeat);
+      proc.kill();
+    });
 
     // Pure byte pipe: curl stdout → browser.  No parsing, no transformation.
     await new Promise<void>((resolve) => {
@@ -381,11 +396,18 @@ export async function serverLogStream(c: Context) {
         sseStream.write(chunk.toString()).catch(() => { proc.kill(); });
       });
 
-      proc.stdout.on("close", resolve);
-      proc.stdout.on("error", resolve);
+      proc.stdout.on("close", () => {
+        if (heartbeat) clearInterval(heartbeat);
+        resolve();
+      });
+      proc.stdout.on("error", () => {
+        if (heartbeat) clearInterval(heartbeat);
+        resolve();
+      });
 
       // If curl exits non-zero (service down), send an error event
       proc.onClose.then((code) => {
+        if (heartbeat) clearInterval(heartbeat);
         if (code !== 0) {
           sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Log streaming service unavailable — ensure OpenResty Lua scripts are deployed" }) }).catch(() => {});
         }

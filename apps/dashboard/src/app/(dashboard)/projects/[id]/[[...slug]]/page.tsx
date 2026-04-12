@@ -16,7 +16,6 @@ import { LogsSettings } from "../components/LogsSettings";
 import { Deployments } from "../components/Deployments";
 import { AdvancedSettings } from "../components/AdvancedSettings";
 import { OverviewTab } from "../components/OverviewTab";
-import { MonitoringTab } from "../components/MonitoringTab";
 import { ServicesTab } from "../components/ServicesTab";
 import { ProjectSidebar, ProjectMobileTabs } from "../components/ProjectSidebar";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -103,8 +102,6 @@ const ProjectSettingsContent = () => {
     switch (activeTab) {
       case "overview":
         return <OverviewTab />;
-      case "monitoring":
-        return <MonitoringTab />;
       case "services":
         return <ServicesTab />;
       case "domains":

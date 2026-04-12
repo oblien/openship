@@ -17,7 +17,7 @@
 
 import { repos } from "@repo/db";
 import { systemDebug, formatDuration } from "../../lib/system-debug";
-import { fetchMgmt, postMgmt } from "../../lib/project-analytics";
+import { fetchMgmt, postMgmt, probeMgmt } from "../../lib/project-analytics";
 
 function debug(msg: string): void {
   systemDebug("analytics-scraper", msg);
@@ -34,7 +34,7 @@ async function scrapeServer(serverId: string): Promise<void> {
   debug(`scrape:start server=${serverId}`);
 
   // 1. Health check
-  const health = await fetchMgmt(serverId, "/health");
+  const health = await probeMgmt(serverId);
   if (!health) {
     debug(`scrape:skip server=${serverId} — mgmt unreachable`);
     return;
@@ -44,15 +44,16 @@ async function scrapeServer(serverId: string): Promise<void> {
   const totalsResult = await fetchMgmt(serverId, "/analytics/totals") as {
     domains?: { domain: string; requests: number; bandwidth_in: number; bandwidth_out: number }[];
   } | null;
+  const domains = Array.isArray(totalsResult?.domains) ? totalsResult.domains : [];
 
-  if (!totalsResult?.domains?.length) {
+  if (domains.length === 0) {
     debug(`scrape:done server=${serverId} — no domains (${formatDuration(startedAt)})`);
     return;
   }
 
   const now = Math.floor(Date.now() / 60_000); // current epoch minute
 
-  for (const domainInfo of totalsResult.domains) {
+  for (const domainInfo of domains) {
     const domain = domainInfo.domain;
 
     // 3. Determine time range for incremental scrape
@@ -76,9 +77,10 @@ async function scrapeServer(serverId: string): Promise<void> {
       response_time: number;
       countries?: Record<string, number>;
     }>; flushed?: number } | null;
+    const buckets = Array.isArray(bucketsResult?.buckets) ? bucketsResult.buckets : [];
 
-    if (bucketsResult?.buckets?.length) {
-      const rows = bucketsResult.buckets.map((b) => ({
+    if (buckets.length > 0) {
+      const rows = buckets.map((b) => ({
         serverId,
         domain,
         minute: b.minute,
@@ -111,7 +113,7 @@ async function scrapeServer(serverId: string): Promise<void> {
     }
   }
 
-  debug(`scrape:done server=${serverId} domains=${totalsResult.domains.length} (${formatDuration(startedAt)})`);
+  debug(`scrape:done server=${serverId} domains=${domains.length} (${formatDuration(startedAt)})`);
 }
 
 // ── Main scrape loop ─────────────────────────────────────────────────────────

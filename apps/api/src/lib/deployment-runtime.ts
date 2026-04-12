@@ -11,7 +11,7 @@ import type { DeployTarget, RuntimeMode } from "@repo/core";
 import { env } from "../config";
 import { getCloudToken } from "./cloud-client";
 import { platform } from "./controller-helpers";
-import { buildSshConfig } from "./ssh-manager";
+import { buildSshConfig, sshManager } from "./ssh-manager";
 
 interface DeploymentMeta {
   deployTarget?: DeployTarget;
@@ -24,11 +24,6 @@ export interface ResolvedDeploymentPlatform {
   effectiveTarget: DeployTarget;
   runtimeMode: RuntimeMode;
   usesManagedRouting: boolean;
-}
-
-interface SelfHostedTargetConnection {
-  ssh?: SshConfig;
-  docker?: DockerConnectionOptions;
 }
 
 function localDockerTransport(): DockerConnectionOptions {
@@ -114,54 +109,44 @@ export async function resolveDeploymentPlatform(
  *
  * Each cell also gets the matching routing (OpenResty) and system manager.
  * Cloud deployments go through the separate cloud-token flow.
+ *
+ * For server targets, the executor is acquired from `sshManager` (pooled,
+ * idle-TTL, auto-retry) instead of creating a fresh SSH connection.
  */
 export async function resolveTargetPlatform(
   target: "local" | "server",
   runtimeMode: RuntimeMode = "bare",
   serverId?: string,
 ): Promise<Platform> {
-  const connection = await resolveSelfHostedTargetConnection(target, runtimeMode, serverId);
+  // For SSH server targets, use the managed connection pool
+  if (target === "server" && serverId) {
+    const executor = await sshManager.acquire(serverId);
 
+    // Still need SSH config for Docker SSH transport (dockerode uses its own connection)
+    const server = await repos.server.get(serverId);
+    const ssh = server?.sshHost ? await buildSshConfig(server) : null;
+
+    return createPlatform({
+      target: "selfhosted",
+      runtime: runtimeMode,
+      executor, // ← managed executor from pool
+      ssh: ssh ?? undefined,
+      docker: runtimeMode === "docker" && ssh
+        ? toDockerSshTransport(ssh)
+        : runtimeMode === "docker"
+          ? localDockerTransport()
+          : undefined,
+    });
+  }
+
+  // Local target — no SSH, no pooling needed
   return createPlatform({
     target: "selfhosted",
     runtime: runtimeMode,
-    ssh: connection.ssh,
-    docker: connection.docker,
-  });
-}
-
-/** Resolve the connection bundle for a self-hosted target once. */
-async function resolveSelfHostedTargetConnection(
-  target: "local" | "server",
-  runtimeMode: RuntimeMode,
-  serverId?: string,
-): Promise<SelfHostedTargetConnection> {
-  if (target === "local") {
-    return {
-      docker: runtimeMode === "docker"
-        ? localDockerTransport()
-        : undefined,
-    };
-  }
-
-  const server = serverId
-    ? await repos.server.get(serverId)
-    : null;
-  if (!server?.sshHost) {
-    throw new Error("No server configured. Add your SSH server in Settings.");
-  }
-
-  const ssh = await buildSshConfig(server);
-  if (!ssh) {
-    throw new Error("Invalid SSH configuration. Check host, auth method, and credentials.");
-  }
-
-  return {
-    ssh,
     docker: runtimeMode === "docker"
-      ? toDockerSshTransport(ssh)
+      ? localDockerTransport()
       : undefined,
-  };
+  });
 }
 
 /** Map the shared SSH config → dockerode SSH transport options. */

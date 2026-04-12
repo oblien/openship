@@ -481,9 +481,10 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             if (streamIntervalRef.current) {
                 clearInterval(streamIntervalRef.current);
             }
-            // Clean disconnection handled by the hook
+            logStream.disconnect();
+            setTerminalStreaming(false);
         };
-    }, []);
+    }, [logStream, setTerminalStreaming]);
 
     // Listen for clear logs event
     useEffect(() => {

@@ -191,7 +191,7 @@ export async function syncEdgeProxy(c: Context) {
     const client = getOblienClient();
     const { proxies } = await client.edgeProxy.list();
     const existing = proxies.find(
-      (p) => p.domain.toLowerCase() === baseDomain || p.slug === slug,
+      (p) => p.slug === slug,
     );
 
     if (!existing) {

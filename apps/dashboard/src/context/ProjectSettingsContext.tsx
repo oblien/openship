@@ -304,7 +304,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     startCommand: 'npm start',
     productionPort: '3000',
     hasServer: true,
-    isLoading: false,
+    isLoading: true,
     error: null,
   });
 
@@ -350,7 +350,17 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       
       if (response.success) {
         setProjectData(response.data.project);
-        setBuildData(response.data.project.options);
+        setBuildData({
+          buildCommand: response.data.project.options?.buildCommand || '',
+          outputDirectory: response.data.project.options?.outputDirectory || '.',
+          productionPaths: response.data.project.options?.productionPaths || '',
+          installCommand: response.data.project.options?.installCommand || 'bun install',
+          startCommand: response.data.project.options?.startCommand || 'npm start',
+          productionPort: response.data.project.options?.productionPort || '3000',
+          hasServer: response.data.project.options?.hasServer ?? true,
+          isLoading: false,
+          error: null,
+        });
         setDomainsData({
           domains: response.data.project.domains || [],
           isLoading: false,
@@ -594,10 +604,12 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   };
 
   // Terminal Logs Management
+  const MAX_TERMINAL_LOGS = 1000;
+
   const addTerminalLog = useCallback((log: string) => {
     setTerminalLogsData(prev => ({
       ...prev,
-      logs: [...prev.logs, log],
+      logs: [...prev.logs, log].slice(-MAX_TERMINAL_LOGS),
     }));
   }, []);
 
@@ -760,7 +772,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
 
     return [
       { id: "overview", label: "Overview", icon: "setting-100-1658432731.png" },
-      { id: "monitoring", label: "Monitoring", icon: "heart%20rate-118-1658433496.png" },
+      { id: "services", label: "Services", icon: "layers.png" },
       { id: "domains", label: "Domains", icon: "server-59-1658435258.png" },
       { id: "deployments", label: "Deployments", icon: "heart%20rate-118-1658433496.png" },
       { id: "source", label: "Source", icon: "git%20branch-159-1658431404.png" },

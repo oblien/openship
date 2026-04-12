@@ -15,6 +15,9 @@ import {
   Loader2,
   ChevronRight,
   ArrowLeft,
+  Plus,
+  Database,
+  Zap,
 } from "lucide-react";
 import { ServiceDetailPanel } from "./services/ServiceDetailPanel";
 
@@ -128,14 +131,35 @@ export const ServicesTab = () => {
         <div className="w-12 h-12 rounded-xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
           <Layers className="size-6 text-muted-foreground/50" />
         </div>
-        <p className="text-sm font-semibold text-foreground/80 mb-1">No services found</p>
+        <p className="text-sm font-semibold text-foreground/80 mb-1">No services connected</p>
         <p className="text-xs text-muted-foreground/60 max-w-[300px] mx-auto mb-5 leading-relaxed">
-          Services are defined in your docker-compose file. Redeploy the project to sync services automatically.
+          Add databases, caches, or other services to extend your app.
         </p>
-        <button onClick={handleSync} disabled={syncing} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50">
-          {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-          Sync from Compose
-        </button>
+        <div className="flex flex-wrap justify-center gap-2 mb-5">
+          {[
+            { label: "PostgreSQL", icon: Database },
+            { label: "Redis", icon: Zap },
+            { label: "MySQL", icon: Database },
+          ].map((svc) => (
+            <span
+              key={svc.label}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-muted/40 text-[12px] text-muted-foreground"
+            >
+              <svc.icon className="size-3" />
+              {svc.label}
+            </span>
+          ))}
+        </div>
+        <div className="flex items-center justify-center gap-3">
+          <button onClick={handleSync} disabled={syncing} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors disabled:opacity-50">
+            {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+            Sync from Compose
+          </button>
+          <button className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[13px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+            <Plus className="size-3.5" />
+            Add Service
+          </button>
+        </div>
       </div>
     );
   }
@@ -205,10 +229,16 @@ export const ServicesTab = () => {
               </p>
             </div>
           </div>
-          <button onClick={handleSync} disabled={syncing} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors disabled:opacity-50">
-            {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-            Sync
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleSync} disabled={syncing} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors disabled:opacity-50">
+              {syncing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              Sync
+            </button>
+            <button className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[13px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+              <Plus className="size-3.5" />
+              Add Service
+            </button>
+          </div>
         </div>
       </div>
 

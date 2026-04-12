@@ -75,6 +75,19 @@ export async function resolveProjectTracking(
 
 const MGMT_BASE = `http://127.0.0.1:${OPENRESTY_MGMT_PORT}`;
 
+async function execMgmtRequest(
+  serverId: string,
+  command: string,
+): Promise<string | null> {
+  try {
+    return await sshManager.withExecutor(serverId, (executor) =>
+      executor.exec(command, { timeout: 10_000 }),
+    );
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Execute a curl request to an OpenResty management API endpoint via SSH.
  * Returns parsed JSON or null on any error (unreachable, timeout, bad JSON).
@@ -83,14 +96,25 @@ export async function fetchMgmt<T>(
   serverId: string,
   path: string,
 ): Promise<T | null> {
+  const raw = await execMgmtRequest(serverId, `curl -sf '${MGMT_BASE}${path}'`);
+  if (!raw) {
+    return null;
+  }
+
   try {
-    const raw = await sshManager.withExecutor(serverId, (executor) =>
-      executor.exec(`curl -sf '${MGMT_BASE}${path}'`, { timeout: 10_000 }),
-    );
     return JSON.parse(raw) as T;
   } catch {
     return null;
   }
+}
+
+/**
+ * Lightweight health probe for the OpenResty management port.
+ * `/health` returns plain text, so it must not go through JSON parsing.
+ */
+export async function probeMgmt(serverId: string): Promise<boolean> {
+  const raw = await execMgmtRequest(serverId, `curl -sf '${MGMT_BASE}/health'`);
+  return raw?.trim() === "ok";
 }
 
 /**
@@ -101,10 +125,12 @@ export async function postMgmt<T>(
   serverId: string,
   path: string,
 ): Promise<T | null> {
+  const raw = await execMgmtRequest(serverId, `curl -sf -X POST '${MGMT_BASE}${path}'`);
+  if (!raw) {
+    return null;
+  }
+
   try {
-    const raw = await sshManager.withExecutor(serverId, (executor) =>
-      executor.exec(`curl -sf -X POST '${MGMT_BASE}${path}'`, { timeout: 10_000 }),
-    );
     return JSON.parse(raw) as T;
   } catch {
     return null;

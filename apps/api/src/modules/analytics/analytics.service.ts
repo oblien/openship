@@ -30,6 +30,10 @@ interface MgmtAnalyticsBucket {
   response_time: number;
 }
 
+function getBucketArray(value: unknown): MgmtAnalyticsBucket[] {
+  return Array.isArray(value) ? value as MgmtAnalyticsBucket[] : [];
+}
+
 async function fetchLiveBuckets(
   serverId: string,
   domain: string,
@@ -40,7 +44,7 @@ async function fetchLiveBuckets(
     serverId,
     `/analytics?domain=${encodeURIComponent(domain)}&from=${fromMinute}&to=${toMinute}`,
   );
-  return result?.buckets ?? [];
+  return getBucketArray(result?.buckets);
 }
 
 /** Convert a DB row to the unified bucket shape. */
@@ -70,6 +74,67 @@ function summariseBuckets(buckets: MgmtAnalyticsBucket[], lastUpdated: string): 
     avgResponseTimeMs: Math.round(avgRt * 1000),
     lastUpdated,
   };
+}
+
+function buildHourlyPeriods(
+  buckets: MgmtAnalyticsBucket[],
+  fromMinute: number,
+  toMinute: number,
+): AnalyticsPeriod[] {
+  const hourly = new Map<number, {
+    requests: number;
+    uniqueVisitors: number;
+    bandwidthIn: number;
+    bandwidthOut: number;
+    responseTimeTotal: number;
+    bucketCount: number;
+  }>();
+
+  for (const bucket of buckets) {
+    const hourKey = Math.floor(bucket.minute / 60);
+    const current = hourly.get(hourKey) ?? {
+      requests: 0,
+      uniqueVisitors: 0,
+      bandwidthIn: 0,
+      bandwidthOut: 0,
+      responseTimeTotal: 0,
+      bucketCount: 0,
+    };
+
+    current.requests += bucket.requests;
+    current.uniqueVisitors += bucket.unique_requests;
+    current.bandwidthIn += bucket.bandwidth_in;
+    current.bandwidthOut += bucket.bandwidth_out;
+    current.responseTimeTotal += bucket.response_time;
+    current.bucketCount += 1;
+    hourly.set(hourKey, current);
+  }
+
+  const periods: AnalyticsPeriod[] = [];
+  const startHour = Math.floor(fromMinute / 60);
+  const endHour = Math.floor(toMinute / 60);
+
+  for (let hourKey = startHour; hourKey <= endHour; hourKey += 1) {
+    const hourStart = new Date(hourKey * 60 * 60_000);
+    const hourEnd = new Date((hourKey + 1) * 60 * 60_000);
+    const current = hourly.get(hourKey);
+
+    periods.push({
+      from: hourStart.toISOString(),
+      to: hourEnd.toISOString(),
+      requests: current?.requests ?? 0,
+      uniqueVisitors: current?.uniqueVisitors ?? 0,
+      bandwidthIn: current?.bandwidthIn ?? 0,
+      bandwidthOut: current?.bandwidthOut ?? 0,
+      avgResponseTimeMs: current && current.bucketCount > 0
+        ? Math.round((current.responseTimeTotal / current.bucketCount) * 1000)
+        : 0,
+      topPaths: [],
+      trafficByHour: {},
+    });
+  }
+
+  return periods;
 }
 
 const EMPTY_SUMMARY: AnalyticsSummary = {
@@ -225,35 +290,7 @@ export async function getAnalyticsPeriods(
 
   if (allBuckets.length === 0) return [];
 
-  // Group into hourly periods
-  const hourMap = new Map<number, MgmtAnalyticsBucket[]>();
-  for (const bucket of allBuckets) {
-    const hourKey = Math.floor(bucket.minute / 60);
-    const arr = hourMap.get(hourKey) ?? [];
-    arr.push(bucket);
-    hourMap.set(hourKey, arr);
-  }
-
-  const periods: AnalyticsPeriod[] = [];
-  for (const [hourKey, hourBuckets] of hourMap) {
-    const hourStart = new Date(hourKey * 60 * 60_000);
-    const hourEnd = new Date((hourKey + 1) * 60 * 60_000);
-    periods.push({
-      from: hourStart.toISOString(),
-      to: hourEnd.toISOString(),
-      requests: hourBuckets.reduce((s, b) => s + b.requests, 0),
-      uniqueVisitors: hourBuckets.reduce((s, b) => s + b.unique_requests, 0),
-      bandwidthIn: hourBuckets.reduce((s, b) => s + b.bandwidth_in, 0),
-      bandwidthOut: hourBuckets.reduce((s, b) => s + b.bandwidth_out, 0),
-      avgResponseTimeMs: Math.round(
-        (hourBuckets.reduce((s, b) => s + b.response_time, 0) / hourBuckets.length) * 1000,
-      ),
-      topPaths: [],
-      trafficByHour: {},
-    });
-  }
-
-  return periods.sort((a, b) => a.from.localeCompare(b.from));
+  return buildHourlyPeriods(allBuckets, fromMinute, toMinute);
 }
 
 // ─── Deployment stats ────────────────────────────────────────────────────────

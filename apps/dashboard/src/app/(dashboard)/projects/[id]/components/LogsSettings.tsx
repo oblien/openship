@@ -15,7 +15,15 @@ type LogsTab = 'terminal' | 'server';
 export const LogsSettings = () => {
   const { projectData, buildData, id, terminalLogsData, serverLogsData, clearTerminalLogs, clearServerLogs } = useProjectSettings();
   const isServicesProject = getProjectType(projectData?.framework as any) === 'services';
-  const canShowTerminal = isServicesProject || buildData.hasServer;
+  const hasResolvedServerMode = isServicesProject
+    || typeof projectData?.options?.hasServer === 'boolean'
+    || typeof projectData?.hasServer === 'boolean'
+    || buildData.isLoading === false;
+  const effectiveHasServer = isServicesProject
+    || projectData?.options?.hasServer === true
+    || projectData?.hasServer === true
+    || (buildData.isLoading === false && buildData.hasServer === true);
+  const canShowTerminal = effectiveHasServer;
   const [activeTab, setActiveTab] = useState<LogsTab>(canShowTerminal ? 'terminal' : 'server');
   const [copied, setCopied] = useState(false);
   const [currentLogs, setCurrentLogs] = useState<string[]>([]);
@@ -24,10 +32,11 @@ export const LogsSettings = () => {
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!hasResolvedServerMode) return;
     if (!canShowTerminal && activeTab === 'terminal') {
       setActiveTab('server');
     }
-  }, [canShowTerminal, activeTab]);
+  }, [hasResolvedServerMode, canShowTerminal, activeTab]);
 
   useEffect(() => {
     if (!isServicesProject || !id) {

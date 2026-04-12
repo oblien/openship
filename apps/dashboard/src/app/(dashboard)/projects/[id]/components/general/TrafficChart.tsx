@@ -24,13 +24,16 @@ export const TrafficChart: React.FC<Props> = ({
 }) => {
   const [chartType, setChartType] = useState<'bar' | 'area'>('area');
   const hasAnalytics = typeof totalRequests === "number";
-  const maxRequests = Math.max(...trafficData.map(d => d.requests), 1);
-  if(trafficData.length === 0) {
-    trafficData = Array.from({ length: 24 }, (_, i) => ({
+  const displayData = trafficData.length > 0
+    ? trafficData
+    : Array.from({ length: 24 }, (_, i) => ({
       hour: i,
       requests: 0,
     }));
-  }
+  const maxRequests = Math.max(...displayData.map((d) => d.requests), 1);
+  const areaData = displayData.length === 1
+    ? [displayData[0], displayData[0]]
+    : displayData;
 
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-4 sm:p-6 h-[320px] sm:h-[380px] flex flex-col">
@@ -85,23 +88,28 @@ export const TrafficChart: React.FC<Props> = ({
       ) : (
         <div className="flex-1 flex flex-col">
           <div className="relative flex-1">
-            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1000 200" preserveAspectRatio="none">
+            <svg
+              className="absolute inset-0 w-full h-full text-primary"
+              viewBox="0 0 1000 200"
+              preserveAspectRatio="none"
+              style={{ color: "hsl(var(--primary))" }}
+            >
               <defs>
                 <linearGradient id="trafficGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset={`${chartType == 'bar' ? 100 : 20}%`} stopColor="hsl(var(--primary))" stopOpacity="0.4" />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.05" />
+                  <stop offset={`${chartType == 'bar' ? 100 : 20}%`} stopColor="currentColor" stopOpacity="0.4" />
+                  <stop offset="100%" stopColor="currentColor" stopOpacity="0.05" />
                 </linearGradient>
               </defs>
 
               {chartType === 'bar' && (
                 /* Bar Chart */
                 <>
-                  {trafficData.map((d, i) => {
+                  {displayData.map((d, i) => {
                     const containerWidth = 1000;
                     const containerHeight = 200;
-                    const barWidth = containerWidth / trafficData.length * 0.7;
-                    const gap = containerWidth / trafficData.length * 0.15;
-                    const x = (i / trafficData.length) * containerWidth + gap;
+                    const barWidth = containerWidth / displayData.length * 0.7;
+                    const gap = containerWidth / displayData.length * 0.15;
+                    const x = (i / displayData.length) * containerWidth + gap;
                     const height = (d.requests / maxRequests) * 180;
                     const y = containerHeight - height;
 
@@ -126,8 +134,8 @@ export const TrafficChart: React.FC<Props> = ({
                 <>
                   {/* Area Fill */}
                   <path
-                    d={`M 0 200 ${trafficData.map((d, i) => {
-                      const x = (i / (trafficData.length - 1)) * 1000;
+                    d={`M 0 200 ${areaData.map((d, i) => {
+                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
                       const y = 200 - (d.requests / maxRequests) * 180;
                       return `L ${x} ${y}`;
                     }).join(' ')} L 1000 200 Z`}
@@ -135,13 +143,13 @@ export const TrafficChart: React.FC<Props> = ({
                   />
                   {/* Top Border Line */}
                   <path
-                    d={trafficData.map((d, i) => {
-                      const x = (i / (trafficData.length - 1)) * 1000;
+                    d={areaData.map((d, i) => {
+                      const x = areaData.length === 1 ? 500 : (i / (areaData.length - 1)) * 1000;
                       const y = 200 - (d.requests / maxRequests) * 180;
                       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
                     }).join(' ')}
                     fill="none"
-                    stroke="hsl(var(--primary))"
+                    stroke="currentColor"
                     strokeWidth="2"
                   />
                 </>
@@ -151,7 +159,7 @@ export const TrafficChart: React.FC<Props> = ({
 
           {/* Hour Labels */}
           <div className="flex items-center justify-between mt-2 text-[9px] sm:text-[10px] text-muted-foreground">
-            {trafficData.filter((_, i) => i % 4 === 0).map((d, i) => (
+            {displayData.filter((_, i) => i % 4 === 0).map((d, i) => (
               <span key={i}>{d.hour}:00</span>
             ))}
           </div>
