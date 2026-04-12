@@ -42,11 +42,16 @@ export interface ComponentStatus {
   label: string;
   description: string;
   installable: boolean;
+  removable?: boolean;
+  removeSupported?: boolean;
+  removeBlockedReason?: string;
   installed: boolean;
   version?: string;
   running?: boolean;
   healthy: boolean;
   message: string;
+  /** Infrastructure components — shown only when detected on the server */
+  optional?: boolean;
 }
 
 export interface ServerCheckResult {
@@ -66,7 +71,7 @@ export interface InstallResultResponse {
 export interface SetupComponentProgress {
   name: string;
   label: string;
-  status: "pending" | "installing" | "installed" | "failed";
+  status: "pending" | "installing" | "installed" | "removing" | "removed" | "failed";
   error?: string;
 }
 
@@ -171,6 +176,14 @@ export const systemApi = {
       component,
       ...(config ? { config } : {}),
     }),
+
+  /** Remove a supported component from a specific server */
+  removeComponent: (serverId: string, component: string, config?: Record<string, unknown>) =>
+    api.post<InstallResultResponse>(endpoints.system.remove, {
+      serverId,
+      component,
+      ...(config ? { config } : {}),
+    }, { timeout: 120_000 }),
 
   /** Get the current install session status (or check if one is running) */
   getInstallSession: (sessionId?: string) =>

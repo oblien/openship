@@ -41,7 +41,7 @@ export {
   checkCertbot,
   checkDocker,
   checkGit,
-  checkNginx,
+  checkOpenResty,
   checkRsync,
   COMPONENT_CHECKS,
 } from "./checks";
@@ -49,11 +49,16 @@ export {
 // ─── Installers ───────────────────────────────────────────────────────────────
 export {
   COMPONENT_INSTALLERS,
+  COMPONENT_UNINSTALLERS,
+  getRemovalSupport,
   installCertbot,
   installDocker,
   installGit,
-  installNginx,
+  installOpenResty,
   installRsync,
+  uninstallCertbot,
+  uninstallOpenResty,
+  uninstallRsync,
 } from "./installer";
 
 // ─── Manager ─────────────────────────────────────────────────────────────────

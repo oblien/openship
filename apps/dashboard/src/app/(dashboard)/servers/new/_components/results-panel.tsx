@@ -27,6 +27,9 @@ export function ResultsPanel({
   onRecheck: () => void;
   onDone: () => void;
 }) {
+  const requiredComps = components.filter((c) => !c.status?.optional);
+  const infraComps = components.filter((c) => c.status?.optional);
+
   return (
     <div className="space-y-4">
       <div className="bg-card rounded-2xl border border-border/50">
@@ -39,15 +42,29 @@ export function ResultsPanel({
             <p className="text-xs text-muted-foreground">
               {overallReady
                 ? "All requirements met"
-                : `${components.filter((c) => !c.status?.healthy).length} component(s) need attention`}
+                : `${requiredComps.filter((c) => !c.status?.healthy).length} component(s) need attention`}
             </p>
           </div>
         </div>
 
         <div className="p-5 space-y-1">
-          {components.map((comp) => (
+          {requiredComps.map((comp) => (
             <ComponentRow key={comp.name} component={comp} />
           ))}
+          {infraComps.length > 0 && (
+            <>
+              <div className="flex items-center gap-2 pt-3 pb-1">
+                <div className="h-px flex-1 bg-border/50" />
+                <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+                  Detected Infrastructure
+                </span>
+                <div className="h-px flex-1 bg-border/50" />
+              </div>
+              {infraComps.map((comp) => (
+                <ComponentRow key={comp.name} component={comp} />
+              ))}
+            </>
+          )}
         </div>
       </div>
 

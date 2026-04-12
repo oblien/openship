@@ -18,17 +18,18 @@ import {
   User,
   KeyRound,
 } from "lucide-react";
-import { getApiErrorMessage, systemApi } from "@/lib/api";
+import { getApiErrorMessage, isAbortError, systemApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
 import { useSetupStream } from "@/hooks/useSetupStream";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
-import type { ServerInfo, ComponentStatus, SetupLogEvent } from "@/lib/api/system";
+import type { ServerInfo, ComponentStatus, SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
 import { OverviewTab } from "./_components/overview-tab";
 import { ComponentsTab } from "./_components/components-tab";
 import { TerminalTab } from "./_components/terminal-tab";
 
 type Tab = "overview" | "components" | "terminal";
+type ManualActionMode = "remove" | null;
 
 const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
@@ -53,6 +54,12 @@ export default function ServerDetailPage({
   const [installLogs, setInstallLogs] = useState<SetupLogEvent[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [showMenu, setShowMenu] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
+  const [activeActionComponent, setActiveActionComponent] = useState<string | null>(null);
+  const [manualActionComponents, setManualActionComponents] = useState<SetupComponentProgress[]>([]);
+  const [manualActionMode, setManualActionMode] = useState<ManualActionMode>(null);
+  const [manualActionDone, setManualActionDone] = useState(false);
+  const [manualActionFinalStatus, setManualActionFinalStatus] = useState<"completed" | "failed" | null>(null);
 
   const setupStream = useSetupStream({
     onComplete: (event) => {
@@ -62,10 +69,11 @@ export default function ServerDetailPage({
           if (!serverId) return;
           const result = await systemApi.checkServer(serverId);
           setComponents(result.components);
+          setActiveActionComponent(null);
           if (event.status === "completed") {
-            showToast("Missing components installed", "success", "Server Setup");
+            showToast("Component action completed", "success", "Server Setup");
           } else {
-            showToast("Some components failed to install", "error", "Server Setup");
+            showToast("Some component actions failed", "error", "Server Setup");
           }
         } catch (err) {
           const message = getApiErrorMessage(err, "Health check failed after install");
@@ -126,6 +134,11 @@ export default function ServerDetailPage({
       return;
     }
 
+    setActiveActionComponent(null);
+    setManualActionComponents([]);
+    setManualActionMode(null);
+    setManualActionDone(false);
+    setManualActionFinalStatus(null);
     setCheckError(null);
     setInstallLogs([]);
     setActiveTab("components");
@@ -141,7 +154,143 @@ export default function ServerDetailPage({
       setCheckError(message);
       showToast(message, "error", "Server Setup");
     }
-  }, [components, showToast, setupStream]);
+  }, [components, serverId, showToast, setupStream]);
+
+  const runComponentAction = useCallback(async (component: ComponentStatus) => {
+    if (!serverId) {
+      showToast("Server is missing", "error", "Server Setup");
+      return;
+    }
+
+    setActiveActionComponent(component.name);
+    setManualActionComponents([]);
+    setManualActionMode(null);
+    setManualActionDone(false);
+    setManualActionFinalStatus(null);
+    setCheckError(null);
+    setInstallLogs([]);
+    setActiveTab("components");
+
+    try {
+      await setupStream.startInstall(serverId, [component.name]);
+    } catch (err) {
+      const message = getApiErrorMessage(err, `Failed to run ${component.label}`);
+      setCheckError(message);
+      showToast(message, "error", "Server Setup");
+    }
+  }, [serverId, setupStream, showToast]);
+
+  const removeComponentAction = useCallback((component: ComponentStatus) => {
+    const modalId = showModal({
+      title: `Remove ${component.label}`,
+      message:
+        component.name === "openresty"
+          ? "This removes OpenResty and its managed Lua/config files from the server. Use Reinstall when you only need to refresh analytics scripts or settings."
+          : `This removes ${component.label} from the server. This is destructive and may disable related deployment features until you install it again.`,
+      icon: "warning",
+      width: "100%",
+      maxWidth: "32rem",
+      buttons: [
+        {
+          label: "Cancel",
+          variant: "secondary",
+          onClick: () => hideModal(modalId),
+        },
+        {
+          label: "Remove",
+          variant: "danger",
+          onClick: async () => {
+            hideModal(modalId);
+            if (!serverId) {
+              showToast("Server is missing", "error", "Server Setup");
+              return;
+            }
+
+            try {
+              setActiveActionComponent(component.name);
+              setIsRemoving(true);
+              setManualActionMode("remove");
+              setManualActionDone(false);
+              setManualActionFinalStatus(null);
+              setManualActionComponents([
+                {
+                  name: component.name,
+                  label: component.label,
+                  status: "removing",
+                },
+              ]);
+              setCheckError(null);
+              setInstallLogs([]);
+              setActiveTab("components");
+              const result = await systemApi.removeComponent(serverId, component.name);
+              if (!result.success) {
+                setInstallLogs((result.logs ?? []).map((message) => ({
+                  type: "log",
+                  timestamp: new Date().toISOString(),
+                  component: component.name,
+                  message,
+                  level: "error" as const,
+                })));
+                setManualActionComponents([
+                  {
+                    name: component.name,
+                    label: component.label,
+                    status: "failed",
+                    error: result.error || `Failed to remove ${component.label}`,
+                  },
+                ]);
+                setManualActionDone(true);
+                setManualActionFinalStatus("failed");
+                throw new Error(result.error || `Failed to remove ${component.label}`);
+              }
+
+              setInstallLogs((result.logs ?? []).map((message) => ({
+                type: "log",
+                timestamp: new Date().toISOString(),
+                component: component.name,
+                message,
+                level: "info" as const,
+              })));
+              setManualActionComponents([
+                {
+                  name: component.name,
+                  label: component.label,
+                  status: "removed",
+                },
+              ]);
+              setManualActionDone(true);
+              setManualActionFinalStatus("completed");
+
+              const next = await systemApi.checkServer(serverId);
+              setComponents(next.components);
+              showToast(`${component.label} removed`, "success", "Server Setup");
+            } catch (err) {
+              if (isAbortError(err)) {
+                // Request timed out but removal may still be running server-side
+                setManualActionComponents([{
+                  name: component.name,
+                  label: component.label,
+                  status: "failed",
+                  error: `Removal is taking longer than expected. Check the server status.`,
+                }]);
+                setManualActionDone(true);
+                setManualActionFinalStatus("failed");
+                setCheckError("Removal timed out — re-check the server to see the current status.");
+                showToast("Removal timed out — re-check server status", "error", "Server Setup");
+              } else {
+                const message = getApiErrorMessage(err, `Failed to remove ${component.label}`);
+                setCheckError(message);
+                showToast(message, "error", "Server Setup");
+              }
+            } finally {
+              setActiveActionComponent(null);
+              setIsRemoving(false);
+            }
+          },
+        },
+      ],
+    });
+  }, [hideModal, serverId, showModal, showToast]);
 
   useEffect(() => {
     if (!serverId) return;
@@ -234,6 +383,19 @@ export default function ServerDetailPage({
 
   const allHealthy =
     components.length > 0 && components.every((c) => c.healthy);
+  const actionBusy = setupStream.isConnected || setupStream.isConnecting || isRemoving;
+  const visibleActionComponents = manualActionComponents.length > 0
+    ? manualActionComponents
+    : setupStream.components;
+  const visibleActionMode = manualActionComponents.length > 0
+    ? manualActionMode ?? "remove"
+    : "install";
+  const visibleActionDone = manualActionComponents.length > 0
+    ? manualActionDone
+    : setupStream.isDone;
+  const visibleActionFinalStatus = manualActionComponents.length > 0
+    ? manualActionFinalStatus
+    : setupStream.finalStatus;
 
   return (
     <div className="min-h-screen bg-background">
@@ -353,13 +515,21 @@ export default function ServerDetailPage({
                 checkError={checkError}
                 onRecheck={runHealthCheck}
                 onInstallMissing={installMissingComponents}
-                installing={setupStream.isConnected || setupStream.isConnecting}
-                installDone={setupStream.isDone}
-                installFinalStatus={setupStream.finalStatus}
-                installComponents={setupStream.components}
+                onRunComponentAction={runComponentAction}
+                onRemoveComponentAction={removeComponentAction}
+                busy={actionBusy}
+                activeActionComponent={activeActionComponent}
+                installDone={visibleActionDone}
+                installFinalStatus={visibleActionFinalStatus}
+                installComponents={visibleActionComponents}
+                actionMode={visibleActionMode}
                 installLogs={installLogs}
                 onDismissInstall={() => {
                   setInstallLogs([]);
+                  setManualActionComponents([]);
+                  setManualActionMode(null);
+                  setManualActionDone(false);
+                  setManualActionFinalStatus(null);
                 }}
               />
             )}

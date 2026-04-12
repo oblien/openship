@@ -120,42 +120,52 @@ export const LogsSettings = () => {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      {/* Tabs - Top */}
-      <div className="flex items-center gap-3">
-        {canShowTerminal && <button
-          onClick={() => setActiveTab('terminal')}
-          className={`relative flex items-center gap-2.5 px-5 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === 'terminal'
-            ? 'bg-card text-foreground shadow-md border border-border'
-            : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-card/50'
-            }`}
-        >
-          {activeTab === 'terminal' && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-r-full"></div>
+      {/* Tabs + Actions */}
+      <div className="flex items-center justify-between border-b border-border/50">
+        <div className="flex items-center gap-1">
+          {canShowTerminal && (
+            <button
+              onClick={() => setActiveTab('terminal')}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
+                activeTab === 'terminal'
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground/70'
+              }`}
+            >
+              <Terminal className="size-4" />
+              Terminal
+              {activeTab === 'terminal' && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+              )}
+            </button>
           )}
-          <div className={`w-2 h-2 rounded-full transition-colors ${activeTab === 'terminal' ? 'bg-primary' : 'bg-muted-foreground/30'
-            }`}></div>
-          <Terminal className="w-4 h-4" />
-          Terminal Logs
-        </button>}
-        <button
-          onClick={() => setActiveTab('server')}
-          className={`relative flex items-center gap-2.5 px-5 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === 'server'
-            ? 'bg-card text-foreground shadow-md border border-border'
-            : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-card/50'
+          <button
+            onClick={() => setActiveTab('server')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
+              activeTab === 'server'
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground/70'
             }`}
-        >
-          {activeTab === 'server' && (
-            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-emerald-500 rounded-r-full"></div>
-          )}
-          <div className={`w-2 h-2 rounded-full transition-colors ${activeTab === 'server' ? 'bg-emerald-500' : 'bg-muted-foreground/30'
-            }`}></div>
-          <Server className="w-4 h-4" />
-          Server Logs
-        </button>
+          >
+            <Server className="size-4" />
+            Server
+            {activeTab === 'server' && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+            )}
+          </button>
+        </div>
+
+        <LogsActions
+          onCopy={copyLogs}
+          onDownload={downloadLogs}
+          onClear={clearLogs}
+          copied={copied}
+          logsCount={currentLogs.length}
+        />
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-[500px]">
+      <div className="flex-1 min-h-[460px]">
         {activeTab === 'terminal' && canShowTerminal && (
           <div className="space-y-4">
             {isServicesProject && (
@@ -205,19 +215,6 @@ export const LogsSettings = () => {
             onLogsChange={handleLogsChange}
           />
         )}
-      </div>
-
-      {/* Actions Bar - Bottom */}
-      <div className="bg-muted/40 rounded-2xl px-6 py-4 border border-border/50 shadow-sm">
-        <div className="flex items-center justify-center">
-          <LogsActions
-            onCopy={copyLogs}
-            onDownload={downloadLogs}
-            onClear={clearLogs}
-            copied={copied}
-            logsCount={currentLogs.length}
-          />
-        </div>
       </div>
     </div>
   );

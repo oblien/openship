@@ -27,16 +27,16 @@ import { dirname, join } from "node:path";
 
 import type { CommandExecutor, RouteConfig, SslResult } from "../types";
 import type { RoutingProvider, SslProvider } from "./types";
-import { LUA_LOGGER_PATH } from "./openresty-lua";
+import { LUA_LOGGER_PATH, buildReloadCommand, detectOpenRestyPaths, type OpenRestyPaths } from "./openresty-lua";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export interface NginxProviderOptions {
   /**
-   * Directory where site server blocks are written.
-   * Default: /usr/local/openresty/nginx/conf/sites-enabled
+   * Detected OpenResty paths — from detectOpenRestyPaths().
+   * Every path (sitesDir, confPath, bin, pid) comes from here.
    */
-  sitesDir?: string;
+  paths: OpenRestyPaths;
   /**
    * ACME email for certbot certificate registration.
    */
@@ -54,7 +54,6 @@ export interface NginxProviderOptions {
   executor?: CommandExecutor;
 }
 
-const DEFAULT_SITES_DIR = "/usr/local/openresty/nginx/conf/sites-enabled";
 const DEFAULT_CERT_DIR = "/etc/letsencrypt/live";
 
 /** Only allow valid domain characters — prevents shell injection. */
@@ -71,16 +70,18 @@ const execFileAsync = promisify(cpExecFile);
 // ─── Implementation ──────────────────────────────────────────────────────────
 
 export class NginxProvider implements RoutingProvider, SslProvider {
-  private readonly sitesDir: string;
+  private sitesDir: string;
   private readonly acmeEmail: string | undefined;
   private readonly certDir: string;
   private readonly executor: CommandExecutor | null;
+  private reloadCommand: string;
 
-  constructor(opts?: NginxProviderOptions) {
-    this.sitesDir = opts?.sitesDir ?? DEFAULT_SITES_DIR;
-    this.acmeEmail = opts?.acmeEmail;
-    this.certDir = opts?.certDir ?? DEFAULT_CERT_DIR;
-    this.executor = opts?.executor ?? null;
+  constructor(opts: NginxProviderOptions) {
+    this.sitesDir = opts.paths.sitesDir;
+    this.acmeEmail = opts.acmeEmail;
+    this.certDir = opts.certDir ?? DEFAULT_CERT_DIR;
+    this.executor = opts.executor ?? null;
+    this.reloadCommand = buildReloadCommand(opts.paths);
   }
 
   // ── File operation helpers (dual-path: local or remote) ──────────────
@@ -148,8 +149,17 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     const slug = this.domainSlug(route.domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
     const locationBody = "staticRoot" in route
-      ? `root ${route.staticRoot};\n        index index.html;\n        try_files $uri $uri/ /index.html;`
-      : `proxy_pass ${route.targetUrl};\n        proxy_set_header Host $host;\n        proxy_set_header X-Real-IP $remote_addr;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_http_version 1.1;\n        proxy_set_header Upgrade $http_upgrade;\n        proxy_set_header Connection "upgrade";`;
+      ? `root ${route.staticRoot};
+        index index.html;
+        try_files $uri $uri/ /index.html;`
+      : `proxy_pass ${route.targetUrl};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";`;
 
     let serverBlock: string;
 
@@ -183,7 +193,7 @@ server {
     ssl_certificate_key ${keyPath};
 
     location / {
-      ${locationBody}
+        ${locationBody}
     }
 }
 `;
@@ -201,7 +211,7 @@ server {
     }
 
     location / {
-      ${locationBody}
+        ${locationBody}
     }
 }
 `;
@@ -299,12 +309,27 @@ server {
     return domain.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-");
   }
 
+  /**
+   * Re-detect OpenResty paths and reload.
+   *
+   * Paths can become stale after an OpenResty reinstall (the binary or
+   * config may move). Re-detecting on every reload keeps the provider
+   * in sync without requiring an API restart.
+   */
   private async reload(): Promise<void> {
-    // Test config first, then reload — two separate commands for safety.
-    // These must fail loudly; otherwise deploy can report success while the
-    // route never became active.
-    await this._exec("openresty", ["-t"]);
-    await this._exec("openresty", ["-s", "reload"]);
+    if (this.executor) {
+      try {
+        const freshPaths = await detectOpenRestyPaths(this.executor);
+        this.sitesDir = freshPaths.sitesDir;
+        this.reloadCommand = buildReloadCommand(freshPaths);
+      } catch {
+        // Detection failed — fall through with current cached paths
+      }
+      await this.executor.exec(this.reloadCommand);
+      return;
+    }
+
+    await execFileAsync("sh", ["-lc", this.reloadCommand]);
   }
 
   private async certsExist(domain: string): Promise<boolean> {

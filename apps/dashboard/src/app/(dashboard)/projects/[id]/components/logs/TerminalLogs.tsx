@@ -521,31 +521,10 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
       
         term.reset();
       
-        const logoLines = [
-          "  ____  ____  _      _____ ______ _   _ ",
-          " / __ \\|  _ \\| |    |_   _|  ____| \\ | |",
-          "| |  | | |_) | |      | | | |__  |  \\| |",
-          "| |  | |  _ <| |      | | |  __| | . ` |",
-          "| |__| | |_) | |____ _| |_| |____| |\\  |",
-          " \\____/|____/|______|_____|______|_| \\_|",
-          "",
-          " --------------------------------------------------------",
-          " Welcome to Oblien server logs terminal —  press start to see logs",
-          " --------------------------------------------------------",
-          ""
-        ];
-      
-        // Get terminal width to center each line
         const width = term.cols || 80;
-      
-        const centered = logoLines.map(line => {
-          const padding = Math.max(0, Math.floor((width - line.length) / 2));
-          return " ".repeat(padding) + line + "\r\n";
-        });
-
-        // Animated typewriter effect
-        await writeAnimated(term, centered.join(""), 2 + Math.random() * 6);
-        await new Promise(r => setTimeout(r, 300));
+        const line = ` Press Start to begin streaming logs`;
+        const padding = Math.max(0, Math.floor((width - line.length) / 2));
+        term.write('\r\n' + ' '.repeat(padding) + line + '\r\n');
         effectShows.current = true;
       }
 
@@ -562,7 +541,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     };
 
     return (
-        <div className="flex flex-col h-full min-h-[500px]">
+        <div className="flex flex-col h-full min-h-[460px]">
             {/* Terminal with Frame */}
             <div className="flex-1 flex flex-col min-h-0">
                 <div className={`${isDarkMode ? 'bg-[#0a0a0a] border-white/10' : 'bg-card border-border'} rounded-2xl overflow-hidden border flex-1 flex flex-col min-h-0`}>
@@ -698,9 +677,8 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     <div className={`relative flex-1 ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-card'} p-4 min-h-0`}>
                         <div ref={terminalRef} className="w-full h-full" />
                         {!terminalLogsData.isStreaming || showTerminalLoading && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <TerminalIcon className={`w-16 h-16 mb-4 ${isDarkMode ? 'text-white/10' : 'text-muted-foreground/30'}`} />
-                                <p className={`text-base ${isDarkMode ? 'text-white/40' : 'text-muted-foreground/70'}`}>Press start to see logs</p>
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <p className={`text-sm ${isDarkMode ? 'text-white/30' : 'text-muted-foreground/50'}`}>Press Start to begin streaming</p>
                             </div>
                         )}
                     </div>

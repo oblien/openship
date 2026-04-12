@@ -44,6 +44,24 @@ export const connectToLiveLogs = async ({
 };
 
 /**
+ * Connect to server HTTP request logs SSE stream (OpenResty live pipe via local API)
+ */
+export const connectToServerLogs = async ({
+  projectId = '',
+  options = {} as SSEClientOptions,
+}) => {
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}projects/${projectId}/server-logs/stream`;
+
+  return connectToSSE(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+    },
+  });
+};
+
+/**
  * Connect to build logs SSE stream (via local API)
  */
 export const connectToBuildLogs = async (
@@ -129,6 +147,12 @@ export const connectToSSE = async (
       ...options.headers,
     },
   });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    options.onError?.(new Error(errorText));
+    return { disconnect: () => {} };
+  }
 
   return processSSEStream(response, options);
 };

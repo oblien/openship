@@ -32,6 +32,10 @@ ngx.header["Cache-Control"]     = "no-cache, no-store"
 ngx.header["Connection"]        = "keep-alive"
 ngx.header["X-Accel-Buffering"] = "no"
 
+-- Send initial SSE comment so the first flush has data.
+-- Without this, ngx.flush on an empty buffer sends chunked-EOF (0\r\n\r\n)
+-- and terminates the response immediately.
+ngx.print(": connected\n\n")
 if not ngx.flush(true) then
     sh:delete(SUB_KEY)
     return
@@ -53,7 +57,7 @@ while true do
     while sent < 100 do
         local entry = sh:rpop(QUEUE_KEY)
         if not entry then break end
-        ngx.print("data: ", entry, "\n\n")
+        ngx.print("event: request\ndata: ", entry, "\n\n")
         sent = sent + 1
     end
 

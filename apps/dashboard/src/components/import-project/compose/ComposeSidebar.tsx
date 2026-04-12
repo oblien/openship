@@ -50,8 +50,11 @@ const ComposeSidebar: React.FC = () => {
   });
 
   // Sync elapsed time when buildStartedAt arrives from API (e.g. after refresh)
+  // Reset to 0 when buildStartedAt is cleared (redeploy)
   useEffect(() => {
-    if (state.buildStartedAt && !state.deploymentSuccess && !state.deploymentFailed && !state.deploymentCanceled) {
+    if (!state.buildStartedAt) {
+      setElapsed(0);
+    } else if (!state.deploymentSuccess && !state.deploymentFailed && !state.deploymentCanceled) {
       setElapsed(Math.max(0, Math.round((Date.now() - new Date(state.buildStartedAt).getTime()) / 1000)));
     }
   }, [state.buildStartedAt, state.deploymentSuccess, state.deploymentFailed, state.deploymentCanceled]);

@@ -1,6 +1,6 @@
 "use client";
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef, useMemo } from "react";
-import { projectsApi } from "@/lib/api";
+import { api, endpoints, projectsApi } from "@/lib/api";
 import { getProjectType } from "@repo/core";
 
 interface BasicProjectData {
@@ -49,6 +49,25 @@ interface AnalyticsData {
     requests: number;
   }>;
   limited: boolean;
+}
+
+interface AnalyticsSummaryResponse {
+  totalRequests: number;
+  uniqueVisitors: number;
+  bandwidthIn: number;
+  bandwidthOut: number;
+  avgResponseTimeMs: number;
+  lastUpdated: string | null;
+}
+
+interface AnalyticsPeriodResponse {
+  from: string;
+  to: string;
+  requests: number;
+  uniqueVisitors: number;
+  bandwidthIn: number;
+  bandwidthOut: number;
+  avgResponseTimeMs: number;
 }
 
 interface DomainsData {
@@ -108,7 +127,7 @@ interface ProjectSettingsContextType {
   analyticsData: AnalyticsData | null;
   isLoadingAnalytics: boolean;
   analyticsError: string | null;
-  refreshAnalytics: () => Promise<void>;
+  refreshAnalytics: (force?: boolean) => Promise<void>;
 
   // Domains
   domainsData: DomainsData;
@@ -141,6 +160,7 @@ interface ProjectSettingsContextType {
   // Server Logs
   serverLogsData: ServerLogsData;
   addServerLog: (log: any) => void;
+  mergeServerLogs: (logs: any[]) => void;
   setServerLogs: (logs: any[]) => void;
   clearServerLogs: () => void;
   setServerMockInterval: (interval: NodeJS.Timeout | null) => void;
@@ -159,6 +179,79 @@ interface ProjectSettingsContextType {
 }
 
 const ProjectSettingsContext = createContext<ProjectSettingsContextType | undefined>(undefined);
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const decimals = value >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[unitIndex]}`;
+}
+
+function mapAnalyticsData(
+  summary: AnalyticsSummaryResponse,
+  periods: AnalyticsPeriodResponse[],
+  domain: string,
+): AnalyticsData | null {
+  if (summary.totalRequests <= 0 && periods.length === 0) return null;
+
+  const firstPeriod = periods[0] ?? null;
+  const lastPeriod = periods[periods.length - 1] ?? null;
+  const firstRequest = firstPeriod?.from ?? summary.lastUpdated ?? new Date().toISOString();
+  const lastRequest = lastPeriod?.to ?? summary.lastUpdated ?? firstRequest;
+  const timeRangeHours = Math.max(
+    1,
+    Math.ceil((new Date(lastRequest).getTime() - new Date(firstRequest).getTime()) / 3_600_000),
+  );
+  const uniqueIPs = summary.uniqueVisitors;
+  const totalRequests = summary.totalRequests;
+
+  return {
+    success: true,
+    domain,
+    summary: {
+      totalRequests,
+      uniqueIPs,
+      uniqueRequests: totalRequests,
+      totalIPs: totalRequests,
+      uniqueIPsPercentage: totalRequests > 0
+        ? ((uniqueIPs / totalRequests) * 100).toFixed(1)
+        : "0.0",
+      firstRequest,
+      lastRequest,
+      timeRangeHours,
+      avgRequestsPerHour: Math.round(totalRequests / timeRangeHours),
+    },
+    performance: {
+      avgResponseTime: summary.avgResponseTimeMs / 1000,
+      avgResponseTimeMs: summary.avgResponseTimeMs,
+      totalResponseTime: summary.avgResponseTimeMs * totalRequests,
+      minResponseTime: `${summary.avgResponseTimeMs.toFixed(0)}ms`,
+      maxResponseTime: `${summary.avgResponseTimeMs.toFixed(0)}ms`,
+    },
+    bandwidth: {
+      totalIn: summary.bandwidthIn,
+      totalOut: summary.bandwidthOut,
+      totalInFormatted: formatBytes(summary.bandwidthIn),
+      totalOutFormatted: formatBytes(summary.bandwidthOut),
+      avgRequestSize: totalRequests > 0 ? summary.bandwidthIn / totalRequests : 0,
+      avgResponseSize: totalRequests > 0 ? summary.bandwidthOut / totalRequests : 0,
+    },
+    topPaths: [],
+    trafficByHour: periods.map((period) => ({
+      hour: new Date(period.from).getHours(),
+      requests: period.requests,
+    })),
+    limited: false,
+  };
+}
 
 interface ProviderProps {
   children: ReactNode;
@@ -235,11 +328,11 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   const lastFetchedIdRef = useRef<string>('');
 
   // Fetch analytics - memoized to prevent recreating on every render
-  const refreshAnalytics = useCallback(async () => {
+  const refreshAnalytics = useCallback(async (force = false) => {
     try {
       // Prevent duplicate fetches for the same project
       if (isLoadingAnalyticsRef.current) return;
-      if (hasFetchedRef.current && lastFetchedIdRef.current === id) {
+      if (!force && hasFetchedRef.current && lastFetchedIdRef.current === id) {
         console.log('[ProjectSettings] Already fetched for this project, skipping');
         return;
       }
@@ -256,7 +349,6 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       const response = await projectsApi.getInfo(id);
       
       if (response.success) {
-        setAnalyticsData(response.data.analytics);
         setProjectData(response.data.project);
         setBuildData(response.data.project.options);
         setDomainsData({
@@ -269,6 +361,29 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           || response.data.project.domains?.[0]?.domain
           || ''
         );
+
+        const nextDomain =
+          response.data.project.domains?.find((d: any) => d.primary)?.domain
+          || response.data.project.domains?.[0]?.domain
+          || '';
+
+        try {
+          const [summaryResponse, periodsResponse] = await Promise.all([
+            api.get<{ data: AnalyticsSummaryResponse }>(endpoints.analytics.summary, {
+              params: { projectId: id },
+            }),
+            api.get<{ data: AnalyticsPeriodResponse[] }>(endpoints.analytics.periods, {
+              params: { projectId: id },
+            }),
+          ]);
+
+          setAnalyticsData(
+            mapAnalyticsData(summaryResponse.data, periodsResponse.data ?? [], nextDomain)
+          );
+        } catch (analyticsError) {
+          console.error('Failed to fetch analytics:', analyticsError);
+          setAnalyticsData(null);
+        }
 
         // Mark as fetched for this id
         hasFetchedRef.current = true;
@@ -515,19 +630,64 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   }, []);
 
   // Server Logs Management
+  const MAX_SERVER_LOGS = 100;
+
+  const getServerLogKey = useCallback((log: any) => {
+    if (!log || typeof log !== "object") return String(log);
+    const parsedTimestamp = typeof log.timestamp === "string"
+      ? Date.parse(log.timestamp)
+      : Number.NaN;
+    const timestampKey = Number.isFinite(parsedTimestamp)
+      ? Math.floor(parsedTimestamp / 1000)
+      : String(log.timestamp ?? "");
+
+    return [
+      timestampKey,
+      log.ip,
+      log.method,
+      log.path,
+      log.statusCode,
+      log.responseTime,
+      log.requestSize,
+      log.responseSize,
+    ].join("|");
+  }, []);
+
+  const dedupeServerLogs = useCallback((logs: any[]) => {
+    const seen = new Set<string>();
+    const merged: any[] = [];
+
+    for (const log of logs) {
+      const key = getServerLogKey(log);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(log);
+      if (merged.length >= MAX_SERVER_LOGS) break;
+    }
+
+    return merged;
+  }, [getServerLogKey]);
+
   const addServerLog = useCallback((log: any) => {
     setServerLogsData(prev => ({
       ...prev,
-      logs: [log, ...prev.logs].slice(0, 50), // Keep last 50 logs
+      logs: dedupeServerLogs([log, ...prev.logs]),
     }));
-  }, []);
+  }, [dedupeServerLogs]);
+
+  const mergeServerLogs = useCallback((logs: any[]) => {
+    setServerLogsData(prev => ({
+      ...prev,
+      logs: dedupeServerLogs([...prev.logs, ...logs]),
+    }));
+  }, [dedupeServerLogs]);
 
   const setServerLogs = useCallback((logs: any[]) => {
     setServerLogsData(prev => ({
       ...prev,
-      logs,
+      logs: dedupeServerLogs(logs),
     }));
-  }, []);
+  }, [dedupeServerLogs]);
 
   const clearServerLogs = useCallback(() => {
     setServerLogsData(prev => ({
@@ -696,7 +856,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     setTerminalXtermInstance,
 
     serverLogsData,
+    getServerLogKey,
+    dedupeServerLogs,
     addServerLog,
+    mergeServerLogs,
     setServerLogs,
     clearServerLogs,
     setServerMockInterval,
@@ -734,7 +897,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     setTerminalSSEConnection,
     setTerminalXtermInstance,
     serverLogsData,
+    getServerLogKey,
+    dedupeServerLogs,
     addServerLog,
+    mergeServerLogs,
     setServerLogs,
     clearServerLogs,
     setServerMockInterval,

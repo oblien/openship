@@ -15,8 +15,14 @@ import type { TCreateProjectBody, TUpdateProjectBody, TSetEnvVarsBody, TUpdateRe
 import { detectStack, MANIFEST_FILES, type RepoFile } from "../../lib/stack-detector";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { repos } from "@repo/db";
+import { OPENRESTY_MGMT_PORT, deployLuaScripts, detectOpenRestyPaths } from "@repo/adapters";
 import * as domainService from "../domains/domain.service";
+import { sshManager } from "../../lib/ssh-manager";
 import { env } from "../../config";
+import { resolveProjectTracking } from "../../lib/project-analytics";
+
+// Track which servers have had Lua scripts deployed this session
+const luaDeployedServers = new Set<string>();
 
 // ─── Ensure project ──────────────────────────────────────────────────────────
 
@@ -48,13 +54,12 @@ export async function getHome(c: Context) {
     const projects = await Promise.all(
       result.rows.map(async (p) => {
         const latest = await repos.deployment.findLatestByProject(p.id);
-        const domains = await repos.domain.listByProject(p.id);
-        const primaryDomain = domains.find((d) => d.isPrimary)?.hostname ?? domains[0]?.hostname ?? null;
+        const primary = await repos.domain.getPrimaryByProject(p.id);
         return {
           ...p,
           latestDeploymentId: latest?.id ?? null,
           latestDeploymentStatus: latest?.status ?? null,
-          primaryDomain,
+          primaryDomain: primary?.hostname ?? null,
         };
       }),
     );
@@ -307,6 +312,122 @@ export async function runtimeLogStream(c: Context) {
   });
 }
 
+// ─── Server HTTP request logs (OpenResty live pipe) ──────────────────────────
+
+/**
+ * GET /projects/:id/server-logs/stream — SSE stream of HTTP request logs
+ * from the OpenResty pipe_stream on the managed server.
+ *
+ * Uses rawExec to run curl on the remote server, piping the raw SSE
+ * bytes directly to the browser.  No parsing, no transformation.
+ * Auto-deploys Lua scripts once per API session per server.
+ */
+export async function serverLogStream(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+
+  const project = await repos.project.findById(id);
+  if (!project || project.userId !== userId) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const tracking = await resolveProjectTracking(id);
+  if (!tracking) {
+    return c.json({ error: "No domain configured for this project" }, 400);
+  }
+  const { domain, serverId } = tracking;
+
+  return streamSSE(c, async (sseStream) => {
+    let executor: Awaited<ReturnType<typeof sshManager.acquire>>;
+    try {
+      executor = await sshManager.acquire(serverId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "SSH connection failed";
+      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: msg }) }).catch(() => {});
+      return;
+    }
+
+    if (!executor.rawExec) {
+      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Server does not support raw streaming" }) }).catch(() => {});
+      return;
+    }
+
+    // Deploy Lua scripts once per server per API session
+    if (!luaDeployedServers.has(serverId!)) {
+      try {
+        const paths = await detectOpenRestyPaths(executor);
+        await deployLuaScripts(executor, paths);
+        luaDeployedServers.add(serverId!);
+      } catch {
+        // Non-fatal — scripts may already be up to date
+      }
+    }
+
+    // Run curl on the remote server — curl handles HTTP, we get pure SSE bytes on stdout
+    const curlCmd = `curl -Nsf 'http://127.0.0.1:${OPENRESTY_MGMT_PORT}/logs/stream?domain=${encodeURIComponent(domain)}'`;
+    let proc: Awaited<ReturnType<typeof executor.rawExec>>;
+    try {
+      proc = await executor.rawExec(curlCmd);
+    } catch {
+      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Failed to connect to log service — ensure OpenResty is running" }) }).catch(() => {});
+      return;
+    }
+
+    sseStream.onAbort(() => { proc.kill(); });
+
+    // Pure byte pipe: curl stdout → browser.  No parsing, no transformation.
+    await new Promise<void>((resolve) => {
+      proc.stdout.on("data", (chunk: Buffer) => {
+        sseStream.write(chunk.toString()).catch(() => { proc.kill(); });
+      });
+
+      proc.stdout.on("close", resolve);
+      proc.stdout.on("error", resolve);
+
+      // If curl exits non-zero (service down), send an error event
+      proc.onClose.then((code) => {
+        if (code !== 0) {
+          sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Log streaming service unavailable — ensure OpenResty Lua scripts are deployed" }) }).catch(() => {});
+        }
+        resolve();
+      });
+    });
+  });
+}
+
+// ─── Recent server logs (ring buffer) ────────────────────────────────────────
+
+export async function recentServerLogs(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+
+  const project = await repos.project.findById(id);
+  if (!project || project.userId !== userId) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const tracking = await resolveProjectTracking(id);
+  if (!tracking) {
+    return c.json({ logs: [] });
+  }
+  const { domain, serverId } = tracking;
+
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "50", 10) || 50, 1), 200);
+
+  try {
+    const raw = await sshManager.withExecutor(serverId, (executor) =>
+      executor.exec(
+        `curl -sf 'http://127.0.0.1:${OPENRESTY_MGMT_PORT}/logs/recent?domain=${encodeURIComponent(domain)}&limit=${limit}'`,
+        { timeout: 10_000 },
+      ),
+    );
+    const entries = JSON.parse(raw);
+    return c.json({ logs: entries });
+  } catch {
+    return c.json({ logs: [] });
+  }
+}
+
 // ─── Git info ────────────────────────────────────────────────────────────────
 
 export async function getGitInfo(c: Context) {
@@ -450,7 +571,6 @@ export async function getInfo(c: Context) {
     success: true,
     data: {
       project: { ...project, options, domains },
-      analytics: null,
     },
   });
 }

@@ -602,6 +602,8 @@ export function useDeploymentBuild(
           currentStepIndex: 0,
           screenshots: [],
           serviceStatuses: [],
+          buildStartedAt: null,
+          buildDurationMs: null,
         }));
 
         const response = await deployApi.buildRedeploy(deploymentId);

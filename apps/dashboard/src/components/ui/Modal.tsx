@@ -36,7 +36,6 @@ export function Modal({
   zIndex = 10000,
   overflow = 'auto'
 }: ModalProps) {
-  console.log('Modal props:', { isOpen, onClose, children, width, maxWidth, maxHeight, height, showCloseButton, footer, zIndex });
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {

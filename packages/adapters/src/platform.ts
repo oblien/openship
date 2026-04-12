@@ -66,7 +66,7 @@ export interface PlatformConfig {
   /** Bare runtime options (only for bare runtime) */
   bare?: import("./runtime/bare").BareRuntimeOptions;
   /** Nginx provider options for self-hosted routing + SSL */
-  nginx?: Omit<import("./infra/nginx").NginxProviderOptions, "executor">;
+  nginx?: Omit<import("./infra/nginx").NginxProviderOptions, "executor" | "paths">;
   /** Oblien client ID (cloud target — master creds) */
   cloudClientId?: string;
   /** Oblien client secret (cloud target — master creds) */
@@ -155,11 +155,13 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
         clientSecret: config.cloudClientSecret ?? process.env.OBLIEN_CLIENT_SECRET ?? "",
       });
 
+  const infra = new CloudInfraProvider(client);
+
   return {
     target: "cloud",
     runtime: new CloudRuntime(client),
-    routing: new CloudInfraProvider(client),
-    ssl: new CloudInfraProvider(client),
+    routing: infra,
+    ssl: infra,
     system: null,
     executor: null,
   };
@@ -183,15 +185,22 @@ async function createDesktopPlatform(config: PlatformConfig): Promise<Platform> 
 /**
  * Create the routing + SSL provider for self-hosted deployments.
  *
- * Both Docker and Bare runtimes use the same Nginx + certbot path.
+ * Detects OpenResty paths from the target server, then creates
+ * the provider with the actual paths — no hardcoded fallbacks.
  */
 async function createInfraProvider(
   _mode: "docker" | "bare",
   config: PlatformConfig,
   executor: CommandExecutor,
 ): Promise<{ routing: RoutingProvider; ssl: SslProvider }> {
+  const { detectOpenRestyPaths, ensureOpenRestyConfig } = await import("./infra/openresty-lua");
+  const paths = await detectOpenRestyPaths(executor);
+
+  // Idempotent — ensures sites-enabled dir + include directive exist
+  await ensureOpenRestyConfig(executor, paths);
+
   const { NginxProvider } = await import("./infra/nginx");
-  const nginx = new NginxProvider({ ...config.nginx, executor });
+  const nginx = new NginxProvider({ paths, ...config.nginx, executor });
   return { routing: nginx, ssl: nginx };
 }
 

@@ -4,7 +4,7 @@ import { isRemoteConnectionError } from "./errors";
 
 export type SystemOs = "linux" | "darwin" | "unknown";
 export type SystemArch = "amd64" | "arm64" | "unknown";
-export type SystemPackageManager = "apt" | "dnf" | "yum" | "brew" | "none";
+export type SystemPackageManager = "apt" | "dnf" | "yum" | "apk" | "brew" | "none";
 export type SystemServiceManager = "systemd" | "launchd" | "none";
 export type LinuxDistro =
   | "ubuntu"
@@ -103,6 +103,7 @@ async function detectPackageManager(
     ["apt", "command -v apt-get"],
     ["dnf", "command -v dnf"],
     ["yum", "command -v yum"],
+    ["apk", "command -v apk"],
     ["brew", "command -v brew"],
   ];
 
@@ -126,14 +127,15 @@ async function detectProfile(
 ): Promise<EnvironmentProfile> {
   const startedAt = Date.now();
   systemDebug("environment", "detect:start");
-  const [unameOs, unameArch, osRelease, packageManager, serviceManager] =
-    await Promise.all([
-      execSafe(executor, "uname -s"),
-      execSafe(executor, "uname -m"),
-      execSafe(executor, "cat /etc/os-release"),
-      detectPackageManager(executor),
-      detectServiceManager(executor),
-    ]);
+
+  // Run probes sequentially — parallel SSH commands can cascade-fail
+  // when one channel error triggers resetConnection() and kills all
+  // other in-flight streams on the same SSH connection.
+  const unameOs = await execSafe(executor, "uname -s");
+  const unameArch = await execSafe(executor, "uname -m");
+  const osRelease = await execSafe(executor, "cat /etc/os-release");
+  const packageManager = await detectPackageManager(executor);
+  const serviceManager = await detectServiceManager(executor);
 
   const os = parseOs(unameOs);
 

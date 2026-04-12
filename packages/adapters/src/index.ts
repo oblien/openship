@@ -78,6 +78,12 @@ export type { RoutingProvider, SslProvider } from "./infra/types";
 export { NginxProvider, type NginxProviderOptions } from "./infra/nginx";
 export { CloudInfraProvider } from "./infra/cloud";
 export { NoopInfraProvider } from "./infra/noop";
+export {
+  OPENRESTY_MGMT_PORT,
+  deployLuaScripts,
+  detectOpenRestyPaths,
+  type OpenRestyPaths,
+} from "./infra/openresty-lua";
 
 // ─── System layer ────────────────────────────────────────────────────────────
 export type {
@@ -123,15 +129,20 @@ export {
   checkCertbot,
   checkDocker,
   checkGit,
-  checkNginx,
+  checkOpenResty,
   COMPONENT_CHECKS,
 } from "./system/checks";
 export {
   COMPONENT_INSTALLERS,
+  COMPONENT_UNINSTALLERS,
+  getRemovalSupport,
   installCertbot,
   installDocker,
   installGit,
-  installNginx,
+  installOpenResty,
+  uninstallCertbot,
+  uninstallOpenResty,
+  uninstallRsync,
 } from "./system/installer";
 export { SystemManager, type SystemManagerOptions } from "./system/setup";
 

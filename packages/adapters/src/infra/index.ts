@@ -8,8 +8,12 @@ export { NginxProvider, type NginxProviderOptions } from "./nginx";
 export { CloudInfraProvider } from "./cloud";
 export { NoopInfraProvider } from "./noop";
 export {
+  buildReloadCommand,
   deployLuaScripts,
+  detectOpenRestyPaths,
+  ensureOpenRestyConfig,
   LUA_LOGGER_PATH,
   OPENRESTY_LUA_DIR,
   OPENRESTY_MGMT_PORT,
+  type OpenRestyPaths,
 } from "./openresty-lua";

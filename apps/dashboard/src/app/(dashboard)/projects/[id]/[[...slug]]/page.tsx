@@ -29,7 +29,7 @@ import { SectionContainer } from "@/components/ui/SectionContainer";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 
 const ProjectSettingsContent = () => {
-  const { projectData, projectNotFound, errorType, activeTab, setActiveTab, tabs, isLoadingAnalytics } = useProjectSettings();
+  const { projectData, setProjectData, projectNotFound, errorType, activeTab, setActiveTab, tabs, isLoadingAnalytics } = useProjectSettings();
 
   const isServicesProject = tabs[0]?.id === "services";
 
@@ -37,11 +37,16 @@ const ProjectSettingsContent = () => {
   const router = useRouter();
 
   const handleDeleteProject = async () => {
+    // Optimistic — immediately show "Deleting" status
+    setProjectData((prev: any) => ({ ...prev, deletedAt: new Date().toISOString() }));
+
     const response = await projectsApi.delete(projectData.id);
     if (response.success) {
       showToast('Project deleted successfully', 'success');
       router.push('/');
     } else {
+      // Revert on failure
+      setProjectData((prev: any) => ({ ...prev, deletedAt: null }));
       showToast(response.message || response.error, 'error', 'Failed to delete project');
     }
   };

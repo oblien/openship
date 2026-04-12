@@ -5,11 +5,13 @@ export type ProjectStatus =
   | "deploying"
   | "failed"
   | "cancelled"
+  | "deleting"
   | "draft";
 
 type ProjectStatusSource = {
   activeDeploymentId?: string | null;
   latestDeploymentStatus?: string | null;
+  deletedAt?: string | null;
 };
 
 export const PROJECT_STATUS_META: Record<
@@ -46,6 +48,11 @@ export const PROJECT_STATUS_META: Record<
     badge: "bg-muted text-muted-foreground",
     dot: "bg-muted-foreground",
   },
+  deleting: {
+    label: "Deleting",
+    badge: "bg-red-500/10 text-red-600 dark:text-red-400",
+    dot: "bg-red-500 animate-pulse",
+  },
   draft: {
     label: "Draft",
     badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
@@ -54,6 +61,10 @@ export const PROJECT_STATUS_META: Record<
 };
 
 export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
+  if (project.deletedAt) {
+    return "deleting";
+  }
+
   switch (project.latestDeploymentStatus) {
     case "queued":
       return "queued";

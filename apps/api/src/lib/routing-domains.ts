@@ -142,7 +142,7 @@ export async function ensureRouteDomainRecord(opts: {
     return existing ?? null;
   }
 
-  const created = await repos.domain.create({
+  const created = await repos.domain.findOrCreate({
     projectId,
     serviceId: route.serviceId,
     hostname: route.hostname,

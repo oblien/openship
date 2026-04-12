@@ -9,6 +9,7 @@ export { createServiceRepo, type Service, type NewService, type ServiceDeploymen
 export { createSettingsRepo, type UserSettings, type NewUserSettings } from "./settings.repo";
 export { createInstanceSettingsRepo, type InstanceSettings, type NewInstanceSettings } from "./instance-settings.repo";
 export { createServerRepo, type Server, type NewServer } from "./server.repo";
+export { createAnalyticsRepo, type ServerAnalyticsRow, type NewServerAnalytics, type ServerAnalyticsGeoRow, type NewServerAnalyticsGeo } from "./analytics.repo";
 
 // ─── Convenience: pre-bound repos using the singleton db ─────────────────────
 
@@ -24,6 +25,7 @@ import { createServiceRepo } from "./service.repo";
 import { createSettingsRepo } from "./settings.repo";
 import { createInstanceSettingsRepo } from "./instance-settings.repo";
 import { createServerRepo } from "./server.repo";
+import { createAnalyticsRepo } from "./analytics.repo";
 
 /**
  * Pre-bound repository instances using the singleton `db`.
@@ -46,4 +48,5 @@ export const repos = {
   settings: createSettingsRepo(db),
   instanceSettings: createInstanceSettingsRepo(db),
   server: createServerRepo(db),
+  analytics: createAnalyticsRepo(db),
 } as const;

@@ -32,6 +32,8 @@ export interface SystemComponentDefinition {
   label: string;
   description: string;
   installable: boolean;
+  /** core = always shown; infrastructure = shown only when detected */
+  category: "core" | "infrastructure";
 }
 
 export interface ComponentStatus {
@@ -39,6 +41,9 @@ export interface ComponentStatus {
   label: string;
   description: string;
   installable: boolean;
+  removable?: boolean;
+  removeSupported?: boolean;
+  removeBlockedReason?: string;
   installed: boolean;
   version?: string;
   /** Whether the daemon is actively running (Docker, Nginx) */
@@ -46,6 +51,8 @@ export interface ComponentStatus {
   /** installed AND running (when applicable) */
   healthy: boolean;
   message: string;
+  /** Infrastructure components — shown only when detected on the server */
+  optional?: boolean;
 }
 
 // ─── Aggregate check result ──────────────────────────────────────────────────
@@ -61,8 +68,8 @@ export interface SystemCheckResult {
 /**
  * High-level features. Prerequisites vary by runtime mode.
  *
- * Docker mode:  build → [git, docker], deploy → [docker], routing → [nginx], ssl → [nginx, certbot]
- * Bare mode:    build → [git],         deploy → [stack runtime], routing → [nginx], ssl → [nginx, certbot]
+ * Docker mode:  build → [git, docker], deploy → [docker], routing → [openresty], ssl → [openresty, certbot]
+ * Bare mode:    build → [git],         deploy → [stack runtime], routing → [openresty], ssl → [openresty, certbot]
  */
 export type Feature = "build" | "deploy" | "routing" | "ssl";
 

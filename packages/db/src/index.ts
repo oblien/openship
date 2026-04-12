@@ -17,6 +17,7 @@ export {
   createServiceRepo,
   createSettingsRepo,
   createServerRepo,
+  createAnalyticsRepo,
   type User,
   type NewUser,
   type Session,
@@ -41,6 +42,10 @@ export {
   type NewUserSettings,
   type Server,
   type NewServer,
+  type ServerAnalyticsRow,
+  type NewServerAnalytics,
+  type ServerAnalyticsGeoRow,
+  type NewServerAnalyticsGeo,
 } from "./repos";
 
 // ─── Drizzle operators (re-exported for convenience) ─────────────────────────

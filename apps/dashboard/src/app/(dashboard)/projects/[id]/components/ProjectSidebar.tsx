@@ -32,13 +32,14 @@ const TAB_ICONS: Record<string, React.ComponentType<{ className?: string; stroke
 /** Desktop right-column navigation — matches LibrarySidebar / Home pattern */
 export const ProjectSidebar = () => {
   const { projectData, projectNotFound, activeTab, tabs, setActiveTab, domain } = useProjectSettings();
-  const { selfHosted } = usePlatform();
+  const { selfHosted, baseDomain } = usePlatform();
   const status = getProjectStatus(projectData as any);
   const meta = PROJECT_STATUS_META[status];
   const localPort = projectData.port || 3000;
   const localUrl = `localhost:${localPort}`;
-  const displayUrl = domain || localUrl;
-  const isLocal = !domain;
+  const slugDomain = projectData.slug && baseDomain ? `${projectData.slug}.${baseDomain}` : '';
+  const displayUrl = domain || slugDomain || localUrl;
+  const isLocal = !domain && !slugDomain && !selfHosted;
 
   const handleTabChange = (tabId: string) => {
     const scrollY = window.scrollY;

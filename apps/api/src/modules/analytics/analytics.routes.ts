@@ -27,3 +27,8 @@ analyticsRoutes.get("/container", ctrl.containerInfo);
 
 /* ─── Dashboard ────────────────────────────────────────────────────────── */
 analyticsRoutes.get("/dashboard", ctrl.dashboard);
+
+/* ─── Server analytics (scraped from OpenResty mgmt API) ───────────────── */
+analyticsRoutes.get("/server/:serverId", ctrl.serverAnalytics);
+analyticsRoutes.get("/server/:serverId/geo", ctrl.serverGeo);
+analyticsRoutes.get("/server/:serverId/live", ctrl.serverAnalyticsLive);

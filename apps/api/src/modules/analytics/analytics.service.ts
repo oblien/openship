@@ -1,10 +1,13 @@
 /**
  * Analytics service — request analytics, resource usage, and deployment stats.
  *
- * Data sources:
- *   - DB:      Historical aggregated periods, cumulative counters
- *   - Redis:   Live request logs + counters (populated by the reverse-proxy)
- *   - Adapter: Real-time container resource usage (CPU, memory, network)
+ * Data flow:
+ *   - OpenResty shared-dict accumulates counters in real-time (log_by_lua)
+ *   - Scraper (analytics-scraper.ts) flushes completed minutes from OpenResty → DB
+ *     via POST /analytics/flush (read + delete), every 5 min
+ *   - DB has all flushed history, OpenResty has only unflushed recent data
+ *   - Reading always combines both: DB (flushed archive) + live (unflushed tail)
+ *   - No overlap, no duplication, no data loss on OpenResty restart
  *
  * The runtime integration is behind the Platform interface, so this
  * service works identically with Docker (self-hosted) and Oblien (cloud).
@@ -14,8 +17,69 @@ import { repos } from "@repo/db";
 import { NotFoundError } from "@repo/core";
 import type { ResourceUsage } from "@repo/adapters";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { resolveProjectTracking, fetchMgmt } from "../../lib/project-analytics";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface MgmtAnalyticsBucket {
+  minute: number;
+  requests: number;
+  unique_requests: number;
+  bandwidth_in: number;
+  bandwidth_out: number;
+  response_time: number;
+}
+
+async function fetchLiveBuckets(
+  serverId: string,
+  domain: string,
+  fromMinute: number,
+  toMinute: number,
+): Promise<MgmtAnalyticsBucket[]> {
+  const result = await fetchMgmt<{ buckets?: MgmtAnalyticsBucket[] }>(
+    serverId,
+    `/analytics?domain=${encodeURIComponent(domain)}&from=${fromMinute}&to=${toMinute}`,
+  );
+  return result?.buckets ?? [];
+}
+
+/** Convert a DB row to the unified bucket shape. */
+function toMgmtBucket(b: { minute: number; requests: number; uniqueRequests: number; bandwidthIn: number; bandwidthOut: number; responseTime: number }): MgmtAnalyticsBucket {
+  return {
+    minute: b.minute,
+    requests: b.requests,
+    unique_requests: b.uniqueRequests,
+    bandwidth_in: b.bandwidthIn,
+    bandwidth_out: b.bandwidthOut,
+    response_time: b.responseTime,
+  };
+}
+
+/** Reduce an array of buckets into a summary. */
+function summariseBuckets(buckets: MgmtAnalyticsBucket[], lastUpdated: string): AnalyticsSummary {
+  const totalReqs = buckets.reduce((s, b) => s + b.requests, 0);
+  const totalUnique = buckets.reduce((s, b) => s + b.unique_requests, 0);
+  const totalIn = buckets.reduce((s, b) => s + b.bandwidth_in, 0);
+  const totalOut = buckets.reduce((s, b) => s + b.bandwidth_out, 0);
+  const avgRt = buckets.reduce((s, b) => s + b.response_time, 0) / buckets.length;
+  return {
+    totalRequests: totalReqs,
+    uniqueVisitors: totalUnique,
+    bandwidthIn: totalIn,
+    bandwidthOut: totalOut,
+    avgResponseTimeMs: Math.round(avgRt * 1000),
+    lastUpdated,
+  };
+}
+
+const EMPTY_SUMMARY: AnalyticsSummary = {
+  totalRequests: 0,
+  uniqueVisitors: 0,
+  bandwidthIn: 0,
+  bandwidthOut: 0,
+  avgResponseTimeMs: 0,
+  lastUpdated: null,
+};
 
 export interface AnalyticsSummary {
   /** Total requests (all time) */
@@ -67,7 +131,10 @@ export interface ContainerUsageSnapshot {
 
 /**
  * Get cumulative analytics summary for a project.
- * Returns totals from DB + optional live increment from Redis.
+ *
+ * Always combines both sources (no overlap thanks to scraper flush):
+ *   - DB: all flushed history
+ *   - Live OpenResty: unflushed recent tail (since last scraper run)
  */
 export async function getAnalyticsSummary(
   projectId: string,
@@ -78,23 +145,46 @@ export async function getAnalyticsSummary(
     throw new NotFoundError("Project", projectId);
   }
 
-  // TODO: Fetch from analytics_summary table once analytics flush is wired
-  // For now, return zero-state
-  return {
-    totalRequests: 0,
-    uniqueVisitors: 0,
-    bandwidthIn: 0,
-    bandwidthOut: 0,
-    avgResponseTimeMs: 0,
-    lastUpdated: null,
-  };
+  const tracking = await resolveProjectTracking(projectId);
+  if (!tracking) {
+    return EMPTY_SUMMARY;
+  }
+
+  const { domain, serverId } = tracking;
+  const now = Math.floor(Date.now() / 60_000);
+
+  // DB: flushed archive (last 24h of persisted data)
+  const dbBuckets = await repos.analytics.recentBuckets({ serverId, domain, limit: 1440 });
+
+  // Live OpenResty: unflushed tail (since last scraper flush)
+  // The scraper flushes up to `now - 1` so live always has at least the current minute
+  const lastFlushed = dbBuckets.length > 0 ? dbBuckets[0]!.minute : now - 1440;
+  const liveBuckets = await fetchLiveBuckets(serverId, domain, lastFlushed + 1, now);
+
+  // Combine both sources
+  const allBuckets: MgmtAnalyticsBucket[] = [
+    ...dbBuckets.map(toMgmtBucket),
+    ...liveBuckets,
+  ];
+
+  if (allBuckets.length === 0) return EMPTY_SUMMARY;
+
+  const lastUpdated = liveBuckets.length > 0
+    ? new Date().toISOString()
+    : dbBuckets[0]!.createdAt.toISOString();
+
+  return summariseBuckets(allBuckets, lastUpdated);
 }
 
 // ─── Analytics periods ───────────────────────────────────────────────────────
 
 /**
  * Get aggregated analytics periods for a date range.
- * Used for charts and detailed reports.
+ *
+ * Always combines both sources (no overlap thanks to scraper flush):
+ *   - DB: flushed history for the requested range
+ *   - Live OpenResty: unflushed tail appended after last DB minute
+ * Grouped into hourly periods for charting.
  */
 export async function getAnalyticsPeriods(
   projectId: string,
@@ -107,8 +197,63 @@ export async function getAnalyticsPeriods(
     throw new NotFoundError("Project", projectId);
   }
 
-  // TODO: Fetch from analytics_period table once analytics flush is wired
-  return [];
+  const tracking = await resolveProjectTracking(projectId);
+  if (!tracking) return [];
+  const { domain, serverId } = tracking;
+
+  const now = Math.floor(Date.now() / 60_000);
+  const fromMinute = from ? Math.floor(new Date(from).getTime() / 60_000) : now - 1440;
+  const toMinute = to ? Math.floor(new Date(to).getTime() / 60_000) : now;
+
+  // DB: flushed archive for the requested range
+  const dbBuckets = await repos.analytics.queryBuckets({ serverId, domain, fromMinute, toMinute });
+
+  // Live OpenResty: unflushed tail (starts after last DB minute)
+  const lastDbMinute = dbBuckets.length > 0
+    ? Math.max(...dbBuckets.map(b => b.minute))
+    : fromMinute - 1;
+  const liveFrom = Math.max(lastDbMinute + 1, fromMinute);
+  const liveBuckets = liveFrom <= toMinute
+    ? await fetchLiveBuckets(serverId, domain, liveFrom, toMinute)
+    : [];
+
+  // Combine both sources
+  const allBuckets: MgmtAnalyticsBucket[] = [
+    ...dbBuckets.map(toMgmtBucket),
+    ...liveBuckets,
+  ];
+
+  if (allBuckets.length === 0) return [];
+
+  // Group into hourly periods
+  const hourMap = new Map<number, MgmtAnalyticsBucket[]>();
+  for (const bucket of allBuckets) {
+    const hourKey = Math.floor(bucket.minute / 60);
+    const arr = hourMap.get(hourKey) ?? [];
+    arr.push(bucket);
+    hourMap.set(hourKey, arr);
+  }
+
+  const periods: AnalyticsPeriod[] = [];
+  for (const [hourKey, hourBuckets] of hourMap) {
+    const hourStart = new Date(hourKey * 60 * 60_000);
+    const hourEnd = new Date((hourKey + 1) * 60 * 60_000);
+    periods.push({
+      from: hourStart.toISOString(),
+      to: hourEnd.toISOString(),
+      requests: hourBuckets.reduce((s, b) => s + b.requests, 0),
+      uniqueVisitors: hourBuckets.reduce((s, b) => s + b.unique_requests, 0),
+      bandwidthIn: hourBuckets.reduce((s, b) => s + b.bandwidth_in, 0),
+      bandwidthOut: hourBuckets.reduce((s, b) => s + b.bandwidth_out, 0),
+      avgResponseTimeMs: Math.round(
+        (hourBuckets.reduce((s, b) => s + b.response_time, 0) / hourBuckets.length) * 1000,
+      ),
+      topPaths: [],
+      trafficByHour: {},
+    });
+  }
+
+  return periods.sort((a, b) => a.from.localeCompare(b.from));
 }
 
 // ─── Deployment stats ────────────────────────────────────────────────────────

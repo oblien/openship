@@ -84,6 +84,68 @@ if uri == "/analytics" then
     return json({ domain = domain, buckets = buckets })
 end
 
+-- ── POST /analytics/flush — read + delete minute buckets ─────────────────────
+-- Same as GET /analytics but deletes the returned buckets from shared memory.
+-- Used by the scraper to atomically move data from OpenResty → DB.
+-- ?domain=example.com&from=EPOCH_MIN&to=EPOCH_MIN
+
+if uri == "/analytics/flush" and ngx.req.get_method() == "POST" then
+    local domain = ngx.var.arg_domain
+    if not domain or domain == "" then return bad("missing ?domain=") end
+    domain = domain:lower()
+
+    local from_m = tonumber(ngx.var.arg_from)
+    local to_m   = tonumber(ngx.var.arg_to)
+    if not from_m or not to_m then
+        return bad("missing ?from= and ?to= (epoch minutes)")
+    end
+    if to_m - from_m > 1440 then to_m = from_m + 1440 end
+
+    local buckets = {}
+    local flushed = 0
+    for m = from_m, to_m do
+        local p = "s:" .. domain .. ":" .. m
+        local r = analytics:get(p .. ":r")
+        if r then
+            local rt_us = analytics:get(p .. ":t") or 0
+            local bucket = {
+                minute           = m,
+                requests         = r,
+                unique_requests  = analytics:get(p .. ":u") or 0,
+                bandwidth_in     = analytics:get(p .. ":i") or 0,
+                bandwidth_out    = analytics:get(p .. ":o") or 0,
+                response_time    = rt_us / 1000000,
+            }
+
+            -- Collect per-minute country data
+            local cpfx = "c:" .. domain .. ":" .. m .. ":"
+            local all_keys = analytics:get_keys(10000)
+            local countries = {}
+            local has_countries = false
+            for _, k in ipairs(all_keys) do
+                if k:sub(1, #cpfx) == cpfx then
+                    countries[k:sub(#cpfx + 1)] = analytics:get(k) or 0
+                    analytics:delete(k)
+                    has_countries = true
+                end
+            end
+            if has_countries then bucket.countries = countries end
+
+            buckets[#buckets + 1] = bucket
+
+            -- Delete the minute-bucket counter keys
+            analytics:delete(p .. ":r")
+            analytics:delete(p .. ":i")
+            analytics:delete(p .. ":o")
+            analytics:delete(p .. ":t")
+            analytics:delete(p .. ":u")
+            flushed = flushed + 1
+        end
+    end
+
+    return json({ domain = domain, buckets = buckets, flushed = flushed })
+end
+
 -- ── GET /analytics/totals — lifetime counters ────────────────────────────────
 -- ?domain=example.com      → single domain
 -- (no domain)              → all known domains

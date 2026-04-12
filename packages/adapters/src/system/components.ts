@@ -6,30 +6,35 @@ export const SYSTEM_COMPONENTS: SystemComponentDefinition[] = [
     label: "Docker",
     description: "Container runtime for deployments",
     installable: true,
-  },
-  {
-    name: "nginx",
-    label: "OpenResty",
-    description: "Reverse proxy with Lua scripting for routing and traffic control",
-    installable: true,
-  },
-  {
-    name: "certbot",
-    label: "Certbot",
-    description: "Let's Encrypt certificate provisioning",
-    installable: true,
+    category: "core",
   },
   {
     name: "git",
     label: "Git",
     description: "Version control for source code",
     installable: true,
+    category: "core",
+  },
+  {
+    name: "openresty",
+    label: "OpenResty",
+    description: "Reverse proxy with Lua scripting for routing and traffic control",
+    installable: true,
+    category: "infrastructure",
+  },
+  {
+    name: "certbot",
+    label: "Certbot",
+    description: "Let's Encrypt certificate provisioning",
+    installable: true,
+    category: "infrastructure",
   },
   {
     name: "rsync",
     label: "rsync",
     description: "Fast directory sync for remote local-build transfers",
     installable: true,
+    category: "infrastructure",
   },
 ];
 
@@ -46,6 +51,7 @@ export function getSystemComponentDefinition(
       label: name,
       description: `${name} component`,
       installable: false,
+      category: "infrastructure" as const,
     }
   );
 }

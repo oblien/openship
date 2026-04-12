@@ -52,7 +52,7 @@ export function getLocalShellArgs(command: string): string[] {
 }
 
 export function getLocalExecEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, DEBIAN_FRONTEND: "noninteractive" };
+  return { ...process.env, DEBIAN_FRONTEND: "noninteractive", DPKG_FORCE: "confnew" };
 }
 
 async function execFileText(
@@ -109,7 +109,7 @@ export function flushBufferedLines(
 }
 
 function buildIsolatedLocalEnv(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { DEBIAN_FRONTEND: "noninteractive" };
+  const env: NodeJS.ProcessEnv = { DEBIAN_FRONTEND: "noninteractive", DPKG_FORCE: "confnew" };
 
   for (const key of LOCAL_BUILD_ENV_KEYS) {
     const value = process.env[key];

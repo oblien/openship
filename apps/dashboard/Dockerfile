@@ -15,9 +15,9 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 COPY --from=builder /app/apps/dashboard/.next/standalone ./
-COPY --from=builder /app/apps/dashboard/.next/static ./.next/static
-COPY --from=builder /app/apps/dashboard/public ./public
+COPY --from=builder /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
+COPY --from=builder /app/apps/dashboard/public ./apps/dashboard/public
 
 ENV NODE_ENV=production
 EXPOSE 3001
-CMD ["node", "server.js"]
+CMD ["node", "apps/dashboard/server.js"]

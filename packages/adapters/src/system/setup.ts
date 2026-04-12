@@ -62,24 +62,24 @@ function resolveRules(mode: RuntimeMode): PrerequisiteRule[] {
     return [
       { feature: "build", requires: ["git", "docker"], message: "Build requires Git and Docker" },
       { feature: "deploy", requires: ["docker"], message: "Deploy requires Docker" },
-      { feature: "routing", requires: ["nginx"], message: "Routing requires OpenResty" },
-      { feature: "ssl", requires: ["nginx", "certbot"], message: "SSL requires OpenResty and certbot" },
+      { feature: "routing", requires: ["openresty"], message: "Routing requires OpenResty" },
+      { feature: "ssl", requires: ["openresty", "certbot"], message: "SSL requires OpenResty and certbot" },
     ];
   }
 
   // bare mode — language runtimes handled per-stack by toolchain layer
   return [
     { feature: "build", requires: ["git"], message: "Build requires Git" },
-    { feature: "routing", requires: ["nginx"], message: "Routing requires OpenResty" },
-    { feature: "ssl", requires: ["nginx", "certbot"], message: "SSL requires OpenResty and certbot" },
+    { feature: "routing", requires: ["openresty"], message: "Routing requires OpenResty" },
+    { feature: "ssl", requires: ["openresty", "certbot"], message: "SSL requires OpenResty and certbot" },
   ];
 }
 
 /** Resolve which system components must be installed for a given runtime mode. */
 function resolveRequired(mode: RuntimeMode): string[] {
   return mode === "docker"
-    ? ["docker", "git", "nginx", "certbot"]
-    : ["git", "nginx", "certbot"];
+    ? ["docker", "git", "openresty", "certbot"]
+    : ["git", "openresty", "certbot"];
 }
 
 // ─── SystemManager ───────────────────────────────────────────────────────────

@@ -69,7 +69,7 @@ function buildComponentStates(
 
 function getMissingComponentNames(components: ComponentState[]): string[] {
   return components
-    .filter((component) => !component.status?.healthy && component.status?.installable !== false)
+    .filter((component) => !component.status?.healthy && !component.status?.optional && component.status?.installable !== false)
     .map((component) => component.name);
 }
 

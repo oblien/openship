@@ -72,4 +72,8 @@ if (env.CLOUD_MODE) {
   /** Cloud account management — connect/disconnect to Openship Cloud */
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
   app.route("/api/cloud", cloudLocalRoutes);
+
+  /** Start the periodic analytics scraper for managed servers */
+  const { startAnalyticsScraper } = await import("./modules/system/analytics-scraper");
+  startAnalyticsScraper();
 }

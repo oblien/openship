@@ -20,6 +20,8 @@ import {
   type CommandExecutor,
   createExecutor,
   COMPONENT_INSTALLERS,
+  COMPONENT_UNINSTALLERS,
+  getRemovalSupport,
   isSshAuthError,
   SYSTEM_COMPONENTS,
   getSystemComponentDefinition,
@@ -48,16 +50,52 @@ const ALLOWED_COMPONENTS = new Set(
   ),
 );
 
+const REMOVABLE_COMPONENTS = new Set(Object.keys(COMPONENT_UNINSTALLERS));
+
+async function withCapabilities<T extends { name: string; installed?: boolean }>(
+  executor: CommandExecutor,
+  components: T[],
+): Promise<Array<T & { removable: boolean; removeSupported?: boolean; removeBlockedReason?: string }>> {
+  return Promise.all(
+    components.map(async (component) => {
+      const removable = REMOVABLE_COMPONENTS.has(component.name);
+      if (!removable || !component.installed) {
+        return {
+          ...component,
+          removable,
+        };
+      }
+
+      const support = await getRemovalSupport(executor, component.name);
+      return {
+        ...component,
+        removable,
+        removeSupported: support.supported,
+        removeBlockedReason: support.reason,
+      };
+    }),
+  );
+}
+
 /**
- * Resolve which components are required for the current deployment mode.
- * Only these are checked / shown on the server page.
+ * Core components required for the current deployment mode.
+ * These are always shown in System Health regardless of install state.
  */
 function resolveRequiredComponents(): string[] {
   const mode = env.DEPLOY_MODE;
-  if (mode === "docker") return ["docker", "git", "nginx", "certbot"];
-  if (mode === "bare") return ["git", "nginx", "certbot"];
-  // desktop / cloud — minimal
+  if (mode === "docker") return ["docker", "git"];
+  if (mode === "bare") return ["git"];
   return ["git"];
+}
+
+/**
+ * Infrastructure components — optional but important for app deployment.
+ * Shown in System Health only when detected (installed) on the server.
+ */
+function resolveInfraComponents(): string[] {
+  return SYSTEM_COMPONENTS
+    .filter((c) => c.category === "infrastructure")
+    .map((c) => c.name);
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -158,19 +196,32 @@ export async function checkServer(c: Context) {
       if (valid.length === 0) {
         return c.json({ error: "Invalid component names" }, 400);
       }
-      components = await sshManager.withExecutor(serverId, (executor) =>
-        checkComponents(executor, valid),
+      components = await sshManager.withExecutor(serverId, async (executor) =>
+        withCapabilities(executor, await checkComponents(executor, valid)),
       );
     } else {
-      // Only check components relevant to the current deployment mode
+      // Check core required + all infrastructure components
       const required = resolveRequiredComponents();
-      components = await sshManager.withExecutor(serverId, (executor) =>
-        checkComponents(executor, required),
+      const infra = resolveInfraComponents();
+      const requiredSet = new Set(required);
+      const allToCheck = [...required, ...infra.filter((n) => !requiredSet.has(n))];
+
+      const allResults = await sshManager.withExecutor(serverId, async (executor) =>
+        withCapabilities(executor, await checkComponents(executor, allToCheck)),
       );
+
+      // Required components always shown; infra only shown when installed
+      components = allResults
+        .map((c) => ({
+          ...c,
+          optional: !requiredSet.has(c.name),
+        }))
+        .filter((c) => !c.optional || c.installed);
     }
 
+    // "missing" and "ready" only consider required (non-optional) components
     const missing = components
-      .filter((c) => !c.healthy)
+      .filter((c) => !c.healthy && !c.optional)
       .map((c) => c.name);
 
     debugSystemRequest(
@@ -202,7 +253,7 @@ export async function checkServer(c: Context) {
  * POST /system/install
  *
  * Install a specific component on a server.
- * Body: { serverId: string, component: "docker" | "nginx" | ..., config?: InstallerConfig }
+ * Body: { serverId: string, component: "docker" | "openresty" | ..., config?: InstallerConfig }
  *
  * Returns: { success: boolean, component: string, version?: string, error?: string }
  */
@@ -256,10 +307,64 @@ export async function installComponent(c: Context) {
 }
 
 /**
+ * POST /system/remove
+ *
+ * Remove a specific component from a server.
+ * Body: { serverId: string, component: "openresty" | "certbot" | "rsync" }
+ *
+ * Returns: { success: boolean, component: string, error?: string, logs?: string[] }
+ */
+export async function removeComponent(c: Context) {
+  if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const serverId = body.serverId as string | undefined;
+  if (!serverId) return c.json({ error: "serverId is required" }, 400);
+
+  const componentName = body.component as string;
+  if (!componentName || !REMOVABLE_COMPONENTS.has(componentName)) {
+    return c.json({ error: "Invalid or unsupported component name" }, 400);
+  }
+
+  const uninstallerFn = COMPONENT_UNINSTALLERS[componentName as keyof typeof COMPONENT_UNINSTALLERS];
+  if (!uninstallerFn) {
+    return c.json({ error: `No remover for ${componentName}` }, 400);
+  }
+
+  try {
+    const logs: string[] = [];
+    const result = await sshManager.withExecutor(serverId, (executor) =>
+      uninstallerFn(
+        executor,
+        (log) => logs.push(log.message),
+        body.config ?? {},
+      ),
+    );
+
+    return c.json({
+      ...result,
+      logs,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Removal failed";
+    if (
+      message === "No server configured" ||
+      message === "Invalid SSH auth configuration"
+    ) {
+      return c.json({ error: "no_server", message }, 400);
+    }
+    if (isSshAuthError(err)) {
+      return c.json({ error: "auth_failed", message }, 400);
+    }
+    return c.json({ error: "remove_failed", message }, 502);
+  }
+}
+
+/**
  * POST /system/install/stream
  *
  * Install multiple components with real-time SSE log streaming.
- * Body: { serverId: string, components: ["docker", "nginx", ...], config?: InstallerConfig }
+ * Body: { serverId: string, components: ["docker", "openresty", ...], config?: InstallerConfig }
  *
  * Returns an SSE stream with events:
  *   - progress: component status updates

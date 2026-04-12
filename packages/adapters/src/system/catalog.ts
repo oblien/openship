@@ -42,6 +42,7 @@ function gitInstallPlan(profile: EnvironmentProfile): InstallPlan {
     apt: "apt-get update -qq && apt-get install -y -qq git",
     dnf: "dnf install -y git",
     yum: "yum install -y git",
+    apk: "apk add --no-cache git",
     brew: "brew install git",
   };
 
@@ -65,6 +66,7 @@ function rsyncInstallPlan(profile: EnvironmentProfile): InstallPlan {
     apt: "apt-get update -qq && apt-get install -y -qq rsync",
     dnf: "dnf install -y rsync",
     yum: "yum install -y rsync",
+    apk: "apk add --no-cache rsync",
     brew: "brew install rsync",
   };
 
@@ -100,18 +102,47 @@ function openrestyInstallPlan(profile: EnvironmentProfile): InstallPlan {
       "wget -qO /tmp/openresty-pubkey.gpg https://openresty.org/package/pubkey.gpg",
       "gpg --yes --dearmor -o /usr/share/keyrings/openresty.gpg /tmp/openresty-pubkey.gpg",
       `echo "deb [signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/${distro} $(lsb_release -sc) main" > /etc/apt/sources.list.d/openresty.list`,
-      "apt-get update -qq && apt-get install -y -qq openresty",
+      'apt-get update -qq && apt-get install -y -qq openresty',
     ].join(" && ");
   } else if (profile.packageManager === "dnf") {
     const distro = profile.distro === "fedora" ? "fedora" : "centos";
     installCommand = `wget -qO /etc/yum.repos.d/openresty.repo https://openresty.org/package/${distro}/openresty.repo && dnf install -y openresty`;
   } else if (profile.packageManager === "yum") {
     installCommand = "wget -qO /etc/yum.repos.d/openresty.repo https://openresty.org/package/centos/openresty.repo && yum install -y openresty";
+  } else if (profile.packageManager === "apk") {
+    installCommand = [
+      "apk add --no-cache wget",
+      "wget -qO /etc/apk/keys/admin@openresty.com-5ea678a6.rsa.pub https://openresty.org/package/alpine/admin@openresty.com-5ea678a6.rsa.pub",
+      `. /etc/os-release && echo "https://openresty.org/package/alpine/v$( echo $VERSION_ID | cut -d. -f1,2 )/main" >> /etc/apk/repositories`,
+      "apk update && apk add openresty",
+    ].join(" && ");
   } else {
-    return {
-      supported: false,
-      unsupportedReason: "OpenResty installation is only supported on Linux with apt, dnf, or yum",
-    };
+    // No recognized package manager — probe at runtime.
+    // The environment detection may have missed it (e.g. SSH session
+    // didn't source /etc/profile), so try each one directly.
+    installCommand = [
+      "set -e",
+      "if command -v apt-get >/dev/null 2>&1; then",
+      "  apt-get update -qq && apt-get install -y -qq wget gnupg2 lsb-release \\",
+      "  && wget -qO /tmp/openresty-pubkey.gpg https://openresty.org/package/pubkey.gpg \\",
+      "  && gpg --yes --dearmor -o /usr/share/keyrings/openresty.gpg /tmp/openresty-pubkey.gpg \\",
+      '  && DISTRO=$(. /etc/os-release 2>/dev/null && echo "$ID" || echo "ubuntu") \\',
+      '  && case "$DISTRO" in debian) REPO=debian ;; *) REPO=ubuntu ;; esac \\',
+      '  && echo "deb [signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/$REPO $(lsb_release -sc) main" > /etc/apt/sources.list.d/openresty.list \\',
+      '  && apt-get update -qq && apt-get install -y -qq openresty',
+      "elif command -v dnf >/dev/null 2>&1; then",
+      "  wget -qO /etc/yum.repos.d/openresty.repo https://openresty.org/package/centos/openresty.repo && dnf install -y openresty",
+      "elif command -v yum >/dev/null 2>&1; then",
+      "  wget -qO /etc/yum.repos.d/openresty.repo https://openresty.org/package/centos/openresty.repo && yum install -y openresty",
+      "elif command -v apk >/dev/null 2>&1; then",
+      "  apk add --no-cache wget \\",
+      "  && wget -qO /etc/apk/keys/admin@openresty.com-5ea678a6.rsa.pub https://openresty.org/package/alpine/admin@openresty.com-5ea678a6.rsa.pub \\",
+      '  && . /etc/os-release && echo "https://openresty.org/package/alpine/v$(echo $VERSION_ID | cut -d. -f1,2)/main" >> /etc/apk/repositories \\',
+      "  && apk update && apk add openresty",
+      "else",
+      '  echo "No supported package manager found (tried apt-get, dnf, yum, apk)" >&2 && exit 1',
+      "fi",
+    ].join("\n");
   }
 
   return {
@@ -130,6 +161,7 @@ function certbotInstallPlan(profile: EnvironmentProfile): InstallPlan {
     apt: "apt-get update -qq && apt-get install -y -qq certbot",
     dnf: "dnf install -y certbot",
     yum: "yum install -y certbot",
+    apk: "apk add --no-cache certbot",
   };
 
   const installCommand = commands[profile.packageManager];
@@ -157,10 +189,10 @@ export const systemCatalog = {
       missingMessage: "Docker is not installed",
       notRunningMessage: "Docker is installed but the daemon is not running",
     },
-    nginx: {
-      versionCommand: "openresty -v 2>&1",
+    openresty: {
+      versionCommand: "openresty -v 2>&1 || /usr/local/openresty/bin/openresty -v 2>&1",
       runningCommands: [
-        "pgrep -x nginx",
+        "pgrep -f 'nginx.*openresty' || pgrep -f '/usr/local/openresty'",
       ],
       parseVersion: (output: string) =>
         output.match(/openresty\/(\S+)/)?.[1] ?? output.match(/nginx\/(\S+)/)?.[1] ?? output,
@@ -187,7 +219,7 @@ export const systemCatalog = {
     docker: dockerInstallPlan,
     git: gitInstallPlan,
     rsync: rsyncInstallPlan,
-    nginx: openrestyInstallPlan,
+    openresty: openrestyInstallPlan,
     certbot: certbotInstallPlan,
   },
 };

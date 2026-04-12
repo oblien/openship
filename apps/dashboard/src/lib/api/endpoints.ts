@@ -37,6 +37,8 @@ export const endpoints = {
     deployments: (id: string | number) => `projects/${id}/deployments`,
     logs: (id: string | number) => `projects/${id}/logs`,
     logsStream: (id: string | number) => `projects/${id}/logs/stream`,
+    serverLogsRecent: (id: string | number) => `projects/${id}/server-logs/recent`,
+    serverLogsStream: (id: string | number) => `projects/${id}/server-logs/stream`,
     ensure: "projects/ensure",
   },
 
@@ -122,6 +124,22 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  Analytics                                                       */
+  /* ---------------------------------------------------------------- */
+  analytics: {
+    summary: "analytics",
+    periods: "analytics/periods",
+    deployments: "analytics/deployments",
+    usage: "analytics/usage",
+    usageStream: "analytics/usage/stream",
+    container: "analytics/container",
+    dashboard: "analytics/dashboard",
+    server: (serverId: string) => `analytics/server/${serverId}`,
+    serverGeo: (serverId: string) => `analytics/server/${serverId}/geo`,
+    serverLive: (serverId: string) => `analytics/server/${serverId}/live`,
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  System (self-hosted only)                                       */
   /* ---------------------------------------------------------------- */
   system: {
@@ -131,6 +149,7 @@ export const endpoints = {
     testConnection: "system/test-connection",
     check: "system/check",
     install: "system/install",
+    remove: "system/remove",
     installStream: "system/install/stream",
     installSession: "system/install/session",
     monitorStream: "system/monitor/stream",

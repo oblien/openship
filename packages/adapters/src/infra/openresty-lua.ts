@@ -47,8 +47,188 @@ export const LUA_LOGGER_PATH = `${OPENRESTY_LUA_DIR}/site_logger.lua`;
 /** Management API port — loopback only, queried via SSH tunnel. */
 export const OPENRESTY_MGMT_PORT = 9145;
 
-const OPENRESTY_CONF_PATH = "/usr/local/openresty/nginx/conf/nginx.conf";
-const SITES_DIR = "/usr/local/openresty/nginx/conf/sites-enabled";
+// ── Detected paths ───────────────────────────────────────────────────────────
+
+/**
+ * Resolved OpenResty paths for a target server.
+ *
+ * Detected once from `openresty -V`, then passed to every function that
+ * touches the OpenResty config on that server. No hardcoded fallbacks
+ * are used at runtime.
+ */
+export interface OpenRestyPaths {
+  /** Path to the openresty binary (e.g. /usr/local/openresty/bin/openresty) */
+  bin: string;
+  /** Path to nginx.conf (e.g. /etc/openresty/nginx.conf) */
+  confPath: string;
+  /** Directory containing nginx.conf (e.g. /etc/openresty) */
+  confDir: string;
+  /** sites-enabled directory (e.g. /etc/openresty/sites-enabled) */
+  sitesDir: string;
+  /** PID file path (e.g. /usr/local/openresty/nginx/logs/nginx.pid) */
+  pidPath: string;
+}
+
+/** Fallback paths when `openresty -V` is unavailable (e.g. not yet installed). */
+export const OPENRESTY_DEFAULT_PATHS: OpenRestyPaths = {
+  bin: "/usr/local/openresty/bin/openresty",
+  confPath: "/usr/local/openresty/nginx/conf/nginx.conf",
+  confDir: "/usr/local/openresty/nginx/conf",
+  sitesDir: "/usr/local/openresty/nginx/conf/sites-enabled",
+  pidPath: "/usr/local/openresty/nginx/logs/nginx.pid",
+};
+
+/** Well-known nginx.conf locations across OpenResty packages. */
+const KNOWN_CONF_PATHS = [
+  "/usr/local/openresty/nginx/conf/nginx.conf",
+  "/etc/openresty/nginx.conf",
+  "/etc/nginx/nginx.conf",
+];
+
+/**
+ * Detect the actual OpenResty paths on a server by parsing `openresty -V`.
+ *
+ * After parsing, validates that the detected conf file actually exists.
+ * If not, probes known alternative locations. This handles scenarios
+ * where OpenResty was reinstalled and the config directory changed.
+ */
+export async function detectOpenRestyPaths(
+  executor: CommandExecutor,
+): Promise<OpenRestyPaths> {
+  const raw = await executor.exec("openresty -V 2>&1 || true");
+
+  const parseFlag = (flag: string): string | null => {
+    const m = raw.match(new RegExp(`--${flag}=([^\\s]+)`));
+    return m ? m[1] : null;
+  };
+
+  const bin = parseFlag("sbin-path") ?? OPENRESTY_DEFAULT_PATHS.bin;
+  let confPath = parseFlag("conf-path") ?? OPENRESTY_DEFAULT_PATHS.confPath;
+  const pidPath = parseFlag("pid-path") ?? OPENRESTY_DEFAULT_PATHS.pidPath;
+
+  // Verify the detected confPath actually exists on disk.
+  // After a reinstall, the config may be at a different location.
+  if (!(await executor.exists(confPath))) {
+    let found = false;
+    for (const candidate of KNOWN_CONF_PATHS) {
+      if (candidate !== confPath && await executor.exists(candidate)) {
+        confPath = candidate;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      // Config doesn't exist yet — use the detected/default path.
+      // ensureOpenRestyConfig() will bootstrap a minimal config file.
+    }
+  }
+
+  const confDir = confPath.replace(/\/[^/]+$/, "");
+
+  return {
+    bin,
+    confPath,
+    confDir,
+    sitesDir: `${confDir}/sites-enabled`,
+    pidPath,
+  };
+}
+
+// ── Reload command builder ───────────────────────────────────────────────────
+
+/**
+ * Build the OpenResty reload command from detected paths.
+ *
+ * Primary: `openresty -t` then `openresty -s reload` (graceful, zero-downtime).
+ * Fallback: if reload fails (e.g. not running), kill everything and start fresh.
+ */
+export function buildReloadCommand(paths: OpenRestyPaths): string {
+  return `${paths.bin} -t 2>&1 || exit 1
+
+if ${paths.bin} -s reload 2>/dev/null; then
+  exit 0
+fi
+
+pkill -f '[o]penresty' >/dev/null 2>&1 || true
+pkill -f '[n]ginx' >/dev/null 2>&1 || true
+sleep 1
+rm -f ${paths.pidPath}
+${paths.bin}`;
+}
+
+/**
+ * Ensure OpenResty config is ready for routing.
+ *
+ * Idempotent — safe to call on every platform init. Creates the
+ * sites-enabled directory and adds the include directive to nginx.conf
+ * if missing. Also creates the ACME challenge directory.
+ *
+ * This runs ONCE at platform startup, not per-request.
+ */
+export async function ensureOpenRestyConfig(
+  executor: CommandExecutor,
+  paths: OpenRestyPaths,
+): Promise<void> {
+  await executor.mkdir(paths.sitesDir);
+  await executor.mkdir("/var/www/acme");
+  // Ensure the logs/PID directory exists — OpenResty refuses to start without it.
+  const pidDir = paths.pidPath.replace(/\/[^/]+$/, "");
+  await executor.mkdir(pidDir);
+
+  // Bootstrap: if nginx.conf doesn't exist (e.g. after a reinstall that
+  // removed the old config), write a minimal working config.
+  if (!(await executor.exists(paths.confPath))) {
+    await executor.mkdir(paths.confDir);
+    await executor.writeFile(
+      paths.confPath,
+      MINIMAL_NGINX_CONF(paths.confDir, paths.sitesDir),
+    );
+    return; // Fresh config already has the include — no sed needed.
+  }
+
+  // Check if the EXACT correct include path is already present
+  const hasCorrectInclude = await executor
+    .exec(`grep -qF 'include ${paths.sitesDir}/' ${paths.confPath}`)
+    .then(() => true)
+    .catch(() => false);
+
+  if (!hasCorrectInclude) {
+    // Check if a WRONG sites-enabled include exists (different directory)
+    const hasWrongInclude = await executor
+      .exec(`grep -q 'include.*sites-enabled' ${paths.confPath}`)
+      .then(() => true)
+      .catch(() => false);
+
+    if (hasWrongInclude) {
+      // Replace the wrong include path with the correct one
+      await executor.exec(
+        `sed -i 's|include.*/sites-enabled/\\*\\.conf;|include ${paths.sitesDir}/*.conf;|' ${paths.confPath}`,
+      );
+    } else {
+      // No include at all — add one inside http {}
+      await executor.exec(
+        `sed -i '/http *{/a \\    include ${paths.sitesDir}/*.conf;' ${paths.confPath}`,
+      );
+    }
+  }
+}
+
+/** Minimal nginx.conf that OpenResty can boot with. */
+function MINIMAL_NGINX_CONF(confDir: string, sitesDir: string): string {
+  return `# Auto-generated by Openship — safe to extend
+worker_processes auto;
+events {
+    worker_connections 1024;
+}
+http {
+    include       ${confDir}/mime.types;
+    default_type  application/octet-stream;
+    sendfile      on;
+    keepalive_timeout 65;
+    include ${sitesDir}/*.conf;
+}
+`;
+}
 const GEOIP_DIR = "/usr/share/GeoIP";
 const GEOIP_DB_PATH = `${GEOIP_DIR}/GeoLite2-Country.mmdb`;
 const GEOIP_DB_URL =
@@ -71,6 +251,11 @@ const MANAGEMENT_BLOCK = `\
 server {
     listen 127.0.0.1:${OPENRESTY_MGMT_PORT};
 
+    # Long-running Lua content handlers need generous timeouts
+    send_timeout          3600s;
+    keepalive_timeout     3600s;
+    lua_check_client_abort on;
+
     # SSE live-log stream (long-lived connection)
     location = /logs/stream {
         content_by_lua_file ${OPENRESTY_LUA_DIR}/pipe_stream.lua;
@@ -79,6 +264,23 @@ server {
     # REST analytics + health (short-lived)
     location / {
         content_by_lua_file ${OPENRESTY_LUA_DIR}/mgmt_api.lua;
+    }
+}
+`;
+
+const DEFAULT_BLOCK = `\
+# Openship default catch-all — prevents the stock OpenResty welcome page
+# Auto-generated — do not edit manually
+server {
+    listen 80 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 404;
     }
 }
 `;
@@ -162,6 +364,7 @@ async function installGeoDeps(executor: CommandExecutor): Promise<void> {
  */
 export async function deployLuaScripts(
   executor: CommandExecutor,
+  paths: OpenRestyPaths,
 ): Promise<void> {
   // ── Install geo dependencies (non-fatal) ─────────────────────────────
   await installGeoDeps(executor);
@@ -176,31 +379,34 @@ export async function deployLuaScripts(
     );
   }
 
+  // ── Ensure nginx.conf + sites-enabled directory ───────────────────────
+  // Must run BEFORE sed patches — bootstraps a minimal config if missing.
+  await ensureOpenRestyConfig(executor, paths);
+
   // ── Patch nginx.conf ─────────────────────────────────────────────────
 
   // Shared dict: analytics counters (256 MB)
   await executor.exec(
-    `grep -q 'lua_shared_dict analytics ' ${OPENRESTY_CONF_PATH} || ` +
-      `sed -i '/http *{/a \\    lua_shared_dict analytics 256m;' ${OPENRESTY_CONF_PATH}`,
+    `grep -q 'lua_shared_dict analytics ' ${paths.confPath} || ` +
+      `sed -i '/http *{/a \\    lua_shared_dict analytics 256m;' ${paths.confPath}`,
   );
 
   // Shared dict: request data — ring buffers + live-log pipe (128 MB)
   await executor.exec(
-    `grep -q 'lua_shared_dict request_data ' ${OPENRESTY_CONF_PATH} || ` +
-      `sed -i '/http *{/a \\    lua_shared_dict request_data 128m;' ${OPENRESTY_CONF_PATH}`,
+    `grep -q 'lua_shared_dict request_data ' ${paths.confPath} || ` +
+      `sed -i '/http *{/a \\    lua_shared_dict request_data 128m;' ${paths.confPath}`,
   );
 
   // Lua module search path (OpenResty default + openship modules)
   await executor.exec(
-    `grep -q 'lua_package_path' ${OPENRESTY_CONF_PATH} || ` +
-      `sed -i '/http *{/a \\    lua_package_path "/usr/local/openresty/site/lualib/?.lua;;";' ${OPENRESTY_CONF_PATH}`,
+    `grep -q 'lua_package_path' ${paths.confPath} || ` +
+      `sed -i '/http *{/a \\    lua_package_path "/usr/local/openresty/site/lualib/?.lua;;";' ${paths.confPath}`,
   );
 
   // ── Management server block ──────────────────────────────────────────
-  await executor.mkdir(SITES_DIR);
-  await executor.writeFile(`${SITES_DIR}/_management.conf`, MANAGEMENT_BLOCK);
+  await executor.writeFile(`${paths.sitesDir}/_management.conf`, MANAGEMENT_BLOCK);
+  await executor.writeFile(`${paths.sitesDir}/_default.conf`, DEFAULT_BLOCK);
 
   // ── Validate + reload ────────────────────────────────────────────────
-  await executor.exec("openresty -t");
-  await executor.exec("openresty -s reload");
+  await executor.exec(buildReloadCommand(paths));
 }

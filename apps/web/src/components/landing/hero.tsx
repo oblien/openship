@@ -80,10 +80,10 @@ export function Hero() {
         <div className="animate-fade-in-up animate-delay-300 mt-9 flex flex-col items-center gap-5">
           <div className="flex items-center justify-center gap-3.5">
             <a
-              href="/docs"
+              href="/login"
               className="th-btn group rounded-full px-7 py-3 text-[15px] font-medium"
             >
-              Get Started
+              Start Free
               <svg
                 className="ml-1.5 -mr-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5"
                 fill="none"
@@ -98,7 +98,7 @@ export function Hero() {
               href="/login"
               className="th-btn-ghost group rounded-full px-7 py-3 text-[15px] font-medium"
             >
-              Start Free
+              Self host
               <svg
                 className="ml-1.5 -mr-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5"
                 fill="none"

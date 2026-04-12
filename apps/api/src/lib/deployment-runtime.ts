@@ -37,7 +37,13 @@ function localDockerTransport(): DockerConnectionOptions {
 
 function resolveEffectiveTarget(base: Platform["target"], snapshot: DeploymentMeta): DeployTarget {
   if (base === "desktop") return snapshot.deployTarget ?? "cloud";
-  if (base === "selfhosted") return "local";
+  if (base === "selfhosted") {
+    // Explicit server ID → always SSH
+    if (snapshot.serverId) return "server";
+    // UI chose "server" target but serverId may be missing → still route to SSH
+    if (snapshot.deployTarget === "server") return "server";
+    return "local";
+  }
   return "cloud";
 }
 

@@ -57,7 +57,41 @@ export class SshExecutor implements CommandExecutor {
     return openSftp(client);
   }
 
+  /**
+   * Force-close the current connection so the next call reconnects.
+   */
+  private resetConnection(): void {
+    if (this.client) {
+      try { this.client.end(); } catch {}
+      this.client = null;
+    }
+    this.connecting = null;
+  }
+
+  /** Returns true if the error is an SSH channel-open failure. */
+  private static isChannelError(err: unknown): boolean {
+    if (!(err instanceof Error)) return false;
+    const msg = err.message.toLowerCase();
+    return msg.includes("channel open failure") || msg.includes("open failed");
+  }
+
   async exec(command: string, opts?: { timeout?: number }): Promise<string> {
+    try {
+      return await this._exec(command, opts);
+    } catch (err) {
+      if (SshExecutor.isChannelError(err)) {
+        this.resetConnection();
+        return this._exec(command, opts);
+      }
+      throw err;
+    }
+  }
+
+  /** Prefix applied to every SSH command — keeps dpkg non-interactive. */
+  private static readonly ENV_PREFIX =
+    'export DEBIAN_FRONTEND=noninteractive DPKG_FORCE=confnew && ';
+
+  private async _exec(command: string, opts?: { timeout?: number }): Promise<string> {
     const client = await this.connect();
     const timeout = opts?.timeout ?? 30_000;
 
@@ -66,7 +100,7 @@ export class SshExecutor implements CommandExecutor {
         reject(new Error(`Command timed out after ${timeout}ms: ${command}`));
       }, timeout);
 
-      client.exec(command, (err, stream) => {
+      client.exec(SshExecutor.ENV_PREFIX + command, (err, stream) => {
         if (err) {
           clearTimeout(timer);
           return reject(err);
@@ -99,46 +133,54 @@ export class SshExecutor implements CommandExecutor {
     command: string,
     onLog: (log: LogEntry) => void,
   ): Promise<{ code: number; output: string }> {
-    const connectAndExec = async (): Promise<{ code: number; output: string }> => {
-      const client = await this.connect();
-      const envPrefix = "export DEBIAN_FRONTEND=noninteractive && ";
+    return this._streamExec(command, onLog).catch((err) => {
+      if (SshExecutor.isChannelError(err)) {
+        this.resetConnection();
+        return this._streamExec(command, onLog);
+      }
+      throw err;
+    });
+  }
 
-      return new Promise((resolve, reject) => {
-        client.exec(envPrefix + command, (err, stream) => {
-          if (err) return reject(err);
+  private async _streamExec(
+    command: string,
+    onLog: (log: LogEntry) => void,
+  ): Promise<{ code: number; output: string }> {
+    const client = await this.connect();
 
-          const chunks: string[] = [];
+    return new Promise((resolve, reject) => {
+      client.exec(SshExecutor.ENV_PREFIX + command, (err, stream) => {
+        if (err) return reject(err);
 
-          stream.on("data", (data: Buffer) => {
-            const text = data.toString();
-            for (const raw of text.split("\n")) {
-              const line = raw.trimEnd();
-              if (line) {
-                chunks.push(line);
-                onLog(logEntry(line));
-              }
+        const chunks: string[] = [];
+
+        stream.on("data", (data: Buffer) => {
+          const text = data.toString();
+          for (const raw of text.split("\n")) {
+            const line = raw.trimEnd();
+            if (line) {
+              chunks.push(line);
+              onLog(logEntry(line));
             }
-          });
+          }
+        });
 
-          stream.stderr.on("data", (data: Buffer) => {
-            const text = data.toString();
-            for (const raw of text.split("\n")) {
-              const line = raw.trimEnd();
-              if (line) {
-                chunks.push(line);
-                onLog(logEntry(line, "warn"));
-              }
+        stream.stderr.on("data", (data: Buffer) => {
+          const text = data.toString();
+          for (const raw of text.split("\n")) {
+            const line = raw.trimEnd();
+            if (line) {
+              chunks.push(line);
+              onLog(logEntry(line, "warn"));
             }
-          });
+          }
+        });
 
-          stream.on("close", (code: number) => {
-            resolve({ code: code ?? 1, output: chunks.join("\n") });
-          });
+        stream.on("close", (code: number) => {
+          resolve({ code: code ?? 1, output: chunks.join("\n") });
         });
       });
-    };
-
-    return connectAndExec();
+    });
   }
 
   async writeFile(path: string, content: string): Promise<void> {
@@ -187,6 +229,31 @@ export class SshExecutor implements CommandExecutor {
     } catch {
       // Already gone
     }
+  }
+
+  rawExec(command: string): Promise<{
+    stdout: import("stream").Readable;
+    stderr: import("stream").Readable;
+    onClose: Promise<number>;
+    kill: () => void;
+  }> {
+    return (async () => {
+      const client = await this.connect();
+      return new Promise((resolve, reject) => {
+        client.exec(command, (err, stream) => {
+          if (err) return reject(err);
+          const onClose = new Promise<number>((res) => {
+            stream.on("close", (code: number) => res(code ?? 1));
+          });
+          resolve({
+            stdout: stream,
+            stderr: stream.stderr,
+            onClose,
+            kill: () => { try { stream.close(); } catch {} },
+          });
+        });
+      });
+    })();
   }
 
   async dispose(): Promise<void> {

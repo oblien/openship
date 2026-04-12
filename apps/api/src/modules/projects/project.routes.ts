@@ -65,3 +65,7 @@ projectRoutes.post("/:id/connect", ctrl.connectDomain);
 /* ─── Runtime logs ─────────────────────────────────────────────────────── */
 projectRoutes.get("/:id/logs", ctrl.runtimeLogs);
 projectRoutes.get("/:id/logs/stream", ctrl.runtimeLogStream);
+
+/* ─── Server HTTP request logs (OpenResty live pipe) ───────────────────── */
+projectRoutes.get("/:id/server-logs/recent", ctrl.recentServerLogs);
+projectRoutes.get("/:id/server-logs/stream", ctrl.serverLogStream);

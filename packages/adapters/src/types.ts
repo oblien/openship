@@ -307,4 +307,17 @@ export interface CommandExecutor {
 
   /** Clean up connections / resources. */
   dispose(): Promise<void>;
+
+  /**
+   * Run a command and return the raw stdout/stderr streams without
+   * line splitting.  Enables byte-for-byte piping of command output.
+   *
+   * Only available on SshExecutor — local executors do not implement this.
+   */
+  rawExec?(command: string): Promise<{
+    stdout: import("stream").Readable;
+    stderr: import("stream").Readable;
+    onClose: Promise<number>;
+    kill: () => void;
+  }>;
 }

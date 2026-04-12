@@ -119,7 +119,8 @@ export async function updateService(
 
   if (updated && (enabledChanged || exposedChanged)) {
     try {
-      const { routing } = platform();
+      const { routing, runtime } = platform();
+      const runtimeName = runtime.name;
       const wasRoutable = svc.enabled && svc.exposed;
       const isRoutable = (updated.enabled ?? svc.enabled) && (updated.exposed ?? svc.exposed);
 
@@ -128,7 +129,7 @@ export async function updateService(
         const oldRoute = buildServiceRouteDomain({
           project,
           service: svc,
-          runtimeName: "docker",
+          runtimeName,
           usesManagedRouting: true,
         });
         if (oldRoute) {
@@ -139,7 +140,7 @@ export async function updateService(
         const routeDomain = buildServiceRouteDomain({
           project,
           service: updated,
-          runtimeName: "docker",
+          runtimeName,
           usesManagedRouting: true,
         });
         if (routeDomain && project.activeDeploymentId) {

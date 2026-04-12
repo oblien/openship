@@ -274,14 +274,30 @@ async function destroyResourceOnce(
 // ─── High-Level Orchestrators ────────────────────────────────────────────────
 
 /**
- * Full project deletion: collect → destroy → DB cleanup → soft-delete.
+ * Full project deletion: validate → soft-delete → background cleanup.
  *
- * Replaces the inline loop that previously lived in project.service.ts.
+ * Soft-deletes immediately so the UI reflects "deleting" instantly.
+ * Resource cleanup (containers, images, routes) and DB cleanup run
+ * in the background — the caller does NOT need to await this.
  */
 export async function deleteProject(projectId: string, userId: string): Promise<void> {
   const p = await repos.project.findById(projectId);
   if (!p || p.userId !== userId) throw new NotFoundError("Project", projectId);
 
+  // 1. Soft-delete immediately — project disappears from listings
+  await repos.project.softDelete(projectId);
+
+  // 2. Background cleanup (fire-and-forget)
+  cleanupProjectResources(p!, projectId).catch((err) =>
+    console.error(`[PROJECT] Background cleanup failed for ${projectId}:`, err),
+  );
+}
+
+/** Internal: runs after soft-delete, outside the request lifecycle. */
+async function cleanupProjectResources(
+  p: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
+  projectId: string,
+): Promise<void> {
   // 1. Collect all resources
   const manifest = await collectProjectManifest(p);
 
@@ -297,7 +313,4 @@ export async function deleteProject(projectId: string, userId: string): Promise<
 
   // 3. DB cleanup (hard-delete deployments + build sessions)
   await repos.deployment.deleteByProjectId(projectId);
-
-  // 4. Soft-delete the project
-  await repos.project.softDelete(projectId);
 }

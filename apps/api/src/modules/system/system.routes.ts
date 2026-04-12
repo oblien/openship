@@ -43,6 +43,7 @@ systemRoutes.delete("/servers/:id", authMiddleware, serversCtrl.deleteServer);
 systemRoutes.post("/test-connection", authMiddleware, serverCheck.testConnection);
 systemRoutes.post("/check", authMiddleware, serverCheck.checkServer);
 systemRoutes.post("/install", authMiddleware, serverCheck.installComponent);
+systemRoutes.post("/remove", authMiddleware, serverCheck.removeComponent);
 systemRoutes.post("/install/stream", authMiddleware, serverCheck.installStream);
 systemRoutes.get("/install/stream", authMiddleware, serverCheck.attachInstallStream);
 systemRoutes.get("/install/session", authMiddleware, serverCheck.getInstallSession);

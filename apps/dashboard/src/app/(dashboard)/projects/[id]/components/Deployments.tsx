@@ -10,6 +10,7 @@ import { useToast } from "@/context/ToastContext";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Rocket } from "lucide-react";
 import { getProjectType } from "@repo/core";
+import { encodeLocalSlug, encodeRepoSlug } from "@/utils/repoSlug";
 
 export const Deployments = () => {
   const { id, projectData, setActiveTab } = useProjectSettings();
@@ -22,13 +23,22 @@ export const Deployments = () => {
   const startRedeploy = React.useCallback(async () => {
     if (!projectData?.id) return;
 
-    const response = await projectsApi.createDeploymentSession(projectData.id);
-    if (response.success && response.deployment_id) {
-      router.push(`/build/${response.deployment_id}?redeploy=true`);
+    const hasRepoSource = Boolean(projectData.gitOwner && projectData.gitRepo);
+    const hasLocalSource = Boolean(projectData.localPath);
+
+    if (hasRepoSource) {
+      const slug = encodeRepoSlug(projectData.gitOwner, projectData.gitRepo);
+      router.push(`/deploy/${slug}`);
       return;
     }
 
-    showToast(response.message || "Failed to start redeployment", "error", "Error");
+    if (hasLocalSource) {
+      const slug = encodeLocalSlug(projectData.localPath);
+      router.push(`/deploy/${slug}`);
+      return;
+    }
+
+    showToast("Project source is missing. Reconnect the repository or local path before redeploying.", "error", "Error");
   }, [projectData?.id, router, showToast]);
 
   const handleRedeploy = async () => {

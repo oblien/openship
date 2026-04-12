@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { ArrowUpDown, Gauge, Server, Users } from "lucide-react";
 import {
   TrafficChart,
@@ -10,8 +10,12 @@ import {
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 
 export const MonitoringTab = () => {
-  const { analyticsData, isLoadingAnalytics } = useProjectSettings();
+  const { analyticsData, isLoadingAnalytics, refreshAnalytics } = useProjectSettings();
   const hasAnalytics = !!analyticsData;
+
+  useEffect(() => {
+    void refreshAnalytics(true);
+  }, [refreshAnalytics]);
 
   const formatNumber = (num: number): string => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;

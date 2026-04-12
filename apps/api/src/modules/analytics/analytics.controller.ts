@@ -4,10 +4,11 @@
 
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
-import { getUserId } from "../../lib/controller-helpers";
+import { getUserId, param } from "../../lib/controller-helpers";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { repos } from "@repo/db";
 import * as analyticsService from "./analytics.service";
+import { fetchMgmt } from "../../lib/project-analytics";
 import type { TAnalyticsQuery, TUsageQuery, TUsageStreamQuery } from "./analytics.schema";
 
 // ─── Request analytics ───────────────────────────────────────────────────────
@@ -108,5 +109,70 @@ export async function usageStream(c: Context) {
 export async function dashboard(c: Context) {
   const userId = getUserId(c);
   const data = await analyticsService.getDashboardStats(userId);
+  return c.json({ data });
+}
+
+// ─── Server analytics (OpenResty scraped data) ───────────────────────────────
+
+/**
+ * GET /analytics/server/:serverId — persisted minute-bucket analytics.
+ * Query: ?domain=&from=&to= (ISO timestamps or epoch minutes)
+ */
+export async function serverAnalytics(c: Context) {
+  const serverId = param(c, "serverId");
+  const domain = c.req.query("domain");
+  if (!domain) return c.json({ error: "domain query param is required" }, 400);
+
+  const now = Math.floor(Date.now() / 60_000);
+  const fromParam = c.req.query("from");
+  const toParam = c.req.query("to");
+
+  const fromMinute = fromParam
+    ? (fromParam.includes("-") ? Math.floor(new Date(fromParam).getTime() / 60_000) : Number(fromParam))
+    : now - 60;
+  const toMinute = toParam
+    ? (toParam.includes("-") ? Math.floor(new Date(toParam).getTime() / 60_000) : Number(toParam))
+    : now;
+
+  const buckets = await repos.analytics.queryBuckets({
+    serverId,
+    domain,
+    fromMinute,
+    toMinute,
+  });
+
+  return c.json({ data: buckets });
+}
+
+/**
+ * GET /analytics/server/:serverId/geo — daily geo aggregates from DB.
+ * Query: ?domain=&day=YYYYMMDD
+ */
+export async function serverGeo(c: Context) {
+  const serverId = param(c, "serverId");
+  const domain = c.req.query("domain");
+  if (!domain) return c.json({ error: "domain query param is required" }, 400);
+
+  const day = c.req.query("day") ?? new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+  const geo = await repos.analytics.queryGeo({ serverId, domain, day });
+  return c.json({ data: geo ?? { countries: {} } });
+}
+
+/**
+ * GET /analytics/server/:serverId/live — proxy live analytics from the
+ * management API on the server (via SSH). Returns real-time data that
+ * hasn't been scraped to DB yet.
+ * Query: ?domain=
+ */
+export async function serverAnalyticsLive(c: Context) {
+  const serverId = param(c, "serverId");
+  const domain = c.req.query("domain");
+  if (!domain) return c.json({ error: "domain query param is required" }, 400);
+
+  const data = await fetchMgmt(serverId, `/analytics/totals?domain=${encodeURIComponent(domain)}`);
+  if (!data) {
+    return c.json({ error: "Failed to reach server management API" }, 502);
+  }
   return c.json({ data });
 }
