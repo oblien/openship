@@ -22,7 +22,7 @@ const footerLinks = {
   Legal: [
     { label: "Privacy", href: "/privacy" },
     { label: "Terms", href: "/terms" },
-    { label: "License (MIT)", href: "https://github.com/openshiporg/openship/blob/main/LICENSE" },
+    { label: "License (MIT)", href: "https://github.com/oblien/openship/blob/main/LICENSE" },
   ],
 };
 
@@ -103,7 +103,7 @@ export function Footer() {
           <div className="flex items-center gap-5">
             {/* GitHub */}
             <a
-              href="https://github.com/openshiporg/openship"
+              href="https://github.com/oblien/openship"
               target="_blank"
               rel="noopener noreferrer"
               className="th-text-muted transition-colors hover:text-[var(--th-text-strong)]"

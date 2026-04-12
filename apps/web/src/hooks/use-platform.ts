@@ -11,7 +11,7 @@ export interface PlatformInfo {
   fileName: string;
 }
 
-const DOWNLOAD_BASE = "https://github.com/openshiporg/openship/releases/latest/download";
+const DOWNLOAD_BASE = "https://github.com/oblien/openship/releases/latest/download";
 
 const PLATFORM_MAP: Record<Platform, PlatformInfo> = {
   "mac-arm": {

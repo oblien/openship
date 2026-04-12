@@ -31,7 +31,7 @@ export default function BlogLayout({ children }: { children: ReactNode }) {
               Blog
             </Link>
             <a
-              href="https://github.com/openshiporg/openship"
+              href="https://github.com/oblien/openship"
               target="_blank"
               rel="noopener noreferrer"
               className="text-gray-400 transition-colors hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"

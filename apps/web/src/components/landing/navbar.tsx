@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { label: "Pricing", href: "/pricing" },
 ];
 
-const GITHUB_URL = "https://github.com/openshiporg/openship";
+const GITHUB_URL = "https://github.com/oblien/openship";
 
 export function Navbar() {
   const [dark, setDark] = useState(false);

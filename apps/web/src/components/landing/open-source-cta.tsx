@@ -113,7 +113,7 @@ export function OpenSourceCta() {
                 </svg>
               </a>
               <a
-                href="https://github.com/openshiporg/openship"
+                href="https://github.com/oblien/openship"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="th-btn-ghost rounded-full px-7 py-3 text-[15px]"

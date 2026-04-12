@@ -69,7 +69,7 @@ export function FinalCta() {
                 </svg>
               </a>
               <a
-                href="https://github.com/openshiporg/openship"
+                href="https://github.com/oblien/openship"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="th-btn-ghost rounded-full px-8 py-3.5 text-[15px] font-medium"

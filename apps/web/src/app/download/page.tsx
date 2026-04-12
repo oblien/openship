@@ -67,7 +67,7 @@ const DOWNLOADS: {
 ];
 
 const DOWNLOAD_BASE =
-  "https://github.com/openshiporg/openship/releases/latest/download";
+  "https://github.com/oblien/openship/releases/latest/download";
 
 const STEPS = [
   {
@@ -141,7 +141,7 @@ export default function DownloadPage() {
               Blog
             </Link>
             <a
-              href="https://github.com/openshiporg/openship"
+              href="https://github.com/oblien/openship"
               target="_blank"
               rel="noopener noreferrer"
               className="transition-colors"
