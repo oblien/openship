@@ -38,7 +38,7 @@ const PLAN_ICON: Record<PlanId, LucideIcon> = {
 const PLAN_COLOR: Record<PlanId, string> = {
   free: "bg-muted text-muted-foreground",
   pro: "bg-primary/10 text-primary",
-  team: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  team: "bg-muted text-foreground",
 };
 
 const MOCK_INVOICES = [
