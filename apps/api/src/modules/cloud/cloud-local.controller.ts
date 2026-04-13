@@ -13,6 +13,25 @@
 
 import type { Context } from "hono";
 import { getUserId } from "../../lib/controller-helpers";
+import { env } from "../../config/env";
+
+// ─── Result page (shown in popup / browser tab after connect) ────────────────
+
+function connectResultPage(title: string, message: string, success = false): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Openship</title>
+<script>
+// Auto-close popup windows; the opener detects the close event.
+if (window.opener) { window.close(); }
+</script></head>
+<body style="display:flex;align-items:center;justify-content:center;height:100vh;margin:0;font-family:system-ui,-apple-system,sans-serif;background:#0a0a0a;color:#fafafa">
+<div style="text-align:center;max-width:420px">
+  <div style="font-size:48px;margin-bottom:16px">${success ? "\u2713" : "\u26A0"}</div>
+  <h2 style="margin:0 0 8px">${title}</h2>
+  <p style="color:#888;margin:0 0 24px">${message}</p>
+  ${success ? '<p style="color:#555;font-size:14px">You can close this window.</p>' : ""}
+</div>
+</body></html>`;
+}
 
 // ─── Cloud account management ────────────────────────────────────────────────
 
@@ -46,7 +65,7 @@ export async function connectCallback(c: Context) {
   const userId = getUserId(c);
   const code = c.req.query("code");
   if (!code) {
-    return c.redirect("/settings?error=missing_code");
+    return c.html(connectResultPage("Missing Code", "The authentication code was not provided. Please try again."));
   }
 
   try {
@@ -54,13 +73,13 @@ export async function connectCallback(c: Context) {
 
     const data = await exchangeCodeWithCloud(code);
     if (!data) {
-      return c.redirect("/settings?error=exchange_failed");
+      return c.html(connectResultPage("Connection Failed", "Could not verify with Openship Cloud. Please try again."));
     }
 
     await storeCloudSession(userId, data.sessionToken);
 
-    return c.redirect("/settings?cloud=connected");
+    return c.html(connectResultPage("Connected to Openship Cloud", "Your instance is now linked. You can close this window.", true));
   } catch {
-    return c.redirect("/settings?error=connect_failed");
+    return c.html(connectResultPage("Connection Failed", "Something went wrong. Please try again."));
   }
 }
