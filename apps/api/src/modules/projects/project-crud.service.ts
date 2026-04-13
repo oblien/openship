@@ -13,11 +13,21 @@ import type { TCreateProjectBody, TUpdateProjectBody } from "./project.schema";
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Enrich a project row with computed fields */
-export function enrichProject(p: Project) {
+export async function enrichProject(p: Project) {
   const production = p.resources as ResourceConfig | null;
   const build = p.buildResources as ResourceConfig | null;
+
+  // Resolve deploy target from the active deployment's meta
+  let deployTarget: string | null = null;
+  if (p.activeDeploymentId) {
+    const dep = await repos.deployment.findById(p.activeDeploymentId);
+    const meta = dep?.meta as { deployTarget?: string } | null;
+    deployTarget = meta?.deployTarget ?? null;
+  }
+
   return {
     ...p,
+    deployTarget,
     resources: encodeResources(
       production,
       build,

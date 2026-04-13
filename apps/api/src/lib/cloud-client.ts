@@ -157,3 +157,25 @@ export async function syncEdgeProxy(
     throw new Error(`Edge proxy sync failed (${res.status}): ${text}`);
   }
 }
+
+// ─── Billing ─────────────────────────────────────────────────────────────────
+
+/**
+ * Proxy a billing request to the SaaS API.
+ *
+ * Used by local/desktop instances so cloud-connected users can manage
+ * their subscription, payment methods, and invoices through the SaaS.
+ *
+ * Returns the raw Response so the caller can forward status + body.
+ * Returns null if the user isn't connected to Openship Cloud.
+ */
+export async function cloudBillingFetch(
+  userId: string,
+  path: string,
+  init?: { method?: string; body?: string },
+): Promise<Response | null> {
+  return cloudFetch(userId, `/api/billing${path}`, {
+    method: init?.method ?? "GET",
+    body: init?.body,
+  });
+}

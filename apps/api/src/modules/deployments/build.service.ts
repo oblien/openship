@@ -3,7 +3,7 @@
  */
 
 import { repos, type Project, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, getRuntimeImage, type StackId, type DeployTarget, type BuildStrategy } from "@repo/core";
+import { NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, getRuntimeImage, type StackId, type DeployTarget, type BuildStrategy, type StackDefinition } from "@repo/core";
 import type { BuildConfig, CommandExecutor, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
 import { BareRuntime, BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, DockerRuntime, ensurePortAvailable, runDeployPipeline, createPlatform, isMultiServiceRuntime } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
@@ -220,7 +220,7 @@ function resolveRuntimeImage(project: Project): string {
 function parseProductionPaths(raw: string | null | undefined, framework: string | null | undefined): string[] {
   if (raw) return raw.split(",").map((s) => s.trim()).filter(Boolean);
   if (framework && framework in STACKS) {
-    const paths = STACKS[framework as StackId] as import("@repo/core").StackDefinition;
+    const paths = STACKS[framework as StackId] as StackDefinition;
     return paths.productionPaths ? [...paths.productionPaths] : [];
   }
   return [];
@@ -952,7 +952,7 @@ async function executeBuildAndDeploy(
         ? await repos.deployment.findById(project.activeDeploymentId)
         : null;
       const previousRuntime = prevDep?.containerId
-        ? await resolveDeploymentRuntime(prevDep).catch(() => runtime)
+        ? await resolveDeploymentRuntime(prevDep).then(r => r.runtime).catch(() => runtime)
         : runtime;
 
       // ── Gather all domains that need routing ───────────────────────

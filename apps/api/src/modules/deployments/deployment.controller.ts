@@ -3,7 +3,7 @@
  */
 
 import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
+import { streamSSE } from "../../lib/sse";
 import { getUserId, param } from "../../lib/controller-helpers";
 import * as deploymentService from "./deployment.service";
 import * as buildService from "./build.service";

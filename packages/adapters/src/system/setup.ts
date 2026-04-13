@@ -38,6 +38,7 @@ import type {
   PrerequisiteRule,
   RuntimeMode,
   SetupResult,
+  SystemCheckResult,
   SystemLogCallback,
   SystemLog,
 } from "./types";
@@ -158,7 +159,7 @@ export class SystemManager {
    * Check all registered components — runs actual system commands.
    * Updates the cached state with fresh results.
    */
-  async checkAll(): Promise<import("./types").SystemCheckResult> {
+  async checkAll(): Promise<SystemCheckResult> {
     const components = await checkAll(this.executor);
 
     const missing = components
@@ -172,7 +173,7 @@ export class SystemManager {
   }
 
   /** Check only the components required for this runtime mode. */
-  async checkRequired(): Promise<import("./types").SystemCheckResult> {
+  async checkRequired(): Promise<SystemCheckResult> {
     const components = await checkComponents(this.executor, this.required);
 
     const missing = components.filter((c) => !c.healthy).map((c) => c.name);
@@ -371,7 +372,7 @@ export class SystemManager {
    * Force re-verification: run all checks and update state.
    * Called automatically when cache is stale, or manually by the user.
    */
-  async verify(): Promise<import("./types").SystemCheckResult> {
+  async verify(): Promise<SystemCheckResult> {
     const result = await this.checkAll();
     return result;
   }

@@ -115,6 +115,7 @@ interface ServerConnection {
 export class SshConnectionManager {
   private servers = new Map<string, ServerConnection>();
   private connecting = new Map<string, Promise<CommandExecutor>>();
+  private retainCounts = new Map<string, number>();
   private destroyed = false;
   private readonly opts: Required<SshManagerOptions>;
 
@@ -222,6 +223,40 @@ export class SshConnectionManager {
     }
   }
 
+  /**
+   * Mark a connection as actively in use by a long-lived operation
+   * (streaming, Docker tunnels, etc.).
+   *
+   * Pauses the idle timer so the connection isn't dropped mid-stream.
+   * Must be paired with a `release()` call.
+   */
+  retain(serverId: string): void {
+    const count = (this.retainCounts.get(serverId) ?? 0) + 1;
+    this.retainCounts.set(serverId, count);
+    // Pause idle timer while retained
+    const conn = this.servers.get(serverId);
+    if (conn?.idleTimer) {
+      clearTimeout(conn.idleTimer);
+      conn.idleTimer = null;
+    }
+    debugSsh(`retain server=${serverId} count=${count}`);
+  }
+
+  /**
+   * Release a long-lived hold on a connection.
+   * When all holds are released, the idle timer restarts.
+   */
+  release(serverId: string): void {
+    const count = Math.max(0, (this.retainCounts.get(serverId) ?? 0) - 1);
+    if (count === 0) {
+      this.retainCounts.delete(serverId);
+      this.touchIdleTimer(serverId);
+    } else {
+      this.retainCounts.set(serverId, count);
+    }
+    debugSsh(`release server=${serverId} count=${count}`);
+  }
+
   /** Shut down the manager. No further acquire() calls allowed. */
   destroy(): void {
     this.destroyed = true;
@@ -257,6 +292,9 @@ export class SshConnectionManager {
     const conn = this.servers.get(serverId);
     if (!conn) return;
 
+    // Don't set idle timer while connection is retained by long-lived ops
+    if ((this.retainCounts.get(serverId) ?? 0) > 0) return;
+
     if (conn.idleTimer) clearTimeout(conn.idleTimer);
     conn.idleTimer = setTimeout(() => {
       debugSsh(`idle-timeout:drop-connection server=${serverId}`);
@@ -272,6 +310,7 @@ export class SshConnectionManager {
     if (!conn) return;
 
     if (conn.idleTimer) clearTimeout(conn.idleTimer);
+    this.retainCounts.delete(serverId);
     if ("dispose" in conn.executor && typeof conn.executor.dispose === "function") {
       conn.executor.dispose();
     }

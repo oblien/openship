@@ -12,7 +12,7 @@ import { deploymentRoutes } from "./modules/deployments/deployment.routes";
 import { domainRoutes } from "./modules/domains/domain.routes";
 import { serviceRoutes } from "./modules/services/service.routes";
 import { analyticsRoutes } from "./modules/analytics/analytics.routes";
-import { billingRoutes } from "./modules/billing/billing.routes";
+import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
 import { githubRoutes } from "./modules/github";
@@ -47,12 +47,15 @@ app.route("/api/webhooks", webhookRoutes);
 app.route("/api/github", githubRoutes);
 app.route("/api/analytics", analyticsRoutes);
 app.route("/api/settings", settingsRoutes);
+app.route("/api/billing", billingPlansRoutes);
 
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
   const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");
   app.route("/api/cloud", cloudSaasRoutes);
-  app.route("/api/billing", billingRoutes);
+
+  const { billingSaasRoutes } = await import("./modules/billing/billing.routes");
+  app.route("/api/billing", billingSaasRoutes);
 } else {
   /**
    * System routes — filesystem browse, instance setup, user provisioning.
@@ -72,6 +75,10 @@ if (env.CLOUD_MODE) {
   /** Cloud account management — connect/disconnect to Openship Cloud */
   const { cloudLocalRoutes } = await import("./modules/cloud/cloud-local.routes");
   app.route("/api/cloud", cloudLocalRoutes);
+
+  /** Billing proxy — cloud-connected local instances proxy to SaaS */
+  const { billingLocalRoutes } = await import("./modules/billing/billing-local.routes");
+  app.route("/api/billing", billingLocalRoutes);
 
   /** Start the periodic analytics scraper for managed servers */
   const { startAnalyticsScraper } = await import("./modules/system/analytics-scraper");

@@ -2,6 +2,10 @@
  * Shared helpers for resolving a project's tracked domain, server,
  * and querying the OpenResty management API.
  *
+ * The actual HTTP-over-SSH-tunnel logic lives in `./ssh-tunnel.ts`.
+ * This file provides the OpenResty-specific convenience wrappers and
+ * project → domain + server resolution.
+ *
  * Used by:
  *   - analytics.service.ts  (summary, periods)
  *   - project.controller.ts (server log stream, recent logs)
@@ -11,7 +15,9 @@
 import { repos } from "@repo/db";
 import { OPENRESTY_MGMT_PORT } from "@repo/adapters";
 import { getRoutingBaseDomain } from "./routing-domains";
-import { sshManager } from "./ssh-manager";
+import { tunnelRequest, tunnelStream } from "./ssh-tunnel";
+
+export type { TunnelStreamHandle } from "./ssh-tunnel";
 
 // ─── Domain normalisation ────────────────────────────────────────────────────
 
@@ -71,68 +77,50 @@ export async function resolveProjectTracking(
   return { domain: normalizeTrackedDomain(hostname), serverId };
 }
 
-// ─── OpenResty management API client ─────────────────────────────────────────
-
-const MGMT_BASE = `http://127.0.0.1:${OPENRESTY_MGMT_PORT}`;
-
-async function execMgmtRequest(
-  serverId: string,
-  command: string,
-): Promise<string | null> {
-  try {
-    return await sshManager.withExecutor(serverId, (executor) =>
-      executor.exec(command, { timeout: 10_000 }),
-    );
-  } catch {
-    return null;
-  }
-}
+// ─── OpenResty management API wrappers ───────────────────────────────────────
 
 /**
- * Execute a curl request to an OpenResty management API endpoint via SSH.
- * Returns parsed JSON or null on any error (unreachable, timeout, bad JSON).
+ * GET JSON from the OpenResty management API through SSH tunnel.
  */
 export async function fetchMgmt<T>(
   serverId: string,
   path: string,
 ): Promise<T | null> {
-  const raw = await execMgmtRequest(serverId, `curl -sf '${MGMT_BASE}${path}'`);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+  const res = await tunnelRequest(serverId, OPENRESTY_MGMT_PORT, path);
+  if (!res || res.statusCode < 200 || res.statusCode >= 300) return null;
+  try { return JSON.parse(res.body) as T; } catch { return null; }
 }
 
 /**
- * Lightweight health probe for the OpenResty management port.
- * `/health` returns plain text, so it must not go through JSON parsing.
- */
-export async function probeMgmt(serverId: string): Promise<boolean> {
-  const raw = await execMgmtRequest(serverId, `curl -sf '${MGMT_BASE}/health'`);
-  return raw?.trim() === "ok";
-}
-
-/**
- * POST to an OpenResty management API endpoint via SSH.
- * Used by the scraper's flush operation (read + delete).
+ * POST to the OpenResty management API through SSH tunnel.
  */
 export async function postMgmt<T>(
   serverId: string,
   path: string,
 ): Promise<T | null> {
-  const raw = await execMgmtRequest(serverId, `curl -sf -X POST '${MGMT_BASE}${path}'`);
-  if (!raw) {
-    return null;
-  }
+  const res = await tunnelRequest(serverId, OPENRESTY_MGMT_PORT, path, {
+    method: "POST",
+  });
+  if (!res || res.statusCode < 200 || res.statusCode >= 300) return null;
+  try { return JSON.parse(res.body) as T; } catch { return null; }
+}
 
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+/**
+ * Lightweight health probe for the OpenResty management port.
+ */
+export async function probeMgmt(serverId: string): Promise<boolean> {
+  const res = await tunnelRequest(serverId, OPENRESTY_MGMT_PORT, "/health");
+  return res?.body.trim() === "ok";
+}
+
+/**
+ * Open a streaming SSE connection to the OpenResty management API.
+ * Returns a tunnel stream handle — caller pipes `handle.stream.on("data", ...)`
+ * to the SSE client.
+ */
+export async function mgmtStream(
+  serverId: string,
+  path: string,
+) {
+  return tunnelStream(serverId, OPENRESTY_MGMT_PORT, path);
 }

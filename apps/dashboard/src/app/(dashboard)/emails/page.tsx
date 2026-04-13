@@ -11,6 +11,7 @@ import {
   type PortConflict,
 } from "@/lib/api";
 import type { ServerOption } from "@/components/shared/ServerSelector";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { MailSetupForm } from "./_components/mail-setup-form";
 import { MailProgress } from "./_components/mail-progress";
 import { MailSidebar } from "./_components/mail-sidebar";
@@ -236,8 +237,7 @@ export default function EmailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -294,7 +294,6 @@ export default function EmailsPage() {
             />
           </div>
         )}
-      </div>
-    </div>
+    </PageContainer>
   );
 }

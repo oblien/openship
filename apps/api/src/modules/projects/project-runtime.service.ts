@@ -22,7 +22,7 @@ export async function getRuntimeLogs(projectId: string, userId: string, tail?: n
     throw new NotFoundError("No running container for project", projectId);
   }
 
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   return runtime.getRuntimeLogs(dep.containerId, tail);
 }
 
@@ -44,8 +44,9 @@ export async function streamRuntimeLogs(
     throw new NotFoundError("No running container for project", projectId);
   }
 
-  const runtime = await resolveDeploymentRuntime(dep);
-  return runtime.streamRuntimeLogs(dep.containerId, onLog, opts);
+  const { runtime, serverId } = await resolveDeploymentRuntime(dep);
+  const cleanup = await runtime.streamRuntimeLogs(dep.containerId, onLog, opts);
+  return { cleanup, serverId };
 }
 
 // ─── Enable / Disable ────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ export async function enableProject(projectId: string, userId: string) {
     throw new ValidationError("No container found for active deployment");
   }
 
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   await runtime.start(dep.containerId);
   return { success: true, message: "Project enabled" };
 }
@@ -81,7 +82,7 @@ export async function disableProject(projectId: string, userId: string) {
     return { success: true, message: "No container to stop" };
   }
 
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   await runtime.stop(dep.containerId);
   return { success: true, message: "Project disabled" };
 }

@@ -24,7 +24,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/context/ToastContext";
 import { projectsApi } from "@/lib/api";
 import ErrorState from "@/components/shared/ErrorState";
-import { SectionContainer } from "@/components/ui/SectionContainer";
+import { PageContainer } from "@/components/ui/PageContainer";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 
 const ProjectSettingsContent = () => {
@@ -129,7 +129,7 @@ const ProjectSettingsContent = () => {
 
   if (isLoadingAnalytics) {
     return (
-      <SectionContainer>
+      <PageContainer fullScreen={false}>
         <div className="space-y-5 py-6">
           {/* Skeleton cards */}
           <div className="bg-card rounded-2xl border border-border/50 p-6 animate-pulse">
@@ -152,12 +152,11 @@ const ProjectSettingsContent = () => {
             ))}
           </div>
         </div>
-      </SectionContainer>
+      </PageContainer>
     );
   }
   return (
-    <div className="min-h-screen bg-background">
-      <SectionContainer>
+    <PageContainer>
         {/* Compact Header */}
         <div className="mb-6">
           <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-2">
@@ -207,9 +206,7 @@ const ProjectSettingsContent = () => {
             <ProjectSidebar />
           </div>
         </div>
-      </SectionContainer>
-
-    </div>
+    </PageContainer>
   );
 };
 

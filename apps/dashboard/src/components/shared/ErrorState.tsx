@@ -10,6 +10,7 @@ import {
   HelpCircle,
   ExternalLink,
 } from "lucide-react";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 /* ── Error type configs ─────────────────────────────────────────────── */
 
@@ -85,8 +86,7 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
   const subtitle = error.details || config.subtitle;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer>
         <div className="max-w-xl mx-auto pt-12">
 
           {/* ── Error card ───────────────────────────────────────── */}
@@ -170,7 +170,6 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
           </div>
 
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

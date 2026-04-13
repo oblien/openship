@@ -9,15 +9,17 @@ import {
   transferRemoteDirectoryWithRsync,
   transferRemoteDirectoryWithTar,
 } from "./remote-transfer";
-import { connectSshClient, openSftp } from "./ssh-client";
+import type { Client as SshClient, SFTPWrapper } from "ssh2";
+import type { Readable, Duplex } from "node:stream";
+import { connectSshClient, openSftp, openSshUnixSocket, type StreamLocalCapableClient } from "./ssh-client";
 
 /**
  * Runs commands on a remote server via SSH.
  * File operations use SFTP.
  */
 export class SshExecutor implements CommandExecutor {
-  private client: import("ssh2").Client | null = null;
-  private connecting: Promise<import("ssh2").Client> | null = null;
+  private client: SshClient | null = null;
+  private connecting: Promise<SshClient> | null = null;
   private readonly config: SshConfig;
 
   constructor(config: SshConfig) {
@@ -27,7 +29,7 @@ export class SshExecutor implements CommandExecutor {
     this.config = config;
   }
 
-  private async connect(): Promise<import("ssh2").Client> {
+  private async connect(): Promise<SshClient> {
     if (this.client) return this.client;
     if (this.connecting) return this.connecting;
 
@@ -52,7 +54,7 @@ export class SshExecutor implements CommandExecutor {
     return this.connecting;
   }
 
-  private async sftp(): Promise<import("ssh2").SFTPWrapper> {
+  private async sftp(): Promise<SFTPWrapper> {
     const client = await this.connect();
     return openSftp(client);
   }
@@ -232,8 +234,8 @@ export class SshExecutor implements CommandExecutor {
   }
 
   rawExec(command: string): Promise<{
-    stdout: import("stream").Readable;
-    stderr: import("stream").Readable;
+    stdout: Readable;
+    stderr: Readable;
     onClose: Promise<number>;
     kill: () => void;
   }> {
@@ -254,6 +256,25 @@ export class SshExecutor implements CommandExecutor {
         });
       });
     })();
+  }
+
+  async forwardUnixSocket(socketPath: string): Promise<Duplex> {
+    const client = await this.connect();
+    return openSshUnixSocket(client as StreamLocalCapableClient, socketPath);
+  }
+
+  async forwardPort(remoteHost: string, remotePort: number): Promise<Duplex> {
+    const client = await this.connect();
+    return new Promise<Duplex>((resolve, reject) => {
+      client.forwardOut(
+        "127.0.0.1", 0,
+        remoteHost, remotePort,
+        (err, stream) => {
+          if (err) return reject(err);
+          resolve(stream as unknown as Duplex);
+        },
+      );
+    });
   }
 
   async dispose(): Promise<void> {

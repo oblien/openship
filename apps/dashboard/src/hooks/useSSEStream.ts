@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { Terminal } from '@xterm/xterm';
 
 /**
@@ -300,10 +300,10 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
     return isConnectedRef.current;
   }, []);
 
-  return {
+  return useMemo(() => ({
     connect,
     disconnect,
     isConnected,
     processSSEChunk, // Exposed for manual processing
-  };
+  }), [connect, disconnect, isConnected, processSSEChunk]);
 };

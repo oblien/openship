@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { usePlatform } from "@/context/PlatformContext";
 import { servicesApi, type Service } from "@/lib/api/services";
 import {
   ExternalLink,
@@ -20,7 +19,6 @@ import {
 
 export const OverviewTab = () => {
   const { projectData, gitData, buildData, analyticsData, isLoadingAnalytics, refreshAnalytics, setActiveTab } = useProjectSettings();
-  const { selfHosted } = usePlatform();
 
   const [services, setServices] = useState<Service[]>([]);
 
@@ -31,7 +29,15 @@ export const OverviewTab = () => {
     }).catch(() => {});
   }, [refreshAnalytics, projectData.id]);
 
-  const platformLabel = selfHosted ? "Self-hosted" : "Openship Cloud";
+  // deployTarget comes from API (active deployment's meta), not from global dashboard mode
+  const deployTarget = projectData.deployTarget as string | null;
+  const platformLabel = deployTarget === "cloud"
+    ? "Openship Cloud"
+    : deployTarget === "server"
+      ? "Self-hosted (Server)"
+      : deployTarget === "local"
+        ? "Self-hosted (Local)"
+        : "—";
   const hasGit = !!(projectData.gitOwner && projectData.gitRepo);
   const modeLabel =
     projectData.productionMode === "static"

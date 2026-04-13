@@ -21,6 +21,7 @@ import {
 import { getApiErrorMessage, isAbortError, systemApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { useSetupStream } from "@/hooks/useSetupStream";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
 import type { ServerInfo, ComponentStatus, SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
@@ -360,8 +361,7 @@ export default function ServerDetailPage({
 
   if (!server) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <PageContainer>
           <div className="flex items-center gap-3 mb-6">
             <button
               onClick={() => router.push("/servers")}
@@ -376,8 +376,7 @@ export default function ServerDetailPage({
           <p className="text-sm text-muted-foreground">
             No server configured with id &ldquo;{serverId}&rdquo;.
           </p>
-        </div>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -398,8 +397,7 @@ export default function ServerDetailPage({
     : setupStream.finalStatus;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer>
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <button
@@ -588,7 +586,6 @@ export default function ServerDetailPage({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

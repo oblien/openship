@@ -8,18 +8,18 @@
  */
 
 import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
+import { streamSSE } from "../../lib/sse";
 import { getUserId, param } from "../../lib/controller-helpers";
 import * as projectService from "./project.service";
 import type { TCreateProjectBody, TUpdateProjectBody, TSetEnvVarsBody, TUpdateResourcesBody } from "./project.schema";
 import { detectStack, MANIFEST_FILES, type RepoFile } from "../../lib/stack-detector";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { repos } from "@repo/db";
-import { OPENRESTY_MGMT_PORT, deployLuaScripts, detectOpenRestyPaths } from "@repo/adapters";
+import { deployLuaScripts, detectOpenRestyPaths } from "@repo/adapters";
 import * as domainService from "../domains/domain.service";
 import { sshManager } from "../../lib/ssh-manager";
 import { env } from "../../config";
-import { resolveProjectTracking } from "../../lib/project-analytics";
+import { resolveProjectTracking, fetchMgmt, mgmtStream } from "../../lib/project-analytics";
 
 // Track which servers have had Lua scripts deployed this session
 const luaDeployedServers = new Set<string>();
@@ -282,14 +282,10 @@ export async function runtimeLogStream(c: Context) {
 
   return streamSSE(c, async (sseStream) => {
     let cleanup: (() => void) | null = null;
-    let heartbeat: NodeJS.Timeout | null = null;
+    let serverId: string | null = null;
 
     try {
-      heartbeat = setInterval(() => {
-        void sseStream.writeSSE({ event: "ping", data: JSON.stringify({ ok: true }) }).catch(() => {});
-      }, 15_000);
-
-      cleanup = await projectService.streamRuntimeLogs(id, userId, (entry) => {
+      const result = await projectService.streamRuntimeLogs(id, userId, (entry) => {
         void sseStream.writeSSE({
           event: "log",
           data: JSON.stringify({
@@ -302,10 +298,13 @@ export async function runtimeLogStream(c: Context) {
         });
       }, { tail });
 
+      cleanup = result.cleanup;
+      serverId = result.serverId;
+      if (serverId) sshManager.retain(serverId);
+
       // Keep the stream open until client disconnects
       await new Promise<void>((resolve) => {
         sseStream.onAbort(() => {
-          if (heartbeat) clearInterval(heartbeat);
           cleanup?.();
           resolve();
         });
@@ -313,8 +312,9 @@ export async function runtimeLogStream(c: Context) {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to stream logs";
       await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: message }) });
-      if (heartbeat) clearInterval(heartbeat);
       cleanup?.();
+    } finally {
+      if (serverId) sshManager.release(serverId);
     }
   });
 }
@@ -345,75 +345,41 @@ export async function serverLogStream(c: Context) {
   const { domain, serverId } = tracking;
 
   return streamSSE(c, async (sseStream) => {
-    let executor: Awaited<ReturnType<typeof sshManager.acquire>>;
-    let heartbeat: NodeJS.Timeout | null = null;
+    // Retain the connection so idle timer doesn't drop it mid-stream
+    sshManager.retain(serverId);
     try {
-      executor = await sshManager.acquire(serverId);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "SSH connection failed";
-      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: msg }) }).catch(() => {});
-      return;
-    }
-
-    if (!executor.rawExec) {
-      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Server does not support raw streaming" }) }).catch(() => {});
-      return;
-    }
-
-    // Deploy Lua scripts once per server per API session
-    if (!luaDeployedServers.has(serverId!)) {
-      try {
-        const paths = await detectOpenRestyPaths(executor);
-        await deployLuaScripts(executor, paths);
-        luaDeployedServers.add(serverId!);
-      } catch {
-        // Non-fatal — scripts may already be up to date
-      }
-    }
-
-    // Run curl on the remote server — curl handles HTTP, we get pure SSE bytes on stdout
-    const curlCmd = `curl -Nsf 'http://127.0.0.1:${OPENRESTY_MGMT_PORT}/logs/stream?domain=${encodeURIComponent(domain)}'`;
-    let proc: Awaited<ReturnType<typeof executor.rawExec>>;
-    try {
-      proc = await executor.rawExec(curlCmd);
-    } catch {
-      await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Failed to connect to log service — ensure OpenResty is running" }) }).catch(() => {});
-      return;
-    }
-
-    heartbeat = setInterval(() => {
-      void sseStream.writeSSE({ event: "ping", data: JSON.stringify({ ok: true }) }).catch(() => {});
-    }, 15_000);
-
-    sseStream.onAbort(() => {
-      if (heartbeat) clearInterval(heartbeat);
-      proc.kill();
-    });
-
-    // Pure byte pipe: curl stdout → browser.  No parsing, no transformation.
-    await new Promise<void>((resolve) => {
-      proc.stdout.on("data", (chunk: Buffer) => {
-        sseStream.write(chunk.toString()).catch(() => { proc.kill(); });
-      });
-
-      proc.stdout.on("close", () => {
-        if (heartbeat) clearInterval(heartbeat);
-        resolve();
-      });
-      proc.stdout.on("error", () => {
-        if (heartbeat) clearInterval(heartbeat);
-        resolve();
-      });
-
-      // If curl exits non-zero (service down), send an error event
-      proc.onClose.then((code) => {
-        if (heartbeat) clearInterval(heartbeat);
-        if (code !== 0) {
-          sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Log streaming service unavailable — ensure OpenResty Lua scripts are deployed" }) }).catch(() => {});
+      // Deploy Lua scripts once per server per API session
+      if (!luaDeployedServers.has(serverId!)) {
+        try {
+          const executor = await sshManager.acquire(serverId);
+          const paths = await detectOpenRestyPaths(executor);
+          await deployLuaScripts(executor, paths);
+          luaDeployedServers.add(serverId!);
+        } catch {
+          // Non-fatal — scripts may already be up to date
         }
-        resolve();
+      }
+
+      const reqPath = `/logs/stream?domain=${encodeURIComponent(domain)}`;
+      const conn = await mgmtStream(serverId, reqPath);
+      if (!conn) {
+        await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Failed to connect to log service — ensure OpenResty is running" }) }).catch(() => {});
+        return;
+      }
+
+      sseStream.onAbort(() => conn.destroy());
+
+      await new Promise<void>((resolve) => {
+        conn.stream.on("data", (chunk: Buffer) => {
+          sseStream.write(chunk.toString()).catch(() => conn.destroy());
+        });
+        conn.stream.on("close", () => resolve());
+        conn.stream.on("end", () => resolve());
+        conn.stream.on("error", () => resolve());
       });
-    });
+    } finally {
+      sshManager.release(serverId);
+    }
   });
 }
 
@@ -436,18 +402,11 @@ export async function recentServerLogs(c: Context) {
 
   const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "50", 10) || 50, 1), 200);
 
-  try {
-    const raw = await sshManager.withExecutor(serverId, (executor) =>
-      executor.exec(
-        `curl -sf 'http://127.0.0.1:${OPENRESTY_MGMT_PORT}/logs/recent?domain=${encodeURIComponent(domain)}&limit=${limit}'`,
-        { timeout: 10_000 },
-      ),
-    );
-    const entries = JSON.parse(raw);
-    return c.json({ logs: entries });
-  } catch {
-    return c.json({ logs: [] });
-  }
+  const entries = await fetchMgmt<unknown[]>(
+    serverId,
+    `/logs/recent?domain=${encodeURIComponent(domain)}&limit=${limit}`,
+  );
+  return c.json({ logs: entries ?? [] });
 }
 
 // ─── Git info ────────────────────────────────────────────────────────────────

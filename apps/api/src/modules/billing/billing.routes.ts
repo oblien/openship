@@ -2,33 +2,34 @@ import { Hono } from "hono";
 import { authMiddleware } from "../../middleware";
 import * as billingController from "./billing.controller";
 
-export const billingRoutes = new Hono();
+/**
+ * Plan info — no Stripe required, works on ALL instances.
+ * Registered at `/api/billing` on every deploy mode.
+ */
+export const billingPlansRoutes = new Hono();
+billingPlansRoutes.get("/plans", billingController.listPlans);
 
-// Auth required for all billing routes except webhook
-billingRoutes.use("*", async (c, next) => {
-  // Stripe webhook uses signature verification, not session auth
+/**
+ * Stripe-powered billing — SaaS only (CLOUD_MODE=true).
+ * Registered at `/api/billing` only when CLOUD_MODE.
+ */
+export const billingSaasRoutes = new Hono();
+
+billingSaasRoutes.use("*", async (c, next) => {
   if (c.req.path.endsWith("/webhook/stripe")) return next();
   return authMiddleware(c, next);
 });
 
-/* ---------- Plans & Pricing ---------- */
-billingRoutes.get("/plans", billingController.listPlans);
+billingSaasRoutes.get("/subscription", billingController.getSubscription);
+billingSaasRoutes.post("/subscription", billingController.createSubscription);
+billingSaasRoutes.patch("/subscription", billingController.updateSubscription);
+billingSaasRoutes.delete("/subscription", billingController.cancelSubscription);
 
-/* ---------- Subscriptions ---------- */
-billingRoutes.get("/subscription", billingController.getSubscription);
-billingRoutes.post("/subscription", billingController.createSubscription);
-billingRoutes.patch("/subscription", billingController.updateSubscription);
-billingRoutes.delete("/subscription", billingController.cancelSubscription);
+billingSaasRoutes.get("/usage", billingController.getUsage);
 
-/* ---------- Usage ---------- */
-billingRoutes.get("/usage", billingController.getUsage);
+billingSaasRoutes.get("/payment-methods", billingController.listPaymentMethods);
+billingSaasRoutes.post("/payment-methods", billingController.addPaymentMethod);
 
-/* ---------- Payment Methods ---------- */
-billingRoutes.get("/payment-methods", billingController.listPaymentMethods);
-billingRoutes.post("/payment-methods", billingController.addPaymentMethod);
+billingSaasRoutes.get("/invoices", billingController.listInvoices);
 
-/* ---------- Invoices ---------- */
-billingRoutes.get("/invoices", billingController.listInvoices);
-
-/* ---------- Stripe Webhook (no auth) ---------- */
-billingRoutes.post("/webhook/stripe", billingController.stripeWebhook);
+billingSaasRoutes.post("/webhook/stripe", billingController.stripeWebhook);

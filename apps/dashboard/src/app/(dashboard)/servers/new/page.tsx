@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { getApiErrorMessage, systemApi } from "@/lib/api";
 import type { ComponentStatus, SetupComponentProgress, SetupLogEvent, ServerInfo } from "@/lib/api/system";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { useToast } from "@/context/ToastContext";
 import { useSetupStream } from "@/hooks/useSetupStream";
 import { AutoSetupFlow } from "./_components/auto-setup-flow";
@@ -414,8 +415,7 @@ export default function AddServerPage() {
 
   if (step) {
     return (
-      <div className="min-h-screen bg-background">
-        <div className="max-w-[1180px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <PageContainer className="max-w-[1180px]">
           <SetupHeader
             step={step}
             serverHost={serverHostLabel}
@@ -497,14 +497,12 @@ export default function AddServerPage() {
               )}
             </>
           )}
-        </div>
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer>
         <div className="flex items-center gap-3 mb-6">
           <button
             onClick={() => router.push("/servers")}
@@ -796,7 +794,6 @@ export default function AddServerPage() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

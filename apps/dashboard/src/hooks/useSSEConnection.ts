@@ -9,7 +9,7 @@
  * Clean entry points - no need to call connection helpers directly!
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SSEMessage, useSSEStream } from './useSSEStream';
 import { createLogMessageProcessor, createBuildMessageProcessor, LogMessageCallbacks, BuildMessageCallbacks } from '@/lib/sseMessageProcessors';
 import { getApiBaseUrl } from '@/lib/api';
@@ -75,42 +75,69 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const callbacksRef = useRef(callbacks);
+  const onConnectRef = useRef(onConnect);
+  const onDisconnectRef = useRef(onDisconnect);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+    onConnectRef.current = onConnect;
+    onDisconnectRef.current = onDisconnect;
+    onErrorRef.current = onError;
+  }, [callbacks, onConnect, onDisconnect, onError]);
 
   // Create message processor
-  const messageProcessor = createLogMessageProcessor(callbacks);
+  const messageProcessor = useMemo(() => createLogMessageProcessor({
+    onLog: (message, rawText, rawBytes) => {
+      callbacksRef.current.onLog?.(message, rawText, rawBytes);
+    },
+    onError: (message) => {
+      callbacksRef.current.onError?.(message);
+    },
+    onContainerExit: (exitCode, message) => {
+      callbacksRef.current.onContainerExit?.(exitCode, message);
+    },
+  }), []);
+
+  const handleConnect = useCallback(() => {
+    setIsConnected(true);
+    setIsConnecting(false);
+    setError(null);
+    onConnectRef.current?.();
+  }, []);
+
+  const handleDisconnect = useCallback(() => {
+    setIsConnected(false);
+    setIsConnecting(false);
+    onDisconnectRef.current?.();
+  }, []);
+
+  const handleError = useCallback((err: Error) => {
+    setError(err);
+    setIsConnected(false);
+    setIsConnecting(false);
+    onErrorRef.current?.(err);
+  }, []);
 
   // Initialize SSE stream
   const sseStream = useSSEStream({
     terminalRef,
     autoWriteToTerminal,
     messageProcessor,
-    onConnect: () => {
-      setIsConnected(true);
-      setIsConnecting(false);
-      setError(null);
-      onConnect?.();
-    },
-    onDisconnect: () => {
-      setIsConnected(false);
-      setIsConnecting(false);
-      onDisconnect?.();
-    },
-    onError: (err) => {
-      setError(err);
-      setIsConnected(false);
-      setIsConnecting(false);
-      onError?.(err);
-    },
+    onConnect: handleConnect,
+    onDisconnect: handleDisconnect,
+    onError: handleError,
   });
 
   /**
    * Connect to live logs stream
    */
 
-  let isConnectingRef = useRef(false);
+  const isConnectingRef = useRef(false);
   const connect = useCallback(async (target: string) => {
     try {
-      if(isConnectingRef.current) return
+      if (isConnectingRef.current) return;
       setIsConnecting(true);
       isConnectingRef.current = true;
       setError(null);
@@ -135,18 +162,19 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
     } catch (err: any) {
       console.error('[useLogStream] Connection error:', err);
       setError(err);
-      onError?.(err);
+      onErrorRef.current?.(err);
       throw err;
-    }finally {
+    } finally {
       isConnectingRef.current = false;
       setIsConnecting(false);
     }
-  }, [sseStream, onError]);
+  }, [sseStream]);
 
   /**
    * Disconnect from stream
    */
   const disconnect = useCallback(() => {
+    isConnectingRef.current = false;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -156,13 +184,13 @@ export const useLogStream = (options: UseLogStreamOptions = {}): UseLogStreamRet
     setIsConnecting(false);
   }, [sseStream]);
 
-  return {
+  return useMemo(() => ({
     connect,
     disconnect,
-    isConnected,
-    isConnecting,
-    error,
-  };
+    get isConnected() { return isConnected; },
+    get isConnecting() { return isConnecting; },
+    get error() { return error; },
+  }), [connect, disconnect]);
 };
 
 // ============================================================================

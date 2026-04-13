@@ -10,15 +10,14 @@ import { BuildPreferences } from "./_components/BuildPreferences";
 import { ServerConnection } from "./_components/ServerConnection";
 import { CloudConnection } from "./_components/CloudConnection";
 import { InstanceInfo } from "./_components/InstanceInfo";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 export default function SettingsPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-background">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <PageContainer>
           <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-        </div>
-      </div>
+      </PageContainer>
     }>
       <SettingsPageInner />
     </Suspense>
@@ -48,8 +47,7 @@ function SettingsPageInner() {
   }, [searchParams, showToast, refresh]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer>
         <div className="mb-6">
           <h1
             className="text-2xl font-medium text-foreground/80"
@@ -75,7 +73,6 @@ function SettingsPageInner() {
             {showCloudConnection && <CloudConnection />}
           </div>
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

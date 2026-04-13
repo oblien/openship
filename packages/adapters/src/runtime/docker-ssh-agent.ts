@@ -9,7 +9,7 @@ import {
   openSshUnixSocket,
   type StreamLocalCapableClient,
 } from "../system/ssh-client";
-import type { SshConfig } from "../types";
+import type { SshConfig, CommandExecutor } from "../types";
 import type { DockerConnectionOptions } from "./docker-transport";
 
 const DEFAULT_REMOTE_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
@@ -65,22 +65,22 @@ function normalizeSocketPathLines(lines: string[]): string[] {
   return normalized;
 }
 
+const DOCKER_SOCKET_DISCOVERY_SCRIPT = [
+  "set -eu",
+  'uid="$(id -u 2>/dev/null || printf 0)"',
+  'printf "%s\\n" "/var/run/docker.sock" "/run/docker.sock" "/run/podman/podman.sock" "/run/user/$uid/docker.sock" "$HOME/.docker/run/docker.sock" | while IFS= read -r candidate; do if [ -S "$candidate" ]; then printf "%s\\n" "$candidate"; fi; done',
+  'find /run/user -maxdepth 2 -type s \\( -name docker.sock -o -name podman.sock \\) -print 2>/dev/null || true',
+  'for dir in /run /var/run "$HOME/.docker/run"; do',
+  '  if [ -d "$dir" ]; then',
+  '    find "$dir" -maxdepth 3 -type s \\( -name docker.sock -o -name podman.sock \\) -print 2>/dev/null || true',
+  "  fi",
+  "done",
+].join("\n");
+
 async function discoverRemoteDockerSocketPathsWithClient(
   client: StreamLocalCapableClient,
 ): Promise<string[]> {
-  const command = [
-    "set -eu",
-    'uid="$(id -u 2>/dev/null || printf 0)"',
-    'printf "%s\\n" "/var/run/docker.sock" "/run/docker.sock" "/run/podman/podman.sock" "/run/user/$uid/docker.sock" "$HOME/.docker/run/docker.sock" | while IFS= read -r candidate; do if [ -S "$candidate" ]; then printf "%s\\n" "$candidate"; fi; done',
-    'find /run/user -maxdepth 2 -type s \( -name docker.sock -o -name podman.sock \) -print 2>/dev/null || true',
-    'for dir in /run /var/run "$HOME/.docker/run"; do',
-    '  if [ -d "$dir" ]; then',
-    '    find "$dir" -maxdepth 3 -type s \\( -name docker.sock -o -name podman.sock \\) -print 2>/dev/null || true',
-    "  fi",
-    "done",
-  ].join("\n");
-
-  const result = await execSshCommand(client, command);
+  const result = await execSshCommand(client, DOCKER_SOCKET_DISCOVERY_SCRIPT);
   const lines = [result.stdout, result.stderr]
     .filter(Boolean)
     .flatMap((text) => text.split(/\r?\n/))
@@ -90,9 +90,25 @@ async function discoverRemoteDockerSocketPathsWithClient(
   return normalizeSocketPathLines(lines);
 }
 
+async function discoverRemoteDockerSocketPathsWithExecutor(
+  executor: CommandExecutor,
+): Promise<string[]> {
+  try {
+    const output = await executor.exec(DOCKER_SOCKET_DISCOVERY_SCRIPT, { timeout: 10_000 });
+    return normalizeSocketPathLines(output.split(/\r?\n/));
+  } catch {
+    return [];
+  }
+}
+
 async function discoverRemoteDockerSocketPaths(
   opts: DockerConnectionOptions,
 ): Promise<string[]> {
+  // Use pooled executor when available — no extra SSH connection needed
+  if (opts.executor) {
+    return discoverRemoteDockerSocketPathsWithExecutor(opts.executor);
+  }
+
   let conn: StreamLocalCapableClient | null = null;
 
   try {
@@ -255,6 +271,26 @@ export async function probeDockerSshBridge(opts: DockerConnectionOptions): Promi
 export async function verifyDockerSshBridge(opts: DockerConnectionOptions): Promise<void> {
   const socketPath = await resolveRemoteDockerSocketPath(opts).catch(() => getFallbackDockerSocketPath(opts));
 
+  // Fast path: use pooled executor’s streamlocal to verify
+  if (opts.executor?.forwardUnixSocket) {
+    try {
+      const stream = await opts.executor.forwardUnixSocket(socketPath);
+      stream.destroy();
+      return;
+    } catch (error) {
+      const diagnostics = shouldCollectSocketDiagnostics(error)
+        ? formatSocketDiagnostics(await collectDockerSocketDiagnostics(opts, socketPath))
+        : "";
+
+      throw new Error(
+        `Cannot reach Docker daemon: ${error instanceof Error ? error.message : String(error)}. ` +
+          `Current failure: streamlocal tunnel could not be opened for ${socketPath}. ` +
+          "Check that the remote Docker-compatible socket exists, the SSH server allows streamlocal forwarding, and the SSH user can access that socket." +
+          diagnostics,
+      );
+    }
+  }
+
   try {
     await probeDockerSshBridge(opts);
   } catch (error) {
@@ -274,16 +310,44 @@ export async function verifyDockerSshBridge(opts: DockerConnectionOptions): Prom
 
 export function createDockerSshAgent(opts: DockerConnectionOptions): http.Agent {
   const agent = new http.Agent({ keepAlive: false });
+  const usePooled = !!opts.executor?.forwardUnixSocket;
 
   agent.createConnection = (
     _options: http.ClientRequestArgs,
     callback?: (error: Error | null, socket: Duplex) => void,
   ) => {
-    let conn: StreamLocalCapableClient | null = null;
     let reported = false;
-    let channelClosed = false;
 
     const fail = (error: Error) => {
+      if (reported) return;
+      reported = true;
+      callback?.(error, undefined as unknown as Duplex);
+    };
+
+    if (usePooled) {
+      // ── Pooled path: reuse the executor’s persistent SSH connection ─────
+      // Opens a streamlocal channel on the existing ssh2.Client.
+      // SSH multiplexes channels, so no new TCP connection is needed.
+      resolveRemoteDockerSocketPath(opts)
+        .then(async (socketPath) => {
+          const stream = await opts.executor!.forwardUnixSocket!(socketPath);
+          const socket = patchSocket(stream as SshSocket);
+          socket.on("error", () => { socket.destroy(); });
+          reported = true;
+          callback?.(null, socket);
+        })
+        .catch((error) => {
+          fail(error instanceof Error ? error : new Error(String(error)));
+        });
+
+      return undefined;
+    }
+
+    // ── Ephemeral path: new SSH connection per request (fallback) ──────
+    let conn: StreamLocalCapableClient | null = null;
+    let channelClosed = false;
+
+    const failEphemeral = (error: Error) => {
       if (reported) return;
       reported = true;
       conn?.end();
@@ -296,7 +360,7 @@ export function createDockerSshAgent(opts: DockerConnectionOptions): http.Agent 
         conn = client;
         client.once("end", () => {
           if (!reported && !channelClosed) {
-            fail(new Error("SSH connection ended before the Docker socket tunnel was established."));
+            failEphemeral(new Error("SSH connection ended before the Docker socket tunnel was established."));
           }
         });
 
@@ -315,7 +379,7 @@ export function createDockerSshAgent(opts: DockerConnectionOptions): http.Agent 
         callback?.(null, socket);
       })
       .catch((error) => {
-        fail(error instanceof Error ? error : new Error(String(error)));
+        failEphemeral(error instanceof Error ? error : new Error(String(error)));
       });
 
     return undefined;

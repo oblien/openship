@@ -118,7 +118,7 @@ export async function rollbackDeployment(deploymentId: string, userId: string) {
   if (project.activeDeploymentId && project.activeDeploymentId !== deploymentId) {
     const current = await repos.deployment.findById(project.activeDeploymentId);
     if (current) {
-      const runtime = await resolveDeploymentRuntime(current);
+      const { runtime } = await resolveDeploymentRuntime(current);
       const currentContainerIds = isComposeProject(project)
         ? await listComposeContainerIds(current.id)
         : current.containerId
@@ -132,7 +132,7 @@ export async function rollbackDeployment(deploymentId: string, userId: string) {
 
   await repos.project.setActiveDeployment(project.id, deploymentId);
 
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   for (const containerId of targetContainerIds) {
     await runtime.start(containerId);
   }
@@ -178,7 +178,7 @@ export async function getDeploymentLogs(deploymentId: string, userId: string, ta
   }
 
   if (dep.containerId) {
-    const runtime = await resolveDeploymentRuntime(dep);
+    const { runtime } = await resolveDeploymentRuntime(dep);
     return runtime.getRuntimeLogs(dep.containerId, tail);
   }
 
@@ -203,7 +203,7 @@ export async function restartDeployment(deploymentId: string, userId: string) {
     throw new ForbiddenError("Deployment has no container");
   }
 
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   for (const containerId of containerIds) {
     await runtime.restart(containerId);
   }
@@ -218,7 +218,7 @@ export async function getContainerInfo(deploymentId: string, userId: string) {
   if (!dep.containerId) {
     throw new ForbiddenError("Deployment has no container");
   }
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   return runtime.getContainerInfo(dep.containerId);
 }
 
@@ -229,7 +229,7 @@ export async function getContainerUsage(deploymentId: string, userId: string) {
   if (!dep.containerId) {
     throw new ForbiddenError("Deployment has no container");
   }
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   return runtime.getUsage(dep.containerId);
 }
 

@@ -62,7 +62,7 @@ export async function collectProjectManifest(
   for (const dep of allDeps) {
     let runtime: RuntimeAdapter;
     try {
-      runtime = await resolveDeploymentRuntime(dep);
+      ({ runtime } = await resolveDeploymentRuntime(dep));
     } catch {
       // Can't resolve runtime (e.g. server deleted) — skip runtime resources
       continue;
@@ -170,7 +170,7 @@ export async function collectDeploymentManifest(
   if (containerIds.length > 0) {
     let runtime: RuntimeAdapter;
     try {
-      runtime = await resolveDeploymentRuntime(dep);
+      ({ runtime } = await resolveDeploymentRuntime(dep));
     } catch {
       return { projectId: dep.projectId, resources };
     }

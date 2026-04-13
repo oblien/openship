@@ -253,8 +253,8 @@ async function resolveServiceContainer(projectId: string, serviceId: string, use
   const row = rows.find((r) => r.serviceId === serviceId);
   if (!row?.containerId) throw new Error("Service has no running container");
 
-  const runtime = await resolveDeploymentRuntime(dep);
-  return { runtime, containerId: row.containerId };
+  const { runtime, serverId } = await resolveDeploymentRuntime(dep);
+  return { runtime, containerId: row.containerId, serverId };
 }
 
 export async function startServiceContainer(projectId: string, serviceId: string, userId: string) {
@@ -292,6 +292,7 @@ export async function streamServiceRuntimeLogs(
   onLog: (entry: LogEntry) => void,
   opts?: { tail?: number },
 ) {
-  const { runtime, containerId } = await resolveServiceContainer(projectId, serviceId, userId);
-  return runtime.streamRuntimeLogs(containerId, onLog, opts);
+  const { runtime, containerId, serverId } = await resolveServiceContainer(projectId, serviceId, userId);
+  const cleanup = await runtime.streamRuntimeLogs(containerId, onLog, opts);
+  return { cleanup, serverId };
 }

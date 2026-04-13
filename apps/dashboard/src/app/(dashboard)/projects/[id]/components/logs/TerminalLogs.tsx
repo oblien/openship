@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Play, Pause, Terminal as TerminalIcon, Search, X, ChevronUp, ChevronDown, Moon, Sun } from "lucide-react";
+import { Play, Pause, Terminal as TerminalIcon, Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import '@xterm/xterm/css/xterm.css';
 import './logs.css';
 import { useLogStream } from "@/hooks/useSSEConnection";
 
-import { text } from '@/utils/upload'
 import { useToast } from "@/context/ToastContext";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { useTheme } from "@/components/theme-provider";
 
 interface TerminalLogsProps {
     projectId: string;
@@ -29,14 +29,15 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         addTerminalLog,
         clearTerminalLogs,
         setTerminalStreaming,
-        setTerminalSSEConnection,
         setTerminalXtermInstance
     } = useProjectSettings();
+
+    const { resolvedTheme } = useTheme();
+    const isDarkMode = resolvedTheme === "dark";
 
     const [searchQuery, setSearchQuery] = useState("");
     const [hasMatches, setHasMatches] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(false);
     const [terminalReady, setTerminalReady] = useState(false);
     const terminalRef = useRef<HTMLDivElement>(null);
     const xtermRef = useRef<any>(null);
@@ -45,12 +46,11 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const lastLogIndexRef = useRef(0); // Track last written log index to prevent duplicates
     const effectShows = useRef(false);
-    const [showTerminalLoading, setShowTerminalLoading] = useState(false);
     const getDarkTheme = () => ({
-        background: '#0a0a0a',
+        background: '#060606',
         foreground: '#e5e5e5',
         cursor: '#ffffff',
-        cursorAccent: '#0a0a0a',
+        cursorAccent: '#060606',
         selectionBackground: 'rgba(255, 255, 255, 0.25)',
         selectionForeground: '#ffffff',
         black: '#000',
@@ -239,12 +239,12 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         }
     }, [terminalLogsData.logs.length, terminalReady]); // Run when new logs arrive
 
-    // Update terminal theme when mode changes
+    // Update terminal theme when global theme changes
     useEffect(() => {
         if (terminalLogsData.xtermInstance) {
             terminalLogsData.xtermInstance.options.theme = getTerminalTheme();
         }
-    }, [isDarkMode]);
+    }, [resolvedTheme]);
 
     useEffect(() => {
         onLogsChange(terminalLogsData.logs);
@@ -476,15 +476,30 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         });
     }, [streamTarget]);
 
+    // Auto-start streaming when terminal is ready
+    const autoStarted = useRef(false);
+    useEffect(() => {
+        if (!terminalReady || !streamTarget || autoStarted.current) return;
+        autoStarted.current = true;
+        setTerminalStreaming(true);
+        void logStream.connect(streamTarget).catch(() => {
+            setTerminalStreaming(false);
+        });
+    }, [terminalReady, streamTarget]);
+
+    const logStreamRef = useRef(logStream);
+    useEffect(() => { logStreamRef.current = logStream; });
+
     useEffect(() => {
         return () => {
             if (streamIntervalRef.current) {
                 clearInterval(streamIntervalRef.current);
             }
-            logStream.disconnect();
+            logStreamRef.current.disconnect();
             setTerminalStreaming(false);
         };
-    }, [logStream, setTerminalStreaming]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Listen for clear logs event
     useEffect(() => {
@@ -512,20 +527,12 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     };
 
     async function showOblienHeader(xtermRef: any) {
-
         if (effectShows.current) return;
         const term = xtermRef.current.xterm;
         const fitAddon = xtermRef.current.fitAddon;
       
-        // Make sure the terminal is sized properly
         if (fitAddon) fitAddon.fit();
-      
         term.reset();
-      
-        const width = term.cols || 80;
-        const line = ` Press Start to begin streaming logs`;
-        const padding = Math.max(0, Math.floor((width - line.length) / 2));
-        term.write('\r\n' + ' '.repeat(padding) + line + '\r\n');
         effectShows.current = true;
       }
 
@@ -545,9 +552,9 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         <div className="flex flex-col h-full min-h-[460px]">
             {/* Terminal with Frame */}
             <div className="flex-1 flex flex-col min-h-0">
-                <div className={`${isDarkMode ? 'bg-[#0a0a0a] border-white/10' : 'bg-card border-border'} rounded-2xl overflow-hidden border flex-1 flex flex-col min-h-0`}>
+                <div className="bg-card rounded-2xl overflow-hidden border border-border/50 flex-1 flex flex-col min-h-0">
                     {/* Terminal Header */}
-                    <div className={`${isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-muted/40 border-border'} px-5 py-3 border-b`}>
+                    <div className="px-5 py-3 border-b border-border/50">
                         <div className="flex items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
                                 <div className="flex gap-2">
@@ -555,15 +562,15 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                                     <div className="w-3 h-3 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500 shadow-sm"></div>
                                     <div className="w-3 h-3 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-500 shadow-sm"></div>
                                 </div>
-                                <TerminalIcon className={`w-4 h-4 ${isDarkMode ? 'text-white/60' : 'text-muted-foreground'}`} />
-                                <span className={`text-sm font-medium ${isDarkMode ? 'text-white/80' : 'text-foreground/80'}`}>{projectName || 'Terminal'}</span>
+                                <TerminalIcon className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-sm font-medium text-foreground/80">{projectName || 'Terminal'}</span>
                             </div>
 
                             {/* Search Input */}
                             <div className="flex-1 max-w-md">
                                 <div className="flex items-center gap-2">
                                     <div className="relative flex-1">
-                                        <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${isDarkMode ? 'text-white/40' : 'text-muted-foreground/70'}`} />
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
                                         <input
                                             type="text"
                                             placeholder="Search in logs..."
@@ -579,10 +586,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                                                     }
                                                 }
                                             }}
-                                            className={`w-full pl-9 pr-8 py-1.5 ${isDarkMode
-                                                    ? 'bg-card/5 border-white/10 text-white placeholder:text-white/30 focus:bg-card/10'
-                                                    : 'bg-muted border-border text-foreground placeholder:text-muted-foreground/70 focus:bg-card'
-                                                } border rounded-lg text-xs focus:outline-none transition-all`}
+                                            className="w-full pl-9 pr-8 py-1.5 bg-muted border-border text-foreground placeholder:text-muted-foreground/70 focus:bg-card border rounded-lg text-xs focus:outline-none transition-all"
                                         />
                                         {searchQuery && (
                                             <button
@@ -590,7 +594,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                                                     setSearchQuery("");
                                                     setHasMatches(false);
                                                 }}
-                                                className={`absolute right-2 top-1/2 -translate-y-1/2 ${isDarkMode ? 'text-white/40 hover:text-white/60' : 'text-muted-foreground/70 hover:text-muted-foreground'} transition-colors`}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-muted-foreground transition-colors"
                                             >
                                                 <X className="w-3.5 h-3.5" />
                                             </button>
@@ -604,24 +608,18 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                                                 <button
                                                     onClick={handleSearchPrevious}
                                                     disabled={!hasMatches || isSearching}
-                                                    className={`p-1 ${isDarkMode
-                                                            ? 'bg-card/5 hover:bg-card/10 border-white/10'
-                                                            : 'bg-muted hover:bg-muted/80 border-border'
-                                                        } disabled:opacity-30 disabled:cursor-not-allowed rounded border transition-colors`}
+                                                    className="p-1 bg-muted hover:bg-muted/80 border-border disabled:opacity-30 disabled:cursor-not-allowed rounded border transition-colors"
                                                     title="Previous match (Shift+Enter)"
                                                 >
-                                                    <ChevronUp className={`w-3.5 h-3.5 ${isDarkMode ? 'text-white/60' : 'text-muted-foreground'}`} />
+                                                    <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
                                                 </button>
                                                 <button
                                                     onClick={handleSearchNext}
                                                     disabled={!hasMatches || isSearching}
-                                                    className={`p-1 ${isDarkMode
-                                                            ? 'bg-card/5 hover:bg-card/10 border-white/10'
-                                                            : 'bg-muted hover:bg-muted/80 border-border'
-                                                        } disabled:opacity-30 disabled:cursor-not-allowed rounded border transition-colors`}
+                                                    className="p-1 bg-muted hover:bg-muted/80 border-border disabled:opacity-30 disabled:cursor-not-allowed rounded border transition-colors"
                                                     title="Next match (Enter)"
                                                 >
-                                                    <ChevronDown className={`w-3.5 h-3.5 ${isDarkMode ? 'text-white/60' : 'text-muted-foreground'}`} />
+                                                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                                                 </button>
                                             </div>
                                         </>
@@ -631,25 +629,9 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
 
                             <div className="flex items-center gap-2 sm:gap-3">
                                 <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${terminalLogsData.isStreaming ? 'bg-emerald-500 animate-pulse' : isDarkMode ? 'bg-card/20' : 'bg-muted-foreground/30'}`}></div>
-                                    <span className={`text-xs ${isDarkMode ? 'text-white/40' : 'text-muted-foreground'} font-mono hidden sm:inline`}>{terminalLogsData.logs.length} lines</span>
+                                    <div className={`w-2 h-2 rounded-full ${terminalLogsData.isStreaming ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/30'}`}></div>
+                                    <span className="text-xs text-muted-foreground font-mono hidden sm:inline">{terminalLogsData.logs.length} lines</span>
                                 </div>
-
-                                {/* Theme Toggle Button */}
-                                <button
-                                    onClick={() => setIsDarkMode(!isDarkMode)}
-                                    className={`p-2 rounded-lg font-medium text-xs transition-all ${isDarkMode
-                                            ? 'bg-card/5 hover:bg-card/10 text-white/60 hover:text-white/80 border border-white/10'
-                                            : 'bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border'
-                                        }`}
-                                    title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
-                                >
-                                    {isDarkMode ? (
-                                        <Sun className="w-4 h-4" />
-                                    ) : (
-                                        <Moon className="w-4 h-4" />
-                                    )}
-                                </button>
 
                                 <button
                                     onClick={toggleStreaming}
@@ -675,11 +657,13 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                     </div>
 
                     {/* Terminal Body */}
-                    <div className={`relative flex-1 ${isDarkMode ? 'bg-[#0a0a0a]' : 'bg-card'} p-4 min-h-0`}>
+                    <div className="relative flex-1 p-4 min-h-0">
                         <div ref={terminalRef} className="w-full h-full" />
-                        {!terminalLogsData.isStreaming || showTerminalLoading && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                <p className={`text-sm ${isDarkMode ? 'text-white/30' : 'text-muted-foreground/50'}`}>Press Start to begin streaming</p>
+                        {terminalLogsData.logs.length === 0 && (
+                            <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+                                <p className="text-sm text-muted-foreground/50">
+                                    {terminalLogsData.isStreaming ? 'Waiting for logs…' : 'Press Start to begin streaming logs'}
+                                </p>
                             </div>
                         )}
                     </div>

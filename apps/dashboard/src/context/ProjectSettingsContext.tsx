@@ -621,10 +621,16 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   }, []);
 
   const setTerminalStreaming = useCallback((isStreaming: boolean) => {
-    setTerminalLogsData(prev => ({
-      ...prev,
-      isStreaming,
-    }));
+    setTerminalLogsData(prev => {
+      if (prev.isStreaming === isStreaming) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        isStreaming,
+      };
+    });
   }, []);
 
   const setTerminalSSEConnection = useCallback((connection: { disconnect: () => void } | null) => {

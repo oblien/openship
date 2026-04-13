@@ -1,5 +1,6 @@
 import {
   createPlatform,
+  type CommandExecutor,
   type DockerConnectionOptions,
   type Platform,
   type RuntimeAdapter,
@@ -24,10 +25,29 @@ export interface ResolvedDeploymentPlatform {
   effectiveTarget: DeployTarget;
   runtimeMode: RuntimeMode;
   usesManagedRouting: boolean;
+  /** The server ID used for SSH targets (null for local/cloud). */
+  serverId: string | null;
 }
 
 function localDockerTransport(): DockerConnectionOptions {
   return { transport: "socket" };
+}
+
+async function resolveServerTargetId(serverId?: string): Promise<string> {
+  if (serverId) {
+    return serverId;
+  }
+
+  const servers = await repos.server.list();
+  if (servers.length === 1 && servers[0]?.id) {
+    return servers[0].id;
+  }
+
+  if (servers.length === 0) {
+    throw new Error("No server configured. Add your SSH server in Settings.");
+  }
+
+  throw new Error("Deployment target is a server, but this deployment has no server ID. Redeploy and select a server explicitly.");
 }
 
 function resolveEffectiveTarget(base: Platform["target"], snapshot: DeploymentMeta): DeployTarget {
@@ -70,12 +90,14 @@ export async function resolveDeploymentPlatform(
   const runtimeMode = snapshot.runtimeMode ?? (basePlatform.runtime.name === "docker" ? "docker" : "bare");
 
   if (effectiveTarget === "local" || effectiveTarget === "server") {
+    const resolvedServerId = effectiveTarget === "server" ? (snapshot.serverId ?? null) : null;
     const targetPlatform = await resolveTargetPlatform(effectiveTarget, runtimeMode, snapshot.serverId);
     return {
       platform: targetPlatform,
       effectiveTarget,
       runtimeMode,
       usesManagedRouting: usesManagedRouting(basePlatform.target, effectiveTarget),
+      serverId: resolvedServerId,
     };
   }
 
@@ -92,6 +114,7 @@ export async function resolveDeploymentPlatform(
     effectiveTarget,
     runtimeMode,
     usesManagedRouting: usesManagedRouting(basePlatform.target, effectiveTarget),
+    serverId: null,
   };
 }
 
@@ -119,23 +142,26 @@ export async function resolveTargetPlatform(
   serverId?: string,
 ): Promise<Platform> {
   // For SSH server targets, use the managed connection pool
-  if (target === "server" && serverId) {
-    const executor = await sshManager.acquire(serverId);
+  if (target === "server") {
+    const resolvedServerId = await resolveServerTargetId(serverId);
+    const executor = await sshManager.acquire(resolvedServerId);
 
     // Still need SSH config for Docker SSH transport (dockerode uses its own connection)
-    const server = await repos.server.get(serverId);
+    const server = await repos.server.get(resolvedServerId);
     const ssh = server?.sshHost ? await buildSshConfig(server) : null;
+
+    if (!ssh) {
+      throw new Error("Invalid SSH configuration. Check host, auth method, and credentials.");
+    }
 
     return createPlatform({
       target: "selfhosted",
       runtime: runtimeMode,
       executor, // ← managed executor from pool
-      ssh: ssh ?? undefined,
-      docker: runtimeMode === "docker" && ssh
-        ? toDockerSshTransport(ssh)
-        : runtimeMode === "docker"
-          ? localDockerTransport()
-          : undefined,
+      ssh,
+      docker: runtimeMode === "docker"
+        ? toDockerSshTransport(ssh, executor)
+        : undefined,
     });
   }
 
@@ -149,10 +175,11 @@ export async function resolveTargetPlatform(
   });
 }
 
-/** Map the shared SSH config → dockerode SSH transport options. */
-function toDockerSshTransport(ssh: SshConfig): DockerConnectionOptions {
+/** Map the shared SSH config → dockerode SSH transport options with pooled executor. */
+function toDockerSshTransport(ssh: SshConfig, executor: CommandExecutor): DockerConnectionOptions {
   return {
     transport: "ssh" as const,
+    executor, // ← reuses the pooled SSH connection for Docker API calls
     host: ssh.host,
     port: ssh.port,
     username: ssh.username,
@@ -171,11 +198,14 @@ function toDockerSshTransport(ssh: SshConfig): DockerConnectionOptions {
  *
  * Used by observability endpoints (logs, restart, stop, usage) that
  * need the runtime matching the deployment's original target.
+ *
+ * Returns `serverId` so callers can retain/release the SSH connection
+ * for long-lived operations (streaming).
  */
 export async function resolveDeploymentRuntime(
   dep: Pick<Deployment, "meta" | "userId">,
-): Promise<RuntimeAdapter> {
+): Promise<{ runtime: RuntimeAdapter; serverId: string | null }> {
   const snapshot = (dep.meta ?? {}) as DeploymentMeta;
   const resolved = await resolveDeploymentPlatform(snapshot, { userId: dep.userId });
-  return resolved.platform.runtime;
+  return { runtime: resolved.platform.runtime, serverId: resolved.serverId };
 }

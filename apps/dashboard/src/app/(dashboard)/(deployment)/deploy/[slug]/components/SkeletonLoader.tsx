@@ -5,8 +5,7 @@ const Shimmer = ({ className }: { className?: string }) => (
 );
 
 const SkeletonLoader = () => (
-  <div className="min-h-screen bg-background">
-    <PageContainer>
+  <PageContainer>
       <div className="grid lg:grid-cols-[1fr_340px] gap-6">
         {/* Main column */}
         <div className="space-y-5">
@@ -80,8 +79,7 @@ const SkeletonLoader = () => (
           <Shimmer className="h-10 rounded-xl" />
         </div>
       </div>
-    </PageContainer>
-  </div>
+  </PageContainer>
 );
 
 export default SkeletonLoader;

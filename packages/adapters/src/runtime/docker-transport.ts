@@ -1,11 +1,20 @@
 import Dockerode from "dockerode";
 import http from "node:http";
+import type { CommandExecutor } from "../types";
 
 import { createDockerSshAgent, verifyDockerSshBridge } from "./docker-ssh-agent";
 
 export interface DockerConnectionOptions {
   /** Transport type */
   transport?: "socket" | "ssh" | "tcp";
+
+  /**
+   * Pooled command executor for SSH transport.  When provided, Docker
+   * API calls reuse the executor's SSH connection (via streamlocal
+   * channel multiplexing) instead of creating a fresh SSH connection
+   * per HTTP request.
+   */
+  executor?: CommandExecutor;
 
   /** Explicit Docker socket path on the remote host (SSH transport only) */
   dockerSocketPath?: string;

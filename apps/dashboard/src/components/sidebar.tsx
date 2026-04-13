@@ -60,10 +60,10 @@ function getNavSections(isSaaS: boolean, selfHosted: boolean): NavSection[] {
     infraItems.push({ key: "servers", href: "/servers", icon: Server });
     infraItems.push({ key: "emails", href: "/emails", icon: Mail });
   }
-  infraItems.push(
-    { key: "monitoring", href: "/monitoring", icon: Activity },
-    { key: "domains",    href: "/domains",    icon: Globe },
-  );
+  // infraItems.push(
+  //   { key: "monitoring", href: "/monitoring", icon: Activity },
+  //   { key: "domains",    href: "/domains",    icon: Globe },
+  // );
 
   return [
     { section: "main", items: MAIN_ITEMS },

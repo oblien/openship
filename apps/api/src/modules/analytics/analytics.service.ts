@@ -383,7 +383,7 @@ export async function getContainerUsage(
   const dep = await repos.deployment.findById(project.activeDeploymentId);
   if (!dep?.containerId) return null;
 
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   return runtime.getUsage(dep.containerId);
 }
 
@@ -404,7 +404,7 @@ export async function getContainerInfo(
   const dep = await repos.deployment.findById(project.activeDeploymentId);
   if (!dep?.containerId) return null;
 
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime } = await resolveDeploymentRuntime(dep);
   return runtime.getContainerInfo(dep.containerId);
 }
 

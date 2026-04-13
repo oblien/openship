@@ -6,7 +6,7 @@ import { githubApi } from "@/lib/api";
 import { generateIcon } from "@/utils/icons";
 import { handleConnectGithub } from "@/utils/github";
 import { useToast } from "@/context/ToastContext";
-import { SectionContainer } from "@/components/ui/SectionContainer";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 interface GitHubStatus {
   active: boolean;
@@ -67,8 +67,7 @@ export default function IntegrationsPage() {
 
 
   return (
-    <div className="min-h-screen bg-[#fafafa]">
-      <SectionContainer>
+      <PageContainer outerClassName="bg-[#fafafa]">
         {/* Header */}
         <div className="mb-8 sm:mb-12 relative">
           <h1 
@@ -308,14 +307,12 @@ export default function IntegrationsPage() {
             </div>
           </div>
         </div>
-      </SectionContainer>
-
       {/* GitHub Permission Modal */}
       {/* <GithubPermissionModal
         isOpen={showGithubModal}
         onClose={() => setShowGithubModal(false)}
         onConnect={handleConnectGithub}
       /> */}
-    </div>
+      </PageContainer>
   );
 }

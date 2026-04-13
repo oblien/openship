@@ -3,9 +3,10 @@
  */
 
 import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
+import { streamSSE } from "../../lib/sse";
 import { getUserId, param } from "../../lib/controller-helpers";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { sshManager } from "../../lib/ssh-manager";
 import { repos } from "@repo/db";
 import * as analyticsService from "./analytics.service";
 import { fetchMgmt } from "../../lib/project-analytics";
@@ -77,28 +78,38 @@ export async function usageStream(c: Context) {
     return c.json({ error: "No active container" }, 404);
   }
 
-  const runtime = await resolveDeploymentRuntime(dep);
+  const { runtime, serverId } = await resolveDeploymentRuntime(dep);
 
   return streamSSE(c, async (sseStream) => {
-    const intervalMs = 5_000; // 5 seconds
-    let running = true;
+    if (serverId) sshManager.retain(serverId);
+    const intervalMs = 5_000;
+    const ac = new AbortController();
+    sseStream.onAbort(() => ac.abort());
 
-    sseStream.onAbort(() => { running = false; });
-
-    while (running) {
-      try {
-        const stats = await runtime.getUsage(dep.containerId!);
-        await sseStream.writeSSE({
-          event: "usage",
-          data: JSON.stringify({ timestamp: new Date().toISOString(), ...stats }),
-        });
-      } catch {
-        await sseStream.writeSSE({
-          event: "error",
-          data: JSON.stringify({ error: "Failed to fetch usage" }),
+    try {
+      while (!ac.signal.aborted) {
+        try {
+          const stats = await runtime.getUsage(dep.containerId!);
+          await sseStream.writeSSE({
+            event: "usage",
+            data: JSON.stringify({ timestamp: new Date().toISOString(), ...stats }),
+          });
+        } catch {
+          if (ac.signal.aborted) break;
+          await sseStream.writeSSE({
+            event: "error",
+            data: JSON.stringify({ error: "Failed to fetch usage" }),
+          });
+        }
+        // Abort-aware sleep — resolves immediately on disconnect
+        await new Promise<void>((resolve) => {
+          if (ac.signal.aborted) return resolve();
+          const timer = setTimeout(resolve, intervalMs);
+          ac.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
         });
       }
-      await new Promise((r) => setTimeout(r, intervalMs));
+    } finally {
+      if (serverId) sshManager.release(serverId);
     }
   });
 }

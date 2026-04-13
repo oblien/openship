@@ -38,6 +38,9 @@ import type { CommandExecutor, SshConfig } from "./types";
 import type { SetupStateStore } from "./system/state";
 import type { InstallerConfig } from "./system/types";
 import type { SystemManager } from "./system/setup";
+import type { DockerConnectionOptions } from "./runtime/docker";
+import type { BareRuntimeOptions } from "./runtime/bare";
+import type { NginxProviderOptions } from "./infra/nginx";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -62,11 +65,11 @@ export interface PlatformConfig {
    */
   runtime?: "docker" | "bare";
   /** Docker connection options (only for docker runtime) */
-  docker?: import("./runtime/docker").DockerConnectionOptions;
+  docker?: DockerConnectionOptions;
   /** Bare runtime options (only for bare runtime) */
-  bare?: import("./runtime/bare").BareRuntimeOptions;
+  bare?: BareRuntimeOptions;
   /** Nginx provider options for self-hosted routing + SSL */
-  nginx?: Omit<import("./infra/nginx").NginxProviderOptions, "executor" | "paths">;
+  nginx?: Omit<NginxProviderOptions, "executor" | "paths">;
   /** Oblien client ID (cloud target — master creds) */
   cloudClientId?: string;
   /** Oblien client secret (cloud target — master creds) */

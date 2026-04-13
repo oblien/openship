@@ -7,6 +7,7 @@
  */
 
 import type { BuildStrategy } from "@repo/core";
+import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
 
 // ─── Resource configuration ──────────────────────────────────────────────────
@@ -315,9 +316,25 @@ export interface CommandExecutor {
    * Only available on SshExecutor — local executors do not implement this.
    */
   rawExec?(command: string): Promise<{
-    stdout: import("stream").Readable;
-    stderr: import("stream").Readable;
+    stdout: Readable;
+    stderr: Readable;
     onClose: Promise<number>;
     kill: () => void;
   }>;
+
+  /**
+   * Open a Unix domain socket tunnel to the target machine.
+   *
+   * SshExecutor: opens an SSH streamlocal channel on the persistent connection.
+   * Not available on LocalExecutor (local Docker uses socket transport directly).
+   */
+  forwardUnixSocket?(socketPath: string): Promise<Duplex>;
+
+  /**
+   * Open a TCP tunnel to a port on the remote machine (SSH direct-tcpip).
+   *
+   * Returns a duplex stream — write requests, read responses.
+   * Not available on LocalExecutor.
+   */
+  forwardPort?(remoteHost: string, remotePort: number): Promise<Duplex>;
 }

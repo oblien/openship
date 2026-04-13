@@ -142,8 +142,7 @@ const DeployRepository: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            <PageContainer>
+        <PageContainer>
                 {/* Step 1: Deploy target picker — centered onboarding style (desktop only) */}
                 {step === "target" && isDesktop && (
                     <div className="flex items-center justify-center min-h-[calc(100vh-8rem)]">
@@ -200,8 +199,7 @@ const DeployRepository: React.FC = () => {
                         <Sidebar />
                     </div>
                 )}
-            </PageContainer>
-        </div>
+        </PageContainer>
     );
 };
 

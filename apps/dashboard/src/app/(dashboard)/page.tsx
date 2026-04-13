@@ -26,6 +26,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { generateIcon } from "@/utils/icons";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { getProjectStatus, PROJECT_STATUS_META } from "@/utils/project-status";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -114,8 +115,7 @@ export default function DashboardHome() {
     : 0;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer>
         
         {/* ── Header ─────────────────────────────────────────────── */}
         <div className="mb-6">
@@ -467,7 +467,6 @@ export default function DashboardHome() {
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

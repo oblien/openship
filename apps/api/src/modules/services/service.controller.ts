@@ -3,8 +3,9 @@
  */
 
 import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
+import { streamSSE } from "../../lib/sse";
 import { getUserId, param } from "../../lib/controller-helpers";
+import { sshManager } from "../../lib/ssh-manager";
 import * as serviceService from "./service.service";
 import type { TUpdateServiceBody, TSetServiceEnvVarsBody } from "./service.schema";
 
@@ -206,9 +207,10 @@ export async function runtimeLogStream(c: Context) {
 
   return streamSSE(c, async (sseStream) => {
     let cleanup: (() => void) | null = null;
+    let serverId: string | null = null;
 
     try {
-      cleanup = await serviceService.streamServiceRuntimeLogs(projectId, serviceId, userId, (entry) => {
+      const result = await serviceService.streamServiceRuntimeLogs(projectId, serviceId, userId, (entry) => {
         void sseStream.writeSSE({
           event: "log",
           data: JSON.stringify({
@@ -221,6 +223,10 @@ export async function runtimeLogStream(c: Context) {
         });
       }, { tail });
 
+      cleanup = result.cleanup;
+      serverId = result.serverId;
+      if (serverId) sshManager.retain(serverId);
+
       await new Promise<void>((resolve) => {
         sseStream.onAbort(() => {
           cleanup?.();
@@ -231,6 +237,8 @@ export async function runtimeLogStream(c: Context) {
       const message = err instanceof Error ? err.message : "Failed to stream logs";
       await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: message }) });
       cleanup?.();
+    } finally {
+      if (serverId) sshManager.release(serverId);
     }
   });
 }

@@ -30,7 +30,7 @@ export async function pruneRetainedBareReleases(
 
     let runtime;
     try {
-      runtime = await resolveDeploymentRuntime(dep);
+      ({ runtime } = await resolveDeploymentRuntime(dep));
     } catch {
       continue;
     }

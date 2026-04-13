@@ -13,6 +13,7 @@ import {
   Shield,
 } from "lucide-react";
 import { systemApi } from "@/lib/api";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 interface ServerEntry {
   id: string;
@@ -54,8 +55,7 @@ export default function ServersPage() {
   }, [fetchServers]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer>
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -261,7 +261,6 @@ export default function ServersPage() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }

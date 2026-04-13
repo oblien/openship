@@ -9,6 +9,7 @@ import { projectsApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { Plus, Search } from "lucide-react";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 export default function ProjectsPage() {
   const { t } = useI18n();
@@ -49,8 +50,7 @@ export default function ProjectsPage() {
   });
 
   return (
-    <div className="min-h-screen bg-background pb-20">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer outerClassName="pb-20">
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
@@ -125,7 +125,6 @@ export default function ProjectsPage() {
             )}
           </>
         )}
-      </div>
-    </div>
+    </PageContainer>
   );
 }

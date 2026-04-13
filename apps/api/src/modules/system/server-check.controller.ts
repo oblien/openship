@@ -13,7 +13,7 @@
  */
 
 import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
+import { streamSSE } from "../../lib/sse";
 import { env } from "../../config";
 import {
   checkComponents,
@@ -635,70 +635,38 @@ export async function monitorStream(c: Context) {
   const POLL_INTERVAL = 3_000;
 
   return streamSSE(c, async (sseStream) => {
-    let closed = false;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
-    let consecutiveWriteErrors = 0;
+    sshManager.retain(serverId);
+    const ac = new AbortController();
+    sseStream.onAbort(() => ac.abort());
 
-    const cleanup = () => {
-      closed = true;
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-      }
-    };
-
-    const poll = async () => {
-      if (closed) return;
-      try {
-        const raw = await sshManager.withExecutor<string>(
-          serverId,
-          (executor: CommandExecutor) =>
-          executor.exec(STATS_COMMAND, { timeout: 5_000 }),
-        );
-        if (closed) return;
-        // Validate it's parseable JSON before sending
-        JSON.parse(raw);
+    try {
+      while (!ac.signal.aborted) {
         try {
+          const raw = await sshManager.withExecutor<string>(
+            serverId,
+            (executor: CommandExecutor) =>
+              executor.exec(STATS_COMMAND, { timeout: 5_000 }),
+          );
+          if (ac.signal.aborted) break;
+          JSON.parse(raw); // validate
           await sseStream.writeSSE({ event: "stats", data: raw });
-          consecutiveWriteErrors = 0;
-        } catch {
-          consecutiveWriteErrors++;
-          if (consecutiveWriteErrors >= 2) cleanup();
-          return;
-        }
-      } catch (err) {
-        if (closed) return;
-        try {
+        } catch (err) {
+          if (ac.signal.aborted) break;
           const msg = err instanceof Error ? err.message : String(err);
           await sseStream.writeSSE({
             event: "error",
             data: JSON.stringify({ error: msg }),
           });
-          consecutiveWriteErrors = 0;
-        } catch {
-          // Write failed — client likely disconnected
-          consecutiveWriteErrors++;
-          if (consecutiveWriteErrors >= 2) {
-            cleanup();
-          }
         }
+        // Abort-aware sleep
+        await new Promise<void>((resolve) => {
+          if (ac.signal.aborted) return resolve();
+          const timer = setTimeout(resolve, POLL_INTERVAL);
+          ac.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+        });
       }
-    };
-
-    // First poll immediately
-    await poll();
-
-    // Then poll on interval
-    if (!closed) {
-      pollTimer = setInterval(() => void poll(), POLL_INTERVAL);
+    } finally {
+      sshManager.release(serverId);
     }
-
-    // Wait until client disconnects
-    await new Promise<void>((resolve) => {
-      sseStream.onAbort(() => {
-        cleanup();
-        resolve();
-      });
-    });
   });
 }

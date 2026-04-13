@@ -12,7 +12,7 @@
  */
 
 import type { Context } from "hono";
-import { streamSSE } from "hono/streaming";
+import { streamSSE } from "../../lib/sse";
 import { env } from "../../config";
 import { sshManager } from "../../lib/ssh-manager";
 import {

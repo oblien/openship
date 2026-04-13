@@ -11,6 +11,7 @@ import { LocalProjects } from "./components/LocalProjects";
 import { LibrarySidebar } from "./components/LibrarySidebar";
 import { UrlImport } from "./components/UrlImport";
 import { TemplateGrid } from "./components/TemplateGrid";
+import { PageContainer } from "@/components/ui/PageContainer";
 
 type Tab = "local" | "repositories" | "url" | "template";
 
@@ -52,8 +53,7 @@ export default function LibraryPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <PageContainer>
 
         {/* ── Header ───────────────────────────────────────────── */}
         <div className="mb-6">
@@ -116,7 +116,6 @@ export default function LibraryPage() {
           {/* ── RIGHT COLUMN ───────────────────────────────────────── */}
           <LibrarySidebar connected={connected} selectedOwner={selectedOwner} repos={repos} onSwitchTab={setActiveTab} />
         </div>
-      </div>
-    </div>
+    </PageContainer>
   );
 }
