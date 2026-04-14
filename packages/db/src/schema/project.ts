@@ -84,6 +84,8 @@ export const project = pgTable("project", {
   /* ── State ──────────────────────────────────────────────────────────── */
   /** Currently active deployment ID */
   activeDeploymentId: text("active_deployment_id"),
+  /** Auto-detected favicon URL from the deployed site */
+  favicon: text("favicon"),
   /** Soft delete */
   deletedAt: timestamp("deleted_at"),
 

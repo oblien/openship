@@ -1,11 +1,16 @@
 import React, { useState } from "react";
 import {
   AlertTriangle,
+  ArrowRightLeft,
+  Cloud,
+  Copy,
+  HardDrive,
   Hammer,
   Loader2,
   Package,
   Pause,
   Play,
+  Server,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -98,15 +103,43 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
   };
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]">
-      <div className="space-y-5">
-        {/* Project Status */}
-        <SectionCard
-          title="Project Status"
-          description="Control whether the project is live or paused"
-          icon={Settings2}
-          iconTone="primary"
-        >
+    <div className="space-y-5">
+      {/* Project Info */}
+      <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+        <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+            <Settings2 className="size-4 text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[14px] font-semibold text-foreground">Project Info</h3>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">Current configuration summary</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-6 px-5 py-4">
+          <MetricRow label="Status" value={isProjectActive ? "Active" : "Disabled"} />
+          <MetricRow label="Project" value={projectData?.name || "—"} />
+          {projectData?.deployTarget && (
+            <MetricRow
+              label="Hosted On"
+              value={
+                projectData.deployTarget === "cloud"
+                  ? "Openship Cloud"
+                  : projectData.deployTarget === "server"
+                    ? projectData.serverName || "Server"
+                    : "Local"
+              }
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Project Status */}
+      <SectionCard
+        title="Project Status"
+        description="Control whether the project is live or paused"
+        icon={Settings2}
+        iconTone="primary"
+      >
           <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
             <div className="flex items-center gap-3">
               <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isProjectActive ? "bg-emerald-500/10" : "bg-amber-500/10"}`}>
@@ -185,6 +218,19 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
           </div>
         </SectionCard>
 
+        {/* Transfer & Clone */}
+        <SectionCard
+          title="Transfer & Clone"
+          description="Move or duplicate this project to a different environment"
+          icon={ArrowRightLeft}
+          iconTone="primary"
+        >
+          <TransferOptions
+            currentTarget={projectData?.deployTarget}
+            currentServer={projectData?.serverName}
+          />
+        </SectionCard>
+
         {/* Danger Zone */}
         <div className="overflow-hidden rounded-2xl border border-red-500/20 bg-card">
           <div className="flex items-start gap-3 border-b border-red-500/15 px-5 py-4">
@@ -209,28 +255,6 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Sidebar */}
-      <div className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-        <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
-          <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-              <Settings2 className="size-4 text-primary" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="text-[14px] font-semibold text-foreground">Project Info</h3>
-              <p className="mt-0.5 text-[12px] text-muted-foreground">Current configuration summary</p>
-            </div>
-          </div>
-          <div className="space-y-3 px-5 py-4">
-            <MetricRow label="Status" value={isProjectActive ? "Active" : "Disabled"} />
-            <MetricRow label="Project" value={projectData?.name || "—"} />
-            <MetricRow label="Domain" value={projectData?.domain || projectData?.custom_domain || "—"} />
-            <MetricRow label="Framework" value={projectData?.framework || "—"} />
-          </div>
-        </div>
-      </div>
 
       <DeletionModal
         isOpen={showDeleteModal}
@@ -247,6 +271,82 @@ function MetricRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-4">
       <span className="text-[13px] text-muted-foreground">{label}</span>
       <span className="max-w-[180px] truncate text-right text-[13px] font-medium text-foreground">{value}</span>
+    </div>
+  );
+}
+
+/* ── Transfer & Clone ─────────────────────────────────────────────── */
+
+const TARGET_META: Record<string, { label: string; icon: React.ReactNode }> = {
+  local: { label: "Local Machine", icon: <HardDrive className="size-4" /> },
+  server: { label: "Self-Hosted Server", icon: <Server className="size-4" /> },
+  cloud: { label: "Openship Cloud", icon: <Cloud className="size-4" /> },
+};
+
+function TransferOptions({
+  currentTarget,
+  currentServer,
+}: {
+  currentTarget?: string | null;
+  currentServer?: string | null;
+}) {
+  const current = TARGET_META[currentTarget ?? ""];
+
+  // Build transfer options — everything except the current target
+  const transferTargets = Object.entries(TARGET_META).filter(
+    ([key]) => key !== currentTarget,
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* Current location */}
+      {current && (
+        <div className="flex items-center gap-3 rounded-xl bg-muted px-4 py-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            {current.icon}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-foreground">{current.label}</p>
+            {currentTarget === "server" && currentServer && (
+              <p className="text-[12px] text-muted-foreground">{currentServer}</p>
+            )}
+          </div>
+          <span className="inline-flex items-center gap-1 shrink-0 text-[12px] text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Current
+          </span>
+        </div>
+      )}
+
+      {/* Transfer + Clone options */}
+      <div className="grid gap-2 sm:grid-cols-3">
+        {transferTargets.map(([key, meta]) => (
+          <button
+            key={key}
+            className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3 text-left transition-colors hover:border-border hover:bg-muted/40"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              {meta.icon}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-foreground">Transfer</p>
+              <p className="text-[12px] text-muted-foreground">{meta.label}</p>
+            </div>
+          </button>
+        ))}
+
+        <button
+          className="flex items-center gap-3 rounded-xl border border-dashed border-border/50 bg-muted/10 px-4 py-3 text-left transition-colors hover:border-border hover:bg-muted/30"
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Copy className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-foreground">Clone</p>
+            <p className="text-[12px] text-muted-foreground">Another server</p>
+          </div>
+        </button>
+      </div>
     </div>
   );
 }

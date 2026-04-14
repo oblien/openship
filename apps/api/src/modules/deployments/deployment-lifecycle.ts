@@ -19,6 +19,7 @@ import type { RuntimeAdapter } from "@repo/adapters";
 import { SYSTEM } from "@repo/core";
 import { notifyDeploySuccess, notifyBuildFailed } from "../../lib/notifications";
 import * as sessionManager from "./session-manager";
+import { detectAndStoreFavicon } from "../../lib/favicon-detector";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -194,5 +195,10 @@ export async function onSuccess(
       url: result.url,
       durationMs: result.durationMs,
     });
+  }
+
+  // Async favicon detection — don't block the deploy response
+  if (result.url) {
+    void detectAndStoreFavicon(project.id, result.url);
   }
 }

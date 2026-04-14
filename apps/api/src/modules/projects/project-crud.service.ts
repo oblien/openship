@@ -17,17 +17,23 @@ export async function enrichProject(p: Project) {
   const production = p.resources as ResourceConfig | null;
   const build = p.buildResources as ResourceConfig | null;
 
-  // Resolve deploy target from the active deployment's meta
+  // Resolve deploy target + server name from the active deployment's meta
   let deployTarget: string | null = null;
+  let serverName: string | null = null;
   if (p.activeDeploymentId) {
     const dep = await repos.deployment.findById(p.activeDeploymentId);
-    const meta = dep?.meta as { deployTarget?: string } | null;
+    const meta = dep?.meta as { deployTarget?: string; serverId?: string } | null;
     deployTarget = meta?.deployTarget ?? null;
+    if (meta?.serverId) {
+      const server = await repos.server.get(meta.serverId);
+      serverName = server?.name || server?.sshHost || null;
+    }
   }
 
   return {
     ...p,
     deployTarget,
+    serverName,
     resources: encodeResources(
       production,
       build,

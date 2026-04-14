@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, GitBranch, Globe, Server, FolderOpen } from "lucide-react";
+import { ArrowRight, GitBranch, Globe, Server, FolderOpen, Cloud, HardDrive } from "lucide-react";
 import { type Project } from "@/constants/mock";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { getProjectStatus, PROJECT_STATUS_META } from "@/utils/project-status";
@@ -21,6 +21,14 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
+function getHostingLabel(deployTarget?: string | null, serverName?: string | null): { icon: React.ReactNode; label: string } | null {
+  if (!deployTarget) return null;
+  if (deployTarget === "cloud") return { icon: <Cloud className="size-3.5" />, label: "Cloud" };
+  if (deployTarget === "server") return { icon: <Server className="size-3.5" />, label: serverName || "Server" };
+  if (deployTarget === "local") return { icon: <HardDrive className="size-3.5" />, label: "Local" };
+  return null;
+}
+
 /* ── Component ────────────────────────────────────────────────────── */
 
 interface Props {
@@ -33,6 +41,7 @@ const ProjectCard: React.FC<Props> = ({ project }) => {
   const status = getProjectStatus(project);
   const statusMeta = PROJECT_STATUS_META[status];
   const fw = getFrameworkConfig(project.framework);
+  const [faviconError, setFaviconError] = useState(false);
 
   const isLocal = !!project.localPath;
   const hasRepo = !!(project.gitOwner && project.gitRepo);
@@ -46,6 +55,8 @@ const ProjectCard: React.FC<Props> = ({ project }) => {
     }
   })();
 
+  const hosting = getHostingLabel(project.deployTarget, project.serverName);
+  const hasFavicon = !!project.favicon && !faviconError;
   const clickTarget = `/projects/${project.id}`;
 
   return (
@@ -53,12 +64,21 @@ const ProjectCard: React.FC<Props> = ({ project }) => {
       onClick={() => router.push(clickTarget)}
       className="flex items-center gap-4 px-5 py-3.5 hover:bg-muted/40 transition-colors cursor-pointer group"
     >
-      {/* Framework icon */}
-      <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors">
-        {fw.icon("hsl(var(--foreground))")}
+      {/* Project icon — favicon with stack fallback */}
+      <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors overflow-hidden">
+        {hasFavicon ? (
+          <img
+            src={project.favicon!}
+            alt=""
+            className="w-6 h-6 object-contain"
+            onError={() => setFaviconError(true)}
+          />
+        ) : (
+          fw.icon("hsl(var(--foreground))")
+        )}
       </div>
 
-      {/* Name + slug */}
+      {/* Name + domain */}
       <div className="min-w-0 flex-shrink-0 w-44 lg:w-56">
         <p className="text-sm font-medium text-foreground truncate">{project.name}</p>
         {domain && (
@@ -73,14 +93,22 @@ const ProjectCard: React.FC<Props> = ({ project }) => {
           {fw.name}
         </span>
 
+        {/* Hosting target */}
+        {hosting && (
+          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+            {hosting.icon}
+            <span className="truncate max-w-[120px]">{hosting.label}</span>
+          </span>
+        )}
+
         {/* Source */}
         {isLocal ? (
-          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+          <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
             <FolderOpen className="size-3.5" />
             <span className="truncate max-w-[140px]">Local</span>
           </span>
         ) : repoSlug ? (
-          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+          <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
             <GitBranch className="size-3.5" />
             <span className="truncate max-w-[140px]">{project.gitRepo}</span>
           </span>
@@ -88,17 +116,17 @@ const ProjectCard: React.FC<Props> = ({ project }) => {
 
         {/* Build target */}
         {isServicesProject ? (
-          <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+          <span className="hidden lg:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
             <Server className="size-3.5" />
             Services
           </span>
         ) : project.hasServer === false ? (
-          <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+          <span className="hidden lg:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
             <Globe className="size-3.5" />
             Static
           </span>
         ) : project.productionMode === "standalone" ? (
-          <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+          <span className="hidden lg:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
             <Server className="size-3.5" />
             Standalone
           </span>

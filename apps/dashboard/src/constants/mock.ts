@@ -36,6 +36,11 @@ export interface Project {
   latestDeploymentId?: string | null;
   latestDeploymentStatus?: string | null;
 
+  /* ── Hosting info (enriched by API) ─────────────────────── */
+  favicon?: string | null;
+  deployTarget?: string | null;
+  serverName?: string | null;
+
   createdAt: string;
   updatedAt: string;
 }

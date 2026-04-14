@@ -50,13 +50,16 @@ export async function getHome(c: Context) {
   try {
     const result = await projectService.listProjects(userId, { page: 1, perPage: 100 });
 
-    // Enrich each project with latest deployment info
+    // Enrich each project with computed fields + latest deployment info
     const projects = await Promise.all(
       result.rows.map(async (p) => {
-        const latest = await repos.deployment.findLatestByProject(p.id);
-        const primary = await repos.domain.getPrimaryByProject(p.id);
+        const [enriched, latest, primary] = await Promise.all([
+          projectService.enrichProject(p),
+          repos.deployment.findLatestByProject(p.id),
+          repos.domain.getPrimaryByProject(p.id),
+        ]);
         return {
-          ...p,
+          ...enriched,
           latestDeploymentId: latest?.id ?? null,
           latestDeploymentStatus: latest?.status ?? null,
           primaryDomain: primary?.hostname ?? null,
