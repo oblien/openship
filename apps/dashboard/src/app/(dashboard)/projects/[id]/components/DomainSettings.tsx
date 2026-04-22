@@ -89,7 +89,7 @@ export const DomainSettings = () => {
 
   useEffect(() => {
     const fetchSSLStatus = async () => {
-      if (isServicesProject || !primaryDomainName) return;
+      if (isServicesProject || !primaryDomainName || isManagedHostDomain) return;
 
       setIsLoadingSSL(true);
       try {
@@ -105,7 +105,7 @@ export const DomainSettings = () => {
     };
 
     void fetchSSLStatus();
-  }, [isServicesProject, primaryDomainName]);
+  }, [isServicesProject, primaryDomainName, isManagedHostDomain]);
 
   useEffect(() => {
     if (!isServicesProject) {

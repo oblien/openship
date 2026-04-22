@@ -233,11 +233,12 @@ interface DeployTargetStepProps {
 const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue }) => {
   const { config, updateConfig } = useDeployment();
   const { requireCloud } = useCloud();
-  const { baseDomain } = usePlatform();
+  const { baseDomain, selfHosted, deployMode } = usePlatform();
   const { ready, servers, hasCloudConnected, hasCloudOption, hasChoice } = targets;
   const hasServers = servers.length > 0;
   const isSingleServer = servers.length === 1;
   const showBuildStrategy = config.projectType === "app";
+  const canUseCloudConnection = selfHosted || deployMode === "desktop";
 
   // Auto-set deploy target when there's only one option
   useEffect(() => {
@@ -349,9 +350,23 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       }
     }
 
+    if (config.projectType !== "services" && canUseCloudConnection && config.deployTarget !== "cloud" && config.domainType === "free") {
+      if (!requireCloud({
+        feature: `Using free .${baseDomain} domains on your own server`,
+        description: `Free .${baseDomain} domains are routed through Openship Cloud. To deploy this project to your own server, either connect Openship Cloud or switch this project to a custom domain.`,
+        secondaryHint: "If you prefer to stay fully self-hosted, change the project domain to a custom domain and continue.",
+      })) {
+        return;
+      }
+    }
+
     // Compose services with free managed domains require cloud
     if (config.projectType === "services" && servicesNeedCloud(config.services)) {
-      if (!requireCloud(`Using .${baseDomain} domains for your services`)) {
+      if (!requireCloud({
+        feature: `Using free .${baseDomain} domains for your services`,
+        description: `One or more exposed services use free .${baseDomain} domains. To deploy them to your own server, either connect Openship Cloud or switch those services to custom domains.`,
+        secondaryHint: "Custom domains work without Openship Cloud. Free managed domains do not.",
+      })) {
         return;
       }
     }

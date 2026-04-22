@@ -90,6 +90,12 @@ interface GitData {
   error: string | null;
   autoDeployEnabled?: boolean;
   webhookActive?: boolean;
+  webhookStrategy?: "app" | "domain" | "repo" | "none";
+  webhookDomain?: string | null;
+  availableStrategies?: string[];
+  verifiedDomains?: Array<{ hostname: string; ssl: boolean }>;
+  installationInstalled?: boolean;
+  installUrl?: string;
 }
 
 interface BuildData {
@@ -495,20 +501,12 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       if (response.success) {
         // Map commits from API response
         const mappedCommits = (response.commits || []).map((commit: any) => ({
-          id: commit.commit_id,
-          status: commit.status, // 'success', 'failed', 'pending'
-          message: commit.commit_info?.message || 'No message',
-          author: commit.created_by || 'Unknown',
-          avatar: (commit.created_by || 'U').charAt(0).toUpperCase() + (commit.created_by?.split(' ')[1]?.[0]?.toUpperCase() || ''),
-          time: new Date(commit.created_at).toLocaleString(),
-          timestamp: commit.commit_info?.timestamp,
-          url: commit.commit_info?.url,
-          files: (commit.commit_info?.added?.length || 0) + (commit.commit_info?.modified?.length || 0) + (commit.commit_info?.removed?.length || 0),
-          changedFiles: [
-            ...(commit.commit_info?.added || []).map((f: string) => ({ name: f, type: 'added' })),
-            ...(commit.commit_info?.modified || []).map((f: string) => ({ name: f, type: 'modified' })),
-            ...(commit.commit_info?.removed || []).map((f: string) => ({ name: f, type: 'removed' })),
-          ],
+          id: commit.sha,
+          message: commit.message || 'No message',
+          author: commit.author || 'Unknown',
+          authorAvatar: commit.author_avatar || '',
+          time: commit.date ? new Date(commit.date).toLocaleString() : '',
+          url: commit.url,
         }));
 
         setGitData({
@@ -517,12 +515,18 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
             provider: 'GitHub',
             url: `https://github.com/${response.owner}/${response.repo}`,
           },
-          branch: 'main', // Can be updated if API provides branch info
+          branch: response.branch || 'main',
           recentCommits: mappedCommits,
           isLoading: false,
           error: null,
           autoDeployEnabled: response.auto_deploy,
           webhookActive: response.webhook_active,
+          webhookStrategy: response.webhook_strategy,
+          webhookDomain: response.webhook_domain,
+          availableStrategies: response.available_strategies,
+          verifiedDomains: response.verified_domains,
+          installationInstalled: response.installation_installed,
+          installUrl: response.install_url,
         });
       } else {
         // Check if it's a repo not found error

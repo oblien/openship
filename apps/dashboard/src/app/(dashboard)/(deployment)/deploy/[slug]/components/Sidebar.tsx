@@ -132,11 +132,12 @@ const ComposeChecklist: React.FC = () => {
 const Sidebar: React.FC = () => {
   const { config, state, updateConfig, startDeployment } = useDeployment();
   const { requireCloud } = useCloud();
-  const { baseDomain } = usePlatform();
+  const { baseDomain, selfHosted, deployMode } = usePlatform();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
   const isServices = config.projectType === "services";
   const isDockerRuntimeProject = config.projectType === "docker" || config.projectType === "services";
+  const canUseCloudConnection = selfHosted || deployMode === "desktop";
 
   // Self-hosted server apps need a runtime mode choice before deploying
   const needsRuntimeChoice =
@@ -181,9 +182,21 @@ const Sidebar: React.FC = () => {
       if (!requireCloud("Deploying to Openship Cloud")) return;
     }
 
+    if (!isServices && canUseCloudConnection && config.deployTarget !== "cloud" && config.domainType === "free") {
+      if (!requireCloud({
+        feature: `Using free .${baseDomain} domains on your own server`,
+        description: `Free .${baseDomain} domains are routed through Openship Cloud. To deploy this project to your own server, either connect Openship Cloud or switch this project to a custom domain.`,
+        secondaryHint: "If you do not want to connect Openship Cloud, change the project domain from free to custom before deploying.",
+      })) return;
+    }
+
     // Compose services with free managed domains require cloud
     if (isServices && servicesNeedCloud(config.services)) {
-      if (!requireCloud(`Using .${baseDomain} domains for your services`)) return;
+      if (!requireCloud({
+        feature: `Using free .${baseDomain} domains for your services`,
+        description: `One or more exposed services use free .${baseDomain} domains. To deploy them to your own server, either connect Openship Cloud or switch those services to custom domains.`,
+        secondaryHint: "Custom domains work without Openship Cloud. Free managed domains do not.",
+      })) return;
     }
 
     if (isServices && shouldWarnAboutUnreachableServices(config.services)) {
@@ -235,7 +248,7 @@ const Sidebar: React.FC = () => {
     }
 
     await continueDeploy();
-  }, [baseDomain, config.deployTarget, config.services, continueDeploy, hideModal, isServices, requireCloud, showModal]);
+  }, [baseDomain, canUseCloudConnection, config.deployTarget, config.domainType, config.services, continueDeploy, hideModal, isServices, requireCloud, showModal]);
 
   return (
     <div className="lg:sticky lg:top-6 h-fit space-y-4">

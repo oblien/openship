@@ -107,6 +107,12 @@ export interface ServerStats {
   load15: string;
 }
 
+export interface ServerRateLimitConfig {
+  rps: number;
+  burst: number;
+  whitelist: string[];
+}
+
 export interface SetupProgressEvent {
   type: "progress";
   component: string | null;
@@ -212,4 +218,19 @@ export const systemApi = {
   /** Delete a server */
   deleteServerEntry: (id: string) =>
     api.delete<{ ok: boolean }>(endpoints.system.server(id)),
+
+  // ── Rate Limiting (per-server) ─────────────────────────────────────────────
+
+  /** Get rate limit config for a server */
+  getRateLimit: (serverId: string) =>
+    api.get<{ config: ServerRateLimitConfig }>(
+      endpoints.system.serverRateLimit(serverId),
+    ),
+
+  /** Update rate limit config for a server */
+  updateRateLimit: (serverId: string, data: { rps?: number; burst?: number; whitelist?: string[] }) =>
+    api.patch<{ success: true; config: ServerRateLimitConfig } | { success: false; error?: string }>(
+      endpoints.system.serverRateLimit(serverId),
+      data,
+    ),
 };

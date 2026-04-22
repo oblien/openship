@@ -27,6 +27,8 @@ export const deployment = pgTable("deployment", {
   branch: text("branch").notNull(),
   commitSha: text("commit_sha"),
   commitMessage: text("commit_message"),
+  /** What triggered this deployment: manual | webhook | redeploy */
+  trigger: text("trigger").notNull().default("manual"),
 
   /* ── Build details ──────────────────────────────────────────────────── */
   /** Environment: production | preview */

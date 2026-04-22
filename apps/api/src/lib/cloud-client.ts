@@ -15,6 +15,12 @@ import type { CloudPreflightData } from "./cloud-preflight";
 import { env } from "../config/env";
 import { decrypt } from "./encryption";
 
+export interface CloudAccount {
+  name: string;
+  email: string;
+  image?: string | null;
+}
+
 // ─── Namespace token cache ───────────────────────────────────────────────────
 
 interface TokenCache {
@@ -44,14 +50,20 @@ async function cloudFetch(
 
   const sessionToken = decrypt(settings.cloudSessionToken);
 
-  const res = await fetch(`${env.OPENSHIP_CLOUD_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-      Authorization: `Bearer ${sessionToken}`,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${env.OPENSHIP_CLOUD_URL}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...init?.headers,
+        Authorization: `Bearer ${sessionToken}`,
+      },
+    });
+  } catch {
+    // Network error (ECONNREFUSED, DNS failure, timeout, etc.)
+    return null;
+  }
 
   if (res.status === 401) {
     await repos.settings.update(userId, { cloudSessionToken: null });
@@ -77,6 +89,34 @@ export async function disconnectCloud(userId: string): Promise<void> {
 export async function isCloudConnected(userId: string): Promise<boolean> {
   const settings = await repos.settings.findByUser(userId);
   return !!settings?.cloudSessionToken;
+}
+
+export async function getCloudConnectionStatus(
+  userId: string,
+): Promise<{ connected: boolean; user?: CloudAccount }> {
+  const settings = await repos.settings.findByUser(userId);
+  if (!settings?.cloudSessionToken) {
+    return { connected: false };
+  }
+
+  const res = await cloudFetch(userId, "/api/cloud/account", { method: "GET" });
+
+  if (!res) {
+    return { connected: true };
+  }
+
+  if (res.status === 401) {
+    return { connected: false };
+  }
+
+  if (!res.ok) {
+    return { connected: true };
+  }
+
+  const json = (await res.json()) as { user?: CloudAccount };
+  return json.user
+    ? { connected: true, user: json.user }
+    : { connected: true };
 }
 
 // ─── Namespace token fetching ────────────────────────────────────────────────
@@ -149,13 +189,35 @@ export async function syncEdgeProxy(
   });
 
   if (!res) {
-    throw new Error("Cannot sync edge proxy: no cloud account linked");
+    throw new Error("Cannot sync edge proxy: no Openship Cloud account linked");
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`Edge proxy sync failed (${res.status}): ${text}`);
   }
+}
+
+// ─── Analytics proxy ─────────────────────────────────────────────────────────
+
+/**
+ * Proxy an analytics call through the SaaS using master Oblien credentials.
+ *
+ * Edge proxies + analytics are account-level — namespace tokens can't access them.
+ * Local/desktop instances call this; the SaaS uses its master client.
+ */
+export async function cloudAnalyticsProxy<T>(
+  userId: string,
+  operation: "timeseries" | "requests" | "streamToken",
+  domain: string,
+  params?: Record<string, unknown>,
+): Promise<T | null> {
+  const res = await cloudFetch(userId, "/api/cloud/analytics", {
+    method: "POST",
+    body: JSON.stringify({ operation, domain, params }),
+  });
+  if (!res?.ok) return null;
+  return res.json() as Promise<T>;
 }
 
 // ─── Billing ─────────────────────────────────────────────────────────────────

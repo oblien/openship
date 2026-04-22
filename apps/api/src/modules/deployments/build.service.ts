@@ -3,21 +3,22 @@
  */
 
 import { repos, type Project, type Deployment } from "@repo/db";
-import { NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, getRuntimeImage, type StackId, type DeployTarget, type BuildStrategy, type StackDefinition } from "@repo/core";
+import { AppError, NotFoundError, ForbiddenError, DeployError, BUILD_ENV_VARS, SYSTEM, STACKS, getRuntimeImage, type StackId, type DeployTarget, type BuildStrategy, type StackDefinition } from "@repo/core";
 import type { BuildConfig, CommandExecutor, DeployConfig, DeployEnvironment, LogEntry, ResourceConfig } from "@repo/adapters";
 import { BareRuntime, BuildLogger, CloudRuntime, DEFAULT_BUILD_RESOURCE_CONFIG, DockerRuntime, ensurePortAvailable, runDeployPipeline, createPlatform, isMultiServiceRuntime } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
-import { env } from "../../config";
+import { env, internalApiUrl } from "../../config";
 import { resolveDeploymentRuntime, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
 import { ensureManagedEdgeProxy } from "../../lib/managed-edge-proxy";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { buildProjectRouteDomains, createTrackedSslProvider, ensureRouteDomainRecord, toRoutedDomainInputs } from "../../lib/routing-domains";
 import { withDefaults } from "../../lib/resources";
 import { resolveToken } from "../github/github.auth";
+import { getLatestCommit } from "../github/github.service";
 import { pruneRetainedBareReleases } from "./release-retention";
 import * as sessionManager from "./session-manager";
 import { onFailure, onSuccess, onCancelled, type LifecycleContext } from "./deployment-lifecycle";
-import { runPreflightChecks } from "./preflight";
+import { runPreflightChecks, type PreflightResult } from "./preflight";
 import { createBuildConfig } from "./build-config";
 import { isComposeProject, executeComposePipeline } from "./compose";
 import * as settingsService from "../settings/settings.service";
@@ -85,6 +86,19 @@ function collapseTerminalLogs(entries: LogEntry[]): LogEntry[] {
   // Flush any remaining content
   flushLine();
   return result;
+}
+
+function throwPreflightFailure(preflight: PreflightResult): never {
+  const failedChecks = preflight.checks.filter((check) => check.status === "fail");
+  const failures = failedChecks
+    .map((check) => `${check.label}: ${check.message}`)
+    .join("; ");
+  const codes = Array.from(new Set(failedChecks.map((check) => check.code).filter((code): code is string => Boolean(code))));
+  const errorCode = codes.length === 1 && failedChecks.every((check) => check.code === codes[0])
+    ? codes[0]
+    : "PRE_DEPLOY_CHECKS_FAILED";
+
+  throw new AppError(`Pre-deploy checks failed: ${failures}`, 403, errorCode);
 }
 
 function buildScopedEnvVars(
@@ -290,12 +304,16 @@ async function createQueuedDeployment(opts: {
   meta: DeploymentConfigSnapshot;
   envVars: Record<string, string> | null;
   commitSha?: string;
+  commitMessage?: string;
+  trigger?: string;
 }) {
   const dep = await repos.deployment.create({
     projectId: opts.projectId,
     userId: opts.userId,
     branch: opts.branch,
     commitSha: opts.commitSha,
+    commitMessage: opts.commitMessage,
+    trigger: opts.trigger ?? "manual",
     environment: opts.environment,
     framework: opts.framework,
     status: "queued",
@@ -384,18 +402,27 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
     composeServices: snapshot.composeServices,
   });
   if (!preflight.ok) {
-    const failures = preflight.checks
-      .filter((c) => c.status === "fail")
-      .map((c) => `${c.label}: ${c.message}`)
-      .join("; ");
-    throw new ForbiddenError(`Pre-deploy checks failed: ${failures}`);
+    throwPreflightFailure(preflight);
   }
   const env = environment || "production";
+
+  // ── Resolve commit info: fetch HEAD from GitHub if not provided ────
+  let commitSha: string | undefined;
+  let commitMessage: string | undefined;
+  if (project.gitOwner && project.gitRepo) {
+    const head = await getLatestCommit(userId, project.gitOwner, project.gitRepo, snapshot.branch);
+    if (head) {
+      commitSha = head.sha;
+      commitMessage = head.message;
+    }
+  }
 
   const dep = await createQueuedDeployment({
     projectId: project.id,
     userId,
     branch: snapshot.branch,
+    commitSha,
+    commitMessage,
     environment: env,
     framework: snapshot.framework,
     meta: {
@@ -616,6 +643,9 @@ export async function redeployBuildSession(deploymentId: string, userId: string)
     projectId: project.id,
     userId,
     branch: oldDep.branch,
+    commitSha: oldDep.commitSha ?? undefined,
+    commitMessage: oldDep.commitMessage ?? undefined,
+    trigger: "redeploy",
     environment: oldDep.environment,
     framework: oldDep.framework || meta.framework,
     meta: {
@@ -660,7 +690,7 @@ export async function startBuild(deploymentId: string, userId: string) {
 
 // ─── Trigger deployment (internal build pipeline) ────────────────────────────
 
-export async function triggerDeployment(userId: string, data: { projectId: string; branch?: string; commitSha?: string; environment?: string }) {
+export async function triggerDeployment(userId: string, data: { projectId: string; branch?: string; commitSha?: string; commitMessage?: string; environment?: string; trigger?: string }) {
   const project = await repos.project.findById(data.projectId);
   if (!project || project.userId !== userId) {
     throw new NotFoundError("Project", data.projectId);
@@ -680,22 +710,31 @@ export async function triggerDeployment(userId: string, data: { projectId: strin
   // ── Preflight: validate config before creating any resources ────
   const preflight = await runPreflightChecks(snapshot, { slug: project.slug, userId });
   if (!preflight.ok) {
-    const failures = preflight.checks
-      .filter((c) => c.status === "fail")
-      .map((c) => `${c.label}: ${c.message}`)
-      .join("; ");
-    throw new ForbiddenError(`Pre-deploy checks failed: ${failures}`);
+    throwPreflightFailure(preflight);
   }
 
   // Copy env vars from project (already encrypted in env_var table)
   const rawEnvMap = await repos.project.getEnvMap(project.id, environment);
   const encryptedEnvVars = Object.keys(rawEnvMap).length > 0 ? rawEnvMap : null;
 
+  // ── Resolve commit info: fetch HEAD from GitHub if not provided ────
+  let commitSha = data.commitSha;
+  let commitMessage = data.commitMessage;
+  if (!commitSha && project.gitOwner && project.gitRepo) {
+    const head = await getLatestCommit(userId, project.gitOwner, project.gitRepo, branch);
+    if (head) {
+      commitSha = head.sha;
+      commitMessage = commitMessage ?? head.message;
+    }
+  }
+
   const dep = await createQueuedDeployment({
     projectId: project.id,
     userId,
     branch,
-    commitSha: data.commitSha,
+    commitSha,
+    commitMessage,
+    trigger: data.trigger ?? "manual",
     environment,
     framework: snapshot.framework,
     meta: {
@@ -1046,6 +1085,10 @@ async function executeBuildAndDeploy(
         domains: toRoutedDomainInputs(plannedDomains),
         routing,
         ssl: deploySsl,
+        routeOptions: project.webhookDomain ? {
+          webhookDomain: project.webhookDomain,
+          webhookProxy: `${internalApiUrl}/api/webhooks/`,
+        } : undefined,
         promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
       }, logger);
 

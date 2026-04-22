@@ -59,6 +59,14 @@ async function dispatchProvider(c: Context, providerName: WebhookProviderName) {
     return c.json({ error: "Invalid JSON body" }, 400);
   }
 
-  const result = await provider.handle(payload, headers);
-  return c.json(result, result.success ? 200 : 400);
+  try {
+    const result = await provider.handle(payload, headers);
+    // Always return 200 for verified webhooks — returning 4xx/5xx causes
+    // GitHub to retry, which can trigger duplicate deployments on transient errors.
+    return c.json(result, 200);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Internal handler error";
+    console.error(`[Webhook] ${providerName} handler error:`, err);
+    return c.json({ success: false, error: message }, 200);
+  }
 }

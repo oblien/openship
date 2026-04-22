@@ -80,10 +80,10 @@ export function Sidebar() {
 
   // On desktop, show cloud identity when connected, machine name when local
   const displayName = isDesktop
-    ? (cloudConnected && cloudUser?.name ? cloudUser.name : (machineName || "Local User"))
+    ? (cloudConnected ? (cloudUser?.name || "Openship Cloud") : (machineName || "Local User"))
     : (user?.name || user?.email?.split("@")[0] || "");
   const displayEmail = isDesktop
-    ? (cloudConnected && cloudUser?.email ? cloudUser.email : "Desktop")
+    ? (cloudConnected ? (cloudUser?.email || "Cloud connected") : "Desktop")
     : user?.email;
   const displayInitial = displayName?.[0] ?? displayEmail?.[0] ?? "?";
   const isSaaS = !selfHosted || cloudConnected;

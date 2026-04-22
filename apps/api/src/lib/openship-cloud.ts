@@ -11,7 +11,7 @@
  *   2. issueNamespaceToken(userId) — mint a scoped token for the namespace
  */
 
-import { Oblien } from "oblien";
+import { Oblien } from "@repo/adapters";
 import { env } from "../config/env";
 
 // ─── Oblien client (master credentials — SaaS only) ─────────────────────────

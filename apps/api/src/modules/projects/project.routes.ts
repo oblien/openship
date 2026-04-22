@@ -47,6 +47,9 @@ projectRoutes.post("/:id/env/set", ctrl.envSet);
 
 /* ─── Git ──────────────────────────────────────────────────────────────── */
 projectRoutes.get("/:id/git", ctrl.getGitInfo);
+projectRoutes.post("/:id/git/link", ctrl.linkRepo);
+projectRoutes.post("/:id/auto-deploy", ctrl.setAutoDeploy);
+projectRoutes.post("/:id/webhook-domain", ctrl.setWebhookDomain);
 projectRoutes.post("/:id/branch", ctrl.setBranch);
 
 /* ─── Resources ────────────────────────────────────────────────────────── */
@@ -66,6 +69,7 @@ projectRoutes.post("/:id/connect", ctrl.connectDomain);
 projectRoutes.get("/:id/logs", ctrl.runtimeLogs);
 projectRoutes.get("/:id/logs/stream", ctrl.runtimeLogStream);
 
-/* ─── Server HTTP request logs (OpenResty live pipe) ───────────────────── */
+/* ─── Server HTTP request logs ─────────────────────────────────────────── */
 projectRoutes.get("/:id/server-logs/recent", ctrl.recentServerLogs);
+projectRoutes.get("/:id/server-logs/stream-token", ctrl.serverLogStreamToken);
 projectRoutes.get("/:id/server-logs/stream", ctrl.serverLogStream);

@@ -17,9 +17,20 @@ import { repos } from "@repo/db";
 import { NotFoundError } from "@repo/core";
 import type { ResourceUsage } from "@repo/adapters";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
-import { resolveProjectTracking, fetchMgmt } from "../../lib/project-analytics";
+import { resolveProjectTrafficSource, fetchMgmt } from "../../lib/project-analytics";
+import { getAdminOblienClient } from "../../lib/oblien-user-client";
+import { cloudAnalyticsProxy } from "../../lib/cloud-client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface CloudAnalyticsBucket {
+  timestamp: number;
+  requests: number;
+  bandwidth_in: number;
+  bandwidth_out: number;
+  response_time_sum: number;
+  unique_visitors: number;
+}
 
 interface MgmtAnalyticsBucket {
   minute: number;
@@ -76,6 +87,23 @@ function summariseBuckets(buckets: MgmtAnalyticsBucket[], lastUpdated: string): 
   };
 }
 
+function summariseCloudBuckets(buckets: CloudAnalyticsBucket[], lastUpdated: string): AnalyticsSummary {
+  const totalReqs = buckets.reduce((sum, bucket) => sum + bucket.requests, 0);
+  const totalUnique = buckets.reduce((sum, bucket) => sum + bucket.unique_visitors, 0);
+  const totalIn = buckets.reduce((sum, bucket) => sum + bucket.bandwidth_in, 0);
+  const totalOut = buckets.reduce((sum, bucket) => sum + bucket.bandwidth_out, 0);
+  const totalResponseTime = buckets.reduce((sum, bucket) => sum + bucket.response_time_sum, 0);
+
+  return {
+    totalRequests: totalReqs,
+    uniqueVisitors: totalUnique,
+    bandwidthIn: totalIn,
+    bandwidthOut: totalOut,
+    avgResponseTimeMs: totalReqs > 0 ? Math.round(totalResponseTime / totalReqs) : 0,
+    lastUpdated,
+  };
+}
+
 function buildHourlyPeriods(
   buckets: MgmtAnalyticsBucket[],
   fromMinute: number,
@@ -128,6 +156,43 @@ function buildHourlyPeriods(
       bandwidthOut: current?.bandwidthOut ?? 0,
       avgResponseTimeMs: current && current.bucketCount > 0
         ? Math.round((current.responseTimeTotal / current.bucketCount) * 1000)
+        : 0,
+      topPaths: [],
+      trafficByHour: {},
+    });
+  }
+
+  return periods;
+}
+
+function buildCloudHourlyPeriods(
+  buckets: CloudAnalyticsBucket[],
+  fromMs: number,
+  toMs: number,
+): AnalyticsPeriod[] {
+  const byHour = new Map<number, CloudAnalyticsBucket>();
+
+  for (const bucket of buckets) {
+    byHour.set(bucket.timestamp, bucket);
+  }
+
+  const periods: AnalyticsPeriod[] = [];
+  const startHour = Math.floor(fromMs / 3_600_000);
+  const endHour = Math.floor(toMs / 3_600_000);
+
+  for (let hourKey = startHour; hourKey <= endHour; hourKey += 1) {
+    const bucketStartMs = hourKey * 3_600_000;
+    const bucket = byHour.get(Math.floor(bucketStartMs / 1000));
+
+    periods.push({
+      from: new Date(bucketStartMs).toISOString(),
+      to: new Date(bucketStartMs + 3_600_000).toISOString(),
+      requests: bucket?.requests ?? 0,
+      uniqueVisitors: bucket?.unique_visitors ?? 0,
+      bandwidthIn: bucket?.bandwidth_in ?? 0,
+      bandwidthOut: bucket?.bandwidth_out ?? 0,
+      avgResponseTimeMs: bucket && bucket.requests > 0
+        ? Math.round(bucket.response_time_sum / bucket.requests)
         : 0,
       topPaths: [],
       trafficByHour: {},
@@ -210,12 +275,40 @@ export async function getAnalyticsSummary(
     throw new NotFoundError("Project", projectId);
   }
 
-  const tracking = await resolveProjectTracking(projectId);
-  if (!tracking) {
+  const source = await resolveProjectTrafficSource(projectId);
+  if (!source) {
     return EMPTY_SUMMARY;
   }
 
-  const { domain, serverId } = tracking;
+  if (source.kind === "cloud") {
+    const toMs = Date.now();
+    const fromMs = toMs - 24 * 60 * 60 * 1000;
+    const params = { from: fromMs, to: toMs, interval: "hour" as const };
+
+    const client = getAdminOblienClient();
+    let response: { data: CloudAnalyticsBucket[]; meta?: { to?: number } } | null = null;
+
+    if (client) {
+      // SaaS: master client directly
+      try {
+        response = await client.analytics.timeseries(source.domain, params);
+      } catch {
+        return EMPTY_SUMMARY;
+      }
+    } else {
+      // Local: proxy through SaaS
+      response = await cloudAnalyticsProxy(userId, "timeseries", source.domain, params);
+    }
+
+    if (!response?.data?.length) return EMPTY_SUMMARY;
+
+    return summariseCloudBuckets(
+      response.data,
+      new Date(response.meta?.to ?? toMs).toISOString(),
+    );
+  }
+
+  const { domain, serverId } = source;
   const now = Math.floor(Date.now() / 60_000);
 
   // DB: flushed archive (last 24h of persisted data)
@@ -262,9 +355,33 @@ export async function getAnalyticsPeriods(
     throw new NotFoundError("Project", projectId);
   }
 
-  const tracking = await resolveProjectTracking(projectId);
-  if (!tracking) return [];
-  const { domain, serverId } = tracking;
+  const source = await resolveProjectTrafficSource(projectId);
+  if (!source) return [];
+
+  if (source.kind === "cloud") {
+    const toMs = to ? new Date(to).getTime() : Date.now();
+    const fromMs = from ? new Date(from).getTime() : toMs - 24 * 60 * 60 * 1000;
+    const params = { from: fromMs, to: toMs, interval: "hour" as const };
+
+    const client = getAdminOblienClient();
+    let response: { data: CloudAnalyticsBucket[] } | null = null;
+
+    if (client) {
+      try {
+        response = await client.analytics.timeseries(source.domain, params);
+      } catch {
+        return [];
+      }
+    } else {
+      response = await cloudAnalyticsProxy(userId, "timeseries", source.domain, params);
+    }
+
+    if (!response?.data?.length) return [];
+
+    return buildCloudHourlyPeriods(response.data, fromMs, toMs);
+  }
+
+  const { domain, serverId } = source;
 
   const now = Math.floor(Date.now() / 60_000);
   const fromMinute = from ? Math.floor(new Date(from).getTime() / 60_000) : now - 1440;

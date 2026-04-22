@@ -6,10 +6,12 @@
  * handoff code generation.
  *
  *   POST /api/cloud/token           — mint namespace-scoped Oblien tokens
+ *   POST /api/cloud/analytics       — proxy Oblien analytics (master client)
+ *   POST /api/cloud/edge-proxy      — sync Oblien edge proxy for managed domains
+ *   POST /api/cloud/preflight       — cloud deployment preflight check
  *   GET  /api/cloud/desktop-handoff — OAuth → one-time code → redirect to desktop
  *   GET  /api/cloud/connect-handoff — OAuth → one-time code → redirect to self-hosted
  *   POST /api/cloud/exchange-code   — exchange code for user + session (no auth)
- *   POST /api/cloud/edge-proxy      — sync Oblien edge proxy for managed domains
  */
 
 import type { Context } from "hono";
@@ -19,6 +21,55 @@ import { auth } from "../../lib/auth";
 import { issueNamespaceToken, getOblienClient } from "../../lib/openship-cloud";
 import { generateHandoffCode, exchangeHandoffCode } from "../../lib/cloud-auth-proxy";
 import { runCloudPreflight } from "../../lib/cloud-preflight";
+
+// ─── Cloud analytics proxy (master client) ───────────────────────────────────
+
+/**
+ * POST /api/cloud/analytics  { operation, domain, params }
+ *
+ * Local/desktop instances call this to get Oblien analytics.
+ * Edge proxies + analytics are account-level — namespace tokens can't access them.
+ * The SaaS uses the master Oblien client on behalf of the caller.
+ */
+export async function analyticsProxy(c: Context) {
+  const { operation, domain, params } = await c.req.json<{
+    operation: "timeseries" | "requests" | "streamToken";
+    domain: string;
+    params?: Record<string, unknown>;
+  }>();
+
+  if (!operation || !domain) {
+    return c.json({ error: "operation and domain are required" }, 400);
+  }
+
+  const client = getOblienClient();
+
+  try {
+    switch (operation) {
+      case "timeseries": {
+        const result = await client.analytics.timeseries(domain, params as any);
+        return c.json(result);
+      }
+      case "requests": {
+        const result = await client.analytics.requests(domain, params as any);
+        return c.json(result);
+      }
+      case "streamToken": {
+        const result = await client.analytics.streamToken(domain);
+        return c.json(result);
+      }
+      default:
+        return c.json({ error: "Unknown operation" }, 400);
+    }
+  } catch (err: unknown) {
+    const status = typeof err === "object" && err !== null && "status" in err
+      ? (err as { status: number }).status
+      : 500;
+    const message = err instanceof Error ? err.message : "Analytics request failed";
+    c.status(status as 400 | 404 | 500);
+    return c.json({ error: message });
+  }
+}
 
 // ─── Namespace token minting ─────────────────────────────────────────────────
 
@@ -36,6 +87,24 @@ export async function preflight(c: Context) {
     customDomain: body.customDomain,
   });
   return c.json({ data: result });
+}
+
+export async function account(c: Context) {
+  const user = c.get("user") as
+    | { name?: string | null; email?: string | null; image?: string | null }
+    | undefined;
+
+  if (!user?.email) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  return c.json({
+    user: {
+      name: user.name ?? user.email,
+      email: user.email,
+      image: user.image ?? null,
+    },
+  });
 }
 
 // ─── Desktop OAuth handoff ───────────────────────────────────────────────────

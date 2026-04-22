@@ -14,12 +14,19 @@ import * as projectService from "./project.service";
 import type { TCreateProjectBody, TUpdateProjectBody, TSetEnvVarsBody, TUpdateResourcesBody } from "./project.schema";
 import { detectStack, MANIFEST_FILES, type RepoFile } from "../../lib/stack-detector";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { repos } from "@repo/db";
-import { deployLuaScripts, detectOpenRestyPaths } from "@repo/adapters";
+import { repos, type Domain } from "@repo/db";
+import { deployLuaScripts } from "@repo/adapters";
+import { getOpenRestyPaths } from "@/lib/openresty-paths";
 import * as domainService from "../domains/domain.service";
 import { sshManager } from "../../lib/ssh-manager";
-import { env } from "../../config";
-import { resolveProjectTracking, fetchMgmt, mgmtStream } from "../../lib/project-analytics";
+import { env, internalApiUrl } from "../../config";
+import { resolveProjectTrafficSource, fetchMgmt, mgmtStream } from "../../lib/project-analytics";
+import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
+import { getAdminOblienClient } from "../../lib/oblien-user-client";
+import { cloudAnalyticsProxy } from "../../lib/cloud-client";
+import { registerWebhook, createWebhook, updateWebhook, deleteWebhook, getWebhookStrategy, resolveWebhookStrategy, getAvailableStrategies, getRecentCommits } from "../github/github.service";
+import { getInstallationId, getInstallUrl } from "../github/github.auth";
+import { platform } from "../../lib/controller-helpers";
 
 // Track which servers have had Lua scripts deployed this session
 const luaDeployedServers = new Set<string>();
@@ -58,6 +65,11 @@ export async function getHome(c: Context) {
           repos.deployment.findLatestByProject(p.id),
           repos.domain.getPrimaryByProject(p.id),
         ]);
+
+        refreshProjectFaviconIfStale(p, {
+          hostname: primary?.verified ? primary.hostname : null,
+        });
+
         return {
           ...enriched,
           latestDeploymentId: latest?.id ?? null,
@@ -91,6 +103,9 @@ export async function list(c: Context) {
   const page = Number(c.req.query("page") ?? 1);
   const perPage = Number(c.req.query("perPage") ?? 20);
   const result = await projectService.listProjects(userId, { page, perPage });
+  result.rows.forEach((project) => {
+    refreshProjectFaviconIfStale(project);
+  });
   return c.json({
     data: result.rows,
     total: result.total,
@@ -110,6 +125,7 @@ export async function getById(c: Context) {
   const userId = getUserId(c);
   const id = param(c, "id");
   const project = await projectService.getProject(id, userId);
+  refreshProjectFaviconIfStale(project);
   return c.json({ data: project });
 }
 
@@ -322,14 +338,56 @@ export async function runtimeLogStream(c: Context) {
   });
 }
 
-// ─── Server HTTP request logs (OpenResty live pipe) ──────────────────────────
+// ─── Server HTTP request logs ────────────────────────────────────────────────
+
+/**
+ * GET /projects/:id/server-logs/stream-token
+ *
+ * Returns { kind: "cloud", url, token } or { kind: "self-hosted" }.
+ * For cloud projects the dashboard connects directly to the edge SSE stream.
+ */
+export async function serverLogStreamToken(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+
+  const project = await repos.project.findById(id);
+  if (!project || project.userId !== userId) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const source = await resolveProjectTrafficSource(id);
+  if (!source) {
+    return c.json({ error: "No domain configured for this project" }, 400);
+  }
+
+  if (source.kind === "cloud") {
+    const client = getAdminOblienClient();
+    let tokenResult: { data?: { stream_url: string; token: string } } | null = null;
+
+    if (client) {
+      try {
+        tokenResult = await client.analytics.streamToken(source.domain);
+      } catch {
+        return c.json({ kind: "self-hosted" as const });
+      }
+    } else {
+      tokenResult = await cloudAnalyticsProxy(userId, "streamToken", source.domain);
+    }
+
+    if (!tokenResult?.data) {
+      return c.json({ kind: "self-hosted" as const });
+    }
+    return c.json({ kind: "cloud" as const, url: tokenResult.data.stream_url, token: tokenResult.data.token });
+  }
+
+  return c.json({ kind: "self-hosted" as const });
+}
 
 /**
  * GET /projects/:id/server-logs/stream — SSE stream of HTTP request logs
  * from the OpenResty pipe_stream on the managed server.
  *
- * Uses rawExec to run curl on the remote server, piping the raw SSE
- * bytes directly to the browser.  No parsing, no transformation.
+ * Cloud projects use stream-token + direct edge connection instead.
  * Auto-deploys Lua scripts once per API session per server.
  */
 export async function serverLogStream(c: Context) {
@@ -341,23 +399,22 @@ export async function serverLogStream(c: Context) {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  const tracking = await resolveProjectTracking(id);
-  if (!tracking) {
-    return c.json({ error: "No domain configured for this project" }, 400);
+  const source = await resolveProjectTrafficSource(id);
+  if (!source || source.kind !== "self-hosted") {
+    return c.json({ error: "Use stream-token endpoint for cloud projects" }, 400);
   }
-  const { domain, serverId } = tracking;
+
+  const { domain, serverId } = source;
 
   return streamSSE(c, async (sseStream) => {
-    // Retain the connection so idle timer doesn't drop it mid-stream
     sshManager.retain(serverId);
     try {
-      // Deploy Lua scripts once per server per API session
-      if (!luaDeployedServers.has(serverId!)) {
+      if (!luaDeployedServers.has(serverId)) {
         try {
           const executor = await sshManager.acquire(serverId);
-          const paths = await detectOpenRestyPaths(executor);
+          const paths = await getOpenRestyPaths(serverId, executor);
           await deployLuaScripts(executor, paths);
-          luaDeployedServers.add(serverId!);
+          luaDeployedServers.add(serverId);
         } catch {
           // Non-fatal — scripts may already be up to date
         }
@@ -386,7 +443,7 @@ export async function serverLogStream(c: Context) {
   });
 }
 
-// ─── Recent server logs (ring buffer) ────────────────────────────────────────
+// ─── Recent server logs ──────────────────────────────────────────────────────
 
 export async function recentServerLogs(c: Context) {
   const userId = getUserId(c);
@@ -397,13 +454,31 @@ export async function recentServerLogs(c: Context) {
     return c.json({ error: "Project not found" }, 404);
   }
 
-  const tracking = await resolveProjectTracking(id);
-  if (!tracking) {
+  const source = await resolveProjectTrafficSource(id);
+  if (!source) {
     return c.json({ logs: [] });
   }
-  const { domain, serverId } = tracking;
 
   const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "50", 10) || 50, 1), 200);
+
+  if (source.kind === "cloud") {
+    const client = getAdminOblienClient();
+    let result: { data?: unknown[] } | null = null;
+
+    if (client) {
+      try {
+        result = await client.analytics.requests(source.domain, { limit });
+      } catch {
+        return c.json({ logs: [] });
+      }
+    } else {
+      result = await cloudAnalyticsProxy(userId, "requests", source.domain, { limit });
+    }
+
+    return c.json({ logs: result?.data ?? [] });
+  }
+
+  const { domain, serverId } = source;
 
   const entries = await fetchMgmt<unknown[]>(
     serverId,
@@ -418,7 +493,340 @@ export async function getGitInfo(c: Context) {
   const userId = getUserId(c);
   const id = param(c, "id");
   const info = await projectService.getGitInfo(id, userId);
-  return c.json({ data: info });
+
+  // No repo linked yet
+  if (!info.gitOwner || !info.gitRepo) {
+    return c.json({ success: false, error: "No repository connected" });
+  }
+
+  const strategy = await resolveWebhookStrategy(userId, info);
+
+  // Cloud projects (deployTarget=cloud) need the GitHub App installed — regardless
+  // of whether this server is the SaaS or a local instance connected to cloud.
+  const isCloudProject = info.deployTarget === "cloud";
+  let installationInstalled = false;
+  if (isCloudProject && info.gitOwner) {
+    const instId = await getInstallationId(userId, info.gitOwner);
+    installationInstalled = !!instId;
+  }
+
+  // Derive webhook_active from strategy + state
+  const webhookActive =
+    strategy === "app" ? installationInstalled :
+    strategy === "domain" ? !!(info.autoDeploy && info.webhookId) :
+    strategy === "repo" ? !!info.webhookId :
+    false;
+
+  // Get available strategies for the UI
+  const strategies = await getAvailableStrategies(userId, info);
+
+  // Get project domains for webhook domain picker
+  const domains = await repos.domain.listByProject(id);
+  const verifiedDomains = domains
+    .filter((d) => d.verified)
+    .map((d) => ({ hostname: d.hostname, ssl: d.sslStatus === "active" }));
+
+  // Fetch recent commits from GitHub API
+  const branch = info.gitBranch ?? "main";
+  const commits = await getRecentCommits(userId, info.gitOwner, info.gitRepo, branch, 10);
+
+  return c.json({
+    success: true,
+    owner: info.gitOwner,
+    repo: info.gitRepo,
+    branch,
+    provider: info.gitProvider ?? "github",
+    commits: commits.map((c) => ({
+      sha: c.sha,
+      message: c.message,
+      author: c.author,
+      author_avatar: c.authorAvatar,
+      date: c.date,
+      url: c.url,
+    })),
+    auto_deploy: info.autoDeploy ?? false,
+    webhook_strategy: strategy,
+    webhook_active: webhookActive,
+    webhook_domain: info.webhookDomain ?? null,
+    available_strategies: strategies.available,
+    verified_domains: verifiedDomains,
+    installation_installed: installationInstalled,
+    install_url: isCloudProject && !installationInstalled ? getInstallUrl() : undefined,
+  });
+}
+
+/**
+ * POST /projects/:id/git/link  { owner, repo, branch? }
+ *
+ * Links a GitHub repo to an existing project and registers a push webhook.
+ */
+export async function linkRepo(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const { owner, repo, branch, installationId } = await c.req.json<{
+    owner: string;
+    repo: string;
+    branch?: string;
+    installationId?: number;
+  }>();
+
+  if (!owner?.trim() || !repo?.trim()) {
+    return c.json({ success: false, error: "owner and repo are required" }, 400);
+  }
+
+  const project = await repos.project.findById(id);
+  if (!project || project.userId !== userId) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  // Update git fields on the project
+  const gitUrl = `https://github.com/${owner}/${repo}.git`;
+  const gitFields: Record<string, unknown> = {
+    gitProvider: "github",
+    gitOwner: owner,
+    gitRepo: repo,
+    gitBranch: branch ?? "main",
+    gitUrl,
+  };
+
+  const strategy = await resolveWebhookStrategy(userId, project);
+
+  if (strategy === "app") {
+    // Cloud mode — verify the GitHub App is installed for this owner
+    const resolvedInstId = await getInstallationId(userId, owner);
+    if (!resolvedInstId) {
+      return c.json({
+        success: false,
+        error: "GitHub App is not installed for this account",
+        install_url: getInstallUrl(),
+        owner,
+      }, 400);
+    }
+    gitFields.installationId = resolvedInstId;
+    gitFields.autoDeploy = true;
+  } else if (strategy === "domain") {
+    // User has a verified domain for webhooks → direct delivery
+    const webhookUrl = `https://${project.webhookDomain}/_openship/hooks/github`;
+    try {
+      const wh = await createWebhook(userId, owner, repo, webhookUrl);
+      if (wh.hookId) gitFields.webhookId = wh.hookId;
+      gitFields.autoDeploy = true;
+    } catch {
+      // Link succeeds without auto-deploy — user can enable later
+    }
+  } else if (strategy === "repo") {
+    // Self-hosted with a public URL — create a repo-level push webhook.
+    let webhookId: number | null = null;
+    try {
+      const result = await registerWebhook(userId, owner, repo);
+      webhookId = result.hookId;
+      gitFields.webhookId = webhookId;
+      gitFields.autoDeploy = !!webhookId;
+    } catch {
+      // Webhook registration failed — link still succeeds, just no auto-deploy
+    }
+  }
+  // strategy === "none": no webhook path is available for this instance yet
+
+  await repos.project.update(id, gitFields);
+
+  return c.json({
+    success: true,
+    owner,
+    repo,
+    branch: branch ?? "main",
+    webhook_strategy: strategy,
+    auto_deploy: !!gitFields.autoDeploy,
+  });
+}
+
+export async function setAutoDeploy(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const { enabled } = await c.req.json<{ enabled: boolean }>();
+  const project = await repos.project.findById(id);
+  if (!project || project.userId !== userId) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  const owner = project.gitOwner;
+  const repo = project.gitRepo;
+
+  if (!owner || !repo) {
+    return c.json({ success: false, error: "No repository linked" }, 400);
+  }
+
+  const strategy = await resolveWebhookStrategy(userId, project);
+
+  // In "none" mode, auto-deploy can't work — suggest options
+  if (strategy === "none" && enabled) {
+    return c.json({
+      success: false,
+      error: "Set a webhook domain or expose this Openship API on a public URL to enable auto-deploy.",
+      webhook_strategy: "none",
+    }, 400);
+  }
+
+  try {
+    if (strategy === "app") {
+      // GitHub App handles push events natively — just toggle the DB flag
+      await repos.project.update(id, { autoDeploy: enabled });
+    } else if (strategy === "domain") {
+      // User has a verified domain — direct webhook delivery
+      if (enabled) {
+        const webhookUrl = `https://${project.webhookDomain}/_openship/hooks/github`;
+        if (!project.webhookId) {
+          const wh = await createWebhook(userId, owner, repo, webhookUrl);
+          if (wh.hookId) await repos.project.update(id, { webhookId: wh.hookId });
+        } else {
+          await updateWebhook(userId, owner, repo, project.webhookId, { active: true });
+        }
+        await repos.project.update(id, { autoDeploy: true });
+      } else {
+        if (project.webhookId) {
+          await updateWebhook(userId, owner, repo, project.webhookId, { active: false });
+        }
+        await repos.project.update(id, { autoDeploy: false });
+      }
+    } else if (enabled) {
+      // "repo" strategy — manage repo-level webhooks
+      if (project.webhookId) {
+        await updateWebhook(userId, owner, repo, project.webhookId, { active: true });
+        await repos.project.update(id, { autoDeploy: true });
+      } else {
+        const result = await registerWebhook(userId, owner, repo);
+        if (!result.hookId) {
+          return c.json({ success: false, error: "Could not create webhook — you may not have admin access to this repository" }, 403);
+        }
+        await repos.project.update(id, { webhookId: result.hookId, autoDeploy: true });
+      }
+    } else {
+      // Disable — deactivate repo-level webhook (keep it so re-enable is instant)
+      if (project.webhookId) {
+        await updateWebhook(userId, owner, repo, project.webhookId, { active: false });
+      }
+      await repos.project.update(id, { autoDeploy: false });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[setAutoDeploy] strategy=${strategy} enabled=${enabled}:`, msg);
+
+    if (msg.includes("No GitHub access token")) {
+      return c.json({ success: false, error: "GitHub is not connected. Link your GitHub account first." }, 401);
+    }
+    if (msg.includes("404")) {
+      await repos.project.update(id, { webhookId: null, autoDeploy: false });
+      return c.json({ success: false, error: "Webhook was deleted on GitHub. Try disabling and re-enabling auto-deploy." }, 410);
+    }
+    if (msg.includes("403")) {
+      return c.json({ success: false, error: "You don't have permission to manage webhooks on this repository." }, 403);
+    }
+    if (msg.includes("422")) {
+      return c.json({ success: false, error: "A webhook already exists for this repository. Try disabling and re-enabling auto-deploy." }, 409);
+    }
+    return c.json({ success: false, error: msg || "Failed to configure auto-deploy" }, 500);
+  }
+
+  const updated = await repos.project.findById(id);
+  return c.json({ success: true, auto_deploy: updated?.autoDeploy ?? false, webhook_strategy: strategy });
+}
+
+/**
+ * POST /projects/:id/webhook-domain  { domain: string | null }
+ *
+ * Set or clear the domain used for receiving GitHub webhooks.
+ *
+ * When a domain is set:
+ *   1. Validates it belongs to this project and is verified
+ *   2. Adds /_openship/hooks/ location to the domain's nginx config
+ *   3. The webhook URL becomes https://{domain}/_openship/hooks/github
+ *
+ * When domain is null → clears the webhook domain (falls back to edge relay or none).
+ */
+export async function setWebhookDomain(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const { domain: hostname } = await c.req.json<{ domain: string | null }>();
+
+  const project = await repos.project.findById(id);
+  if (!project || project.userId !== userId) {
+    return c.json({ error: "Project not found" }, 404);
+  }
+
+  // ── Clear webhook domain ────────────────────────────────────────────
+  if (!hostname) {
+    // If clearing, remove the webhook location from the old domain's nginx config
+    if (project.webhookDomain) {
+      await reRegisterDomainRoute(project, project.webhookDomain, false);
+    }
+    await repos.project.update(id, { webhookDomain: null });
+    return c.json({ success: true, webhook_domain: null });
+  }
+
+  // ── Set webhook domain ──────────────────────────────────────────────
+  // Verify the domain belongs to this project
+  const domains = await repos.domain.listByProject(id);
+  const dom = domains.find((d) => d.hostname === hostname);
+  if (!dom) {
+    return c.json({ error: "Domain does not belong to this project" }, 400);
+  }
+  if (!dom.verified) {
+    return c.json({ error: "Domain must be verified before it can receive webhooks" }, 400);
+  }
+
+  // Remove webhook location from the old domain if changing
+  if (project.webhookDomain && project.webhookDomain !== hostname) {
+    await reRegisterDomainRoute(project, project.webhookDomain, false);
+  }
+
+  // Add webhook location to the new domain's nginx config
+  await reRegisterDomainRoute(project, hostname, true);
+
+  await repos.project.update(id, { webhookDomain: hostname });
+
+  const scheme = dom.sslStatus === "active" ? "https" : "http";
+  const webhookUrl = `${scheme}://${hostname}/_openship/hooks/github`;
+
+  return c.json({
+    success: true,
+    webhook_domain: hostname,
+    webhook_url: webhookUrl,
+  });
+}
+
+/**
+ * Re-register a domain's nginx route with or without the webhook proxy location.
+ * Reads the current deployment's service info to get the route target.
+ */
+async function reRegisterDomainRoute(
+  project: { id: string; activeDeploymentId: string | null; port: number | null },
+  hostname: string,
+  enableWebhook: boolean,
+): Promise<void> {
+  if (!project.activeDeploymentId) return;
+
+  try {
+    const { routing } = platform();
+
+    // Find the service deployment to get the container target
+    const svcDeps = await repos.service.listByDeployment(project.activeDeploymentId);
+    const primarySvc = svcDeps.find((s) => s.ip);
+
+    if (!primarySvc?.ip) return;
+
+    const port = primarySvc.hostPort?.toString() || project.port?.toString() || "3000";
+
+    await routing.registerRoute({
+      domain: hostname,
+      tls: true,
+      targetUrl: `http://${primarySvc.ip}:${port}`,
+      webhookProxy: enableWebhook
+        ? `${internalApiUrl}/api/webhooks/`
+        : undefined,
+    });
+  } catch (err) {
+    console.error(`[Webhook Domain] Failed to update nginx for ${hostname}:`, err);
+  }
 }
 
 export async function setBranch(c: Context) {
@@ -545,11 +953,42 @@ export async function getInfo(c: Context) {
 
   // Fetch domains for this project
   const rawDomains = await repos.domain.listByProject(id);
-  const domains = rawDomains.map((d) => ({
+  let domains: Array<Domain & { domain: string; primary: boolean }> = rawDomains.map((d) => ({
     ...d,
     domain: d.hostname,
     primary: d.isPrimary,
   }));
+
+  if (domains.length === 0) {
+    const trafficSource = await resolveProjectTrafficSource(id);
+    if (trafficSource?.kind === "cloud") {
+      domains = [{
+        id: `managed:${id}`,
+        projectId: id,
+        serviceId: null,
+        hostname: trafficSource.domain,
+        domain: trafficSource.domain,
+        isPrimary: true,
+        primary: true,
+        status: "active",
+        verificationToken: null,
+        verified: true,
+        verifiedAt: new Date(),
+        sslStatus: "active",
+        sslIssuer: "oblien",
+        sslExpiresAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }];
+    }
+  }
+
+  const verifiedPrimaryDomain = rawDomains.find((domain) => domain.isPrimary && domain.verified)?.hostname
+    ?? rawDomains.find((domain) => domain.verified)?.hostname
+    ?? null;
+  refreshProjectFaviconIfStale(project, {
+    hostname: verifiedPrimaryDomain,
+  });
 
   return c.json({
     success: true,

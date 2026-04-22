@@ -12,15 +12,15 @@
  * fs.readFileSync and push them to the server.
  *
  * Scripts:
- *   site_logger.lua  — log_by_lua: atomic counters + ring buffer + pipe
- *   pipe_log.lua     — module: pushes to shared-dict list for SSE pipe
- *   pipe_stream.lua  — content_by_lua: SSE endpoint (long-lived)
- *   mgmt_api.lua     — content_by_lua: REST analytics query endpoints
- *   geo_country.lua  — module: MaxMind GeoLite2 IP → country code
+ *   site_logger.lua      — log_by_lua: atomic counters + ring buffer + pipe
+ *   pipe_log.lua         — module: pushes to shared-dict list for SSE pipe
+ *   pipe_stream.lua      — content_by_lua: SSE endpoint (long-lived)
+ *   mgmt_api.lua         — content_by_lua: REST analytics query endpoints
+ *   geo_country.lua      — module: MaxMind GeoLite2 IP → country code
  *
  * Shared memory zones (declared in nginx.conf):
- *   analytics      256m — minute-bucket counters, daily geo, totals
- *   request_data   128m — raw-log ring buffers + live-log pipe queue
+ *   analytics        256m — minute-bucket counters, daily geo, totals
+ *   request_data     128m — raw-log ring buffers + live-log pipe queue
  *
  * Management port: 127.0.0.1:9145 (loopback only)
  *   GET /analytics?domain=&from=&to=   — minute-bucket time series

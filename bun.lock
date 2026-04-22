@@ -6,7 +6,6 @@
       "dependencies": {
         "@octokit/auth-oauth-device": "^8.0.3",
         "api": "^6.1.3",
-        "oblien": "^2.2.0",
       },
       "devDependencies": {
         "prettier": "^3.8.1",
@@ -148,7 +147,7 @@
         "@repo/core": "workspace:*",
         "dockerode": "^4.0.9",
         "ignore": "^7.0.5",
-        "oblien": "^2.2.0",
+        "oblien": "^2.2.33",
         "ssh2": "^1.17.0",
       },
       "devDependencies": {
@@ -2059,7 +2058,7 @@
 
     "object-keys": ["object-keys@1.1.1", "", {}, "sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA=="],
 
-    "oblien": ["oblien@2.2.0", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-Of5AuMtG0OHwYsUS0YtcWA039GTC771zTRh9oOQKxzC1vWegnKIUDDCeAtek8DPnVlQeuf2snf3ZS9LiQdLOKQ=="],
+    "oblien": ["oblien@2.2.33", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1", "ws": "^8.18.3" }, "bin": { "oblien": "dist/cli/index.js", "oblien-mcp": "dist/mcp/index.js" } }, "sha512-ZUIhwiPmZOZOInk5pNKtL/hcSAq8el9Uopakp263Mj4e75TYIYOwO7GyqeK01jXWMCbLFueVVwbf7FzCDSxmxg=="],
 
     "obug": ["obug@2.1.1", "", {}, "sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ=="],
 
@@ -2704,6 +2703,8 @@
     "wrap-ansi": ["wrap-ansi@8.1.0", "", { "dependencies": { "ansi-styles": "^6.1.0", "string-width": "^5.0.1", "strip-ansi": "^7.0.1" } }, "sha512-si7QWI6zUMq56bESFvagtmzMdGOtoxfR+Sez11Mobfc7tm+VkUckk9bW2UeffTGVUbOksxmSw0AA2gs8g71NCQ=="],
 
     "wrappy": ["wrappy@1.0.2", "", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="],
+
+    "ws": ["ws@8.20.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA=="],
 
     "wsl-utils": ["wsl-utils@0.1.0", "", { "dependencies": { "is-wsl": "^3.1.0" } }, "sha512-h3Fbisa2nKGPxCpm89Hk33lBLsnaGBvctQopaBSOW/uIs6FTe1ATyAnKFJrzVs9vpGdsTe73WF3V4lIsk4Gacw=="],
 

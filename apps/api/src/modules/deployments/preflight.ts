@@ -24,7 +24,14 @@ export interface PreflightCheck {
     label: string;
     status: "pass" | "fail" | "warn";
     message?: string;
+    code?: string;
 }
+
+export const PREFLIGHT_ERROR_CODES = {
+    CLOUD_REQUIRED_TARGET: "CLOUD_REQUIRED_TARGET",
+    CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN: "CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN",
+    CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS: "CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS",
+} as const;
 
 export interface PreflightResult {
     ok: boolean;
@@ -85,6 +92,7 @@ async function checkComposeServiceDomains(
                 id: `service-domain-${service.name}`,
                 label: `Service subdomain (${service.name})`,
                 status: "fail",
+                code: PREFLIGHT_ERROR_CODES.CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS,
                 message: `Free subdomain "${fqdn}" requires Openship Cloud. Connect your account or switch to a custom domain.`,
             });
             continue;
@@ -312,27 +320,53 @@ async function checkCustomDomain(
 
 async function checkCloudRuntime(
     cloud: CloudPreflightData | null,
-    requiresCloud: boolean,
+    requirement: "none" | "cloud-runtime" | "managed-project-domain" | "managed-compose-domains",
 ): Promise<PreflightCheck> {
-    if (!cloud) {
-        if (requiresCloud) {
-            return {
-                id: "runtime",
-                label: "Cloud runtime",
-                status: "fail",
-                message: "Openship Cloud is required for this deployment, but no cloud account is connected. Connect your account first.",
-            };
-        }
+    if (requirement === "none") {
         return { id: "runtime", label: "Runtime", status: "pass" };
     }
 
+    if (!cloud) {
+        if (requirement === "managed-project-domain") {
+            return {
+                id: "runtime",
+                label: "Free domain routing",
+                status: "fail",
+                code: PREFLIGHT_ERROR_CODES.CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN,
+                message: `Free .${getRoutingBaseDomain()} domains require Openship Cloud for routing. To deploy to your own server, either connect Openship Cloud or switch this project to a custom domain.`,
+            };
+        }
+
+        if (requirement === "managed-compose-domains") {
+            return {
+                id: "runtime",
+                label: "Free domain routing",
+                status: "fail",
+                code: PREFLIGHT_ERROR_CODES.CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS,
+                message: `One or more exposed services use free .${getRoutingBaseDomain()} domains. Connect Openship Cloud or switch those services to custom domains before deploying to your own server.`,
+            };
+        }
+
+        return {
+            id: "runtime",
+            label: "Openship Cloud",
+            status: "fail",
+            code: PREFLIGHT_ERROR_CODES.CLOUD_REQUIRED_TARGET,
+            message: "This deployment target runs on Openship Cloud, but no cloud account is connected. Connect your account first.",
+        };
+    }
+
     if (cloud.runtime.ok) {
-        return { id: "runtime", label: "Cloud runtime", status: "pass" };
+        return {
+            id: "runtime",
+            label: requirement === "cloud-runtime" ? "Openship Cloud" : "Free domain routing",
+            status: "pass",
+        };
     }
 
     return {
         id: "runtime",
-        label: "Cloud runtime",
+        label: requirement === "cloud-runtime" ? "Openship Cloud" : "Free domain routing",
         status: "fail",
         message: cloud.runtime.message,
     };
@@ -354,7 +388,13 @@ export async function runPreflightChecks(
     const hasManagedProjectDomain = !!opts?.slug && !opts?.customDomain && usesManagedRouting;
     const hasManagedComposeDomains =
         opts?.composeServices?.some((service) => service.exposed && service.domainType !== "custom") ?? false;
-    const requiresCloud = effectiveTarget === "cloud" || hasManagedProjectDomain || hasManagedComposeDomains;
+    const cloudRequirement = effectiveTarget === "cloud"
+        ? "cloud-runtime"
+        : hasManagedProjectDomain
+            ? "managed-project-domain"
+            : hasManagedComposeDomains
+                ? "managed-compose-domains"
+                : "none";
 
     const checks: PreflightCheck[] = [
         checkConfig(snapshot),
@@ -366,7 +406,7 @@ export async function runPreflightChecks(
         checks.push(await checkSlug(opts.slug, cloudPreflight));
     }
 
-    checks.push(await checkCloudRuntime(cloudPreflight, requiresCloud));
+    checks.push(await checkCloudRuntime(cloudPreflight, cloudRequirement));
 
     if (opts?.customDomain) {
         checks.push(await checkCustomDomain(opts.customDomain, cloudPreflight));

@@ -44,6 +44,8 @@ interface RepositoryListProps {
   setSelectedOwner: (login: string) => void;
   loading: boolean;
   loadingRepos: boolean;
+  /** When provided, clicking a repo calls this instead of navigating to deploy */
+  onSelect?: (owner: string, repo: GitHubRepo) => void;
 }
 
 export function RepositoryList({
@@ -53,6 +55,7 @@ export function RepositoryList({
   setSelectedOwner,
   loading,
   loadingRepos,
+  onSelect,
 }: RepositoryListProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -221,7 +224,7 @@ export function RepositoryList({
                 <div
                   key={repo.id ?? repo.full_name ?? `${ownerLogin}/${repo.name}`}
                   className="px-5 py-3.5 flex items-center gap-4 hover:bg-muted/40 transition-colors cursor-pointer group"
-                  onClick={() => handleDeploy(ownerLogin, repo.name)}
+                  onClick={() => onSelect ? onSelect(ownerLogin, repo) : handleDeploy(ownerLogin, repo.name)}
                 >
                   <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors">
                     {repo.private ? (

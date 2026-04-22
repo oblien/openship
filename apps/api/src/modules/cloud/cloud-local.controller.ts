@@ -44,15 +44,8 @@ export async function disconnect(c: Context) {
 
 export async function status(c: Context) {
   const userId = getUserId(c);
-  const { isCloudConnected } = await import("../../lib/cloud-client");
-  const connected = await isCloudConnected(userId);
-  if (!connected) return c.json({ connected: false });
-
-  const user = c.get("user");
-  return c.json({
-    connected: true,
-    user: user ? { name: user.name, email: user.email, image: user.image } : undefined,
-  });
+  const { getCloudConnectionStatus } = await import("../../lib/cloud-client");
+  return c.json(await getCloudConnectionStatus(userId));
 }
 
 /**

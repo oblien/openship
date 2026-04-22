@@ -36,6 +36,19 @@ export interface ProjectTracking {
   serverId: string;
 }
 
+export type ProjectTrafficSource =
+  | {
+      kind: "self-hosted";
+      domain: string;
+      serverId: string;
+      deployTarget: string | null;
+    }
+  | {
+      kind: "cloud";
+      domain: string;
+      deployTarget: "cloud";
+    };
+
 /**
  * Resolve the tracked domain and server for a project.
  *
@@ -50,6 +63,23 @@ export interface ProjectTracking {
 export async function resolveProjectTracking(
   projectId: string,
 ): Promise<ProjectTracking | null> {
+  const source = await resolveProjectTrafficSource(projectId);
+  if (!source || source.kind !== "self-hosted") {
+    return null;
+  }
+
+  return { domain: source.domain, serverId: source.serverId };
+}
+
+/**
+ * Resolve where project request traffic is observed.
+ *
+ * Cloud deployments use Oblien edge analytics directly.
+ * Self-hosted deployments use the OpenResty management API on the target server.
+ */
+export async function resolveProjectTrafficSource(
+  projectId: string,
+): Promise<ProjectTrafficSource | null> {
   const project = await repos.project.findById(projectId);
   if (!project) return null;
 
@@ -61,20 +91,38 @@ export async function resolveProjectTracking(
     (project.slug && baseDomain ? `${project.slug}.${baseDomain}` : null);
   if (!hostname) return null;
 
-  // Server: deployment meta first, then first configured server
+  const domain = normalizeTrackedDomain(hostname);
+
+  let deployTarget: string | null = null;
   let serverId: string | null = null;
   if (project.activeDeploymentId) {
     const dep = await repos.deployment.findById(project.activeDeploymentId);
-    const meta = dep?.meta as { serverId?: string } | null;
+    const meta = dep?.meta as { deployTarget?: string; serverId?: string } | null;
+    deployTarget = meta?.deployTarget ?? null;
     if (meta?.serverId) serverId = meta.serverId;
   }
+
+  if (deployTarget === "cloud") {
+    return {
+      kind: "cloud",
+      domain,
+      deployTarget: "cloud",
+    };
+  }
+
+  // Server: deployment meta first, then first configured server
   if (!serverId) {
     const servers = await repos.server.list();
     serverId = servers[0]?.id ?? null;
   }
   if (!serverId) return null;
 
-  return { domain: normalizeTrackedDomain(hostname), serverId };
+  return {
+    kind: "self-hosted",
+    domain,
+    serverId,
+    deployTarget,
+  };
 }
 
 // ─── OpenResty management API wrappers ───────────────────────────────────────

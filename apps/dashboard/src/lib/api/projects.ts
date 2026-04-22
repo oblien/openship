@@ -119,6 +119,10 @@ export const projectsApi = {
   /** Get git settings */
   getGit: (id: string | number) => api.get<any>(endpoints.projects.git(id)),
 
+  /** Link a GitHub repo to an existing project + register webhook */
+  linkRepo: (id: string | number, body: { owner: string; repo: string; branch?: string; installationId?: number }) =>
+    api.post<any>(endpoints.projects.gitLink(id), body),
+
   /** List branches */
   getBranches: (id: string | number) =>
     api.get<any>(endpoints.projects.branches(id)),
@@ -134,6 +138,10 @@ export const projectsApi = {
   /** Toggle auto-deploy setting */
   setAutoDeploy: (id: string | number, enabled: boolean) =>
     api.post<any>(endpoints.projects.autoDeploy(id), { enabled }),
+
+  /** Set or clear the webhook domain */
+  setWebhookDomain: (id: string | number, domain: string | null) =>
+    api.post<any>(endpoints.projects.webhookDomain(id), { domain }),
 
   /** Set resources (POST — tier-based) */
   setResources: (id: string | number, resources: Record<string, any>) =>

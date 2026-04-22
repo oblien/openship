@@ -191,6 +191,12 @@ interface BaseRouteConfig {
   domain: string;
   /** Whether TLS is enabled */
   tls: boolean;
+  /**
+   * When set, adds a `/_openship/hooks/` location that proxies
+   * webhook requests to the Openship API at this URL.
+   * Example: "http://127.0.0.1:4000/api/webhooks/"
+   */
+  webhookProxy?: string;
 }
 
 export interface ProxyRouteConfig extends BaseRouteConfig {

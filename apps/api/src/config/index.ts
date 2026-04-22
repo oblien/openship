@@ -1,1 +1,1 @@
-export { env } from "./env";
+export { env, internalApiUrl } from "./env";

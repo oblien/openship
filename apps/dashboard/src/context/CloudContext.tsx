@@ -25,6 +25,13 @@ interface CloudUser {
   image?: string | null;
 }
 
+interface CloudRequirementPrompt {
+  feature: string;
+  description?: string;
+  secondaryHint?: string;
+  ctaLabel?: string;
+}
+
 interface CloudState {
   /** Whether connected to Openship Cloud */
   connected: boolean;
@@ -41,7 +48,7 @@ interface CloudState {
    * Usage:
    *   if (!requireCloud("deploy to cloud")) return;
    */
-  requireCloud: (feature: string) => boolean;
+  requireCloud: (feature: string | CloudRequirementPrompt) => boolean;
   /** Start the cloud connect flow (desktop IPC or browser popup) */
   startConnect: () => void;
   /** Force a status re-check (e.g. after connecting) */
@@ -80,7 +87,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
-  const [modalFeature, setModalFeature] = useState<string | null>(null);
+  const [modalFeature, setModalFeature] = useState<CloudRequirementPrompt | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Clean up polling on unmount
@@ -115,9 +122,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   }, [checkStatus]);
 
   const requireCloud = useCallback(
-    (feature: string): boolean => {
+    (feature: string | CloudRequirementPrompt): boolean => {
       if (connected) return true;
-      setModalFeature(feature);
+      setModalFeature(typeof feature === "string" ? { feature } : feature);
       return false;
     },
     [connected],
@@ -227,10 +234,23 @@ export function CloudProvider({ children }: { children: ReactNode }) {
             <h2 className="text-lg font-semibold text-foreground">
               Connect Openship Cloud
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-              <strong className="text-foreground">{modalFeature}</strong> requires
-              an Openship Cloud connection. Connect your account to unlock:
-            </p>
+            {modalFeature.description ? (
+              <div className="mt-1 space-y-1.5 text-sm leading-relaxed">
+                <p className="text-foreground font-medium">{modalFeature.feature}</p>
+                <p className="text-muted-foreground">{modalFeature.description}</p>
+              </div>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">{modalFeature.feature}</strong> requires
+                an Openship Cloud connection. Connect your account to unlock:
+              </p>
+            )}
+
+            {modalFeature.secondaryHint && (
+              <div className="mt-4 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                {modalFeature.secondaryHint}
+              </div>
+            )}
 
             {/* Feature list */}
             <div className="mt-4 space-y-2">
@@ -259,7 +279,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
                 ) : (
                   <ExternalLink className="size-4" />
                 )}
-                {connecting ? "Waiting for sign in…" : "Connect to Openship Cloud"}
+                {connecting ? "Waiting for sign in…" : (modalFeature.ctaLabel ?? "Connect to Openship Cloud")}
               </Button>
               <Button
                 variant="ghost"

@@ -47,23 +47,62 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     return `${(mb / 1024).toFixed(2)} GB`;
   }, []);
 
-  // Normalize a ring-buffer entry (short keys) into our ServerLog shape
-  const normalizeRingEntry = useCallback((d: any): ServerLog | null => {
+  const parseNumber = useCallback((value: unknown) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return 0;
+  }, []);
+
+  const toIsoTimestamp = useCallback((value: unknown) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return new Date(value > 1_000_000_000_000 ? value : value * 1000).toISOString();
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        return new Date(numeric > 1_000_000_000_000 ? numeric : numeric * 1000).toISOString();
+      }
+
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toISOString();
+      }
+    }
+
+    return new Date().toISOString();
+  }, []);
+
+  const normalizeLogEntry = useCallback((d: any): ServerLog | null => {
     if (!d || typeof d !== 'object') return null;
+
+    const responseTimeMs = d.responseTime !== undefined
+      ? Math.round(parseNumber(d.responseTime) * 1000)
+      : d.req_time !== undefined
+        ? Math.round(parseNumber(d.req_time) * 1000)
+        : d.rt !== undefined
+          ? Math.round(parseNumber(d.rt) * 1000)
+          : 0;
+
     return {
-      id: `hist-${d.ts}-${Math.random().toString(36).slice(2, 8)}`,
-      timestamp: d.ts ? new Date(d.ts * 1000).toISOString() : new Date().toISOString(),
+      id: d.id || `req-${d.ts || d.timestamp || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: toIsoTimestamp(d.timestamp ?? d.ts ?? d.date),
       ip: d.ip || '-',
       country: d.country,
       method: d.method || 'GET',
-      path: d.uri || '/',
-      statusCode: typeof d.status === 'number' ? d.status : (parseInt(d.status, 10) || 0),
-      userAgent: d.ua || '',
-      responseTime: typeof d.rt === 'number' ? Math.round(d.rt * 1000) : 0,
-      requestSize: typeof d.bw_in === 'number' ? d.bw_in : 0,
-      responseSize: typeof d.bw_out === 'number' ? d.bw_out : 0,
+      path: d.path || d.uri || '/',
+      statusCode: d.statusCode !== undefined
+        ? parseInt(String(d.statusCode), 10) || 0
+        : parseInt(String(d.status ?? 0), 10) || 0,
+      userAgent: d.userAgent || d.ua || '',
+      responseTime: responseTimeMs,
+      requestSize: parseNumber(d.requestSize ?? d.req_size ?? d.bw_in),
+      responseSize: parseNumber(d.responseSize ?? d.res_size ?? d.bw_out),
     };
-  }, []);
+  }, [parseNumber, toIsoTimestamp]);
 
   useEffect(() => {
     setServerLogs([]);
@@ -71,10 +110,9 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     setIsLoading(true);
 
     let cancelled = false;
-    const url = `${getApiBaseUrl()}projects/${projectId}/server-logs/stream`;
-    const es = new EventSource(url, { withCredentials: true });
+    let es: EventSource | null = null;
 
-    es.addEventListener("request", (e) => {
+    const handleRequestEvent = (e: MessageEvent) => {
       try {
         const d = JSON.parse(e.data);
         if (!d || typeof d !== 'object') return;
@@ -85,26 +123,15 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
           return;
         }
 
-        if (d.uri || d.method) {
+        const entry = normalizeLogEntry(d);
+        if (entry) {
           setIsLoading(false);
-          addServerLog({
-            id: d.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            timestamp: d.date || (d.timestamp ? new Date(d.timestamp * 1000).toISOString() : new Date().toISOString()),
-            ip: d.ip || '-',
-            country: d.country,
-            method: d.method || 'GET',
-            path: d.uri || '/',
-            statusCode: typeof d.status === 'number' ? d.status : (parseInt(d.status, 10) || 0),
-            userAgent: d.userAgent || '',
-            responseTime: typeof d.responseTime === 'number' ? Math.round(d.responseTime * 1000) : 0,
-            requestSize: typeof d.requestSize === 'number' ? d.requestSize : (parseInt(d.requestSize, 10) || 0),
-            responseSize: typeof d.responseSize === 'number' ? d.responseSize : (parseInt(d.responseSize, 10) || 0),
-          });
+          addServerLog(entry);
         }
       } catch { /* malformed data */ }
-    });
+    };
 
-    es.addEventListener("error", (e) => {
+    const handleErrorEvent = (e: Event) => {
       const me = e as MessageEvent;
       if (me.data) {
         try {
@@ -114,16 +141,46 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
           setError(me.data);
         }
       }
-      if (es.readyState === EventSource.CLOSED) {
+      if (es?.readyState === EventSource.CLOSED) {
         setError("Connection to log stream lost");
       }
       setIsLoading(false);
-    });
-
-    es.onopen = () => {
-      setError(null);
-      setIsLoading(false);
     };
+
+    const initStream = async () => {
+      try {
+        const tokenRes = await api.get<{ kind: string; url?: string; token?: string }>(
+          endpoints.projects.serverLogsStreamToken(projectId),
+        );
+        if (cancelled) return;
+
+        if (tokenRes.kind === "cloud" && tokenRes.url && tokenRes.token) {
+          // Cloud: connect directly to edge
+          const streamUrl = `${tokenRes.url}?token=${encodeURIComponent(tokenRes.token)}`;
+          es = new EventSource(streamUrl);
+          // Edge sends default "message" events
+          es.onmessage = handleRequestEvent;
+        } else {
+          // Self-hosted: connect to API SSE
+          const streamUrl = `${getApiBaseUrl()}${endpoints.projects.serverLogsStream(projectId)}`;
+          es = new EventSource(streamUrl, { withCredentials: true });
+          es.addEventListener("request", handleRequestEvent);
+        }
+
+        es.addEventListener("error", handleErrorEvent);
+        es.onopen = () => {
+          setError(null);
+          setIsLoading(false);
+        };
+      } catch {
+        if (!cancelled) {
+          setError("Failed to connect to log stream");
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initStream();
 
     // Fetch recent logs in parallel and merge them behind live data.
     api.get<{ logs: any[] }>(endpoints.projects.serverLogsRecent(projectId), {
@@ -132,7 +189,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
       if (cancelled) return;
       if (res.logs?.length) {
         const entries = res.logs
-          .map(normalizeRingEntry)
+          .map(normalizeLogEntry)
           .filter((e): e is ServerLog => e !== null)
           .sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
         if (entries.length > 0) {
@@ -145,9 +202,9 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
 
     return () => {
       cancelled = true;
-      es.close();
+      es?.close();
     };
-  }, [projectId, setServerLogs, addServerLog, mergeServerLogs, normalizeRingEntry]);
+  }, [projectId, setServerLogs, addServerLog, mergeServerLogs, normalizeLogEntry]);
 
   const logsStrings = useMemo(() => {
     return serverLogsData.logs.map((log: any) =>

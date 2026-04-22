@@ -6,6 +6,7 @@
 
 import type { Context } from "hono";
 import { repos } from "@repo/db";
+import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
 import { env } from "../../config";
 import { sshManager } from "../../lib/ssh-manager";
 
@@ -86,6 +87,7 @@ export async function createServer(c: Context) {
   });
 
   sshManager.invalidate(server.id);
+  invalidateOpenRestyPaths(server.id);
 
   return c.json({
     id: server.id,
@@ -125,6 +127,7 @@ export async function updateServer(c: Context) {
 
   const updated = await repos.server.update(id, patch);
   sshManager.invalidate(id);
+  invalidateOpenRestyPaths(id);
 
   return c.json({
     id: updated.id,
@@ -146,6 +149,7 @@ export async function deleteServer(c: Context) {
 
   await repos.server.delete(id);
   sshManager.invalidate(id);
+  invalidateOpenRestyPaths(id);
 
   return c.json({ ok: true });
 }

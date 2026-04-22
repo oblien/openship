@@ -61,7 +61,7 @@ export {
   type PromptUserFn,
   runDeployPipeline,
 } from "./runtime/deploy-pipeline";
-export { type RoutedDomainInput, registerResolvedRoutes } from "./runtime/route-registration";
+export { type RoutedDomainInput, type RouteRegistrationOptions, registerResolvedRoutes } from "./runtime/route-registration";
 export {
   type PortOccupant,
   probeListeningPort,
@@ -75,7 +75,7 @@ export {
 
 // ─── Infrastructure layer ────────────────────────────────────────────────────
 export type { RoutingProvider, SslProvider } from "./infra/types";
-export { NginxProvider, type NginxProviderOptions } from "./infra/nginx";
+export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
 export { CloudInfraProvider } from "./infra/cloud";
 export { NoopInfraProvider } from "./infra/noop";
 export {
@@ -167,3 +167,6 @@ export { installTool, installTools } from "./toolchain";
 // ─── Platform (top-level entry point) ────────────────────────────────────────
 export type { PlatformTarget, PlatformConfig, Platform } from "./platform";
 export { createPlatform, initPlatform, getPlatform, resetPlatform } from "./platform";
+
+// ─── Oblien SDK (re-export for single source of truth) ───────────────────────
+export { Oblien } from "oblien";

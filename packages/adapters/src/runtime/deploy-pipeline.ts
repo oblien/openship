@@ -20,7 +20,7 @@
 import type { DeployConfig, LogCallback, RouteConfig, SslResult } from "../types";
 import type { BuildLogger } from "./build-pipeline";
 import { DeployError } from "@repo/core";
-import { registerResolvedRoutes } from "./route-registration";
+import { registerResolvedRoutes, type RouteRegistrationOptions } from "./route-registration";
 
 // ─── Prompt callback ────────────────────────────────────────────────────────
 
@@ -89,6 +89,8 @@ export interface DeployPipelineInput {
   routing?: DeployRouting;
   /** SSL provider — used when a domain needs cert provisioning/checks. */
   ssl?: DeploySsl;
+  /** Options for webhook proxy injection during route registration. */
+  routeOptions?: RouteRegistrationOptions;
   /** Callback to pause and prompt the user — required for interactive preflight. */
   promptUser?: PromptUserFn;
 }
@@ -121,7 +123,7 @@ export async function runDeployPipeline(
   input: DeployPipelineInput,
   logger: BuildLogger,
 ): Promise<DeployPipelineResult> {
-  const { config, previousContainerId, domains, routing, ssl, promptUser } = input;
+  const { config, previousContainerId, domains, routing, ssl, routeOptions, promptUser } = input;
 
   try {
     logger.step("deploy", "running", "Deploying...");
@@ -161,7 +163,7 @@ export async function runDeployPipeline(
         ? await env.resolveTargetUrl(containerId, config.port).then((targetUrl) => targetUrl ? { targetUrl } : null)
         : null;
 
-    await registerResolvedRoutes(logger, routing, ssl, domains, routeTarget);
+    await registerResolvedRoutes(logger, routing, ssl, domains, routeTarget, routeOptions);
 
     logger.step("deploy", "completed", "Deployed successfully");
 

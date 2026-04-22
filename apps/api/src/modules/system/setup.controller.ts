@@ -12,6 +12,7 @@
 
 import type { Context } from "hono";
 import { repos } from "@repo/db";
+import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
 import { env } from "../../config";
 import { clearAuthModeCache } from "../../lib/auth-mode";
 import { normalizeRollbackWindow } from "../../lib/release-retention";
@@ -81,6 +82,7 @@ export async function setup(c: Context) {
       serverId = created.id;
     }
     sshManager.invalidate(serverId);
+    invalidateOpenRestyPaths(serverId);
   }
 
   clearAuthModeCache();
@@ -144,6 +146,7 @@ export async function deleteSettings(c: Context) {
   }
 
   sshManager.invalidate();
+  invalidateOpenRestyPaths();
   clearAuthModeCache();
   return c.json({ ok: true });
 }

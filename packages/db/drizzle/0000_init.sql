@@ -1,4 +1,4 @@
--- Full schema: squashed from TypeScript source of truth (packages/db/src/schema/*)
+-- Full schema: single init from TypeScript source of truth (packages/db/src/schema/*)
 
 -- ── Auth (Better Auth core) ─────────────────────────────────────────────────
 
@@ -125,6 +125,11 @@ CREATE TABLE "project" (
 	"sleep_mode" text DEFAULT 'auto_sleep',
 	"rollback_window" integer,
 	"active_deployment_id" text,
+	"webhook_id" integer,
+	"webhook_domain" text,
+	"auto_deploy" boolean DEFAULT false NOT NULL,
+	"favicon" text,
+	"favicon_checked_at" timestamp,
 	"deleted_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
@@ -133,6 +138,7 @@ CREATE TABLE "project" (
 CREATE TABLE "env_var" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
+	"service_id" text,
 	"key" text NOT NULL,
 	"value" text NOT NULL,
 	"environment" text DEFAULT 'production' NOT NULL,
@@ -151,6 +157,7 @@ CREATE TABLE "deployment" (
 	"branch" text NOT NULL,
 	"commit_sha" text,
 	"commit_message" text,
+	"trigger" text DEFAULT 'manual' NOT NULL,
 	"environment" text DEFAULT 'production' NOT NULL,
 	"framework" text,
 	"status" text DEFAULT 'queued' NOT NULL,
@@ -183,6 +190,7 @@ CREATE TABLE "build_session" (
 CREATE TABLE "domain" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
+	"service_id" text,
 	"hostname" text NOT NULL,
 	"is_primary" boolean DEFAULT false NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
@@ -215,6 +223,81 @@ CREATE TABLE "git_installation" (
 );
 --> statement-breakpoint
 
+-- ── Services ────────────────────────────────────────────────────────────────
+
+CREATE TABLE "service" (
+	"id" text PRIMARY KEY NOT NULL,
+	"project_id" text NOT NULL,
+	"name" text NOT NULL,
+	"image" text,
+	"build" text,
+	"dockerfile" text,
+	"ports" jsonb DEFAULT '[]'::jsonb,
+	"depends_on" jsonb DEFAULT '[]'::jsonb,
+	"environment" jsonb DEFAULT '{}'::jsonb,
+	"volumes" jsonb DEFAULT '[]'::jsonb,
+	"command" text,
+	"restart" text DEFAULT 'unless-stopped',
+	"exposed" boolean DEFAULT false NOT NULL,
+	"exposed_port" text,
+	"domain" text,
+	"custom_domain" text,
+	"domain_type" text DEFAULT 'free',
+	"enabled" boolean DEFAULT true NOT NULL,
+	"sort_order" integer DEFAULT 0 NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "service_deployment" (
+	"id" text PRIMARY KEY NOT NULL,
+	"deployment_id" text NOT NULL,
+	"service_id" text NOT NULL,
+	"container_id" text,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"image_ref" text,
+	"host_port" integer,
+	"ip" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+
+-- ── Analytics ───────────────────────────────────────────────────────────────
+
+CREATE TABLE "server_analytics" (
+	"id" text PRIMARY KEY NOT NULL,
+	"server_id" text NOT NULL,
+	"domain" text NOT NULL,
+	"minute" integer NOT NULL,
+	"requests" integer DEFAULT 0 NOT NULL,
+	"unique_requests" integer DEFAULT 0 NOT NULL,
+	"bandwidth_in" integer DEFAULT 0 NOT NULL,
+	"bandwidth_out" integer DEFAULT 0 NOT NULL,
+	"response_time" real DEFAULT 0 NOT NULL,
+	"countries" jsonb,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "server_analytics_geo" (
+	"id" text PRIMARY KEY NOT NULL,
+	"server_id" text NOT NULL,
+	"domain" text NOT NULL,
+	"day" text NOT NULL,
+	"countries" jsonb NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+
+-- ── Indexes ─────────────────────────────────────────────────────────────────
+
+CREATE UNIQUE INDEX "uq_analytics_server_domain_minute" ON "server_analytics" ("server_id", "domain", "minute");
+--> statement-breakpoint
+CREATE INDEX "idx_analytics_domain_minute" ON "server_analytics" ("domain", "minute");
+--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_analytics_geo_server_domain_day" ON "server_analytics_geo" ("server_id", "domain", "day");
+--> statement-breakpoint
+
 -- ── Foreign keys ────────────────────────────────────────────────────────────
 
 ALTER TABLE "session" ADD CONSTRAINT "session_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
@@ -227,6 +310,8 @@ ALTER TABLE "project" ADD CONSTRAINT "project_user_id_user_id_fk" FOREIGN KEY ("
 --> statement-breakpoint
 ALTER TABLE "env_var" ADD CONSTRAINT "env_var_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
+ALTER TABLE "env_var" ADD CONSTRAINT "env_var_service_id_service_id_fk" FOREIGN KEY ("service_id") REFERENCES "public"."service"("id") ON DELETE set null ON UPDATE no action;
+--> statement-breakpoint
 ALTER TABLE "deployment" ADD CONSTRAINT "deployment_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "deployment" ADD CONSTRAINT "deployment_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
@@ -237,4 +322,16 @@ ALTER TABLE "build_session" ADD CONSTRAINT "build_session_project_id_project_id_
 --> statement-breakpoint
 ALTER TABLE "domain" ADD CONSTRAINT "domain_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
+ALTER TABLE "domain" ADD CONSTRAINT "domain_service_id_service_id_fk" FOREIGN KEY ("service_id") REFERENCES "public"."service"("id") ON DELETE set null ON UPDATE no action;
+--> statement-breakpoint
 ALTER TABLE "git_installation" ADD CONSTRAINT "git_installation_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "service" ADD CONSTRAINT "service_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "service_deployment" ADD CONSTRAINT "service_deployment_deployment_id_deployment_id_fk" FOREIGN KEY ("deployment_id") REFERENCES "public"."deployment"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "service_deployment" ADD CONSTRAINT "service_deployment_service_id_service_id_fk" FOREIGN KEY ("service_id") REFERENCES "public"."service"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "server_analytics" ADD CONSTRAINT "server_analytics_server_id_servers_id_fk" FOREIGN KEY ("server_id") REFERENCES "public"."servers"("id") ON DELETE cascade ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "server_analytics_geo" ADD CONSTRAINT "server_analytics_geo_server_id_servers_id_fk" FOREIGN KEY ("server_id") REFERENCES "public"."servers"("id") ON DELETE cascade ON UPDATE no action;

@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useToast } from "@/context/ToastContext";
+import { useCloud } from "@/context/CloudContext";
+import { usePlatform } from "@/context/PlatformContext";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { useBuildStream } from "@/hooks/useSSEConnection";
 import { deployApi, projectsApi } from "@/lib/api";
@@ -21,6 +23,14 @@ function extractErrorMessage(err: unknown, fallback: string): string {
   }
   if (err instanceof Error) return err.message;
   return fallback;
+}
+
+function extractErrorCode(err: unknown): string | null {
+  if (err instanceof ApiError) {
+    const body = err.body as Record<string, unknown> | undefined;
+    if (body && typeof body.code === "string") return body.code;
+  }
+  return null;
 }
 
 const STEPS = [
@@ -42,6 +52,8 @@ export function useDeploymentBuild(
   setConfig: React.Dispatch<React.SetStateAction<DeploymentConfig>>,
 ) {
   const { showToast } = useToast();
+  const { requireCloud } = useCloud();
+  const { baseDomain, selfHosted, deployMode } = usePlatform();
   const [state, setState] = useState<DeploymentState>(INITIAL_STATE);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
@@ -379,11 +391,51 @@ export function useDeploymentBuild(
       }
     } catch (err) {
       console.error("Deployment error:", err);
-      showToast(extractErrorMessage(err, "Failed to start deployment"), "error", "Error");
+      const message = extractErrorMessage(err, "Failed to start deployment");
+      const errorCode = extractErrorCode(err);
+      const canUseCloudConnection = selfHosted || deployMode === "desktop";
+      const needsManagedProjectDomainHelp =
+        canUseCloudConnection &&
+        config.projectType !== "services" &&
+        config.deployTarget !== "cloud" &&
+        config.domainType === "free" &&
+        errorCode === "CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN";
+      const needsManagedComposeDomainHelp =
+        canUseCloudConnection &&
+        config.projectType === "services" &&
+        errorCode === "CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS";
+      const needsCloudTargetHelp = errorCode === "CLOUD_REQUIRED_TARGET";
+
+      if (needsManagedProjectDomainHelp) {
+        const openedModal = !requireCloud({
+          feature: `Using free .${baseDomain} domains on your own server`,
+          description: `Free .${baseDomain} domains are routed through Openship Cloud. To deploy this project to your own server, either connect Openship Cloud or switch this project to a custom domain.`,
+          secondaryHint: "If you prefer to stay fully self-hosted, change the project domain to a custom domain and deploy again.",
+        });
+        if (!openedModal) {
+          showToast(message, "error", "Error");
+        }
+      } else if (needsManagedComposeDomainHelp) {
+        const openedModal = !requireCloud({
+          feature: `Using free .${baseDomain} domains for your services`,
+          description: `One or more exposed services use free .${baseDomain} domains. To deploy them to your own server, either connect Openship Cloud or switch those services to custom domains.`,
+          secondaryHint: "Custom domains work without Openship Cloud. Free managed domains do not.",
+        });
+        if (!openedModal) {
+          showToast(message, "error", "Error");
+        }
+      } else if (needsCloudTargetHelp) {
+        const openedModal = !requireCloud("Deploying to Openship Cloud");
+        if (!openedModal) {
+          showToast(message, "error", "Error");
+        }
+      } else {
+        showToast(message, "error", "Error");
+      }
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [config, showToast]);
+  }, [baseDomain, config, deployMode, requireCloud, selfHosted, showToast]);
 
   const connectToBuild = useCallback(async (deploymentId?: string) => {
     const id = deploymentId || state.deploymentId;

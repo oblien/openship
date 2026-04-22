@@ -117,3 +117,6 @@ export const env = envSchema.parse(process.env);
 export const trustedOrigins = env.TRUSTED_ORIGINS
   ? env.TRUSTED_ORIGINS.split(",")
   : ["http://localhost:3000", "http://localhost:3001"];
+
+/** Internal loopback URL for the API (used by nginx webhook proxy, etc.) */
+export const internalApiUrl = `http://127.0.0.1:${env.PORT}`;

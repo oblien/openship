@@ -1,22 +1,36 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  CheckCircle2,
+  AlertTriangle,
+  ChevronDown,
+  Download,
   ExternalLink,
   GitBranch,
   GitCommit,
+  Globe,
   Github,
-  Link2,
   Loader2,
   Webhook,
   Zap,
 } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { useGitHub } from "@/context/GitHubContext";
+import type { GitHubRepo } from "@/context/GitHubContext";
+import { useToast } from "@/context/ToastContext";
 import { formatDate } from "@/utils/date";
 import { projectsApi } from "@/lib/api";
+import { getApiErrorMessage } from "@/lib/api/client";
+import { Modal } from "@/components/ui/Modal";
+import { RepositoryList } from "../../../library/components/RepositoryList";
 
 export const GitSettings = () => {
-  const { gitData, refreshGit, id } = useProjectSettings();
+  const { gitData, refreshGit, id, projectData } = useProjectSettings();
+  const github = useGitHub();
+  const { showToast } = useToast();
   const [isTogglingAutoDeploy, setIsTogglingAutoDeploy] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
+  const [isSettingDomain, setIsSettingDomain] = useState(false);
+  const [showDomainMenu, setShowDomainMenu] = useState(false);
   const hasRefreshed = useRef(false);
 
   useEffect(() => {
@@ -32,12 +46,35 @@ export const GitSettings = () => {
       const newState = !gitData.autoDeployEnabled;
       const response = await projectsApi.setAutoDeploy(id, newState);
       if (response.success) {
+        showToast(newState ? "Auto-deploy enabled" : "Auto-deploy disabled", "success");
+        await refreshGit();
+      } else {
+        showToast(response.error || "Failed to toggle auto-deploy", "error");
         await refreshGit();
       }
     } catch (error) {
-      console.error("Failed to toggle auto-deploy:", error);
+      showToast(getApiErrorMessage(error, "Failed to toggle auto-deploy"), "error");
+      await refreshGit();
     } finally {
       setIsTogglingAutoDeploy(false);
+    }
+  };
+
+  const handleSetWebhookDomain = async (domain: string | null) => {
+    setIsSettingDomain(true);
+    setShowDomainMenu(false);
+    try {
+      const response = await projectsApi.setWebhookDomain(id, domain);
+      if (response.success) {
+        showToast(domain ? `Webhook domain set to ${domain}` : "Webhook domain cleared", "success");
+        await refreshGit();
+      } else {
+        showToast(response.error || "Failed to set webhook domain", "error");
+      }
+    } catch (error) {
+      showToast(getApiErrorMessage(error, "Failed to set webhook domain"), "error");
+    } finally {
+      setIsSettingDomain(false);
     }
   };
 
@@ -56,21 +93,147 @@ export const GitSettings = () => {
   }
 
   if (!gitData.repository) {
-    return (
-      <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted/40">
-          <Github className="size-6 text-muted-foreground/50" />
+    const handleLinkRepo = async (ownerLogin: string, repo: GitHubRepo) => {
+      setIsLinking(true);
+      try {
+        const result = await projectsApi.linkRepo(id, { owner: ownerLogin, repo: repo.name });
+        if (result.success) {
+          showToast(`Linked to ${ownerLogin}/${repo.name}`, "success");
+          setShowPicker(false);
+          await refreshGit();
+        } else if (result.install_url) {
+          showToast(result.error || "GitHub App is not installed for this account", "error");
+          setShowPicker(false);
+          window.open(result.install_url, "_blank", "noopener,noreferrer");
+        } else {
+          showToast(result.error || "Failed to link repository", "error");
+        }
+      } catch (error) {
+        showToast(getApiErrorMessage(error, "Failed to link repository"), "error");
+      } finally {
+        setIsLinking(false);
+      }
+    };
+
+    // Not connected to GitHub at all
+    if (!github.connected && !github.loading) {
+      return (
+        <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted/40">
+            <Github className="size-6 text-muted-foreground/50" />
+          </div>
+          <h3 className="mt-4 text-base font-semibold text-foreground">Connect GitHub first</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Link your GitHub account to connect a repository to this project.
+          </p>
+          <button
+            onClick={() => void github.connect()}
+            disabled={github.connecting}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
+          >
+            {github.connecting ? <Loader2 className="size-4 animate-spin" /> : <Github className="size-4" />}
+            {github.connecting ? "Connecting…" : "Connect GitHub"}
+          </button>
         </div>
-        <h3 className="mt-4 text-base font-semibold text-foreground">Repository not connected</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Connect a source repository to enable automatic deployments and commit history.
-        </p>
-      </div>
+      );
+    }
+
+    // Connected — show CTA + modal picker
+    return (
+      <>
+        <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+            <Github className="size-6 text-primary" />
+          </div>
+          <h3 className="mt-4 text-base font-semibold text-foreground">Link a Repository</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Connect a GitHub repository to enable webhook-triggered deployments.
+          </p>
+          <button
+            onClick={() => setShowPicker(true)}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90"
+          >
+            <Github className="size-4" />
+            Select Repository
+          </button>
+        </div>
+
+        <Modal
+          isOpen={showPicker}
+          onClose={() => setShowPicker(false)}
+          maxWidth="640px"
+          width="640px"
+          maxHeight="80vh"
+          showCloseButton
+          overflow="hidden"
+        >
+          <div className="px-5 py-4 border-b border-border/50">
+            <h2 className="text-base font-semibold text-foreground">Select a repository</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">Choose a repository to link to this project</p>
+          </div>
+          {isLinking && (
+            <div className="flex items-center gap-2 px-5 py-2.5 bg-primary/5 border-b border-border/50 text-sm text-primary">
+              <Loader2 className="size-4 animate-spin" />
+              Linking repository…
+            </div>
+          )}
+          <div className="overflow-y-auto" style={{ maxHeight: "calc(80vh - 120px)" }}>
+            <RepositoryList
+              repos={github.repos}
+              accounts={github.accounts}
+              selectedOwner={github.selectedOwner}
+              setSelectedOwner={github.setSelectedOwner}
+              loading={false}
+              loadingRepos={github.loadingRepos}
+              onSelect={handleLinkRepo}
+            />
+          </div>
+        </Modal>
+      </>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]">
+    <div className="space-y-5">
+      {/* Install GitHub App banner — cloud-deployed projects that lack the app */}
+      {projectData.deployTarget === "cloud" && !gitData.installationInstalled && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 px-5 py-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10">
+            <AlertTriangle className="size-4 text-amber-500" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[14px] font-semibold text-foreground">GitHub App not installed</h3>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              Install the Openship GitHub App on your account or organization to enable auto-deploy and webhook-triggered deployments for cloud projects.
+            </p>
+            <a
+              href={gitData.installUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90"
+            >
+              <Download className="size-4" />
+              Install GitHub App
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* No webhook endpoint banner — local/private instances need a direct endpoint */}
+      {gitData.webhookStrategy === "none" && (
+        <div className="flex items-start gap-3 rounded-2xl border border-blue-500/30 bg-blue-500/5 px-5 py-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/10">
+            <Globe className="size-4 text-blue-500" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[14px] font-semibold text-foreground">Enable auto-deploy</h3>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              Auto-deploy needs a direct webhook endpoint. Expose this Openship API on a public URL or configure a verified webhook domain for direct delivery.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-5">
         <SectionCard
           title="Source Repository"
@@ -100,44 +263,128 @@ export const GitSettings = () => {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <InfoCard
-              icon={Zap}
-              title="Auto Deploy"
-              value={gitData.autoDeployEnabled ? "Enabled" : "Disabled"}
-              description={gitData.autoDeployEnabled ? "Pushes trigger deployments automatically" : "Deployments must be started manually"}
-              action={
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={gitData.autoDeployEnabled}
-                  onClick={handleAutoDeployToggle}
-                  disabled={isTogglingAutoDeploy}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${gitData.autoDeployEnabled ? "bg-primary" : "bg-muted"} ${isTogglingAutoDeploy ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
-                >
-                  {isTogglingAutoDeploy ? (
-                    <span className="mx-auto">
-                      <Loader2 className="size-3.5 animate-spin text-background" />
-                    </span>
-                  ) : (
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${gitData.autoDeployEnabled ? "translate-x-6" : "translate-x-1"}`} />
-                  )}
-                </button>
-              }
-            />
-            <InfoCard
-              icon={Webhook}
-              title="Webhook"
-              value={gitData.webhookActive ? "Active" : "Inactive"}
-              description={gitData.webhookActive ? "Repository events are reaching Openship" : "Webhook has not been configured or is not responding"}
-              tone={gitData.webhookActive ? "success" : "neutral"}
-            />
-          </div>
+          {/* Only show auto-deploy/webhook when prerequisites are met */}
+          {!(
+            (projectData.deployTarget === "cloud" && !gitData.installationInstalled) ||
+            (gitData.webhookStrategy === "none" && !gitData.verifiedDomains?.length)
+          ) && (
+            <>
+              {/* Webhook Domain Picker — show when verified domains are available */}
+              {gitData.verifiedDomains && gitData.verifiedDomains.length > 0 && projectData.deployTarget !== "cloud" && (
+                <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Globe className="size-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-foreground">Webhook Endpoint</p>
+                      <p className="mt-0.5 text-[12px] text-muted-foreground">
+                        {gitData.webhookDomain
+                          ? "GitHub delivers push events directly to this domain"
+                          : "Choose a domain for direct webhook delivery"
+                        }
+                      </p>
+                      <div className="relative mt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowDomainMenu(!showDomainMenu)}
+                          disabled={isSettingDomain}
+                          className="flex w-full items-center justify-between gap-2 rounded-lg border border-border/60 bg-background px-3 py-2 text-left text-[13px] transition-colors hover:border-border disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span className={gitData.webhookDomain ? "text-foreground" : "text-muted-foreground"}>
+                            {isSettingDomain ? "Updating..." : gitData.webhookDomain || "Select domain..."}
+                          </span>
+                          {isSettingDomain ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : <ChevronDown className="size-3.5 text-muted-foreground" />}
+                        </button>
+                        {showDomainMenu && (
+                          <div className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-border/60 bg-popover shadow-lg">
+                            {gitData.verifiedDomains.map((d) => (
+                              <button
+                                key={d.hostname}
+                                type="button"
+                                onClick={() => handleSetWebhookDomain(d.hostname)}
+                                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-muted/50 ${gitData.webhookDomain === d.hostname ? "bg-primary/5 text-primary" : "text-foreground"}`}
+                              >
+                                <Globe className="size-3.5 shrink-0" />
+                                {d.hostname}
+                                {d.ssl && <span className="ml-auto text-[11px] text-emerald-500">SSL</span>}
+                              </button>
+                            ))}
+                            {gitData.webhookDomain && (
+                              <button
+                                type="button"
+                                onClick={() => handleSetWebhookDomain(null)}
+                                className="flex w-full items-center gap-2 border-t border-border/30 px-3 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted/50"
+                              >
+                                Clear selection
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <InfoCard
+                  icon={Zap}
+                  title="Auto Deploy"
+                  value={gitData.autoDeployEnabled ? "Enabled" : "Disabled"}
+                  description={
+                    gitData.autoDeployEnabled
+                      ? gitData.webhookStrategy === "domain"
+                          ? `Pushes deliver to ${gitData.webhookDomain}`
+                          : "Pushes trigger deployments automatically"
+                      : "Deployments must be started manually"
+                  }
+                  action={
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={gitData.autoDeployEnabled}
+                      onClick={handleAutoDeployToggle}
+                      disabled={isTogglingAutoDeploy}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${gitData.autoDeployEnabled ? "bg-primary" : "bg-muted"} ${isTogglingAutoDeploy ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                    >
+                      {isTogglingAutoDeploy ? (
+                        <span className="mx-auto">
+                          <Loader2 className="size-3.5 animate-spin text-background" />
+                        </span>
+                      ) : (
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${gitData.autoDeployEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                      )}
+                    </button>
+                  }
+                />
+                <InfoCard
+                  icon={Webhook}
+                  title="Webhook"
+                  value={
+                    gitData.webhookStrategy === "domain" && gitData.webhookActive
+                      ? "Direct"
+                      : gitData.webhookActive
+                          ? "Active"
+                          : "Inactive"
+                  }
+                  description={
+                    gitData.webhookStrategy === "domain" && gitData.webhookActive
+                      ? `Events deliver directly via ${gitData.webhookDomain}`
+                      : gitData.webhookActive
+                          ? "Repository events are reaching Openship"
+                          : "Webhook has not been configured or is not responding"
+                  }
+                  tone={gitData.webhookActive ? "success" : "neutral"}
+                />
+              </div>
+            </>
+          )}
         </SectionCard>
 
         <SectionCard
           title="Recent Commits"
-          description="Latest repository activity connected to this project"
+          description={`Latest commits on ${gitData.branch || 'main'}`}
           icon={GitCommit}
           iconTone="orange"
         >
@@ -147,58 +394,46 @@ export const GitSettings = () => {
               <p className="mt-1 text-sm text-muted-foreground">Push to your repository and recent commit activity will appear here.</p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-border/40 divide-y divide-border/30">
-              {gitData.recentCommits.slice(0, 8).map((commit: any) => (
-                <div key={commit.id} className="px-4 py-4">
-                  <div className="flex items-start justify-between gap-4">
+            <>
+              <div className="overflow-hidden rounded-xl border border-border/40 divide-y divide-border/30">
+                {gitData.recentCommits.slice(0, 8).map((commit: any) => (
+                  <div key={commit.id} className="flex items-center gap-3 px-4 py-2.5">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <code className="rounded-full bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{commit.id?.slice(0, 7)}</code>
-                        <StatusChip status={commit.status} />
-                      </div>
-                      <p className="mt-2 break-words text-sm font-medium text-foreground">{commit.message}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
-                        <span>{commit.author}</span>
-                        <span className="text-muted-foreground/40">·</span>
-                        <span>{formatDate(commit.time, undefined, undefined, true)}</span>
-                        {commit.files ? (
-                          <>
-                            <span className="text-muted-foreground/40">·</span>
-                            <span>{commit.files} file{commit.files !== 1 ? "s" : ""} changed</span>
-                          </>
+                      <div className="flex items-center gap-1.5">
+                        {commit.authorAvatar ? (
+                          <img src={commit.authorAvatar} alt={commit.author} className="size-4 rounded-full" />
                         ) : null}
+                        <span className="text-[11px] font-medium text-muted-foreground">{commit.author}</span>
+                        <span className="text-muted-foreground/40">·</span>
+                        <span className="text-[11px] text-muted-foreground">{formatDate(commit.time, undefined, undefined, true)}</span>
+                        <code className="rounded-full bg-muted/50 px-1.5 py-px text-[10px] font-medium text-muted-foreground">{commit.id?.slice(0, 7)}</code>
                       </div>
+                      <p className="mt-0.5 truncate text-[12px] text-foreground">{commit.message?.split('\n')[0]}</p>
                     </div>
                     {commit.url ? (
                       <a
                         href={commit.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/10"
+                        className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                       >
-                        <Link2 className="size-3.5" />
-                        View
+                        <ExternalLink className="size-3" />
                       </a>
                     ) : null}
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              <a
+                href={`${gitData.repository.url}/commits/${gitData.branch || 'main'}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-medium text-primary transition-colors hover:text-primary/80"
+              >
+                View all commits on GitHub
+                <ExternalLink className="size-3.5" />
+              </a>
+            </>
           )}
-        </SectionCard>
-      </div>
-
-      <div className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-        <SectionCard
-          title="Integration Status"
-          description="Current source control connection health"
-          icon={CheckCircle2}
-          iconTone="emerald"
-        >
-          <MetricRow label="Provider" value="GitHub" />
-          <MetricRow label="Repository" value={gitData.repository.name} />
-          <MetricRow label="Branch" value={gitData.branch || "main"} />
-          <MetricRow label="Webhook" value={gitData.webhookActive ? "Active" : "Inactive"} />
         </SectionCard>
       </div>
     </div>
@@ -287,25 +522,3 @@ function InfoCard({
   );
 }
 
-function MetricRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-[13px] text-muted-foreground">{label}</span>
-      <span className="max-w-[180px] truncate text-right text-[13px] font-medium text-foreground">{value}</span>
-    </div>
-  );
-}
-
-function StatusChip({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    success: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    failed: "bg-red-500/10 text-red-600 dark:text-red-400",
-    pending: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  };
-
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[status] || "bg-muted/50 text-muted-foreground"}`}>
-      {status}
-    </span>
-  );
-}

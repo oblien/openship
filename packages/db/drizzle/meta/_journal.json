@@ -12,29 +12,29 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1742947200000,
-      "tag": "0001_services",
+      "when": 1776729600000,
+      "tag": "0001_project_favicon_checked_at",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1743033600000,
-      "tag": "0002_service_routing",
+      "when": 1776816000000,
+      "tag": "0002_webhook_relay_tables",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1743120000000,
-      "tag": "0003_server_analytics",
+      "when": 1776902400000,
+      "tag": "0003_deploy_triggers",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1744675200000,
-      "tag": "0004_project_favicon",
+      "when": 1776988800000,
+      "tag": "0004_drop_webhook_relay",
       "breakpoints": true
     }
   ]

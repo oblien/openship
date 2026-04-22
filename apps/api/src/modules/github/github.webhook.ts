@@ -13,6 +13,7 @@
 
 import { repos } from "@repo/db";
 import { env } from "../../config/env";
+import { triggerDeployment } from "../deployments/build.service";
 import { verifyHmacSha256 } from "../webhooks/webhook.service";
 import type {
   WebhookProvider,
@@ -24,7 +25,7 @@ import type {
   GitHubPushPayload,
 } from "./github.types";
 
-// ─── Push deduplication (prevents concurrent deploys for same repo) ──────────
+// ─── Push deduplication (prevents duplicate delivery reprocessing) ───────────
 
 const activePushes = new Set<string>();
 
@@ -35,11 +36,14 @@ export const githubWebhookProvider: WebhookProvider = {
 
   verify(payload: string | Buffer, headers: Record<string, string>): WebhookVerifyResult {
     const secret = env.GITHUB_WEBHOOK_SECRET;
+    const signature = headers["x-hub-signature-256"];
+
+    // No secret configured — accept unsigned webhooks (self-hosted without secret)
     if (!secret) {
-      return { valid: false, error: "GITHUB_WEBHOOK_SECRET is not configured" };
+      return { valid: true };
     }
 
-    const signature = headers["x-hub-signature-256"];
+    // Secret configured but no signature in request — reject
     if (!signature) {
       return { valid: false, error: "Missing x-hub-signature-256 header" };
     }
@@ -50,6 +54,9 @@ export const githubWebhookProvider: WebhookProvider = {
 
   async handle(payload: unknown, headers: Record<string, string>): Promise<WebhookHandlerResult> {
     const event = headers["x-github-event"];
+    if (!event) {
+      return { success: true, event: "unknown", message: "Missing x-github-event header" };
+    }
 
     switch (event) {
       case "installation":
@@ -76,6 +83,10 @@ async function handleInstallation(
       return handleInstallationCreated(payload);
     case "deleted":
       return handleInstallationDeleted(payload);
+    case "suspend":
+      return handleInstallationSuspended(payload);
+    case "unsuspend":
+      return handleInstallationCreated(payload); // Re-upsert to restore
     default:
       return {
         success: true,
@@ -96,7 +107,9 @@ async function handleInstallationCreated(
   /* Find the user by their GitHub provider ID in Better Auth's account table */
   const account = await findUserByGitHubId(senderId);
   if (!account) {
-    return { success: false, event: "installation", error: "No linked user found for this GitHub account" };
+    // Return success so GitHub doesn't retry — user may install before signing up
+    console.log(`[GitHub Webhook] Installation created by unknown GitHub user ${senderId} (${accountLogin}) — skipping`);
+    return { success: true, event: "installation", message: "No linked Openship user — ignored" };
   }
 
   await repos.gitInstallation.upsert({
@@ -121,7 +134,8 @@ async function handleInstallationDeleted(
 
   const account = await findUserByGitHubId(senderId);
   if (!account) {
-    return { success: false, event: "installation", error: "No linked user found" };
+    // Not an Openship user — nothing to clean up
+    return { success: true, event: "installation", message: "No linked user — ignored" };
   }
 
   await repos.gitInstallation.removeByInstallationId(account.userId, installationId);
@@ -129,17 +143,39 @@ async function handleInstallationDeleted(
   return { success: true, event: "installation", message: "Installation removed" };
 }
 
+async function handleInstallationSuspended(
+  payload: GitHubInstallationPayload,
+): Promise<WebhookHandlerResult> {
+  const senderId = String(payload.sender.id);
+  const installationId = payload.installation.id;
+  const accountLogin = payload.installation.account.login.toLowerCase();
+
+  const account = await findUserByGitHubId(senderId);
+  if (!account) {
+    return { success: true, event: "installation", message: "No linked user — ignored" };
+  }
+
+  // Suspended installations can't issue tokens — remove so token resolution
+  // falls back to the user's OAuth token, and linkRepo will prompt re-install.
+  await repos.gitInstallation.removeByInstallationId(account.userId, installationId);
+  console.log(`[GitHub Webhook] Installation suspended for ${accountLogin} — removed from DB`);
+
+  return { success: true, event: "installation", message: `Installation suspended for ${accountLogin}` };
+}
+
 // ─── Push events ─────────────────────────────────────────────────────────────
 
 async function handlePush(payload: GitHubPushPayload): Promise<WebhookHandlerResult> {
   const owner = payload.repository?.owner?.login;
   const repo = payload.repository?.name;
+  const ref = payload.ref;
+  const commitSha = payload.head_commit?.id;
 
   if (!owner || !repo) {
     return { success: false, event: "push", error: "Missing repository info in payload" };
   }
 
-  const pushKey = `${owner}/${repo}`.toLowerCase();
+  const pushKey = `${owner}/${repo}#${ref ?? "unknown"}@${commitSha ?? "unknown"}`.toLowerCase();
 
   /* Deduplicate: skip if we're already processing a push for this repo */
   if (activePushes.has(pushKey)) {
@@ -149,25 +185,52 @@ async function handlePush(payload: GitHubPushPayload): Promise<WebhookHandlerRes
   activePushes.add(pushKey);
 
   try {
-    /**
-     * TODO: Integrate with deployment service once it's implemented.
-     *
-     * The flow should be:
-     *   1. Look up project by owner+repo in the deployments/projects table
-     *   2. Create a new build session
-     *   3. Queue the deployment via BullMQ
-     *   4. Create a GitHub check run to track status
-     *
-     * For now we log and acknowledge the event so the webhook infrastructure
-     * is fully operational.
-     */
-    console.log(`[GitHub Webhook] Push received: ${owner}/${repo} ref=${payload.ref}`);
-    console.log(`[GitHub Webhook] Commit: ${payload.head_commit?.id?.slice(0, 7)} — ${payload.head_commit?.message}`);
+    /* Only handle branch pushes — ignore tag pushes (refs/tags/...) */
+    if (!ref?.startsWith("refs/heads/")) {
+      return { success: true, event: "push", message: `Ignoring non-branch ref: ${ref ?? "unknown"}` };
+    }
+
+    const branch = ref.replace("refs/heads/", "");
+    const commitMessage = payload.head_commit?.message;
+
+    /* Find all projects linked to this repo that have auto-deploy enabled */
+    const projects = await repos.project.findByGitRepo(owner, repo);
+    const autoDeployProjects = projects.filter(
+      (p) => p.autoDeploy && (p.gitBranch ?? "main") === branch,
+    );
+
+    if (autoDeployProjects.length === 0) {
+      console.log(`[GitHub Webhook] Push to ${owner}/${repo}#${branch} — no matching auto-deploy projects`);
+      return { success: true, event: "push", message: "No auto-deploy projects matched" };
+    }
+
+    /* Trigger deployment for each matching project */
+    const results = await Promise.allSettled(
+      autoDeployProjects.map((p) =>
+        triggerDeployment(p.userId, {
+          projectId: p.id,
+          branch,
+          commitSha,
+          commitMessage,
+          trigger: "webhook",
+        }),
+      ),
+    );
+
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r) => r.status === "rejected").length;
+
+    if (failed > 0) {
+      const errors = results
+        .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+        .map((r) => String(r.reason));
+      console.error(`[GitHub Webhook] Push deploy failures for ${owner}/${repo}:`, errors);
+    }
 
     return {
       success: true,
       event: "push",
-      message: `Push event processed for ${owner}/${repo}`,
+      message: `Triggered ${succeeded} deployment(s) for ${owner}/${repo}#${branch}${failed ? `, ${failed} failed` : ""}`,
     };
   } finally {
     activePushes.delete(pushKey);

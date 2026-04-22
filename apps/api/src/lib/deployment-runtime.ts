@@ -74,7 +74,7 @@ async function resolveCloudPlatformForUser(userId?: string): Promise<Platform> {
   const result = await getCloudToken(userId);
   if (!result) {
     throw new Error(
-      "Cannot access cloud deployment: no cloud account linked. Connect your Oblien account in Settings.",
+      "Cannot access cloud deployment: no cloud account linked. Connect your Openship Cloud account in Settings.",
     );
   }
 

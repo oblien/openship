@@ -17,6 +17,7 @@ import {
   Globe,
   User,
   KeyRound,
+  Shield,
 } from "lucide-react";
 import { getApiErrorMessage, isAbortError, systemApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -29,12 +30,15 @@ import { OverviewTab } from "./_components/overview-tab";
 import { ComponentsTab } from "./_components/components-tab";
 import { TerminalTab } from "./_components/terminal-tab";
 
-type Tab = "overview" | "components" | "terminal";
+import { RateLimitSettings } from "./_components/rate-limit-settings";
+
+type Tab = "overview" | "components" | "security" | "terminal";
 type ManualActionMode = "remove" | null;
 
 const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
   { key: "components", label: "Components", icon: Blocks },
+  { key: "security", label: "Security", icon: Shield },
   { key: "terminal", label: "Terminal", icon: Terminal },
 ];
 
@@ -532,6 +536,10 @@ export default function ServerDetailPage({
               />
             )}
 
+            {activeTab === "security" && (
+              <RateLimitSettings serverId={serverId} />
+            )}
+
             {activeTab === "terminal" && <TerminalTab />}
           </div>
 
@@ -584,6 +592,7 @@ export default function ServerDetailPage({
                 </div>
               </div>
             </div>
+
           </div>
         </div>
     </PageContainer>

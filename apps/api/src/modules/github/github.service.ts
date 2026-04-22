@@ -211,6 +211,73 @@ export async function listBranches(
   });
 }
 
+/**
+ * Get the latest commit on a branch.
+ */
+export async function getLatestCommit(
+  userId: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<{ sha: string; message: string } | null> {
+  try {
+    const data = await githubFetch<{ sha: string; commit: { message: string } }>({
+      userId,
+      owner,
+      url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(branch)}`,
+    });
+    return { sha: data.sha, message: data.commit.message };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch recent commits from a branch via the GitHub API.
+ */
+export async function getRecentCommits(
+  userId: string,
+  owner: string,
+  repo: string,
+  branch: string,
+  perPage = 10,
+): Promise<Array<{
+  sha: string;
+  message: string;
+  author: string;
+  authorAvatar: string;
+  date: string;
+  url: string;
+}>> {
+  try {
+    const data = await githubFetch<Array<{
+      sha: string;
+      html_url: string;
+      commit: {
+        message: string;
+        author: { name: string; date: string } | null;
+      };
+      author: { login: string; avatar_url: string } | null;
+    }>>({
+      userId,
+      owner,
+      url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits`,
+      params: { sha: branch, per_page: String(perPage) },
+    });
+
+    return data.map((c) => ({
+      sha: c.sha,
+      message: c.commit.message,
+      author: c.author?.login ?? c.commit.author?.name ?? "Unknown",
+      authorAvatar: c.author?.avatar_url ?? "",
+      date: c.commit.author?.date ?? "",
+      url: c.html_url,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // ─── Files ───────────────────────────────────────────────────────────────────
 
 /**
@@ -284,6 +351,7 @@ export async function listWebhooks(
   return githubFetch<GitHubWebhook[]>({
     userId,
     owner,
+    useUserToken: true,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`,
   });
 }
@@ -296,24 +364,50 @@ export async function createWebhook(
   owner: string,
   repo: string,
   webhookUrl: string,
+  secret?: string,
 ): Promise<{ hookId: number; events: string[]; active: boolean }> {
+  const config: Record<string, unknown> = {
+    url: webhookUrl,
+    content_type: "json",
+  };
+  if (secret) config.secret = secret;
+
   const data = await githubFetch<GitHubWebhook>({
     userId,
     owner,
+    useUserToken: true,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`,
     method: "POST",
     params: {
       name: "web",
       active: true,
       events: ["push"],
-      config: {
-        url: webhookUrl,
-        content_type: "json",
-      },
+      config,
     },
   });
 
   return { hookId: data.id, events: data.events, active: data.active };
+}
+
+/**
+ * Update a webhook (e.g. toggle active state).
+ */
+export async function updateWebhook(
+  userId: string,
+  owner: string,
+  repo: string,
+  hookId: number,
+  patch: { active?: boolean; events?: string[] },
+): Promise<{ id: number; active: boolean; events: string[] }> {
+  const data = await githubFetch<GitHubWebhook>({
+    userId,
+    owner,
+    useUserToken: true,
+    url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks/${hookId}`,
+    method: "PATCH",
+    params: patch,
+  });
+  return { id: data.id, active: data.active, events: data.events };
 }
 
 /**
@@ -328,6 +422,7 @@ export async function deleteWebhook(
   await githubFetch({
     userId,
     owner,
+    useUserToken: true,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks/${hookId}`,
     method: "DELETE",
   });
@@ -548,11 +643,102 @@ export async function getUserHome(userId: string) {
   return { status, repos, accounts, mode, localStatus };
 }
 
+// ─── Webhook strategy ────────────────────────────────────────────────────────
+
+export type WebhookStrategy = "app" | "domain" | "repo" | "none";
+
+/**
+ * Determine the base webhook strategy from global config (sync, no user context).
+ *
+ *  - "app"  → GitHub App handles push events natively (cloud mode).
+ *  - "repo" → Create per-repo webhooks (self-hosted with a public URL).
+ *  - "none" → Can't receive webhooks (localhost / private IP).
+ */
+export function getWebhookStrategy(): WebhookStrategy {
+  if (getGitHubAuthMode() === "app") return "app";
+
+  // For non-app modes, check if the URL is publicly reachable
+  const url = env.BETTER_AUTH_URL;
+  if (isLocalUrl(url)) return "none";
+  return "repo";
+}
+
+/**
+ * Resolve the effective webhook strategy for a project + user (async).
+ *
+ * Priority:
+ *   1. "app"    — GitHub App (cloud mode)
+ *   2. "domain" — project has a webhookDomain set (direct delivery)
+ *   3. "repo"   — BETTER_AUTH_URL is public
+ *   4. "none"   — no way to receive webhooks
+ */
+export async function resolveWebhookStrategy(
+  _userId: string,
+  project?: { webhookDomain?: string | null },
+): Promise<WebhookStrategy> {
+  const base = getWebhookStrategy();
+  if (base === "app") return "app";
+
+  // Project has a domain configured → direct webhook delivery
+  if (project?.webhookDomain) return "domain";
+
+  // Public URL → repo-level webhooks at BETTER_AUTH_URL
+  if (base === "repo") return "repo";
+
+  return "none";
+}
+
+/**
+ * Get the list of available webhook strategies for a user + project.
+ * Used by the dashboard to show options to the user.
+ */
+export async function getAvailableStrategies(
+  userId: string,
+  project?: { webhookDomain?: string | null },
+): Promise<{ current: WebhookStrategy; available: WebhookStrategy[] }> {
+  const current = await resolveWebhookStrategy(userId, project);
+  const available: WebhookStrategy[] = [];
+
+  if (getGitHubAuthMode() === "app") {
+    available.push("app");
+    return { current, available };
+  }
+
+  // Domain is always available if verified domains exist (handled by UI)
+  available.push("domain");
+
+  if (!isLocalUrl(env.BETTER_AUTH_URL)) {
+    available.push("repo");
+  }
+
+  return { current, available };
+}
+
+/** True when the URL points to localhost or a private/unreachable address. */
+function isLocalUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname === "::1" ||
+      hostname.endsWith(".local") ||
+      /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname)
+    );
+  } catch {
+    return true;
+  }
+}
+
 // ─── Webhook registration ────────────────────────────────────────────────────
 
 /**
  * Register a push webhook on a repo.
  * If creation returns 422 (already exists), finds the existing hook.
+ *
+ * Callers should check `getWebhookStrategy()` before calling — this will
+ * throw if the URL is unreachable (localhost).
  */
 export async function registerWebhook(
   userId: string,

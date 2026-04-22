@@ -14,6 +14,7 @@ import * as fs from "./filesystem.controller";
 import * as setup from "./setup.controller";
 import * as serverCheck from "./server-check.controller";
 import * as serversCtrl from "./servers.controller";
+import * as rateLimit from "./rate-limit.controller";
 
 export const systemRoutes = new Hono();
 
@@ -38,6 +39,10 @@ systemRoutes.get("/servers/:id", authMiddleware, serversCtrl.getServer);
 systemRoutes.post("/servers", authMiddleware, serversCtrl.createServer);
 systemRoutes.patch("/servers/:id", authMiddleware, serversCtrl.updateServer);
 systemRoutes.delete("/servers/:id", authMiddleware, serversCtrl.deleteServer);
+
+/* ── Per-server rate limiting (OpenResty level) ─────────────────── */
+systemRoutes.get("/servers/:id/rate-limit", authMiddleware, rateLimit.getRateLimit);
+systemRoutes.patch("/servers/:id/rate-limit", authMiddleware, rateLimit.updateRateLimit);
 
 /* ── Server check & install (dashboard setup wizard) ────────────── */
 systemRoutes.post("/test-connection", authMiddleware, serverCheck.testConnection);

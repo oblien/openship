@@ -73,12 +73,12 @@ export function CloudConnection() {
               </div>
             )}
             <div className="flex-1 min-w-0">
-              {cloudUser?.name && (
-                <p className="text-sm font-medium text-foreground truncate">{cloudUser.name}</p>
-              )}
-              {cloudUser?.email && (
-                <p className="text-xs text-muted-foreground truncate">{cloudUser.email}</p>
-              )}
+              <p className="text-sm font-medium text-foreground truncate">
+                {cloudUser?.name || "Openship Cloud"}
+              </p>
+              <p className="text-xs text-muted-foreground truncate">
+                {cloudUser?.email || "Connected cloud account"}
+              </p>
             </div>
           </div>
 

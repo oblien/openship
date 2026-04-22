@@ -233,6 +233,14 @@ export async function getGitInfo(projectId: string, userId: string) {
   const p = await repos.project.findById(projectId);
   if (!p || p.userId !== userId) throw new NotFoundError("Project", projectId);
 
+  // Resolve deploy target from active deployment meta
+  let deployTarget: string | null = null;
+  if (p.activeDeploymentId) {
+    const dep = await repos.deployment.findById(p.activeDeploymentId);
+    const meta = dep?.meta as { deployTarget?: string } | null;
+    deployTarget = meta?.deployTarget ?? null;
+  }
+
   return {
     gitProvider: p.gitProvider,
     gitOwner: p.gitOwner,
@@ -240,6 +248,10 @@ export async function getGitInfo(projectId: string, userId: string) {
     gitBranch: p.gitBranch,
     gitUrl: p.gitUrl,
     installationId: p.installationId,
+    webhookId: p.webhookId,
+    webhookDomain: p.webhookDomain,
+    autoDeploy: p.autoDeploy,
+    deployTarget,
   };
 }
 

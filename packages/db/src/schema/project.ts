@@ -84,8 +84,16 @@ export const project = pgTable("project", {
   /* ── State ──────────────────────────────────────────────────────────── */
   /** Currently active deployment ID */
   activeDeploymentId: text("active_deployment_id"),
+  /** GitHub webhook ID registered on the repo */
+  webhookId: integer("webhook_id"),
+  /** Domain hostname used for receiving GitHub webhooks (null = edge relay or none) */
+  webhookDomain: text("webhook_domain"),
+  /** Whether pushes to the branch trigger auto-deploy */
+  autoDeploy: boolean("auto_deploy").notNull().default(false),
   /** Auto-detected favicon URL from the deployed site */
   favicon: text("favicon"),
+  /** Last time favicon detection was attempted for this project */
+  faviconCheckedAt: timestamp("favicon_checked_at"),
   /** Soft delete */
   deletedAt: timestamp("deleted_at"),
 

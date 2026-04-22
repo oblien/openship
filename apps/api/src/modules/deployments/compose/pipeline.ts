@@ -22,6 +22,7 @@ import { onFailure, onSuccess, type LifecycleContext } from "../deployment-lifec
 import * as sessionManager from "../session-manager";
 import { buildServiceRouteDomain, createTrackedSslProvider, ensureRouteDomainRecord, toRoutedDomainInputs } from "../../../lib/routing-domains";
 import type { ComposeService } from "../../../lib/compose-parser";
+import { internalApiUrl } from "../../../config";
 
 import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 
@@ -110,7 +111,11 @@ async function registerComposeRoutes(opts: {
     const targetUrl = `http://${deployed.ip}:${port}`;
 
     logger.log(`Configuring public route for service "${deployed.serviceName}" (${targetUrl})...\n`);
-    await registerResolvedRoutes(logger, routing, trackedSsl, toRoutedDomainInputs([route]), { targetUrl });
+    const routeOpts = project.webhookDomain ? {
+      webhookDomain: project.webhookDomain,
+      webhookProxy: `${internalApiUrl}/api/webhooks/`,
+    } : undefined;
+    await registerResolvedRoutes(logger, routing, trackedSsl, toRoutedDomainInputs([route]), { targetUrl }, routeOpts);
 
     // ── Sync free subdomains with managed edge proxy ─────────────
     if (usesManagedRouting && route.isCloud && route.managedSubdomain) {

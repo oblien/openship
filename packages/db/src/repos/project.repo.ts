@@ -53,6 +53,17 @@ export function createProjectRepo(db: Database) {
       });
     },
 
+    /** Find all projects linked to a given git owner/repo (for webhook dispatch) */
+    async findByGitRepo(owner: string, repo: string) {
+      return db.query.project.findMany({
+        where: and(
+          eq(project.gitOwner, owner),
+          eq(project.gitRepo, repo),
+          isNull(project.deletedAt),
+        ),
+      });
+    },
+
     async listByUser(userId: string, opts?: { page?: number; perPage?: number }) {
       const page = opts?.page ?? 1;
       const perPage = opts?.perPage ?? 20;
@@ -84,6 +95,28 @@ export function createProjectRepo(db: Database) {
       await db
         .update(project)
         .set({ ...data, updatedAt: new Date() })
+        .where(eq(project.id, id));
+    },
+
+    /** Update favicon cache metadata without touching the user-visible updatedAt field. */
+    async updateFaviconCache(
+      id: string,
+      data: { favicon?: string | null; faviconCheckedAt?: Date | null },
+    ) {
+      const patch: Partial<NewProject> = {};
+
+      if (Object.prototype.hasOwnProperty.call(data, "favicon")) {
+        patch.favicon = data.favicon ?? null;
+      }
+      if (Object.prototype.hasOwnProperty.call(data, "faviconCheckedAt")) {
+        patch.faviconCheckedAt = data.faviconCheckedAt ?? null;
+      }
+
+      if (Object.keys(patch).length === 0) return;
+
+      await db
+        .update(project)
+        .set(patch)
         .where(eq(project.id, id));
     },
 

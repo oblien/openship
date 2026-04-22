@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   FolderKanban,
   Rocket,
-  Globe,
   ArrowRight,
   Plus,
   ExternalLink,
@@ -23,31 +22,14 @@ import { projectsApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import HomeTipCard from "@/components/overview/HomeTipCard";
 import { useI18n } from "@/components/i18n-provider";
-import { generateIcon } from "@/utils/icons";
-import { getFrameworkConfig } from "@/components/import-project/Frameworks";
 import { getProjectStatus, PROJECT_STATUS_META } from "@/utils/project-status";
 import { PageContainer } from "@/components/ui/PageContainer";
+import ProjectCard from "./projects/components/ProjectCard";
+import { type Project } from "@/constants/mock";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
-
-interface HomeProject {
-  id: string;
-  name: string;
-  slug: string;
-  framework: string;
-  activeDeploymentId?: string | null;
-  latestDeploymentId?: string | null;
-  latestDeploymentStatus?: string | null;
-  gitOwner?: string | null;
-  gitRepo?: string | null;
-  localPath?: string | null;
-  hasServer?: boolean;
-  productionMode?: string | null;
-  updatedAt: string;
-  createdAt: string;
-}
 
 interface DashboardNumbers {
   total_active_projects?: number;
@@ -80,7 +62,7 @@ export default function DashboardHome() {
   const { user } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
-  const [projects, setProjects] = useState<HomeProject[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [numbers, setNumbers] = useState<DashboardNumbers>({});
   const [loading, setLoading] = useState(true);
 
@@ -244,45 +226,9 @@ export default function DashboardHome() {
                 </div>
               ) : (
                 <div className="divide-y divide-border/50">
-                  {projects.slice(0, 6).map((p) => {
-                    const fw = getFrameworkConfig(p.framework);
-                    const status = getProjectStatus(p);
-                    const statusMeta = PROJECT_STATUS_META[status];
-                    return (
-                      <div
-                        key={p.id}
-                        onClick={() => router.push(`/projects/${p.id}`)}
-                        className="px-5 py-3.5 flex items-center gap-4 hover:bg-muted/40 transition-colors cursor-pointer group"
-                      >
-                        <div className="w-10 h-10 rounded-xl bg-muted/60 flex items-center justify-center shrink-0 group-hover:bg-muted transition-colors">
-                          {fw.icon ? (
-                            fw.icon("hsl(var(--foreground))")
-                          ) : (
-                            generateIcon("code-1-1663582768.png", 20, "hsl(var(--foreground))")
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">
-                            {p.name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-muted/60 text-[10px] text-muted-foreground">{fw.name}</span>
-                            <span className="text-muted-foreground/40">·</span>
-                            <span className="text-xs text-muted-foreground">{timeAgo(p.updatedAt || p.createdAt)}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${statusMeta.badge}`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dot}`} />
-                            {statusMeta.label}
-                          </span>
-                          <ArrowRight className="size-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {projects.slice(0, 6).map((p) => (
+                    <ProjectCard key={p.id} project={p} />
+                  ))}
                   {projects.length > 6 && (
                     <Link
                       href="/projects"
