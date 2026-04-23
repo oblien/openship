@@ -81,7 +81,7 @@ services:
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:3505"
     environment:
       NODE_ENV: production
 
