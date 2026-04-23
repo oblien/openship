@@ -4,7 +4,7 @@ import { env } from "../config";
 /**
  * Middleware that restricts a route to self-hosted instances only.
  *
- * Returns 404 when CLOUD_MODE=true (i.e. the managed openship.com SaaS).
+ * Returns 404 when CLOUD_MODE=true (i.e. the managed openship.io SaaS).
  * Self-hosted deployments (docker, bare, desktop) — even those using
  * GitHub App auth or OAuth — retain full local filesystem access.
  *

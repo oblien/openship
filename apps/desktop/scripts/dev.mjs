@@ -25,9 +25,10 @@ setTimeout(() => {
     stdio: "inherit",
     env: {
       ...process.env,
-      // Point to local SaaS dev instance (pnpm dev:saas) for cloud auth testing
-      OPENSHIP_CLOUD_URL: process.env.OPENSHIP_CLOUD_URL || "http://localhost:4100",
-      OPENSHIP_CLOUD_DASHBOARD_URL: process.env.OPENSHIP_CLOUD_DASHBOARD_URL || "http://localhost:3002",
+      // Default to the public cloud control plane.
+      // Override these vars when testing against a local SaaS dev instance.
+      OPENSHIP_CLOUD_URL: process.env.OPENSHIP_CLOUD_URL || "https://api.openship.io",
+      OPENSHIP_CLOUD_DASHBOARD_URL: process.env.OPENSHIP_CLOUD_DASHBOARD_URL || "https://app.openship.io",
     },
   });
 

@@ -7,7 +7,7 @@ import { createAuthClient } from "better-auth/react";
  * is readable by :3001 (both browser and SSR via `cookies()`).
  *
  * In production both services share a common top-level domain
- * (e.g. api.openship.com / app.openship.com with cookie domain .openship.com).
+ * (e.g. api.openship.io / app.openship.io with cookie domain .openship.io).
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
