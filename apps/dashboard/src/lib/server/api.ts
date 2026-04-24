@@ -1,5 +1,6 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { getApiOriginFromHeaders } from "@/lib/api/urls";
 
 /**
  * Server-side API client for Next.js server components, layouts, and route handlers.
@@ -12,7 +13,6 @@ import { cookies } from "next/headers";
  *   const projects = await serverApi.get<Project[]>("/projects");
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const DEFAULT_TIMEOUT = 10_000;
 
 /* ------------------------------------------------------------------ */
@@ -51,9 +51,11 @@ async function request<T = unknown>(
   opts: ServerRequestOptions = {},
 ): Promise<T> {
   const { body, timeout = DEFAULT_TIMEOUT, params, headers: extraHeaders, cache, revalidate } = opts;
+  const requestHeaders = await headers();
+  const baseUrl = getApiOriginFromHeaders(requestHeaders);
 
   /* --- Build URL -------------------------------------------------- */
-  const url = new URL(path.startsWith("/") ? path : `/${path}`, BASE_URL);
+  const url = new URL(path.startsWith("/") ? path : `/${path}`, baseUrl);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined) url.searchParams.set(k, String(v));
@@ -68,13 +70,13 @@ async function request<T = unknown>(
     .join("; ");
 
   /* --- Headers ---------------------------------------------------- */
-  const headers: Record<string, string> = {
+  const outboundHeaders: Record<string, string> = {
     ...extraHeaders,
     cookie: cookieHeader,
   };
 
   if (body && typeof body === "object" && !(body instanceof FormData)) {
-    headers["content-type"] = "application/json";
+    outboundHeaders["content-type"] = "application/json";
   }
 
   /* --- Timeout ---------------------------------------------------- */
@@ -85,7 +87,7 @@ async function request<T = unknown>(
   try {
     const res = await fetch(url, {
       method,
-      headers,
+      headers: outboundHeaders,
       signal: controller.signal,
       body:
         body instanceof FormData

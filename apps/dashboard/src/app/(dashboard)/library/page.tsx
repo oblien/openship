@@ -34,6 +34,7 @@ export default function LibraryPage() {
     repos,
     loadingRepos,
     refresh,
+    installUrl,
   } = useGitHub();
   const { selfHosted } = usePlatform();
 
@@ -109,6 +110,7 @@ export default function LibraryPage() {
                 setSelectedOwner={setSelectedOwner}
                 loading={loading}
                 loadingRepos={loadingRepos}
+                installUrl={installUrl}
               />
             )}
           </div>

@@ -1,5 +1,18 @@
 import { z } from "zod";
 
+const DEFAULT_BETTER_AUTH_SECRET = "change-me-in-production";
+const DEFAULT_BETTER_AUTH_URL = "http://localhost:4000";
+const DEFAULT_DASHBOARD_URL = "http://localhost:3001";
+const DEFAULT_OPENSHIP_CLOUD_URL = "https://api.openship.io";
+const DEFAULT_OPENSHIP_CLOUD_DASHBOARD_URL = "https://app.openship.io";
+
+const httpUrl = z.string().url().refine((value) => {
+  const protocol = new URL(value).protocol;
+  return protocol === "http:" || protocol === "https:";
+}, {
+  message: "must be a valid http(s) URL",
+});
+
 /**
  * API configuration — loaded from environment variables.
  *
@@ -28,8 +41,9 @@ const envSchema = z.object({
   DATABASE_URL: z.string().default(""),
 
   /* ---------- Auth (Better Auth) ---------- */
-  BETTER_AUTH_SECRET: z.string().default("change-me-in-production"),
-  BETTER_AUTH_URL: z.string().default("http://localhost:4000"),
+  BETTER_AUTH_SECRET: z.string().min(1).default(DEFAULT_BETTER_AUTH_SECRET),
+  BETTER_AUTH_URL: httpUrl.default(DEFAULT_BETTER_AUTH_URL),
+  BETTER_AUTH_COOKIE_DOMAIN: z.string().optional(),
   TRUSTED_ORIGINS: z.string().optional(),
 
   /* ---------- OAuth Providers ---------- */
@@ -58,10 +72,13 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
-  /* ---------- Git Webhooks ---------- */
+  /* ---------- GitHub App ---------- */
   GITHUB_APP_ID: z.string().optional(),
   GITHUB_APP_SLUG: z.string().optional(),
+  /** PEM private key — raw multi-line string */
   GITHUB_PRIVATE_KEY: z.string().optional(),
+  /** PEM private key — base64-encoded (single-line, for env vars) */
+  GITHUB_PRIVATE_KEY_BASE64: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
 
   /* ---------- Email (SMTP) ---------- */
@@ -72,7 +89,7 @@ const envSchema = z.object({
   SMTP_FROM: z.string().default("Openship <noreply@openship.dev>"),
 
   /* ---------- Dashboard ---------- */
-  DASHBOARD_URL: z.string().default("http://localhost:3001"),
+  DASHBOARD_URL: httpUrl.default(DEFAULT_DASHBOARD_URL),
 
   /* ---------- Network (self-hosted) ---------- */
   /** Public IP of the server — used for A record instructions in self-hosted mode. */
@@ -89,10 +106,10 @@ const envSchema = z.object({
   OBLIEN_CLIENT_SECRET: z.string().optional(),
 
   /** Openship Cloud API URL — used by local instances to fetch namespace tokens */
-  OPENSHIP_CLOUD_URL: z.string().default("https://api.openship.io"),
+  OPENSHIP_CLOUD_URL: httpUrl.default(DEFAULT_OPENSHIP_CLOUD_URL),
 
   /** Openship Cloud dashboard URL — used for external auth redirect (desktop + cloud connect) */
-  OPENSHIP_CLOUD_DASHBOARD_URL: z.string().default("https://app.openship.io"),
+  OPENSHIP_CLOUD_DASHBOARD_URL: httpUrl.default(DEFAULT_OPENSHIP_CLOUD_DASHBOARD_URL),
 
   /* ---------- Screenshots (optional) ---------- */
   SCREENSHOT_SERVICE_URL: z.string().optional(),
@@ -111,12 +128,76 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
-export const env = envSchema.parse(process.env);
+function normalizeHttpOrigin(value: string, source: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new Error("unsupported protocol");
+    }
+
+    url.pathname = "/";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    throw new Error(`${source} must be a valid http(s) origin.`);
+  }
+}
+
+function parseTrustedOrigins(rawOrigins?: string) {
+  if (!rawOrigins?.trim()) {
+    return undefined;
+  }
+
+  return rawOrigins
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => normalizeHttpOrigin(origin, "TRUSTED_ORIGINS"));
+}
+
+function unique(values: string[]) {
+  return [...new Set(values)];
+}
+
+function validateProductionConfig(parsedEnv: Env) {
+  if (parsedEnv.NODE_ENV !== "production") {
+    return;
+  }
+
+  const errors: string[] = [];
+
+  if (parsedEnv.BETTER_AUTH_SECRET === DEFAULT_BETTER_AUTH_SECRET) {
+    errors.push("BETTER_AUTH_SECRET must be set to a secure value in production.");
+  }
+
+  if (parsedEnv.BETTER_AUTH_URL === DEFAULT_BETTER_AUTH_URL) {
+    errors.push("BETTER_AUTH_URL must be set to the public API URL in production.");
+  }
+
+  if (parsedEnv.DASHBOARD_URL === DEFAULT_DASHBOARD_URL) {
+    errors.push("DASHBOARD_URL must be set to the public dashboard URL in production.");
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join(" "));
+  }
+}
+
+const parsedEnv = envSchema.parse(process.env);
+validateProductionConfig(parsedEnv);
+
+export const env = parsedEnv;
 
 /** Parsed trusted origins — single source of truth for CORS + Better Auth */
-export const trustedOrigins = env.TRUSTED_ORIGINS
-  ? env.TRUSTED_ORIGINS.split(",")
-  : ["http://localhost:3000", "http://localhost:3001"];
+export const trustedOrigins = parseTrustedOrigins(env.TRUSTED_ORIGINS)
+  ?? unique([
+    normalizeHttpOrigin(env.DASHBOARD_URL, "DASHBOARD_URL"),
+    normalizeHttpOrigin(env.BETTER_AUTH_URL, "BETTER_AUTH_URL"),
+    ...(env.NODE_ENV === "production"
+      ? []
+      : ["http://localhost:3000", "http://localhost:3001"]),
+  ]);
 
 /** Internal loopback URL for the API (used by nginx webhook proxy, etc.) */
 export const internalApiUrl = `http://127.0.0.1:${env.PORT}`;

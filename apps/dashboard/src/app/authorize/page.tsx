@@ -3,7 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
-import { buildAuthPageHref } from "@/lib/cloud-auth";
+import { buildAuthPageHref, getCloudDesktopHandoffUrl } from "@/lib/cloud-auth";
 import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Loader2, Monitor, Check } from "lucide-react";
@@ -41,15 +41,13 @@ function AuthorizePageInner() {
   const state = searchParams.get("state");
   const codeChallenge = searchParams.get("code_challenge");
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-
   // Build handoff URL with state + PKCE challenge
   const handoffUrl = callback
-    ? `${API_URL}/api/cloud/desktop-handoff?${new URLSearchParams({
-        redirect: callback,
-        ...(state ? { state } : {}),
-        ...(codeChallenge ? { code_challenge: codeChallenge } : {}),
-      }).toString()}`
+    ? getCloudDesktopHandoffUrl({
+        callbackUrl: callback,
+        state,
+        codeChallenge,
+      })
     : null;
 
   // Preserve the desktop-cloud flow marker so login/register/OAuth

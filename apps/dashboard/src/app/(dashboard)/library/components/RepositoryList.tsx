@@ -10,6 +10,7 @@ import {
   GitFork,
   ArrowRight,
   ChevronDown,
+  Github,
 } from "lucide-react";
 import type { GitHubRepo } from "@/context/GitHubContext";
 import { encodeRepoSlug } from "@/utils/repoSlug";
@@ -46,6 +47,8 @@ interface RepositoryListProps {
   loadingRepos: boolean;
   /** When provided, clicking a repo calls this instead of navigating to deploy */
   onSelect?: (owner: string, repo: GitHubRepo) => void;
+  /** GitHub App install URL — shown when connected but no installations */
+  installUrl?: string | null;
 }
 
 export function RepositoryList({
@@ -56,6 +59,7 @@ export function RepositoryList({
   loading,
   loadingRepos,
   onSelect,
+  installUrl,
 }: RepositoryListProps) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -184,34 +188,61 @@ export function RepositoryList({
         </div>
       ) : filtered.length === 0 ? (
         <div className="px-6 py-12 text-center">
-          <div className="relative mx-auto w-48 h-32 mb-4">
-            <svg className="w-full h-full" viewBox="0 0 200 130" fill="none">
-              <rect x="50" y="25" width="100" height="75" rx="12" fill="var(--th-sf-04)" />
-              <rect x="40" y="15" width="100" height="75" rx="12" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
-              <rect x="30" y="5" width="100" height="75" rx="12" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
-              <rect x="30" y="5" width="100" height="22" rx="12" fill="var(--th-sf-05)" />
-              <circle cx="44" cy="16" r="3" fill="#ef4444" fillOpacity="0.6" />
-              <circle cx="54" cy="16" r="3" fill="#eab308" fillOpacity="0.6" />
-              <circle cx="64" cy="16" r="3" fill="#22c55e" fillOpacity="0.6" />
-              <rect x="42" y="36" width="40" height="4" rx="2" fill="var(--th-on-12)" />
-              <rect x="42" y="45" width="68" height="3" rx="1.5" fill="var(--th-on-08)" />
-              <rect x="42" y="53" width="52" height="3" rx="1.5" fill="var(--th-on-08)" />
-              <circle cx="170" cy="65" r="18" fill="var(--th-on-05)" />
-              <circle cx="170" cy="65" r="13" fill="var(--th-card-bg)" stroke="var(--th-on-20)" strokeWidth="1.5" strokeDasharray="3 2" />
-              <path d="M170 58v14M163 65h14" stroke="var(--th-on-40)" strokeWidth="1.5" strokeLinecap="round" />
-              <circle cx="15" cy="40" r="3" fill="var(--th-on-10)" />
-              <circle cx="185" cy="25" r="2.5" fill="var(--th-on-12)" />
-              <path d="M130 60 Q 148 58 155 65" stroke="var(--th-on-12)" strokeWidth="1" strokeDasharray="3 3" fill="none" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-medium text-foreground/80 mb-2">
-            {search ? "No matching repositories" : "No repositories found"}
-          </h3>
-          <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
-            {search
-              ? "Try a different search term or adjust your filters"
-              : "This account doesn\u2019t have any repositories yet"}
-          </p>
+          {!search && accounts.length === 0 && installUrl ? (
+            /* Connected but no installations — prompt to install */
+            <>
+              <div className="mx-auto w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mb-4">
+                <Github className="size-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-medium text-foreground/80 mb-2">
+                Install the GitHub App
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed mb-4">
+                Install the GitHub App on your account or organization to grant access to your repositories.
+              </p>
+              <a
+                href={installUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium bg-foreground text-background rounded-xl hover:bg-foreground/90 transition-colors"
+              >
+                <Github className="size-4" />
+                Install GitHub App
+              </a>
+            </>
+          ) : (
+            /* Generic empty state */
+            <>
+              <div className="relative mx-auto w-48 h-32 mb-4">
+                <svg className="w-full h-full" viewBox="0 0 200 130" fill="none">
+                  <rect x="50" y="25" width="100" height="75" rx="12" fill="var(--th-sf-04)" />
+                  <rect x="40" y="15" width="100" height="75" rx="12" fill="var(--th-sf-03)" stroke="var(--th-bd-subtle)" strokeWidth="1" />
+                  <rect x="30" y="5" width="100" height="75" rx="12" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
+                  <rect x="30" y="5" width="100" height="22" rx="12" fill="var(--th-sf-05)" />
+                  <circle cx="44" cy="16" r="3" fill="#ef4444" fillOpacity="0.6" />
+                  <circle cx="54" cy="16" r="3" fill="#eab308" fillOpacity="0.6" />
+                  <circle cx="64" cy="16" r="3" fill="#22c55e" fillOpacity="0.6" />
+                  <rect x="42" y="36" width="40" height="4" rx="2" fill="var(--th-on-12)" />
+                  <rect x="42" y="45" width="68" height="3" rx="1.5" fill="var(--th-on-08)" />
+                  <rect x="42" y="53" width="52" height="3" rx="1.5" fill="var(--th-on-08)" />
+                  <circle cx="170" cy="65" r="18" fill="var(--th-on-05)" />
+                  <circle cx="170" cy="65" r="13" fill="var(--th-card-bg)" stroke="var(--th-on-20)" strokeWidth="1.5" strokeDasharray="3 2" />
+                  <path d="M170 58v14M163 65h14" stroke="var(--th-on-40)" strokeWidth="1.5" strokeLinecap="round" />
+                  <circle cx="15" cy="40" r="3" fill="var(--th-on-10)" />
+                  <circle cx="185" cy="25" r="2.5" fill="var(--th-on-12)" />
+                  <path d="M130 60 Q 148 58 155 65" stroke="var(--th-on-12)" strokeWidth="1" strokeDasharray="3 3" fill="none" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-medium text-foreground/80 mb-2">
+                {search ? "No matching repositories" : "No repositories found"}
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                {search
+                  ? "Try a different search term or adjust your filters"
+                  : "This account doesn\u2019t have any repositories yet"}
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <>

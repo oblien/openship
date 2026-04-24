@@ -36,6 +36,10 @@ export async function resolveStrategy(
   framework: string | undefined,
   explicit?: BuildStrategy,
 ): Promise<BuildStrategy> {
+  const { env } = await import("../../config");
+  // In SaaS/Cloud mode, never allow building locally on the API host
+  if (env.CLOUD_MODE) return "server";
+
   // 1. Per-deploy explicit value (source of truth)
   if (explicit) return explicit;
 

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback } from "react";
+import { CLOUD_DASHBOARD_URL } from "@repo/onboarding";
 
 /** Default cloud domain — matches SYSTEM.DOMAINS.CLOUD_DOMAIN in @repo/core */
 const DEFAULT_CLOUD_DOMAIN = "opsh.io";
@@ -20,6 +21,15 @@ interface PlatformContextValue {
 }
 
 const PlatformContext = createContext<PlatformContextValue | undefined>(undefined);
+
+type CloudConnectionPlatformState = Pick<PlatformContextValue, "selfHosted" | "deployMode">;
+
+export function canUseCloudConnection({
+  selfHosted,
+  deployMode,
+}: CloudConnectionPlatformState) {
+  return selfHosted || deployMode === "desktop";
+}
 
 export function usePlatform() {
   const ctx = useContext(PlatformContext);
@@ -44,7 +54,7 @@ export function PlatformProvider({
   selfHosted: initialSelfHosted = true,
   deployMode: initialDeployMode = "docker",
   authMode: initialAuthMode = "local",
-  cloudAuthUrl: initialCloudAuthUrl = "",
+  cloudAuthUrl: initialCloudAuthUrl = CLOUD_DASHBOARD_URL,
   machineName: initialMachineName,
   hostDomain: initialHostDomain,
 }: PlatformProviderProps) {

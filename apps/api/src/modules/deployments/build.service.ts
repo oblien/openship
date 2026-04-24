@@ -329,7 +329,7 @@ async function createQueuedDeployment(opts: {
     });
   } catch (err) {
     // Atomicity: clean up orphaned deployment
-    await repos.deployment.deleteDeployment(dep.id).catch(() => {});
+    await repos.deployment.deleteDeployment(dep.id).catch(() => { });
     throw err;
   }
 
@@ -525,27 +525,27 @@ export async function getBuildSessionStatus(deploymentId: string, userId: string
 
   const composeData = projectType === "services"
     ? await Promise.all([
-        repos.service.listByDeployment(deploymentId).catch(() => []),
-        repos.service.listByProject(project.id).catch(() => []),
-      ]).then(([deploymentServices, projectServices]) => ({
-        composeDeployment: snapshot?.composeDeployment ?? null,
-        serviceStatuses: deploymentServices.map((service) => ({
-          serviceId: service.serviceId,
-          status: service.status,
-          containerId: service.containerId,
-          hostPort: service.hostPort,
-          ip: service.ip,
-          imageRef: service.imageRef,
+      repos.service.listByDeployment(deploymentId).catch(() => []),
+      repos.service.listByProject(project.id).catch(() => []),
+    ]).then(([deploymentServices, projectServices]) => ({
+      composeDeployment: snapshot?.composeDeployment ?? null,
+      serviceStatuses: deploymentServices.map((service) => ({
+        serviceId: service.serviceId,
+        status: service.status,
+        containerId: service.containerId,
+        hostPort: service.hostPort,
+        ip: service.ip,
+        imageRef: service.imageRef,
+      })),
+      services: projectServices
+        .filter((service) => service.enabled)
+        .map((service) => ({
+          serviceId: service.id,
+          serviceName: service.name,
+          image: service.image,
+          build: service.build,
         })),
-        services: projectServices
-          .filter((service) => service.enabled)
-          .map((service) => ({
-            serviceId: service.id,
-            serviceName: service.name,
-            image: service.image,
-            build: service.build,
-          })),
-      }))
+    }))
     : {};
 
   return {
@@ -602,10 +602,10 @@ export async function cancelBuildSession(deploymentId: string, userId: string) {
 
   const { runtime } = platform();
   if (dep.status === "building") {
-    await runtime.cancelBuild(dep.id).catch(() => {});
+    await runtime.cancelBuild(dep.id).catch(() => { });
   }
   if (dep.containerId) {
-    await runtime.destroy(dep.containerId).catch(() => {});
+    await runtime.destroy(dep.containerId).catch(() => { });
   }
 
   // Mark all pending/building services as failed so UI stops showing spinners
@@ -1024,33 +1024,33 @@ async function executeBuildAndDeploy(
       const deployEnv: DeployEnvironment = {
         preflight: targetExecutor
           ? async (cfg, promptUser) => {
-              if (system) {
-                const systemLog = (entry: { message: string; level: "info" | "warn" | "error" }) => {
-                  logger.log(`${entry.message}\n`, entry.level);
-                };
-
-                if (!isStaticSelfHosted) {
-                  await system.ensureFeature("deploy", systemLog);
-                }
-                if (plannedDomains.length > 0) {
-                  await system.ensureFeature("routing", systemLog);
-                }
-                if (plannedDomains.some((d) => d.provisionSsl)) {
-                  await system.ensureFeature("ssl", systemLog);
-                }
-              }
+            if (system) {
+              const systemLog = (entry: { message: string; level: "info" | "warn" | "error" }) => {
+                logger.log(`${entry.message}\n`, entry.level);
+              };
 
               if (!isStaticSelfHosted) {
-                await ensurePortAvailable(targetExecutor, cfg.port, logger, promptUser);
+                await system.ensureFeature("deploy", systemLog);
+              }
+              if (plannedDomains.length > 0) {
+                await system.ensureFeature("routing", systemLog);
+              }
+              if (plannedDomains.some((d) => d.provisionSsl)) {
+                await system.ensureFeature("ssl", systemLog);
               }
             }
+
+            if (!isStaticSelfHosted) {
+              await ensurePortAvailable(targetExecutor, cfg.port, logger, promptUser);
+            }
+          }
           : undefined,
         activate: async (cfg, onLog) => {
           const r = isStaticSelfHosted
             ? await staticBareRuntime.deployStatic({
-                ...cfg,
-                outputDirectory: cfg.outputDirectory ?? snapshot.outputDirectory,
-              })
+              ...cfg,
+              outputDirectory: cfg.outputDirectory ?? snapshot.outputDirectory,
+            })
             : await runtime.deploy(cfg, onLog);
           if (!r.containerId) throw new Error("Deploy produced no container");
           return { containerId: r.containerId, url: r.url };
@@ -1060,14 +1060,14 @@ async function executeBuildAndDeploy(
           : previousRuntime.destroy(id),
         resolveRoute: isStaticSelfHosted
           ? async (id, cfg) => ({
-              staticRoot: staticBareRuntime.resolveStaticRoot(id, cfg.outputDirectory ?? snapshot.outputDirectory),
-            })
+            staticRoot: staticBareRuntime.resolveStaticRoot(id, cfg.outputDirectory ?? snapshot.outputDirectory),
+          })
           : undefined,
         resolveTargetUrl: runtime.supports("containerIp")
           ? async (id, port) => {
-              const ip = await runtime.getContainerIp(id);
-              return ip ? `http://${ip}:${port}` : null;
-            }
+            const ip = await runtime.getContainerIp(id);
+            return ip ? `http://${ip}:${port}` : null;
+          }
           : undefined,
       };
 

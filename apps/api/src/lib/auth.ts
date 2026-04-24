@@ -17,6 +17,33 @@ import { resetPasswordEmail, verifyEmailTemplate } from "./email-templates";
 // SaaS API (port 4100) don't collide on localhost (cookies ignore port).
 export const COOKIE_PREFIX = env.CLOUD_MODE ? "openship-cloud" : "openship";
 
+function getSharedCookieDomain() {
+  if (env.BETTER_AUTH_COOKIE_DOMAIN) {
+    return env.BETTER_AUTH_COOKIE_DOMAIN;
+  }
+
+  if (!env.CLOUD_MODE) {
+    return undefined;
+  }
+
+  const urls = [env.BETTER_AUTH_URL, env.DASHBOARD_URL];
+
+  for (const value of urls) {
+    try {
+      const hostname = new URL(value).hostname;
+      if (hostname === "openship.io" || hostname.endsWith(".openship.io")) {
+        return ".openship.io";
+      }
+    } catch {
+      // Ignore invalid URLs and fall back to host-only cookies.
+    }
+  }
+
+  return undefined;
+}
+
+const sharedCookieDomain = getSharedCookieDomain();
+
 export const auth = betterAuth({
   basePath: "/api/auth",
   baseURL: env.BETTER_AUTH_URL,
@@ -62,6 +89,12 @@ export const auth = betterAuth({
           github: {
             clientId: env.GITHUB_CLIENT_ID,
             clientSecret: env.GITHUB_CLIENT_SECRET,
+            scope: ["read:user", "user:email"],
+            mapProfileToUser: (profile: any) => ({
+              name: profile.name || profile.login,
+              email: profile.email || `${profile.id}+${profile.login}@users.noreply.github.com`,
+              image: profile.avatar_url,
+            }),
           },
         }
       : {}),
@@ -73,6 +106,14 @@ export const auth = betterAuth({
           },
         }
       : {}),
+  },
+
+  /* ---------- Account Linking ---------- */
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["github", "google"],
+    },
   },
 
   /* ---------- Session ---------- */
@@ -108,6 +149,14 @@ export const auth = betterAuth({
   /* ---------- Advanced ---------- */
   advanced: {
     cookiePrefix: COOKIE_PREFIX,
+    ...(sharedCookieDomain
+      ? {
+          crossSubDomainCookies: {
+            enabled: true,
+            domain: sharedCookieDomain,
+          },
+        }
+      : {}),
   },
 });
 

@@ -9,6 +9,8 @@ import React, {
   useEffect,
 } from "react";
 import { githubApi } from "@/lib/api";
+import { endpoints } from "@/lib/api/endpoints";
+import { getApiBaseUrl } from "@/lib/api/client";
 import { openAuthWindow } from "@/utils/authWindow";
 import { usePlatform } from "@/context/PlatformContext";
 
@@ -47,6 +49,7 @@ interface GitHubContextValue {
   loading: boolean;
   mode: GitHubMode;
   connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
 
   /* CLI / Device flow */
   cliAction: CliAction | null;
@@ -62,6 +65,9 @@ interface GitHubContextValue {
   /* Actions */
   refresh: () => Promise<void>;
   fetchReposForOwner: (owner: string) => Promise<void>;
+
+  /* App mode */
+  installUrl: string | null;
 }
 
 export type CliAction =
@@ -80,20 +86,30 @@ export function useGitHub() {
 
 interface GitHubProviderProps {
   children: React.ReactNode;
+  initialData?: any;
 }
 
-export function GitHubProvider({ children }: GitHubProviderProps) {
+export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
   const { setSelfHosted } = usePlatform();
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(!!initialData?.status?.connected);
   const [connecting, setConnecting] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<GitHubMode>("cloud");
+  const [loading, setLoading] = useState(!initialData);
+  
+  // Resolve the initial mode correctly
+  const initialMode = initialData?.mode === "app" ? "cloud" : 
+                      initialData?.mode === "cli" ? "cli" : 
+                      initialData?.mode === "token" ? "token" : 
+                      initialData?.mode === "oauth" ? "desktop" : 
+                      (initialData?.mode || "cloud");
+
+  const [mode, setMode] = useState<GitHubMode>(initialMode as GitHubMode);
   const [cliAction, setCliAction] = useState<CliAction | null>(null);
-  const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
-  const [userLogin, setUserLogin] = useState("");
-  const [selectedOwner, setSelectedOwnerState] = useState("");
-  const [repos, setRepos] = useState<GitHubRepo[]>([]);
+  const [accounts, setAccounts] = useState<GitHubAccount[]>(initialData?.accounts || []);
+  const [userLogin, setUserLogin] = useState(initialData?.status?.login || "");
+  const [selectedOwner, setSelectedOwnerState] = useState(initialData?.status?.login || "");
+  const [repos, setRepos] = useState<GitHubRepo[]>(initialData?.repos || []);
   const [loadingRepos, setLoadingRepos] = useState(false);
+  const [installUrl, setInstallUrl] = useState<string | null>(initialData?.installUrl || null);
   const initRef = useRef(false);
 
   /* ── Fetch connection info ──────────────────────────────────── */
@@ -110,10 +126,12 @@ export function GitHubProvider({ children }: GitHubProviderProps) {
         else setMode(m as GitHubMode);
       }
       if (res?.selfHosted !== undefined) setSelfHosted(res.selfHosted);
-      if (res?.status?.connected && res.accounts?.length > 0) {
+      if (res?.installUrl) setInstallUrl(res.installUrl);
+      else setInstallUrl(null);
+      if (res?.status?.connected) {
         setConnected(true);
         setCliAction(null);
-        setAccounts(res.accounts);
+        setAccounts(res.accounts ?? []);
         setUserLogin(res.status.login);
         if (!selectedOwner) setSelectedOwnerState(res.status.login);
         setRepos(res.repos ?? []);
@@ -131,10 +149,13 @@ export function GitHubProvider({ children }: GitHubProviderProps) {
 
   /* ── On mount ───────────────────────────────────────────────── */
   useEffect(() => {
+    // If we have SSR initialData, don't double fetch!
+    if (initialData) return;
+
     if (initRef.current) return;
     initRef.current = true;
     refresh();
-  }, [refresh]);
+  }, [refresh, initialData]);
 
   /* ── Connect GitHub ─────────────────────────────────────────── */
   const connect = useCallback(async () => {
@@ -153,9 +174,11 @@ export function GitHubProvider({ children }: GitHubProviderProps) {
 
       switch (res?.flow) {
         case "redirect": {
-          // Backend gave us a URL — open in popup / system browser
-          const handle = openAuthWindow();
-          handle.navigate(res.url);
+          // Navigate popup directly to the API redirect endpoint.
+          // This ensures the state cookie is set in the popup's own
+          // browsing context (same-origin), avoiding SameSite issues.
+          const redirectUrl = `${getApiBaseUrl()}${endpoints.github.connectRedirect}`;
+          const handle = openAuthWindow(redirectUrl);
           handle.onClose(() => {
             setTimeout(() => {
               setConnecting(false);
@@ -190,6 +213,21 @@ export function GitHubProvider({ children }: GitHubProviderProps) {
       setConnecting(false);
     }
   }, [refresh]);
+
+  /* ── Disconnect GitHub ──────────────────────────────────────── */
+  const disconnect = useCallback(async () => {
+    try {
+      await githubApi.disconnect();
+      setConnected(false);
+      setAccounts([]);
+      setRepos([]);
+      setUserLogin("");
+      setSelectedOwnerState("");
+      setCliAction(null);
+    } catch {
+      /* silent */
+    }
+  }, []);
 
   /* ── Device flow polling ────────────────────────────────────── */
   useEffect(() => {
@@ -253,6 +291,7 @@ export function GitHubProvider({ children }: GitHubProviderProps) {
         loading,
         mode,
         connect,
+        disconnect,
         cliAction,
         accounts,
         userLogin,
@@ -262,6 +301,7 @@ export function GitHubProvider({ children }: GitHubProviderProps) {
         loadingRepos,
         refresh,
         fetchReposForOwner,
+        installUrl,
       }}
     >
       {children}

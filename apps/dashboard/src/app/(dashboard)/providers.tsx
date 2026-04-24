@@ -12,12 +12,13 @@ interface DashboardProvidersProps {
   cloudAuthUrl: string;
   machineName?: string;
   hostDomain?: string;
+  initialGithubData?: any;
 }
 
-export function DashboardProviders({ children, selfHosted, deployMode, authMode, cloudAuthUrl, machineName, hostDomain }: DashboardProvidersProps) {
+export function DashboardProviders({ children, initialGithubData, selfHosted, deployMode, authMode, cloudAuthUrl, machineName, hostDomain }: DashboardProvidersProps) {
   return (
     <PlatformProvider selfHosted={selfHosted} deployMode={deployMode} authMode={authMode} cloudAuthUrl={cloudAuthUrl} machineName={machineName} hostDomain={hostDomain}>
-      <GitHubProvider>
+      <GitHubProvider initialData={initialGithubData}>
         <CloudProvider>
           {children}
         </CloudProvider>

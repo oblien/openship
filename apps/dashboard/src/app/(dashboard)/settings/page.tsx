@@ -9,6 +9,7 @@ import { useToast } from "@/context/ToastContext";
 import { BuildPreferences } from "./_components/BuildPreferences";
 import { ServerConnection } from "./_components/ServerConnection";
 import { CloudConnection } from "./_components/CloudConnection";
+import { GitHubConnection } from "./_components/GitHubConnection";
 import { InstanceInfo } from "./_components/InstanceInfo";
 import { PageContainer } from "@/components/ui/PageContainer";
 
@@ -63,6 +64,7 @@ function SettingsPageInner() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
           {/* ── LEFT COLUMN ── */}
           <div className="space-y-6 min-w-0">
+            <GitHubConnection />
             {showBuildPreferences && <BuildPreferences />}
             {showServerConnection && <ServerConnection />}
             <InstanceInfo />

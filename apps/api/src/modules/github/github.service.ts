@@ -632,12 +632,19 @@ export async function getUserHome(userId: string) {
   }
 
   // App mode: use GitHub App installations
-  const installations = await getUserInstallations(userId);
-  const accounts = mapAccounts(installations);
-
+  let accounts: MappedAccount[] = [];
   let repos: MappedRepository[] = [];
-  if (installations.length > 0) {
-    repos = await listInstallationRepos(userId, status.login, installations[0].id);
+
+  try {
+    const installations = await getUserInstallations(userId);
+    accounts = mapAccounts(installations);
+
+    if (installations.length > 0) {
+      repos = await listInstallationRepos(userId, status.login, installations[0].id);
+    }
+  } catch (err) {
+    // Private key not configured or installation token failed — return empty
+    console.warn("[GitHub] Failed to fetch installations/repos:", (err as Error).message);
   }
 
   return { status, repos, accounts, mode, localStatus };

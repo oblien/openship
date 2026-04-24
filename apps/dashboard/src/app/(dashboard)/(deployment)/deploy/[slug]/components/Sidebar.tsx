@@ -7,7 +7,7 @@ import RuntimeModeModalContent from "./RuntimeModeModalContent";
 import { useDeployment } from "@/context/DeploymentContext";
 import { servicesNeedCloud } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
-import { usePlatform } from "@/context/PlatformContext";
+import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import { useModal } from "@/context/ModalContext";
 import { useRouter } from "next/navigation";
 
@@ -137,7 +137,7 @@ const Sidebar: React.FC = () => {
   const router = useRouter();
   const isServices = config.projectType === "services";
   const isDockerRuntimeProject = config.projectType === "docker" || config.projectType === "services";
-  const canUseCloudConnection = selfHosted || deployMode === "desktop";
+  const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
 
   // Self-hosted server apps need a runtime mode choice before deploying
   const needsRuntimeChoice =
@@ -182,7 +182,7 @@ const Sidebar: React.FC = () => {
       if (!requireCloud("Deploying to Openship Cloud")) return;
     }
 
-    if (!isServices && canUseCloudConnection && config.deployTarget !== "cloud" && config.domainType === "free") {
+    if (!isServices && canConnectCloud && config.deployTarget !== "cloud" && config.domainType === "free") {
       if (!requireCloud({
         feature: `Using free .${baseDomain} domains on your own server`,
         description: `Free .${baseDomain} domains are routed through Openship Cloud. To deploy this project to your own server, either connect Openship Cloud or switch this project to a custom domain.`,
@@ -248,7 +248,7 @@ const Sidebar: React.FC = () => {
     }
 
     await continueDeploy();
-  }, [baseDomain, canUseCloudConnection, config.deployTarget, config.domainType, config.services, continueDeploy, hideModal, isServices, requireCloud, showModal]);
+  }, [baseDomain, canConnectCloud, config.deployTarget, config.domainType, config.services, continueDeploy, hideModal, isServices, requireCloud, showModal]);
 
   return (
     <div className="lg:sticky lg:top-6 h-fit space-y-4">

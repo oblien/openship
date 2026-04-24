@@ -1,4 +1,4 @@
-import { CLOUD_DASHBOARD_URL } from "@repo/onboarding";
+import { getCloudApiOrigin, getCloudDashboardUrl } from "@/lib/api/urls";
 
 export const DESKTOP_CLOUD_FLOW = "desktop-cloud";
 const DEFAULT_APP_NAME = "Openship Desktop";
@@ -18,7 +18,7 @@ export function buildDesktopAuthorizeUrl(options: {
   state?: string | null;
   codeChallenge?: string | null;
 }) {
-  const baseUrl = (options.cloudAuthUrl || CLOUD_DASHBOARD_URL).replace(/\/$/, "");
+  const baseUrl = getCloudDashboardUrl(options.cloudAuthUrl);
   const params = new URLSearchParams({
     callback: options.callbackUrl,
     app: options.appName || DEFAULT_APP_NAME,
@@ -30,6 +30,24 @@ export function buildDesktopAuthorizeUrl(options: {
   if (options.codeChallenge) params.set("code_challenge", options.codeChallenge);
 
   return `${baseUrl}/authorize?${params.toString()}`;
+}
+
+export function getCloudConnectHandoffUrl(callbackUrl: string) {
+  return `${getCloudApiOrigin()}/api/cloud/connect-handoff?redirect=${encodeURIComponent(callbackUrl)}`;
+}
+
+export function getCloudDesktopHandoffUrl(options: {
+  callbackUrl: string;
+  state?: string | null;
+  codeChallenge?: string | null;
+}) {
+  const params = new URLSearchParams({
+    redirect: options.callbackUrl,
+    ...(options.state ? { state: options.state } : {}),
+    ...(options.codeChallenge ? { code_challenge: options.codeChallenge } : {}),
+  });
+
+  return `${getCloudApiOrigin()}/api/cloud/desktop-handoff?${params.toString()}`;
 }
 
 export function buildAuthPageHref(route: "/login" | "/register" | "/authorize", searchParams: SearchParamsLike) {
@@ -44,7 +62,7 @@ export function buildAuthPageHref(route: "/login" | "/register" | "/authorize", 
   return query ? `${route}?${query}` : route;
 }
 
-export function getPostAuthRedirect(searchParams: SearchParamsLike, apiUrl: string) {
+export function getPostAuthRedirect(searchParams: SearchParamsLike) {
   const callback = searchParams.get("callback");
   if (!callback) return null;
 
@@ -52,7 +70,7 @@ export function getPostAuthRedirect(searchParams: SearchParamsLike, apiUrl: stri
     return buildAuthPageHref("/authorize", searchParams);
   }
 
-  return `${apiUrl}/api/cloud/connect-handoff?redirect=${encodeURIComponent(callback)}`;
+  return getCloudConnectHandoffUrl(callback);
 }
 
 function sleep(ms: number) {

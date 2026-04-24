@@ -52,7 +52,7 @@ async function runDesktopCloudAuth(
 }
 
 async function runCloudFlow(
-  cloudAuthUrl: string,
+  cloudAuthUrl: string | undefined,
   setStatus: (status: LoadingStatus) => void,
   isCancelled: () => boolean,
 ): Promise<LoadingResult> {
@@ -104,7 +104,7 @@ export async function runLoadingFlow(options: {
   const { state, cloudAuthUrl, setStatus, isCancelled } = options;
 
   if (state.path === "cloud") {
-    return runCloudFlow(cloudAuthUrl || "", setStatus, isCancelled);
+    return runCloudFlow(cloudAuthUrl, setStatus, isCancelled);
   }
 
   setStatus({

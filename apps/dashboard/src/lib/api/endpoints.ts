@@ -108,6 +108,7 @@ export const endpoints = {
     userRepos: "github/repos",
     status: "github/status",
     connect: "github/connect",
+    connectRedirect: "github/connect/redirect",
     connectPoll: "github/connect/poll",
     disconnect: "github/disconnect",
   },

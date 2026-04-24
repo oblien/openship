@@ -54,7 +54,7 @@ export default function HomeTipCard({ projectCount, loading }: HomeTipCardProps)
   const gitHub = useGitHub();
   const tip = getHomeTips({
     connected: gitHub.connected,
-    loading,
+    loading: loading || gitHub.loading,
     projectCount,
   })[0];
 

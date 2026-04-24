@@ -4,7 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useToast } from "@/context/ToastContext";
 import { useCloud } from "@/context/CloudContext";
-import { usePlatform } from "@/context/PlatformContext";
+import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { useBuildStream } from "@/hooks/useSSEConnection";
 import { deployApi, projectsApi } from "@/lib/api";
@@ -393,15 +393,15 @@ export function useDeploymentBuild(
       console.error("Deployment error:", err);
       const message = extractErrorMessage(err, "Failed to start deployment");
       const errorCode = extractErrorCode(err);
-      const canUseCloudConnection = selfHosted || deployMode === "desktop";
+      const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
       const needsManagedProjectDomainHelp =
-        canUseCloudConnection &&
+        canConnectCloud &&
         config.projectType !== "services" &&
         config.deployTarget !== "cloud" &&
         config.domainType === "free" &&
         errorCode === "CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN";
       const needsManagedComposeDomainHelp =
-        canUseCloudConnection &&
+        canConnectCloud &&
         config.projectType === "services" &&
         errorCode === "CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS";
       const needsCloudTargetHelp = errorCode === "CLOUD_REQUIRED_TARGET";

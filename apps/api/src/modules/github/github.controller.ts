@@ -45,7 +45,12 @@ export async function getStatus(c: Context) {
 export async function getHome(c: Context) {
   const userId = getUserId(c);
   const data = await githubService.getUserHome(userId);
-  return c.json({ ...data, selfHosted: !env.CLOUD_MODE });
+  const mode = githubAuth.getGitHubAuthMode();
+  return c.json({
+    ...data,
+    selfHosted: !env.CLOUD_MODE,
+    installUrl: mode === "app" ? githubAuth.getInstallUrl() : undefined,
+  });
 }
 
 /** POST /github/connect — Normalized connection flow.
@@ -84,11 +89,6 @@ export async function connect(c: Context) {
   }
 
   if ((mode === "app" || mode === "oauth") && hasOAuth) {
-    if (mode === "app") {
-      // Has OAuth but still needs App installation → redirect to install page
-      return c.json({ connected: false, flow: "redirect" as const, url: githubAuth.getInstallUrl() });
-    }
-    // OAuth mode, has token → already connected
     return c.json({ connected: true });
   }
 
@@ -129,24 +129,74 @@ export async function connect(c: Context) {
     });
   }
 
-  // ── App / OAuth: need GitHub OAuth → generate URL server-side ──
-  const callbackURL = mode === "app" ? "/auth/callback/install" : "/auth/callback/close";
+  // ── App / OAuth: need GitHub OAuth → tell frontend to open the redirect popup ──
+  return c.json({ connected: false, flow: "redirect" as const });
+}
+
+/** GET /github/connect/redirect — Direct browser navigation endpoint.
+ *
+ *  Instead of returning JSON (which is a cross-origin fetch that can't
+ *  persist cookies in the popup's browsing context), this endpoint is
+ *  navigated to directly by the popup window. It calls better-auth's
+ *  linkSocialAccount, copies the state cookie to the response, and does a
+ *  302 redirect to GitHub. The cookie lives in the popup's context so
+ *  it's available when GitHub redirects back to the callback URL.
+ */
+export async function connectRedirect(c: Context) {
+  const userId = getUserId(c);
+  const mode = githubAuth.getGitHubAuthMode();
+
+  const callbackURL = "/auth/callback/close";
 
   try {
-    const result = await auth.api.signInSocial({
+    // Use linkSocialAccount (not signInSocial) because the user is already
+    // authenticated — we want to attach GitHub to their existing account.
+    const result = await auth.api.linkSocialAccount({
       body: {
         provider: "github",
         callbackURL,
       },
       headers: c.req.raw.headers,
+      asResponse: true,
     });
 
-    if (result?.url) {
-      return c.json({ connected: false, flow: "redirect" as const, url: result.url });
-    }
-  } catch { /* fall through */ }
+    if (result instanceof Response) {
+      // better-auth returns a Response with JSON body { url, redirect }
+      // and Set-Cookie headers for the state. We need to:
+      // 1. Read the URL from the JSON body
+      // 2. Copy the Set-Cookie headers
+      // 3. Return a real 302 redirect
 
-  return c.json({ connected: false, error: "Unable to start GitHub authorization" }, 500);
+      const cookies = result.headers.getSetCookie();
+      
+      // Try to get the redirect URL from the body
+      let redirectUrl: string | null = null;
+      try {
+        const body = await result.json() as { url?: string };
+        redirectUrl = body?.url ?? null;
+      } catch {
+        // If the response is already a redirect (3xx), use the Location header
+        redirectUrl = result.headers.get("location");
+      }
+
+      if (redirectUrl) {
+        const response = c.redirect(redirectUrl);
+        for (const cookie of cookies) {
+          response.headers.append("Set-Cookie", cookie);
+        }
+        return response;
+      }
+    }
+
+    // Fallback: non-Response result with a URL
+    if (result && typeof result === "object" && "url" in result) {
+      return c.redirect((result as { url: string }).url);
+    }
+  } catch (err) {
+    /* fall through */
+  }
+
+  return c.text("Unable to start GitHub authorization", 500);
 }
 
 /** GET /github/local-status — Check if the machine has `gh` CLI auth available.

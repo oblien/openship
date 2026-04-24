@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { getApiOrigin } from "@/lib/api/urls";
 
 /**
  * OAuth callback for cloud mode — after GitHub OAuth completes,
@@ -12,7 +13,7 @@ export default function OAuthCallbackInstall() {
   useEffect(() => {
     async function redirect() {
       try {
-        const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+        const BASE = getApiOrigin();
         const res = await fetch(`${BASE}/api/github/connect`, {
           method: "POST",
           credentials: "include",

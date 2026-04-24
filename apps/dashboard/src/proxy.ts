@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCloudConnectHandoffUrl } from "./lib/cloud-auth";
 
 /**
  * Lightweight middleware — checks cookie existence only.
@@ -51,9 +52,7 @@ export function proxy(req: NextRequest) {
     }
 
     // Self-hosted connect flow → go straight to handoff endpoint
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-    const handoffUrl = `${apiUrl}/api/cloud/connect-handoff?redirect=${encodeURIComponent(callback)}`;
-    return NextResponse.redirect(handoffUrl);
+    return NextResponse.redirect(getCloudConnectHandoffUrl(callback));
   }
 
   // Cookie + public route → let auth layout handle the redirect

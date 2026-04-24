@@ -23,6 +23,7 @@ githubRoutes.get("/local-status", localOnly, ctrl.getLocalStatus);
 githubRoutes.get("/connect/poll", localOnly, ctrl.pollConnect);
 githubRoutes.get("/home", ctrl.getHome);
 githubRoutes.post("/connect", ctrl.connect);
+githubRoutes.get("/connect/redirect", ctrl.connectRedirect);
 githubRoutes.post("/disconnect", ctrl.disconnect);
 
 /* ─── Accounts / Organisations ─────────────────────────────────────────── */

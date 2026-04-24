@@ -11,7 +11,8 @@ import {
 } from "react";
 import { Cloud, ExternalLink, X, Rocket, Shield, Globe, Zap, Loader2 } from "lucide-react";
 import { cloudApi } from "@/lib/api";
-import { usePlatform } from "@/context/PlatformContext";
+import { getApiOrigin, getCloudDashboardUrl } from "@/lib/api/urls";
+import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import { Button } from "@/components/ui/button";
 import { openAuthWindow } from "@/utils/authWindow";
 
@@ -82,6 +83,8 @@ const FEATURES = [
 
 export function CloudProvider({ children }: { children: ReactNode }) {
   const { selfHosted, deployMode, cloudAuthUrl } = usePlatform();
+  const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
+  const hasNativeCloudAccess = !canConnectCloud;
 
   const [connected, setConnected] = useState(false);
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
@@ -99,8 +102,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
   // Check cloud status on mount (self-hosted / desktop only)
   const checkStatus = useCallback(async () => {
-    const canUseCloudConnection = selfHosted || deployMode === "desktop";
-    if (!canUseCloudConnection) {
+    if (!canConnectCloud) {
+      setConnected(true);
+      setCloudUser(null);
       setLoading(false);
       return;
     }
@@ -115,23 +119,26 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [deployMode, selfHosted]);
+  }, [canConnectCloud]);
 
   useEffect(() => {
     checkStatus();
   }, [checkStatus]);
 
+  const isConnected = hasNativeCloudAccess || connected;
+
   const requireCloud = useCallback(
     (feature: string | CloudRequirementPrompt): boolean => {
-      if (connected) return true;
+      if (isConnected) return true;
       setModalFeature(typeof feature === "string" ? { feature } : feature);
       return false;
     },
-    [connected],
+    [isConnected],
   );
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-  const connectUrl = `${cloudAuthUrl}/login?callback=${encodeURIComponent(`${apiUrl}/api/cloud/connect-callback`)}`;
+  const apiUrl = getApiOrigin();
+  const cloudDashboardUrl = getCloudDashboardUrl(cloudAuthUrl);
+  const connectUrl = `${cloudDashboardUrl}/login?callback=${encodeURIComponent(`${apiUrl}/api/cloud/connect-callback`)}`;
 
   /** Desktop IPC connect flow with PKCE + nonce polling */
   const startDesktopConnect = useCallback(async () => {
@@ -192,17 +199,21 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
   /** Start cloud connect — auto-detects desktop vs browser */
   const startConnect = useCallback(() => {
+    if (!canConnectCloud) {
+      return;
+    }
+
     const isDesktop = typeof window !== "undefined" && (window as any).desktop?.isDesktop;
     if (isDesktop) {
       startDesktopConnect();
     } else {
       startBrowserConnect();
     }
-  }, [startDesktopConnect, startBrowserConnect]);
+  }, [canConnectCloud, startDesktopConnect, startBrowserConnect]);
 
   return (
     <CloudContext.Provider
-      value={{ connected, cloudUser, loading, connecting, requireCloud, startConnect, refresh: checkStatus, setConnected }}
+      value={{ connected: isConnected, cloudUser, loading, connecting, requireCloud, startConnect, refresh: checkStatus, setConnected }}
     >
       {children}
 

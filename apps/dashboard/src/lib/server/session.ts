@@ -1,5 +1,7 @@
 import "server-only";
 import { cache } from "react";
+import { headers } from "next/headers";
+import { getFallbackDeploymentInfoFromHeaders } from "@/lib/api/urls";
 import { serverApi, ServerApiError } from "./api";
 
 /**
@@ -92,13 +94,18 @@ export async function getDeploymentInfo(): Promise<DeploymentInfo> {
   if (_deploymentInfo && Date.now() - _deploymentInfoFetchedAt < DEPLOYMENT_INFO_TTL) {
     return _deploymentInfo;
   }
+
+  const requestHeaders = await headers();
+
   try {
     _deploymentInfo = await serverApi.get<DeploymentInfo>("/api/health/env");
     _deploymentInfoFetchedAt = Date.now();
   } catch {
-    if (!_deploymentInfo) {
-      _deploymentInfo = { selfHosted: true, deployMode: "docker", authMode: "local", cloudAuthUrl: "" };
+    if (_deploymentInfo) {
+      return _deploymentInfo;
     }
+
+    return getFallbackDeploymentInfoFromHeaders(requestHeaders);
   }
   return _deploymentInfo;
 }

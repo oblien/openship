@@ -1,3 +1,5 @@
+import { getRestApiBaseUrl } from "./urls";
+
 /**
  * Standard API client for the Openship dashboard.
  *
@@ -12,7 +14,7 @@
  *   - Consistent error shape (`ApiError`)
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+const BASE_URL = getRestApiBaseUrl();
 const DEFAULT_TIMEOUT = 15_000;
 
 /* Ensure the base always ends with a slash for correct URL resolution */

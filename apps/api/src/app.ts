@@ -49,6 +49,12 @@ app.route("/api/analytics", analyticsRoutes);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/billing", billingPlansRoutes);
 
+/* ---------- OAuth callback landing pages (auto-close popup) ---------- */
+const authCallbackHtml = `<!DOCTYPE html><html><head><title>Success</title></head><body><script>window.close();</script><p>Authentication successful. You can close this window.</p></body></html>`;
+
+app.get("/auth/callback/install", (c) => c.html(authCallbackHtml));
+app.get("/auth/callback/close", (c) => c.html(authCallbackHtml));
+
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
   const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");

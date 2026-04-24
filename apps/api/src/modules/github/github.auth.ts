@@ -28,20 +28,45 @@ const tokenCache = new TtlCache<string>({ maxSize: 5_000, sweepIntervalMs: 60_00
 
 // ─── App-level JWT ───────────────────────────────────────────────────────────
 
+/** Cached decoded PEM — decoded once from base64 on first use. */
+let _cachedPrivateKey: string | null = null;
+
+/**
+ * Resolve the GitHub App private key from environment.
+ * Supports two formats:
+ *   - GITHUB_PRIVATE_KEY       — raw PEM string (multi-line)
+ *   - GITHUB_PRIVATE_KEY_BASE64 — base64-encoded PEM (single env var line)
+ * Decoded value is cached in memory.
+ */
+function resolvePrivateKey(): string {
+  if (_cachedPrivateKey) return _cachedPrivateKey;
+
+  if (env.GITHUB_PRIVATE_KEY) {
+    _cachedPrivateKey = env.GITHUB_PRIVATE_KEY;
+    return _cachedPrivateKey;
+  }
+
+  if (env.GITHUB_PRIVATE_KEY_BASE64) {
+    _cachedPrivateKey = Buffer.from(env.GITHUB_PRIVATE_KEY_BASE64, "base64").toString("utf-8");
+    return _cachedPrivateKey;
+  }
+
+  throw new Error("GITHUB_PRIVATE_KEY or GITHUB_PRIVATE_KEY_BASE64 is required");
+}
+
 /**
  * Generate a short-lived JWT for authenticating as the GitHub App itself.
  * Valid for 10 minutes (GitHub's maximum).
  *
- * Requires GITHUB_APP_ID and GITHUB_PRIVATE_KEY env vars.
+ * Requires GITHUB_APP_ID and a private key env var.
  */
 export function generateAppJwt(): string {
   const appId = env.GITHUB_APP_ID;
-  const privateKey = env.GITHUB_PRIVATE_KEY;
-
-  if (!appId || !privateKey) {
-    throw new Error("GITHUB_APP_ID and GITHUB_PRIVATE_KEY are required");
+  if (!appId) {
+    throw new Error("GITHUB_APP_ID is required");
   }
 
+  const privateKey = resolvePrivateKey();
   const now = Math.floor(Date.now() / 1000);
 
   const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
@@ -384,7 +409,7 @@ export function isCloudMode(): boolean {
  * Get the GitHub App installation URL (cloud mode).
  */
 export function getInstallUrl(): string {
-  const appSlug = env.GITHUB_APP_SLUG ?? "openship";
+  const appSlug = env.GITHUB_APP_SLUG ?? "openship-io";
   return `https://github.com/apps/${appSlug}/installations/new`;
 }
 
@@ -392,6 +417,7 @@ export function getInstallUrl(): string {
  * Disconnect a user from GitHub — removes all installations and invalidates cache.
  */
 export async function disconnectUser(userId: string): Promise<void> {
+  await repos.account.unlinkProvider(userId, "github");
   await repos.gitInstallation.removeAllForUser(userId);
   tokenCache.invalidateBySubstring(userId);
 }

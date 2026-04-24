@@ -5,7 +5,7 @@ import { Server, Cloud, Cpu, ArrowRight, Pencil, ChevronDown, CheckCircle2, Load
 import { useDeployment } from "@/context/DeploymentContext";
 import { servicesNeedCloud } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
-import { usePlatform } from "@/context/PlatformContext";
+import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
 import type { ServerInfo } from "@/lib/api/system";
 import type { DeployTarget, BuildStrategy } from "@/context/deployment/types";
@@ -197,17 +197,24 @@ export interface ResolvedTargets {
 
 export function useDesktopTargets(): ResolvedTargets {
   const cloud = useCloud();
+  const { selfHosted } = usePlatform();
   const [servers, setServers] = useState<ServerInfo[]>([]);
   const [serversReady, setServersReady] = useState(false);
 
   useEffect(() => {
+    // Servers only exist in self-hosted mode — skip the API call in SaaS
+    if (!selfHosted) {
+      setServersReady(true);
+      return;
+    }
+
     let cancelled = false;
     systemApi.listServers()
       .then((list) => { if (!cancelled) setServers(list); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setServersReady(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [selfHosted]);
 
   const hasServers = servers.length > 0;
   const hasCloudConnected = cloud.connected;
@@ -238,7 +245,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const hasServers = servers.length > 0;
   const isSingleServer = servers.length === 1;
   const showBuildStrategy = config.projectType === "app";
-  const canUseCloudConnection = selfHosted || deployMode === "desktop";
+  const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
 
   // Auto-set deploy target when there's only one option
   useEffect(() => {
@@ -350,7 +357,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       }
     }
 
-    if (config.projectType !== "services" && canUseCloudConnection && config.deployTarget !== "cloud" && config.domainType === "free") {
+    if (config.projectType !== "services" && canConnectCloud && config.deployTarget !== "cloud" && config.domainType === "free") {
       if (!requireCloud({
         feature: `Using free .${baseDomain} domains on your own server`,
         description: `Free .${baseDomain} domains are routed through Openship Cloud. To deploy this project to your own server, either connect Openship Cloud or switch this project to a custom domain.`,

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2, ExternalLink } from "lucide-react";
 import { isNetworkError } from "@/lib/api";
+import { getApiOrigin } from "@/lib/api/urls";
 import {
   buildAuthPageHref,
   buildDesktopAuthorizeUrl,
@@ -50,8 +51,7 @@ function LoginPageInner() {
 
   const callbackError = searchParams.get("error");
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-  const postLoginUrl = getPostAuthRedirect(searchParams, API_URL);
+  const postLoginUrl = getPostAuthRedirect(searchParams);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -96,7 +96,7 @@ function LoginPageInner() {
 
   /* ── Zero-auth mode (desktop): auto-redirect to create session ── */
   if (authMode === "none") {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+    const apiUrl = getApiOrigin();
     // Redirect to the desktop-login endpoint which creates a real
     // session cookie and redirects back to the dashboard.
     if (typeof window !== "undefined") {
@@ -113,7 +113,7 @@ function LoginPageInner() {
 
   /* ── Cloud mode (desktop): redirect to Openship Cloud for all auth ── */
   if (authMode === "cloud") {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+    const apiUrl = getApiOrigin();
     const callbackUrl = `${apiUrl}/api/auth/cloud-callback`;
     const cloudLoginUrl = buildDesktopAuthorizeUrl({ cloudAuthUrl, callbackUrl });
 

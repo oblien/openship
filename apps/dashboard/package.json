@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3001",
-    "dev:saas": "NEXT_PUBLIC_API_URL=http://localhost:4100 NEXT_DIST_DIR=.next-saas next dev --port 3002",
+    "dev": "bun run scripts/dev.ts local",
+    "dev:saas": "bun run scripts/dev.ts saas",
+    "dev:saas:local": "bun run scripts/dev.ts saas local",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

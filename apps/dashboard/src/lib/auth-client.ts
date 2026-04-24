@@ -1,18 +1,19 @@
 import { createAuthClient } from "better-auth/react";
+import { getAuthBaseUrl } from "@/lib/api/urls";
 
 /**
  * API base URL — auth requests go directly to the dedicated API server.
  *
- * Cookies on localhost are shared across ports, so Set-Cookie from :4000
- * is readable by :3001 (both browser and SSR via `cookies()`).
+ * Cookies on localhost are shared across ports, so the local dashboard
+ * can read cookies set by the local API in both standard and SaaS dev modes.
  *
  * In production both services share a common top-level domain
  * (e.g. api.openship.io / app.openship.io with cookie domain .openship.io).
  */
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const AUTH_BASE_URL = getAuthBaseUrl();
 
 export const authClient = createAuthClient({
-  baseURL: API_URL,
+  baseURL: AUTH_BASE_URL,
   fetchOptions: {
     credentials: "include",
     // Disable retry to prevent infinite loops on 429

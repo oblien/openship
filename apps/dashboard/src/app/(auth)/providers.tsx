@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext } from "react";
+import { CLOUD_DASHBOARD_URL } from "@repo/onboarding";
 
 interface AuthContextValue {
   authMode: "cloud" | "local" | "none";
@@ -10,7 +11,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue>({
   authMode: "local",
-  cloudAuthUrl: "",
+  cloudAuthUrl: CLOUD_DASHBOARD_URL,
   selfHosted: true,
 });
 

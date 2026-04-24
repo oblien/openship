@@ -39,8 +39,7 @@ function RegisterPageInner() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
-  const postLoginUrl = getPostAuthRedirect(searchParams, API_URL);
+  const postLoginUrl = getPostAuthRedirect(searchParams);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
