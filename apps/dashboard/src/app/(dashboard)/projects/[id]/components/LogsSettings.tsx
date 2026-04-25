@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Terminal, Server } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { TerminalLogs } from "./logs/TerminalLogs";
@@ -14,6 +15,9 @@ type LogsTab = 'terminal' | 'server';
 
 export const LogsSettings = () => {
   const { projectData, buildData, id, terminalLogsData, serverLogsData, clearTerminalLogs, clearServerLogs } = useProjectSettings();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const isServicesProject = getProjectType(projectData?.framework as any) === 'services';
   const hasResolvedServerMode = isServicesProject
     || typeof projectData?.options?.hasServer === 'boolean'
@@ -24,7 +28,16 @@ export const LogsSettings = () => {
     || projectData?.hasServer === true
     || (buildData.isLoading === false && buildData.hasServer === true);
   const canShowTerminal = effectiveHasServer;
-  const [activeTab, setActiveTab] = useState<LogsTab>(canShowTerminal ? 'terminal' : 'server');
+  const requestedTab = searchParams.get('tab') === 'server'
+    ? 'server'
+    : searchParams.get('tab') === 'terminal'
+      ? 'terminal'
+      : null;
+  const initialTab = requestedTab && (requestedTab === 'server' || canShowTerminal)
+    ? requestedTab
+    : canShowTerminal ? 'terminal' : 'server';
+  const [activeTab, setActiveTab] = useState<LogsTab>(initialTab);
+  const hasSelectedTabRef = useRef(false);
   const [copied, setCopied] = useState(false);
   const [currentLogs, setCurrentLogs] = useState<string[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -37,6 +50,40 @@ export const LogsSettings = () => {
       setActiveTab('server');
     }
   }, [hasResolvedServerMode, canShowTerminal, activeTab]);
+
+  useEffect(() => {
+    if (!hasResolvedServerMode) return;
+    let nextTab: LogsTab | null = null;
+
+    if (requestedTab === 'server') {
+      nextTab = 'server';
+    } else if (requestedTab === 'terminal' && canShowTerminal) {
+      nextTab = 'terminal';
+    } else if (requestedTab === 'terminal' && !canShowTerminal) {
+      nextTab = 'server';
+    } else if (!hasSelectedTabRef.current && canShowTerminal) {
+      nextTab = 'terminal';
+    }
+
+    if (nextTab && nextTab !== activeTab) {
+      setActiveTab(nextTab);
+    }
+  }, [hasResolvedServerMode, requestedTab, canShowTerminal, activeTab]);
+
+  useEffect(() => {
+    if (!hasResolvedServerMode) return;
+    if (searchParams.get('tab') === activeTab) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', activeTab);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [hasResolvedServerMode, activeTab, pathname, router, searchParams]);
+
+  const switchTab = useCallback((tab: LogsTab) => {
+    if (tab === 'terminal' && !canShowTerminal) return;
+    hasSelectedTabRef.current = true;
+    setActiveTab(tab);
+  }, [canShowTerminal]);
 
   useEffect(() => {
     if (!isServicesProject || !id) {
@@ -78,7 +125,10 @@ export const LogsSettings = () => {
   const selectedService = services.find((service) => service.id === selectedServiceId) ?? null;
   const terminalStreamTarget = isServicesProject
     ? (selectedServiceId ? endpoints.services.logsStream(id, selectedServiceId) : '')
-    : id;
+    : endpoints.projects.logsStream(id);
+  const terminalHistoryTarget = isServicesProject
+    ? (selectedServiceId ? endpoints.services.logs(id, selectedServiceId) : '')
+    : endpoints.projects.logs(id);
 
   const handleLogsChange = useCallback((logs: string[]) => {
     setCurrentLogs(logs);
@@ -134,7 +184,7 @@ export const LogsSettings = () => {
         <div className="flex items-center gap-1">
           {canShowTerminal && (
             <button
-              onClick={() => setActiveTab('terminal')}
+              onClick={() => switchTab('terminal')}
               className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
                 activeTab === 'terminal'
                   ? 'text-foreground'
@@ -149,7 +199,7 @@ export const LogsSettings = () => {
             </button>
           )}
           <button
-            onClick={() => setActiveTab('server')}
+            onClick={() => switchTab('server')}
             className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
               activeTab === 'server'
                 ? 'text-foreground'
@@ -212,6 +262,7 @@ export const LogsSettings = () => {
                 projectId={id}
                 projectName={selectedService?.name || projectData?.name || 'Project'}
                 streamTarget={terminalStreamTarget}
+                historyTarget={terminalHistoryTarget}
                 onLogsChange={handleLogsChange}
               />
             )}

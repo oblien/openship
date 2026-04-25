@@ -33,6 +33,12 @@ function now(): string {
   return new Date().toISOString();
 }
 
+function applyTail(entries: LogEntry[], tail?: number): LogEntry[] {
+  if (typeof tail !== "number") return entries;
+  if (tail <= 0) return [];
+  return entries.slice(-tail);
+}
+
 // ─── CloudRuntime ────────────────────────────────────────────────────────────
 
 export class CloudRuntime implements RuntimeAdapter {
@@ -579,7 +585,7 @@ fi`;
       // Each line: [timestamp] stream: message
       if (typeof raw.logs === "string") {
         const logStr = raw.logs as string;
-        return logStr.split("\n").filter(Boolean).map((line) => {
+        return applyTail(logStr.split("\n").filter(Boolean).map((line) => {
           // Parse "[2026-03-14T06:09:25Z] stdout: actual message"
           const match = line.match(/^\[([^\]]+)\]\s+(stdout|stderr):\s?(.*)/);
           if (match) {
@@ -590,7 +596,7 @@ fi`;
             };
           }
           return { timestamp: now(), message: line, level: "info" as const };
-        });
+        }), tail);
       }
 
       // Fallback: array shapes
@@ -600,7 +606,7 @@ fi`;
         : [];
       if (lines.length === 0) return [];
 
-      return lines.map((line: unknown) => {
+      return applyTail(lines.map((line: unknown) => {
         if (typeof line === "string") {
           return { timestamp: now(), message: line, level: "info" as const };
         }
@@ -611,7 +617,7 @@ fi`;
           message,
           level: entry.stream === "stderr" ? "warn" as const : "info" as const,
         };
-      }).filter(e => e.message);
+      }).filter(e => e.message), tail);
     } catch {
       // Workload may not exist yet — fall back to workspace cmd logs
       const result = await this.ws(containerId).logs.get({
@@ -622,7 +628,7 @@ fi`;
       const lines = (result as Record<string, unknown>).logs;
       if (!Array.isArray(lines)) return [];
 
-      return lines.map((line: unknown) => {
+      return applyTail(lines.map((line: unknown) => {
         if (typeof line === "string") {
           return { timestamp: now(), message: line, level: "info" as const };
         }
@@ -632,7 +638,7 @@ fi`;
           message: (entry.message as string) ?? String(line),
           level: "info" as const,
         };
-      });
+      }), tail);
     }
   }
 
@@ -652,16 +658,19 @@ fi`;
     const run = async () => {
       try {
         // 1. Replay existing logs so the terminal isn't blank
-        try {
-          const history = await this.getRuntimeLogs(containerId, opts?.tail ?? 100);
-          for (const entry of history) {
-            if (cancelled) return;
-            if (!entry.message) continue;
-            const rawData = entry.rawData ?? Buffer.from(entry.message).toString("base64");
-            onLog({ ...entry, rawData });
+        const replayTail = opts?.tail ?? 100;
+        if (replayTail > 0) {
+          try {
+            const history = await this.getRuntimeLogs(containerId, replayTail);
+            for (const entry of history) {
+              if (cancelled) return;
+              if (!entry.message) continue;
+              const rawData = entry.rawData ?? Buffer.from(entry.message).toString("base64");
+              onLog({ ...entry, rawData });
+            }
+          } catch {
+            // Historical fetch failed — non-fatal, continue to live stream
           }
-        } catch {
-          // Historical fetch failed — non-fatal, continue to live stream
         }
 
         if (cancelled) return;

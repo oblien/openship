@@ -74,22 +74,34 @@ export async function getHome(c: Context) {
 export async function connect(c: Context) {
   const userId = getUserId(c);
   const mode = githubAuth.getGitHubAuthMode();
-  const hasOAuth = !!(await githubAuth.getUserToken(userId));
+  const status = await githubAuth.getUserStatus(userId);
 
   // ── Already connected? ─────────────────────────────────────
-  if (mode === "token" && env.GITHUB_TOKEN) {
+  if (mode === "token" && status.connected) {
     return c.json({ connected: true });
   }
 
   if (mode === "cli") {
-    const ghCliToken = await localAuth.getLocalGhToken();
-    if (ghCliToken || hasOAuth) {
+    if (status.connected) {
       return c.json({ connected: true });
     }
   }
 
-  if ((mode === "app" || mode === "oauth") && hasOAuth) {
+  if (mode === "oauth" && status.connected) {
     return c.json({ connected: true });
+  }
+
+  if (mode === "app" && status.connected) {
+    const installations = await githubAuth.getUserInstallations(userId, status);
+    if (installations.length > 0) {
+      return c.json({ connected: true });
+    }
+
+    return c.json({
+      connected: false,
+      flow: "redirect" as const,
+      url: githubAuth.getInstallUrl(),
+    });
   }
 
   // ── CLI: no token yet ──────────────────────────────────────
@@ -143,10 +155,9 @@ export async function connect(c: Context) {
  *  it's available when GitHub redirects back to the callback URL.
  */
 export async function connectRedirect(c: Context) {
-  const userId = getUserId(c);
   const mode = githubAuth.getGitHubAuthMode();
 
-  const callbackURL = "/auth/callback/close";
+  const callbackURL = mode === "app" ? "/auth/callback/install" : "/auth/callback/close";
 
   try {
     // Use linkSocialAccount (not signInSocial) because the user is already

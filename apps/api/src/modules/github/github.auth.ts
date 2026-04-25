@@ -341,25 +341,62 @@ export async function getUserStatus(userId: string) {
  * Get all installations that the user has access to.
  * Returns empty array if the user has no GitHub OAuth token.
  */
-export async function getUserInstallations(userId: string): Promise<GitHubInstallation[]> {
+export async function getUserInstallations(
+  userId: string,
+  status?: { connected: boolean; id?: number },
+): Promise<GitHubInstallation[]> {
   const token = await getUserToken(userId);
   if (!token) return [];
 
   try {
+    const userStatus = status ?? await getUserStatus(userId);
+    if (!userStatus.connected) return [];
+
     const data = await githubFetch<{ installations: GitHubInstallation[] }>({
       userId,
       url: "https://api.github.com/user/installations",
       useUserToken: true,
     });
 
-    /* Cross-reference with our DB to only return installations the user owns */
-    const dbInstallations = await repos.gitInstallation.listByUser(userId);
-    const dbIds = new Set(dbInstallations.map((i) => i.installationId));
+    const installations = data.installations ?? [];
 
-    return (data.installations ?? []).filter((i) => dbIds.has(i.id));
+    try {
+      await repos.gitInstallation.replaceForUser(
+        userId,
+        installations.map((installation) => ({
+          installationId: installation.id,
+          owner: installation.account.login,
+          ownerType: installation.account.type,
+          providerUserId: userStatus.id ? String(userStatus.id) : undefined,
+          providerOwnerId: String(installation.account.id),
+          isOrg: installation.account.type === "Organization",
+        })),
+      );
+    } catch (err) {
+      console.warn("[GitHub] Failed to sync installations:", (err as Error).message);
+    }
+
+    return installations;
   } catch {
-    return [];
+    return getStoredInstallations(userId);
   }
+}
+
+async function getStoredInstallations(userId: string): Promise<GitHubInstallation[]> {
+  const installations = await repos.gitInstallation.listByUser(userId);
+  return installations.map((installation) => ({
+    id: installation.installationId,
+    account: {
+      login: installation.owner,
+      id: Number(installation.providerOwnerId ?? 0),
+      avatar_url: "",
+      type: installation.ownerType === "Organization" ? "Organization" : "User",
+    },
+    app_id: Number(env.GITHUB_APP_ID ?? 0),
+    target_type: installation.ownerType,
+    permissions: {},
+    events: [],
+  }));
 }
 
 /**

@@ -9,18 +9,50 @@ import { useLogStream } from "@/hooks/useSSEConnection";
 import { useToast } from "@/context/ToastContext";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useTheme } from "@/components/theme-provider";
+import { api } from "@/lib/api";
 
 interface TerminalLogsProps {
     projectId: string;
     projectName: string;
     streamTarget: string;
+    historyTarget: string;
     onLogsChange: (logs: string[]) => void;
 }
+
+const appendQueryParam = (target: string, key: string, value: string) => {
+    if (!target) return target;
+    const separator = target.includes('?') ? '&' : '?';
+    return `${target}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+};
+
+const decodeLogEntry = (entry: any): string | null => {
+    if (!entry || typeof entry !== 'object') return null;
+
+    if (typeof entry.rawData === 'string' && entry.rawData) {
+        try {
+            const binary = atob(entry.rawData);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return new TextDecoder().decode(bytes).replace(/\r?\n$/, '');
+        } catch {
+            // Fall through to message below.
+        }
+    }
+
+    if (typeof entry.message === 'string') {
+        return entry.message.replace(/\r?\n$/, '');
+    }
+
+    return null;
+};
 
 export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     projectId,
     projectName,
     streamTarget,
+    historyTarget,
     onLogsChange,
 }) => {
     const { showToast } = useToast();
@@ -45,6 +77,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
     const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const lastLogIndexRef = useRef(0); // Track last written log index to prevent duplicates
+    const terminalLogCountRef = useRef(0);
     const effectShows = useRef(false);
     const getDarkTheme = () => ({
         background: '#060606',
@@ -250,6 +283,10 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         onLogsChange(terminalLogsData.logs);
     }, [terminalLogsData.logs, onLogsChange]);
 
+    useEffect(() => {
+        terminalLogCountRef.current = terminalLogsData.logs.length;
+    }, [terminalLogsData.logs.length]);
+
     // Native search with debouncing for performance
     const performSearch = useCallback((query: string) => {
         if (!searchAddonRef.current) return;
@@ -412,6 +449,29 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         },
     });
 
+    const loadRecentLogs = useCallback(async (force = false) => {
+        if (!historyTarget) return;
+        if (!force && terminalLogCountRef.current > 0) return;
+
+        try {
+            const response = await api.get<{ data?: any[] }>(historyTarget, {
+                params: { tail: 100 },
+            });
+            const entries = Array.isArray(response.data) ? response.data : [];
+            for (const entry of entries) {
+                const text = decodeLogEntry(entry);
+                if (text) addTerminalLog(text);
+            }
+        } catch (error) {
+            console.warn('Failed to load recent terminal logs:', error);
+        }
+    }, [historyTarget, addTerminalLog]);
+
+    const connectLiveStream = useCallback(async () => {
+        if (!streamTarget) return;
+        await logStream.connect(appendQueryParam(streamTarget, 'tail', '0'));
+    }, [streamTarget, logStream]);
+
     const toggleStreaming = async () => {
         if (terminalLogsData.isStreaming) {
             // Disconnect using the clean hook
@@ -427,8 +487,8 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
             setTerminalStreaming(true);
             try {
                 if (streamTarget) {
-                    // Connect using the clean hook - no more manual connection management!
-                    await logStream.connect(streamTarget);
+                    await loadRecentLogs(true);
+                    await connectLiveStream();
                 } else {
                     // Mock stream - add initial message as a log
                     addTerminalLog('[Using Mock Stream - No Project ID]');
@@ -470,11 +530,14 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         }
 
         setTerminalStreaming(true);
-        void logStream.connect(streamTarget).catch((error) => {
+        void (async () => {
+            await loadRecentLogs(true);
+            await connectLiveStream();
+        })().catch((error) => {
             console.error('Error switching log stream:', error);
             setTerminalStreaming(false);
         });
-    }, [streamTarget]);
+    }, [streamTarget, loadRecentLogs, connectLiveStream]);
 
     // Auto-start streaming when terminal is ready
     const autoStarted = useRef(false);
@@ -482,10 +545,13 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         if (!terminalReady || !streamTarget || autoStarted.current) return;
         autoStarted.current = true;
         setTerminalStreaming(true);
-        void logStream.connect(streamTarget).catch(() => {
+        void (async () => {
+            await loadRecentLogs();
+            await connectLiveStream();
+        })().catch(() => {
             setTerminalStreaming(false);
         });
-    }, [terminalReady, streamTarget]);
+    }, [terminalReady, streamTarget, loadRecentLogs, connectLiveStream]);
 
     const logStreamRef = useRef(logStream);
     useEffect(() => { logStreamRef.current = logStream; });
@@ -540,6 +606,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         clearTerminalLogs();
         // Reset the log index counter
         lastLogIndexRef.current = 0;
+        terminalLogCountRef.current = 0;
         effectShows.current = true;
         if (xtermRef.current?.xterm) {
             // Clear the terminal display first
@@ -673,4 +740,3 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
         </div>
     );
 };
-

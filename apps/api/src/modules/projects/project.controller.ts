@@ -340,6 +340,38 @@ export async function runtimeLogStream(c: Context) {
 
 // ─── Server HTTP request logs ────────────────────────────────────────────────
 
+function extractCloudStreamToken(result: unknown): { stream_url: string; token: string } | null {
+  const root = result as Record<string, unknown> | null;
+  const data = (root?.data && typeof root.data === "object" ? root.data : root) as Record<string, unknown> | null;
+  const streamUrl = data?.stream_url ?? data?.streamUrl ?? data?.url;
+  const token = data?.token;
+  return typeof streamUrl === "string" && typeof token === "string"
+    ? { stream_url: streamUrl, token }
+    : null;
+}
+
+function extractCloudRequestLogs(result: unknown): unknown[] {
+  const root = result as Record<string, unknown> | null;
+  const data = root?.data as unknown;
+  const candidates = [
+    data,
+    root?.requests,
+    root?.logs,
+    root?.items,
+    root?.rows,
+    data && typeof data === "object" ? (data as Record<string, unknown>).requests : undefined,
+    data && typeof data === "object" ? (data as Record<string, unknown>).logs : undefined,
+    data && typeof data === "object" ? (data as Record<string, unknown>).items : undefined,
+    data && typeof data === "object" ? (data as Record<string, unknown>).rows : undefined,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+
+  return [];
+}
+
 /**
  * GET /projects/:id/server-logs/stream-token
  *
@@ -362,7 +394,7 @@ export async function serverLogStreamToken(c: Context) {
 
   if (source.kind === "cloud") {
     const client = getAdminOblienClient();
-    let tokenResult: { data?: { stream_url: string; token: string } } | null = null;
+    let tokenResult: unknown = null;
 
     if (client) {
       try {
@@ -374,10 +406,11 @@ export async function serverLogStreamToken(c: Context) {
       tokenResult = await cloudAnalyticsProxy(userId, "streamToken", source.domain);
     }
 
-    if (!tokenResult?.data) {
+    const tokenData = extractCloudStreamToken(tokenResult);
+    if (!tokenData) {
       return c.json({ kind: "self-hosted" as const });
     }
-    return c.json({ kind: "cloud" as const, url: tokenResult.data.stream_url, token: tokenResult.data.token });
+    return c.json({ kind: "cloud" as const, url: tokenData.stream_url, token: tokenData.token });
   }
 
   return c.json({ kind: "self-hosted" as const });
@@ -463,7 +496,7 @@ export async function recentServerLogs(c: Context) {
 
   if (source.kind === "cloud") {
     const client = getAdminOblienClient();
-    let result: { data?: unknown[] } | null = null;
+    let result: unknown = null;
 
     if (client) {
       try {
@@ -475,7 +508,7 @@ export async function recentServerLogs(c: Context) {
       result = await cloudAnalyticsProxy(userId, "requests", source.domain, { limit });
     }
 
-    return c.json({ logs: result?.data ?? [] });
+    return c.json({ logs: extractCloudRequestLogs(result) });
   }
 
   const { domain, serverId } = source;

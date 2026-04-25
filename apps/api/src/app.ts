@@ -16,6 +16,7 @@ import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
 import { githubRoutes } from "./modules/github";
+import * as githubAuth from "./modules/github/github.auth";
 import { settingsRoutes } from "./modules/settings/settings.routes";
 
 /* ---------- Initialize platform (runtime + infra + system) ---------- */
@@ -49,10 +50,15 @@ app.route("/api/analytics", analyticsRoutes);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/billing", billingPlansRoutes);
 
-/* ---------- OAuth callback landing pages (auto-close popup) ---------- */
+/* ---------- OAuth callback landing pages ---------- */
 const authCallbackHtml = `<!DOCTYPE html><html><head><title>Success</title></head><body><script>window.close();</script><p>Authentication successful. You can close this window.</p></body></html>`;
 
-app.get("/auth/callback/install", (c) => c.html(authCallbackHtml));
+app.get("/auth/callback/install", (c) => {
+  if (githubAuth.getGitHubAuthMode() === "app") {
+    return c.redirect(githubAuth.getInstallUrl());
+  }
+  return c.html(authCallbackHtml);
+});
 app.get("/auth/callback/close", (c) => c.html(authCallbackHtml));
 
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */

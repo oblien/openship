@@ -28,6 +28,11 @@ interface ServerLogsProps {
   onLogsChange: (logs: string[]) => void;
 }
 
+const appendQueryParam = (url: string, key: string, value: string) => {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+};
+
 export const ServerLogs: React.FC<ServerLogsProps> = ({
   projectId,
   projectName,
@@ -156,10 +161,11 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
 
         if (tokenRes.kind === "cloud" && tokenRes.url && tokenRes.token) {
           // Cloud: connect directly to edge
-          const streamUrl = `${tokenRes.url}?token=${encodeURIComponent(tokenRes.token)}`;
+          const streamUrl = appendQueryParam(tokenRes.url, "token", tokenRes.token);
           es = new EventSource(streamUrl);
-          // Edge sends default "message" events
+          // Edge deployments may send either default messages or named request events.
           es.onmessage = handleRequestEvent;
+          es.addEventListener("request", handleRequestEvent);
         } else {
           // Self-hosted: connect to API SSE
           const streamUrl = `${getApiBaseUrl()}${endpoints.projects.serverLogsStream(projectId)}`;
@@ -185,10 +191,22 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     // Fetch recent logs in parallel and merge them behind live data.
     api.get<{ logs: any[] }>(endpoints.projects.serverLogsRecent(projectId), {
       params: { limit: 100 },
-    }).then((res) => {
+    }).then((res: any) => {
       if (cancelled) return;
-      if (res.logs?.length) {
-        const entries = res.logs
+      const logs: unknown[] = Array.isArray(res.logs)
+        ? res.logs
+        : Array.isArray(res.logs?.data)
+          ? res.logs.data
+          : Array.isArray(res.logs?.requests)
+            ? res.logs.requests
+            : Array.isArray(res.logs?.items)
+              ? res.logs.items
+              : Array.isArray(res.logs?.rows)
+                ? res.logs.rows
+                : [];
+
+      if (logs.length) {
+        const entries = logs
           .map(normalizeLogEntry)
           .filter((e): e is ServerLog => e !== null)
           .sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
@@ -332,4 +350,3 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     </div>
   );
 };
-

@@ -38,8 +38,12 @@ export const githubWebhookProvider: WebhookProvider = {
     const secret = env.GITHUB_WEBHOOK_SECRET;
     const signature = headers["x-hub-signature-256"];
 
-    // No secret configured — accept unsigned webhooks (self-hosted without secret)
     if (!secret) {
+      if (env.CLOUD_MODE || env.GITHUB_AUTH_MODE === "app") {
+        return { valid: false, error: "GITHUB_WEBHOOK_SECRET is required in GitHub App mode" };
+      }
+
+      // Self-hosted installs may use unsigned repo webhooks while setting up.
       return { valid: true };
     }
 

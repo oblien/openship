@@ -212,6 +212,7 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
       method?: string;
       headers?: Record<string, string>;
       body?: any;
+      idleTimeoutMs?: number;
     } = {}
   ) => {
     // Disconnect existing connection
@@ -223,7 +224,28 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
     sseBufferRef.current = '';
 
     // Create new abort controller
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearIdleTimer = () => {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+    };
+    const resetIdleTimer = () => {
+      if (!options.idleTimeoutMs) return;
+      clearIdleTimer();
+      idleTimer = setTimeout(() => {
+        controller.abort();
+      }, options.idleTimeoutMs);
+    };
+    const releaseController = () => {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    };
 
     try {
       const response = await fetch(url, {
@@ -234,17 +256,16 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
           ...options.headers,
         },
         body: options.body ? JSON.stringify(options.body) : undefined,
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
       });
 
       if (!response.ok) {
+        let message = response.statusText;
         try {
           const json = await response.json();
-          onError?.(new Error(`SSE connection failed: ${json.error || response.statusText}`));
-        } catch (e) {
-          onError?.(new Error(`SSE connection failed: ${response.statusText}`));
-        }
-        throw new Error(`SSE connection failed: ${response.statusText}`);
+          message = json.error || message;
+        } catch {}
+        throw new Error(`SSE connection failed: ${message}`);
       }
 
       const reader = response.body?.getReader();
@@ -254,6 +275,7 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
 
       isConnectedRef.current = true;
       onConnect?.();
+      resetIdleTimer();
 
       const decoder = new TextDecoder();
 
@@ -263,12 +285,17 @@ export const useSSEStream = <T extends SSEMessage = SSEMessage>(
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
+        resetIdleTimer();
         processSSEChunk(chunk);
       }
 
+      clearIdleTimer();
+      releaseController();
       isConnectedRef.current = false;
       onDisconnect?.();
     } catch (err: any) {
+      clearIdleTimer();
+      releaseController();
       if (err.name === 'AbortError') {
         // Connection was intentionally aborted
         isConnectedRef.current = false;

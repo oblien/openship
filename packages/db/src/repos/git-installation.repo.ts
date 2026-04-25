@@ -54,6 +54,34 @@ export function createGitInstallationRepo(db: Database) {
       return { ...row, createdAt: new Date(), updatedAt: new Date() };
     },
 
+    /** Replace all GitHub App installations for a user with a fresh snapshot */
+    async replaceForUser(userId: string, data: Array<Omit<NewGitInstallation, "id" | "userId" | "provider">>) {
+      const rows = data.map((installation) => ({
+        id: randomUUID(),
+        userId,
+        provider: "github",
+        ...installation,
+        owner: installation.owner.toLowerCase(),
+      }));
+
+      const replace = async (tx: Database) => {
+        await tx
+          .delete(gitInstallation)
+          .where(
+            and(
+              eq(gitInstallation.userId, userId),
+              eq(gitInstallation.provider, "github"),
+            ),
+          );
+
+        if (rows.length > 0) {
+          await tx.insert(gitInstallation).values(rows);
+        }
+      };
+
+      await db.transaction(replace);
+    },
+
     /** Remove installation by user + owner */
     async removeByOwner(userId: string, owner: string) {
       return db

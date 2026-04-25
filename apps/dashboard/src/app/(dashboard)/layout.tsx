@@ -18,7 +18,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   ]);
 
   return (
-    <DashboardProviders initialGithubData={initialGithubData} selfHosted={deploymentInfo.selfHosted} deployMode={deploymentInfo.deployMode} authMode={deploymentInfo.authMode} cloudAuthUrl={deploymentInfo.cloudAuthUrl} machineName={deploymentInfo.machineName} hostDomain={deploymentInfo.hostDomain}>
+    <DashboardProviders
+      initialGithubData={initialGithubData}
+      initialUser={session.user}
+      selfHosted={deploymentInfo.selfHosted}
+      deployMode={deploymentInfo.deployMode}
+      authMode={deploymentInfo.authMode}
+      cloudAuthUrl={deploymentInfo.cloudAuthUrl}
+      machineName={deploymentInfo.machineName}
+      hostDomain={deploymentInfo.hostDomain}
+    >
       <div className="flex h-dvh">
         <Sidebar />
         {/* Main content */}

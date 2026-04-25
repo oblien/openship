@@ -4,6 +4,8 @@ import {
   createContext,
   useContext,
   useCallback,
+  useEffect,
+  useState,
   type ReactNode,
 } from "react";
 import { useSession, signOut } from "@/lib/auth-client";
@@ -43,8 +45,15 @@ const AuthContext = createContext<AuthState | undefined>(undefined);
 /*  Provider                                                          */
 /* ------------------------------------------------------------------ */
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({
+  children,
+  initialUser = null,
+}: {
+  children: ReactNode;
+  initialUser?: AuthUser | null;
+}) {
   const router = useRouter();
+  const [hasHydrated, setHasHydrated] = useState(false);
 
   /*
    * `useSession()` is Better Auth's React hook.
@@ -55,7 +64,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const { data: session, isPending } = useSession();
 
-  const user: AuthUser | null = session?.user ?? null;
+  useEffect(() => {
+    setHasHydrated(true);
+  }, []);
+
+  const sessionUser: AuthUser | null = session?.user ?? null;
+  const user: AuthUser | null =
+    sessionUser ?? (isPending || !hasHydrated ? initialUser : null);
   const isLoading = isPending;
   const isLoggedIn = !!user;
 

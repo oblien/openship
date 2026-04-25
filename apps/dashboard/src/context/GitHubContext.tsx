@@ -174,10 +174,9 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
 
       switch (res?.flow) {
         case "redirect": {
-          // Navigate popup directly to the API redirect endpoint.
-          // This ensures the state cookie is set in the popup's own
-          // browsing context (same-origin), avoiding SameSite issues.
-          const redirectUrl = `${getApiBaseUrl()}${endpoints.github.connectRedirect}`;
+          // Prefer a backend-provided URL when the next step is known
+          // (for example, GitHub App installation after OAuth).
+          const redirectUrl = res.url ?? `${getApiBaseUrl()}${endpoints.github.connectRedirect}`;
           const handle = openAuthWindow(redirectUrl);
           handle.onClose(() => {
             setTimeout(() => {
