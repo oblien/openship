@@ -26,6 +26,10 @@ import type { GitHubInstallation, MappedAccount } from "./github.types";
 
 const tokenCache = new TtlCache<string>({ maxSize: 5_000, sweepIntervalMs: 60_000 });
 
+export function invalidateUserGitHubCache(userId: string): void {
+  tokenCache.invalidateBySubstring(userId);
+}
+
 // ─── App-level JWT ───────────────────────────────────────────────────────────
 
 /** Cached decoded PEM — decoded once from base64 on first use. */
@@ -372,6 +376,7 @@ export async function getUserInstallations(
           isOrg: installation.account.type === "Organization",
         })),
       );
+      invalidateUserGitHubCache(userId);
     } catch (err) {
       console.warn("[GitHub] Failed to sync installations:", (err as Error).message);
     }
@@ -456,5 +461,5 @@ export function getInstallUrl(): string {
 export async function disconnectUser(userId: string): Promise<void> {
   await repos.account.unlinkProvider(userId, "github");
   await repos.gitInstallation.removeAllForUser(userId);
-  tokenCache.invalidateBySubstring(userId);
+  invalidateUserGitHubCache(userId);
 }

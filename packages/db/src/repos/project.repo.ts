@@ -13,11 +13,7 @@ export type NewEnvVar = typeof envVar.$inferInsert;
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Build Drizzle conditions for env var queries scoped by project/environment/service */
-function envVarScope(
-  projectId: string,
-  environment?: string,
-  serviceId?: string | null,
-): SQL[] {
+function envVarScope(projectId: string, environment?: string, serviceId?: string | null): SQL[] {
   const conditions: SQL[] = [eq(envVar.projectId, projectId)];
   if (environment) {
     conditions.push(eq(envVar.environment, environment));
@@ -45,11 +41,7 @@ export function createProjectRepo(db: Database) {
 
     async findBySlug(userId: string, slug: string) {
       return db.query.project.findFirst({
-        where: and(
-          eq(project.userId, userId),
-          eq(project.slug, slug),
-          isNull(project.deletedAt),
-        ),
+        where: and(eq(project.userId, userId), eq(project.slug, slug), isNull(project.deletedAt)),
       });
     },
 
@@ -61,6 +53,13 @@ export function createProjectRepo(db: Database) {
           eq(project.gitRepo, repo),
           isNull(project.deletedAt),
         ),
+      });
+    },
+
+    async listByApp(appId: string) {
+      return db.query.project.findMany({
+        where: and(eq(project.appId, appId), isNull(project.deletedAt)),
+        orderBy: [desc(project.createdAt)],
       });
     },
 
@@ -84,6 +83,36 @@ export function createProjectRepo(db: Database) {
       return { rows, total: Number(total), page, perPage };
     },
 
+    async listPrimaryByUser(userId: string, opts?: { page?: number; perPage?: number }) {
+      const page = opts?.page ?? 1;
+      const perPage = opts?.perPage ?? 20;
+      const offset = (page - 1) * perPage;
+
+      const rows = await db.query.project.findMany({
+        where: and(
+          eq(project.userId, userId),
+          eq(project.environmentSlug, "production"),
+          isNull(project.deletedAt),
+        ),
+        orderBy: [desc(project.createdAt)],
+        limit: perPage,
+        offset,
+      });
+
+      const [{ value: total }] = await db
+        .select({ value: sql<number>`count(*)` })
+        .from(project)
+        .where(
+          and(
+            eq(project.userId, userId),
+            eq(project.environmentSlug, "production"),
+            isNull(project.deletedAt),
+          ),
+        );
+
+      return { rows, total: Number(total), page, perPage };
+    },
+
     async create(data: Omit<NewProject, "id">) {
       const id = generateId("proj");
       const row = { id, ...data };
@@ -96,6 +125,13 @@ export function createProjectRepo(db: Database) {
         .update(project)
         .set({ ...data, updatedAt: new Date() })
         .where(eq(project.id, id));
+    },
+
+    async updateByApp(appId: string, data: Partial<NewProject>) {
+      await db
+        .update(project)
+        .set({ ...data, updatedAt: new Date() })
+        .where(and(eq(project.appId, appId), isNull(project.deletedAt)));
     },
 
     /** Update favicon cache metadata without touching the user-visible updatedAt field. */
@@ -114,10 +150,7 @@ export function createProjectRepo(db: Database) {
 
       if (Object.keys(patch).length === 0) return;
 
-      await db
-        .update(project)
-        .set(patch)
-        .where(eq(project.id, id));
+      await db.update(project).set(patch).where(eq(project.id, id));
     },
 
     /** Soft-delete a project */
@@ -152,10 +185,7 @@ export function createProjectRepo(db: Database) {
     },
 
     async updateEnvVar(id: string, value: string) {
-      await db
-        .update(envVar)
-        .set({ value, updatedAt: new Date() })
-        .where(eq(envVar.id, id));
+      await db.update(envVar).set({ value, updatedAt: new Date() }).where(eq(envVar.id, id));
     },
 
     async deleteEnvVar(id: string) {
@@ -188,7 +218,11 @@ export function createProjectRepo(db: Database) {
     },
 
     /** Get a map of env vars for injection into builds/containers */
-    async getEnvMap(projectId: string, environment: string, serviceId?: string | null): Promise<Record<string, string>> {
+    async getEnvMap(
+      projectId: string,
+      environment: string,
+      serviceId?: string | null,
+    ): Promise<Record<string, string>> {
       const rows = await db.query.envVar.findMany({
         where: and(...envVarScope(projectId, environment, serviceId)),
       });

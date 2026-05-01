@@ -17,7 +17,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 
-const TAB_ICONS: Record<string, React.ComponentType<{ className?: string; strokeWidth?: number }>> = {
+const TAB_ICONS: Record<
+  string,
+  React.ComponentType<{ className?: string; strokeWidth?: number }>
+> = {
   overview: LayoutDashboard,
   monitoring: Activity,
   services: Layers,
@@ -32,13 +35,14 @@ const TAB_ICONS: Record<string, React.ComponentType<{ className?: string; stroke
 
 /** Desktop right-column navigation — matches LibrarySidebar / Home pattern */
 export const ProjectSidebar = () => {
-  const { projectData, projectNotFound, activeTab, tabs, setActiveTab, domain } = useProjectSettings();
+  const { projectData, projectNotFound, activeTab, tabs, setActiveTab, domain } =
+    useProjectSettings();
   const { selfHosted, baseDomain } = usePlatform();
   const status = getProjectStatus(projectData as any);
   const meta = PROJECT_STATUS_META[status];
   const localPort = projectData.port || 3000;
   const localUrl = `localhost:${localPort}`;
-  const slugDomain = projectData.slug && baseDomain ? `${projectData.slug}.${baseDomain}` : '';
+  const slugDomain = projectData.slug && baseDomain ? `${projectData.slug}.${baseDomain}` : "";
   const displayUrl = domain || slugDomain || localUrl;
   const isLocal = !domain && !slugDomain && !selfHosted;
   const siteHref = isLocal ? `http://${displayUrl}` : `https://${displayUrl}`;
@@ -77,7 +81,9 @@ export const ProjectSidebar = () => {
               </a>
             </div>
           </div>
-          <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}>
+          <span
+            className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}
+          >
             <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
             {meta.label}
           </span>
@@ -85,7 +91,9 @@ export const ProjectSidebar = () => {
 
         <div className="mt-4 space-y-3">
           <div className="flex items-center justify-between gap-4">
-            <span className="text-sm text-muted-foreground">{isLocal ? "Local" : "Production"}</span>
+            <span className="text-sm text-muted-foreground">
+              {isLocal ? "Local" : "Production"}
+            </span>
             <a
               href={siteHref}
               target="_blank"

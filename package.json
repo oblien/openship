@@ -15,6 +15,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:api": "turbo run dev --filter=@repo/api...",
+    "dev:local": "turbo run dev --filter=@repo/api --filter=@repo/dashboard --concurrency=10",
     "dev:saas": "turbo run dev:saas --filter=@repo/api --filter=@repo/dashboard --concurrency=10",
     "dev:saas:local": "OPENSHIP_SAAS_TARGET=local turbo run dev:saas --filter=@repo/api --filter=@repo/dashboard --concurrency=10",
     "dev:dashboard": "turbo run dev --filter=@repo/dashboard",

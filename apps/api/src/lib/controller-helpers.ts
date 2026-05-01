@@ -13,6 +13,7 @@ import {
   type PlatformConfig,
 } from "@repo/adapters";
 import { env } from "../config/env";
+import { isOblienConfigured } from "./platform-mode";
 
 // ─── Auth helpers ────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ export function param(c: Context, name: string): string {
  *   3. Default → "selfhosted" with docker or bare runtime
  */
 function resolveConfig(): PlatformConfig {
-  if (env.CLOUD_MODE || env.DEPLOY_MODE === "cloud") {
+  if (isOblienConfigured()) {
     return {
       target: "cloud",
       cloudClientId: env.OBLIEN_CLIENT_ID,

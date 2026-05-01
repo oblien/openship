@@ -14,7 +14,7 @@ import { encrypt, decrypt } from "../../lib/encryption";
 import { buildProjectRouteDomains, createTrackedSslProvider, ensureRouteDomainRecord, toRoutedDomainInputs } from "../../lib/routing-domains";
 import { withDefaults } from "../../lib/resources";
 import { resolveToken } from "../github/github.auth";
-import { getLatestCommit } from "../github/github.service";
+import { getLatestCommit, getRepository } from "../github/github.service";
 import { pruneRetainedBareReleases } from "./release-retention";
 import * as sessionManager from "./session-manager";
 import { onFailure, onSuccess, onCancelled, type LifecycleContext } from "./deployment-lifecycle";
@@ -196,7 +196,7 @@ function buildConfigSnapshot(project: Project, branch?: string, customDomain?: s
 
   return {
     repoUrl: project.gitUrl ?? "",
-    branch: branch || project.gitBranch || "main",
+    branch: branch || project.gitBranch || (project.localPath ? "main" : ""),
     framework: project.framework!,
     buildImage: project.buildImage!,
     runtimeImage,
@@ -215,6 +215,18 @@ function buildConfigSnapshot(project: Project, branch?: string, customDomain?: s
     customDomain: customDomain || undefined,
     localPath: project.localPath || undefined,
   };
+}
+
+async function resolveProjectBranch(userId: string, project: Project, branch?: string) {
+  const configuredBranch = branch?.trim() || project.gitBranch?.trim();
+  if (configuredBranch) return configuredBranch;
+
+  if (project.gitOwner && project.gitRepo) {
+    const repository = await getRepository(userId, project.gitOwner, project.gitRepo);
+    return repository.default_branch;
+  }
+
+  return "main";
 }
 
 function resolveRuntimeImage(project: Project): string {
@@ -371,7 +383,8 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
 
   await checkNoActiveBuild(project.id);
 
-  const snapshot = buildConfigSnapshot(project, branch, customDomain);
+  const resolvedBranch = await resolveProjectBranch(userId, project, branch);
+  const snapshot = buildConfigSnapshot(project, resolvedBranch, customDomain);
   if (services?.length) {
     snapshot.composeServices = services;
   }
@@ -634,15 +647,16 @@ export async function cancelBuildSession(deploymentId: string, userId: string) {
 
 export async function redeployBuildSession(deploymentId: string, userId: string) {
   const { dep: oldDep, project } = await loadDeploymentForUser(deploymentId, userId);
+  const resolvedBranch = await resolveProjectBranch(userId, project, oldDep.branch ?? undefined);
 
   // Prefer the old deployment's snapshot; fall back to a fresh one from the project
   const meta = (oldDep.meta as DeploymentConfigSnapshot | null)
-    ?? buildConfigSnapshot(project, oldDep.branch);
+    ?? buildConfigSnapshot(project, resolvedBranch);
 
   const dep = await createQueuedDeployment({
     projectId: project.id,
     userId,
-    branch: oldDep.branch,
+    branch: meta.branch,
     commitSha: oldDep.commitSha ?? undefined,
     commitMessage: oldDep.commitMessage ?? undefined,
     trigger: "redeploy",
@@ -700,7 +714,7 @@ export async function triggerDeployment(userId: string, data: { projectId: strin
     throw new ForbiddenError("Project has no git repository or local path configured");
   }
 
-  const branch = data.branch ?? project.gitBranch ?? "main";
+  const branch = await resolveProjectBranch(userId, project, data.branch);
   const environment = data.environment ?? "production";
 
   await checkNoActiveBuild(project.id);

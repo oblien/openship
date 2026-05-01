@@ -28,7 +28,7 @@ export const deployApi = {
 
   /** Resolve project info from GitHub repo or local path — detects stack */
   prepare: (body:
-    | { source?: "github"; owner: string; repo: string; force?: string | boolean }
+    | { source?: "github"; owner: string; repo: string; branch?: string; force?: string | boolean }
     | { source: "local"; path: string }
   ) =>
     api.post<any>(endpoints.deploy.prepare, body),

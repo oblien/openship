@@ -11,7 +11,13 @@ import type { Context } from "hono";
 import { streamSSE } from "../../lib/sse";
 import { getUserId, param } from "../../lib/controller-helpers";
 import * as projectService from "./project.service";
-import type { TCreateProjectBody, TUpdateProjectBody, TSetEnvVarsBody, TUpdateResourcesBody } from "./project.schema";
+import type {
+  TCreateProjectBody,
+  TCreateProjectEnvironmentBody,
+  TUpdateProjectBody,
+  TSetEnvVarsBody,
+  TUpdateResourcesBody,
+} from "./project.schema";
 import { detectStack, MANIFEST_FILES, type RepoFile } from "../../lib/stack-detector";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { repos, type Domain } from "@repo/db";
@@ -24,7 +30,18 @@ import { resolveProjectTrafficSource, fetchMgmt, mgmtStream } from "../../lib/pr
 import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
 import { getAdminOblienClient } from "../../lib/oblien-user-client";
 import { cloudAnalyticsProxy } from "../../lib/cloud-client";
-import { registerWebhook, createWebhook, updateWebhook, deleteWebhook, getWebhookStrategy, resolveWebhookStrategy, getAvailableStrategies, getRecentCommits } from "../github/github.service";
+import {
+  registerWebhook,
+  createWebhook,
+  updateWebhook,
+  deleteWebhook,
+  getWebhookStrategy,
+  resolveWebhookStrategy,
+  getAvailableStrategies,
+  getRecentCommits,
+  getRepository,
+  listBranches as listGitHubBranches,
+} from "../github/github.service";
 import { getInstallationId, getInstallUrl } from "../github/github.auth";
 import { platform } from "../../lib/controller-helpers";
 
@@ -35,7 +52,7 @@ const luaDeployedServers = new Set<string>();
 
 export async function ensure(c: Context) {
   const userId = getUserId(c);
-  const body = await c.req.json<TCreateProjectBody>();
+  const body = await c.req.json<TCreateProjectBody & { projectId?: string }>();
 
   if (!body.name) {
     return c.json({ success: false, error: "name is required" }, 400);
@@ -129,6 +146,33 @@ export async function getById(c: Context) {
   return c.json({ data: project });
 }
 
+// ─── Project environments ───────────────────────────────────────────────────
+
+export async function listEnvironments(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const data = await projectService.listProjectEnvironments(id, userId);
+  return c.json({ success: true, data });
+}
+
+export async function createEnvironment(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const body = await c.req.json<TCreateProjectEnvironmentBody>();
+
+  if (!body.environmentName?.trim()) {
+    return c.json({ success: false, error: "environmentName is required" }, 400);
+  }
+
+  try {
+    const data = await projectService.createProjectEnvironment(id, userId, body);
+    return c.json({ success: true, data }, 201);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create environment";
+    return c.json({ success: false, error: message }, 400);
+  }
+}
+
 export async function update(c: Context) {
   const userId = getUserId(c);
   const id = param(c, "id");
@@ -218,7 +262,9 @@ export async function scanLocal(c: Context) {
     MANIFEST_FILES.map(async (name) => {
       try {
         manifests[name] = await readFile(`${dirPath}/${name}`, "utf-8");
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }),
   );
 
@@ -304,18 +350,23 @@ export async function runtimeLogStream(c: Context) {
     let serverId: string | null = null;
 
     try {
-      const result = await projectService.streamRuntimeLogs(id, userId, (entry) => {
-        void sseStream.writeSSE({
-          event: "log",
-          data: JSON.stringify({
-            type: "log",
-            data: entry.rawData,
-            message: entry.message,
-            timestamp: entry.timestamp,
-            level: entry.level,
-          }),
-        });
-      }, { tail });
+      const result = await projectService.streamRuntimeLogs(
+        id,
+        userId,
+        (entry) => {
+          void sseStream.writeSSE({
+            event: "log",
+            data: JSON.stringify({
+              type: "log",
+              data: entry.rawData,
+              message: entry.message,
+              timestamp: entry.timestamp,
+              level: entry.level,
+            }),
+          });
+        },
+        { tail },
+      );
 
       cleanup = result.cleanup;
       serverId = result.serverId;
@@ -342,7 +393,10 @@ export async function runtimeLogStream(c: Context) {
 
 function extractCloudStreamToken(result: unknown): { stream_url: string; token: string } | null {
   const root = result as Record<string, unknown> | null;
-  const data = (root?.data && typeof root.data === "object" ? root.data : root) as Record<string, unknown> | null;
+  const data = (root?.data && typeof root.data === "object" ? root.data : root) as Record<
+    string,
+    unknown
+  > | null;
   const streamUrl = data?.stream_url ?? data?.streamUrl ?? data?.url;
   const token = data?.token;
   return typeof streamUrl === "string" && typeof token === "string"
@@ -456,7 +510,14 @@ export async function serverLogStream(c: Context) {
       const reqPath = `/logs/stream?domain=${encodeURIComponent(domain)}`;
       const conn = await mgmtStream(serverId, reqPath);
       if (!conn) {
-        await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Failed to connect to log service — ensure OpenResty is running" }) }).catch(() => {});
+        await sseStream
+          .writeSSE({
+            event: "error",
+            data: JSON.stringify({
+              error: "Failed to connect to log service — ensure OpenResty is running",
+            }),
+          })
+          .catch(() => {});
         return;
       }
 
@@ -545,10 +606,13 @@ export async function getGitInfo(c: Context) {
 
   // Derive webhook_active from strategy + state
   const webhookActive =
-    strategy === "app" ? installationInstalled :
-    strategy === "domain" ? !!(info.autoDeploy && info.webhookId) :
-    strategy === "repo" ? !!info.webhookId :
-    false;
+    strategy === "app"
+      ? installationInstalled
+      : strategy === "domain"
+        ? !!(info.autoDeploy && info.webhookId)
+        : strategy === "repo"
+          ? !!info.webhookId
+          : false;
 
   // Get available strategies for the UI
   const strategies = await getAvailableStrategies(userId, info);
@@ -559,9 +623,14 @@ export async function getGitInfo(c: Context) {
     .filter((d) => d.verified)
     .map((d) => ({ hostname: d.hostname, ssl: d.sslStatus === "active" }));
 
-  // Fetch recent commits from GitHub API
-  const branch = info.gitBranch ?? "main";
-  const commits = await getRecentCommits(userId, info.gitOwner, info.gitRepo, branch, 10);
+  let branch = info.gitBranch ?? "";
+  if (!branch && info.gitOwner && info.gitRepo) {
+    const repository = await getRepository(userId, info.gitOwner, info.gitRepo);
+    branch = repository.default_branch;
+  }
+  const commits = branch
+    ? await getRecentCommits(userId, info.gitOwner, info.gitRepo, branch, 10)
+    : [];
 
   return c.json({
     success: true,
@@ -585,6 +654,26 @@ export async function getGitInfo(c: Context) {
     verified_domains: verifiedDomains,
     installation_installed: installationInstalled,
     install_url: isCloudProject && !installationInstalled ? getInstallUrl() : undefined,
+  });
+}
+
+export async function listBranches(c: Context) {
+  const userId = getUserId(c);
+  const id = param(c, "id");
+  const info = await projectService.getGitInfo(id, userId);
+
+  if (!info.gitOwner || !info.gitRepo) {
+    return c.json({ success: false, error: "No repository connected" }, 400);
+  }
+
+  const branches = await listGitHubBranches(userId, info.gitOwner, info.gitRepo);
+  return c.json({
+    success: true,
+    data: branches.map((branch) => ({
+      name: branch.name,
+      sha: branch.commit.sha,
+      protected: branch.protected,
+    })),
   });
 }
 
@@ -614,11 +703,15 @@ export async function linkRepo(c: Context) {
 
   // Update git fields on the project
   const gitUrl = `https://github.com/${owner}/${repo}.git`;
+  const defaultBranch =
+    branch?.trim() ||
+    (await getRepository(userId, owner, repo)).default_branch;
+
   const gitFields: Record<string, unknown> = {
     gitProvider: "github",
     gitOwner: owner,
     gitRepo: repo,
-    gitBranch: branch ?? "main",
+    gitBranch: defaultBranch,
     gitUrl,
   };
 
@@ -628,12 +721,15 @@ export async function linkRepo(c: Context) {
     // Cloud mode — verify the GitHub App is installed for this owner
     const resolvedInstId = await getInstallationId(userId, owner);
     if (!resolvedInstId) {
-      return c.json({
-        success: false,
-        error: "GitHub App is not installed for this account",
-        install_url: getInstallUrl(),
-        owner,
-      }, 400);
+      return c.json(
+        {
+          success: false,
+          error: "GitHub App is not installed for this account",
+          install_url: getInstallUrl(),
+          owner,
+        },
+        400,
+      );
     }
     gitFields.installationId = resolvedInstId;
     gitFields.autoDeploy = true;
@@ -662,12 +758,35 @@ export async function linkRepo(c: Context) {
   // strategy === "none": no webhook path is available for this instance yet
 
   await repos.project.update(id, gitFields);
+  if (project.appId) {
+    await repos.projectApp.update(project.appId, {
+      gitProvider: "github",
+      gitOwner: owner,
+      gitRepo: repo,
+      gitUrl,
+      installationId: (gitFields.installationId as number | undefined) ?? installationId,
+    });
+
+    const sharedGitFields = {
+      gitProvider: "github",
+      gitOwner: owner,
+      gitRepo: repo,
+      gitUrl,
+      installationId: (gitFields.installationId as number | undefined) ?? installationId,
+    };
+    const siblings = await repos.project.listByApp(project.appId);
+    await Promise.all(
+      siblings
+        .filter((sibling) => sibling.id !== id)
+        .map((sibling) => repos.project.update(sibling.id, sharedGitFields)),
+    );
+  }
 
   return c.json({
     success: true,
     owner,
     repo,
-    branch: branch ?? "main",
+    branch: defaultBranch,
     webhook_strategy: strategy,
     auto_deploy: !!gitFields.autoDeploy,
   });
@@ -693,11 +812,15 @@ export async function setAutoDeploy(c: Context) {
 
   // In "none" mode, auto-deploy can't work — suggest options
   if (strategy === "none" && enabled) {
-    return c.json({
-      success: false,
-      error: "Set a webhook domain or expose this Openship API on a public URL to enable auto-deploy.",
-      webhook_strategy: "none",
-    }, 400);
+    return c.json(
+      {
+        success: false,
+        error:
+          "Set a webhook domain or expose this Openship API on a public URL to enable auto-deploy.",
+        webhook_strategy: "none",
+      },
+      400,
+    );
   }
 
   try {
@@ -729,7 +852,13 @@ export async function setAutoDeploy(c: Context) {
       } else {
         const result = await registerWebhook(userId, owner, repo);
         if (!result.hookId) {
-          return c.json({ success: false, error: "Could not create webhook — you may not have admin access to this repository" }, 403);
+          return c.json(
+            {
+              success: false,
+              error: "Could not create webhook — you may not have admin access to this repository",
+            },
+            403,
+          );
         }
         await repos.project.update(id, { webhookId: result.hookId, autoDeploy: true });
       }
@@ -745,23 +874,49 @@ export async function setAutoDeploy(c: Context) {
     console.error(`[setAutoDeploy] strategy=${strategy} enabled=${enabled}:`, msg);
 
     if (msg.includes("No GitHub access token")) {
-      return c.json({ success: false, error: "GitHub is not connected. Link your GitHub account first." }, 401);
+      return c.json(
+        { success: false, error: "GitHub is not connected. Link your GitHub account first." },
+        401,
+      );
     }
     if (msg.includes("404")) {
       await repos.project.update(id, { webhookId: null, autoDeploy: false });
-      return c.json({ success: false, error: "Webhook was deleted on GitHub. Try disabling and re-enabling auto-deploy." }, 410);
+      return c.json(
+        {
+          success: false,
+          error: "Webhook was deleted on GitHub. Try disabling and re-enabling auto-deploy.",
+        },
+        410,
+      );
     }
     if (msg.includes("403")) {
-      return c.json({ success: false, error: "You don't have permission to manage webhooks on this repository." }, 403);
+      return c.json(
+        {
+          success: false,
+          error: "You don't have permission to manage webhooks on this repository.",
+        },
+        403,
+      );
     }
     if (msg.includes("422")) {
-      return c.json({ success: false, error: "A webhook already exists for this repository. Try disabling and re-enabling auto-deploy." }, 409);
+      return c.json(
+        {
+          success: false,
+          error:
+            "A webhook already exists for this repository. Try disabling and re-enabling auto-deploy.",
+        },
+        409,
+      );
     }
     return c.json({ success: false, error: msg || "Failed to configure auto-deploy" }, 500);
   }
 
   const updated = await repos.project.findById(id);
-  return c.json({ success: true, auto_deploy: updated?.autoDeploy ?? false, webhook_strategy: strategy });
+  return c.json({
+    success: true,
+    auto_deploy: updated?.autoDeploy ?? false,
+    webhook_strategy: strategy,
+  });
 }
 
 /**
@@ -853,9 +1008,7 @@ async function reRegisterDomainRoute(
       domain: hostname,
       tls: true,
       targetUrl: `http://${primarySvc.ip}:${port}`,
-      webhookProxy: enableWebhook
-        ? `${internalApiUrl}/api/webhooks/`
-        : undefined,
+      webhookProxy: enableWebhook ? `${internalApiUrl}/api/webhooks/` : undefined,
     });
   } catch (err) {
     console.error(`[Webhook Domain] Failed to update nginx for ${hostname}:`, err);
@@ -926,8 +1079,17 @@ export async function listDeployments(c: Context) {
   const page = Number(c.req.query("page") ?? 1);
   const perPage = Number(c.req.query("perPage") ?? 20);
   const environment = c.req.query("environment") ?? undefined;
-  const result = await projectService.listProjectDeployments(id, userId, { page, perPage, environment });
-  return c.json({ data: result.rows, total: result.total, page: result.page, perPage: result.perPage });
+  const result = await projectService.listProjectDeployments(id, userId, {
+    page,
+    perPage,
+    environment,
+  });
+  return c.json({
+    data: result.rows,
+    total: result.total,
+    page: result.page,
+    perPage: result.perPage,
+  });
 }
 
 // ─── Deployment session ──────────────────────────────────────────────────────
@@ -970,16 +1132,20 @@ export async function getInfo(c: Context) {
   const userId = getUserId(c);
   const id = param(c, "id");
   const project = await projectService.getProject(id, userId);
+  const environments = await projectService.listProjectEnvironments(id, userId);
+  const hasServer = project.hasServer ?? project.productionMode === "host";
 
   // Build the "options" object the dashboard expects for build settings
   const options = {
-    buildCommand: project.buildCommand ?? '',
-    outputDirectory: project.outputDirectory ?? '',
-    productionPaths: project.productionPaths ?? '',
-    installCommand: project.installCommand ?? '',
-    startCommand: '',
-    productionPort: String(project.port ?? 3000),
-    hasServer: project.productionMode === 'host',
+    buildCommand: project.buildCommand ?? "",
+    outputDirectory: project.outputDirectory ?? "",
+    productionPaths: project.productionPaths ?? "",
+    installCommand: project.installCommand ?? "",
+    startCommand: hasServer ? (project.startCommand ?? "") : "",
+    productionPort: hasServer ? String(project.port ?? 3000) : "",
+    hasServer,
+    hasBuild: project.hasBuild ?? true,
+    rootDirectory: project.rootDirectory ?? "./",
     isLoading: false,
     error: null,
   };
@@ -995,30 +1161,33 @@ export async function getInfo(c: Context) {
   if (domains.length === 0) {
     const trafficSource = await resolveProjectTrafficSource(id);
     if (trafficSource?.kind === "cloud") {
-      domains = [{
-        id: `managed:${id}`,
-        projectId: id,
-        serviceId: null,
-        hostname: trafficSource.domain,
-        domain: trafficSource.domain,
-        isPrimary: true,
-        primary: true,
-        status: "active",
-        verificationToken: null,
-        verified: true,
-        verifiedAt: new Date(),
-        sslStatus: "active",
-        sslIssuer: "oblien",
-        sslExpiresAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }];
+      domains = [
+        {
+          id: `managed:${id}`,
+          projectId: id,
+          serviceId: null,
+          hostname: trafficSource.domain,
+          domain: trafficSource.domain,
+          isPrimary: true,
+          primary: true,
+          status: "active",
+          verificationToken: null,
+          verified: true,
+          verifiedAt: new Date(),
+          sslStatus: "active",
+          sslIssuer: "oblien",
+          sslExpiresAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
     }
   }
 
-  const verifiedPrimaryDomain = rawDomains.find((domain) => domain.isPrimary && domain.verified)?.hostname
-    ?? rawDomains.find((domain) => domain.verified)?.hostname
-    ?? null;
+  const verifiedPrimaryDomain =
+    rawDomains.find((domain) => domain.isPrimary && domain.verified)?.hostname ??
+    rawDomains.find((domain) => domain.verified)?.hostname ??
+    null;
   refreshProjectFaviconIfStale(project, {
     hostname: verifiedPrimaryDomain,
   });
@@ -1027,6 +1196,7 @@ export async function getInfo(c: Context) {
     success: true,
     data: {
       project: { ...project, options, domains },
+      environments,
     },
   });
 }

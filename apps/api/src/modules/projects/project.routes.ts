@@ -29,6 +29,8 @@ projectRoutes.get("/:id", ctrl.getById);
 projectRoutes.patch("/:id", ctrl.update);
 projectRoutes.delete("/:id", ctrl.remove);
 projectRoutes.get("/:id/info", ctrl.getInfo);
+projectRoutes.get("/:id/environments", ctrl.listEnvironments);
+projectRoutes.post("/:id/environments", ctrl.createEnvironment);
 projectRoutes.post("/:id/update", ctrl.updatePost);
 projectRoutes.post("/:id/delete", ctrl.deletePost);
 
@@ -48,6 +50,7 @@ projectRoutes.post("/:id/env/set", ctrl.envSet);
 /* ─── Git ──────────────────────────────────────────────────────────────── */
 projectRoutes.get("/:id/git", ctrl.getGitInfo);
 projectRoutes.post("/:id/git/link", ctrl.linkRepo);
+projectRoutes.get("/:id/branches", ctrl.listBranches);
 projectRoutes.post("/:id/auto-deploy", ctrl.setAutoDeploy);
 projectRoutes.post("/:id/webhook-domain", ctrl.setWebhookDomain);
 projectRoutes.post("/:id/branch", ctrl.setBranch);

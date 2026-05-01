@@ -18,16 +18,31 @@ import {
 } from "lucide-react";
 
 export const OverviewTab = () => {
-  const { projectData, gitData, buildData, analyticsData, isLoadingAnalytics, refreshAnalytics, setActiveTab } = useProjectSettings();
+  const { projectData, gitData, buildData, analyticsData, isLoadingAnalytics, setActiveTab, id } = useProjectSettings();
 
   const [services, setServices] = useState<Service[]>([]);
 
   useEffect(() => {
-    void refreshAnalytics(true);
-    servicesApi.list(projectData.id).then((res) => {
-      if (res.success) setServices(res.services ?? []);
-    }).catch(() => {});
-  }, [refreshAnalytics, projectData.id]);
+    const projectId = projectData.id || id;
+    if (!projectId || projectId === "undefined") {
+      setServices([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    servicesApi.list(projectId)
+      .then((res) => {
+        if (!cancelled && res.success) setServices(res.services ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setServices([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, projectData.id]);
 
   // deployTarget comes from API (active deployment's meta), not from global dashboard mode
   const deployTarget = projectData.deployTarget as string | null;
@@ -39,8 +54,12 @@ export const OverviewTab = () => {
         ? "Self-hosted (Local)"
         : "—";
   const hasGit = !!(projectData.gitOwner && projectData.gitRepo);
+  const isStaticRuntime =
+    projectData.hasServer === false ||
+    projectData.options?.hasServer === false ||
+    projectData.productionMode === "static";
   const modeLabel =
-    projectData.productionMode === "static"
+    isStaticRuntime
       ? "Static Site"
       : projectData.productionMode === "standalone"
         ? "Standalone"
@@ -129,7 +148,7 @@ export const OverviewTab = () => {
         <Card title="Infrastructure" icon={Cpu} iconColor="primary">
           <Item label="Platform" value={platformLabel} />
           <Item label="Mode" value={modeLabel} />
-          <Item label="Port" value={String(projectData.port || 3000)} />
+          {!isStaticRuntime && <Item label="Port" value={String(projectData.port || 3000)} />}
         </Card>
 
         {/* Source & CI/CD */}
@@ -240,8 +259,10 @@ export const OverviewTab = () => {
       {/* Connected Services bar */}
       <button
         onClick={() => {
+          const projectId = projectData.id || id;
+          if (!projectId || projectId === "undefined") return;
           setActiveTab("services");
-          window.history.replaceState({}, "", `/projects/${projectData.id}/services`);
+          window.history.replaceState({}, "", `/projects/${projectId}/services`);
         }}
         className="w-full bg-card rounded-2xl border border-border/50 px-4 py-3 flex items-center justify-between hover:bg-accent/50 transition-colors group"
       >

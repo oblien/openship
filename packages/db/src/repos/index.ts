@@ -1,15 +1,48 @@
 export { createUserRepo, type User, type NewUser } from "./user.repo";
 export { createSessionRepo, type Session } from "./session.repo";
 export { createAccountRepo, type Account } from "./account.repo";
-export { createGitInstallationRepo, type GitInstallation, type NewGitInstallation } from "./git-installation.repo";
-export { createProjectRepo, type Project, type NewProject, type EnvVar, type NewEnvVar } from "./project.repo";
-export { createDeploymentRepo, type Deployment, type NewDeployment, type BuildSession, type NewBuildSession } from "./deployment.repo";
+export {
+  createGitInstallationRepo,
+  type GitInstallation,
+  type NewGitInstallation,
+} from "./git-installation.repo";
+export { createProjectAppRepo, type ProjectApp, type NewProjectApp } from "./project-app.repo";
+export {
+  createProjectRepo,
+  type Project,
+  type NewProject,
+  type EnvVar,
+  type NewEnvVar,
+} from "./project.repo";
+export {
+  createDeploymentRepo,
+  type Deployment,
+  type NewDeployment,
+  type BuildSession,
+  type NewBuildSession,
+} from "./deployment.repo";
 export { createDomainRepo, type Domain, type NewDomain } from "./domain.repo";
-export { createServiceRepo, type Service, type NewService, type ServiceDeployment, type NewServiceDeployment } from "./service.repo";
+export {
+  createServiceRepo,
+  type Service,
+  type NewService,
+  type ServiceDeployment,
+  type NewServiceDeployment,
+} from "./service.repo";
 export { createSettingsRepo, type UserSettings, type NewUserSettings } from "./settings.repo";
-export { createInstanceSettingsRepo, type InstanceSettings, type NewInstanceSettings } from "./instance-settings.repo";
+export {
+  createInstanceSettingsRepo,
+  type InstanceSettings,
+  type NewInstanceSettings,
+} from "./instance-settings.repo";
 export { createServerRepo, type Server, type NewServer } from "./server.repo";
-export { createAnalyticsRepo, type ServerAnalyticsRow, type NewServerAnalytics, type ServerAnalyticsGeoRow, type NewServerAnalyticsGeo } from "./analytics.repo";
+export {
+  createAnalyticsRepo,
+  type ServerAnalyticsRow,
+  type NewServerAnalytics,
+  type ServerAnalyticsGeoRow,
+  type NewServerAnalyticsGeo,
+} from "./analytics.repo";
 
 // ─── Convenience: pre-bound repos using the singleton db ─────────────────────
 
@@ -18,6 +51,7 @@ import { createUserRepo } from "./user.repo";
 import { createSessionRepo } from "./session.repo";
 import { createAccountRepo } from "./account.repo";
 import { createGitInstallationRepo } from "./git-installation.repo";
+import { createProjectAppRepo } from "./project-app.repo";
 import { createProjectRepo } from "./project.repo";
 import { createDeploymentRepo } from "./deployment.repo";
 import { createDomainRepo } from "./domain.repo";
@@ -41,6 +75,7 @@ export const repos = {
   session: createSessionRepo(db),
   account: createAccountRepo(db),
   gitInstallation: createGitInstallationRepo(db),
+  projectApp: createProjectAppRepo(db),
   project: createProjectRepo(db),
   deployment: createDeploymentRepo(db),
   domain: createDomainRepo(db),

@@ -20,6 +20,8 @@ export {
   updateProject,
   getGitInfo,
   setBranch,
+  listProjectEnvironments,
+  createProjectEnvironment,
   updateOptions,
   listProjectDeployments,
   getLatestDeploymentSession,

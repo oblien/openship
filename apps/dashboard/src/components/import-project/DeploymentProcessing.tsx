@@ -548,7 +548,16 @@ const DeploymentDetails = memo(() => {
 
   const handleEdit = () => {
     const slug = encodeRepoSlug(config.owner, config.repo);
-    router.push(`/deploy/${slug}?force=true`);
+    const params = new URLSearchParams({ force: "true" });
+    const projectId = state.projectId || config.projectId;
+
+    if (projectId) {
+      params.set("projectId", projectId);
+    } else if (config.branch) {
+      params.set("branch", config.branch);
+    }
+
+    router.push(`/deploy/${slug}?${params.toString()}`);
   };
 
   const formatTime = (seconds: number) => {
@@ -622,4 +631,3 @@ const DeploymentDetails = memo(() => {
 DeploymentDetails.displayName = "DeploymentDetails";
 
 export default DeploymentProcessing;
-

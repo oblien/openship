@@ -14,6 +14,7 @@ export const projectsApi = {
 
   /** Create or update a project (mandatory before build access) */
   ensure: (body: {
+    projectId?: string;
     name: string;
     slug?: string;
     gitOwner?: string;
@@ -32,12 +33,10 @@ export const projectsApi = {
     port?: number;
     hasServer?: boolean;
     hasBuild?: boolean;
-  }) =>
-    api.post<any>(endpoints.projects.ensure, body),
+  }) => api.post<any>(endpoints.projects.ensure, body),
 
   /** List local projects only */
-  getLocal: () =>
-    api.get<{ success: boolean; projects: any[] }>(endpoints.projects.local),
+  getLocal: () => api.get<{ success: boolean; projects: any[] }>(endpoints.projects.local),
 
   /** Scan a local directory for framework detection */
   scan: (path: string) =>
@@ -64,15 +63,33 @@ export const projectsApi = {
     installCommand?: string;
     outputDirectory?: string;
     port?: number;
-  }) =>
-    api.post<{ data: any }>(endpoints.projects.import, data),
+  }) => api.post<{ data: any }>(endpoints.projects.import, data),
 
   /** Delete a local project */
-  deleteLocal: (id: string) =>
-    api.delete<{ message: string }>(`projects/${id}`),
+  deleteLocal: (id: string) => api.delete<{ message: string }>(`projects/${id}`),
 
   /** Single project info */
   getInfo: (id: string | number) => api.get<any>(endpoints.projects.info(id)),
+
+  /** List sibling environments for the same app/repo */
+  getEnvironments: (id: string | number) =>
+    api.get<{ success: boolean; data: any[] }>(endpoints.projects.environments(id)),
+
+  /** Create an isolated project environment under the same app/repo */
+  createEnvironment: (
+    id: string | number,
+    body: {
+      environmentName: string;
+      environmentSlug?: string;
+      environmentType?: "production" | "preview" | "development";
+      gitBranch?: string;
+      sourceMode?: "branch" | "manual";
+    },
+  ) =>
+    api.post<{ success: boolean; data?: any; error?: string }>(
+      endpoints.projects.environments(id),
+      body,
+    ),
 
   /** Delete a project */
   delete: (id: string | number) => api.post<any>(endpoints.projects.delete(id)),
@@ -87,27 +104,21 @@ export const projectsApi = {
 
   /** Enable or disable a project */
   toggle: (id: string | number, enable: boolean) =>
-    api.post<any>(
-      endpoints.projects.toggle(id, enable ? "enable" : "disable"),
-    ),
+    api.post<any>(endpoints.projects.toggle(id, enable ? "enable" : "disable")),
 
   /** Clear CDN / proxy cache */
-  clearCache: (id: string | number) =>
-    api.post<any>(endpoints.projects.clearCache(id)),
+  clearCache: (id: string | number) => api.post<any>(endpoints.projects.clearCache(id)),
 
   /** Clear build artifacts */
-  clearBuild: (id: string | number) =>
-    api.post<any>(endpoints.projects.clearBuild(id)),
+  clearBuild: (id: string | number) => api.post<any>(endpoints.projects.clearBuild(id)),
 
   /** Create a new deployment session */
   createDeploymentSession: (id: string | number) =>
     api.post<any>(endpoints.projects.deploymentSession(id)),
 
   /** Connect a custom domain */
-  connectDomain: (
-    id: string | number,
-    body: { domain: string; includeWww: boolean },
-  ) => api.post<any>(endpoints.projects.connect(id), body),
+  connectDomain: (id: string | number, body: { domain: string; includeWww: boolean }) =>
+    api.post<any>(endpoints.projects.connect(id), body),
 
   /** Set environment variables */
   setEnv: (id: string | number, envVars: any) =>
@@ -120,12 +131,13 @@ export const projectsApi = {
   getGit: (id: string | number) => api.get<any>(endpoints.projects.git(id)),
 
   /** Link a GitHub repo to an existing project + register webhook */
-  linkRepo: (id: string | number, body: { owner: string; repo: string; branch?: string; installationId?: number }) =>
-    api.post<any>(endpoints.projects.gitLink(id), body),
+  linkRepo: (
+    id: string | number,
+    body: { owner: string; repo: string; branch?: string; installationId?: number },
+  ) => api.post<any>(endpoints.projects.gitLink(id), body),
 
   /** List branches */
-  getBranches: (id: string | number) =>
-    api.get<any>(endpoints.projects.branches(id)),
+  getBranches: (id: string | number) => api.get<any>(endpoints.projects.branches(id)),
 
   /** Set active branch */
   setBranch: (id: string | number, branch: string) =>
@@ -156,6 +168,5 @@ export const projectsApi = {
     api.post<any>(endpoints.projects.sleepMode(id), { sleep_mode }),
 
   /** List deployments for a project */
-  getDeployments: (id: string | number) =>
-    api.get<any>(endpoints.projects.deployments(id)),
+  getDeployments: (id: string | number) => api.get<any>(endpoints.projects.deployments(id)),
 };

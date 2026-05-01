@@ -1,6 +1,6 @@
 import { betterAuth, type User } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { db, schema } from "@repo/db";
+import { db, getDriver, schema } from "@repo/db";
 import { env, trustedOrigins } from "../config/env";
 import { sendMail, smtpEnabled } from "./mail";
 import { resetPasswordEmail, verifyEmailTemplate } from "./email-templates";
@@ -43,6 +43,7 @@ function getSharedCookieDomain() {
 }
 
 const sharedCookieDomain = getSharedCookieDomain();
+const useSessionCookieCache = getDriver() !== "pglite";
 
 export const auth = betterAuth({
   basePath: "/api/auth",
@@ -112,6 +113,7 @@ export const auth = betterAuth({
   account: {
     accountLinking: {
       enabled: true,
+      allowDifferentEmails: true,
       trustedProviders: ["github", "google"],
     },
   },
@@ -120,10 +122,14 @@ export const auth = betterAuth({
   session: {
     expiresIn: 60 * 60 * 24 * 30, // 30 days
     updateAge: 60 * 60,            // refresh session every hour
-    cookieCache: {
-      enabled: true,
-      maxAge: 60 * 60 * 24,        // cache session in cookie for 24h (avoids DB hit)
-    },
+    ...(useSessionCookieCache
+      ? {
+          cookieCache: {
+            enabled: true,
+            maxAge: 60 * 60 * 24, // cache session in cookie for 24h (avoids DB hit)
+          },
+        }
+      : {}),
   },
 
   /* ---------- Custom fields on user ---------- */

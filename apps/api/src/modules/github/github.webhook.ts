@@ -15,6 +15,7 @@ import { repos } from "@repo/db";
 import { env } from "../../config/env";
 import { triggerDeployment } from "../deployments/build.service";
 import { verifyHmacSha256 } from "../webhooks/webhook.service";
+import { invalidateUserGitHubCache } from "./github.auth";
 import type {
   WebhookProvider,
   WebhookVerifyResult,
@@ -126,6 +127,7 @@ async function handleInstallationCreated(
     providerOwnerId: String(payload.installation.account.id),
     isOrg: accountType === "Organization",
   });
+  invalidateUserGitHubCache(account.userId);
 
   return { success: true, event: "installation", message: `Installation created for ${accountLogin}` };
 }
@@ -143,6 +145,7 @@ async function handleInstallationDeleted(
   }
 
   await repos.gitInstallation.removeByInstallationId(account.userId, installationId);
+  invalidateUserGitHubCache(account.userId);
 
   return { success: true, event: "installation", message: "Installation removed" };
 }
@@ -162,6 +165,7 @@ async function handleInstallationSuspended(
   // Suspended installations can't issue tokens — remove so token resolution
   // falls back to the user's OAuth token, and linkRepo will prompt re-install.
   await repos.gitInstallation.removeByInstallationId(account.userId, installationId);
+  invalidateUserGitHubCache(account.userId);
   console.log(`[GitHub Webhook] Installation suspended for ${accountLogin} — removed from DB`);
 
   return { success: true, event: "installation", message: `Installation suspended for ${accountLogin}` };

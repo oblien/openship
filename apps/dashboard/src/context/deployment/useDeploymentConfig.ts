@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { FrameworkId } from "@/components/import-project/types";
-import { deployApi } from "@/lib/api";
+import { deployApi, projectsApi } from "@/lib/api";
+import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { settingsApi } from "@/lib/api/settings";
 import type { BuildMode } from "@/lib/api/settings";
 import { STACKS, type StackDefinition } from "@repo/core";
@@ -72,9 +73,35 @@ export function useDeploymentConfig() {
       owner: string,
       repo: string,
       force?: string,
+      context?: { branch?: string; projectId?: string },
     ): Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }> => {
       try {
-        const response = await deployApi.prepare({ owner, repo, force });
+        let project: Record<string, any> | null = null;
+
+        if (context?.projectId) {
+          const projectResponse = await projectsApi.getInfo(context.projectId);
+          project = projectResponse?.data?.project ?? projectResponse?.project ?? null;
+
+          if (!project) {
+            return {
+              success: false,
+              error: "Project environment was not found",
+              errorType: "api_error",
+            };
+          }
+        }
+
+        const sourceOwner = project?.gitOwner || owner;
+        const sourceRepo = project?.gitRepo || repo;
+        const projectBranch = typeof project?.gitBranch === "string" ? project.gitBranch : "";
+        const requestedBranch = (projectBranch || context?.branch || "").trim() || undefined;
+
+        const response = await deployApi.prepare({
+          owner: sourceOwner,
+          repo: sourceRepo,
+          branch: requestedBranch,
+          force,
+        });
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -84,7 +111,17 @@ export function useDeploymentConfig() {
           return { success: false, buildInProgress: true };
         }
 
-        const repoName = response.repository.name || repo;
+        const repoName = response.repository.name || sourceRepo;
+        const selectedBranch =
+          requestedBranch ||
+          response.repository.selected_branch ||
+          response.repository.default_branch ||
+          "";
+        const branches = response.repository.branches?.map((b: any) => b.name) || [];
+        const branchOptions =
+          selectedBranch && !branches.includes(selectedBranch)
+            ? [selectedBranch, ...branches]
+            : branches;
         const projectType = response.projectType || "app";
         const detectedStack = (response.stack || "nextjs") as FrameworkId;
         const stackDef = STACKS[detectedStack as keyof typeof STACKS] as StackDefinition | undefined;
@@ -93,49 +130,64 @@ export function useDeploymentConfig() {
 
         setConfig((prev) => ({
           ...prev,
+          projectId: context?.projectId,
           repo: repoName,
-          owner: response.repository.owner?.login || owner,
-          projectName: repoName,
+          owner: response.repository.owner?.login || sourceOwner,
+          projectName: project?.name || repoName,
           projectType,
-          domain: repoName.toLowerCase(),
+          domain: project?.slug || repoName.toLowerCase(),
           framework: detectedStack,
           detectedFramework: detectedStack,
           buildStrategy: normalizeBuildStrategy(projectType, stackDef),
           runtimeMode: normalizeRuntimeMode(projectType),
-          packageManager: response.packageManager || "npm",
-          buildImage: response.buildImage || "node:22",
-          branch: response.repository.default_branch || "main",
-          branches: response.repository.branches?.map((b: any) => b.name) || [],
+          packageManager: project?.packageManager || response.packageManager || "npm",
+          buildImage: project?.buildImage || response.buildImage || "node:22",
+          branch: selectedBranch,
+          branches: branchOptions,
           services: response.services || [],
           options: {
-            buildCommand: response.buildCommand || "",
-            installCommand: response.installCommand || "",
-            outputDirectory: response.outputDirectory || "",
-            productionPaths: Array.isArray(response.productionPaths)
+            buildCommand: project?.buildCommand ?? response.buildCommand ?? "",
+            installCommand: project?.installCommand ?? response.installCommand ?? "",
+            outputDirectory: project?.outputDirectory ?? response.outputDirectory ?? "",
+            productionPaths: project?.productionPaths ?? (Array.isArray(response.productionPaths)
               ? response.productionPaths.join(", ")
-              : response.productionPaths || "",
-            startCommand: response.startCommand || "",
-            productionPort: String(response.port || 3000),
-            rootDirectory: "./",
-            hasServer,
-            hasBuild,
+              : response.productionPaths || ""),
+            startCommand: project?.startCommand ?? response.startCommand ?? "",
+            productionPort: String(project?.port ?? response.port ?? 3000),
+            rootDirectory: project?.rootDirectory || "./",
+            hasServer: project?.hasServer ?? hasServer,
+            hasBuild: project?.hasBuild ?? hasBuild,
           },
         }));
 
         return { success: true };
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Failed to fetch repository data";
-        return { success: false, error: errorMessage, errorType: "network_error" };
+        const errorMessage = getApiErrorMessage(err, "Failed to fetch repository data");
+        return {
+          success: false,
+          error: errorMessage,
+          errorType: err instanceof ApiError ? "api_error" : "network_error",
+        };
       }
     },
-    [],
+    [normalizeBuildStrategy, normalizeRuntimeMode],
   );
 
   // ── Prepare from local path ────────────────────────────────────────────────
 
   const initializeFromLocal = useCallback(
-    async (path: string): Promise<{ success: boolean; error?: string; errorType?: string }> => {
+    async (
+      path: string,
+      context?: { projectId?: string },
+    ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
       try {
+        let project: Record<string, any> | null = null;
+
+        if (context?.projectId) {
+          const projectResponse = await projectsApi.getInfo(context.projectId);
+          project = projectResponse?.data?.project ?? projectResponse?.project ?? null;
+        }
+
         const response = await deployApi.prepare({ source: "local", path });
 
         if (response?.error) {
@@ -151,43 +203,48 @@ export function useDeploymentConfig() {
 
         setConfig((prev) => ({
           ...prev,
+          projectId: context?.projectId,
           repo: name,
           owner: "local",
           localPath: path,
-          projectName: name,
+          projectName: project?.name || name,
           projectType,
-          domain: name.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+          domain: project?.slug || name.toLowerCase().replace(/[^a-z0-9-]/g, ""),
           framework: detectedStack,
           detectedFramework: detectedStack,
           buildStrategy: normalizeBuildStrategy(projectType, stackDef),
           runtimeMode: normalizeRuntimeMode(projectType),
-          packageManager: response.packageManager || "npm",
-          buildImage: response.buildImage || "node:22",
-          branch: "main",
+          packageManager: project?.packageManager || response.packageManager || "npm",
+          buildImage: project?.buildImage || response.buildImage || "node:22",
+          branch: project?.gitBranch || response.repository.default_branch || "main",
           branches: [],
           services: response.services || [],
           options: {
-            buildCommand: response.buildCommand || "",
-            installCommand: response.installCommand || "",
-            outputDirectory: response.outputDirectory || "",
-            productionPaths: Array.isArray(response.productionPaths)
+            buildCommand: project?.buildCommand ?? response.buildCommand ?? "",
+            installCommand: project?.installCommand ?? response.installCommand ?? "",
+            outputDirectory: project?.outputDirectory ?? response.outputDirectory ?? "",
+            productionPaths: project?.productionPaths ?? (Array.isArray(response.productionPaths)
               ? response.productionPaths.join(", ")
-              : response.productionPaths || "",
-            startCommand: response.startCommand || "",
-            productionPort: String(response.port || 3000),
-            rootDirectory: path,
-            hasServer,
-            hasBuild,
+              : response.productionPaths || ""),
+            startCommand: project?.startCommand ?? response.startCommand ?? "",
+            productionPort: String(project?.port ?? response.port ?? 3000),
+            rootDirectory: project?.rootDirectory || path,
+            hasServer: project?.hasServer ?? hasServer,
+            hasBuild: project?.hasBuild ?? hasBuild,
           },
         }));
 
         return { success: true };
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "Failed to scan local project";
-        return { success: false, error: errorMessage, errorType: "network_error" };
+        const errorMessage = getApiErrorMessage(err, "Failed to scan local project");
+        return {
+          success: false,
+          error: errorMessage,
+          errorType: err instanceof ApiError ? "api_error" : "network_error",
+        };
       }
     },
-    [],
+    [normalizeBuildStrategy, normalizeRuntimeMode],
   );
 
   return {

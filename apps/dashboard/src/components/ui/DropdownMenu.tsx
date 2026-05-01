@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState } from "react";
 import { MoreHorizontal } from "lucide-react";
+import { DismissiblePopover } from "./Popover";
 
 export interface MenuAction {
   id: string;
@@ -33,34 +34,6 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      document.addEventListener("keydown", handleEscape);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [isOpen]);
 
   const handleActionClick = (action: MenuAction) => {
     if (!action.disabled && action.onClick) {
@@ -95,7 +68,11 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
   };
 
   return (
-    <div ref={containerRef} className={`relative ${className}`}>
+    <DismissiblePopover
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      className={`relative ${className}`}
+    >
       {/* Trigger Button */}
       <button
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -167,7 +144,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </DismissiblePopover>
   );
 };
 

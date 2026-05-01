@@ -108,7 +108,7 @@ export const DomainSettings = () => {
   }, [isServicesProject, primaryDomainName, isManagedHostDomain]);
 
   useEffect(() => {
-    if (!isServicesProject) {
+    if (!isServicesProject || !id || id === "undefined") {
       setServices([]);
       setServicesLoading(false);
       return;

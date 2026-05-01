@@ -208,6 +208,7 @@ export async function listBranches(
     userId,
     owner,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
+    params: { per_page: 100 },
   });
 }
 

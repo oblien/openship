@@ -53,6 +53,8 @@ export type { BuildStrategy, RuntimeMode, DeployTarget } from "@repo/core";
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 export interface DeploymentConfig {
+  /** Existing deployable environment to update/deploy, when launched from a project page. */
+  projectId?: string;
   projectName: string;
   repo: string;
   owner: string;
@@ -92,6 +94,7 @@ export interface DeploymentConfig {
 }
 
 export const DEFAULT_CONFIG: DeploymentConfig = {
+  projectId: undefined,
   projectName: "",
   repo: "",
   owner: "",
@@ -216,9 +219,11 @@ export interface DeploymentContextType {
     owner: string,
     repo: string,
     force?: string,
+    context?: { branch?: string; projectId?: string },
   ) => Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }>;
   initializeFromLocal: (
     path: string,
+    context?: { projectId?: string },
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
 
   // Build lifecycle

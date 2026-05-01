@@ -4,16 +4,13 @@
  */
 
 const LOCAL_PREFIX = "local:";
+const REPO_V2_PREFIX = "repo:v2:";
 
 type DecodedSlug =
-  | { kind: "repo"; owner: string; repo: string }
+  | { kind: "repo"; owner: string; repo: string; branch?: string; projectId?: string }
   | { kind: "local"; path: string };
 
-/**
- * Encodes owner and repo into a URL-safe base64 slug
- */
-export function encodeRepoSlug(owner: string, repo: string): string {
-  const data = `${owner}/${repo}`;
+function encodeBase64Url(data: string): string {
   const base64 = Buffer.from(data).toString('base64');
   return base64
     .replace(/\+/g, '-')
@@ -22,15 +19,18 @@ export function encodeRepoSlug(owner: string, repo: string): string {
 }
 
 /**
+ * Encodes owner and repo into a URL-safe base64 slug
+ */
+export function encodeRepoSlug(owner: string, repo: string): string {
+  return encodeBase64Url(`${owner}/${repo}`);
+}
+
+/**
  * Encodes a local path into a URL-safe base64 slug (prefixed with "local:")
  */
 export function encodeLocalSlug(path: string): string {
   const data = LOCAL_PREFIX + path;
-  const base64 = Buffer.from(data).toString('base64');
-  return base64
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
+  return encodeBase64Url(data);
 }
 
 /**
@@ -51,6 +51,24 @@ export function decodeSlug(slug: string): DecodedSlug | null {
     if (decoded.startsWith(LOCAL_PREFIX)) {
       const path = decoded.slice(LOCAL_PREFIX.length);
       return path ? { kind: "local", path } : null;
+    }
+
+    if (decoded.startsWith(REPO_V2_PREFIX)) {
+      const payload = JSON.parse(decoded.slice(REPO_V2_PREFIX.length));
+      if (!payload || typeof payload !== "object") return null;
+
+      const { owner, repo, branch, projectId } = payload as Record<string, unknown>;
+      if (typeof owner !== "string" || typeof repo !== "string" || !owner || !repo) {
+        return null;
+      }
+
+      return {
+        kind: "repo",
+        owner,
+        repo,
+        ...(typeof branch === "string" && branch ? { branch } : {}),
+        ...(typeof projectId === "string" && projectId ? { projectId } : {}),
+      };
     }
 
     const [owner, repo] = decoded.split('/');
@@ -107,4 +125,3 @@ export function extractOwnerRepoFromUrl(url: string): { owner: string; repo: str
     return null;
   }
 }
-

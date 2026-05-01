@@ -306,6 +306,7 @@ export function useDeploymentBuild(
     try {
       // Step 1: Ensure project exists
       const projectData = await projectsApi.ensure({
+        projectId: config.projectId || undefined,
         name: config.projectName || config.repo || config.localPath?.split("/").pop() || "project",
         gitOwner: isLocal ? undefined : config.owner || undefined,
         gitRepo: isLocal ? undefined : config.repo || undefined,
@@ -323,7 +324,7 @@ export function useDeploymentBuild(
         port: config.options.productionPort ? Number(config.options.productionPort) : undefined,
         hasServer: config.options.hasServer,
         hasBuild: config.options.hasBuild,
-        slug: config.domain || undefined,
+        slug: config.projectId ? undefined : config.domain || undefined,
       });
 
       if (!projectData.success || !projectData.project_id) {
@@ -476,6 +477,7 @@ export function useDeploymentBuild(
 
           setConfig((prev) => ({
             ...prev,
+            projectId: data.project_id || prev.projectId,
             domain: cleanDomain,
             domainType: apiConfig.domainType || "free",
             customDomain: apiConfig.customDomain || "",

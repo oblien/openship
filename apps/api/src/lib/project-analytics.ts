@@ -16,6 +16,7 @@ import { repos } from "@repo/db";
 import { OPENRESTY_MGMT_PORT } from "@repo/adapters";
 import { getRoutingBaseDomain } from "./routing-domains";
 import { tunnelRequest, tunnelStream } from "./ssh-tunnel";
+import { isOblienBackedDeployment } from "./platform-mode";
 
 export type { TunnelStreamHandle } from "./ssh-tunnel";
 
@@ -26,7 +27,10 @@ export type { TunnelStreamHandle } from "./ssh-tunnel";
  * Lua `site_logger.lua` stores counters under lowercase, no-www keys.
  */
 export function normalizeTrackedDomain(hostname: string): string {
-  return hostname.trim().toLowerCase().replace(/^www\./, "");
+  return hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./, "");
 }
 
 // ─── Project → domain + server resolution ────────────────────────────────────
@@ -60,9 +64,7 @@ export type ProjectTrafficSource =
  *   1. Active deployment's `meta.serverId`
  *   2. First configured server (single-server setups)
  */
-export async function resolveProjectTracking(
-  projectId: string,
-): Promise<ProjectTracking | null> {
+export async function resolveProjectTracking(projectId: string): Promise<ProjectTracking | null> {
   const source = await resolveProjectTrafficSource(projectId);
   if (!source || source.kind !== "self-hosted") {
     return null;
@@ -74,7 +76,7 @@ export async function resolveProjectTracking(
 /**
  * Resolve where project request traffic is observed.
  *
- * Cloud deployments use Oblien edge analytics directly.
+ * SaaS and OpenShip Cloud deployments use Oblien edge analytics directly.
  * Self-hosted deployments use the OpenResty management API on the target server.
  */
 export async function resolveProjectTrafficSource(
@@ -102,7 +104,7 @@ export async function resolveProjectTrafficSource(
     if (meta?.serverId) serverId = meta.serverId;
   }
 
-  if (deployTarget === "cloud") {
+  if (isOblienBackedDeployment(deployTarget)) {
     return {
       kind: "cloud",
       domain,
@@ -130,27 +132,29 @@ export async function resolveProjectTrafficSource(
 /**
  * GET JSON from the OpenResty management API through SSH tunnel.
  */
-export async function fetchMgmt<T>(
-  serverId: string,
-  path: string,
-): Promise<T | null> {
+export async function fetchMgmt<T>(serverId: string, path: string): Promise<T | null> {
   const res = await tunnelRequest(serverId, OPENRESTY_MGMT_PORT, path);
   if (!res || res.statusCode < 200 || res.statusCode >= 300) return null;
-  try { return JSON.parse(res.body) as T; } catch { return null; }
+  try {
+    return JSON.parse(res.body) as T;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * POST to the OpenResty management API through SSH tunnel.
  */
-export async function postMgmt<T>(
-  serverId: string,
-  path: string,
-): Promise<T | null> {
+export async function postMgmt<T>(serverId: string, path: string): Promise<T | null> {
   const res = await tunnelRequest(serverId, OPENRESTY_MGMT_PORT, path, {
     method: "POST",
   });
   if (!res || res.statusCode < 200 || res.statusCode >= 300) return null;
-  try { return JSON.parse(res.body) as T; } catch { return null; }
+  try {
+    return JSON.parse(res.body) as T;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -166,9 +170,6 @@ export async function probeMgmt(serverId: string): Promise<boolean> {
  * Returns a tunnel stream handle — caller pipes `handle.stream.on("data", ...)`
  * to the SSE client.
  */
-export async function mgmtStream(
-  serverId: string,
-  path: string,
-) {
+export async function mgmtStream(serverId: string, path: string) {
   return tunnelStream(serverId, OPENRESTY_MGMT_PORT, path);
 }

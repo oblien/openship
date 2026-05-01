@@ -36,8 +36,16 @@ export const ServicesTab = () => {
 
   const projectSlugBase = projectData.slug || projectData.name || "project";
   const selectedId = slug?.[1] ?? null;
+  const hasProjectId = Boolean(id && id !== "undefined");
 
   const fetchData = useCallback(async () => {
+    if (!hasProjectId) {
+      setServices([]);
+      setContainers([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -52,13 +60,15 @@ export const ServicesTab = () => {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [hasProjectId, id]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const handleSync = async () => {
+    if (!hasProjectId) return;
+
     setSyncing(true);
     try {
       const res = await servicesApi.sync(id, []);
@@ -83,10 +93,12 @@ export const ServicesTab = () => {
   };
 
   const openService = (serviceId: string) => {
+    if (!hasProjectId) return;
     router.push(`/projects/${id}/services/${serviceId}`);
   };
 
   const closeService = () => {
+    if (!hasProjectId) return;
     router.push(`/projects/${id}/services`);
   };
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useRouter, useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import ProjectSettings from "@/components/import-project/ProjectSettings";
 import BuildSettings from "@/components/import-project/BuildSettings";
 import DockerSettings from "@/components/import-project/DockerSettings";
@@ -47,12 +47,13 @@ const ProjectName: React.FC = () => {
 
 const DeployRepository: React.FC = () => {
     const params = useParams();
-    const router = useRouter();
     const slug = params.slug as string;
     const { config, initializeFromRepo, initializeFromLocal } = useDeployment();
     const { deployMode } = usePlatform();
     const searchParams = useSearchParams();
     const force = searchParams.get("force") || undefined;
+    const projectId = searchParams.get("projectId") || undefined;
+    const branch = searchParams.get("branch") || undefined;
     const isDesktop = deployMode === "desktop";
     
     const [loading, setLoading] = useState<boolean>(true);
@@ -85,9 +86,12 @@ const DeployRepository: React.FC = () => {
 
             let result;
             if (decoded.kind === "local") {
-                result = await initializeFromLocal(decoded.path);
+                result = await initializeFromLocal(decoded.path, { projectId });
             } else {
-                result = await initializeFromRepo(decoded.owner, decoded.repo, force);
+                result = await initializeFromRepo(decoded.owner, decoded.repo, force, {
+                    branch: branch ?? decoded.branch,
+                    projectId: projectId ?? decoded.projectId,
+                });
             }
 
             if (!result.success) {
@@ -119,7 +123,7 @@ const DeployRepository: React.FC = () => {
         };
 
         initialize();
-    }, [slug, initializeFromRepo, force, router]);
+    }, [slug, initializeFromRepo, initializeFromLocal, force, projectId, branch]);
 
     if (loading) {
         return <SkeletonLoader />;

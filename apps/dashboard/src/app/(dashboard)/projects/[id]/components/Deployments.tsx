@@ -28,18 +28,27 @@ export const Deployments = () => {
 
     if (hasRepoSource) {
       const slug = encodeRepoSlug(projectData.gitOwner, projectData.gitRepo);
-      router.push(`/deploy/${slug}`);
+      const params = new URLSearchParams({ projectId: projectData.id });
+      router.push(`/deploy/${slug}?${params.toString()}`);
       return;
     }
 
     if (hasLocalSource) {
       const slug = encodeLocalSlug(projectData.localPath);
-      router.push(`/deploy/${slug}`);
+      const params = new URLSearchParams({ projectId: projectData.id });
+      router.push(`/deploy/${slug}?${params.toString()}`);
       return;
     }
 
     showToast("Project source is missing. Reconnect the repository or local path before redeploying.", "error", "Error");
-  }, [projectData?.id, router, showToast]);
+  }, [
+    projectData?.gitOwner,
+    projectData?.gitRepo,
+    projectData?.id,
+    projectData?.localPath,
+    router,
+    showToast,
+  ]);
 
   const handleRedeploy = async () => {
     if (!projectData?.id || isRedeploying) return;

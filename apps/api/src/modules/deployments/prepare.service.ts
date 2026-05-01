@@ -16,7 +16,7 @@ import { env } from "../../config";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type Source =
-  | { source: "github"; owner: string; repo: string; userId: string }
+  | { source: "github"; owner: string; repo: string; userId: string; branch?: string }
   | { source: "local"; path: string };
 
 export interface ProjectInfo {
@@ -26,6 +26,7 @@ export interface ProjectInfo {
     owner: { login: string };
     private: boolean;
     default_branch: string;
+    selected_branch?: string;
     clone_url?: string;
     html_url?: string;
     branches?: { name: string }[];
@@ -52,7 +53,7 @@ export interface ProjectInfo {
  */
 export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
   if (input.source === "github") {
-    return resolveFromGitHub(input.userId, input.owner, input.repo);
+    return resolveFromGitHub(input.userId, input.owner, input.repo, input.branch);
   }
 
   // Local filesystem access — blocked in cloud mode
@@ -65,17 +66,31 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
 
 // ─── GitHub ──────────────────────────────────────────────────────────────────
 
-async function resolveFromGitHub(userId: string, owner: string, repo: string): Promise<ProjectInfo> {
+async function resolveFromGitHub(
+  userId: string,
+  owner: string,
+  repo: string,
+  branch?: string,
+): Promise<ProjectInfo> {
   const repository = await githubService.getRepository(userId, owner, repo, {
     withBranches: true,
   });
+  const requestedBranch = branch?.trim();
+  const selectedBranch = requestedBranch || repository.default_branch;
+
+  if (requestedBranch) {
+    const head = await githubService.getLatestCommit(userId, owner, repo, selectedBranch);
+    if (!head) {
+      throw new Error(`Branch "${selectedBranch}" was not found for ${owner}/${repo}`);
+    }
+  }
 
   let files: RepoFile[] = [];
   let packageJson: Record<string, unknown> | undefined;
 
   try {
     const contents = await githubService.listFiles(userId, owner, repo, {
-      branch: repository.default_branch,
+      branch: selectedBranch,
     });
     if (Array.isArray(contents)) {
       files = contents.map((f: any) => ({
@@ -89,7 +104,7 @@ async function resolveFromGitHub(userId: string, owner: string, repo: string): P
 
   try {
     const pkgFile = await githubService.getFileContent(userId, owner, repo, "package.json", {
-      branch: repository.default_branch,
+      branch: selectedBranch,
       json: true,
     });
     if (pkgFile?.content) {
@@ -108,7 +123,7 @@ async function resolveFromGitHub(userId: string, owner: string, repo: string): P
     if (files.some((f) => f.name.toLowerCase() === name)) {
       try {
         const composeFile = await githubService.getFileContent(userId, owner, repo, name, {
-          branch: repository.default_branch,
+          branch: selectedBranch,
         });
         if (composeFile?.content) {
           composeContent = composeFile.content;
@@ -127,14 +142,14 @@ async function resolveFromGitHub(userId: string, owner: string, repo: string): P
     .map(async (name) => {
       try {
         const file = await githubService.getFileContent(userId, owner, repo, name, {
-          branch: repository.default_branch,
+          branch: selectedBranch,
         });
         if (file?.content) manifests[name] = file.content;
       } catch { /* skip */ }
     });
   await Promise.all(manifestReads);
 
-  return toProjectInfo(repository, files, packageJson, composeContent, manifests);
+  return toProjectInfo(repository, files, packageJson, composeContent, manifests, selectedBranch);
 }
 
 // ─── Local filesystem ────────────────────────────────────────────────────────
@@ -191,7 +206,7 @@ async function resolveFromLocal(dirPath: string): Promise<ProjectInfo> {
     default_branch: "main",
   } as const;
 
-  return toProjectInfo(repoShape, files, packageJson, composeContent, manifests);
+  return toProjectInfo(repoShape, files, packageJson, composeContent, manifests, repoShape.default_branch);
 }
 
 // ─── Shared mapper ───────────────────────────────────────────────────────────
@@ -203,6 +218,7 @@ function toProjectInfo(
     owner: string;
     private: boolean;
     default_branch: string;
+    selected_branch?: string;
     clone_url?: string;
     html_url?: string;
     branches?: { name: string }[];
@@ -211,6 +227,7 @@ function toProjectInfo(
   packageJson?: Record<string, unknown>,
   composeContent?: string,
   fileContents?: Record<string, string>,
+  selectedBranch?: string,
 ): ProjectInfo {
   const stack = detectStack(files, packageJson, fileContents);
 
@@ -232,6 +249,7 @@ function toProjectInfo(
       owner: { login: repo.owner },
       private: repo.private,
       default_branch: repo.default_branch,
+      selected_branch: selectedBranch || repo.default_branch,
       clone_url: repo.clone_url,
       html_url: repo.html_url,
       branches: repo.branches,

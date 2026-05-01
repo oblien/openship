@@ -15,15 +15,14 @@ export const endpoints = {
     scan: "projects/scan",
     import: "projects/import",
     info: (id: string | number) => `projects/${id}/info`,
+    environments: (id: string | number) => `projects/${id}/environments`,
     delete: (id: string | number) => `projects/${id}/delete`,
     update: (id: string | number) => `projects/${id}/update`,
     options: (id: string | number) => `projects/${id}/options`,
-    toggle: (id: string | number, action: "enable" | "disable") =>
-      `projects/${id}/${action}`,
+    toggle: (id: string | number, action: "enable" | "disable") => `projects/${id}/${action}`,
     clearCache: (id: string | number) => `projects/${id}/clear-cache`,
     clearBuild: (id: string | number) => `projects/${id}/clear-build`,
-    deploymentSession: (id: string | number) =>
-      `projects/${id}/deployment-session`,
+    deploymentSession: (id: string | number) => `projects/${id}/deployment-session`,
     connect: (id: string | number) => `projects/${id}/connect`,
     envSet: (id: string | number) => `projects/${id}/env/set`,
     envGet: (id: string | number) => `projects/${id}/env/get`,
@@ -55,8 +54,7 @@ export const endpoints = {
     update: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}`,
     sync: (projectId: string | number) => `projects/${projectId}/services/sync`,
-    containers: (projectId: string | number) =>
-      `projects/${projectId}/services/containers`,
+    containers: (projectId: string | number) => `projects/${projectId}/services/containers`,
     start: (projectId: string | number, serviceId: string) =>
       `projects/${projectId}/services/${serviceId}/start`,
     stop: (projectId: string | number, serviceId: string) =>

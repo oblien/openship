@@ -162,6 +162,16 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
     setConnecting(true);
     setCliAction(null);
 
+    const finishRedirectFlow = () => {
+      setConnecting(false);
+      void refresh();
+
+      // The popup can close before cookies/DB writes are visible to the
+      // dashboard request, so do a couple of quiet follow-up checks.
+      window.setTimeout(() => void refresh(), 750);
+      window.setTimeout(() => void refresh(), 2000);
+    };
+
     try {
       const res = await githubApi.connect();
 
@@ -178,12 +188,7 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
           // (for example, GitHub App installation after OAuth).
           const redirectUrl = res.url ?? `${getApiBaseUrl()}${endpoints.github.connectRedirect}`;
           const handle = openAuthWindow(redirectUrl);
-          handle.onClose(() => {
-            setTimeout(() => {
-              setConnecting(false);
-              refresh();
-            }, 1000);
-          });
+          handle.onClose(finishRedirectFlow);
           return;
         }
 

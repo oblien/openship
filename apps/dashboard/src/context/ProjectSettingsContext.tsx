@@ -1,5 +1,14 @@
 "use client";
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef, useMemo } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+  useRef,
+  useMemo,
+} from "react";
 import { api, endpoints, projectsApi } from "@/lib/api";
 import { getProjectType } from "@repo/core";
 
@@ -98,6 +107,18 @@ interface GitData {
   installUrl?: string;
 }
 
+interface ProjectEnvironment {
+  id: string;
+  name: string;
+  slug: string;
+  type: "production" | "preview" | "development";
+  gitBranch: string;
+  projectSlug: string;
+  activeDeploymentId: string | null;
+  latestDeploymentStatus: string | null;
+  primaryDomain: string | null;
+}
+
 interface BuildData {
   buildCommand: string;
   outputDirectory: string;
@@ -105,6 +126,8 @@ interface BuildData {
   installCommand: string;
   startCommand: string;
   productionPort: string;
+  rootDirectory: string;
+  hasBuild: boolean;
   hasServer: boolean;
   isLoading: boolean;
   error: string | null;
@@ -173,8 +196,17 @@ interface ProjectSettingsContextType {
 
   // Global state
   projectNotFound: boolean;
-  errorType: 'project-not-found' | 'repo-not-found' | 'access-denied' | null;
+  errorType: "project-not-found" | "repo-not-found" | "access-denied" | null;
   id: string;
+  environments: ProjectEnvironment[];
+  refreshEnvironments: () => Promise<void>;
+  createEnvironment: (input: {
+    environmentName: string;
+    environmentSlug?: string;
+    environmentType?: "production" | "preview" | "development";
+    gitBranch?: string;
+    sourceMode?: "branch" | "manual";
+  }) => Promise<ProjectEnvironment | null>;
   domain: string;
   slug?: string[]; // Optional array for catch-all routes
   activeTab: string;
@@ -227,9 +259,8 @@ function mapAnalyticsData(
       uniqueIPs,
       uniqueRequests: totalRequests,
       totalIPs: totalRequests,
-      uniqueIPsPercentage: totalRequests > 0
-        ? ((uniqueIPs / totalRequests) * 100).toFixed(1)
-        : "0.0",
+      uniqueIPsPercentage:
+        totalRequests > 0 ? ((uniqueIPs / totalRequests) * 100).toFixed(1) : "0.0",
       firstRequest,
       lastRequest,
       timeRangeHours,
@@ -270,13 +301,15 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   children,
   id,
   slug,
-  initialProjectData
+  initialProjectData,
 }) => {
-  const [projectData, setProjectData] = useState<BasicProjectData>(initialProjectData || {
-    name: '',
-    description: '',
-    framework: ''
-  });
+  const [projectData, setProjectData] = useState<BasicProjectData>(
+    initialProjectData || {
+      name: "",
+      description: "",
+      framework: "",
+    },
+  );
 
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
@@ -296,19 +329,23 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
 
   const [gitData, setGitData] = useState<GitData>({
     repository: null,
-    branch: '',
+    branch: "",
     recentCommits: [],
     isLoading: false,
     error: null,
   });
 
+  const [environments, setEnvironments] = useState<ProjectEnvironment[]>([]);
+
   const [buildData, setBuildData] = useState<BuildData>({
-    buildCommand: '',
-    outputDirectory: '.',
-    productionPaths: '',
-    installCommand: 'bun install',
-    startCommand: 'npm start',
-    productionPort: '3000',
+    buildCommand: "",
+    outputDirectory: ".",
+    productionPaths: "",
+    installCommand: "bun install",
+    startCommand: "npm start",
+    productionPort: "3000",
+    rootDirectory: "./",
+    hasBuild: true,
     hasServer: true,
     isLoading: true,
     error: null,
@@ -327,108 +364,116 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   });
 
   const [projectNotFound, setProjectNotFound] = useState(false);
-  const [errorType, setErrorType] = useState<'project-not-found' | 'repo-not-found' | 'access-denied' | null>(null);
-  const [domain, setDomain] = useState('');
+  const [errorType, setErrorType] = useState<
+    "project-not-found" | "repo-not-found" | "access-denied" | null
+  >(null);
+  const [domain, setDomain] = useState("");
   const isLoadingAnalyticsRef = useRef<boolean>(false);
   const hasFetchedRef = useRef<boolean>(false);
-  const lastFetchedIdRef = useRef<string>('');
+  const lastFetchedIdRef = useRef<string>("");
 
   // Fetch analytics - memoized to prevent recreating on every render
-  const refreshAnalytics = useCallback(async (force = false) => {
-    try {
-      // Prevent duplicate fetches for the same project
-      if (isLoadingAnalyticsRef.current) return;
-      if (!force && hasFetchedRef.current && lastFetchedIdRef.current === id) {
-        console.log('[ProjectSettings] Already fetched for this project, skipping');
-        return;
-      }
-
-      isLoadingAnalyticsRef.current = true;
-      setIsLoadingAnalytics(true);
-      setAnalyticsError(null);
-      setProjectNotFound(false);
-      setErrorType(null);
-
-      if (!id) return;
-
-      console.log('[ProjectSettings] Fetching project info for:', id);
-      const response = await projectsApi.getInfo(id);
-      
-      if (response.success) {
-        setProjectData(response.data.project);
-        setBuildData({
-          buildCommand: response.data.project.options?.buildCommand || '',
-          outputDirectory: response.data.project.options?.outputDirectory || '.',
-          productionPaths: response.data.project.options?.productionPaths || '',
-          installCommand: response.data.project.options?.installCommand || 'bun install',
-          startCommand: response.data.project.options?.startCommand || 'npm start',
-          productionPort: response.data.project.options?.productionPort || '3000',
-          hasServer: response.data.project.options?.hasServer ?? true,
-          isLoading: false,
-          error: null,
-        });
-        setDomainsData({
-          domains: response.data.project.domains || [],
-          isLoading: false,
-          error: null
-        });
-        setDomain(
-          response.data.project.domains?.find((d: any) => d.primary)?.domain
-          || response.data.project.domains?.[0]?.domain
-          || ''
-        );
-
-        const nextDomain =
-          response.data.project.domains?.find((d: any) => d.primary)?.domain
-          || response.data.project.domains?.[0]?.domain
-          || '';
-
-        try {
-          const [summaryResponse, periodsResponse] = await Promise.all([
-            api.get<{ data: AnalyticsSummaryResponse }>(endpoints.analytics.summary, {
-              params: { projectId: id },
-            }),
-            api.get<{ data: AnalyticsPeriodResponse[] }>(endpoints.analytics.periods, {
-              params: { projectId: id },
-            }),
-          ]);
-
-          setAnalyticsData(
-            mapAnalyticsData(summaryResponse.data, periodsResponse.data ?? [], nextDomain)
-          );
-        } catch (analyticsError) {
-          console.error('Failed to fetch analytics:', analyticsError);
-          setAnalyticsData(null);
+  const refreshAnalytics = useCallback(
+    async (force = false) => {
+      try {
+        // Prevent duplicate fetches for the same project
+        if (isLoadingAnalyticsRef.current) return;
+        if (!force && hasFetchedRef.current && lastFetchedIdRef.current === id) {
+          console.log("[ProjectSettings] Already fetched for this project, skipping");
+          return;
         }
 
-        // Mark as fetched for this id
-        hasFetchedRef.current = true;
-        lastFetchedIdRef.current = id;
-      } else {
+        isLoadingAnalyticsRef.current = true;
+        setIsLoadingAnalytics(true);
+        setAnalyticsError(null);
+        setProjectNotFound(false);
+        setErrorType(null);
+
+        if (!id) return;
+
+        console.log("[ProjectSettings] Fetching project info for:", id);
+        const response = await projectsApi.getInfo(id);
+
+        if (response.success) {
+          setProjectData(response.data.project);
+          setEnvironments(response.data.environments || []);
+          setBuildData({
+            buildCommand: response.data.project.options?.buildCommand || "",
+            outputDirectory: response.data.project.options?.outputDirectory || ".",
+            productionPaths: response.data.project.options?.productionPaths || "",
+            installCommand: response.data.project.options?.installCommand || "bun install",
+            startCommand: response.data.project.options?.startCommand || "npm start",
+            productionPort: response.data.project.options?.productionPort || "",
+            rootDirectory: response.data.project.options?.rootDirectory || "./",
+            hasBuild: response.data.project.options?.hasBuild ?? true,
+            hasServer: response.data.project.options?.hasServer ?? true,
+            isLoading: false,
+            error: null,
+          });
+          setDomainsData({
+            domains: response.data.project.domains || [],
+            isLoading: false,
+            error: null,
+          });
+          setDomain(
+            response.data.project.domains?.find((d: any) => d.primary)?.domain ||
+              response.data.project.domains?.[0]?.domain ||
+              "",
+          );
+
+          const nextDomain =
+            response.data.project.domains?.find((d: any) => d.primary)?.domain ||
+            response.data.project.domains?.[0]?.domain ||
+            "";
+
+          try {
+            const [summaryResponse, periodsResponse] = await Promise.all([
+              api.get<{ data: AnalyticsSummaryResponse }>(endpoints.analytics.summary, {
+                params: { projectId: id },
+              }),
+              api.get<{ data: AnalyticsPeriodResponse[] }>(endpoints.analytics.periods, {
+                params: { projectId: id },
+              }),
+            ]);
+
+            setAnalyticsData(
+              mapAnalyticsData(summaryResponse.data, periodsResponse.data ?? [], nextDomain),
+            );
+          } catch (analyticsError) {
+            console.error("Failed to fetch analytics:", analyticsError);
+            setAnalyticsData(null);
+          }
+
+          // Mark as fetched for this id
+          hasFetchedRef.current = true;
+          lastFetchedIdRef.current = id;
+        } else {
+          setProjectNotFound(true);
+          setErrorType("project-not-found");
+          setAnalyticsError("Project not found");
+        }
+      } catch (error) {
+        console.error("Failed to fetch analytics:", error);
         setProjectNotFound(true);
-        setErrorType('project-not-found');
-        setAnalyticsError('Project not found');
+        setErrorType("project-not-found");
+        setAnalyticsError("Failed to load analytics");
+      } finally {
+        setIsLoadingAnalytics(false);
+        isLoadingAnalyticsRef.current = false;
       }
-    } catch (error) {
-      console.error('Failed to fetch analytics:', error);
-      setProjectNotFound(true);
-      setErrorType('project-not-found');
-      setAnalyticsError('Failed to load analytics');
-    } finally {
-      setIsLoadingAnalytics(false);
-      isLoadingAnalyticsRef.current = false;
-    }
-  }, [id]); // Only recreate when id changes
+    },
+    [id],
+  ); // Only recreate when id changes
 
   // Fetch domains
   const refreshDomains = async () => {
     try {
-      setDomainsData(prev => ({ ...prev, isLoading: true, error: null }));
+      setDomainsData((prev) => ({ ...prev, isLoading: true, error: null }));
       // Add your API call here
       // const response = await request(`projects/${domain}/domains`, {}, 'GET');
       // setDomainsData({ domains: response.domains, isLoading: false, error: null });
     } catch (error) {
-      setDomainsData(prev => ({ ...prev, isLoading: false, error: 'Failed to load domains' }));
+      setDomainsData((prev) => ({ ...prev, isLoading: false, error: "Failed to load domains" }));
     }
   };
 
@@ -438,10 +483,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     try {
       if (isLoadingEnvironmentRef.current) return;
       isLoadingEnvironmentRef.current = true;
-      setEnvironmentData(prev => ({ ...prev, isLoading: true, error: null }));
+      setEnvironmentData((prev) => ({ ...prev, isLoading: true, error: null }));
 
       if (!id) {
-        setEnvironmentData(prev => ({ ...prev, isLoading: false }));
+        setEnvironmentData((prev) => ({ ...prev, isLoading: false }));
         return;
       }
 
@@ -467,14 +512,14 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           error: null,
         });
       } else {
-        setEnvironmentData(prev => ({
+        setEnvironmentData((prev) => ({
           ...prev,
           isLoading: false,
         }));
       }
     } catch (error) {
-      console.error('Failed to fetch environment variables:', error);
-      setEnvironmentData(prev => ({
+      console.error("Failed to fetch environment variables:", error);
+      setEnvironmentData((prev) => ({
         ...prev,
         isLoading: false,
       }));
@@ -489,10 +534,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     try {
       if (isLoadingGitRef.current) return;
       isLoadingGitRef.current = true;
-      setGitData(prev => ({ ...prev, isLoading: true, error: null }));
+      setGitData((prev) => ({ ...prev, isLoading: true, error: null }));
 
       if (!id) {
-        setGitData(prev => ({ ...prev, isLoading: false }));
+        setGitData((prev) => ({ ...prev, isLoading: false }));
         return;
       }
 
@@ -502,20 +547,20 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         // Map commits from API response
         const mappedCommits = (response.commits || []).map((commit: any) => ({
           id: commit.sha,
-          message: commit.message || 'No message',
-          author: commit.author || 'Unknown',
-          authorAvatar: commit.author_avatar || '',
-          time: commit.date ? new Date(commit.date).toLocaleString() : '',
+          message: commit.message || "No message",
+          author: commit.author || "Unknown",
+          authorAvatar: commit.author_avatar || "",
+          time: commit.date ? new Date(commit.date).toLocaleString() : "",
           url: commit.url,
         }));
 
         setGitData({
           repository: {
             name: `${response.owner}/${response.repo}`,
-            provider: 'GitHub',
+            provider: "GitHub",
             url: `https://github.com/${response.owner}/${response.repo}`,
           },
-          branch: response.branch || 'main',
+          branch: response.branch || "main",
           recentCommits: mappedCommits,
           isLoading: false,
           error: null,
@@ -530,35 +575,36 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         });
       } else {
         // Check if it's a repo not found error
-        const isRepoError = response.error?.toLowerCase().includes('repository') ||
-          response.error?.toLowerCase().includes('repo');
+        const isRepoError =
+          response.error?.toLowerCase().includes("repository") ||
+          response.error?.toLowerCase().includes("repo");
 
         if (isRepoError) {
           setProjectNotFound(true);
-          setErrorType('repo-not-found');
+          setErrorType("repo-not-found");
         }
 
-        setGitData(prev => ({
+        setGitData((prev) => ({
           ...prev,
           isLoading: false,
-          error: response.error || 'Failed to load git data',
+          error: response.error || "Failed to load git data",
           repository: null,
           recentCommits: [],
         }));
       }
     } catch (error) {
-      console.error('Failed to fetch git data:', error);
-      setGitData(prev => ({
+      console.error("Failed to fetch git data:", error);
+      setGitData((prev) => ({
         ...prev,
         isLoading: false,
-        error: 'Failed to load git data',
+        error: "Failed to load git data",
         repository: null,
         recentCommits: [],
       }));
     } finally {
       isLoadingGitRef.current = false;
     }
-  }, []);
+  }, [id]);
 
   // Fetch build
   const isLoadingBuildRef = useRef(false);
@@ -567,10 +613,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     if (isLoadingBuildRef.current) return;
     isLoadingBuildRef.current = true;
     try {
-      setBuildData(prev => ({ ...prev, isLoading: true, error: null }));
+      setBuildData((prev) => ({ ...prev, isLoading: true, error: null }));
       // Add your API call here
     } catch (error) {
-      setBuildData(prev => ({ ...prev, isLoading: false, error: 'Failed to load build data' }));
+      setBuildData((prev) => ({ ...prev, isLoading: false, error: "Failed to load build data" }));
     } finally {
       isLoadingBuildRef.current = false;
     }
@@ -578,17 +624,17 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
 
   // Update functions
   const updateProjectData = async (updates: Partial<BasicProjectData>) => {
-    setProjectData(prev => ({ ...prev, ...updates }));
+    setProjectData((prev) => ({ ...prev, ...updates }));
     // Add your API call here to persist changes
   };
 
   const updateDomains = async (domains: any[]) => {
-    setDomainsData(prev => ({ ...prev, domains }));
+    setDomainsData((prev) => ({ ...prev, domains }));
     // Add your API call here to persist changes
   };
 
   const updateEnvironment = async (envVars: any) => {
-    setEnvironmentData(prev => ({ ...prev, envVars }));
+    setEnvironmentData((prev) => ({ ...prev, envVars }));
     // Add your API call here to persist changes
   };
 
@@ -598,34 +644,61 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   };
 
   const updateBuild = async (buildInfo: any) => {
-    setBuildData(prev => ({ ...prev, ...buildInfo }));
+    setBuildData((prev) => ({ ...prev, ...buildInfo }));
     // Add your API call here to persist changes
   };
 
   const updateProjectActive = async (active: boolean) => {
-    setProjectData(prev => ({ ...prev, active }));
+    setProjectData((prev) => ({ ...prev, active }));
     // Add your API call here to persist changes
   };
+
+  const refreshEnvironments = useCallback(async () => {
+    if (!id) return;
+    const response = await projectsApi.getEnvironments(id);
+    if (response.success) {
+      setEnvironments(response.data || []);
+    }
+  }, [id]);
+
+  const createEnvironment = useCallback(
+    async (input: {
+      environmentName: string;
+      environmentSlug?: string;
+      environmentType?: "production" | "preview" | "development";
+      gitBranch?: string;
+      sourceMode?: "branch" | "manual";
+    }) => {
+      if (!id) return null;
+      const response = await projectsApi.createEnvironment(id, input);
+      if (!response.success || !response.data) {
+        throw new Error(response.error || "Failed to create environment");
+      }
+      await refreshEnvironments();
+      return response.data as ProjectEnvironment;
+    },
+    [id, refreshEnvironments],
+  );
 
   // Terminal Logs Management
   const MAX_TERMINAL_LOGS = 1000;
 
   const addTerminalLog = useCallback((log: string) => {
-    setTerminalLogsData(prev => ({
+    setTerminalLogsData((prev) => ({
       ...prev,
       logs: [...prev.logs, log].slice(-MAX_TERMINAL_LOGS),
     }));
   }, []);
 
   const clearTerminalLogs = useCallback(() => {
-    setTerminalLogsData(prev => ({
+    setTerminalLogsData((prev) => ({
       ...prev,
       logs: [],
     }));
   }, []);
 
   const setTerminalStreaming = useCallback((isStreaming: boolean) => {
-    setTerminalLogsData(prev => {
+    setTerminalLogsData((prev) => {
       if (prev.isStreaming === isStreaming) {
         return prev;
       }
@@ -638,14 +711,14 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   }, []);
 
   const setTerminalSSEConnection = useCallback((connection: { disconnect: () => void } | null) => {
-    setTerminalLogsData(prev => ({
+    setTerminalLogsData((prev) => ({
       ...prev,
       sseConnection: connection,
     }));
   }, []);
 
   const setTerminalXtermInstance = useCallback((instance: any) => {
-    setTerminalLogsData(prev => ({
+    setTerminalLogsData((prev) => ({
       ...prev,
       xtermInstance: instance,
     }));
@@ -656,9 +729,8 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
 
   const getServerLogKey = useCallback((log: any) => {
     if (!log || typeof log !== "object") return String(log);
-    const parsedTimestamp = typeof log.timestamp === "string"
-      ? Date.parse(log.timestamp)
-      : Number.NaN;
+    const parsedTimestamp =
+      typeof log.timestamp === "string" ? Date.parse(log.timestamp) : Number.NaN;
     const timestampKey = Number.isFinite(parsedTimestamp)
       ? Math.floor(parsedTimestamp / 1000)
       : String(log.timestamp ?? "");
@@ -675,59 +747,74 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     ].join("|");
   }, []);
 
-  const dedupeServerLogs = useCallback((logs: any[]) => {
-    const seen = new Set<string>();
-    const merged: any[] = [];
+  const dedupeServerLogs = useCallback(
+    (logs: any[]) => {
+      const seen = new Set<string>();
+      const merged: any[] = [];
 
-    for (const log of logs) {
-      const key = getServerLogKey(log);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(log);
-      if (merged.length >= MAX_SERVER_LOGS) break;
-    }
+      for (const log of logs) {
+        const key = getServerLogKey(log);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(log);
+        if (merged.length >= MAX_SERVER_LOGS) break;
+      }
 
-    return merged;
-  }, [getServerLogKey]);
+      return merged;
+    },
+    [getServerLogKey],
+  );
 
-  const addServerLog = useCallback((log: any) => {
-    setServerLogsData(prev => ({
-      ...prev,
-      logs: dedupeServerLogs([log, ...prev.logs]),
-    }));
-  }, [dedupeServerLogs]);
+  const addServerLog = useCallback(
+    (log: any) => {
+      setServerLogsData((prev) => ({
+        ...prev,
+        logs: dedupeServerLogs([log, ...prev.logs]),
+      }));
+    },
+    [dedupeServerLogs],
+  );
 
-  const mergeServerLogs = useCallback((logs: any[]) => {
-    setServerLogsData(prev => ({
-      ...prev,
-      logs: dedupeServerLogs([...prev.logs, ...logs]),
-    }));
-  }, [dedupeServerLogs]);
+  const mergeServerLogs = useCallback(
+    (logs: any[]) => {
+      setServerLogsData((prev) => ({
+        ...prev,
+        logs: dedupeServerLogs([...prev.logs, ...logs]),
+      }));
+    },
+    [dedupeServerLogs],
+  );
 
-  const setServerLogs = useCallback((logs: any[]) => {
-    setServerLogsData(prev => ({
-      ...prev,
-      logs: dedupeServerLogs(logs),
-    }));
-  }, [dedupeServerLogs]);
+  const setServerLogs = useCallback(
+    (logs: any[]) => {
+      setServerLogsData((prev) => ({
+        ...prev,
+        logs: dedupeServerLogs(logs),
+      }));
+    },
+    [dedupeServerLogs],
+  );
 
   const clearServerLogs = useCallback(() => {
-    setServerLogsData(prev => ({
+    setServerLogsData((prev) => ({
       ...prev,
       logs: [],
     }));
   }, []);
 
-  const setServerMockInterval = useCallback((interval: NodeJS.Timeout | null) => {
-    // Clear previous interval if exists
-    if (serverLogsData.mockInterval) {
-      clearInterval(serverLogsData.mockInterval);
-    }
-    setServerLogsData(prev => ({
-      ...prev,
-      mockInterval: interval,
-    }));
-  }, [serverLogsData.mockInterval]);
+  const setServerMockInterval = useCallback(
+    (interval: NodeJS.Timeout | null) => {
+      // Clear previous interval if exists
+      if (serverLogsData.mockInterval) {
+        clearInterval(serverLogsData.mockInterval);
+      }
+      setServerLogsData((prev) => ({
+        ...prev,
+        mockInterval: interval,
+      }));
+    },
+    [serverLogsData.mockInterval],
+  );
 
   // Cleanup on unmount - use refs to avoid re-running on data changes
   const terminalSSERef = useRef(terminalLogsData.sseConnection);
@@ -765,9 +852,13 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   };
 
   const isServicesProject = !!(
-    projectData.framework &&
-    getProjectType(projectData.framework as any) === "services"
+    projectData.framework && getProjectType(projectData.framework as any) === "services"
   );
+  const hasProjectRuntimeLogs =
+    isServicesProject ||
+    projectData.options?.hasServer === true ||
+    projectData.hasServer === true ||
+    (buildData.isLoading ? true : buildData.hasServer === true);
 
   const tabs = useMemo(() => {
     if (isServicesProject) {
@@ -780,17 +871,26 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       ];
     }
 
-    return [
+    const appTabs = [
       { id: "overview", label: "Overview", icon: "setting-100-1658432731.png" },
       { id: "services", label: "Services", icon: "layers.png" },
       { id: "domains", label: "Domains", icon: "server-59-1658435258.png" },
       { id: "deployments", label: "Deployments", icon: "heart%20rate-118-1658433496.png" },
       { id: "source", label: "Source", icon: "git%20branch-159-1658431404.png" },
       { id: "runtime", label: "Runtime", icon: "setting-40-1662364403.png" },
-      { id: "logs", label: "Logs", icon: "terminal-184-1658431404.png" },
       { id: "advanced", label: "Advanced", icon: "error%20triangle-81-1658234612.png" },
     ];
-  }, [isServicesProject]);
+
+    if (hasProjectRuntimeLogs) {
+      appTabs.splice(appTabs.length - 1, 0, {
+        id: "logs",
+        label: "Logs",
+        icon: "terminal-184-1658431404.png",
+      });
+    }
+
+    return appTabs;
+  }, [hasProjectRuntimeLogs, isServicesProject]);
 
   const defaultTab = tabs[0].id;
   const [activeTab, setActiveTab] = useState(resolveTab(slug?.[0]) || defaultTab);
@@ -815,7 +915,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
   const [deployments, setDeployments] = useState([]);
   const [deploymentsLoading, setDeploymentsLoading] = useState(false);
   const isLoadingDeploymentsRef = useRef(false);
-  
+
   const fetchDeployments = useCallback(async () => {
     if (deploymentsLoading || isLoadingDeploymentsRef.current) return;
     if (!id) return;
@@ -840,112 +940,119 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     }
   }, [id]);
 
-  const value: ProjectSettingsContextType = useMemo(() => ({
-    fetchDeployments,
-    deployments,
-    deploymentsLoading,
-    projectData,
-    setProjectData,
-    updateProjectData,
-    updateProjectActive,
+  const value: ProjectSettingsContextType = useMemo(
+    () => ({
+      fetchDeployments,
+      deployments,
+      deploymentsLoading,
+      projectData,
+      setProjectData,
+      updateProjectData,
+      updateProjectActive,
 
-    analyticsData,
-    isLoadingAnalytics,
-    analyticsError,
-    refreshAnalytics,
+      analyticsData,
+      isLoadingAnalytics,
+      analyticsError,
+      refreshAnalytics,
 
-    domainsData,
-    updateDomains,
-    refreshDomains,
+      domainsData,
+      updateDomains,
+      refreshDomains,
 
-    environmentData,
-    updateEnvironment,
-    refreshEnvironment,
+      environmentData,
+      updateEnvironment,
+      refreshEnvironment,
 
-    gitData,
-    updateGit,
-    refreshGit,
+      gitData,
+      updateGit,
+      refreshGit,
 
-    buildData,
-    updateBuild,
-    refreshBuild,
+      buildData,
+      updateBuild,
+      refreshBuild,
 
-    terminalLogsData,
-    addTerminalLog,
-    clearTerminalLogs,
-    setTerminalStreaming,
-    setTerminalSSEConnection,
-    setTerminalXtermInstance,
+      terminalLogsData,
+      addTerminalLog,
+      clearTerminalLogs,
+      setTerminalStreaming,
+      setTerminalSSEConnection,
+      setTerminalXtermInstance,
 
-    serverLogsData,
-    getServerLogKey,
-    dedupeServerLogs,
-    addServerLog,
-    mergeServerLogs,
-    setServerLogs,
-    clearServerLogs,
-    setServerMockInterval,
+      serverLogsData,
+      getServerLogKey,
+      dedupeServerLogs,
+      addServerLog,
+      mergeServerLogs,
+      setServerLogs,
+      clearServerLogs,
+      setServerMockInterval,
 
-    projectNotFound,
-    errorType,
-    id,
-    domain,
-    slug,
-    activeTab,
-    setActiveTab,
-    tabs,
-  }), [
-    projectData,
-    analyticsData,
-    isLoadingAnalytics,
-    analyticsError,
-    refreshAnalytics,
-    domainsData,
-    updateDomains,
-    refreshDomains,
-    environmentData,
-    updateEnvironment,
-    refreshEnvironment,
-    gitData,
-    updateGit,
-    refreshGit,
-    buildData,
-    updateBuild,
-    refreshBuild,
-    terminalLogsData,
-    addTerminalLog,
-    clearTerminalLogs,
-    setTerminalStreaming,
-    setTerminalSSEConnection,
-    setTerminalXtermInstance,
-    serverLogsData,
-    getServerLogKey,
-    dedupeServerLogs,
-    addServerLog,
-    mergeServerLogs,
-    setServerLogs,
-    clearServerLogs,
-    setServerMockInterval,
-    projectNotFound,
-    errorType,
-    id,
-    domain,
-    slug,
-    activeTab,
-    tabs,
-  ]);
+      projectNotFound,
+      errorType,
+      id,
+      environments,
+      refreshEnvironments,
+      createEnvironment,
+      domain,
+      slug,
+      activeTab,
+      setActiveTab,
+      tabs,
+    }),
+    [
+      projectData,
+      analyticsData,
+      isLoadingAnalytics,
+      analyticsError,
+      refreshAnalytics,
+      domainsData,
+      updateDomains,
+      refreshDomains,
+      environmentData,
+      updateEnvironment,
+      refreshEnvironment,
+      gitData,
+      updateGit,
+      refreshGit,
+      buildData,
+      updateBuild,
+      refreshBuild,
+      terminalLogsData,
+      addTerminalLog,
+      clearTerminalLogs,
+      setTerminalStreaming,
+      setTerminalSSEConnection,
+      setTerminalXtermInstance,
+      serverLogsData,
+      getServerLogKey,
+      dedupeServerLogs,
+      addServerLog,
+      mergeServerLogs,
+      setServerLogs,
+      clearServerLogs,
+      setServerMockInterval,
+      projectNotFound,
+      errorType,
+      id,
+      environments,
+      refreshEnvironments,
+      createEnvironment,
+      domain,
+      slug,
+      activeTab,
+      tabs,
+    ],
+  );
 
   return (
-    <ProjectSettingsContext.Provider value={value}>
-      {children}
-    </ProjectSettingsContext.Provider>
+    <ProjectSettingsContext.Provider value={value}>{children}</ProjectSettingsContext.Provider>
   );
 };
 
 export const useProjectSettings = () => {
   const context = useContext(ProjectSettingsContext);
   if (context === undefined) {
-    throw new Error('useProjectSettings must be used within a ProjectSettingsProvider');
+    throw new Error("useProjectSettings must be used within a ProjectSettingsProvider");
   }
   return context;
 };

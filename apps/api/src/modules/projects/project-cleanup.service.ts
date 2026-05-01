@@ -48,9 +48,7 @@ export interface CleanupResult {
  * Collect ALL resources owned by a project into a flat manifest.
  * Single pass: queries DB once per resource type, no per-item queries in loops.
  */
-export async function collectProjectManifest(
-  project: Project,
-): Promise<CleanupManifest> {
+export async function collectProjectManifest(project: Project): Promise<CleanupManifest> {
   const resources: CleanupResource[] = [];
   const { routing } = platform();
   const isCompose = isComposeProject(project);
@@ -105,10 +103,7 @@ export async function collectProjectManifest(
     }
 
     // Bare runtime artifacts (release dirs stored as containerId paths)
-    if (
-      dep.containerId?.includes("/") &&
-      !(runtime instanceof DockerRuntime)
-    ) {
+    if (dep.containerId?.includes("/") && !(runtime instanceof DockerRuntime)) {
       // Already tracked as "container" above — bare destroy() handles path removal
     }
   }
@@ -221,7 +216,8 @@ export async function executeCleanup(
       } else {
         const resource = batch[j];
         const reason = settled[j] as PromiseRejectedResult;
-        const errMsg = reason.reason instanceof Error ? reason.reason.message : String(reason.reason);
+        const errMsg =
+          reason.reason instanceof Error ? reason.reason.message : String(reason.reason);
         result.failed.push({ ref: resource.ref, label: resource.label, error: errMsg });
       }
     }
@@ -286,6 +282,10 @@ export async function deleteProject(projectId: string, userId: string): Promise<
 
   // 1. Soft-delete immediately — project disappears from listings
   await repos.project.softDelete(projectId);
+  const remainingEnvironments = await repos.project.listByApp(p.appId);
+  if (remainingEnvironments.length === 0) {
+    await repos.projectApp.softDelete(p.appId);
+  }
 
   // 2. Background cleanup (fire-and-forget)
   cleanupProjectResources(p!, projectId).catch((err) =>
@@ -306,7 +306,7 @@ async function cleanupProjectResources(
   if (result.failed.length > 0) {
     console.error(
       `[PROJECT] Cleanup for ${projectId}: ${result.succeeded}/${result.total} succeeded, ` +
-      `${result.failed.length} failed:`,
+        `${result.failed.length} failed:`,
       result.failed.map((f) => `${f.label}: ${f.error}`),
     );
   }

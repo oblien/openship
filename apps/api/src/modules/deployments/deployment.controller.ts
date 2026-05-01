@@ -195,7 +195,7 @@ export async function buildRespond(c: Context) {
 /**
  * POST /deployments/prepare — resolve project info from GitHub or local path.
  *
- * Body (GitHub): { source: "github", owner, repo }
+ * Body (GitHub): { source: "github", owner, repo, branch? }
  * Body (local):  { source: "local", path: "/abs/path" }
  * Legacy:        { owner, repo }  (treated as GitHub)
  */
@@ -205,6 +205,7 @@ export async function prepare(c: Context) {
     source?: "github" | "local";
     owner?: string;
     repo?: string;
+    branch?: string;
     path?: string;
   }>();
 
@@ -218,7 +219,7 @@ export async function prepare(c: Context) {
       if (!body.owner || !body.repo) {
         return c.json({ error: "owner and repo are required" }, 400);
       }
-      input = { source: "github", owner: body.owner, repo: body.repo, userId };
+      input = { source: "github", owner: body.owner, repo: body.repo, branch: body.branch, userId };
     } else if (source === "local") {
       if (env.CLOUD_MODE) {
         return c.json({ error: "Local projects are not available in cloud mode" }, 403);
