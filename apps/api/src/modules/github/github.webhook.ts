@@ -7,15 +7,16 @@
  * Handles:
  *   - installation.created  → store installation in DB
  *   - installation.deleted  → remove installation from DB
- *   - push                  → trigger redeployment (delegates to deployment service)
+ *   - push                  → trigger branch-matched redeployment
  *   - check_run             → acknowledged, no action
  */
 
-import { repos } from "@repo/db";
+import { repos, type Project } from "@repo/db";
 import { env } from "../../config/env";
 import { triggerDeployment } from "../deployments/build.service";
 import { verifyHmacSha256 } from "../webhooks/webhook.service";
 import { invalidateUserGitHubCache } from "./github.auth";
+import { getRepository } from "./github.service";
 import type {
   WebhookProvider,
   WebhookVerifyResult,
@@ -26,9 +27,9 @@ import type {
   GitHubPushPayload,
 } from "./github.types";
 
-// ─── Push deduplication (prevents duplicate delivery reprocessing) ───────────
+// ─── Deployment deduplication ────────────────────────────────────────────────
 
-const activePushes = new Set<string>();
+const activeBranchDeployments = new Set<string>();
 
 // ─── GitHub Webhook Provider ─────────────────────────────────────────────────
 
@@ -171,55 +172,88 @@ async function handleInstallationSuspended(
   return { success: true, event: "installation", message: `Installation suspended for ${accountLogin}` };
 }
 
-// ─── Push events ─────────────────────────────────────────────────────────────
+// ─── Branch deployment events ────────────────────────────────────────────────
 
 async function handlePush(payload: GitHubPushPayload): Promise<WebhookHandlerResult> {
   const owner = payload.repository?.owner?.login;
   const repo = payload.repository?.name;
   const ref = payload.ref;
   const commitSha = payload.head_commit?.id;
+  const defaultBranch = payload.repository?.default_branch;
 
   if (!owner || !repo) {
     return { success: false, event: "push", error: "Missing repository info in payload" };
   }
 
-  const pushKey = `${owner}/${repo}#${ref ?? "unknown"}@${commitSha ?? "unknown"}`.toLowerCase();
-
-  /* Deduplicate: skip if we're already processing a push for this repo */
-  if (activePushes.has(pushKey)) {
-    return { success: true, event: "push", message: "Already processing a push for this repo" };
+  if (payload.deleted) {
+    return { success: true, event: "push", message: "Ignoring deleted branch push" };
   }
 
-  activePushes.add(pushKey);
+  if (!ref?.startsWith("refs/heads/")) {
+    return { success: true, event: "push", message: `Ignoring non-branch ref: ${ref ?? "unknown"}` };
+  }
+
+  const branch = ref.replace("refs/heads/", "");
+
+  return triggerBranchDeployments({
+    event: "push",
+    owner,
+    repo,
+    branch,
+    defaultBranch,
+    commitSha,
+    commitMessage: payload.head_commit?.message,
+  });
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+interface BranchDeploymentTrigger {
+  event: "push";
+  owner: string;
+  repo: string;
+  branch: string;
+  defaultBranch?: string | null;
+  commitSha?: string;
+  commitMessage?: string;
+}
+
+async function triggerBranchDeployments(
+  input: BranchDeploymentTrigger,
+): Promise<WebhookHandlerResult> {
+  const deploymentKey = branchDeploymentKey(input);
+
+  if (activeBranchDeployments.has(deploymentKey)) {
+    return {
+      success: true,
+      event: input.event,
+      message: `Already handled deployment trigger for ${input.owner}/${input.repo}#${input.branch}`,
+    };
+  }
+
+  activeBranchDeployments.add(deploymentKey);
 
   try {
-    /* Only handle branch pushes — ignore tag pushes (refs/tags/...) */
-    if (!ref?.startsWith("refs/heads/")) {
-      return { success: true, event: "push", message: `Ignoring non-branch ref: ${ref ?? "unknown"}` };
-    }
-
-    const branch = ref.replace("refs/heads/", "");
-    const commitMessage = payload.head_commit?.message;
-
-    /* Find all projects linked to this repo that have auto-deploy enabled */
-    const projects = await repos.project.findByGitRepo(owner, repo);
+    const projects = await repos.project.findByGitRepo(input.owner, input.repo);
+    const defaultBranch = await resolveDefaultBranch(input, projects);
     const autoDeployProjects = projects.filter(
-      (p) => p.autoDeploy && (p.gitBranch ?? "main") === branch,
+      (p) => p.autoDeploy && projectWebhookBranch(p, defaultBranch) === input.branch,
     );
 
     if (autoDeployProjects.length === 0) {
-      console.log(`[GitHub Webhook] Push to ${owner}/${repo}#${branch} — no matching auto-deploy projects`);
-      return { success: true, event: "push", message: "No auto-deploy projects matched" };
+      console.log(
+        `[GitHub Webhook] ${input.event} for ${input.owner}/${input.repo}#${input.branch} — no matching auto-deploy projects`,
+      );
+      return { success: true, event: input.event, message: "No auto-deploy projects matched" };
     }
 
-    /* Trigger deployment for each matching project */
     const results = await Promise.allSettled(
       autoDeployProjects.map((p) =>
         triggerDeployment(p.userId, {
           projectId: p.id,
-          branch,
-          commitSha,
-          commitMessage,
+          branch: input.branch,
+          commitSha: input.commitSha,
+          commitMessage: input.commitMessage,
           trigger: "webhook",
         }),
       ),
@@ -232,20 +266,56 @@ async function handlePush(payload: GitHubPushPayload): Promise<WebhookHandlerRes
       const errors = results
         .filter((r): r is PromiseRejectedResult => r.status === "rejected")
         .map((r) => String(r.reason));
-      console.error(`[GitHub Webhook] Push deploy failures for ${owner}/${repo}:`, errors);
+      console.error(
+        `[GitHub Webhook] ${input.event} deploy failures for ${input.owner}/${input.repo}#${input.branch}:`,
+        errors,
+      );
     }
 
     return {
       success: true,
-      event: "push",
-      message: `Triggered ${succeeded} deployment(s) for ${owner}/${repo}#${branch}${failed ? `, ${failed} failed` : ""}`,
+      event: input.event,
+      message:
+        `Triggered ${succeeded} deployment(s) for ${input.owner}/${input.repo}#${input.branch}` +
+        `${failed ? `, ${failed} failed` : ""}`,
     };
   } finally {
-    activePushes.delete(pushKey);
+    activeBranchDeployments.delete(deploymentKey);
   }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+function projectWebhookBranch(project: Project, defaultBranch?: string | null): string | null {
+  return project.gitBranch?.trim() || defaultBranch?.trim() || null;
+}
+
+async function resolveDefaultBranch(
+  input: BranchDeploymentTrigger,
+  projects: Project[],
+): Promise<string | null> {
+  const payloadDefaultBranch = input.defaultBranch?.trim();
+  if (payloadDefaultBranch) return payloadDefaultBranch;
+
+  const legacyProject = projects.find(
+    (p) => !p.gitBranch?.trim() && p.gitOwner && p.gitRepo,
+  );
+  if (!legacyProject) return null;
+
+  try {
+    const repository = await getRepository(legacyProject.userId, input.owner, input.repo);
+    return repository.default_branch;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[GitHub Webhook] Could not resolve default branch for ${input.owner}/${input.repo}: ${message}`,
+    );
+    return null;
+  }
+}
+
+function branchDeploymentKey(input: BranchDeploymentTrigger): string {
+  const commit = input.commitSha?.trim() || "unknown";
+  return `${input.owner}/${input.repo}#${input.branch}@${commit}`.toLowerCase();
+}
 
 /**
  * Find our user by their GitHub account ID using Better Auth's account table.

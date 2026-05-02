@@ -20,7 +20,7 @@ import { useToast } from "@/context/ToastContext";
 import { projectsApi } from "@/lib/api";
 
 interface Props {
-  onDeleteProject: () => void;
+  onDeleteProject: (deleteApp?: boolean) => void;
 }
 
 const ICON_TONES = {
@@ -350,5 +350,4 @@ function TransferOptions({
     </div>
   );
 }
-
 

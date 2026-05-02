@@ -24,6 +24,8 @@ import type {
 } from "./github.types";
 import { env } from "../../config/env";
 
+export const GITHUB_DEPLOY_WEBHOOK_EVENTS = ["push"] as const;
+
 // ─── Repository mapping ─────────────────────────────────────────────────────
 
 /**
@@ -357,8 +359,12 @@ export async function listWebhooks(
   });
 }
 
+function normalizeWebhookUrl(url?: string | null): string {
+  return (url ?? "").replace(/\/+$/, "");
+}
+
 /**
- * Create a push webhook for a repository.
+ * Create a deploy webhook for a repository.
  */
 export async function createWebhook(
   userId: string,
@@ -382,7 +388,7 @@ export async function createWebhook(
     params: {
       name: "web",
       active: true,
-      events: ["push"],
+      events: [...GITHUB_DEPLOY_WEBHOOK_EVENTS],
       config,
     },
   });
@@ -398,7 +404,7 @@ export async function updateWebhook(
   owner: string,
   repo: string,
   hookId: number,
-  patch: { active?: boolean; events?: string[] },
+  patch: { active?: boolean; events?: string[]; config?: Record<string, unknown> },
 ): Promise<{ id: number; active: boolean; events: string[] }> {
   const data = await githubFetch<GitHubWebhook>({
     userId,
@@ -742,7 +748,7 @@ function isLocalUrl(url: string): boolean {
 // ─── Webhook registration ────────────────────────────────────────────────────
 
 /**
- * Register a push webhook on a repo.
+ * Register a deploy webhook on a repo.
  * If creation returns 422 (already exists), finds the existing hook.
  *
  * Callers should check `getWebhookStrategy()` before calling — this will
@@ -752,20 +758,40 @@ export async function registerWebhook(
   userId: string,
   owner: string,
   repo: string,
+  webhookUrl = `${env.BETTER_AUTH_URL}/api/webhooks/github`,
 ): Promise<{ hookId: number | null; events: string[] }> {
-  const webhookUrl = `${env.BETTER_AUTH_URL}/api/webhooks/github`;
-
   try {
-    const result = await createWebhook(userId, owner, repo, webhookUrl);
+    const result = await createWebhook(
+      userId,
+      owner,
+      repo,
+      webhookUrl,
+      env.GITHUB_WEBHOOK_SECRET || undefined,
+    );
     return { hookId: result.hookId, events: result.events };
   } catch (err) {
     /* 422 = webhook already exists — find it */
     if (err instanceof Error && err.message.includes("422")) {
       const existing = await listWebhooks(userId, owner, repo);
+      const targetUrl = normalizeWebhookUrl(webhookUrl);
       const match = existing.find((h) =>
-        h.config?.url?.includes("/api/webhooks/github"),
+        normalizeWebhookUrl(h.config?.url) === targetUrl,
       );
-      return { hookId: match?.id ?? null, events: match?.events ?? [] };
+      if (!match) return { hookId: null, events: [] };
+
+      const config = env.GITHUB_WEBHOOK_SECRET
+        ? {
+            url: webhookUrl,
+            content_type: "json",
+            secret: env.GITHUB_WEBHOOK_SECRET,
+          }
+        : undefined;
+      const updated = await updateWebhook(userId, owner, repo, match.id, {
+        active: true,
+        events: [...GITHUB_DEPLOY_WEBHOOK_EVENTS],
+        config,
+      });
+      return { hookId: updated.id, events: updated.events };
     }
     throw err;
   }

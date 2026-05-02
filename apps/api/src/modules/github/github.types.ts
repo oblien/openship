@@ -97,10 +97,12 @@ export interface GitHubPushCommit {
 
 export interface GitHubPushPayload {
   ref: string;
-  head_commit: GitHubPushCommit;
+  deleted?: boolean;
+  head_commit: GitHubPushCommit | null;
   repository: {
     name: string;
     full_name: string;
+    default_branch?: string;
     owner: { login: string; id: number };
   };
   sender: { id: number; login: string };

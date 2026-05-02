@@ -20,7 +20,7 @@ import type {
 } from "./project.schema";
 import { detectStack, MANIFEST_FILES, type RepoFile } from "../../lib/stack-detector";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { repos, type Domain } from "@repo/db";
+import { repos, type Domain, type Project } from "@repo/db";
 import { deployLuaScripts } from "@repo/adapters";
 import { getOpenRestyPaths } from "@/lib/openresty-paths";
 import * as domainService from "../domains/domain.service";
@@ -32,7 +32,6 @@ import { getAdminOblienClient } from "../../lib/oblien-user-client";
 import { cloudAnalyticsProxy } from "../../lib/cloud-client";
 import {
   registerWebhook,
-  createWebhook,
   updateWebhook,
   deleteWebhook,
   getWebhookStrategy,
@@ -184,8 +183,9 @@ export async function update(c: Context) {
 export async function remove(c: Context) {
   const userId = getUserId(c);
   const id = param(c, "id");
-  await projectService.deleteProject(id, userId);
-  return c.json({ message: "deleted" });
+  const deleteApp = c.req.query("deleteApp") !== "false";
+  const result = await projectService.deleteProject(id, userId, { deleteApp });
+  return c.json({ message: "deleted", ...result });
 }
 
 // ─── Environment variables ───────────────────────────────────────────────────
@@ -604,14 +604,19 @@ export async function getGitInfo(c: Context) {
     installationInstalled = !!instId;
   }
 
+  let sharedWebhookId = info.webhookId ?? null;
+  if (!sharedWebhookId && info.gitOwner && info.gitRepo) {
+    sharedWebhookId = await findSharedWebhookId(userId, info.gitOwner, info.gitRepo);
+  }
+
   // Derive webhook_active from strategy + state
   const webhookActive =
     strategy === "app"
       ? installationInstalled
       : strategy === "domain"
-        ? !!(info.autoDeploy && info.webhookId)
+        ? !!(info.autoDeploy && sharedWebhookId)
         : strategy === "repo"
-          ? !!info.webhookId
+          ? !!(info.autoDeploy && sharedWebhookId)
           : false;
 
   // Get available strategies for the UI
@@ -680,7 +685,7 @@ export async function listBranches(c: Context) {
 /**
  * POST /projects/:id/git/link  { owner, repo, branch? }
  *
- * Links a GitHub repo to an existing project and registers a push webhook.
+ * Links a GitHub repo to an existing project and registers a deploy webhook.
  */
 export async function linkRepo(c: Context) {
   const userId = getUserId(c);
@@ -737,7 +742,7 @@ export async function linkRepo(c: Context) {
     // User has a verified domain for webhooks → direct delivery
     const webhookUrl = `https://${project.webhookDomain}/_openship/hooks/github`;
     try {
-      const wh = await createWebhook(userId, owner, repo, webhookUrl);
+      const wh = await registerWebhook(userId, owner, repo, webhookUrl);
       if (wh.hookId) gitFields.webhookId = wh.hookId;
       gitFields.autoDeploy = true;
     } catch {
@@ -773,6 +778,7 @@ export async function linkRepo(c: Context) {
       gitRepo: repo,
       gitUrl,
       installationId: (gitFields.installationId as number | undefined) ?? installationId,
+      ...(typeof gitFields.webhookId === "number" ? { webhookId: gitFields.webhookId } : {}),
     };
     const siblings = await repos.project.listByApp(project.appId);
     await Promise.all(
@@ -790,6 +796,70 @@ export async function linkRepo(c: Context) {
     webhook_strategy: strategy,
     auto_deploy: !!gitFields.autoDeploy,
   });
+}
+
+async function listUserRepoProjects(userId: string, owner: string, repo: string) {
+  const ownerKey = owner.toLowerCase();
+  const repoKey = repo.toLowerCase();
+  const projects = await repos.project.findByGitRepo(owner, repo);
+  return projects.filter(
+    (p) =>
+      p.userId === userId &&
+      p.gitOwner?.toLowerCase() === ownerKey &&
+      p.gitRepo?.toLowerCase() === repoKey,
+  );
+}
+
+async function findSharedWebhookId(userId: string, owner: string, repo: string) {
+  const projects = await listUserRepoProjects(userId, owner, repo);
+  return projects.find((p) => typeof p.webhookId === "number")?.webhookId ?? null;
+}
+
+async function syncSharedWebhookId(userId: string, owner: string, repo: string, webhookId: number) {
+  const projects = await listUserRepoProjects(userId, owner, repo);
+  await Promise.all(
+    projects
+      .filter((p) => p.webhookId !== webhookId)
+      .map((p) => repos.project.update(p.id, { webhookId })),
+  );
+}
+
+async function ensureSharedWebhook(
+  userId: string,
+  project: Project,
+  owner: string,
+  repo: string,
+  webhookUrl?: string,
+) {
+  const existingHookId = project.webhookId ?? (await findSharedWebhookId(userId, owner, repo));
+  const targetWebhookUrl = webhookUrl ?? `${env.BETTER_AUTH_URL}/api/webhooks/github`;
+  const result = await registerWebhook(userId, owner, repo, targetWebhookUrl);
+  if (!result.hookId) return null;
+
+  if (existingHookId && existingHookId !== result.hookId) {
+    await updateWebhook(userId, owner, repo, existingHookId, { active: false }).catch(
+      () => undefined,
+    );
+  }
+
+  await syncSharedWebhookId(userId, owner, repo, result.hookId);
+  return result.hookId;
+}
+
+async function disableSharedWebhookIfUnused(
+  userId: string,
+  owner: string,
+  repo: string,
+  webhookId: number | null,
+) {
+  const repoProjects = await repos.project.findByGitRepo(owner, repo);
+  if (repoProjects.some((p) => p.autoDeploy)) return;
+
+  const projects = repoProjects.filter((p) => p.userId === userId);
+  const hookId = webhookId ?? projects.find((p) => typeof p.webhookId === "number")?.webhookId;
+  if (hookId) {
+    await updateWebhook(userId, owner, repo, hookId, { active: false });
+  }
 }
 
 export async function setAutoDeploy(c: Context) {
@@ -831,27 +901,8 @@ export async function setAutoDeploy(c: Context) {
       // User has a verified domain — direct webhook delivery
       if (enabled) {
         const webhookUrl = `https://${project.webhookDomain}/_openship/hooks/github`;
-        if (!project.webhookId) {
-          const wh = await createWebhook(userId, owner, repo, webhookUrl);
-          if (wh.hookId) await repos.project.update(id, { webhookId: wh.hookId });
-        } else {
-          await updateWebhook(userId, owner, repo, project.webhookId, { active: true });
-        }
-        await repos.project.update(id, { autoDeploy: true });
-      } else {
-        if (project.webhookId) {
-          await updateWebhook(userId, owner, repo, project.webhookId, { active: false });
-        }
-        await repos.project.update(id, { autoDeploy: false });
-      }
-    } else if (enabled) {
-      // "repo" strategy — manage repo-level webhooks
-      if (project.webhookId) {
-        await updateWebhook(userId, owner, repo, project.webhookId, { active: true });
-        await repos.project.update(id, { autoDeploy: true });
-      } else {
-        const result = await registerWebhook(userId, owner, repo);
-        if (!result.hookId) {
+        const webhookId = await ensureSharedWebhook(userId, project, owner, repo, webhookUrl);
+        if (!webhookId) {
           return c.json(
             {
               success: false,
@@ -860,14 +911,28 @@ export async function setAutoDeploy(c: Context) {
             403,
           );
         }
-        await repos.project.update(id, { webhookId: result.hookId, autoDeploy: true });
+        await repos.project.update(id, { autoDeploy: true });
+      } else {
+        await repos.project.update(id, { autoDeploy: false });
+        await disableSharedWebhookIfUnused(userId, owner, repo, project.webhookId);
       }
+    } else if (enabled) {
+      // "repo" strategy — manage repo-level webhooks
+      const webhookId = await ensureSharedWebhook(userId, project, owner, repo);
+      if (!webhookId) {
+        return c.json(
+          {
+            success: false,
+            error: "Could not create webhook — you may not have admin access to this repository",
+          },
+          403,
+        );
+      }
+      await repos.project.update(id, { autoDeploy: true });
     } else {
-      // Disable — deactivate repo-level webhook (keep it so re-enable is instant)
-      if (project.webhookId) {
-        await updateWebhook(userId, owner, repo, project.webhookId, { active: false });
-      }
+      // Disable this environment. Keep the repo webhook while sibling environments still use it.
       await repos.project.update(id, { autoDeploy: false });
+      await disableSharedWebhookIfUnused(userId, owner, repo, project.webhookId);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1206,8 +1271,15 @@ export async function getInfo(c: Context) {
 export async function deletePost(c: Context) {
   const userId = getUserId(c);
   const id = param(c, "id");
-  await projectService.deleteProject(id, userId);
-  return c.json({ success: true, message: "deleted" });
+  let deleteApp = true;
+  try {
+    const body = await c.req.json<{ deleteApp?: boolean }>();
+    deleteApp = body.deleteApp ?? true;
+  } catch {
+    // Old clients sent no body. Treat that as deleting the full app group.
+  }
+  const result = await projectService.deleteProject(id, userId, { deleteApp });
+  return c.json({ success: true, message: "deleted", ...result });
 }
 
 // ─── Update via POST (old API compat) ────────────────────────────────────────

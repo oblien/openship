@@ -47,10 +47,12 @@ export function createProjectRepo(db: Database) {
 
     /** Find all projects linked to a given git owner/repo (for webhook dispatch) */
     async findByGitRepo(owner: string, repo: string) {
+      const ownerKey = owner.toLowerCase();
+      const repoKey = repo.toLowerCase();
       return db.query.project.findMany({
         where: and(
-          eq(project.gitOwner, owner),
-          eq(project.gitRepo, repo),
+          sql`lower(${project.gitOwner}) = ${ownerKey}`,
+          sql`lower(${project.gitRepo}) = ${repoKey}`,
           isNull(project.deletedAt),
         ),
       });

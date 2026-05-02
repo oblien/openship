@@ -4,7 +4,7 @@ import { AlertTriangle } from "lucide-react";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (deleteApp: boolean) => void;
   projectName: string;
 }
 
@@ -15,20 +15,23 @@ export const DeletionModal = ({
   projectName,
 }: Props) => {
   const [inputValue, setInputValue] = useState("");
+  const [deleteApp, setDeleteApp] = useState(true);
   const isConfirmDisabled = inputValue !== projectName;
 
   if (!isOpen) return null;
 
   const handleConfirm = () => {
     if (!isConfirmDisabled) {
-      onConfirm();
+      onConfirm(deleteApp);
       setInputValue("");
+      setDeleteApp(true);
       onClose();
     }
   };
 
   const handleClose = () => {
     setInputValue("");
+    setDeleteApp(true);
     onClose();
   };
 
@@ -46,11 +49,30 @@ export const DeletionModal = ({
           <p className="text-muted-foreground">
             You are about to delete the project <strong className="text-foreground">{projectName}</strong> permanently.
           </p>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
+            <input
+              type="checkbox"
+              checked={deleteApp}
+              onChange={(e) => setDeleteApp(e.target.checked)}
+              className="mt-0.5 size-4 rounded border-border accent-red-600"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">Delete all environments</span>
+              <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                {deleteApp
+                  ? "Deletes the complete app, including every branch environment under it."
+                  : "Deletes only the current environment. Other branch environments stay available."}
+              </span>
+            </span>
+          </label>
           
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
             <p className="text-sm text-amber-700 dark:text-amber-300 font-medium mb-1">Important Warning</p>
             <p className="text-sm text-amber-700 dark:text-amber-300">
-              If you apply this, the entire project <strong>will be deleted</strong> and all associated data on our servers including backups <strong>will be lost permanently</strong>. Make sure this is what you intend.
+              {deleteApp
+                ? "If you apply this, the entire project app and all branch environments will be deleted permanently."
+                : "If you apply this, only this environment and its associated data will be deleted permanently."}
             </p>
           </div>
 
@@ -85,11 +107,10 @@ export const DeletionModal = ({
                 : 'bg-foreground text-background hover:bg-foreground/90'
             }`}
           >
-            Confirm Delete
+            {deleteApp ? "Delete Project" : "Delete Environment"}
           </button>
         </div>
       </div>
     </div>
   );
 };
-

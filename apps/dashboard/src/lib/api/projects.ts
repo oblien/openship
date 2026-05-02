@@ -91,8 +91,9 @@ export const projectsApi = {
       body,
     ),
 
-  /** Delete a project */
-  delete: (id: string | number) => api.post<any>(endpoints.projects.delete(id)),
+  /** Delete a project app or a single environment */
+  delete: (id: string | number, body: { deleteApp?: boolean } = {}) =>
+    api.post<any>(endpoints.projects.delete(id), body),
 
   /** Update name or description */
   update: (id: string | number, action: string, value: string) =>

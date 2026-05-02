@@ -269,28 +269,53 @@ async function destroyResourceOnce(
 
 // ─── High-Level Orchestrators ────────────────────────────────────────────────
 
+export interface DeleteProjectOptions {
+  /** True deletes every environment under the same project app. */
+  deleteApp?: boolean;
+}
+
 /**
- * Full project deletion: validate → soft-delete → background cleanup.
+ * Full project/environment deletion: validate → soft-delete → background cleanup.
  *
- * Soft-deletes immediately so the UI reflects "deleting" instantly.
- * Resource cleanup (containers, images, routes) and DB cleanup run
- * in the background — the caller does NOT need to await this.
+ * In the current product model, a DB project is one environment and project_app
+ * is the app users think of as "the project". deleteApp=true removes all sibling
+ * environments under that app; false removes only the current environment.
  */
-export async function deleteProject(projectId: string, userId: string): Promise<void> {
+export async function deleteProject(
+  projectId: string,
+  userId: string,
+  options: DeleteProjectOptions = {},
+): Promise<{ deletedApp: boolean; deletedProjects: number }> {
   const p = await repos.project.findById(projectId);
   if (!p || p.userId !== userId) throw new NotFoundError("Project", projectId);
 
-  // 1. Soft-delete immediately — project disappears from listings
-  await repos.project.softDelete(projectId);
-  const remainingEnvironments = await repos.project.listByApp(p.appId);
-  if (remainingEnvironments.length === 0) {
+  const deleteApp = options.deleteApp ?? true;
+  const projects = deleteApp
+    ? (await repos.project.listByApp(p.appId)).filter((row) => row.userId === userId)
+    : [p];
+
+  // 1. Soft-delete immediately — environments disappear from listings
+  await Promise.all(projects.map((project) => repos.project.softDelete(project.id)));
+
+  let deletedApp = deleteApp;
+  if (deleteApp) {
     await repos.projectApp.softDelete(p.appId);
+  } else {
+    const remainingEnvironments = await repos.project.listByApp(p.appId);
+    if (remainingEnvironments.length === 0) {
+      await repos.projectApp.softDelete(p.appId);
+      deletedApp = true;
+    }
   }
 
   // 2. Background cleanup (fire-and-forget)
-  cleanupProjectResources(p!, projectId).catch((err) =>
-    console.error(`[PROJECT] Background cleanup failed for ${projectId}:`, err),
-  );
+  for (const project of projects) {
+    cleanupProjectResources(project, project.id).catch((err) =>
+      console.error(`[PROJECT] Background cleanup failed for ${project.id}:`, err),
+    );
+  }
+
+  return { deletedApp, deletedProjects: projects.length };
 }
 
 /** Internal: runs after soft-delete, outside the request lifecycle. */

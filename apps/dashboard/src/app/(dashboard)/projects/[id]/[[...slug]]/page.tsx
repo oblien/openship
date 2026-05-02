@@ -434,13 +434,13 @@ const ProjectSettingsContent = () => {
   const { showToast } = useToast();
   const router = useRouter();
 
-  const handleDeleteProject = async () => {
+  const handleDeleteProject = async (deleteApp = true) => {
     // Optimistic - immediately show "Deleting" status
     setProjectData((prev: any) => ({ ...prev, deletedAt: new Date().toISOString() }));
 
-    const response = await projectsApi.delete(projectData.id);
+    const response = await projectsApi.delete(projectData.id, { deleteApp });
     if (response.success) {
-      showToast("Project deleted successfully", "success");
+      showToast(deleteApp ? "Project deleted successfully" : "Environment deleted successfully", "success");
       router.push("/");
     } else {
       // Revert on failure
