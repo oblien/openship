@@ -65,6 +65,8 @@ const DISCOVERED_ROOT_MARKERS = new Set([
   "gatsby-config.ts",
   "vue.config.js",
   "vue.config.ts",
+  // Nx project marker — each Nx workspace project carries a project.json
+  "project.json",
   ...MANIFEST_FILES.map((name) => name.toLowerCase()),
 ]);
 
@@ -111,6 +113,24 @@ const LIBRARY_ROOT_SEGMENTS = new Set([
 ]);
 
 const MAX_PROJECT_ROOT_HINTS = 24;
+
+/**
+ * Single source of truth for project-root selection heuristics. Tuning weights here
+ * lets you reason about ranking without grepping through scoring functions.
+ */
+const CANDIDATE_WEIGHTS = {
+  source: { vercel: 100, workspace: 60, discovered: 20, root: 0 },
+  category: { fullstack: 30, frontend: 20, static: 10, backend: 0, generic: 0 },
+  servicesProject: 16,
+  hasBuildScript: 5,
+  files: { "index.html": 6, public: 4, src: 2 },
+  segments: {
+    firstIsApps: 10,
+    lastIsAppish: 8,
+    firstIsLibrary: -8,
+    shallowBonus: 1,
+  },
+} as const;
 
 export function normalizeProjectRootDirectory(value?: string): string {
   const normalized = value
@@ -256,6 +276,30 @@ function matchesWorkspacePattern(rootDirectory: string, pattern: string): boolea
   return regex.test(normalizedRoot);
 }
 
+/**
+ * Rush monorepo: rush.json declares each project explicitly under projects[].projectFolder.
+ */
+function parseRushWorkspacePatterns(rushJsonContent?: string): string[] {
+  if (!rushJsonContent) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rushJsonContent) as { projects?: unknown };
+    const projects = Array.isArray(parsed.projects) ? parsed.projects : [];
+
+    return projects
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return "";
+        const folder = (entry as { projectFolder?: unknown }).projectFolder;
+        return typeof folder === "string" ? folder : "";
+      })
+      .filter((folder) => folder.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 function getWorkspacePatterns(
   rootPackageJson?: Record<string, unknown>,
   rootFileContents?: Record<string, string>,
@@ -264,6 +308,7 @@ function getWorkspacePatterns(
   return [
     ...getPackageJsonWorkspacePatterns(rootPackageJson),
     ...getPnpmWorkspacePatterns(normalizedFileContents["pnpm-workspace.yaml"]),
+    ...parseRushWorkspacePatterns(normalizedFileContents["rush.json"]),
   ].map((pattern) => normalizeProjectRootDirectory(pattern)).filter(Boolean);
 }
 
@@ -394,10 +439,6 @@ export function collectPreferredRootHints(
 }
 
 function canPromoteNestedApp(root: ProjectRootSnapshot): boolean {
-  if (root.stack.projectType === "services" || root.stack.projectType === "docker") {
-    return true;
-  }
-
   return (
     root.stack.projectType === "app" &&
     (root.stack.category === "backend" ||
@@ -414,6 +455,21 @@ function isNestedProjectCandidate(candidate: ProjectRootSnapshot): boolean {
 
   if (candidate.stack.projectType === "services") {
     return true;
+  }
+
+  return (
+    candidate.stack.projectType === "app" &&
+    NESTED_APP_CATEGORIES.has(candidate.stack.category)
+  );
+}
+
+function canExposeSingleAppAlternative(root: ProjectRootSnapshot): boolean {
+  return root.stack.projectType === "services";
+}
+
+function isNestedSingleAppCandidate(candidate: ProjectRootSnapshot): boolean {
+  if (!candidate.rootDirectory || candidate.stack.stack === "unknown") {
+    return false;
   }
 
   return (
@@ -488,56 +544,48 @@ export function applyWorkspaceContext(
 }
 
 function scoreCandidate(candidate: ProjectRootSnapshot): number {
-  let score = candidate.source === "vercel" ? 100 : 0;
+  const { source, category, servicesProject, hasBuildScript, files, segments } = CANDIDATE_WEIGHTS;
 
-  if (candidate.source === "workspace") {
-    score += 60;
-  } else if (candidate.source === "discovered") {
-    score += 20;
-  }
-
-  if (candidate.stack.category === "fullstack") {
-    score += 30;
-  } else if (candidate.stack.category === "frontend") {
-    score += 20;
-  } else if (candidate.stack.category === "static") {
-    score += 10;
-  }
+  let score = source[candidate.source] ?? 0;
+  score += category[candidate.stack.category as keyof typeof category] ?? 0;
 
   if (candidate.stack.projectType === "services") {
-    score += 16;
+    score += servicesProject;
   }
 
   const scripts = candidate.packageJson?.scripts as Record<string, string> | undefined;
   if (scripts?.build) {
-    score += 5;
+    score += hasBuildScript;
   }
 
   const candidateFileSet = new Set(candidate.files.map((file) => file.name.toLowerCase()));
-  if (candidateFileSet.has("index.html")) score += 6;
-  if (candidateFileSet.has("public")) score += 4;
-  if (candidateFileSet.has("src")) score += 2;
-
-  const firstSegment = candidate.rootDirectory.split("/")[0]?.toLowerCase() ?? "";
-  const lastSegment = candidate.rootDirectory.split("/").at(-1)?.toLowerCase() ?? "";
-  if (firstSegment === "apps") score += 10;
-  if (APPISH_ROOT_SEGMENTS.has(lastSegment)) score += 8;
-  if (LIBRARY_ROOT_SEGMENTS.has(firstSegment)) score -= 8;
-
-  if (candidate.rootDirectory.split("/").length === 1) {
-    score += 1;
+  for (const [name, weight] of Object.entries(files)) {
+    if (candidateFileSet.has(name)) score += weight;
   }
+
+  const pathSegments = candidate.rootDirectory.split("/");
+  const firstSegment = pathSegments[0]?.toLowerCase() ?? "";
+  const lastSegment = pathSegments.at(-1)?.toLowerCase() ?? "";
+  if (firstSegment === "apps") score += segments.firstIsApps;
+  if (APPISH_ROOT_SEGMENTS.has(lastSegment)) score += segments.lastIsAppish;
+  if (LIBRARY_ROOT_SEGMENTS.has(firstSegment)) score += segments.firstIsLibrary;
+  if (pathSegments.length === 1) score += segments.shallowBonus;
 
   return score;
 }
 
-export function selectPreferredProjectRoot(
+function selectPreferredCandidate(
   rootInput: ProjectRootSnapshotInput,
   candidateInputs: ProjectRootSnapshotInput[],
-): ProjectRootSnapshot {
+  options: {
+    canSelect: (root: ProjectRootSnapshot) => boolean;
+    isEligible: (candidate: ProjectRootSnapshot) => boolean;
+    fallback: (root: ProjectRootSnapshot) => ProjectRootSnapshot | null;
+  },
+): ProjectRootSnapshot | null {
   const root = buildSnapshot(rootInput);
-  if (!canPromoteNestedApp(root)) {
-    return root;
+  if (!options.canSelect(root)) {
+    return options.fallback(root);
   }
 
   let bestCandidate: ProjectRootSnapshot | null = null;
@@ -545,7 +593,7 @@ export function selectPreferredProjectRoot(
 
   for (const candidateInput of candidateInputs) {
     const candidate = buildSnapshot(candidateInput);
-    if (!isNestedProjectCandidate(candidate)) {
+    if (!options.isEligible(candidate)) {
       continue;
     }
 
@@ -556,5 +604,27 @@ export function selectPreferredProjectRoot(
     }
   }
 
-  return bestCandidate ?? root;
+  return bestCandidate ?? options.fallback(root);
+}
+
+export function selectPreferredProjectRoot(
+  rootInput: ProjectRootSnapshotInput,
+  candidateInputs: ProjectRootSnapshotInput[],
+): ProjectRootSnapshot {
+  return selectPreferredCandidate(rootInput, candidateInputs, {
+    canSelect: canPromoteNestedApp,
+    isEligible: isNestedProjectCandidate,
+    fallback: (root) => root,
+  })!;
+}
+
+export function selectPreferredSingleAppRoot(
+  rootInput: ProjectRootSnapshotInput,
+  candidateInputs: ProjectRootSnapshotInput[],
+): ProjectRootSnapshot | null {
+  return selectPreferredCandidate(rootInput, candidateInputs, {
+    canSelect: canExposeSingleAppAlternative,
+    isEligible: isNestedSingleAppCandidate,
+    fallback: () => null,
+  });
 }

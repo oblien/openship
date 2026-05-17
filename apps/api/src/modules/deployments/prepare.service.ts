@@ -23,7 +23,14 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { env } from "../../config";
 
-const PREPARE_FILE_CONTENTS = [...MANIFEST_FILES, "pnpm-workspace.yaml", "vercel.json"] as const;
+const PREPARE_FILE_CONTENTS = [
+  ...MANIFEST_FILES,
+  "pnpm-workspace.yaml",
+  "vercel.json",
+  "turbo.json",
+  "nx.json",
+  "rush.json",
+] as const;
 const COMPOSE_FILES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"] as const;
 
 interface ProjectReader {
@@ -298,6 +305,29 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
   return resolveFromLocal(input.path);
 }
 
+// ─── Shared resolver ─────────────────────────────────────────────────────────
+
+type RepoMeta = Parameters<typeof toProjectInfo>[0];
+
+/**
+ * Shared resolution pipeline: snapshot → select root → read compose/.env → map.
+ * Source-specific work (auth, branch validation, fs stat) lives in the callers.
+ */
+async function resolveFromReader(
+  reader: ProjectReader,
+  repoMeta: RepoMeta,
+  selectedBranch: string,
+): Promise<ProjectInfo> {
+  const rootSnapshot = await readProjectSnapshot(reader);
+  const selectedProject = await selectProjectSnapshot(reader, rootSnapshot);
+  const [composeContent, composeEnvContent] = await Promise.all([
+    readComposeText(reader, selectedProject.rootDirectory, selectedProject.files),
+    readProjectText(reader, selectedProject.rootDirectory, ".env"),
+  ]);
+
+  return toProjectInfo(repoMeta, selectedProject, composeContent, selectedBranch, composeEnvContent);
+}
+
 // ─── GitHub ──────────────────────────────────────────────────────────────────
 
 async function resolveFromGitHub(
@@ -319,13 +349,11 @@ async function resolveFromGitHub(
     }
   }
 
-  const reader = createGitHubReader(userId, owner, repo, selectedBranch);
-  const rootSnapshot = await readProjectSnapshot(reader);
-  const selectedProject = await selectProjectSnapshot(reader, rootSnapshot);
-  const composeContent = await readComposeText(reader, selectedProject.rootDirectory, selectedProject.files);
-  const composeEnvContent = await readProjectText(reader, selectedProject.rootDirectory, ".env");
-
-  return toProjectInfo(repository, selectedProject, composeContent, selectedBranch, composeEnvContent);
+  return resolveFromReader(
+    createGitHubReader(userId, owner, repo, selectedBranch),
+    repository,
+    selectedBranch,
+  );
 }
 
 // ─── Local filesystem ────────────────────────────────────────────────────────
@@ -337,22 +365,20 @@ async function resolveFromLocal(dirPath: string): Promise<ProjectInfo> {
   }
 
   const reader = createLocalReader(dirPath);
-  const rootSnapshot = await readProjectSnapshot(reader);
-  const dirName = (rootSnapshot.packageJson?.name as string) ?? basename(dirPath);
+  const rootPackageJson = await reader.readJson("package.json");
+  const name = (rootPackageJson?.name as string) ?? basename(dirPath);
 
-  const repoShape = {
-    name: dirName,
-    full_name: dirPath,
-    owner: "local",
-    private: true,
-    default_branch: "main",
-  } as const;
-
-  const selectedProject = await selectProjectSnapshot(reader, rootSnapshot);
-  const composeContent = await readComposeText(reader, selectedProject.rootDirectory, selectedProject.files);
-  const composeEnvContent = await readProjectText(reader, selectedProject.rootDirectory, ".env");
-
-  return toProjectInfo(repoShape, selectedProject, composeContent, repoShape.default_branch, composeEnvContent);
+  return resolveFromReader(
+    reader,
+    {
+      name,
+      full_name: dirPath,
+      owner: "local",
+      private: true,
+      default_branch: "main",
+    },
+    "main",
+  );
 }
 
 // ─── Shared mapper ───────────────────────────────────────────────────────────

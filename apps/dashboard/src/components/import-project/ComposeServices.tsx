@@ -19,13 +19,10 @@ import { useDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { STACK_ICONS } from "@repo/core";
 import {
-  createPublicEndpoint,
-  resolveBuildImageForDeploymentMode,
   usesServiceDeployment,
   type ComposeServiceInfo,
-  type DeploymentConfig,
-  type PublicEndpoint,
 } from "@/context/deployment/types";
+import { getModeSwitchUpdates } from "@/context/deployment/mode-config";
 import { normalizeSubdomain, normalizeSubdomainInput } from "@/utils/subdomain";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -37,8 +34,6 @@ import { cn } from "@/lib/utils";
 
 const getExposedPort = (svc: ComposeServiceInfo) =>
   svc.ports[0]?.split(":").pop()?.split("/")[0];
-
-const PRIMARY_SINGLE_APP_SERVICE_NAMES = new Set(["web", "app", "frontend"]);
 
 type EnvVarRow = { key: string; value: string; visible: boolean };
 
@@ -83,112 +78,6 @@ const missingEnvCount = (service: ComposeServiceInfo) =>
 
 const portDisplay = (port: string) => port.split(":").pop()?.split("/")[0] || port;
 
-function resolveComposeServiceSingleAppDomain(
-  service: ComposeServiceInfo,
-  projectName: string,
-): string {
-  if (service.domain) {
-    return service.domain;
-  }
-
-  return PRIMARY_SINGLE_APP_SERVICE_NAMES.has(service.name)
-    ? normalizeSubdomain(projectName)
-    : normalizeSubdomain(`${projectName}-${service.name}`);
-}
-
-function deriveSingleAppEndpointsFromCompose(
-  config: DeploymentConfig,
-): { publicEndpoints: PublicEndpoint[]; productionPort: string } | null {
-  const projectName = config.projectName || config.repo || "project";
-  const composeEndpoints = config.services
-    .map((service, index) => {
-      if (!service.exposed) return null;
-
-      const port = service.exposedPort || getExposedPort(service) || "";
-      if (!port) return null;
-
-      return {
-        sourceIndex: index,
-        service,
-        endpoint: createPublicEndpoint({
-          port,
-          domainType: service.domainType || "free",
-          domain:
-            service.domainType === "custom"
-              ? ""
-              : resolveComposeServiceSingleAppDomain(service, projectName),
-          customDomain: service.domainType === "custom" ? service.customDomain || "" : "",
-        }),
-      };
-    })
-    .filter((entry): entry is {
-      sourceIndex: number;
-      service: ComposeServiceInfo;
-      endpoint: PublicEndpoint;
-    } => entry !== null)
-    .sort((left, right) => {
-      const leftPriority = PRIMARY_SINGLE_APP_SERVICE_NAMES.has(left.service.name) ? 0 : left.service.exposed ? 1 : 2;
-      const rightPriority = PRIMARY_SINGLE_APP_SERVICE_NAMES.has(right.service.name) ? 0 : right.service.exposed ? 1 : 2;
-      return leftPriority - rightPriority || left.sourceIndex - right.sourceIndex;
-    });
-
-  if (composeEndpoints.length === 0) {
-    return null;
-  }
-
-  const currentPort = config.options.productionPort.trim();
-  const primaryCandidate = composeEndpoints.find(({ endpoint }) => endpoint.port === currentPort) ?? composeEndpoints[0];
-  const primaryPort = primaryCandidate.endpoint.port;
-  const [currentPrimary, ...currentAdditional] = config.publicEndpoints;
-
-  const primaryEndpoint = createPublicEndpoint({
-    ...primaryCandidate.endpoint,
-    ...currentPrimary,
-    id: currentPrimary?.id,
-    port: primaryPort,
-    domain: currentPrimary?.domain || primaryCandidate.endpoint.domain,
-    customDomain: currentPrimary?.customDomain || primaryCandidate.endpoint.customDomain,
-    domainType: currentPrimary?.domainType ?? primaryCandidate.endpoint.domainType,
-  });
-
-  const matchedCurrent = new Set<number>();
-  const additionalEndpoints = composeEndpoints
-    .filter(({ sourceIndex }) => sourceIndex !== primaryCandidate.sourceIndex)
-    .map(({ endpoint }) => {
-      const existingIndex = currentAdditional.findIndex((candidate, index) => {
-        if (matchedCurrent.has(index)) return false;
-
-        return candidate.port === endpoint.port || (
-          candidate.domainType === endpoint.domainType &&
-          candidate.domain === endpoint.domain &&
-          candidate.customDomain === endpoint.customDomain
-        );
-      });
-
-      if (existingIndex === -1) {
-        return endpoint;
-      }
-
-      matchedCurrent.add(existingIndex);
-      const existing = currentAdditional[existingIndex];
-      return createPublicEndpoint({
-        ...endpoint,
-        ...existing,
-        id: existing.id,
-        port: endpoint.port,
-        domain: existing.domain || endpoint.domain,
-        customDomain: existing.customDomain || endpoint.customDomain,
-        domainType: existing.domainType ?? endpoint.domainType,
-      });
-    });
-
-  const preservedAdditional = currentAdditional.filter((_, index) => !matchedCurrent.has(index));
-
-  return {
-    publicEndpoints: [primaryEndpoint, ...additionalEndpoints, ...preservedAdditional],
-    productionPort: primaryPort,
-  };
-}
 
 const SkeletonBlock: React.FC<{ className: string }> = ({ className }) => (
   <div className={`animate-pulse rounded-md bg-muted ${className}`} />
@@ -765,25 +654,7 @@ const ComposeServices: React.FC = () => {
 
   const setDeploymentMode = useCallback(
     (mode: "services" | "single") => {
-      const updates: Partial<DeploymentConfig> = {
-        serviceDeploymentMode: mode,
-        runtimeMode: mode === "services" ? "docker" : "bare",
-        buildStrategy: mode === "services" ? "server" : config.buildStrategy,
-        buildImage: resolveBuildImageForDeploymentMode(config, mode),
-      };
-
-      if (mode === "single") {
-        const singleAppEndpoints = deriveSingleAppEndpointsFromCompose(config);
-        if (singleAppEndpoints) {
-          updates.publicEndpoints = singleAppEndpoints.publicEndpoints;
-          updates.options = {
-            ...config.options,
-            productionPort: singleAppEndpoints.productionPort,
-          };
-        }
-      }
-
-      updateConfig(updates);
+      updateConfig(getModeSwitchUpdates(config, mode));
     },
     [config, updateConfig],
   );

@@ -7,12 +7,11 @@
  */
 
 import type { MultiServiceRuntimeAdapter, ResourceConfig } from "@repo/adapters";
-import { BuildLogger, resolveDockerfileCandidates } from "@repo/adapters";
+import { BuildLogger } from "@repo/adapters";
 import { repos, type Deployment, type Project } from "@repo/db";
 
 import { createDockerfileBuildConfig, type BuildConfigSnapshotLike } from "../build-config";
 import * as sessionManager from "../session-manager";
-import * as githubService from "../../github/github.service";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -22,44 +21,6 @@ function sanitizeComposeImageName(value: string): string {
       .toLowerCase()
       .replace(/[^a-z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "service"
-  );
-}
-
-async function readComposeDockerfileContent(opts: {
-  project: Project;
-  dep: Deployment;
-  context: string;
-  dockerfilePath?: string | null;
-  serviceName: string;
-  logger: BuildLogger;
-}): Promise<string | undefined> {
-  const { project, dep, context, dockerfilePath, serviceName, logger } = opts;
-  if (project.localPath || !project.gitOwner || !project.gitRepo) return undefined;
-
-  const candidates = resolveDockerfileCandidates(context, dockerfilePath);
-  const ref = dep.commitSha || dep.branch || project.gitBranch || undefined;
-  const errors: string[] = [];
-
-  for (const candidate of candidates) {
-    try {
-      logger.log(`Reading Dockerfile "${candidate}" from GitHub.\n`, "info", {
-        serviceName,
-      });
-      const file = await githubService.getFileContent(
-        dep.userId,
-        project.gitOwner,
-        project.gitRepo,
-        candidate,
-        { branch: ref },
-      );
-      return file.content;
-    } catch (err) {
-      errors.push(`${candidate}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  throw new Error(
-    `No Dockerfile found for service "${serviceName}". Checked: ${candidates.join(", ")}. ${errors.join("; ")}`,
   );
 }
 
@@ -166,31 +127,12 @@ export async function buildComposeImages(opts: {
         });
       });
 
-      let dockerfileContent: string | undefined;
-      if (opts.runtime.name === "cloud") {
-        try {
-          dockerfileContent = await readComposeDockerfileContent({
-            project: opts.project,
-            dep: opts.dep,
-            context,
-            dockerfilePath: service.dockerfile ?? undefined,
-            serviceName: service.name,
-            logger: opts.logger,
-          });
-        } catch (err) {
-          const failureMessage = err instanceof Error ? err.message : String(err);
-          buildFailures.set(service.id, failureMessage);
-          opts.logger.log(`Compose service "${service.name}" build failed: ${failureMessage}\n`, "error", {
-            serviceName: service.name,
-          });
-          sessionManager.broadcastServiceStatus(opts.dep.id, {
-            serviceName: service.name,
-            serviceId: service.id,
-            status: "failed",
-            error: failureMessage,
-          });
-          return;
-        }
+      if (opts.runtime.name === "cloud" && !opts.project.localPath) {
+        opts.logger.log(
+          `Resolving Dockerfile for compose service "${service.name}" from the build source checkout.\n`,
+          "info",
+          { serviceName: service.name },
+        );
       }
 
       const buildResult = await opts.runtime.build(
@@ -206,7 +148,6 @@ export async function buildComposeImages(opts: {
             slug: `${sanitizeComposeImageName(opts.project.slug ?? opts.project.name)}-${sanitizeComposeImageName(service.name)}`,
             rootDirectory: context,
             dockerfilePath: service.dockerfile ?? undefined,
-            dockerfileContent,
             hasServer: true,
           },
         }),

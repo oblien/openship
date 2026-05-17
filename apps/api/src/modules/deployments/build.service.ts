@@ -21,6 +21,7 @@ import {
 } from "@repo/core";
 import type {
   BuildConfig,
+  BuildResult,
   CommandExecutor,
   DeployConfig,
   DeployEnvironment,
@@ -196,6 +197,64 @@ function throwPreflightFailure(preflight: PreflightResult): never {
       : "PRE_DEPLOY_CHECKS_FAILED";
 
   throw new AppError(`Pre-deploy checks failed: ${failures}`, 403, errorCode);
+}
+
+/** Wrap a snapshot with the project's currently-active deployment id (rollback target). */
+function metaWithPrevious(
+  snapshot: DeploymentConfigSnapshot,
+  project: Project,
+): DeploymentConfigSnapshot {
+  return { ...snapshot, previousActiveDeploymentId: project.activeDeploymentId ?? undefined };
+}
+
+/**
+ * Compose-vs-normal pipeline gate (single source of truth).
+ * Single mode short-circuits; otherwise we resolve services + pipeline in parallel.
+ */
+async function resolveServicePipelineMode(
+  project: Project,
+  snapshot: DeploymentConfigSnapshot,
+): Promise<{
+  useSingleAppPipeline: boolean;
+  useServicePipeline: boolean;
+  servicePreflightServices: ComposeService[];
+}> {
+  if (snapshot.serviceDeploymentMode === "single") {
+    return { useSingleAppPipeline: true, useServicePipeline: false, servicePreflightServices: [] };
+  }
+
+  const [servicePreflightServices, useServicePipeline] = await Promise.all([
+    resolveProjectServicePreflightServices(project.id, snapshot.composeServices),
+    shouldUseProjectServicePipeline(project, snapshot.composeServices),
+  ]);
+
+  return { useSingleAppPipeline: false, useServicePipeline, servicePreflightServices };
+}
+
+/** Run preflight against a snapshot+route state and throw a structured failure on any check fail. */
+async function runDeploymentPreflight(
+  snapshot: DeploymentConfigSnapshot,
+  routeState: Awaited<ReturnType<typeof resolveProjectRouteState>>,
+  opts: {
+    userId: string;
+    composeServices?: ComposeService[];
+    multiService?: boolean;
+  },
+): Promise<void> {
+  const preflight = await runPreflightChecks(snapshot, {
+    customDomain: routeState.primaryCustomDomain,
+    slug:
+      routeState.publicEndpoints.length > 0 && routeState.primaryDomainType === "free"
+        ? routeState.primarySlug
+        : undefined,
+    userId: opts.userId,
+    publicEndpoints: routeState.publicEndpoints,
+    ...(opts.composeServices ? { composeServices: opts.composeServices } : {}),
+    ...(opts.multiService !== undefined ? { multiService: opts.multiService } : {}),
+  });
+  if (!preflight.ok) {
+    throwPreflightFailure(preflight);
+  }
 }
 
 function buildScopedEnvVars(
@@ -559,19 +618,10 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
   if (requestedServiceMode === "services" && services?.length) {
     snapshot.composeServices = services;
   }
-  const useSingleAppPipeline = snapshot.serviceDeploymentMode === "single";
-  const servicePreflightServices = useSingleAppPipeline
-    ? []
-    : await resolveProjectServicePreflightServices(
-        project.id,
-        snapshot.composeServices,
-      );
-  const useServicePipeline = useSingleAppPipeline
-    ? false
-    : await shouldUseProjectServicePipeline(
-        project,
-        snapshot.composeServices,
-      );
+  const { useServicePipeline, servicePreflightServices } = await resolveServicePipelineMode(
+    project,
+    snapshot,
+  );
 
   // Resolve effective build strategy via settings service
   snapshot.buildStrategy = await settingsService.resolveStrategy(
@@ -592,20 +642,11 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
   }
 
   // ── Preflight: validate config + domain before creating any resources ──
-  const preflight = await runPreflightChecks(snapshot, {
-    customDomain: routeState.primaryCustomDomain,
-    slug:
-      routeState.publicEndpoints.length > 0 && routeState.primaryDomainType === "free"
-        ? routeState.primarySlug
-        : undefined,
+  await runDeploymentPreflight(snapshot, routeState, {
     userId,
-    publicEndpoints: routeState.publicEndpoints,
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
   });
-  if (!preflight.ok) {
-    throwPreflightFailure(preflight);
-  }
   const env = environment || "production";
 
   // ── Resolve commit info from the branch HEAD ────
@@ -623,10 +664,7 @@ export async function requestBuildAccess(userId: string, input: BuildAccessInput
     commitMessage,
     environment: env,
     framework: snapshot.framework,
-    meta: {
-      ...snapshot,
-      previousActiveDeploymentId: project.activeDeploymentId ?? undefined,
-    },
+    meta: metaWithPrevious(snapshot, project),
     envVars: encryptEnvVars(envVars),
   });
 
@@ -890,10 +928,7 @@ export async function redeployBuildSession(deploymentId: string, userId: string)
     trigger: "redeploy",
     environment: oldDep.environment,
     framework: oldDep.framework || meta.framework,
-    meta: {
-      ...meta,
-      previousActiveDeploymentId: project.activeDeploymentId ?? undefined,
-    },
+    meta: metaWithPrevious(meta, project),
     envVars: oldDep.envVars as Record<string, string> | null,
   });
 
@@ -961,18 +996,7 @@ export async function triggerDeployment(
   const routeState = await resolveProjectRouteState(project);
 
   // ── Preflight: validate config before creating any resources ────
-  const preflight = await runPreflightChecks(snapshot, {
-    customDomain: routeState.primaryCustomDomain,
-    slug:
-      routeState.publicEndpoints.length > 0 && routeState.primaryDomainType === "free"
-        ? routeState.primarySlug
-        : undefined,
-    userId,
-    publicEndpoints: routeState.publicEndpoints,
-  });
-  if (!preflight.ok) {
-    throwPreflightFailure(preflight);
-  }
+  await runDeploymentPreflight(snapshot, routeState, { userId });
 
   // Copy env vars from project (already encrypted in env_var table)
   const rawEnvMap = await repos.project.getEnvMap(project.id, environment);
@@ -996,10 +1020,7 @@ export async function triggerDeployment(
     trigger: data.trigger ?? "manual",
     environment,
     framework: snapshot.framework,
-    meta: {
-      ...snapshot,
-      previousActiveDeploymentId: project.activeDeploymentId ?? undefined,
-    },
+    meta: metaWithPrevious(snapshot, project),
     envVars: encryptedEnvVars,
   });
 
@@ -1117,12 +1138,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       gitToken: gitToken ?? undefined,
     });
 
-    const useServicePipeline = snapshot.serviceDeploymentMode === "single"
-      ? false
-      : await shouldUseProjectServicePipeline(
-          project,
-          snapshot.composeServices,
-        );
+    const useServicePipeline = (await resolveServicePipelineMode(project, snapshot)).useServicePipeline;
 
     if (useServicePipeline && isMultiServiceRuntime(runtime)) {
       if (snapshot.composeServices?.length) {
@@ -1191,275 +1207,357 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     });
     sessionManager.updateStatus(dep.id, "deploying");
 
-    // ── Branch: static (Pages) vs server (VM) ────────────────────────
+    const phase: DeployPhaseInputs = {
+      ctx,
+      project,
+      dep,
+      snapshot,
+      buildSessionId,
+      runtime,
+      routing,
+      ssl,
+      system,
+      targetExecutor,
+      usesManagedRouting,
+      routeState,
+      buildResult,
+      envMap,
+      prodResources,
+      logger,
+    };
+
     if (!snapshot.hasServer && runtime instanceof CloudRuntime) {
-      // ── Static deploy via Oblien Pages ─────────────────────────────
-      logger.step("deploy", "running", "Deploying to edge (static)...");
-
-      const staticResult = await runtime.deployStatic({
-        deploymentId: dep.id,
-        projectId: project.id,
-        buildSessionId,
-        imageRef: buildResult.imageRef,
-        environment: dep.environment,
-        port: snapshot.port,
-        startCommand: snapshot.startCommand,
-        stack: snapshot.framework,
-        envVars: envMap,
-        resources: prodResources,
-        restartPolicy: "no",
-        runtimeName: project.slug ?? project.id,
-        publicEndpoints: routeState.publicEndpoints,
-        outputDirectory: resolveStaticOutputDirectory(
-          snapshot.outputDirectory,
-          routeState.publicEndpoints[0]?.targetPath,
-        ),
-        projectName: project.name,
-      });
-
-      if (staticResult.status === "failed" || !staticResult.containerId) {
-        logger.step("deploy", "failed", "Static deploy failed");
-        await onFailure(ctx, "Failed to deploy static site to edge", buildResult.durationMs);
-        return;
-      }
-
-      logger.step("deploy", "completed", "Deployed to edge successfully");
-
-      await onSuccess(ctx, {
-        containerId: staticResult.containerId,
-        url: staticResult.url,
-        durationMs: buildResult.durationMs ?? 0,
-      });
+      await executeStaticEdgeDeploy(phase, runtime);
     } else {
-      // ── Server deploy (existing VM pipeline) ───────────────────────
-      // Static sites are always served directly from the web server (OpenResty)
-      // via file-backed routes — Docker is only for server apps.
-      const staticBareRuntime =
-        !snapshot.hasServer && runtime instanceof BareRuntime ? runtime : null;
-      const isStaticSelfHosted = staticBareRuntime !== null;
-
-      const deployConfig: DeployConfig = {
-        deploymentId: dep.id,
-        projectId: project.id,
-        buildSessionId,
-        imageRef: buildResult.imageRef,
-        environment: dep.environment,
-        port: snapshot.port,
-        startCommand: snapshot.startCommand,
-        stack: snapshot.framework,
-        envVars: envMap,
-        resources: prodResources,
-        restartPolicy: isStaticSelfHosted ? "no" : "always",
-        runtimeName: project.slug ?? project.id,
-        publicEndpoints: routeState.publicEndpoints,
-        outputDirectory: snapshot.outputDirectory,
-        productionPaths: snapshot.productionPaths.length ? snapshot.productionPaths : undefined,
-      };
-
-      // Gather inputs for the deploy pipeline
-      const prevDep = project.activeDeploymentId
-        ? await repos.deployment.findById(project.activeDeploymentId)
-        : null;
-      const previousRuntime = prevDep?.containerId
-        ? await resolveDeploymentRuntime(prevDep)
-            .then((r) => r.runtime)
-            .catch(() => runtime)
-        : runtime;
-
-      // ── Gather all domains that need routing ───────────────────────
-      // Sources: custom domain, verified DB domains, free host subdomain.
-      // Every domain gets an OpenResty route; SSL is provisioned only for
-      // custom domains — the free host subdomain skips SSL (user manages it).
-      const projectDomains = await repos.domain.listByProject(project.id);
-      const domainByHostname = new Map(
-        projectDomains.map((domain) => [domain.hostname.toLowerCase(), domain]),
-      );
-      const plannedDomains = buildProjectRouteDomains({
-        project,
-        projectDomains,
-        customDomain: routeState.primaryCustomDomain,
-        managedSlug: routeState.publicEndpoints.length > 0 ? routeState.primarySlug : undefined,
-        publicEndpoints: routeState.publicEndpoints,
-        runtimeName: runtime.name,
-        usesManagedRouting,
-      });
-      const activeRouteIds = new Set(
-        routeState.publicEndpoints
-          .map((endpoint) => endpoint.id)
-          .filter((id): id is string => !!id),
-      );
-      const obsoleteProjectDomains = activeRouteIds.size > 0
-        ? projectDomains.filter(
-            (domain) =>
-              !domain.serviceId &&
-              !activeRouteIds.has(domain.id),
-          )
-        : [];
-
-      // Persist domain records for any new planned domains (free subdomain, custom domain)
-      for (const route of plannedDomains) {
-        const created = await ensureRouteDomainRecord({
-          projectId: project.id,
-          route,
-          domainByHostname,
-        });
-        if (created && !projectDomains.some((d) => d.id === created.id)) {
-          logger.log(`Created domain record for "${route.hostname}".\n`);
-        }
-      }
-
-      // Compose deploy environment from runtime adapter
-      const deployEnv: DeployEnvironment = {
-        preflight: targetExecutor
-          ? async (cfg, promptUser) => {
-              if (system) {
-                const systemLog = (entry: {
-                  message: string;
-                  level: "info" | "warn" | "error";
-                }) => {
-                  logger.log(`${entry.message}\n`, entry.level);
-                };
-
-                if (!isStaticSelfHosted) {
-                  await system.ensureFeature("deploy", systemLog);
-                }
-                if (plannedDomains.length > 0) {
-                  await system.ensureFeature("routing", systemLog);
-                }
-                if (plannedDomains.some((d) => d.provisionSsl)) {
-                  await system.ensureFeature("ssl", systemLog);
-                }
-              }
-
-              if (!isStaticSelfHosted) {
-                const ports = Array.from(
-                  new Set((routeState.publicEndpoints.length > 0
-                    ? routeState.publicEndpoints
-                    : [{ port: cfg.port }])
-                    .map((endpoint) => endpoint.port ?? cfg.port)
-                    .filter((port): port is number => Number.isFinite(port))),
-                );
-
-                for (const port of ports) {
-                  await ensurePortAvailable(targetExecutor, port, logger, promptUser);
-                }
-              }
-            }
-          : undefined,
-        activate: async (cfg, onLog) => {
-          const r = isStaticSelfHosted
-            ? await staticBareRuntime.deployStatic({
-                ...cfg,
-                outputDirectory: cfg.outputDirectory ?? snapshot.outputDirectory,
-              })
-            : await runtime.deploy(cfg, onLog);
-          if (!r.containerId) throw new Error("Deploy produced no container");
-          return { containerId: r.containerId, url: r.url };
-        },
-        deactivate: (id) =>
-          previousRuntime.name === "bare" && !id.includes("/")
-            ? previousRuntime.stop(id)
-            : previousRuntime.destroy(id),
-        resolveRoute: isStaticSelfHosted
-          ? async (id, cfg) => ({
-              staticRoot: staticBareRuntime.resolveStaticRoot(
-                id,
-                cfg.outputDirectory ?? snapshot.outputDirectory,
-              ),
-            })
-          : undefined,
-        resolveTargetUrl: runtime.supports("containerIp")
-          ? async (id, port) => {
-              const ip = await runtime.getContainerIp(id);
-              return ip ? `http://${ip}:${port}` : null;
-            }
-          : undefined,
-      };
-
-      const deploySsl = plannedDomains.some((domain) => domain.provisionSsl)
-        ? createTrackedSslProvider(ssl, domainByHostname)
-        : ssl;
-
-      const deployResult = await runDeployPipeline(
-        deployEnv,
-        {
-          config: deployConfig,
-          previousContainerId: prevDep?.containerId ?? undefined,
-          domains: toRoutedDomainInputs(plannedDomains),
-          routing,
-          ssl: deploySsl,
-          routeOptions: project.webhookDomain
-            ? {
-                webhookDomain: project.webhookDomain,
-                webhookProxy: `${internalApiUrl}/api/webhooks/`,
-              }
-            : undefined,
-          promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
-        },
-        logger,
-      );
-
-      if (deployResult.status === "failed") {
-        await onFailure(ctx, deployResult.error, buildResult.durationMs, {
-          errorCode: deployResult.errorCode,
-          errorDetails: deployResult.errorDetails,
-        });
-        return;
-      }
-
-      if (usesManagedRouting) {
-        for (const domain of plannedDomains.filter((d) => d.isCloud && d.managedSubdomain)) {
-          logger.log(`Syncing managed edge proxy for ${domain.hostname}...\n`);
-          await ensureManagedEdgeProxy(dep.userId, domain.managedSubdomain!, {
-            serverId: snapshot.serverId,
-          });
-        }
-      }
-
-      for (const domain of obsoleteProjectDomains) {
-        if (routing) {
-          await routing.removeRoute(domain.hostname).catch((err) => {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.log(`Warning: failed to remove stale route ${domain.hostname}: ${message}\n`, "warn");
-          });
-        }
-
-        await repos.domain.remove(domain.id).catch((err) => {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.log(`Warning: failed to remove stale domain record ${domain.hostname}: ${message}\n`, "warn");
-        });
-      }
-
-      if (
-        prevDep?.imageRef &&
-        prevDep.imageRef !== buildResult.imageRef &&
-        previousRuntime instanceof DockerRuntime
-      ) {
-        await previousRuntime.removeImage(prevDep.imageRef).catch((err) => {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.log(
-            `Warning: failed to remove previous image ${prevDep.imageRef}: ${message}\n`,
-            "warn",
-          );
-        });
-      }
-
-      // ── Success ──────────────────────────────────────────────────────
-      await onSuccess(ctx, {
-        containerId: deployResult.containerId!,
-        url: deployResult.url,
-        durationMs: buildResult.durationMs ?? 0,
-      });
-
-      if (runtime.name === "bare") {
-        await pruneRetainedBareReleases(project, dep).catch((err) => {
-          console.error(`[DEPLOY] Failed to prune retained releases for ${dep.id}:`, err);
-        });
-      }
+      await executeServerDeploy(phase);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     logger.log(`Error: ${message}`, "error");
     await onFailure(ctx, message);
+  }
+}
+
+// ─── Deploy phases ───────────────────────────────────────────────────────────
+
+interface DeployPhaseInputs {
+  ctx: LifecycleContext;
+  project: Project;
+  dep: Deployment;
+  snapshot: DeploymentConfigSnapshot;
+  buildSessionId: string;
+  runtime: Awaited<ReturnType<typeof platform>>["runtime"];
+  routing: Awaited<ReturnType<typeof platform>>["routing"];
+  ssl: Awaited<ReturnType<typeof platform>>["ssl"];
+  system: Awaited<ReturnType<typeof platform>>["system"];
+  targetExecutor: CommandExecutor | null;
+  usesManagedRouting: boolean;
+  routeState: Awaited<ReturnType<typeof resolveProjectRouteState>>;
+  buildResult: BuildResult;
+  envMap: Record<string, string>;
+  prodResources: ResourceConfig;
+  logger: BuildLogger;
+}
+
+/** Static edge deploy via CloudRuntime (Oblien Pages). */
+async function executeStaticEdgeDeploy(
+  phase: DeployPhaseInputs,
+  runtime: CloudRuntime,
+): Promise<void> {
+  const { ctx, project, dep, snapshot, buildSessionId, routeState, buildResult, envMap, prodResources, logger } = phase;
+
+  logger.step("deploy", "running", "Deploying to edge (static)...");
+
+  const staticResult = await runtime.deployStatic({
+    deploymentId: dep.id,
+    projectId: project.id,
+    buildSessionId,
+    imageRef: buildResult.imageRef!,
+    environment: dep.environment,
+    port: snapshot.port,
+    startCommand: snapshot.startCommand,
+    stack: snapshot.framework,
+    envVars: envMap,
+    resources: prodResources,
+    restartPolicy: "no",
+    runtimeName: project.slug ?? project.id,
+    publicEndpoints: routeState.publicEndpoints,
+    outputDirectory: resolveStaticOutputDirectory(
+      snapshot.outputDirectory,
+      routeState.publicEndpoints[0]?.targetPath,
+    ),
+    projectName: project.name,
+  });
+
+  if (staticResult.status === "failed" || !staticResult.containerId) {
+    logger.step("deploy", "failed", "Static deploy failed");
+    await onFailure(ctx, "Failed to deploy static site to edge", buildResult.durationMs);
+    return;
+  }
+
+  logger.step("deploy", "completed", "Deployed to edge successfully");
+
+  await onSuccess(ctx, {
+    containerId: staticResult.containerId,
+    url: staticResult.url,
+    durationMs: buildResult.durationMs ?? 0,
+  });
+}
+
+/** Server deploy via runDeployPipeline (VM / Docker / Bare). Handles static-self-hosted too. */
+async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
+  const {
+    ctx, project, dep, snapshot, buildSessionId,
+    runtime, routing, ssl, system, targetExecutor, usesManagedRouting,
+    routeState, buildResult, envMap, prodResources, logger,
+  } = phase;
+
+  // Static sites are always served directly from the web server (OpenResty)
+  // via file-backed routes — Docker is only for server apps.
+  const staticBareRuntime =
+    !snapshot.hasServer && runtime instanceof BareRuntime ? runtime : null;
+  const isStaticSelfHosted = staticBareRuntime !== null;
+
+  const deployConfig: DeployConfig = {
+    deploymentId: dep.id,
+    projectId: project.id,
+    buildSessionId,
+    imageRef: buildResult.imageRef!,
+    environment: dep.environment,
+    port: snapshot.port,
+    startCommand: snapshot.startCommand,
+    stack: snapshot.framework,
+    envVars: envMap,
+    resources: prodResources,
+    restartPolicy: isStaticSelfHosted ? "no" : "always",
+    runtimeName: project.slug ?? project.id,
+    publicEndpoints: routeState.publicEndpoints,
+    outputDirectory: snapshot.outputDirectory,
+    productionPaths: snapshot.productionPaths.length ? snapshot.productionPaths : undefined,
+  };
+
+  // Resolve the previous deployment + its runtime so we can deactivate it cleanly.
+  const prevDep = project.activeDeploymentId
+    ? await repos.deployment.findById(project.activeDeploymentId)
+    : null;
+  const previousRuntime = prevDep?.containerId
+    ? await resolveDeploymentRuntime(prevDep)
+        .then((r) => r.runtime)
+        .catch(() => runtime)
+    : runtime;
+
+  // ── Gather all domains that need routing ───────────────────────────
+  // Sources: custom domain, verified DB domains, free host subdomain.
+  // Every domain gets an OpenResty route; SSL is provisioned only for
+  // custom domains — the free host subdomain skips SSL (user manages it).
+  const projectDomains = await repos.domain.listByProject(project.id);
+  const domainByHostname = new Map(
+    projectDomains.map((domain) => [domain.hostname.toLowerCase(), domain]),
+  );
+  const plannedDomains = buildProjectRouteDomains({
+    project,
+    projectDomains,
+    customDomain: routeState.primaryCustomDomain,
+    managedSlug: routeState.publicEndpoints.length > 0 ? routeState.primarySlug : undefined,
+    publicEndpoints: routeState.publicEndpoints,
+    runtimeName: runtime.name,
+    usesManagedRouting,
+  });
+  const activeRouteIds = new Set(
+    routeState.publicEndpoints
+      .map((endpoint) => endpoint.id)
+      .filter((id): id is string => !!id),
+  );
+  const obsoleteProjectDomains = activeRouteIds.size > 0
+    ? projectDomains.filter((domain) => !domain.serviceId && !activeRouteIds.has(domain.id))
+    : [];
+
+  // Persist domain records for any new planned domains (free subdomain, custom domain)
+  for (const route of plannedDomains) {
+    const created = await ensureRouteDomainRecord({
+      projectId: project.id,
+      route,
+      domainByHostname,
+    });
+    if (created && !projectDomains.some((d) => d.id === created.id)) {
+      logger.log(`Created domain record for "${route.hostname}".\n`);
+    }
+  }
+
+  // Compose deploy environment from runtime adapter
+  const deployEnv: DeployEnvironment = {
+    preflight: targetExecutor
+      ? async (cfg, promptUser) => {
+          if (system) {
+            const systemLog = (entry: { message: string; level: "info" | "warn" | "error" }) => {
+              logger.log(`${entry.message}\n`, entry.level);
+            };
+
+            if (!isStaticSelfHosted) {
+              await system.ensureFeature("deploy", systemLog);
+            }
+            if (plannedDomains.length > 0) {
+              await system.ensureFeature("routing", systemLog);
+            }
+            if (plannedDomains.some((d) => d.provisionSsl)) {
+              await system.ensureFeature("ssl", systemLog);
+            }
+          }
+
+          if (!isStaticSelfHosted) {
+            const ports = Array.from(
+              new Set(
+                (routeState.publicEndpoints.length > 0
+                  ? routeState.publicEndpoints
+                  : [{ port: cfg.port }])
+                  .map((endpoint) => endpoint.port ?? cfg.port)
+                  .filter((port): port is number => Number.isFinite(port)),
+              ),
+            );
+
+            for (const port of ports) {
+              await ensurePortAvailable(targetExecutor, port, logger, promptUser);
+            }
+          }
+        }
+      : undefined,
+    activate: async (cfg, onLog) => {
+      const r = isStaticSelfHosted
+        ? await staticBareRuntime.deployStatic({
+            ...cfg,
+            outputDirectory: cfg.outputDirectory ?? snapshot.outputDirectory,
+          })
+        : await runtime.deploy(cfg, onLog);
+      if (!r.containerId) throw new Error("Deploy produced no container");
+      return { containerId: r.containerId, url: r.url };
+    },
+    deactivate: (id) =>
+      previousRuntime.name === "bare" && !id.includes("/")
+        ? previousRuntime.stop(id)
+        : previousRuntime.destroy(id),
+    resolveRoute: isStaticSelfHosted
+      ? async (id, cfg) => ({
+          staticRoot: staticBareRuntime.resolveStaticRoot(
+            id,
+            cfg.outputDirectory ?? snapshot.outputDirectory,
+          ),
+        })
+      : undefined,
+    resolveTargetUrl: runtime.supports("containerIp")
+      ? async (id, port) => {
+          const ip = await runtime.getContainerIp(id);
+          return ip ? `http://${ip}:${port}` : null;
+        }
+      : undefined,
+  };
+
+  const deploySsl = plannedDomains.some((domain) => domain.provisionSsl)
+    ? createTrackedSslProvider(ssl, domainByHostname)
+    : ssl;
+
+  const deployResult = await runDeployPipeline(
+    deployEnv,
+    {
+      config: deployConfig,
+      previousContainerId: prevDep?.containerId ?? undefined,
+      domains: toRoutedDomainInputs(plannedDomains),
+      routing,
+      ssl: deploySsl,
+      routeOptions: project.webhookDomain
+        ? {
+            webhookDomain: project.webhookDomain,
+            webhookProxy: `${internalApiUrl}/api/webhooks/`,
+          }
+        : undefined,
+      promptUser: (prompt) => sessionManager.promptUser(dep.id, prompt),
+    },
+    logger,
+  );
+
+  if (deployResult.status === "failed") {
+    await onFailure(ctx, deployResult.error, buildResult.durationMs, {
+      errorCode: deployResult.errorCode,
+      errorDetails: deployResult.errorDetails,
+    });
+    return;
+  }
+
+  await runPostDeploySync({
+    plannedDomains,
+    obsoleteProjectDomains,
+    routing,
+    usesManagedRouting,
+    userId: dep.userId,
+    serverId: snapshot.serverId,
+    prevDep,
+    previousRuntime,
+    buildResult,
+    logger,
+  });
+
+  await onSuccess(ctx, {
+    containerId: deployResult.containerId!,
+    url: deployResult.url,
+    durationMs: buildResult.durationMs ?? 0,
+  });
+
+  if (runtime.name === "bare") {
+    await pruneRetainedBareReleases(project, dep).catch((err) => {
+      console.error(`[DEPLOY] Failed to prune retained releases for ${dep.id}:`, err);
+    });
+  }
+}
+
+/** After a successful deploy: managed-edge sync, prune obsolete domains/routes, GC previous image. */
+async function runPostDeploySync(opts: {
+  plannedDomains: ReturnType<typeof buildProjectRouteDomains>;
+  obsoleteProjectDomains: Domain[];
+  routing: Awaited<ReturnType<typeof platform>>["routing"];
+  usesManagedRouting: boolean;
+  userId: string;
+  serverId?: string;
+  prevDep: Deployment | null | undefined;
+  previousRuntime: Awaited<ReturnType<typeof platform>>["runtime"];
+  buildResult: BuildResult;
+  logger: BuildLogger;
+}): Promise<void> {
+  const {
+    plannedDomains, obsoleteProjectDomains, routing, usesManagedRouting,
+    userId, serverId, prevDep, previousRuntime, buildResult, logger,
+  } = opts;
+
+  if (usesManagedRouting) {
+    for (const domain of plannedDomains.filter((d) => d.isCloud && d.managedSubdomain)) {
+      logger.log(`Syncing managed edge proxy for ${domain.hostname}...\n`);
+      await ensureManagedEdgeProxy(userId, domain.managedSubdomain!, { serverId });
+    }
+  }
+
+  for (const domain of obsoleteProjectDomains) {
+    if (routing) {
+      await routing.removeRoute(domain.hostname).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.log(`Warning: failed to remove stale route ${domain.hostname}: ${message}\n`, "warn");
+      });
+    }
+
+    await repos.domain.remove(domain.id).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.log(`Warning: failed to remove stale domain record ${domain.hostname}: ${message}\n`, "warn");
+    });
+  }
+
+  if (
+    prevDep?.imageRef &&
+    prevDep.imageRef !== buildResult.imageRef &&
+    previousRuntime instanceof DockerRuntime
+  ) {
+    await previousRuntime.removeImage(prevDep.imageRef).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.log(
+        `Warning: failed to remove previous image ${prevDep.imageRef}: ${message}\n`,
+        "warn",
+      );
+    });
   }
 }

@@ -107,11 +107,11 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
     const resolvedUrl = endpoint.domainType === "custom" && endpoint.customDomain
       ? `https://${endpoint.customDomain}`
       : null;
-    const readOnlyTarget = hasServer && !allowPortEdit
+    const readOnlyTarget = !allowPortEdit
       ? {
-          label: "Exposed port",
-          value: endpoint.port || runtimePort || "Auto",
-          icon: "port" as const,
+          label: hasServer ? "Exposed port" : "Static path",
+          value: hasServer ? (endpoint.port || runtimePort || "Auto") : (endpoint.targetPath || "/"),
+          icon: hasServer ? ("port" as const) : ("path" as const),
         }
       : undefined;
 
@@ -132,7 +132,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
         onExposedPortChange={hasServer && allowPortEdit
           ? (value) => handleEndpointChange(endpoint.id, { port: value })
           : undefined}
-        onTargetPathChange={!hasServer
+        onTargetPathChange={!hasServer && allowPortEdit
           ? (value) => handleEndpointChange(endpoint.id, { targetPath: value })
           : undefined}
         saveMode={saveMode}

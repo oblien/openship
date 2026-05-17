@@ -1,5 +1,6 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
+import type { PrepareSingleAppCandidate } from "@/lib/api/deploy";
 import { getBuildImage, STACKS, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 
@@ -75,6 +76,38 @@ export type { BuildStrategy, RuntimeMode, DeployTarget } from "@repo/core";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
+export interface DeploymentOptions {
+  buildCommand: string;
+  outputDirectory: string;
+  productionPaths: string;
+  installCommand: string;
+  startCommand: string;
+  productionPort: string;
+  rootDirectory: string;
+  hasServer: boolean;
+  hasBuild: boolean;
+}
+
+export interface DeploymentModeSnapshot {
+  framework: FrameworkId;
+  detectedFramework: FrameworkId | null;
+  packageManager: string;
+  buildImage: string;
+  buildStrategy: BuildStrategy;
+  runtimeMode: RuntimeMode;
+  publicEndpoints: PublicEndpoint[];
+  options: DeploymentOptions;
+}
+
+export interface DeploymentSingleModeSnapshot extends DeploymentModeSnapshot {
+  sourceSignature: string | null;
+}
+
+export interface DeploymentModeSnapshots {
+  services?: DeploymentModeSnapshot;
+  single?: DeploymentSingleModeSnapshot;
+}
+
 export interface DeploymentConfig {
   /** Existing deployable environment to update/deploy, when launched from a project page. */
   projectId?: string;
@@ -108,21 +141,19 @@ export interface DeploymentConfig {
    * service fan-out for this deployment and use the normal single-app pipeline.
    */
   serviceDeploymentMode: "services" | "single";
+  singleAppCandidate?: PrepareSingleAppCandidate;
+  composeDefaults?: {
+    framework: FrameworkId;
+    packageManager: string;
+    buildImage: string;
+    options: DeploymentOptions;
+  };
+  modeSnapshots?: DeploymentModeSnapshots;
   /** Local-only flag so env imports don't overwrite a user-edited runtime port. */
   productionPortTouched: boolean;
   /** Last runtime port auto-applied from env detection in this deploy flow. */
   lastAutoDetectedEnvPort: string | null;
-  options: {
-    buildCommand: string;
-    outputDirectory: string;
-    productionPaths: string;
-    installCommand: string;
-    startCommand: string;
-    productionPort: string;
-    rootDirectory: string;
-    hasServer: boolean;
-    hasBuild: boolean;
-  };
+  options: DeploymentOptions;
 }
 
 export const DEFAULT_CONFIG: DeploymentConfig = {

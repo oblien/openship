@@ -82,12 +82,3 @@
   font-style: normal;
   font-display: swap;
 }
-
-@font-face {
-  font-family: 'SF Arabic Rounded';
-  src: local('SF Arabic Rounded'), local('SFArabicRounded-Regular'),
-    url('https://cdn.oblien.com/fonts/SFArabicRounded-Regular.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
-}

@@ -4,6 +4,7 @@ import {
   applyWorkspaceContext,
   discoverProjectRootHints,
   selectPreferredProjectRoot,
+  selectPreferredSingleAppRoot,
 } from "../../src/lib/project-root-detector";
 
 describe("selectPreferredProjectRoot", () => {
@@ -112,44 +113,50 @@ describe("selectPreferredProjectRoot", () => {
     expect(selected.stack.stack).toBe("nextjs");
   });
 
-  it("prefers a vercel-configured frontend directory over a root compose project", () => {
+  it("keeps a root compose project as the primary root and exposes the vercel frontend as a single-app alternative", () => {
     const vercelConfig = JSON.stringify({
       buildCommand: "cd frontend && npm run build",
       outputDirectory: "frontend/dist",
     });
 
-    const selected = selectPreferredProjectRoot(
-      {
-        rootDirectory: "",
-        files: [
-          { name: "docker-compose.yml", type: "file" as const },
-          { name: "frontend", type: "dir" as const },
-          { name: "vercel.json", type: "file" as const },
-        ],
-        fileContents: { "vercel.json": vercelConfig },
-      },
-      [{
-        rootDirectory: "frontend",
-        source: "vercel",
-        files: [
-          { name: "package.json", type: "file" as const },
-          { name: "src", type: "dir" as const },
-          { name: "vite.config.ts", type: "file" as const },
-        ],
-        packageJson: {
-          dependencies: {
-            react: "^19.0.0",
-            "react-dom": "^19.0.0",
-            vite: "^8.0.0",
-          },
-          scripts: { build: "vite build" },
-        },
-        fileContents: {},
-      }],
-    );
+    const rootInput = {
+      rootDirectory: "",
+      files: [
+        { name: "docker-compose.yml", type: "file" as const },
+        { name: "frontend", type: "dir" as const },
+        { name: "vercel.json", type: "file" as const },
+      ],
+      fileContents: { "vercel.json": vercelConfig },
+    };
 
-    expect(selected.rootDirectory).toBe("frontend");
-    expect(selected.stack.stack).toBe("vite");
+    const frontendCandidate = {
+      rootDirectory: "frontend",
+      source: "vercel" as const,
+      files: [
+        { name: "package.json", type: "file" as const },
+        { name: "src", type: "dir" as const },
+        { name: "vite.config.ts", type: "file" as const },
+      ],
+      packageJson: {
+        dependencies: {
+          react: "^19.0.0",
+          "react-dom": "^19.0.0",
+          vite: "^8.0.0",
+        },
+        scripts: { build: "vite build" },
+      },
+      fileContents: {},
+    };
+
+    // Primary root remains the compose project — services pipeline owns the deploy.
+    const primary = selectPreferredProjectRoot(rootInput, [frontendCandidate]);
+    expect(primary.rootDirectory).toBe("");
+    expect(primary.stack.projectType).toBe("services");
+
+    // Single-app pipeline can promote the vercel-pointed frontend without mixing logic.
+    const singleApp = selectPreferredSingleAppRoot(rootInput, [frontendCandidate]);
+    expect(singleApp?.rootDirectory).toBe("frontend");
+    expect(singleApp?.stack.stack).toBe("vite");
   });
 
   it("prefers an app workspace over a package library in a recursive repo tree", () => {
@@ -318,5 +325,35 @@ describe("selectPreferredProjectRoot", () => {
 
     expect(selected.rootDirectory).toBe("apps/services");
     expect(selected.stack.stack).toBe("docker-compose");
+  });
+
+  it("recognises a Rush monorepo and elevates its projects to workspace hints", () => {
+    const rushJson = JSON.stringify({
+      projects: [
+        { packageName: "@app/web", projectFolder: "apps/web" },
+        { packageName: "@app/api", projectFolder: "services/api" },
+      ],
+    });
+
+    const hints = discoverProjectRootHints(
+      [
+        { path: "rush.json", type: "file" },
+        { path: "apps/web/package.json", type: "file" },
+        { path: "services/api/package.json", type: "file" },
+      ],
+      { "rush.json": rushJson },
+    );
+
+    expect(hints).toContainEqual({ rootDirectory: "apps/web", source: "workspace" });
+    expect(hints).toContainEqual({ rootDirectory: "services/api", source: "workspace" });
+  });
+
+  it("recognises an Nx project.json as a discovered project root", () => {
+    const hints = discoverProjectRootHints([
+      { path: "nx.json", type: "file" },
+      { path: "apps/web/project.json", type: "file" },
+    ]);
+
+    expect(hints).toContainEqual({ rootDirectory: "apps/web", source: "discovered" });
   });
 });

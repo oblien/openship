@@ -624,6 +624,9 @@ export const DomainSettings = () => {
             description={domainMeta.subtitle}
             icon={Globe}
             iconTone="primary"
+            headerBadge={hasDomain ? (
+              <StatusPill tone={domainMeta.statusTone}>{domainMeta.statusLabel}</StatusPill>
+            ) : undefined}
             actions={singleDomainActions}
           >
             <ValueBlock label={hasDomain ? "Domain" : "Local URL"} value={currentUrl} />
@@ -634,20 +637,12 @@ export const DomainSettings = () => {
                 value={primaryProjectDomain.mappedLabel}
               />
             ) : null}
-            <InfoRow
-              label="Status"
-              value={<StatusPill tone={domainMeta.statusTone}>{domainMeta.statusLabel}</StatusPill>}
-            />
-            {hasDomain && (
+            {!hasDomain ? (
               <InfoRow
-                label="SSL"
-                value={
-                  <span className="text-[13px] font-medium text-foreground">
-                    {isManagedHostDomain ? "Included by host" : "Managed per domain"}
-                  </span>
-                }
+                label="Status"
+                value={<StatusPill tone={domainMeta.statusTone}>{domainMeta.statusLabel}</StatusPill>}
               />
-            )}
+            ) : null}
           </SectionCard>
 
           {hasDomain && (
@@ -1048,6 +1043,7 @@ function SectionCard({
   description,
   icon: Icon,
   iconTone = "primary",
+  headerBadge,
   actions,
   children,
 }: {
@@ -1055,13 +1051,14 @@ function SectionCard({
   description: string;
   icon: React.ComponentType<{ className?: string }>;
   iconTone?: keyof typeof ICON_TONES;
+  headerBadge?: React.ReactNode;
   actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
       <div className="border-b border-border/40 px-5 py-4">
-        <div className="flex min-w-0 items-start gap-3">
+        <div className="flex min-w-0 items-start justify-between gap-3">
           <div
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}
           >
@@ -1071,6 +1068,7 @@ function SectionCard({
             <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
             <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
           </div>
+          {headerBadge ? <div className="shrink-0 self-start">{headerBadge}</div> : null}
         </div>
         {actions ? <div className="mt-4">{actions}</div> : null}
       </div>

@@ -10,6 +10,7 @@ import { useBuildStream } from "@/hooks/useSSEConnection";
 import { deployApi, projectsApi } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
 import type { DeploymentConfig, DeploymentState, DeploymentStatus } from "./types";
+import { syncActiveModeSnapshot } from "./mode-config";
 import {
   DEFAULT_CONFIG,
   INITIAL_STATE,
@@ -596,7 +597,7 @@ export function useDeploymentBuild(
             apiHasServer ? undefined : { targetPath: "/" },
           );
 
-          setConfig((prev) => syncPublicEndpointState({
+          setConfig((prev) => syncActiveModeSnapshot(syncPublicEndpointState({
             ...prev,
             projectId: data.project_id || prev.projectId,
             publicEndpoints: normalizedEndpoints,
@@ -609,6 +610,9 @@ export function useDeploymentBuild(
             branch: apiConfig.branch || prev.branch,
             envVars: apiConfig.envVars || prev.envVars,
             projectType: data.projectType || prev.projectType,
+            modeSnapshots: (data.projectType || prev.projectType) === "services"
+              ? prev.modeSnapshots
+              : undefined,
             serviceDeploymentMode:
               apiConfig.serviceDeploymentMode ||
               (data.projectType === "services" ? "services" : "single"),
@@ -625,7 +629,7 @@ export function useDeploymentBuild(
               hasServer: apiHasServer,
               hasBuild: apiConfig.hasBuild !== undefined ? apiConfig.hasBuild : prev.options.hasBuild,
             },
-          }));
+          })));
         }
 
         // Parse existing logs. Compose needs structured entries so service tabs

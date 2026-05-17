@@ -34,18 +34,7 @@ export interface PrepareComposeService {
   domainType?: "free" | "custom";
 }
 
-export interface PrepareProjectResponse {
-  repository: {
-    name: string;
-    full_name: string;
-    owner?: { login: string };
-    private: boolean;
-    default_branch: string;
-    selected_branch?: string;
-    clone_url?: string;
-    html_url?: string;
-    branches?: Array<{ name: string }>;
-  };
+export interface PrepareAppConfig {
   stack: StackId;
   projectType: "app" | "docker" | "services";
   category: string;
@@ -58,6 +47,25 @@ export interface PrepareProjectResponse {
   rootDirectory: string;
   productionPaths: string[];
   port: number;
+  hasServer: boolean;
+  hasBuild: boolean;
+}
+
+export type PrepareSingleAppCandidate = PrepareAppConfig;
+
+export interface PrepareProjectResponse extends PrepareAppConfig {
+  repository: {
+    name: string;
+    full_name: string;
+    owner?: { login: string };
+    private: boolean;
+    default_branch: string;
+    selected_branch?: string;
+    clone_url?: string;
+    html_url?: string;
+    branches?: Array<{ name: string }>;
+  };
+  singleAppCandidate?: PrepareSingleAppCandidate;
   services?: PrepareComposeService[];
   rootEnv?: Record<string, string>;
   error?: string;
