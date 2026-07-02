@@ -1,0 +1,5 @@
+[install]
+# Give every workspace its own node_modules (per-package symlinks).
+# The dashboard/web dev scripts invoke `node_modules/next/dist/bin/next`
+# from inside the app dir, which the default hoisted linker doesn't create.
+linker = "isolated"
