@@ -71,8 +71,36 @@ function resolvePgliteDataDir(): string {
  * Migrations run automatically at startup from `packages/db/drizzle/`.
  * Schema changes → `pnpm db:generate` → commit the new migration → restart.
  */
+/**
+ * Resolve the Postgres connection string.
+ *
+ * `DATABASE_URL` wins when set. Otherwise we compose one from discrete vars, so
+ * you can set `POSTGRES_PASSWORD` (etc.) — the SAME names docker-compose uses for
+ * the postgres service — instead of embedding the password in a full URL and
+ * duplicating it. Accepts both `POSTGRES_*` (compose convention) and standard
+ * libpq `PG*` names. An empty result → PGlite embedded (zero-config dev).
+ */
+function resolveDatabaseUrl(): string {
+  const explicit = process.env.DATABASE_URL?.trim();
+  if (explicit) return explicit;
+
+  const host = process.env.POSTGRES_HOST ?? process.env.PGHOST;
+  const password = process.env.POSTGRES_PASSWORD ?? process.env.PGPASSWORD;
+  // Only compose a URL when the operator clearly intends a real Postgres —
+  // otherwise fall through to PGlite (dev default).
+  if (!host && !password) return "";
+
+  const user = process.env.POSTGRES_USER ?? process.env.PGUSER ?? "openship";
+  const port = process.env.POSTGRES_PORT ?? process.env.PGPORT ?? "5432";
+  const db = process.env.POSTGRES_DB ?? process.env.PGDATABASE ?? user;
+  const auth = password
+    ? `${encodeURIComponent(user)}:${encodeURIComponent(password)}`
+    : encodeURIComponent(user);
+  return `postgresql://${auth}@${host ?? "localhost"}:${port}/${db}`;
+}
+
 async function createDb(): Promise<Database> {
-  const url = process.env.DATABASE_URL ?? "";
+  const url = resolveDatabaseUrl();
 
   if (url.startsWith("postgres")) {
     return createPgClient(url);
