@@ -4,16 +4,28 @@ export const OG_SIZE = { width: 1200, height: 630 } as const;
 export const OG_ALT =
   "Openship - Open Source, Self-Hostable Deployment Platform";
 
+/** Accent palette for the aurora glow, footer dot, and eyebrow tint.
+ *  `glow` is a bare "r,g,b" triple (used inside rgba()). Defaults to brand green. */
+export interface OgAccent {
+  glow: string;
+  solid: string;
+  soft: string;
+}
+
+const GREEN_ACCENT: OgAccent = { glow: "57,174,74", solid: "#39AE4A", soft: "#A3E1B3" };
+
 interface OgOptions {
   title?: string;
   subtitle?: string;
   eyebrow?: string;
+  accent?: OgAccent;
 }
 
 export function renderOgImage({
   title = "Deploy anything. Own everything.",
   subtitle = "Open source, self-hostable deployment platform. AI-powered builds. Free SSL. Instant rollback.",
   eyebrow,
+  accent = GREEN_ACCENT,
 }: OgOptions = {}) {
   return new ImageResponse(
     (
@@ -35,8 +47,7 @@ export function renderOgImage({
           style={{
             position: "absolute",
             inset: 0,
-            background:
-              "radial-gradient(1200px 600px at 80% 0%, rgba(57,174,74,.18), transparent 60%), radial-gradient(900px 500px at 0% 100%, rgba(57,174,74,.10), transparent 65%)",
+            background: `radial-gradient(1200px 600px at 80% 0%, rgba(${accent.glow},.18), transparent 60%), radial-gradient(900px 500px at 0% 100%, rgba(${accent.glow},.10), transparent 65%)`,
           }}
         />
 
@@ -74,7 +85,7 @@ export function renderOgImage({
               style={{
                 fontSize: 22,
                 fontWeight: 500,
-                color: "#A3E1B3",
+                color: accent.soft,
                 letterSpacing: 0.5,
                 textTransform: "uppercase",
               }}
@@ -123,7 +134,7 @@ export function renderOgImage({
                 width: 10,
                 height: 10,
                 borderRadius: 999,
-                background: "#39AE4A",
+                background: accent.solid,
               }}
             />
             openship.io

@@ -207,7 +207,27 @@ export default function DownloadPage() {
         <div className="hero-edge-fade-bottom absolute bottom-0 left-0 right-0 h-40" aria-hidden="true" />
       </section>
 
-      <main className="relative" style={{ background: "var(--th-bg-page)" }}>
+      <main className="relative">
+        {/* ════════════════════════════════════════════════════════════
+            PRODUCT SHOWCASE - the app itself, tucked up under the hero
+        ════════════════════════════════════════════════════════════ */}
+        <section className="relative z-10 mx-auto -mt-16 max-w-6xl px-6 sm:-mt-24">
+          <div className="dl-shot">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/screen.png"
+              alt="The Openship desktop app - deployments, logs, and services in one native window"
+              width={2880}
+              height={1800}
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+          <p className="mt-5 text-center text-[13px]" style={{ color: "var(--th-text-muted)" }}>
+            The full dashboard, in a native window - deploys, logs, metrics, and services.
+          </p>
+        </section>
+
         {/* ════════════════════════════════════════════════════════════
             CLI INSTALL - editorial spread with manager tabs
         ════════════════════════════════════════════════════════════ */}
@@ -392,21 +412,7 @@ export default function DownloadPage() {
 
                   {/* Copy + CTA */}
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={{
-                          background: "var(--th-clr-sea-bg)",
-                          color: "var(--th-clr-sea)",
-                          border: "1px solid var(--th-clr-sea-bdr)",
-                        }}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--th-clr-sea)" }} />
-                        Detected on your machine
-                      </span>
-                    </div>
-
-                    <div className="mt-3 text-[26px] font-medium tracking-[-0.02em]" style={{ color: "var(--th-text-heading)" }}>
+                    <div className="text-[26px] font-medium tracking-[-0.02em]" style={{ color: "var(--th-text-heading)" }}>
                       {recommendedDl.title}
                     </div>
                     <div className="mt-1 text-[14px]" style={{ color: "var(--th-text-muted)" }}>

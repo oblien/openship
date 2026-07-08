@@ -4,9 +4,27 @@ import { Navbar } from "@/components/landing/navbar";
 import { Footer } from "@/components/landing/footer";
 import "./changelog.css";
 
+const CHANGELOG_DESC = "New features, fixes, and improvements to Openship.";
+
 export const metadata: Metadata = {
-  title: "Changelog – Openship",
-  description: "New features, fixes, and improvements to Openship.",
+  // Plain string — the root layout's "%s - Openship" template adds the suffix
+  // (the old value double-suffixed to "Changelog – Openship - Openship").
+  title: "Changelog",
+  description: CHANGELOG_DESC,
+  alternates: { canonical: "/changelog" },
+  openGraph: {
+    title: "Changelog - Openship",
+    description: CHANGELOG_DESC,
+    url: "/changelog",
+    type: "website",
+    siteName: "Openship",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Changelog - Openship",
+    description: CHANGELOG_DESC,
+  },
 };
 
 type Entry = { url: string; data: ChangelogFrontmatter };

@@ -1,0 +1,21 @@
+import { renderOgImage, OG_SIZE } from "@/lib/og-image";
+
+export const runtime = "edge";
+export const alt =
+  "Download Openship - CLI, native desktop app, and self-hosted dashboard for macOS, Windows, and Linux";
+export const size = OG_SIZE;
+export const contentType = "image/png";
+
+// Seafoam/cyan accent to match the download page's own aurora — distinct from
+// the home page's brand-green OG, same clean layout.
+const SEAFOAM = { glow: "0,184,148", solid: "#00B894", soft: "#7FEFD5" };
+
+export default function OgImage() {
+  return renderOgImage({
+    eyebrow: "Download",
+    title: "Install Openship. Deploy in seconds.",
+    subtitle:
+      "CLI, native desktop app, and self-hosted dashboard - macOS, Windows, Linux. Same backend, your choice of surface.",
+    accent: SEAFOAM,
+  });
+}

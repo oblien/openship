@@ -24,6 +24,8 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     url: "/download",
     type: "website",
+    siteName: "Openship",
+    locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
@@ -47,7 +49,6 @@ const softwareLd = {
     price: "0",
     priceCurrency: "USD",
   },
-  aggregateRating: undefined,
   publisher: {
     "@type": "Organization",
     name: "Openship",

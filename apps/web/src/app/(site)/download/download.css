@@ -49,3 +49,22 @@
 .dl-hero .hero-headline-second {
   color: rgba(0, 184, 148, .55);
 }
+
+/* ── Product screenshot frame (hero → showcase) ────────────── */
+.dl-shot {
+  position: relative;
+  margin: 0 auto;
+  max-width: 1080px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--th-card-bd);
+  background: var(--th-card-bg);
+  box-shadow:
+    0 1px 0 0 var(--th-on-05),
+    0 40px 90px -50px rgba(0, 0, 0, .38);
+}
+.dl-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}

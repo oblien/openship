@@ -2300,3 +2300,104 @@ details[open] .pp-faq-icon { transform: rotate(180deg); background: var(--th-sf-
   border-bottom: 1px solid var(--th-bd-default);
 }
 .legal-foot a:hover { border-bottom-color: var(--th-bd-strong); }
+
+/* ── How it works ──────────────────────────────────────────────────────── */
+.hiw-section {
+  position: relative;
+  padding: clamp(100px, 12vw, 160px) 0;
+}
+.hiw-container {
+  margin: 0 auto;
+  max-width: 900px;
+  padding: 0 1.5rem;
+}
+.hiw-head {
+  margin: 0 auto clamp(56px, 7vw, 84px);
+  max-width: 40rem;
+  text-align: center;
+}
+.hiw-eyebrow {
+  margin-bottom: 22px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--th-text-muted);
+}
+.hiw-title {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+  color: var(--th-text-heading);
+}
+.hiw-sub {
+  margin: 26px auto 0;
+  max-width: 34rem;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+.hiw-flow {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 680px;
+}
+.hiw-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 24px;
+  padding-bottom: 40px;
+}
+.hiw-step:last-child { padding-bottom: 0; }
+/* vertical connector down the number rail */
+.hiw-step::before {
+  content: "";
+  position: absolute;
+  left: 31px;
+  top: 50px;
+  bottom: -4px;
+  width: 1px;
+  background: var(--th-bd-default);
+}
+.hiw-step:last-child::before { display: none; }
+.hiw-step-rail {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.hiw-step-n {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  border: 1px solid var(--th-bd-default);
+  background: var(--th-bg-page);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--th-text-heading);
+}
+.hiw-step-body { padding-top: 9px; }
+.hiw-step-title {
+  margin-bottom: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--th-text-heading);
+}
+.hiw-step-desc {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+@media (max-width: 640px) {
+  .hiw-step { grid-template-columns: 46px 1fr; gap: 16px; }
+  .hiw-step::before { left: 22px; }
+}

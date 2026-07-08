@@ -1,6 +1,7 @@
 export { Navbar } from "./navbar";
 export { Hero } from "./hero";
 export { Features } from "./features";
+export { HowItWorks } from "./how-it-works";
 export { Dashboard } from "./dashboard";
 export { DeploymentModels } from "./deployment-models";
 export { CompletePlatform } from "./complete-platform";

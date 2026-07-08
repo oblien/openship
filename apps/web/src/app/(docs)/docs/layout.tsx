@@ -3,7 +3,8 @@ import { DocsLayout } from "fumadocs-ui/layouts/notebook";
 import { docsSource } from "@/lib/source";
 import type { ReactNode } from "react";
 
-import "fumadocs-ui/style.css";
+// fumadocs-ui/style.css is imported once in the (docs) ROOT layout so the
+// stylesheet is confined to the docs document (see (docs)/layout.tsx).
 
 /**
  * Native Fumadocs "Notebook" docs shell — full-width navbar on top (like

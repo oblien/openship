@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import "./globals.css";
+import "../globals.css";
 
 const SITE_URL = "https://openship.io";
 const SITE_NAME = "Openship";

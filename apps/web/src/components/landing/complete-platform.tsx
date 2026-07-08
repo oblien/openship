@@ -3,8 +3,9 @@ import {
   TrendingUp, Scale, Activity, ScrollText, CalendarClock, RefreshCw,
   Globe, Lock, Network, Waypoints, Cable, Zap,
   Database, Layers, Server, HardDrive, Mail, Cloudy,
-  LayoutDashboard, Monitor, Users, KeyRound, FileText,
+  LayoutDashboard, Monitor, Bot, KeyRound, FileText,
   Shield, Gauge, FileLock2, ShieldAlert, Fingerprint, BadgeCheck,
+  Building2, UserCog, KeySquare, Mailbox, ClipboardList, ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { DarkSection } from "./dark-section";
@@ -106,6 +107,22 @@ const MARKS = {
       <path d="M40 50 L48 58 L62 42" opacity="0.55" strokeLinecap="round" strokeLinejoin="round" />
     </>
   ),
+  /* Collaborate - org tree: 1 owner → 2 → 3 (team hierarchy) */
+  team: (
+    <>
+      <path d="M50 20 L30 46" opacity="0.55" />
+      <path d="M50 20 L70 46" opacity="0.55" />
+      <path d="M30 54 L20 78" opacity="0.55" />
+      <path d="M30 54 L40 78" opacity="0.55" />
+      <path d="M70 54 L80 78" opacity="0.55" />
+      <circle cx="50" cy="16" r="3.2" fill="currentColor" />
+      <circle cx="30" cy="50" r="2.6" />
+      <circle cx="70" cy="50" r="2.6" />
+      <circle cx="20" cy="82" r="2.2" />
+      <circle cx="40" cy="82" r="2.2" />
+      <circle cx="80" cy="82" r="2.2" />
+    </>
+  ),
 };
 
 const GROUPS: Group[] = [
@@ -169,7 +186,7 @@ const GROUPS: Group[] = [
       { name: "CLI", desc: "A single binary covering deploy, logs, secrets, domains, rollbacks.", icon: Terminal },
       { name: "Web dashboard", desc: "Visual deploys, metrics, billing, team access.", icon: LayoutDashboard },
       { name: "Desktop app", desc: "Native Mac and Windows. Push from local, stream logs natively.", icon: Monitor },
-      { name: "Team roles", desc: "Owner, admin, deployer, viewer. Per-project access, audit trail.", icon: Users },
+      { name: "MCP server", desc: "Drive deploys from AI agents — Claude, Cursor, any MCP client. Standard tools, authenticated.", icon: Bot },
       { name: "Secrets vault", desc: "Encrypted at rest. Environment-scoped. Rotated without redeploying.", icon: KeyRound },
       { name: "Audit log", desc: "Every action, exportable, retained for compliance.", icon: FileText },
     ],
@@ -187,6 +204,19 @@ const GROUPS: Group[] = [
       { name: "Compliance-ready", desc: "Logs and config suitable for SOC 2, ISO 27001.", icon: BadgeCheck },
     ],
   },
+  {
+    n: "07",
+    heading: "Collaborate",
+    mark: MARKS.team,
+    items: [
+      { name: "Workspaces", desc: "Multiple organizations per account — isolated projects, servers, and members. Switch in a click.", icon: Building2 },
+      { name: "Team roles", desc: "Owner, admin, member, and a restricted role. Assigned per teammate.", icon: UserCog },
+      { name: "Per-resource access", desc: "Grant access down to individual projects and resources - not just broad roles.", icon: KeySquare },
+      { name: "Restricted by default", desc: "The restricted role starts with zero access. Every permission is explicit - least privilege.", icon: ShieldCheck },
+      { name: "Invitations", desc: "Invite teammates by email. Expiring links, accept flow, per-inviter rate limits.", icon: Mailbox },
+      { name: "Member audit", desc: "Every join, role change, and removal recorded and exportable.", icon: ClipboardList },
+    ],
+  },
 ];
 
 export function CompletePlatform() {
@@ -197,7 +227,7 @@ export function CompletePlatform() {
           <header className="cp-head">
             <p className="cp-eyebrow">The full platform</p>
             <h2 className="cp-title">
-              Forty capabilities,<br />one platform.
+              Forty-two capabilities,<br />one platform.
             </h2>
             <p className="cp-sub">
               No add-on stores, no plugin marketplaces, no &ldquo;requires an integration with&hellip;&rdquo;.

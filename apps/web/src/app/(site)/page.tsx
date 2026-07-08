@@ -3,6 +3,7 @@ import {
   Hero,
   Dashboard,
   Features,
+  HowItWorks,
   DeploymentModels,
   CompletePlatform,
   MailServer,
@@ -64,6 +65,7 @@ export default function HomePage() {
         <Hero />
         <Dashboard />
         <Features />
+        <HowItWorks />
         <DeploymentModels />
         <CompletePlatform />
         <MailServer />
