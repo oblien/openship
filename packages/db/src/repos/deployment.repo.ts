@@ -88,11 +88,23 @@ export function createDeploymentRepo(db: Database) {
       return { rows, total: Number(total), page, perPage };
     },
 
-    async create(data: Omit<NewDeployment, "id">) {
+    /**
+     * Insert a deployment, atomically honoring the one-active-per-project
+     * partial unique index (`uq_deployment_one_active_per_project`). A bare
+     * `ON CONFLICT DO NOTHING` (no target) covers that partial index: if another
+     * deployment for this project is already queued/building/deploying, the
+     * insert is skipped and `.returning()` yields nothing, so this returns
+     * `undefined`. The DB decides the race — the caller surfaces "already in
+     * progress" without inspecting error codes/messages.
+     */
+    async create(data: Omit<NewDeployment, "id">): Promise<Deployment | undefined> {
       const id = generateId("dep");
-      const row = { id, ...data };
-      await db.insert(deployment).values(row);
-      return { ...row, createdAt: new Date(), updatedAt: new Date() } as Deployment;
+      const [inserted] = await db
+        .insert(deployment)
+        .values({ id, ...data })
+        .onConflictDoNothing()
+        .returning();
+      return inserted as Deployment | undefined;
     },
 
     /**

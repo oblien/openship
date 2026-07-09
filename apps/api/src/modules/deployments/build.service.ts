@@ -522,18 +522,6 @@ export async function checkNoActiveBuild(projectId: string) {
 }
 
 /**
- * Detection: the partial unique index uq_deployment_one_active_per_project
- * surfaces this Postgres / pglite error code when two webhook
- * deliveries race to create a deployment for the same project.
- */
-function isActiveDeploymentRace(err: unknown): boolean {
-  const e = err as { code?: string; message?: string } | undefined;
-  if (!e) return false;
-  if (e.code === "23505") return true; // unique_violation
-  return Boolean(e.message?.includes("uq_deployment_one_active_per_project"));
-}
-
-/**
  * Which enabled services have an env var (project-level or service-scoped)
  * modified since the active deployment went live — i.e. need an env-only
  * refresh. A project-level change (serviceId null) affects EVERY service.
@@ -616,39 +604,36 @@ export async function createQueuedDeployment(opts: {
   // per-commit, reusing the number when the same commit is redeployed. Failed
   // and in-flight deploys stay version=null and show no badge.
 
-  let dep;
-  try {
-    dep = await repos.deployment.create({
-      projectId: opts.projectId,
-      organizationId: opts.organizationId,
-      branch: opts.branch,
-      commitSha: opts.commitSha,
-      commitMessage: opts.commitMessage,
-      trigger: opts.trigger ?? "manual",
-      environment: opts.environment,
-      framework: opts.framework,
-      status: "queued",
-      meta,
-      envVars: opts.envVars,
-      // Default to git: most projects are GitHub-backed and re-cloning
-      // at the previous commit_sha is cheaper than archiving artifacts.
-      // Callers that need snapshot pass it explicitly (or set the
-      // per-project default via project.defaultRollbackStrategy).
-      rollbackStrategy: opts.rollbackStrategy ?? "git",
-      commitShaBefore: opts.commitShaBefore,
-      forceAll: opts.forceAll ?? false,
-      changedPaths: opts.changedPaths ?? null,
-      changedPathsTruncated: opts.changedPathsTruncated ?? false,
-    });
-  } catch (err) {
-    // Race: another caller raced past checkNoActiveBuild and won the
-    // INSERT. Surface as a 403 to match the early-rejection path.
-    if (isActiveDeploymentRace(err)) {
-      throw new ForbiddenError(
-        "Another deployment is already in progress for this project. Wait for it to finish or cancel it.",
-      );
-    }
-    throw err;
+  // The insert is atomic against the one-active-per-project index: undefined
+  // means another deployment won/holds the slot (raced past checkNoActiveBuild,
+  // or a queued/building one already exists). Surface as a 403, same as the
+  // early-rejection path — no error-code/message inspection needed.
+  const dep = await repos.deployment.create({
+    projectId: opts.projectId,
+    organizationId: opts.organizationId,
+    branch: opts.branch,
+    commitSha: opts.commitSha,
+    commitMessage: opts.commitMessage,
+    trigger: opts.trigger ?? "manual",
+    environment: opts.environment,
+    framework: opts.framework,
+    status: "queued",
+    meta,
+    envVars: opts.envVars,
+    // Default to git: most projects are GitHub-backed and re-cloning
+    // at the previous commit_sha is cheaper than archiving artifacts.
+    // Callers that need snapshot pass it explicitly (or set the
+    // per-project default via project.defaultRollbackStrategy).
+    rollbackStrategy: opts.rollbackStrategy ?? "git",
+    commitShaBefore: opts.commitShaBefore,
+    forceAll: opts.forceAll ?? false,
+    changedPaths: opts.changedPaths ?? null,
+    changedPathsTruncated: opts.changedPathsTruncated ?? false,
+  });
+  if (!dep) {
+    throw new ForbiddenError(
+      "Another deployment is already in progress for this project. Wait for it to finish or cancel it.",
+    );
   }
 
   try {
