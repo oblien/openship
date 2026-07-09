@@ -1025,6 +1025,9 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     ? projectDomains.filter(
         (domain) =>
           !domain.serviceId &&
+          // Never sweep a user-connected custom domain (may be portless / not a
+          // build endpoint) — only free/generated routes are eligible.
+          domain.domainType !== "custom" &&
           !activeRouteIds.has(domain.id) &&
           !plannedHostnames.has(domain.hostname.toLowerCase()),
       )

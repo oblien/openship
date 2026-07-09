@@ -256,19 +256,21 @@ export async function ensureRouteDomainRecord(opts: {
   const { projectId, route, domainByHostname } = opts;
   const key = route.hostname.toLowerCase();
   const existing = domainByHostname.get(key);
+  // Primary (DB isPrimary) is owned by explicit setPrimary — the deploy must not
+  // re-derive it from endpoint order; only a new domain may claim it, when none exists.
+  const hasExistingPrimary = [...domainByHostname.values()].some((d) => d.isPrimary);
   if (existing) {
     const patch: Record<string, unknown> = {};
     const expectedDomainType = route.domainType ?? null;
     const expectedTargetPort = route.targetPort ?? null;
     const expectedTargetPath = route.targetPath ?? null;
     const expectedServiceId = route.serviceId ?? null;
-    const expectedPrimary = route.isPrimary ?? existing.isPrimary;
 
     if ((existing.domainType ?? null) !== expectedDomainType) patch.domainType = expectedDomainType;
     if ((existing.targetPort ?? null) !== expectedTargetPort) patch.targetPort = expectedTargetPort;
     if ((existing.targetPath ?? null) !== expectedTargetPath) patch.targetPath = expectedTargetPath;
     if ((existing.serviceId ?? null) !== expectedServiceId) patch.serviceId = expectedServiceId;
-    if (existing.isPrimary !== expectedPrimary) patch.isPrimary = expectedPrimary;
+    // isPrimary intentionally NOT patched — preserve the user's stored selection.
     if (!existing.verified) {
       patch.verified = true;
       patch.verifiedAt = new Date();
@@ -296,7 +298,9 @@ export async function ensureRouteDomainRecord(opts: {
     targetPort: route.targetPort,
     targetPath: route.targetPath,
     domainType: route.domainType,
-    isPrimary: route.isPrimary ?? (!route.serviceId && domainByHostname.size === 0),
+    isPrimary: hasExistingPrimary
+      ? false
+      : (route.isPrimary ?? (!route.serviceId && domainByHostname.size === 0)),
     status: "active",
     verified: true,
     verifiedAt: new Date(),

@@ -38,24 +38,28 @@ export const Deployments = () => {
     projectsApi
       .getCommitStatus(projectData.id)
       .then((res) => {
+        if (cancelled) return;
         const s = res?.data;
-        // Suppress the redeploy nudge while the latest commit is already
-        // building/deploying — there's nothing to redeploy, it's in flight.
-        if (!cancelled && s?.supported && s.behind && !s.latestInProgress) {
-          setCommitStatus({
-            behind: true,
-            branch: s.branch,
-            latestSha: s.latestSha,
-            latestMessage: s.latestMessage,
-            deployedSha: s.deployedSha,
-          });
-        }
+        // Set when behind HEAD (and not already in flight), else CLEAR — must be
+        // able to remove a stale banner, not only add one.
+        setCommitStatus(
+          s?.supported && s.behind && !s.latestInProgress
+            ? {
+                behind: true,
+                branch: s.branch,
+                latestSha: s.latestSha,
+                latestMessage: s.latestMessage,
+                deployedSha: s.deployedSha,
+              }
+            : null,
+        );
       })
       .catch(() => { /* best-effort nudge; never block the page */ });
     return () => {
       cancelled = true;
     };
-  }, [projectData?.id]);
+    // activeDeploymentId dep → refetch after a deploy advances the live release.
+  }, [projectData?.id, projectData?.activeDeploymentId]);
 
   /**
    * Redeploy = take the project's CURRENT saved configuration + env vars, pull

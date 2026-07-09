@@ -10,6 +10,7 @@ import { useGitHub } from "@/context/GitHubContext";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { useBuildStream } from "@/hooks/useSSEConnection";
 import { deployApi, projectsApi } from "@/lib/api";
+import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
 import type { DeploymentConfig, DeploymentState, DeploymentStatus, ServiceDeployStatus } from "./types";
@@ -206,6 +207,9 @@ export function useDeploymentBuild(
   const canStreamContainer = useRef<boolean>(false);
   const lastEventIdRef = useRef<number | undefined>(undefined);
   const lastErrorRef = useRef<{ message: string; timestamp: number } | null>(null);
+  // Wall-clock of the last self-heal poll — rate-caps the leading poll so effect
+  // re-creation (dep churn) can't burst getBuildStatus into a request storm.
+  const lastBuildStatusPollRef = useRef(0);
   /** Wall-clock when each build phase (by step index) became current — used to
    *  derive live per-phase durations as the build advances. Reset per deploy. */
   const phaseStartRef = useRef<Record<number, number>>({});
@@ -275,6 +279,10 @@ export function useDeploymentBuild(
         phaseDurations: nextDurations,
       };
     });
+
+    // Deploy changed the live release — drop cached project info so the project
+    // view re-reads fresh (clears the "New commit"/"Action Required" banners).
+    if (data?.project_id) invalidateProjectCaches(data.project_id);
 
     if (warningMessage) {
       const textEncoder = new TextEncoder();
@@ -847,6 +855,7 @@ export function useDeploymentBuild(
 
     let cancelled = false;
     const tick = async () => {
+      lastBuildStatusPollRef.current = Date.now();
       try {
         const data = await deployApi.getBuildStatus(deploymentId);
         if (cancelled || !data?.success) return;
@@ -887,7 +896,13 @@ export function useDeploymentBuild(
       }
     };
 
-    void tick();
+    // Leading poll only if we haven't polled within the interval. If this effect
+    // is re-created rapidly (a dep changed identity across renders), the guard
+    // skips the immediate poll so it can't storm the endpoint — the interval
+    // still paces it at BUILD_STATUS_POLL_MS.
+    if (Date.now() - lastBuildStatusPollRef.current >= BUILD_STATUS_POLL_MS) {
+      void tick();
+    }
     const interval = setInterval(tick, BUILD_STATUS_POLL_MS);
     return () => {
       cancelled = true;

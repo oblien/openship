@@ -180,6 +180,27 @@ export function createDeploymentRepo(db: Database) {
         .where(eq(deployment.id, id));
     },
 
+    /**
+     * Flip meta.composeDeployment.decision "pending" → "superseded" for every
+     * OTHER deployment of the project — a newer release makes a held keep/reject
+     * moot. Atomic via jsonb_set; status left as-is (historical).
+     */
+    async supersedePendingDecisions(projectId: string, exceptDeploymentId: string): Promise<void> {
+      await db
+        .update(deployment)
+        .set({
+          meta: sql`jsonb_set(${deployment.meta}, '{composeDeployment,decision}', '"superseded"'::jsonb)`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(deployment.projectId, projectId),
+            ne(deployment.id, exceptDeploymentId),
+            sql`${deployment.meta}->'composeDeployment'->>'decision' = 'pending'`,
+          ),
+        );
+    },
+
     /** Mark every `reconciling` deployment for a project (other than `exceptId`)
      *  as failed — a newer deploy supersedes them. Status only; no runtime
      *  teardown. Returns the number of rows affected is not needed by callers. */

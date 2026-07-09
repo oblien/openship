@@ -317,6 +317,16 @@ export async function onSuccess(
 
   await repos.project.setActiveDeployment(project.id, dep.id);
 
+  // A newer release makes a prior held keep/reject decision moot — mark it
+  // superseded so no stale deployment reads as "Action Required". Best-effort.
+  await repos.deployment
+    .supersedePendingDecisions(project.id, dep.id)
+    .catch((err) =>
+      console.warn(
+        `[deployment-lifecycle] supersedePendingDecisions failed project=${project.id}: ${safeErrorMessage(err)}`,
+      ),
+    );
+
   // deployment.meta is the per-deploy historical snapshot; the
   // project column is the CURRENT cloud binding. Drift detection
   // reads the project column.
