@@ -97,7 +97,8 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     : (newVars: EnvironmentVariableRow[]) => deployment?.updateConfig({ envVars: newVars });
 
   const addEnvVar = useCallback(() => {
-    const newEnvVars = [...currentEnvVars, { key: "", value: "", visible: false }];
+    // Default visible so you can see what you type; the eye toggles to hide.
+    const newEnvVars = [...currentEnvVars, { key: "", value: "", visible: true }];
     updateEnvVars(newEnvVars);
     // Auto-enable editing mode when adding in settings mode
     if (mode === "settings") {
@@ -712,7 +713,7 @@ function parseEnvFile(content: string) {
       }
     }
 
-    parsed.push({ key, value, visible: false });
+    parsed.push({ key, value, visible: true });
   });
 
   return parsed;

@@ -216,7 +216,9 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
     if (state.projectId) router.push(`/projects/${state.projectId}`);
   }, [state.deploymentId, state.projectId, router, showToast]);
 
+  const retryInFlightRef = React.useRef(false);
   const handleRetryFailed = React.useCallback(async () => {
+    if (retryInFlightRef.current) return; // one retry press = one POST
     // Rebuild ONLY the failed services — the successful ones carry forward on
     // their existing containers (compose carry-forward).
     const failedIds = state.serviceStatuses
@@ -227,12 +229,26 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
       setDecisionModalOpen(false);
       return;
     }
-    const res = await deployApi.trigger({ projectId: state.projectId, serviceIds: failedIds });
+    retryInFlightRef.current = true;
+    // Resolve + close optimistically the instant we act. The new deployment
+    // supersedes the old partial's pending decision server-side at create, so the
+    // banner/modal must not linger OR re-arm — leaving the retry armed on failure
+    // is exactly what re-POSTed into the in-progress lock and spammed 403s.
     setDecisionResolved(true);
     setDecisionModalOpen(false);
-    const newId = res?.data?.deployment?.id;
-    router.push(newId ? `/build/${newId}` : `/projects/${state.projectId}`);
-  }, [state.serviceStatuses, state.projectId, router]);
+    try {
+      const res = await deployApi.trigger({ projectId: state.projectId, serviceIds: failedIds });
+      const newId = res?.data?.deployment?.id;
+      router.push(newId ? `/build/${newId}` : `/projects/${state.projectId}`);
+    } catch (err) {
+      // Usually a deploy is already in progress (the previous retry) → 403. Do
+      // NOT re-fire; send the user to the project where the running deploy shows.
+      showToast(err instanceof Error ? err.message : "Could not start the retry", "error", "Retry");
+      router.push(`/projects/${state.projectId}`);
+    } finally {
+      retryInFlightRef.current = false;
+    }
+  }, [state.serviceStatuses, state.projectId, router, showToast]);
 
   // Auto-open the decision dialog once per deployment when a partial failure is
   // awaiting a decision. Closing it leaves the persistent banner in place, so the
@@ -502,28 +518,34 @@ function detectServiceName(text: string, serviceNames: string[]) {
   return null;
 }
 
-function stripServicePrefix(text: string, serviceName: string) {
-  const prefixPattern = new RegExp(`^\\[${escapeRegExp(serviceName)}\\]\\s*`);
-  return text.replace(prefixPattern, "") || text;
-}
-
 function stripServicePrefixFromChunk(text: string, serviceName: string) {
   const prefixPattern = new RegExp(`(^|[\\r\\n])\\[${escapeRegExp(serviceName)}\\]\\s*`, "g");
   return text.replace(prefixPattern, "$1") || text;
 }
 
-function parseLogLines(logs: BuildLog[], serviceNames: string[]): ParsedLogLine[] {
+function parseLogLines(
+  logs: BuildLog[],
+  serviceNames: string[],
+  serviceIdToName: Map<string, string>,
+): ParsedLogLine[] {
   return logs
     .map((log) => {
       const rawText = log.text;
       const detectionText = textForDetection(rawText);
-      const structuredService =
-        log.serviceName && serviceNames.includes(log.serviceName)
-          ? {
-              serviceName: log.serviceName,
-              text: stripServicePrefixFromChunk(rawText, log.serviceName),
-            }
-          : null;
+      // Route by the STABLE serviceId → canonical name first (roster-independent,
+      // works before serviceStatuses hydrate); then trust the line's own
+      // serviceName tag WITHOUT the roster `includes` gate — that gate dropped
+      // early live lines into Prepare; finally fall back to text detection for
+      // untagged shared lines.
+      const taggedName =
+        (log.serviceId ? serviceIdToName.get(log.serviceId) : undefined) ??
+        (log.serviceName || undefined);
+      const structuredService = taggedName
+        ? {
+            serviceName: taggedName,
+            text: stripServicePrefixFromChunk(rawText, taggedName),
+          }
+        : null;
       const detectedServiceName = structuredService?.serviceName ?? detectServiceName(detectionText, serviceNames);
       const text = detectedServiceName
         ? stripServicePrefixFromChunk(structuredService?.text ?? rawText, detectedServiceName)
@@ -594,7 +616,17 @@ function ComposeServiceLogsPanel({
   isFinished: boolean;
   terminalTheme: "light" | "dark";
 }) {
-  const parsedLogs = useMemo(() => parseLogLines(logs, serviceNames), [logs, serviceNames]);
+  const serviceIdToName = useMemo(() => {
+    const map = new Map<string, string>();
+    services.forEach((service) => {
+      if (service.serviceId && service.serviceName) map.set(service.serviceId, service.serviceName);
+    });
+    return map;
+  }, [services]);
+  const parsedLogs = useMemo(
+    () => parseLogLines(logs, serviceNames, serviceIdToName),
+    [logs, serviceNames, serviceIdToName],
+  );
   const serviceStatusByName = useMemo(() => {
     const statuses = new Map<string, ServiceDeployStatus["status"]>();
     services.forEach((service) => statuses.set(service.serviceName, service.status));
@@ -616,7 +648,11 @@ function ComposeServiceLogsPanel({
         prepareLogs.push(log);
         return;
       }
-      byService.get(log.serviceName)?.push(log);
+      const bucket = byService.get(log.serviceName);
+      // A tagged line whose service isn't in the roster (roster gap) is surfaced
+      // in Prepare rather than silently dropped by the missing bucket.
+      if (bucket) bucket.push(log);
+      else prepareLogs.push(log);
     });
 
     const serviceTabs = serviceNames.map((serviceName) => ({

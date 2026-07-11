@@ -115,7 +115,12 @@ export async function logs(c: Context) {
  * Shared SSE streaming helper - subscribes to a build session and
  * keeps the connection open until the client disconnects or session ends.
  */
-function streamBuildSession(c: Context, deploymentId: string, initialEvent?: { event: string; data: string }) {
+function streamBuildSession(
+  c: Context,
+  deploymentId: string,
+  initialEvent?: { event: string; data: string },
+  sinceSeq?: number,
+) {
   return streamSSE(c, async (sseStream) => {
     let closed = false;
 
@@ -133,7 +138,10 @@ function streamBuildSession(c: Context, deploymentId: string, initialEvent?: { e
       }
     };
 
-    const { success, unsubscribe } = buildService.subscribeToBuildSession(deploymentId, writer);
+    // `sinceSeq` (from the client's history snapshot) makes the session replay
+    // ONLY entries newer than what the client already has — the live stream
+    // stops re-delivering history on refresh/reconnect.
+    const { success, unsubscribe } = buildService.subscribeToBuildSession(deploymentId, writer, sinceSeq);
 
     if (!success) {
       await sseStream.writeSSE({ event: "error", data: JSON.stringify({ error: "Session not found" }) });
@@ -164,7 +172,11 @@ export async function stream(c: Context) {
   await permission.assert(getRequestContext(c), { resourceType: "deployment", resourceId: id, action: "read" });
   // Verify the requesting user owns this deployment before streaming
   await deploymentService.getDeployment(id, ctx.organizationId);
-  return streamBuildSession(c, id);
+  // Resume cursor: explicit ?since= (the client's history-snapshot max seq),
+  // falling back to the EventSource Last-Event-ID header on native reconnect.
+  const sinceRaw = c.req.query("since") ?? c.req.header("Last-Event-ID");
+  const sinceSeq = sinceRaw != null && sinceRaw !== "" ? Number(sinceRaw) : undefined;
+  return streamBuildSession(c, id, undefined, Number.isFinite(sinceSeq) ? sinceSeq : undefined);
 }
 
 export async function rollback(c: Context) {

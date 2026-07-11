@@ -34,13 +34,19 @@ export interface BuildSessionState {
   /** SSE writer callbacks for active subscribers */
   subscribers: Set<SseWriter>;
   startedAt: number;
+  /** Monotonic counter for per-entry `seq` (the SSE event id). Never reset by
+   *  the ring-buffer trim, so the client's dedup cursor keeps advancing instead
+   *  of plateauing at the buffer cap. */
+  nextSeq: number;
 }
 
 export type SseWriter = (event: string, data: string) => boolean;
 
 
-/** Convert a LogEntry into the JSON payload the frontend expects. */
-function formatLogPayload(entry: LogEntry, eventId: number): string {
+/** Convert a LogEntry into the JSON payload the frontend expects. The event id
+ *  is the entry's stable `seq` (assigned in appendLog), NOT the ring-buffer
+ *  index — the index plateaus at the buffer cap and froze the client dedup. */
+function formatLogPayload(entry: LogEntry): string {
   // Use native base64 when available (cloud adapter), otherwise encode.
   // Local/SSH logs are single lines without trailing newlines - append \n
   // so the terminal renders each entry on its own line.
@@ -48,11 +54,12 @@ function formatLogPayload(entry: LogEntry, eventId: number): string {
   return JSON.stringify({
     type: "log",
     data: base64Data,
-    eventId,
+    eventId: entry.seq,
     step: entry.step,
     stepStatus: entry.stepStatus,
     level: entry.level,
     serviceName: entry.serviceName,
+    serviceId: entry.serviceId,
   });
 }
 
@@ -90,6 +97,7 @@ export function createSession(
     serviceStatuses: new Map(),
     subscribers: new Set(),
     startedAt: Date.now(),
+    nextSeq: 0,
   };
   sessions.set(deploymentId, state, SYSTEM.SSE.SESSION_TTL_SECONDS);
   return state;
@@ -105,6 +113,9 @@ export function appendLog(sessionId: string, entry: LogEntry): void {
   const session = sessions.get(sessionId);
   if (!session) return;
 
+  // Assign the stable seq BEFORE the ring-buffer trim so it never plateaus.
+  entry.seq = session.nextSeq++;
+
   session.logs.push(entry);
   if (session.logs.length > SYSTEM.SSE.MAX_LOGS_PER_SESSION) {
     session.logs.splice(0, session.logs.length - SYSTEM.SSE.MAX_LOGS_PER_SESSION);
@@ -116,7 +127,7 @@ export function appendLog(sessionId: string, entry: LogEntry): void {
 
   // Broadcast raw log to terminal (skip step-metadata-only entries)
   if (!isStepMeta) {
-    const logPayload = formatLogPayload(entry, session.logs.length - 1);
+    const logPayload = formatLogPayload(entry);
     const dead: SseWriter[] = [];
     for (const writer of session.subscribers) {
       const ok = writer("log", logPayload);
@@ -218,10 +229,18 @@ export function updateStatus(
   }
 }
 
-/** Subscribe a new SSE writer to a session, returns unsubscribe fn */
+/**
+ * Subscribe a new SSE writer to a session, returns unsubscribe fn.
+ *
+ * `sinceSeq` is the highest `seq` the client already has (from the history
+ * snapshot it fetched before connecting). Entries with `seq <= sinceSeq` are
+ * NOT replayed, so a refresh/reconnect streams only genuinely new events
+ * instead of re-delivering the whole buffer. Omit it for a fresh subscription.
+ */
 export function subscribe(
   sessionId: string,
   writer: SseWriter,
+  sinceSeq?: number,
 ): { success: boolean; unsubscribe: () => void } {
   const session = sessions.get(sessionId);
   if (!session) return { success: false, unsubscribe: () => {} };
@@ -247,9 +266,12 @@ export function subscribe(
     const entry = session.logs[i];
     const isStepMeta = !!entry.step && !!entry.stepStatus;
 
-    // Only replay real output entries to the terminal
-    if (!isStepMeta) {
-      const ok = writer("log", formatLogPayload(entry, i));
+    // Only replay real output entries to the terminal, and skip anything the
+    // client already has (seq <= sinceSeq) so a resume streams only new events.
+    const alreadySeen =
+      sinceSeq !== undefined && entry.seq !== undefined && entry.seq <= sinceSeq;
+    if (!isStepMeta && !alreadySeen) {
+      const ok = writer("log", formatLogPayload(entry));
       if (!ok) {
         session.subscribers.delete(writer);
         return { success: false, unsubscribe: () => {} };

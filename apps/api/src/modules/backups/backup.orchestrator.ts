@@ -18,6 +18,7 @@
  */
 
 import { repos, type Service, type BackupRunStatus } from "@repo/db";
+import { containerIdForService } from "../services/service-container";
 import { backupRunBus } from "./backup.sse";
 import { getJobRunner } from "../../lib/job-runner";
 import { toAdapterRow } from "../backup-destinations/hydrate-server";
@@ -605,16 +606,13 @@ export class BackupOrchestrator {
     };
   }
 
-  /** Find the live container id for a service. Compose deploys stash
-   *  per-service container ids in deployment.meta.composeServices. */
+  /** Find the live container id for a service, via the shared resolver. */
   private async resolveServiceContainerId(serviceRow: Service): Promise<string | null> {
     const project = await repos.project.findById(serviceRow.projectId);
     if (!project?.activeDeploymentId) return null;
     const dep = await repos.deployment.findById(project.activeDeploymentId);
-    if (!dep?.meta) return null;
-    const meta = dep.meta as { composeServices?: Array<{ name: string; containerId?: string }> };
-    const entry = meta.composeServices?.find((s) => s.name === serviceRow.name);
-    return entry?.containerId ?? null;
+    if (!dep) return null;
+    return containerIdForService(dep, serviceRow);
   }
 }
 

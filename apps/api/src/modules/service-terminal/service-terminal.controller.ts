@@ -35,6 +35,7 @@ import { safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
 import { checkPermission } from "../../lib/permission";
+import { containerIdForService } from "../services/service-container";
 import {
   attachServiceWs,
   consumeServiceTerminalTicket,
@@ -182,18 +183,14 @@ async function resolveServiceForOrg(
     };
   }
 
-  // Resolve the actual container/workspace id for this service. Compose
-  // deploys stash per-service ids in deployment.meta.composeServices.
-  const meta = (dep.meta ?? {}) as {
-    composeServices?: Array<{ name: string; containerId?: string }>;
-  };
-  const entry = meta.composeServices?.find((s) => s.name === service.name);
-  const containerId = entry?.containerId ?? dep.containerId;
+  // Resolve THIS service's own container via the shared resolver (never the
+  // compose primary — see containerIdForService).
+  const containerId = await containerIdForService(dep, service);
   if (!containerId) {
     return {
       ok: false,
       code: "not_deployed",
-      message: "Service has not finished deploying yet",
+      message: "Service container not found — it may still be deploying.",
     };
   }
 

@@ -1,14 +1,16 @@
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { unlink } from "node:fs/promises";
+import { mkdtemp, rm as fsRm, stat, unlink } from "node:fs/promises";
 import { connect as netConnect } from "node:net";
-import { dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { Duplex } from "node:stream";
 import { promisify } from "node:util";
 import { randomBytes } from "node:crypto";
 
-import { safeErrorMessage } from "@repo/core";
+import { TRANSFER_EXCLUDES, formatBytes, safeErrorMessage } from "@repo/core";
 
+import { getTarCreateArgs } from "../archive";
 import type {
   CommandExecutor,
   LogEntry,
@@ -17,11 +19,7 @@ import type {
   SshConfig,
 } from "../types";
 import { logEntry, sq } from "./local-shell";
-import {
-  canUseRemoteRsync,
-  transferRemoteDirectoryWithRsync,
-  transferRemoteDirectoryWithTar,
-} from "./remote-transfer";
+import { extractRemoteArchive, packLocalArchive } from "./remote-transfer";
 import {
   buildBaseSshArgs,
   makeControlPath,
@@ -282,15 +280,6 @@ export class SystemSshExecutor implements CommandExecutor {
     }
   }
 
-  private async hasRemoteCommand(command: string): Promise<boolean> {
-    try {
-      const out = await this.exec(`command -v ${command} >/dev/null 2>&1 && echo ok`, { timeout: 5_000 });
-      return out === "ok";
-    } catch {
-      return false;
-    }
-  }
-
   /** Pipe a local command's stdout into a remote command's stdin over ssh. */
   private async pipeLocal(
     localCmd: string,
@@ -332,38 +321,30 @@ export class SystemSshExecutor implements CommandExecutor {
     localPath: string,
     remotePath: string,
     onLog?: (log: LogEntry) => void,
-    options?: { excludes?: string[]; includes?: string[]; mode?: "auto" | "tar" },
+    options?: { excludes?: string[]; includes?: string[] },
   ): Promise<void> {
-    const deps = {
-      config: this.config,
-      hasRemoteCommand: (command: string) => this.hasRemoteCommand(command),
-      ensureRemoteDir: (path: string) => this.exec(`mkdir -p ${sq(path)}`).then(() => undefined),
-      pipeLocal: (
-        localCmd: string,
-        remoteCmd: string,
-        logCb?: (log: LogEntry) => void,
-        onBytes?: (bytes: number) => void,
-      ) => this.pipeLocal(localCmd, remoteCmd, logCb, onBytes),
-    };
+    // Pack the tree into ONE archive, stream that single file over the existing
+    // OpenSSH ControlMaster (multiplexed channel, no new handshake, no rsync,
+    // no per-file overhead), then verify + extract on the server.
+    const excludes = options?.excludes ?? [...TRANSFER_EXCLUDES];
+    const tarArgs = getTarCreateArgs(localPath, { excludes, includes: options?.includes });
+    const tmpLocalDir = await mkdtemp(join(tmpdir(), "openship-xfer-"));
+    const localArchive = join(tmpLocalDir, "context.tar.gz");
+    // Sibling of the destination dir so it lands on the same filesystem.
+    const remoteArchive = `${remotePath}.openship-xfer.tar.gz`;
 
-    if (options?.mode !== "tar") {
-      const rsync = await canUseRemoteRsync(deps);
-      if (rsync.ok) {
-        try {
-          await transferRemoteDirectoryWithRsync(localPath, remotePath, deps, onLog, options);
-          return;
-        } catch (err) {
-          onLog?.(logEntry(
-            `rsync transfer failed (${safeErrorMessage(err)}); falling back to tar stream over the SSH connection.`,
-            "warn",
-          ));
-        }
-      } else {
-        onLog?.(logEntry(`rsync unavailable (${rsync.reason}); using tar stream transfer.`, "warn"));
-      }
+    try {
+      onLog?.(logEntry("Packing source into a single archive..."));
+      await packLocalArchive(tarArgs, localArchive);
+      const totalBytes = (await stat(localArchive)).size;
+      await this.exec(`mkdir -p ${sq(dirname(remoteArchive))}`);
+      onLog?.(logEntry(`Uploading ${formatBytes(totalBytes)} archive over the SSH connection...`));
+      const { code } = await this.pipeLocal(`cat ${sq(localArchive)}`, `cat > ${sq(remoteArchive)}`, onLog);
+      if (code !== 0) throw new Error(`archive upload failed (exit ${code})`);
+      await extractRemoteArchive((command) => this.exec(command), remoteArchive, remotePath, totalBytes, onLog);
+    } finally {
+      await fsRm(tmpLocalDir, { recursive: true, force: true }).catch(() => {});
     }
-
-    await transferRemoteDirectoryWithTar(localPath, remotePath, deps, onLog, options);
   }
 
   async forwardPort(remoteHost: string, remotePort: number): Promise<Duplex> {

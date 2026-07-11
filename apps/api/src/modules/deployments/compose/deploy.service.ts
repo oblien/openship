@@ -136,7 +136,11 @@ function toDeployRestartPolicy(restart?: string): DeployConfig["restartPolicy"] 
   return "always";
 }
 
-function createServicePipelineLogger(parent: BuildLogger, serviceName: string): BuildLogger {
+function createServicePipelineLogger(
+  parent: BuildLogger,
+  serviceName: string,
+  serviceId: string,
+): BuildLogger {
   return new BuildLogger((entry) => {
     // Compose owns the global deploy step. Per-service pipeline step events are
     // intentionally kept out of the shared progress bar.
@@ -147,6 +151,7 @@ function createServicePipelineLogger(parent: BuildLogger, serviceName: string): 
     parent.callback({
       ...entry,
       serviceName: entry.serviceName ?? serviceName,
+      serviceId: entry.serviceId ?? serviceId,
     });
   });
 }
@@ -709,7 +714,7 @@ export async function deployComposeServices(
     try {
       const previous = previousByServiceId.get(svc.id);
       let serviceResult: MultiServiceDeployResult | undefined;
-      const serviceLogger = createServicePipelineLogger(logger, svc.name);
+      const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
       const routeDomains = proxyRoute ? toRoutedDomainInputs([proxyRoute]) : [];
       const deployEnv: DeployEnvironment = {
         activate: async (_cfg, onLog) => {

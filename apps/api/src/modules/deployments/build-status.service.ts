@@ -22,9 +22,12 @@ export async function getBuildSessionStatus(deploymentId: string) {
   const logEntries = isActive
     ? (memSession?.logs ?? (buildSessionRow?.logs as LogEntry[] | null) ?? [])
     : ((buildSessionRow?.logs as LogEntry[] | null) ?? memSession?.logs ?? []);
-  // Filter out step-metadata entries - they drive the progress bar, not the terminal
+  // Filter out step-metadata entries - they drive the progress bar, not the
+  // terminal. eventId is the entry's stable `seq` (falling back to the array
+  // index for legacy rows persisted before seq existed) so it matches the live
+  // SSE ids and survives the ring-buffer trim.
   const terminalEntries = logEntries
-    .map((entry, eventId) => ({ entry, eventId }))
+    .map((entry, index) => ({ entry, eventId: entry.seq ?? index }))
     .filter(({ entry }) => !(entry.step && entry.stepStatus));
   const logsText = terminalEntries.map(({ entry }) => entry.message).join("\n");
   const structuredLogs = terminalEntries.map(({ entry, eventId }) => ({
@@ -32,18 +35,17 @@ export async function getBuildSessionStatus(deploymentId: string) {
     time: entry.timestamp,
     level: entry.level,
     serviceName: entry.serviceName,
+    serviceId: entry.serviceId,
     rawData: entry.rawData,
     eventId,
   }));
-  const lastEventId = (() => {
-    for (let index = logEntries.length - 1; index >= 0; index--) {
-      const entry = logEntries[index];
-      if (!(entry.step && entry.stepStatus)) {
-        return index;
-      }
-    }
-    return undefined;
-  })();
+  // Highest terminal seq the client will have after seeding from this snapshot —
+  // it resumes the live stream from here (?since=), so it must be the absolute
+  // seq, not an array index.
+  const lastEventId = terminalEntries.reduce<number | undefined>(
+    (max, { eventId }) => (max === undefined || eventId > max ? eventId : max),
+    undefined,
+  );
 
   // In-memory session is real-time truth (updated every phase transition).
   // DB build-session row only moves queued → building → final, so it's stale during deploy.

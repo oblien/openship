@@ -224,8 +224,15 @@ export interface LogEntry {
   stepStatus?: "running" | "completed" | "failed" | "skipped";
   /** Compose service name when this log belongs to one service. */
   serviceName?: string;
+  /** Stable id of the service this log belongs to (compose deployments). Routes
+   *  the line to its per-service tab without fragile name matching. */
+  serviceId?: string;
   /** Pre-encoded base64 data - passed through to SSE without re-encoding. */
   rawData?: string;
+  /** Monotonic sequence assigned by the session manager at append time, used as
+   *  the SSE event id / client dedup cursor. Decoupled from the ring-buffer
+   *  index so it never plateaus when the buffer trims. */
+  seq?: number;
 }
 
 /**
@@ -392,7 +399,9 @@ export interface CommandExecutor {
    * Transfer a local directory into the target environment.
    *
    * LocalExecutor: cp -a (same filesystem).
-   * SshExecutor:   tar locally → pipe through SSH → extract remotely.
+   * SshExecutor:   pack the tree into one archive → upload that single file
+   *                (ssh2 SFTP, or a cat stream over the OpenSSH ControlMaster)
+   *                → verify + extract remotely.
    *
    * By default SshExecutor excludes `node_modules` and `.git` (source transfer).
    * Pass `options.excludes` to override, or `options.includes` to transfer only
@@ -407,13 +416,6 @@ export interface CommandExecutor {
     options?: {
       excludes?: string[];
       includes?: string[];
-      /**
-       * Transfer strategy. Defaults to `"auto"`: tries rsync first, falls back
-       * to a tar pipe over the existing SSH connection. Pass `"tar"` to skip
-       * rsync entirely - useful for first-time transfers of large trees with
-       * many small files, where rsync's per-file overhead dominates.
-       */
-      mode?: "auto" | "tar";
     },
   ): Promise<void>;
 

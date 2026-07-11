@@ -57,6 +57,7 @@ export interface BuildMessage extends SSEMessage {
   errorDetails?: Record<string, unknown>;
   warningMessage?: string;
   serviceName?: string;
+  serviceId?: string;
 }
 
 export interface BuildMessageCallbacks {

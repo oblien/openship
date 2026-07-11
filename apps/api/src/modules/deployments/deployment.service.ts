@@ -214,8 +214,19 @@ export async function rejectDeployment(
     await repos.project.setActiveDeployment(project.id, null);
   }
 
-  // Terminal "rejected" status — record and logs preserved.
-  await repos.deployment.updateStatus(deploymentId, "rejected");
+  // Terminal "rejected" status — record and logs preserved. Also stamp the
+  // compose decision so a directly-opened rejected deploy never re-reads as
+  // "Action Required" (build-status derives decisionPending from meta). Mirrors
+  // keepDeployment, which writes decision:"kept".
+  const rejectMeta = (dep.meta as Record<string, unknown> | null) ?? {};
+  const rejectedCompose = rejectMeta.composeDeployment as Record<string, unknown> | undefined;
+  await repos.deployment.updateStatus(
+    deploymentId,
+    "rejected",
+    rejectedCompose
+      ? { meta: { ...rejectMeta, composeDeployment: { ...rejectedCompose, decision: "rejected" } } }
+      : undefined,
+  );
 
   return {
     success: true,
@@ -267,7 +278,9 @@ export async function getDeploymentLogs(
 ) {
   const dep = await getDeployment(deploymentId, organizationId);
 
-  const buildSessions = await repos.deployment.findBuildSession(deploymentId);
+  // Keyed by deploymentId — findBuildSession filters by the build-session id and
+  // would always miss here (returning [] then falling back to container logs).
+  const buildSessions = await repos.deployment.findBuildSessionByDeploymentId(deploymentId);
   if (buildSessions?.logs) {
     return buildSessions.logs as LogEntry[];
   }
@@ -332,7 +345,7 @@ export async function getBuildLogs(
 ) {
   await getDeployment(deploymentId, organizationId);
 
-  const buildSession = await repos.deployment.findBuildSession(deploymentId);
+  const buildSession = await repos.deployment.findBuildSessionByDeploymentId(deploymentId);
   if (!buildSession?.logs) {
     return [];
   }

@@ -235,18 +235,10 @@ export class BareRuntime implements RuntimeAdapter {
     remotePath: string,
     logger: BuildLogger,
   ): Promise<void> {
-    // Default ("auto") mode - prefer rsync over the system `ssh` binary,
-    // fall back to tar piped through the existing ssh2 channel only if
-    // rsync is missing on either side.
-    //
-    // The old comment here forced `mode: "tar"` claiming rsync's
-    // per-file roundtrips were slow. That comparison assumed both
-    // transports used the same SSH layer, which they don't:
-    //   - rsync uses the SYSTEM `ssh` binary → ~10-30 MB/s typical
-    //   - our tar pipe uses the Node `ssh2` library → ~0.3-1 MB/s
-    //     (small default window, JS-side framing/cipher overhead)
-    // So even with rsync's per-file scan, system ssh is 10-30× faster
-    // on the wire - and we get native `--progress` output for free.
+    // The executor packs the source into a single archive and uploads that one
+    // file (ssh2 SFTP, or a cat stream over the OpenSSH ControlMaster), then
+    // verifies + extracts it on the target. No rsync: it delta-syncs a tree
+    // against an existing copy, which buys nothing for one fresh archive.
     await transferLocalDirectory(
       localPath,
       {

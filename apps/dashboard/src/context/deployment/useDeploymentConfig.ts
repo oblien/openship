@@ -106,7 +106,7 @@ function envMapToRows(env?: Record<string, string>): DeploymentConfig["envVars"]
   return Object.entries(env ?? {}).map(([key, value]) => ({
     key,
     value,
-    visible: false,
+    visible: true, // show values as entered; eye toggles to hide
   }));
 }
 
@@ -763,7 +763,7 @@ export function useDeploymentConfig() {
         const envRes = await projectsApi.getEnv(projectId).catch(() => null);
         const envVars: DeploymentConfig["envVars"] = (envRes?.data ?? [])
           .filter((v) => v.environment === "production")
-          .map((v) => ({ key: v.key, value: v.isSecret ? "" : v.value, visible: false }));
+          .map((v) => ({ key: v.key, value: v.isSecret ? "" : v.value, visible: true }));
 
         const response = buildSavedProjectResponse(project, serviceRows);
         const repoName = project.gitRepo || project.name || "project";

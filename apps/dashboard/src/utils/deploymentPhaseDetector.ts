@@ -11,6 +11,9 @@ export interface BuildLog {
   text: string;
   time: string;
   serviceName?: string;
+  /** Stable service id for per-service tab routing (compose). Preferred over
+   *  serviceName, which is only a display label / fallback key. */
+  serviceId?: string;
   rawData?: string;
   eventId?: number;
 }

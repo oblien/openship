@@ -18,6 +18,7 @@ export function collapseTerminalLogs(entries: LogEntry[]): LogEntry[] {
   let currentLevel: LogEntry["level"] = "info";
   let currentTimestamp = "";
   let currentServiceName: string | undefined;
+  let currentServiceId: string | undefined;
 
   const flushLine = () => {
     const trimmed = currentLine.trimEnd();
@@ -27,6 +28,13 @@ export function collapseTerminalLogs(entries: LogEntry[]): LogEntry[] {
         message: trimmed,
         level: currentLevel,
         serviceName: currentServiceName,
+        // Keep serviceId so the persisted snapshot still routes each line to its
+        // per-service tab on a finished/refreshed deploy (stable id, not name).
+        serviceId: currentServiceId,
+        // No seq: the persisted (finished) path never re-opens the SSE stream, so
+        // there is no resume/dedup cursor to satisfy, and build-status falls back
+        // to the array index. Copying entry.seq here would duplicate it across
+        // lines a single multi-newline entry collapses into.
       });
     }
     currentLine = "";
@@ -44,6 +52,7 @@ export function collapseTerminalLogs(entries: LogEntry[]): LogEntry[] {
     currentLevel = entry.level;
     currentTimestamp = entry.timestamp;
     currentServiceName = entry.serviceName;
+    currentServiceId = entry.serviceId;
 
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];

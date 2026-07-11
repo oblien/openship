@@ -29,7 +29,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { RotateCw, Terminal as TerminalIcon } from "lucide-react";
+import { RotateCw } from "lucide-react";
 import { usePtyConnection } from "@/hooks/usePtyConnection";
 import type { TerminalErrorCode } from "@/lib/api";
 import "@xterm/xterm/css/xterm.css";
@@ -153,7 +153,10 @@ export const ServiceTerminal = forwardRef<
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<any>(null);
   const fitAddonRef = useRef<any>(null);
-  const [terminalReady, setTerminalReady] = useState(false);
+  // Bytes that arrive before xterm's dynamic import finishes are buffered here
+  // and flushed on mount — so the ticket/WS/shell handshake runs in PARALLEL
+  // with the (sometimes slow) xterm import instead of waiting behind it.
+  const pendingBytesRef = useRef<Uint8Array[]>([]);
   const [exitInfo, setExitInfo] = useState<{
     code: number | null;
     signal?: string;
@@ -164,7 +167,9 @@ export const ServiceTerminal = forwardRef<
   onResumeTokenChangeRef.current = onResumeTokenChange;
 
   const onBytes = useCallback((chunk: Uint8Array) => {
-    xtermRef.current?.write(chunk);
+    const xterm = xtermRef.current;
+    if (xterm) xterm.write(chunk);
+    else pendingBytesRef.current.push(chunk);
   }, []);
 
   const onReady = useCallback(
@@ -197,7 +202,7 @@ export const ServiceTerminal = forwardRef<
 
   const pty = usePtyConnection({
     target: { kind: "service", id: serviceId },
-    enabled: enabled && terminalReady && reconnectKey >= 0,
+    enabled: enabled && reconnectKey >= 0,
     onBytes,
     onReady,
     onExit,
@@ -247,6 +252,12 @@ export const ServiceTerminal = forwardRef<
       xtermRef.current = terminal;
       fitAddonRef.current = fitAddon;
 
+      // Flush bytes that landed while the import was in flight.
+      if (pendingBytesRef.current.length) {
+        for (const c of pendingBytesRef.current) terminal.write(c);
+        pendingBytesRef.current = [];
+      }
+
       terminal.onData((data: string) => {
         ptyRef.current.sendInput(data);
       });
@@ -286,8 +297,6 @@ export const ServiceTerminal = forwardRef<
       const ro = new ResizeObserver(fit);
       ro.observe(containerRef.current);
       window.addEventListener("resize", fit);
-
-      setTerminalReady(true);
 
       cleanup = () => {
         ro.disconnect();
@@ -396,29 +405,25 @@ export const ServiceTerminal = forwardRef<
   }, [pty]);
 
   return (
-    <div
-      className={`relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-border/60 bg-[#0a0a0a] ${className}`}
-    >
+    <div className={`relative flex h-full w-full flex-col gap-2 ${className}`}>
+      {/* Status as a plain subheader line under the tab's "Terminal" header —
+          no boxed banner, no border. Only shown while connecting / errored /
+          exited; once connected it disappears and just the terminal remains. */}
       {banner && (
-        <div
-          className={
-            "flex items-center justify-between gap-3 border-b px-4 py-2 text-xs " +
-            (banner.tone === "error"
-              ? "border-red-500/30 bg-red-500/10 text-red-200"
-              : banner.tone === "info"
-                ? "border-border/60 bg-zinc-900/80 text-zinc-300"
-                : "border-border/60 bg-zinc-900/80 text-zinc-400")
-          }
-        >
-          <div className="flex items-center gap-2">
-            <TerminalIcon className="size-3.5" />
-            <span>{banner.message}</span>
-          </div>
+        <div className="flex items-center justify-between gap-3">
+          <span
+            className={
+              "text-xs " +
+              (banner.tone === "error" ? "text-red-500" : "text-muted-foreground")
+            }
+          >
+            {banner.message}
+          </span>
           {banner.showReconnect && (
             <button
               type="button"
               onClick={handleReconnect}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/40 px-2 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:bg-background/60"
+              className="inline-flex items-center gap-1.5 rounded-md border border-border/50 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
             >
               <RotateCw className="size-3" />
               Reconnect
@@ -429,7 +434,7 @@ export const ServiceTerminal = forwardRef<
 
       <div
         ref={containerRef}
-        className="min-h-0 flex-1 p-2"
+        className="min-h-0 flex-1 overflow-hidden rounded-lg"
         style={{ fontSmooth: "antialiased", WebkitFontSmoothing: "antialiased" }}
       />
     </div>

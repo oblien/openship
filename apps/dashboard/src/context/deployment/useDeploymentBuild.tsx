@@ -154,6 +154,10 @@ function mapBuildLogsFromStatus(data: any): BuildLog[] {
             typeof entry.serviceName === "string" && entry.serviceName.trim()
               ? entry.serviceName
               : undefined,
+          serviceId:
+            typeof entry.serviceId === "string" && entry.serviceId.trim()
+              ? entry.serviceId
+              : undefined,
           rawData: typeof entry.rawData === "string" ? entry.rawData : undefined,
           eventId: typeof entry.eventId === "number" ? entry.eventId : undefined,
         };
@@ -406,12 +410,17 @@ export function useDeploymentBuild(
           // lines arrive, which previously dropped them from the tabs until a
           // refresh rebuilt buildLogs from persisted logs. A serviceName only
           // ever appears on a services deploy, so single-app is unaffected.
-          if (usesServiceDeployment(config) || serviceName) {
+          const serviceId =
+            typeof message.serviceId === "string" && message.serviceId.trim()
+              ? message.serviceId
+              : undefined;
+          if (usesServiceDeployment(config) || serviceName || serviceId) {
             const nextLog: BuildLog = {
               type: logTypeFromStreamMessage((message as { level?: unknown }).level, rawText),
               text: rawText,
               time: new Date().toISOString(),
               serviceName,
+              serviceId,
               rawData: typeof message.data === "string" ? message.data : undefined,
             };
             setState((prev) => ({
@@ -1037,6 +1046,14 @@ export function useDeploymentBuild(
 
         const isActive = data.is_active;
         const status = data.status;
+        // A freshly-created (queued/building) deployment has no in-memory build
+        // session yet, so `is_active` is momentarily false even though it IS
+        // running — e.g. right after a retry/redeploy navigates here. Treat any
+        // non-terminal status as live so we ATTACH the stream (buildStream
+        // reconnects on "session not found" until the session spins up) and run
+        // the self-heal poll, instead of freezing until a manual refresh.
+        const isTerminal = status === "ready" || status === "failed" || status === "cancelled";
+        const isLive = isActive || !isTerminal;
 
         setState((prev) => ({
           ...prev,
@@ -1047,7 +1064,7 @@ export function useDeploymentBuild(
           deploymentSuccess: !isActive && status === "ready",
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",
-          isDeploying: isActive,
+          isDeploying: isLive,
           screenshots: !isActive ? (data.screenshots || []) : [],
           failureMessage: !isActive ? (data.failureMessage || "") : "",
           warningMessage: !isActive ? (data.warningMessage || "") : "",
@@ -1097,8 +1114,16 @@ export function useDeploymentBuild(
         }
 
         // Handle scenarios
-        if (isActive) {
-          await buildStream.connect(deploymentId, false);
+        if (isLive) {
+          // History already seeded from the snapshot above; attach live from the
+          // last seq we have so the stream sends ONLY new events (no re-replay).
+          // When the session isn't up yet (just-created deploy), lastEventId is
+          // absent and buildStream reconnects until it appears — no refresh needed.
+          await buildStream.connect(
+            deploymentId,
+            false,
+            typeof data.lastEventId === "number" ? data.lastEventId : undefined,
+          );
         } else if (status === "ready") {
           handleSuccessMessage({
             screenshots: data.screenshots,

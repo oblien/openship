@@ -381,7 +381,7 @@ const SharedEnvironmentCard: React.FC<{
 
   const importRootEnv = useCallback(() => {
     if (importableRootVars.length === 0) return;
-    onChange([...envVars, ...importableRootVars.map((env) => ({ ...env, visible: false }))]);
+    onChange([...envVars, ...importableRootVars.map((env) => ({ ...env, visible: true }))]);
   }, [envVars, importableRootVars, onChange]);
 
   return (

@@ -11,16 +11,6 @@ export interface DirectoryTransferOptions {
   excludes?: string[];
   /** When set, only these paths are transferred (overrides excludes). */
   includes?: string[];
-  /**
-   * Transfer strategy when the target is an SSH executor.
-   *   "auto" (default) - try rsync first, fall back to tar pipe.
-   *   "tar"            - skip rsync, stream a single tar over the existing
-   *                      SSH connection. Faster for first-time transfers
-   *                      of thousands of small files (typical JS dist),
-   *                      where rsync's per-file roundtrips dominate.
-   * Ignored for cloud-runtime targets (which always upload a tarball).
-   */
-  mode?: "auto" | "tar";
 }
 
 export type LocalDirectoryTarget =
@@ -49,7 +39,6 @@ export async function transferLocalDirectory(
     await target.executor.transferIn(localPath, target.path, logger.callback, {
       excludes: options?.excludes,
       includes: options?.includes,
-      mode: options?.mode,
     });
 
     // Validate transfer: verify the target directory is non-empty

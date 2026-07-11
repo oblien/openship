@@ -24,6 +24,7 @@
 
 import crypto from "node:crypto";
 import { repos, type BackupRun, type BackupRestoreStatus } from "@repo/db";
+import { containerIdForService } from "../services/service-container";
 import {
   resolveDestination,
   resolveExecutor,
@@ -446,14 +447,7 @@ export class RestoreOrchestrator {
     let containerId: string | null = null;
     if (project.activeDeploymentId) {
       const dep = await repos.deployment.findById(project.activeDeploymentId);
-      if (dep?.meta) {
-        const meta = dep.meta as {
-          composeServices?: Array<{ name: string; containerId?: string }>;
-        };
-        containerId =
-          meta.composeServices?.find((s) => s.name === serviceRow.name)?.containerId ??
-          null;
-      }
+      if (dep) containerId = await containerIdForService(dep, serviceRow);
     }
 
     return {

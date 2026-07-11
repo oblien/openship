@@ -241,6 +241,7 @@ export async function buildComposeImages(opts: {
         message: entry.message,
         level: entry.level,
         serviceName: service.name,
+        serviceId: service.id,
         rawData: entry.rawData,
       });
     });

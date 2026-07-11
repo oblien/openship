@@ -216,7 +216,7 @@ export interface UseBuildStreamOptions {
 }
 
 export interface UseBuildStreamReturn {
-  connect: (deploymentId: string, startBuild?: boolean) => Promise<void>;
+  connect: (deploymentId: string, startBuild?: boolean, sinceSeq?: number) => Promise<void>;
   disconnect: () => void;
   isConnected: boolean;
   isConnecting: boolean;
@@ -272,6 +272,9 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
   const terminalStateRef = useRef(false);
   const manualDisconnectRef = useRef(false);
   const lastStartBuildRef = useRef(true);
+  // Highest seq the client already has (from the history snapshot). Sent as
+  // ?since= so the server replays only newer events instead of the whole buffer.
+  const sinceSeqRef = useRef<number | undefined>(undefined);
   const callbacksRef = useRef(callbacks);
   const onConnectRef = useRef(onConnect);
   const onDisconnectRef = useRef(onDisconnect);
@@ -392,7 +395,12 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
           idleTimeoutMs: BUILD_STREAM_IDLE_TIMEOUT_MS,
         });
       } else {
-        await sseStream.connect(`${baseUrl}deployments/${deploymentId}/stream`, {
+        const since = sinceSeqRef.current;
+        const streamUrl =
+          typeof since === "number" && Number.isFinite(since)
+            ? `${baseUrl}deployments/${deploymentId}/stream?since=${since}`
+            : `${baseUrl}deployments/${deploymentId}/stream`;
+        await sseStream.connect(streamUrl, {
           method: 'GET',
           headers: {
             'Accept': 'text/event-stream',
@@ -468,13 +476,17 @@ export const useBuildStream = (options: UseBuildStreamOptions = {}): UseBuildStr
   /**
    * Connect to build stream
    */
-  const connect = useCallback(async (deploymentId: string, startBuild: boolean = true) => {
+  const connect = useCallback(async (deploymentId: string, startBuild: boolean = true, sinceSeq?: number) => {
     if (
       activeDeploymentIdRef.current === deploymentId &&
       (connectingRef.current || isConnectedRef.current || isReconnectingRef.current)
     ) {
       return;
     }
+
+    // Cursor for the resume (GET) path; retained across reconnects so a blip
+    // doesn't re-request the whole buffer. Ignored on a startBuild (POST).
+    sinceSeqRef.current = sinceSeq;
 
     // Switching to a DIFFERENT deployment (redeploy/retry navigation via
     // router.push): tear the old stream down first so the new one takes over

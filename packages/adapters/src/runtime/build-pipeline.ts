@@ -31,7 +31,7 @@ export class BuildLogger {
   log(
     message: string,
     level: LogEntry["level"] = "info",
-    meta?: Pick<LogEntry, "serviceName">,
+    meta?: Pick<LogEntry, "serviceName" | "serviceId">,
   ): void {
     this.onLog?.({ timestamp: new Date().toISOString(), message, level, ...meta });
   }

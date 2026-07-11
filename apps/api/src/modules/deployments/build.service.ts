@@ -659,6 +659,18 @@ export async function createQueuedDeployment(opts: {
       console.warn(`[build] supersede reconciling for ${opts.projectId} failed:`, err),
     );
 
+  // Creating a new deployment IS the decision on any prior partial-failure
+  // "keep or reject" that's still pending for this project — retry / redeploy /
+  // webhook all supersede it. Clear it at CREATE time (not deferred to
+  // onDeploymentReady, which never fires if this build stays building or fails)
+  // so the "Action Required" banner + modal disappear immediately and can't
+  // re-arm the retry loop. Best-effort, matching supersedeReconciling above.
+  await repos.deployment
+    .supersedePendingDecisions(opts.projectId, dep.id)
+    .catch((err) =>
+      console.warn(`[build] supersede pending decisions for ${opts.projectId} failed:`, err),
+    );
+
   return dep;
 }
 

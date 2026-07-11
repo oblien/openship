@@ -159,10 +159,10 @@ export class BareBackupExecutor implements BackupExecutor {
 
     await fs.mkdir(localDir, { recursive: true });
     try {
-      // Stage the artifact locally, then tar-pipe the dir onto the target
+      // Stage the artifact locally, then transfer the dir onto the target
       // (the CommandExecutor exposes no stdin-streaming primitive).
       await pipeline(body, createWriteStream(localFile));
-      await exec.transferIn(localDir, remoteDir, undefined, { mode: "tar" });
+      await exec.transferIn(localDir, remoteDir);
 
       const wrapped = `${composeShell(cmd, opts).replace(/^sh -c /, "")} < ${shellEscape(remoteFile)}`;
       const runner = `sh -c ${shellEscape(wrapped)}; ec=$?; rm -rf ${shellEscape(remoteDir)}; exit $ec`;
