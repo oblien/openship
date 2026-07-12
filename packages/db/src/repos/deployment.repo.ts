@@ -185,10 +185,22 @@ export function createDeploymentRepo(db: Database) {
      * OTHER deployment of the project — a newer release makes a held keep/reject
      * moot. Atomic via jsonb_set; status left as-is (historical).
      */
+    /**
+     * A newer deployment supersedes any prior partial-failure that's still
+     * awaiting a keep/reject decision. Such a deployment is no longer the live
+     * one, so we FINALIZE it: mark `decision: "superseded"` (clears the
+     * "Action Required" banner/modal — build-status derives `decisionPending`
+     * from `decision === "pending"`) AND set `status: "cancelled"` so it reads
+     * as a settled, not-live deployment in the list instead of lingering as
+     * `partial_failure`. The compose partial detail stays in meta. Status only
+     * — no container teardown; the new deploy's reconcile replaces them.
+     */
     async supersedePendingDecisions(projectId: string, exceptDeploymentId: string): Promise<void> {
       await db
         .update(deployment)
         .set({
+          status: "cancelled",
+          errorMessage: "Superseded by a newer deployment while awaiting a keep/reject decision.",
           meta: sql`jsonb_set(${deployment.meta}, '{composeDeployment,decision}', '"superseded"'::jsonb)`,
           updatedAt: new Date(),
         })
