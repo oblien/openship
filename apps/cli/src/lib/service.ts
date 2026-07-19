@@ -29,6 +29,7 @@ export interface UpFlags {
   port?: string;
   dataDir?: string;
   dashboardPort?: string;
+  publicUrl?: string;
   /** false → pass --no-ui */
   ui?: boolean;
   uiVersion?: string;
@@ -46,6 +47,7 @@ function upArgs(flags: UpFlags): string[] {
   if (flags.port) a.push("--port", flags.port);
   if (flags.dataDir) a.push("--data-dir", flags.dataDir);
   if (flags.dashboardPort) a.push("--dashboard-port", flags.dashboardPort);
+  if (flags.publicUrl) a.push("--public-url", flags.publicUrl);
   if (flags.ui === false) a.push("--no-ui");
   if (flags.uiVersion) a.push("--ui-version", flags.uiVersion);
   return a;

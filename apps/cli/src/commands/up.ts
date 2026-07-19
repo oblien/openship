@@ -9,12 +9,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ensureDashboard } from "../lib/dashboard";
+import { mergeTrustedOrigin, normalizePublicUrl } from "../lib/public-url";
 import { installAndStart, preview } from "../lib/service";
 
 interface UpOpts {
   port?: string;
   dataDir?: string;
   dashboardPort?: string;
+  publicUrl?: string;
   ui?: boolean;
   uiVersion?: string;
   foreground?: boolean;
@@ -46,11 +48,13 @@ export const upCommand = new Command("up")
   .option("--port <port>", "API port to listen on", "4000")
   .option("--data-dir <dir>", "Directory for the embedded database")
   .option("--dashboard-port <port>", "Dashboard port", "3001")
+  .option("--public-url <url>", "Public dashboard/API origin when running behind a reverse proxy")
   .option("--no-ui", "Run the API only — don't download/serve the dashboard")
   .option("--ui-version <tag>", "Dashboard release tag to run (default: this CLI's version)")
   .option("-f, --foreground", "Run attached in this terminal instead of as a background service")
   .option("--dry-run", "Print the service definition that would be installed, then exit")
   .action(async (opts: UpOpts) => {
+    opts.publicUrl = normalizePublicUrl(opts.publicUrl);
     if (opts.foreground) return runForeground(opts);
     startService(opts);
   });
@@ -64,6 +68,7 @@ function startService(opts: UpOpts): void {
     port: opts.port,
     dataDir: opts.dataDir,
     dashboardPort: opts.dashboardPort,
+    publicUrl: opts.publicUrl,
     ui: opts.ui,
     uiVersion: opts.uiVersion,
   };
@@ -78,10 +83,11 @@ function startService(opts: UpOpts): void {
     const res = installAndStart(flags);
     const port = String(opts.port || "4000");
     const dashPort = String(opts.dashboardPort || "3001");
+    const dashboardUrl = opts.publicUrl || `http://localhost:${dashPort}`;
     console.log(
       chalk.green("\n  ✔ Openship is running as a service.\n") +
         chalk.dim(`  API:       http://localhost:${port}/api\n`) +
-        (opts.ui !== false ? chalk.dim(`  Dashboard: http://localhost:${dashPort}\n`) : "") +
+        (opts.ui !== false ? chalk.dim(`  Dashboard: ${dashboardUrl}\n`) : "") +
         chalk.dim(`  ${res.detail}\n`) +
         chalk.dim("  Starts on boot and auto-restarts. Stop with `openship stop`.\n"),
     );
@@ -106,6 +112,7 @@ async function runForeground(opts: UpOpts): Promise<void> {
     }
 
     const port = String(opts.port || "4000");
+    const publicUrl = normalizePublicUrl(opts.publicUrl);
     const dataDir: string = opts.dataDir || join(OS_DIR, "data");
     mkdirSync(dataDir, { recursive: true });
 
@@ -123,6 +130,15 @@ async function runForeground(opts: UpOpts): Promise<void> {
       OPENSHIP_MIGRATIONS_DIR: join(SERVER_DIR, "migrations"),
       OPENSHIP_PGLITE_ASSETS_DIR: join(SERVER_DIR, "pglite"),
       BETTER_AUTH_SECRET: ensureAuthSecret(),
+      ...(publicUrl
+        ? {
+            OPENSHIP_LOCAL_DASHBOARD_URL: publicUrl,
+            OPENSHIP_EXTRA_TRUSTED_ORIGINS: mergeTrustedOrigin(
+              process.env.OPENSHIP_EXTRA_TRUSTED_ORIGINS,
+              publicUrl,
+            ),
+          }
+        : {}),
     };
     delete env.DATABASE_URL;
     delete env.POSTGRES_URL;
@@ -216,7 +232,8 @@ async function runForeground(opts: UpOpts): Promise<void> {
             // window.__OPENSHIP_API_ORIGIN__ so both target our local API. It
             // does NOT read API_INTERNAL_URL — using that leaves it defaulting
             // to :4000 (possibly a different instance).
-            OPENSHIP_LOCAL_API_URL: `http://127.0.0.1:${port}`,
+            OPENSHIP_LOCAL_API_URL:
+              publicUrl || process.env.OPENSHIP_LOCAL_API_URL || `http://127.0.0.1:${port}`,
           },
           stdio: ["ignore", "pipe", "pipe"],
         });

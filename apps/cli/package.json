@@ -26,6 +26,7 @@
   "scripts": {
     "build": "tsup && bun run build/stage-server.ts",
     "lint": "tsc --noEmit",
+    "test": "vitest run",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
@@ -40,6 +41,7 @@
     "@types/node": "^22.13.0",
     "tsx": "^4.21.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

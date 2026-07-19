@@ -44,6 +44,9 @@ openship up           # installs Openship as a background service (starts on boo
 
 `openship open` opens the dashboard; `openship stop` stops the service. Want a one-off attached run instead? `openship up --foreground`. To deploy a project:
 
+When a reverse proxy exposes the dashboard and `/api` on one origin, configure
+the browser-facing URL with `openship up --public-url https://openship.example.com`.
+
 ```bash
 cd your-project
 openship init         # link this directory to a project

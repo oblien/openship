@@ -106,7 +106,9 @@ function LoginPageInner() {
 
   /* ── Zero-auth mode (desktop): auto-redirect to create session ── */
   if (authMode === "none") {
-    const apiUrl = getApiOrigin(typeof window !== "undefined" ? window.location.origin : undefined);
+    // The no-argument form honors the API origin injected by self-hosted
+    // installs behind a reverse proxy, even when it is not a known target.
+    const apiUrl = getApiOrigin();
     // Redirect to the desktop-login endpoint which creates a real
     // session cookie and redirects back to the dashboard.
     if (typeof window !== "undefined") {
@@ -123,7 +125,7 @@ function LoginPageInner() {
 
   /* ── Cloud mode (desktop): redirect to Openship Cloud for all auth ── */
   if (authMode === "cloud") {
-    const apiUrl = getApiOrigin(typeof window !== "undefined" ? window.location.origin : undefined);
+    const apiUrl = getApiOrigin();
     const callbackUrl = `${apiUrl}/api/auth/cloud-callback`;
     // The actual cloud-authorize URL is built inside handleCloudSignIn so
     // PKCE state can be minted + stashed in localStorage just before the
