@@ -27,7 +27,7 @@
     "dev:web": "turbo run dev --filter=@repo/web",
     "dev:email": "turbo run dev --filter=@repo/email",
     "dev:all": "turbo run dev",
-    "dev:clean": "ps -A -o pid,command 2>/dev/null | grep -E 'src/index\\.ts|next/dist/bin/next' | grep -v grep | awk '{print $1}' | xargs -I {} kill -9 {} 2>/dev/null; for p in 4000 4100 3001 3002; do pid=$(lsof -ti tcp:$p 2>/dev/null); [ -n \"$pid\" ] && kill -9 $pid 2>/dev/null; done; echo 'cleaned'",
+    "dev:clean": "ps -A -o pid,command 2>/dev/null | grep -E 'src/index\\.ts|next/dist/bin/next|next-server' | grep -v grep | awk '{print $1}' | xargs -I {} kill -9 {} 2>/dev/null; for p in 4000 4100 3001 3002; do pid=$(lsof -ti tcp:$p 2>/dev/null); [ -n \"$pid\" ] && kill -9 $pid 2>/dev/null; done; echo 'cleaned'",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
