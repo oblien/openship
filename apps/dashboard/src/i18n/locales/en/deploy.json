@@ -129,6 +129,8 @@
     "gitForwardDescPre": "Clone on the server using your local ",
     "gitForwardDescPost": " identity — no build-and-upload. Nothing is stored on the server.",
     "options": {
+      "local": "This Machine",
+      "localDesc": "Deploy directly on the machine running Openship.",
       "serverViaSsh": "Deploy to your remote server via SSH.",
       "servers": "Your servers",
       "serversCount": "{count} configured servers.",

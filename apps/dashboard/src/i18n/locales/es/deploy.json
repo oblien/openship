@@ -129,6 +129,8 @@
     "gitForwardDescPre": "Clona en el servidor usando tu identidad local de ",
     "gitForwardDescPost": " — sin compilar y subir. No se almacena nada en el servidor.",
     "options": {
+      "local": "Esta máquina",
+      "localDesc": "Desplegar directamente en la máquina donde se ejecuta Openship.",
       "serverViaSsh": "Despliega en tu servidor remoto a través de SSH.",
       "servers": "Tus servidores",
       "serversCount": "{count} servidores configurados.",

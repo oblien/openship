@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import ProjectSettings from "@/components/import-project/ProjectSettings";
 import BuildSettings from "@/components/import-project/BuildSettings";
@@ -10,7 +10,7 @@ import EnvironmentVariables from "@/components/import-project/EnvironmentVariabl
 import MonorepoApps from "@/components/import-project/MonorepoApps";
 import RoutingSection from "@/components/import-project/RoutingSection";
 import Sidebar from "./components/Sidebar";
-import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets } from "./components/DeployTargetStep";
+import DeployTargetStep, { DeployTargetSummary, useDesktopTargets } from "./components/DeployTargetStep";
 // Clone-strategy gate moved from inline render to a preflight modal
 // triggered from <Sidebar>'s handleDeploy. The inline placement was
 // wrong (showed before the user clicked Deploy). See
@@ -106,47 +106,12 @@ const DeployRepository: React.FC = () => {
     // Step: "target" = pick build/deploy target, "config" = project settings
     // Only desktop gets step 1. Non-desktop skips straight to config.
     //
-    // Returning users land directly on "config": we read their soft
-    // last-pick from localStorage SYNCHRONOUSLY in the useState initializer
-    // and skip the target picker entirely. Avoids the brief flash of
-    // "Where do you want to deploy?" + spinner that DeployTargetStep
-    // would otherwise show while waiting for settingsApi.get() to resolve.
-    // The settings-API default is still authoritative and gets applied
-    // if the user clicks "edit" to reopen the picker.
-    const [step, setStep] = useState<"target" | "config">(() => {
-        if (!isDesktop) return "config";
-        if (typeof window === "undefined") return "target";
-        return lastPickStore.read() ? "config" : "target";
-    });
-
-    // Apply the soft last-pick to config so step="config" renders with the
-    // correct target/serverId. Runs TWICE:
-    //   Pass 1: pre-paint (useLayoutEffect) so the summary bar doesn't
-    //           flash with DEFAULT_CONFIG.deployTarget="cloud".
-    //   Pass 2: AFTER initializeFromRepo's setConfig settles — that path
-    //           goes through buildPreparedConfig which overwrites
-    //           buildStrategy / runtimeMode based on stack defaults,
-    //           clobbering the user's last pick. The applied flag is
-    //           reset right before pass 2 so it fires once more.
-    const appliedLastPickRef = useRef(false);
-
-    const applyLastPick = useCallback(() => {
-        if (!isDesktop || appliedLastPickRef.current) return;
-        const last = typeof window !== "undefined" ? lastPickStore.read() : null;
-        if (!last) return;
-        appliedLastPickRef.current = true;
-        if (last.target === "server" && last.serverId) {
-            updateConfig({ deployTarget: "server", serverId: last.serverId });
-        } else if (last.target === "cloud") {
-            updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
-        } else if (last.target === "local") {
-            updateConfig({ deployTarget: "local", serverId: undefined });
-        }
-    }, [isDesktop, updateConfig]);
-
-    useLayoutEffect(() => {
-        applyLastPick();
-    }, [applyLastPick]);
+    // Always enter the target step on desktop. DeployTargetStep resolves the
+    // authoritative settings default first, then the soft browser last-pick,
+    // and auto-skips when either applies cleanly.
+    const [step, setStep] = useState<"target" | "config">(
+        isDesktop ? "target" : "config",
+    );
 
     // Track whether the user explicitly came back to step 1 via the edit
     // affordance. If they did, we must NOT auto-skip past it again - they
@@ -191,16 +156,6 @@ const DeployRepository: React.FC = () => {
                     branch: branch ?? decoded.branch,
                     projectId: projectId ?? decoded.projectId,
                 });
-            }
-
-            // Re-apply last-pick: initializeFromRepo's buildPreparedConfig
-            // overwrites buildStrategy + runtimeMode from the detected stack's
-            // defaults, which clobbers what useLayoutEffect set above. Reset
-            // the guard and re-apply so the summary bar (and the rest of the
-            // page) reflects the user's actual saved preference.
-            if (result.success) {
-                appliedLastPickRef.current = false;
-                applyLastPick();
             }
 
             if (!result.success) {

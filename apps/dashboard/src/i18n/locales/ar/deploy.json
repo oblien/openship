@@ -129,6 +129,8 @@
     "gitForwardDescPre": "الاستنساخ على الخادم باستخدام هوية ",
     "gitForwardDescPost": " المحلية لديك — دون بناء ورفع. لا يُخزَّن أي شيء على الخادم.",
     "options": {
+      "local": "هذا الجهاز",
+      "localDesc": "النشر مباشرة على الجهاز الذي يشغّل Openship.",
       "serverViaSsh": "انشر إلى خادمك البعيد عبر SSH.",
       "servers": "الخوادم",
       "serversCount": "اختر من بين {count} خوادم مُهيّأة.",

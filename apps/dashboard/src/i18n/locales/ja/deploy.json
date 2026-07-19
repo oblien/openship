@@ -129,6 +129,8 @@
     "gitForwardDescPre": "ローカルの ",
     "gitForwardDescPost": " のIDを使ってサーバー上でクローンします — ビルドとアップロードは行いません。サーバーには何も保存されません。",
     "options": {
+      "local": "このマシン",
+      "localDesc": "Openshipを実行しているマシンに直接デプロイします。",
       "serverViaSsh": "SSH経由でリモートサーバーにデプロイします。",
       "servers": "あなたのサーバー",
       "serversCount": "設定済みのサーバー{count}台。",

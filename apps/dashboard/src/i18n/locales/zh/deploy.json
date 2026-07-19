@@ -129,6 +129,8 @@
     "gitForwardDescPre": "在服务器上使用你本地的 ",
     "gitForwardDescPost": " 身份进行克隆——无需构建并上传。服务器上不会存储任何内容。",
     "options": {
+      "local": "此计算机",
+      "localDesc": "直接部署到运行 Openship 的计算机。",
       "serverViaSsh": "通过 SSH 部署到你的远程服务器。",
       "servers": "你的服务器",
       "serversCount": "{count} 台已配置的服务器。",

@@ -337,7 +337,9 @@ export function useDesktopTargets(): ResolvedTargets {
     servers,
     hasCloudConnected,
     hasCloudOption,
-    hasChoice: ready && Number(hasServers) + Number(hasCloudOption) > 1,
+    // Self-hosted/desktop installs can always deploy on the machine running
+    // Openship. Count it as a real target, independently from where builds run.
+    hasChoice: ready && Number(selfHosted) + Number(hasServers) + Number(hasCloudOption) > 1,
     refreshServers: fetchServers,
   };
 }
@@ -898,6 +900,15 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     description: string;
   }> = [];
 
+  if (selfHosted) {
+    deployTargetOptions.push({
+      value: "local",
+      icon: <Cpu className="size-5" />,
+      label: ts.options.local,
+      description: ts.options.localDesc,
+    });
+  }
+
   if (hasServers) {
     if (isSingleServer) {
       // Single server → show directly by name
@@ -1027,6 +1038,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
 
   const hasAnyDeployTarget = deployTargetOptions.length > 0;
   const canContinue = ready && (
+    (config.deployTarget === "local" && selfHosted) ||
     config.deployTarget === "cloud" ||
     (config.deployTarget === "server" && !!config.serverId && hasServers)
   );
