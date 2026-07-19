@@ -164,7 +164,12 @@ export async function getHome(c: Context) {
     return c.json({
       success: true,
       projects: [],
-      numbers: { total_projects: 0, total_deployments: 0, total_success_deployments: 0 },
+      numbers: {
+        total_active_projects: 0,
+        total_deployments: 0,
+        total_success_deployments: 0,
+        total_failed_deployments: 0,
+      },
       otherOrgs: [],
     });
   }
@@ -176,12 +181,13 @@ export async function getHome(c: Context) {
   // reconnect" client-side from `deployTarget === 'cloud'` +
   // CloudContext.connected — no duplicate server-side flag.
   const projectIds = result.rows.map((p) => p.id);
-  const [enrichedProjectsResolved, latestByProject, primariesByProject, servicesByProject] =
+  const [enrichedProjectsResolved, latestByProject, primariesByProject, servicesByProject, deploymentStats] =
     await Promise.all([
       projectService.enrichProjectsBatch(result.rows),
       repos.deployment.findLatestByProjects(projectIds),
       repos.domain.getPrimariesByProjects(projectIds),
       repos.service.listByProjects(projectIds),
+      repos.deployment.countStatusByOrganization(organizationId),
     ]);
 
   const projects = enrichedProjectsResolved.map((enriched, idx) => {
@@ -271,9 +277,10 @@ export async function getHome(c: Context) {
     success: true,
     projects: mergedProjects,
     numbers: {
-      total_projects: result.total + cloudProjectCount,
-      total_deployments: 0,
-      total_success_deployments: 0,
+      total_active_projects: result.total + cloudProjectCount,
+      total_deployments: deploymentStats.total,
+      total_success_deployments: deploymentStats.success,
+      total_failed_deployments: deploymentStats.failed,
     },
     otherOrgs,
     ...(cloudPartial ? { cloudPartial: true } : {}),

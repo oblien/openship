@@ -6,6 +6,7 @@ node_modules/
 dist/
 .next/
 .next-saas/
+.next-test/
 .turbo/
 out/
 # Self-hosted server release bundle (apps/api/scripts/build-release.ts)

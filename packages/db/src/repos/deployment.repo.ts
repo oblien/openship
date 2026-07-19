@@ -88,6 +88,31 @@ export function createDeploymentRepo(db: Database) {
       return { rows, total: Number(total), page, perPage };
     },
 
+    /** Deployment counts for an org, bucketed by outcome — powers the
+     *  dashboard "Activity" card (total/success/failed). `ready` and
+     *  `partial_failure` count as success (same convention as the
+     *  reconcile/rollback queries above); `failed`/`cancelled`/`rejected`
+     *  count as failure. In-flight statuses count toward total only. */
+    async countStatusByOrganization(organizationId: string) {
+      const rows = await db
+        .select({ status: deployment.status, value: sql<number>`count(*)` })
+        .from(deployment)
+        .where(eq(deployment.organizationId, organizationId))
+        .groupBy(deployment.status);
+
+      let total = 0;
+      let success = 0;
+      let failed = 0;
+      for (const row of rows) {
+        const count = Number(row.value);
+        total += count;
+        if (row.status === "ready" || row.status === "partial_failure") success += count;
+        else if (row.status === "failed" || row.status === "cancelled" || row.status === "rejected")
+          failed += count;
+      }
+      return { total, success, failed };
+    },
+
     /**
      * Insert a deployment, atomically honoring the one-active-per-project
      * partial unique index (`uq_deployment_one_active_per_project`). A bare
