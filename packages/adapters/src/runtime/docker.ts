@@ -2010,6 +2010,34 @@ export class DockerRuntime implements RuntimeAdapter {
     networkId: string,
     projectId: string,
   ): Promise<void> {
+    const executor =
+      this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    if (executor) {
+      // dockerode list/connect over SSH hangs on Docker 29+; heal via CLI.
+      try {
+        const out = await executor.exec(
+          `docker ps -aq --filter label=openship.project=${sq(projectId)}`,
+          { timeout: 30_000 },
+        );
+        for (const id of out.split(/\s+/).filter(Boolean)) {
+          const service = (
+            await executor.exec(
+              `docker inspect ${sq(id)} --format '{{index .Config.Labels "openship.service"}}'`,
+              { timeout: 15_000 },
+            )
+          ).trim();
+          const alias = service ? ` --alias ${sq(service)}` : "";
+          await executor.exec(
+            `docker network connect${alias} ${sq(networkId)} ${sq(id)} >/dev/null 2>&1 || true`,
+            { timeout: 30_000 },
+          );
+        }
+      } catch {
+        return;
+      }
+      return;
+    }
+
     let containers: Awaited<ReturnType<typeof this.docker.listContainers>>;
     try {
       containers = await this.docker.listContainers({
