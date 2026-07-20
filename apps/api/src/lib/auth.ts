@@ -3,7 +3,7 @@ import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, mcp } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
-import { defaultStatements } from "better-auth/plugins/organization/access";
+import { defaultRoles, defaultStatements } from "better-auth/plugins/organization/access";
 import { createAccessControl } from "better-auth/plugins/access";
 import { db, getDriver, repos, schema } from "@repo/db";
 import { env, runtimeTarget, trustedOrigins } from "../config/env";
@@ -339,10 +339,17 @@ export const auth = betterAuth({
        */
       ac: ORG_ACCESS_CONTROLLER,
       roles: {
-        // The plugin's default roles still apply (owner/admin/member);
-        // we only need to declare `restricted` so Better Auth's input
-        // validators accept it. The actual permission policy lives in
+        // `roles` REPLACES the plugin's defaults — it does not extend them.
+        // Better Auth resolves the role table as
+        // `{ ...options.roles || defaultRoles }` (plugins/organization/
+        // has-permission.mjs), so passing only `restricted` would leave
+        // owner/admin/member with no statements at all and every
+        // permission-gated org endpoint (invite, member CRUD, teams, org
+        // update/delete) would 403 — even for the owner. Spread the
+        // defaults back in so `restricted` is genuinely a fourth role.
+        // The actual permission policy for `restricted` lives in
         // permission.ts, not here.
+        ...defaultRoles,
         restricted: RESTRICTED_ROLE,
       },
       sendInvitationEmail: smtpEnabled
