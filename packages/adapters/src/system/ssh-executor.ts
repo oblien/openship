@@ -33,6 +33,10 @@ function clampWindow(value: number | undefined, fallback: number, min: number, m
 export class SshExecutor implements CommandExecutor {
   private client: SshClient | null = null;
   private connecting: Promise<SshClient> | null = null;
+  /** Cached SFTP subsystem channel, reused across writeFile/readFile/exists
+   *  (see `sftp()` below — this is the fix for the channel leak in #34). */
+  private sftpWrapper: SFTPWrapper | null = null;
+  private sftpConnecting: Promise<SFTPWrapper> | null = null;
   private readonly config: SshConfig;
   /** Subscribers notified when the transport drops (see onDisconnect). */
   private readonly disconnectListeners = new Set<(err: Error) => void>();
@@ -61,6 +65,7 @@ export class SshExecutor implements CommandExecutor {
       const onTransportDown = (cause?: Error) => {
         if (this.client !== client) return; // superseded / already handled
         this.client = null;
+        this.clearSftp();
         this.handleDisconnect(cause);
       };
 
@@ -106,15 +111,50 @@ export class SshExecutor implements CommandExecutor {
     }
   }
 
+  /**
+   * Return the cached SFTP subsystem channel, opening ONE on first use and
+   * reusing it for every subsequent writeFile/readFile/exists call on this
+   * connection. Each `client.sftp()` opens a distinct channel that counts
+   * against the server's `MaxSessions`; opening a fresh one per call and
+   * never closing it leaked a channel per file op and eventually exhausted
+   * MaxSessions, cancelling in-flight deploys (#34). The cache is evicted by
+   * `clearSftp()` on channel close/error, `resetConnection()`, or `dispose()`,
+   * so a dead channel is transparently reopened on the next call.
+   */
   private async sftp(): Promise<SFTPWrapper> {
-    const client = await this.connect();
-    return openSftp(client);
+    if (this.sftpWrapper) return this.sftpWrapper;
+    if (this.sftpConnecting) return this.sftpConnecting;
+
+    this.sftpConnecting = (async () => {
+      const client = await this.connect();
+      const wrapper = await openSftp(client);
+      const evict = () => {
+        if (this.sftpWrapper === wrapper) this.sftpWrapper = null;
+      };
+      wrapper.on("close", evict);
+      wrapper.on("error", evict);
+      this.sftpWrapper = wrapper;
+      this.sftpConnecting = null;
+      return wrapper;
+    })();
+
+    return this.sftpConnecting;
+  }
+
+  /** Ends the cached SFTP channel (if any) so the next `sftp()` call reopens one. */
+  private clearSftp(): void {
+    if (this.sftpWrapper) {
+      try { this.sftpWrapper.end(); } catch { /* already gone */ }
+    }
+    this.sftpWrapper = null;
+    this.sftpConnecting = null;
   }
 
   /**
    * Force-close the current connection so the next call reconnects.
    */
   private resetConnection(): void {
+    this.clearSftp();
     if (this.client) {
       try { this.client.end(); } catch {}
       this.client = null;
@@ -130,19 +170,42 @@ export class SshExecutor implements CommandExecutor {
   }
 
   /**
-   * Run an operation, and if it fails opening an SSH channel on a half-dead
-   * cached connection ("Channel open failure: open failed" — common after the
-   * idle timeout drops the socket), drop the connection and retry ONCE on a
-   * fresh one. This is why `exec` survives a stale connection; the SFTP-based
-   * ops (writeFile/readFile/exists) must go through it too, or a deploy's route
-   * write fails spuriously and only succeeds on a manual redeploy.
+   * A channel-open just failed ("Channel open failure: open failed" — e.g.
+   * after the idle timeout half-kills the socket, or the server briefly
+   * refuses a new channel under session pressure). Decide how to recover:
+   *
+   * - If nothing else is running on this connection (`inflight` empty — no
+   *   in-progress exec/streamExec), the transport itself is the likely
+   *   culprit; force a clean reconnect.
+   * - If something else IS in flight — most importantly a `docker build`
+   *   streaming over `streamExec` — that channel is proof the transport is
+   *   fine; only the NEW channel was refused. Don't `resetConnection()` (=
+   *   `client.end()`) in that case: it would tear down every channel on the
+   *   connection, cancelling the unrelated build (#34's actual reported
+   *   symptom). Just evict the cached SFTP channel (in case that's what's
+   *   stale) and retry on the SAME connection.
+   */
+  private async recoverChannelError(): Promise<void> {
+    if (this.inflight.size === 0) {
+      this.resetConnection();
+    } else {
+      this.clearSftp();
+    }
+  }
+
+  /**
+   * Run an operation, and on a channel-open failure recover (see
+   * `recoverChannelError`) and retry ONCE. This is why `exec` survives a
+   * stale connection; the SFTP-based ops (writeFile/readFile/exists) must go
+   * through it too, or a deploy's route write fails spuriously and only
+   * succeeds on a manual redeploy.
    */
   private async withChannelRetry<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (err) {
       if (SshExecutor.isChannelError(err)) {
-        this.resetConnection();
+        await this.recoverChannelError();
         return fn();
       }
       throw err;
@@ -210,9 +273,9 @@ export class SshExecutor implements CommandExecutor {
     command: string,
     onLog: (log: LogEntry) => void,
   ): Promise<{ code: number; output: string }> {
-    return this._streamExec(command, onLog).catch((err) => {
+    return this._streamExec(command, onLog).catch(async (err) => {
       if (SshExecutor.isChannelError(err)) {
-        this.resetConnection();
+        await this.recoverChannelError();
         return this._streamExec(command, onLog);
       }
       throw err;
@@ -478,6 +541,7 @@ export class SshExecutor implements CommandExecutor {
     this.connecting = null;
     this.reverseHandlers.clear();
     this.reverseListenerClient = null;
+    this.clearSftp();
     if (this.client) {
       this.client.end();
       this.client = null;
