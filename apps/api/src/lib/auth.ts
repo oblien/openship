@@ -114,6 +114,8 @@ export const auth = betterAuth({
   /* ---------- Email + Password ---------- */
   emailAndPassword: {
     enabled: true,
+    // Self-hosted / Funnel: set OPENSHIP_DISABLE_SIGNUP=true to invite-only.
+    disableSignUp: process.env.OPENSHIP_DISABLE_SIGNUP === "true",
     minPasswordLength: 8,
     maxPasswordLength: 128,
 

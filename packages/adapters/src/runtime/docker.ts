@@ -928,6 +928,23 @@ export class DockerRuntime implements RuntimeAdapter {
     }
   }
 
+
+  /**
+   * Confirm an image exists after a remote/local build.
+   * SSH builds must use `docker image inspect` on the remote host — dockerode
+   * inspect over the SSH HTTP bridge is unreliable on Docker 29+ and falsely
+   * reports "image was not created" after a successful build.
+   */
+  private async assertImageReady(tag: string): Promise<void> {
+    const executor =
+      this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    if (executor) {
+      await executor.exec(`docker image inspect ${sq(tag)} >/dev/null`);
+      return;
+    }
+    await this.docker.getImage(tag).inspect();
+  }
+
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
     const log = logger ?? new BuildLogger();
     const startTime = Date.now();
@@ -969,7 +986,7 @@ export class DockerRuntime implements RuntimeAdapter {
         }
 
         try {
-          await this.docker.getImage(tag).inspect();
+          await this.assertImageReady(tag);
         } catch (cause) {
           throw new Error(`Docker build finished but the image ${tag} was not created`, { cause });
         }
@@ -1042,7 +1059,7 @@ export class DockerRuntime implements RuntimeAdapter {
       }
 
       try {
-        await this.docker.getImage(tag).inspect();
+        await this.assertImageReady(tag);
       } catch (cause) {
         throw new Error(`Docker build finished but the image ${tag} was not created`, { cause });
       }
@@ -1223,7 +1240,7 @@ export class DockerRuntime implements RuntimeAdapter {
           }
 
           try {
-            await this.docker.getImage(tag).inspect();
+            await this.assertImageReady(tag);
           } catch (cause) {
             throw new Error(`Docker build finished but the image ${tag} was not created`, { cause });
           }
@@ -1857,6 +1874,35 @@ export class DockerRuntime implements RuntimeAdapter {
     // slug would both miss and both create, yielding two networks with the same
     // name (Docker allows it) and ambiguous name lookups. Serialize per server.
     const critical = async () => {
+      const executor =
+        this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+
+      // Prefer remote CLI over dockerode-through-SSH: the HTTP bridge is flaky
+      // on Docker 29+ (socket closed mid-request during network ensure).
+      if (executor) {
+        try {
+          const id = (
+            await executor.exec(
+              `docker network inspect ${sq(networkName)} --format '{{.Id}}'`,
+              { timeout: 30_000 },
+            )
+          ).trim();
+          if (id) return id;
+        } catch {
+          // missing → create below
+        }
+        await executor.exec(
+          `docker network create --driver bridge --label ${sq(`openship.network=${slug}`)} ${sq(networkName)}`,
+          { timeout: 30_000 },
+        );
+        return (
+          await executor.exec(
+            `docker network inspect ${sq(networkName)} --format '{{.Id}}'`,
+            { timeout: 30_000 },
+          )
+        ).trim();
+      }
+
       const networks = await this.docker.listNetworks({
         filters: { name: [networkName] },
       });

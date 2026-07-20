@@ -8,6 +8,7 @@ COPY packages/ ./packages/
 COPY apps/ ./apps/
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_API_PROXY=true
 RUN bun install && cd apps/dashboard && bun run build
 
 # ─── Production stage ──────────────────────────────────
