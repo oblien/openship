@@ -44,7 +44,7 @@ export { resolveProvider, listProviders, describeProviders } from "./registry";
  *   - ProviderNotReadyError if preflight rejects (e.g. missing creds)
  *   - SlugTakenError if the chosen slug is in use
  *   - ProvisionFailedError on any other create failure
- *   - ProviderNotImplementedError for stub providers (ngrok/cloudflare)
+ *   - ProviderNotImplementedError for stub providers (cloudflare)
  *
  * Caller is responsible for persisting the returned TunnelRecord —
  * the tunneling module is intentionally stateless about ownership.

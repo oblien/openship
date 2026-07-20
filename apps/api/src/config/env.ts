@@ -177,6 +177,20 @@ const envSchema = z.object({
    */
   OBLIEN_WEBHOOK_SECRET: z.string().optional(),
 
+  /* ---------- ngrok tunnel provider ---------- */
+  /**
+   * Agent authtoken (from the ngrok dashboard → "Your Authtoken").
+   * Required to open any tunnel, free or paid. A per-call override
+   * can be passed via TunnelProvisionInput.context.authtoken.
+   */
+  NGROK_AUTHTOKEN: z.string().optional(),
+  /**
+   * API key (dashboard → API Keys — distinct from the authtoken above).
+   * Only needed to reserve a custom domain on a paid plan via the
+   * ngrok REST API. Free-tier dev-domain tunnels work without it.
+   */
+  NGROK_API_KEY: z.string().optional(),
+
   /* ---------- Backup destinations ---------- */
   /**
    * Allow `kind: 'local'` backup destinations. Defaults OFF in CLOUD_MODE
