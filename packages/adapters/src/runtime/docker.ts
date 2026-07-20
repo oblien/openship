@@ -2070,6 +2070,11 @@ export class DockerRuntime implements RuntimeAdapter {
   ): Promise<MultiServiceDeployResult> {
     const log = onLog ?? (() => {});
     const containerName = `openship-${config.slug}-${config.serviceName}`;
+    const executor =
+      this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    if (executor) {
+      return this.deployServiceWorkloadViaSsh(executor, group, config, containerName, log);
+    }
 
     // Stop and remove any existing container with the same name
     try {
@@ -2200,6 +2205,120 @@ export class DockerRuntime implements RuntimeAdapter {
 
     return {
       containerId: container.id,
+      status: "running",
+      ip,
+      hostPort,
+    };
+  }
+
+
+  /**
+   * Create/start a compose service container via remote `docker` CLI.
+   * Avoids dockerode-over-SSH hangs on Docker 29+ during remove/create/start.
+   */
+  private async deployServiceWorkloadViaSsh(
+    executor: { exec(command: string, opts?: { timeout?: number }): Promise<string> },
+    group: MultiServiceGroupHandle,
+    config: MultiServiceDeployConfig,
+    containerName: string,
+    log: LogCallback,
+  ): Promise<MultiServiceDeployResult> {
+    await executor.exec(`docker rm -f ${sq(containerName)} >/dev/null 2>&1 || true`, {
+      timeout: 60_000,
+    });
+
+    const env = [
+      ...(config.publicPort && config.environment.PORT === undefined
+        ? [`PORT=${config.publicPort}`]
+        : []),
+      ...Object.entries(config.environment).map(([k, v]) => `${k}=${v}`),
+    ];
+    if (!config.namespaceVolumes) {
+      await this.assertNoForeignNamedVolumeCollision(config);
+    }
+    const scopedBinds = scopeVolumeBinds(config.slug, config.volumes, config.namespaceVolumes);
+    const restart = (config.restart && RESTART_POLICIES[config.restart])
+      ? config.restart
+      : "always";
+    const labels = {
+      ...this.labels({
+        deploymentId: config.deploymentId,
+        projectId: config.projectId,
+      }),
+      "openship.service": config.serviceName,
+    };
+
+    const args: string[] = [
+      "docker run -d",
+      `--name ${sq(containerName)}`,
+      `--hostname ${sq(config.serviceName)}`,
+      `--network ${sq(group.id)}`,
+      `--network-alias ${sq(config.serviceName)}`,
+      `--restart ${sq(restart)}`,
+    ];
+    for (const [k, v] of Object.entries(labels)) {
+      args.push(`--label ${sq(`${k}=${v}`)}`);
+    }
+    for (const e of env) {
+      args.push(`-e ${sq(e)}`);
+    }
+    for (const port of config.ports) {
+      args.push(`-p ${sq(port)}`);
+    }
+    for (const bind of scopedBinds) {
+      args.push(`-v ${sq(bind)}`);
+    }
+    if (config.command) {
+      args.push(sq(config.image), "sh", "-c", sq(config.command));
+    } else {
+      args.push(sq(config.image));
+    }
+
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Creating service container ${containerName} from ${config.image} (SSH CLI)...\n`,
+      level: "info",
+    });
+
+    const containerId = (
+      await executor.exec(args.join(" "), { timeout: 120_000 })
+    ).trim();
+    if (!containerId) {
+      throw new Error(`docker run produced no container id for ${containerName}`);
+    }
+
+    const inspect = await executor.exec(
+      `docker inspect ${sq(containerId)} --format '{{json .NetworkSettings}}'`,
+      { timeout: 30_000 },
+    );
+    let ip: string | undefined;
+    let hostPort: number | undefined;
+    try {
+      const ns = JSON.parse(inspect);
+      for (const net of Object.values(ns.Networks ?? {}) as Array<{ IPAddress?: string }>) {
+        if (net.IPAddress) {
+          ip = net.IPAddress;
+          break;
+        }
+      }
+      for (const bindings of Object.values(ns.Ports ?? {}) as Array<Array<{ HostPort?: string }> | null>) {
+        if (bindings?.[0]?.HostPort) {
+          hostPort = parseInt(bindings[0].HostPort, 10);
+          break;
+        }
+      }
+    } catch {
+      // best-effort
+    }
+
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Service ${config.serviceName} started (${containerId.slice(0, 12)})${ip ? ` at ${ip}` : ""}.\n`,
+      level: "info",
+    });
+
+    return {
+      containerId,
       status: "running",
       ip,
       hostPort,
