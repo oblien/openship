@@ -323,6 +323,24 @@ export function createDeploymentRepo(db: Database) {
       return out;
     },
 
+    /**
+     * Total + successful deployment counts across a set of projects, in one
+     * aggregate query. Used by getHome for the dashboard's Activity widget.
+     * "ready" and "partial_failure" both count as success — see
+     * getLatestSuccessfulForBranch above for why partial_failure counts.
+     */
+    async countStatsByProjects(projectIds: string[]): Promise<{ total: number; success: number }> {
+      if (projectIds.length === 0) return { total: 0, success: 0 };
+      const [row] = await db
+        .select({
+          total: sql<number>`count(*)`,
+          success: sql<number>`count(*) filter (where ${deployment.status} in ('ready', 'partial_failure'))`,
+        })
+        .from(deployment)
+        .where(inArray(deployment.projectId, projectIds));
+      return { total: Number(row?.total ?? 0), success: Number(row?.success ?? 0) };
+    },
+
     /** Bulk lookup by id — used by enrichProject batching. */
     async findManyById(ids: string[]): Promise<Map<string, Deployment>> {
       if (ids.length === 0) return new Map();

@@ -164,7 +164,7 @@ export async function getHome(c: Context) {
     return c.json({
       success: true,
       projects: [],
-      numbers: { total_projects: 0, total_deployments: 0, total_success_deployments: 0 },
+      numbers: { total_active_projects: 0, total_deployments: 0, total_success_deployments: 0 },
       otherOrgs: [],
     });
   }
@@ -176,13 +176,19 @@ export async function getHome(c: Context) {
   // reconnect" client-side from `deployTarget === 'cloud'` +
   // CloudContext.connected — no duplicate server-side flag.
   const projectIds = result.rows.map((p) => p.id);
-  const [enrichedProjectsResolved, latestByProject, primariesByProject, servicesByProject] =
-    await Promise.all([
-      projectService.enrichProjectsBatch(result.rows),
-      repos.deployment.findLatestByProjects(projectIds),
-      repos.domain.getPrimariesByProjects(projectIds),
-      repos.service.listByProjects(projectIds),
-    ]);
+  const [
+    enrichedProjectsResolved,
+    latestByProject,
+    primariesByProject,
+    servicesByProject,
+    deploymentStats,
+  ] = await Promise.all([
+    projectService.enrichProjectsBatch(result.rows),
+    repos.deployment.findLatestByProjects(projectIds),
+    repos.domain.getPrimariesByProjects(projectIds),
+    repos.service.listByProjects(projectIds),
+    repos.deployment.countStatsByProjects(projectIds),
+  ]);
 
   const projects = enrichedProjectsResolved.map((enriched, idx) => {
     const original = result.rows[idx];
@@ -250,6 +256,8 @@ export async function getHome(c: Context) {
 
   let mergedProjects: unknown[] = localProjects;
   let cloudProjectCount = 0;
+  let cloudDeploymentCount = 0;
+  let cloudSuccessDeploymentCount = 0;
   let cloudPartial = false;
   if (cloud.state === "merged") {
     const localIds = new Set(localProjects.map((p) => (p as { id: string }).id));
@@ -259,6 +267,8 @@ export async function getHome(c: Context) {
     mergedProjects = [...localProjects, ...cloudProjects];
     cloudProjectCount =
       Number(cloud.numbers.total_projects ?? cloudProjects.length) || cloudProjects.length;
+    cloudDeploymentCount = Number(cloud.numbers.total_deployments ?? 0) || 0;
+    cloudSuccessDeploymentCount = Number(cloud.numbers.total_success_deployments ?? 0) || 0;
   } else if (cloud.state === "unavailable") {
     cloudPartial = true;
   }
@@ -271,9 +281,9 @@ export async function getHome(c: Context) {
     success: true,
     projects: mergedProjects,
     numbers: {
-      total_projects: result.total + cloudProjectCount,
-      total_deployments: 0,
-      total_success_deployments: 0,
+      total_active_projects: result.total + cloudProjectCount,
+      total_deployments: deploymentStats.total + cloudDeploymentCount,
+      total_success_deployments: deploymentStats.success + cloudSuccessDeploymentCount,
     },
     otherOrgs,
     ...(cloudPartial ? { cloudPartial: true } : {}),
