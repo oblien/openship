@@ -604,7 +604,7 @@ const ProjectSettingsContent = () => {
       label: t.projects.help.contactSupport,
       icon: <HelpCircle className="w-4 h-4" />,
       onClick: () => {
-        window.open("https://oblien.com/support", "_blank");
+        window.open("https://openship.io/contact", "_blank");
       },
     },
     {
@@ -612,7 +612,7 @@ const ProjectSettingsContent = () => {
       label: t.projects.help.reportIssue,
       icon: <Bug className="w-4 h-4" />,
       onClick: () => {
-        window.open("https://github.com/oblien/deployments/issues/new", "_blank");
+        window.open("https://github.com/oblien/openship/issues/new", "_blank");
       },
     },
     {
@@ -620,7 +620,7 @@ const ProjectSettingsContent = () => {
       label: t.projects.help.sendFeedback,
       icon: <MessageSquare className="w-4 h-4" />,
       onClick: () => {
-        window.open("https://oblien.com/feedback", "_blank");
+        window.open("https://github.com/oblien/openship/issues/new", "_blank");
       },
     },
     {
@@ -632,7 +632,7 @@ const ProjectSettingsContent = () => {
       label: t.projects.help.documentation,
       icon: <BookOpen className="w-4 h-4" />,
       onClick: () => {
-        window.open("https://oblien.com/docs", "_blank");
+        window.open("https://openship.io/docs", "_blank");
       },
     },
     {
@@ -640,7 +640,7 @@ const ProjectSettingsContent = () => {
       label: t.projects.help.joinCommunity,
       icon: <ExternalLink className="w-4 h-4" />,
       onClick: () => {
-        window.open("https://discord.gg/oblien", "_blank");
+        window.open("https://discord.gg/openship", "_blank");
       },
     },
   ];

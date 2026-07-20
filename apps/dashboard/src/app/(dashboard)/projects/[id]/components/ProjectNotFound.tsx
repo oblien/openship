@@ -75,7 +75,7 @@ export const ProjectNotFound: React.FC = () => {
               </p>
               <div className="flex justify-center gap-2 text-xs">
                 <a
-                  href="https://docs.oblien.com"
+                  href="https://openship.io/docs"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-foreground hover:text-primary font-semibold transition-colors"
@@ -84,7 +84,7 @@ export const ProjectNotFound: React.FC = () => {
                 </a>
                 <span className="text-muted-foreground/70">·</span>
                 <a
-                  href="mailto:support@oblien.com"
+                  href="mailto:hello@openship.io"
                   className="text-foreground hover:text-primary font-semibold transition-colors"
                 >
                   {t.projects.notFound.support}
