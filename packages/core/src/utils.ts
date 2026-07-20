@@ -57,3 +57,26 @@ export function formatDuration(seconds: number): string {
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Align a loopback origin with another loopback host (port preserved).
+ *
+ * `localhost` and `127.0.0.1` are the same machine but *different sites* to a
+ * browser: a request/redirect between them is cross-site, so a host-only
+ * SameSite=Lax cookie set on one is never sent back on the other. Non-loopback
+ * origins are left untouched.
+ */
+export function alignLoopbackOrigin(origin: string, otherHost: string): string {
+  try {
+    const target = new URL(origin);
+    if (!LOOPBACK_HOSTNAMES.has(target.hostname) || !LOOPBACK_HOSTNAMES.has(otherHost)) {
+      return origin;
+    }
+    target.hostname = otherHost;
+    return `${target.protocol}//${target.host}`;
+  } catch {
+    return origin;
+  }
+}
