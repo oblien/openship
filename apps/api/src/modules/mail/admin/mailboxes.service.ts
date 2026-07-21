@@ -22,14 +22,7 @@
  */
 
 import { sshManager } from "../../../lib/ssh-manager";
-import {
-  execute,
-  queryOne,
-  queryRows,
-  q,
-  qInt,
-  transaction,
-} from "./psql-runner";
+import { execute, queryOne, queryRows, q, qInt, transaction } from "./psql-runner";
 import { hashPassword } from "./password";
 import {
   createMaildirOnDisk,
@@ -39,11 +32,9 @@ import {
   STORAGE_NODE,
 } from "./maildir";
 import { recountDomain, validateDomain } from "./domains.service";
-import {
-  buildInsertMailboxSql,
-  buildInsertSelfForwardingSql,
-} from "./platform-mailbox.service";
+import { buildInsertMailboxSql, buildInsertSelfForwardingSql } from "./platform-mailbox.service";
 import { safeErrorMessage } from "@repo/core";
+import { readState } from "../mail-state";
 
 const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
 const LOCAL_PART_RE = /^[a-z0-9._+-]+$/;
@@ -137,10 +128,7 @@ function validateDisplayName(name: string): void {
   }
 }
 
-export async function listMailboxes(
-  serverId: string,
-  domain: string,
-): Promise<MailboxRow[]> {
+export async function listMailboxes(serverId: string, domain: string): Promise<MailboxRow[]> {
   validateDomain(domain);
   return queryRows<MailboxRow>(
     serverId,
@@ -148,10 +136,7 @@ export async function listMailboxes(
   );
 }
 
-export async function getMailbox(
-  serverId: string,
-  email: string,
-): Promise<MailboxRow | null> {
+export async function getMailbox(serverId: string, email: string): Promise<MailboxRow | null> {
   validateEmail(email);
   return queryOne<MailboxRow>(
     serverId,
@@ -219,9 +204,7 @@ export async function createMailbox(
         `DELETE FROM forwardings WHERE address = ${q(username)} AND forwarding = ${q(username)};`,
       );
       throw new Error(
-        `Failed to create Maildir; mailbox was rolled back: ${
-          safeErrorMessage(err)
-        }`,
+        `Failed to create Maildir; mailbox was rolled back: ${safeErrorMessage(err)}`,
       );
     }
 
@@ -269,10 +252,7 @@ export async function updateMailbox(
     }
 
     if (sets.length > 1) {
-      await execute(
-        exec,
-        `UPDATE mailbox SET ${sets.join(", ")} WHERE username = ${q(username)}`,
-      );
+      await execute(exec, `UPDATE mailbox SET ${sets.join(", ")} WHERE username = ${q(username)}`);
     }
 
     // Mirror active flag on the forwardings row so Postfix stops accepting
@@ -336,25 +316,25 @@ export async function softDeleteMailbox(
  * input, so we can't be tricked into rm-ing an arbitrary path. `removeMaildirOnDisk`
  * additionally guards against any path outside /var/vmail/.
  */
-export async function hardDeleteMailbox(
-  serverId: string,
-  email: string,
-): Promise<void> {
+export async function hardDeleteMailbox(serverId: string, email: string): Promise<void> {
   validateEmail(email);
   const username = email.toLowerCase();
   const existing = await getMailbox(serverId, username);
   if (!existing) throw new MailboxNotFoundError(username);
 
-  // Refuse to delete the postmaster account of the install domain. The
-  // install wizard creates it and iRedMail's own scripts expect it to
-  // exist. The UI should not even expose this option, but defence in depth.
-  if (existing.username.startsWith("postmaster@")) {
-    throw new Error(
-      `Refusing to hard-delete the postmaster mailbox (${existing.username}). Use soft delete instead.`,
-    );
-  }
-
   await sshManager.withExecutor(serverId, async (exec) => {
+    // Only the install domain's postmaster is infrastructure. Additional
+    // domains also get a postmaster mailbox, but it must remain removable so
+    // cascade deletion can empty and drop those domains.
+    if (username.startsWith("postmaster@")) {
+      const installDomain = (await readState(exec))?.domain?.toLowerCase();
+      if (!installDomain || username === `postmaster@${installDomain}`) {
+        throw new Error(
+          `Refusing to hard-delete the postmaster mailbox (${existing.username}). Use soft delete instead.`,
+        );
+      }
+    }
+
     await transaction(exec, [
       `DELETE FROM forwardings WHERE address = ${q(username)} OR forwarding = ${q(username)}`,
       `DELETE FROM used_quota WHERE username = ${q(username)}`,
@@ -390,4 +370,3 @@ export class MailboxNotFoundError extends Error {
     super(`Mailbox not found: ${username}`);
   }
 }
-
