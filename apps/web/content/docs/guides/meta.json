@@ -2,6 +2,7 @@
   "title": "Guides",
   "pages": [
     "deploy-from-github",
+    "deploy-from-gitlab",
     "deploy-local-folder",
     "deploy-template-or-url",
     "openship-json",
