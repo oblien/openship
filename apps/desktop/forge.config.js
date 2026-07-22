@@ -60,6 +60,7 @@ module.exports = {
       path.join(RESOURCES, "dashboard"),
       path.join(RESOURCES, "migrations"),
       path.join(RESOURCES, "pglite"),
+      path.join(RESOURCES, "lua"),
     ],
     ...osxSigning,
   },

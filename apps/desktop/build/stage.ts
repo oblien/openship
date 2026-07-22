@@ -7,6 +7,7 @@
  *   resources/dashboard/              the dashboard's own Next standalone output
  *   resources/migrations/             drizzle .sql  → OPENSHIP_MIGRATIONS_DIR
  *   resources/pglite/                 pglite.wasm + pglite.data → OPENSHIP_PGLITE_ASSETS_DIR
+ *   resources/lua/                    OpenResty scripts → OPENSHIP_LUA_DIR
  *
  * Invoked by electron-forge's `generateAssets` hook (forge.config.js) and also
  * runnable standalone with `bun run build/stage.ts`. Must run under bun — it
@@ -26,6 +27,7 @@ const RESOURCES = join(DESKTOP_DIR, "resources");
 const API_DIR = join(REPO_ROOT, "apps/api");
 const DASHBOARD_DIR = join(REPO_ROOT, "apps/dashboard");
 const DB_DRIZZLE_DIR = join(REPO_ROOT, "packages/db/drizzle");
+const ADAPTERS_LUA_DIR = join(REPO_ROOT, "packages/adapters/src/infra/lua");
 
 const isWin = process.platform === "win32";
 const API_BIN = isWin ? "openship-api.exe" : "openship-api";
@@ -163,6 +165,12 @@ function main(): void {
       }
       cpSync(src, join(dest, file));
     }
+  });
+
+  // 5. OpenResty Lua scripts — data files bun --compile can't embed. The API
+  //    reads them via OPENSHIP_LUA_DIR (set by the desktop at spawn).
+  step("copying OpenResty scripts → resources/lua/", () => {
+    cpSync(ADAPTERS_LUA_DIR, join(RESOURCES, "lua"), { recursive: true });
   });
 
   process.stdout.write(

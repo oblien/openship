@@ -96,6 +96,7 @@ function resourcePaths() {
     apiBin: join(root, "bin", API_BIN),
     migrationsDir: join(root, "migrations"),
     pgliteDir: join(root, "pglite"),
+    luaDir: join(root, "lua"),
     dashboardDir: join(root, "dashboard", "apps", "dashboard"),
   };
 }
@@ -213,7 +214,7 @@ export async function startLocalServices(internalToken: string): Promise<void> {
   if (started) return;
   started = true;
 
-  const { apiBin, migrationsDir, pgliteDir, dashboardDir } = resourcePaths();
+  const { apiBin, migrationsDir, pgliteDir, luaDir, dashboardDir } = resourcePaths();
   const userData = app.getPath("userData");
   const dataDir = join(userData, "data");
   mkdirSync(dataDir, { recursive: true });
@@ -279,6 +280,7 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       PGLITE_DATA_DIR: dataDir,
       OPENSHIP_MIGRATIONS_DIR: migrationsDir,
       OPENSHIP_PGLITE_ASSETS_DIR: pgliteDir,
+      OPENSHIP_LUA_DIR: luaDir,
       // The dashboard runs on a dynamic port not in the API's static origin
       // table — trust it explicitly so CORS / origin-guard / auth accept it.
       OPENSHIP_EXTRA_TRUSTED_ORIGINS: `${dashOrigin},http://127.0.0.1:${dashPort}`,
