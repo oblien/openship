@@ -81,7 +81,7 @@ export async function probeListeningPort(
 ): Promise<PortOccupant | null> {
   try {
     const out = await executor.exec(
-      `ss -tlnp sport = :${port} 2>/dev/null | grep LISTEN || lsof -ti tcp:${port} 2>/dev/null || true`,
+      `ss -tlnp sport = :${port} 2>/dev/null | grep LISTEN || lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null || true`,
     );
 
     const ssMatch = out.match(/pid=(\d+)/);
