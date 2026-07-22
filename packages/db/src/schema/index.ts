@@ -17,6 +17,7 @@ export { updateStatus } from "./update-status";
 export { serverModuleStatus } from "./server-module-status";
 export { cloudWebhookBinding } from "./cloud-webhook-binding";
 export { githubWebhookEvent } from "./github-webhook-event";
+export { gitlabWebhookEvent } from "./gitlab-webhook-event";
 export { service, serviceDeployment } from "./service";
 export { deploymentCheckRun } from "./deployment-check-run";
 export { userSettings, instanceSettings } from "./settings";

@@ -8,16 +8,18 @@ import { gitInstallation } from "../schema";
 export type GitInstallation = typeof gitInstallation.$inferSelect;
 export type NewGitInstallation = typeof gitInstallation.$inferInsert;
 
+const DEFAULT_PROVIDER = "github";
+
 // ─── Repository ──────────────────────────────────────────────────────────────
 
 export function createGitInstallationRepo(db: Database) {
   return {
     /** Find installation by user + owner */
-    async findByOwner(userId: string, owner: string) {
+    async findByOwner(userId: string, owner: string, provider: string = DEFAULT_PROVIDER) {
       return db.query.gitInstallation.findFirst({
         where: and(
           eq(gitInstallation.userId, userId),
-          eq(gitInstallation.provider, "github"),
+          eq(gitInstallation.provider, provider),
           eq(gitInstallation.owner, owner.toLowerCase()),
         ),
       });
@@ -32,22 +34,26 @@ export function createGitInstallationRepo(db: Database) {
      * installation to whichever member happened to install it, which breaks
      * the moment that user leaves the org.
      */
-    async findByOrgAndOwner(organizationId: string, owner: string) {
+    async findByOrgAndOwner(
+      organizationId: string,
+      owner: string,
+      provider: string = DEFAULT_PROVIDER,
+    ) {
       return db.query.gitInstallation.findFirst({
         where: and(
           eq(gitInstallation.organizationId, organizationId),
-          eq(gitInstallation.provider, "github"),
+          eq(gitInstallation.provider, provider),
           eq(gitInstallation.owner, owner.toLowerCase()),
         ),
       });
     },
 
     /** Find all installations for a user */
-    async listByUser(userId: string) {
+    async listByUser(userId: string, provider: string = DEFAULT_PROVIDER) {
       return db.query.gitInstallation.findMany({
         where: and(
           eq(gitInstallation.userId, userId),
-          eq(gitInstallation.provider, "github"),
+          eq(gitInstallation.provider, provider),
         ),
       });
     },
@@ -86,12 +92,16 @@ export function createGitInstallationRepo(db: Database) {
       return returned ?? { ...row, createdAt: now, updatedAt: now };
     },
 
-    /** Replace all GitHub App installations for a user with a fresh snapshot */
-    async replaceForUser(userId: string, data: Array<Omit<NewGitInstallation, "id" | "userId" | "provider">>) {
+    /** Replace all App installations for a user with a fresh snapshot */
+    async replaceForUser(
+      userId: string,
+      data: Array<Omit<NewGitInstallation, "id" | "userId" | "provider">>,
+      provider: string = DEFAULT_PROVIDER,
+    ) {
       const rows = data.map((installation) => ({
         id: randomUUID(),
         userId,
-        provider: "github",
+        provider,
         ...installation,
         owner: installation.owner.toLowerCase(),
       }));
@@ -102,7 +112,7 @@ export function createGitInstallationRepo(db: Database) {
           .where(
             and(
               eq(gitInstallation.userId, userId),
-              eq(gitInstallation.provider, "github"),
+              eq(gitInstallation.provider, provider),
             ),
           );
 
@@ -115,51 +125,58 @@ export function createGitInstallationRepo(db: Database) {
     },
 
     /** Remove installation by user + owner */
-    async removeByOwner(userId: string, owner: string) {
+    async removeByOwner(userId: string, owner: string, provider: string = DEFAULT_PROVIDER) {
       return db
         .delete(gitInstallation)
         .where(
           and(
             eq(gitInstallation.userId, userId),
-            eq(gitInstallation.provider, "github"),
+            eq(gitInstallation.provider, provider),
             eq(gitInstallation.owner, owner.toLowerCase()),
           ),
         );
     },
 
     /** Remove installation by installation_id */
-    async removeByInstallationId(userId: string, installationId: number) {
+    async removeByInstallationId(
+      userId: string,
+      installationId: number,
+      provider: string = DEFAULT_PROVIDER,
+    ) {
       return db
         .delete(gitInstallation)
         .where(
           and(
             eq(gitInstallation.userId, userId),
-            eq(gitInstallation.provider, "github"),
+            eq(gitInstallation.provider, provider),
             eq(gitInstallation.installationId, installationId),
           ),
         );
     },
 
-    /** Remove installation rows by installation_id, regardless of linked OAuth account */
-    async removeByInstallationIdForProvider(installationId: number) {
+    /** Remove installation rows by installation_id for a provider */
+    async removeByInstallationIdForProvider(
+      installationId: number,
+      provider: string = DEFAULT_PROVIDER,
+    ) {
       return db
         .delete(gitInstallation)
         .where(
           and(
-            eq(gitInstallation.provider, "github"),
+            eq(gitInstallation.provider, provider),
             eq(gitInstallation.installationId, installationId),
           ),
         );
     },
 
-    /** Remove all GitHub installations for a user */
-    async removeAllForUser(userId: string) {
+    /** Remove all installations for a user + provider */
+    async removeAllForUser(userId: string, provider: string = DEFAULT_PROVIDER) {
       return db
         .delete(gitInstallation)
         .where(
           and(
             eq(gitInstallation.userId, userId),
-            eq(gitInstallation.provider, "github"),
+            eq(gitInstallation.provider, provider),
           ),
         );
     },

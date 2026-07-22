@@ -55,6 +55,11 @@ export {
   type NewGithubWebhookEvent,
 } from "./github-webhook-event.repo";
 export {
+  createGitlabWebhookEventRepo,
+  type GitlabWebhookEvent,
+  type NewGitlabWebhookEvent,
+} from "./gitlab-webhook-event.repo";
+export {
   createServiceRepo,
   normalizeRoutingFields,
   toComposeSpec,
@@ -208,6 +213,7 @@ import { createUpdateStatusRepo } from "./update-status.repo";
 import { createServerModuleStatusRepo } from "./server-module-status.repo";
 import { createCloudWebhookBindingRepo } from "./cloud-webhook-binding.repo";
 import { createGithubWebhookEventRepo } from "./github-webhook-event.repo";
+import { createGitlabWebhookEventRepo } from "./gitlab-webhook-event.repo";
 import { createServiceRepo } from "./service.repo";
 import { createServiceDeploymentRepo } from "./service-deployment.repo";
 import { createSettingsRepo } from "./settings.repo";
@@ -275,6 +281,7 @@ export const repos = {
   serverModuleStatus: createServerModuleStatusRepo(db),
   cloudWebhookBinding: createCloudWebhookBindingRepo(db),
   githubWebhookEvent: createGithubWebhookEventRepo(db),
+  gitlabWebhookEvent: createGitlabWebhookEventRepo(db),
   service: createServiceRepo(db),
   serviceDeployment: createServiceDeploymentRepo(db),
   settings: createSettingsRepo(db),

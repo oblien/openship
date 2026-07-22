@@ -259,6 +259,14 @@ export const userSettings = pgTable("user_settings", {
    */
   patScope: jsonb("pat_scope").$type<string[] | null>(),
 
+  /* ── GitLab clone credentials ───────────────────────────────────────────────
+   * User-level GitLab personal access token (encrypted). Used by the GitLab
+   * token dispatcher after per-project override and before OAuth. Separate
+   * from cloneTokenEncrypted so a GitHub PAT and GitLab PAT cannot collide.
+   */
+  gitlabCloneTokenEncrypted: text("gitlab_clone_token_encrypted"),
+  gitlabCloneTokenSetAt: timestamp("gitlab_clone_token_set_at"),
+
   // ── Timestamps ─────────────────────────────────────────────────────────────
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
