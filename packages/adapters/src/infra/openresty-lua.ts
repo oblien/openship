@@ -239,7 +239,8 @@ const GEOIP_DB_URL =
 
 // ── Local Lua source directory ───────────────────────────────────────────────
 
-const LUA_SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "lua");
+const LUA_SRC_DIR =
+  process.env.OPENSHIP_LUA_DIR ?? join(dirname(fileURLToPath(import.meta.url)), "lua");
 
 /** Read a .lua file from the local lua/ directory. */
 function readLua(filename: string): string {
