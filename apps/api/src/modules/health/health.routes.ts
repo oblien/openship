@@ -78,10 +78,17 @@ healthRoutes.get("/env", async (c) => {
       authMode = "none";
     }
   } else {
+    // Not desktop-only: zero-auth is valid for any DEPLOY_MODE (see
+    // lib/auth-mode.ts). The operator opts in through the settings endpoint,
+    // which gates it behind OPENSHIP_ALLOW_ZERO_AUTH plus an explicit
+    // `confirm` string. Read the persisted value so this agrees with
+    // getAuthMode() — hardcoding "local" told the dashboard to render a login
+    // screen on an instance whose API requires no login.
     authMode = "local";
     try {
       const { repos } = await import("@repo/db");
       const settings = await repos.instanceSettings.get();
+      authMode = settings?.authMode ?? "local";
       teamMode = settings?.teamMode ?? "single_user";
       migrationTargetUrl = settings?.migrationTargetUrl ?? null;
       migrationInProgress = settings?.migrationInProgress ?? false;
