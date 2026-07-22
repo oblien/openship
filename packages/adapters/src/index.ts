@@ -135,7 +135,7 @@ export type {
   SystemLog,
   SystemLogCallback,
 } from "./system/types";
-export type { ImportedSite, ProxyScanResult } from "./system/types";
+export type { EdgeConflictDetails, ImportedSite, ProxyScanResult } from "./system/types";
 export {
   classifyProxy,
   EdgeConflictError,

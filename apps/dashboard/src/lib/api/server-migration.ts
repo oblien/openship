@@ -40,6 +40,25 @@ export interface DiscoveredGroup {
   services: DiscoveredService[];
 }
 
+/** An Openship project recovered from the server (see api docker-reconcile.ts). */
+export interface OpenshipProjectGroup {
+  projectId: string;
+  suggestedName: string;
+  slug?: string;
+  domains?: string[];
+  source?: {
+    gitProvider?: string | null;
+    gitOwner?: string | null;
+    gitRepo?: string | null;
+    gitBranch?: string | null;
+  };
+  runtimeMode?: string | null;
+  /** true = already exists in this instance's DB (not re-importable, just counted). */
+  knownHere: boolean;
+  deploymentId?: string;
+  services: DiscoveredService[];
+}
+
 export interface DiscoveredStack {
   serverId: string;
   composeProjects: string[];
@@ -49,7 +68,18 @@ export interface DiscoveredStack {
   networks: Array<{ name: string; driver: string }>;
   warnings: string[];
   adoptable: boolean;
+  /** Live containers already managed by a project in this instance's DB (count). */
   alreadyManaged: number;
+  /** Openship projects found on the server; `knownHere: false` are re-importable. */
+  openshipProjects: OpenshipProjectGroup[];
+}
+
+export interface ReimportResult {
+  success: boolean;
+  projectId: string;
+  slug: string;
+  reimported: string[];
+  deferredDeployment: true;
 }
 
 export interface AdoptResult {
@@ -203,6 +233,15 @@ export const dockerMigrationApi = {
   /** Create an Openship project from the selected discovered services (records only). */
   adopt: (input: { serverId: string; projectName: string; serviceNames: string[] }) =>
     api.post<AdoptResult>(endpoints.dockerMigration.adopt, input),
+
+  /** Re-import an orphaned Openship project (DR / cross-instance), preserving its id.
+   *  Records only — the user redeploys from the project to finalize live state. */
+  reimport: (input: {
+    serverId: string;
+    projectId: string;
+    projectName?: string;
+    serviceNames?: string[];
+  }) => api.post<ReimportResult>(endpoints.dockerMigration.reimport, input),
 
   /** Read-only preview of a full migration to a (possibly different) server. */
   preview: (input: {

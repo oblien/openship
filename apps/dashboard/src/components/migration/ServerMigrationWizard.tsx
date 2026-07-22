@@ -28,6 +28,7 @@ import {
   type DiscoveredStack,
   type DiscoveredGroup,
   type DiscoveredService,
+  type OpenshipProjectGroup,
   type MigrationRun,
   type MigrationStatus,
 } from "@/lib/api";
@@ -313,6 +314,12 @@ export function ServerMigrationWizard({
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const adoptable = Boolean(stack?.adoptable);
+  // Openship projects on the server that this instance doesn't know → re-importable.
+  const orphanedOpenship = useMemo(
+    () => stack?.openshipProjects?.filter((p) => !p.knownHere) ?? [],
+    [stack],
+  );
+  const hasReimport = orphanedOpenship.length > 0;
   const sameServer = selectedId === targetId;
   // Cross-server can't move a locally-built image (not in a registry) — the API
   // blocks it with the exact service names. Surface the caveat up front when a
@@ -691,14 +698,35 @@ export function ServerMigrationWizard({
               {/* Idle + loading keep the illustration (loading just pulses it). */}
               {!stack && !error && <EmptyHint scanning={scanning} status={scanStatus} />}
 
-              {/* Scanned but nothing adoptable → stay compact, show a "nothing
-                  found" state (not a giant empty modal). */}
-              {stack && !adoptable && <NoResults message={m.discover.nothing} />}
+              {/* Scanned but nothing adoptable AND nothing to re-import → compact
+                  "nothing found" (not a giant empty modal). */}
+              {stack && !adoptable && !hasReimport && <NoResults message={m.discover.nothing} />}
+
+              {/* Only Openship projects to re-import (no generic candidates): show
+                  the re-import section on its own. */}
+              {stack && !adoptable && hasReimport && (
+                <div className="h-full min-h-0 overflow-y-auto pr-1">
+                  <OpenshipReimportSection
+                    serverId={selectedId ?? ""}
+                    orphaned={orphanedOpenship}
+                    alreadyManaged={stack.alreadyManaged}
+                    onOpen={(pid) => router.push(`/projects/${pid}`)}
+                  />
+                </div>
+              )}
 
               {adoptable && stack && active && (
                 <div className="flex gap-5 h-full min-h-0">
                   {/* LEFT: discovered groups */}
                   <div className="flex-[3] min-w-0 overflow-y-auto pr-1 space-y-4">
+                    {hasReimport && (
+                      <OpenshipReimportSection
+                        serverId={selectedId ?? ""}
+                        orphaned={orphanedOpenship}
+                        alreadyManaged={stack.alreadyManaged}
+                        onOpen={(pid) => router.push(`/projects/${pid}`)}
+                      />
+                    )}
                     {stack.groups.map((group) => (
                       <ServiceGroup
                         key={groupKey(group)}
@@ -922,6 +950,128 @@ function NoResults({ message, isError }: { message: string; isError?: boolean })
       </div>
       <p className={`max-w-sm text-sm ${isError ? "text-destructive/90" : "text-muted-foreground"}`}>{message}</p>
     </div>
+  );
+}
+
+/**
+ * Openship projects recovered from the server (matched by the `openship.project`
+ * label + the on-server manifest) that this instance doesn't know — DB reset
+ * (DR) or a server from another instance. Re-import rebuilds the project records
+ * PRESERVING the original id so the running containers re-attach; it's records
+ * only (no move/redeploy), so a "redeploy to finalize" note follows.
+ */
+function OpenshipReimportSection({
+  serverId,
+  orphaned,
+  alreadyManaged,
+  onOpen,
+}: {
+  serverId: string;
+  orphaned: OpenshipProjectGroup[];
+  alreadyManaged: number;
+  onOpen: (projectId: string) => void;
+}) {
+  const { t } = useI18n();
+  const m = t.migration.reimport;
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [done, setDone] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const reimport = async (p: OpenshipProjectGroup) => {
+    setBusy(p.projectId);
+    setErrors((e) => ({ ...e, [p.projectId]: "" }));
+    try {
+      const res = await dockerMigrationApi.reimport({
+        serverId,
+        projectId: p.projectId,
+        projectName: (names[p.projectId] ?? p.suggestedName).trim() || undefined,
+      });
+      setDone((d) => ({ ...d, [p.projectId]: res.projectId }));
+    } catch (err) {
+      setErrors((e) => ({ ...e, [p.projectId]: getApiErrorMessage(err, m.failed) }));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="space-y-3 rounded-xl border border-info/30 bg-info/[0.06] p-4">
+      <div className="flex items-center gap-2">
+        <AppLogo className="size-4" />
+        <h3 className="text-sm font-semibold text-foreground">{m.title}</h3>
+        <span className="rounded-md bg-info/15 px-1.5 py-0.5 text-[11px] font-medium text-info">
+          {orphaned.length}
+        </span>
+      </div>
+      <p className="text-[13px] text-muted-foreground">{m.intro}</p>
+
+      <div className="grid grid-cols-1 gap-2 xl:grid-cols-2 items-stretch">
+        {orphaned.map((p) => {
+          const doneId = done[p.projectId];
+          const err = errors[p.projectId];
+          return (
+            <div
+              key={p.projectId}
+              className="flex h-full flex-col gap-2 rounded-lg border border-border/60 bg-card/60 p-3"
+            >
+              {doneId ? (
+                <div className="flex h-full flex-col justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-sm text-success">
+                    <CheckCircle2 className="size-4 shrink-0" />
+                    <span className="font-medium">{m.reimported}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onOpen(doneId)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                  >
+                    {m.openProject}
+                    <ArrowRight className="size-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    value={names[p.projectId] ?? p.suggestedName}
+                    onChange={(e) => setNames((n) => ({ ...n, [p.projectId]: e.target.value }))}
+                    className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-info"
+                    placeholder={p.suggestedName}
+                  />
+                  <div className="text-xs text-muted-foreground">
+                    {interpolate(m.services, { n: String(p.services.length) })}
+                    {p.domains && p.domains.length > 0 ? ` · ${p.domains.join(", ")}` : ""}
+                  </div>
+                  {err && <p className="text-xs text-danger">{err}</p>}
+                  <button
+                    type="button"
+                    disabled={busy === p.projectId || !serverId}
+                    onClick={() => reimport(p)}
+                    className="mt-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-info/50 bg-info/10 px-3 py-1.5 text-sm font-medium text-info hover:bg-info/20 transition-colors disabled:opacity-50"
+                  >
+                    {busy === p.projectId ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        {m.working}
+                      </>
+                    ) : (
+                      m.action
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {alreadyManaged > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {interpolate(m.alreadyManaged, { n: String(alreadyManaged) })}
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">{m.finalizeNote}</p>
+    </section>
   );
 }
 

@@ -22,6 +22,7 @@ import type {
 import { classifyProxy } from "@repo/adapters";
 import type { ComposeHealthcheck } from "@repo/core";
 import type { ComposeService } from "../../lib/compose-parser";
+import type { ManifestProjectEntry } from "../../lib/openship-manifest";
 
 export interface DiscoveredVolumeMount {
   /** "volume" reuses a named volume in place; "bind" is a host path. */
@@ -72,6 +73,39 @@ export interface DiscoveredGroup {
   services: DiscoveredService[];
 }
 
+/**
+ * An OPENSHIP-owned project recovered from a server's live containers (matched by
+ * the `openship.project` label) + its `.openship/manifest.json` entry. `knownHere`
+ * = this project id already exists in the scanning instance's DB (genuinely
+ * managed here → not re-importable, just counted). `knownHere: false` = orphaned:
+ * the DB was reset (DR) or the server came from another Openship instance →
+ * re-importable, preserving the original id/slug so the live containers re-attach.
+ */
+export interface OpenshipProjectGroup {
+  /** Original Openship project id from the `openship.project` label. */
+  projectId: string;
+  /** Best-effort display name (manifest name/slug → compose project → derived). */
+  suggestedName: string;
+  /** Original slug (from the manifest) — preserved on re-import to keep URLs. */
+  slug?: string;
+  /** Domains from the manifest — restored as route state on re-import. */
+  domains?: string[];
+  /** Git source recovered from the manifest (restored on re-import). */
+  source?: {
+    gitProvider?: string | null;
+    gitOwner?: string | null;
+    gitRepo?: string | null;
+    gitBranch?: string | null;
+  };
+  runtimeMode?: string | null;
+  /** Whether this project id already exists in this instance's DB. */
+  knownHere: boolean;
+  /** Deployment id from the label/manifest — carried for future live-status recovery. */
+  deploymentId?: string;
+  /** Live service containers reconstructed from runtime state. */
+  services: DiscoveredService[];
+}
+
 export interface DiscoveredStack {
   serverId: string;
   /** compose "project" groupings found (com.docker.compose.project). */
@@ -85,8 +119,11 @@ export interface DiscoveredStack {
   /** Stack-level notes for things Openship can't carry over 1:1. */
   warnings: string[];
   adoptable: boolean;
-  /** Containers skipped because Openship already manages them. */
+  /** Live containers already managed by a project in THIS instance's DB (count). */
   alreadyManaged: number;
+  /** Openship projects recovered from the server (see {@link OpenshipProjectGroup});
+   *  `knownHere: false` entries are re-importable. Empty when none found. */
+  openshipProjects: OpenshipProjectGroup[];
 }
 
 // Docker-injected / shell env that should never be imported as app config.
@@ -292,6 +329,8 @@ export function reconcileStack(opts: {
   /** image ref → its baked-in default CMD tokens, dropped when the container
    *  only restates it (see toDiscoveredService). */
   imageCmds?: Map<string, string[]>;
+  /** Openship projects recovered from the server (computed in the IO shell). */
+  openshipProjects?: OpenshipProjectGroup[];
 }): DiscoveredStack {
   const { serverId, details, volumes, networks, declared, alreadyManaged, imageDefaults, imageCmds } = opts;
 
@@ -368,5 +407,76 @@ export function reconcileStack(opts: {
     warnings,
     adoptable: services.length > 0,
     alreadyManaged,
+    openshipProjects: opts.openshipProjects ?? [],
   };
+}
+
+/**
+ * Reconstruct OPENSHIP-owned projects from their live containers + the server's
+ * `.openship/manifest.json`. Pure — the DB cross-reference (which ids are
+ * `knownHere`) and the manifest read happen in the IO shell and are passed in.
+ *
+ * Containers are grouped by their `openship.project` label. Build-helper
+ * containers (`openship.build`, no live app) are skipped. A single-app deploy
+ * container carries only `openship.project`/`openship.deployment` (no
+ * `openship.service`), so we DON'T require a service label — we recover the
+ * service name from `openship.service` when present, else the container name.
+ */
+export function reconcileOpenshipProjects(opts: {
+  managedDetails: DockerContainerDetail[];
+  /** Manifest entries keyed by project id (null when the server has no manifest). */
+  manifestById: Map<string, ManifestProjectEntry> | null;
+  /** Project ids that already exist in this instance's DB. */
+  knownHereIds: Set<string>;
+  imageDefaults?: Map<string, Set<string>>;
+  imageCmds?: Map<string, string[]>;
+}): OpenshipProjectGroup[] {
+  const { managedDetails, manifestById, knownHereIds, imageDefaults, imageCmds } = opts;
+
+  const byProject = new Map<string, DockerContainerDetail[]>();
+  for (const d of managedDetails) {
+    const projectId = d.labels["openship.project"];
+    if (!projectId) continue; // not project-owned (infra/network helper) — skip
+    if (d.labels["openship.build"]) continue; // transient build container — not a service
+    const list = byProject.get(projectId) ?? [];
+    list.push(d);
+    byProject.set(projectId, list);
+  }
+
+  const out: OpenshipProjectGroup[] = [];
+  for (const [projectId, details] of byProject) {
+    const entry = manifestById?.get(projectId);
+    const services = details.map((d) => {
+      const svc = toDiscoveredService(d, undefined, imageDefaults?.get(d.image ?? ""), imageCmds?.get(d.image ?? ""));
+      const serviceLabel = d.labels["openship.service"];
+      return serviceLabel ? { ...svc, name: serviceLabel } : svc;
+    });
+    const deploymentId =
+      details.find((d) => d.labels["openship.deployment"])?.labels["openship.deployment"] ??
+      entry?.deployment?.id;
+
+    out.push({
+      projectId,
+      knownHere: knownHereIds.has(projectId),
+      suggestedName:
+        entry?.name ||
+        entry?.slug ||
+        details.find((d) => d.composeProject)?.composeProject ||
+        `openship-${projectId.replace(/^proj_/, "").slice(0, 8)}`,
+      slug: entry?.slug,
+      domains: entry?.domains,
+      source: entry
+        ? {
+            gitProvider: entry.gitProvider,
+            gitOwner: entry.gitOwner,
+            gitRepo: entry.gitRepo,
+            gitBranch: entry.gitBranch,
+          }
+        : undefined,
+      runtimeMode: entry?.runtimeMode ?? undefined,
+      deploymentId,
+      services,
+    });
+  }
+  return out;
 }

@@ -66,7 +66,15 @@ function findClosingBracket(body: string, start: number): number {
     const ch = body[i];
     const prev = body[i - 1];
     if (inDouble) {
-      if (ch === '"' && prev !== "\\") inDouble = false;
+      if (ch === '"') {
+        // A closing double quote is escaped only when it is preceded by an
+        // odd number of consecutive backslashes (standard TOML basic-string rule).
+        let backslashRun = 0;
+        for (let j = i - 1; j >= 0 && body[j] === "\\"; j--) {
+          backslashRun++;
+        }
+        if (backslashRun % 2 === 0) inDouble = false;
+      }
       continue;
     }
     if (inSingle) {

@@ -210,6 +210,14 @@ jobs:
             label: Linux x64
             find: "-name *.AppImage"
             asset: Openship.AppImage
+          # GitHub-hosted native aarch64 runner → stage.ts derives arm64 from
+          # process.arch, so the API bun --compile + the AppImage build are arm64.
+          # x64 keeps the legacy `Openship.AppImage` name (auto-update compat);
+          # arm64 is a NEW asset selected only by arm64 clients.
+          - os: ubuntu-24.04-arm
+            label: Linux arm64
+            find: "-name *.AppImage"
+            asset: Openship-arm64.AppImage
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -544,7 +552,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           # Upload whichever desktop installers built (fail-fast:false means a
           # single-OS failure shouldn't block the release).
-          for asset in Openship-arm64.dmg Openship-x64.dmg Openship-win32-x64.zip Openship.AppImage; do
+          for asset in Openship-arm64.dmg Openship-x64.dmg Openship-win32-x64.zip Openship.AppImage Openship-arm64.AppImage; do
             if [[ -f "dist/${asset}" ]]; then
               gh release upload "${TAG}" "dist/${asset}" "dist/${asset}.sha256" --clobber
             else

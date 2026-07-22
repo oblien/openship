@@ -211,6 +211,21 @@ export interface ProxyScanResult {
   warnings: string[];
 }
 
+/**
+ * The `details` payload of an `edge_conflict` prompt (and the shape surfaced when
+ * a non-interactive install halts on an occupied edge). Lets every consumer — the
+ * dashboard takeover modal, the CLI preflight, the headless "re-run to take over"
+ * message — render the SAME audit data: what proxy holds 80/443 and exactly which
+ * sites a migrate would import.
+ */
+export type EdgeConflictDetails = {
+  edge: EdgeStatus;
+  /** Sites parsed from the foreign proxy's config (empty for takeover-only proxies). */
+  sites: ImportedSite[];
+  /** Config the scan couldn't interpret — shown so the operator knows what WON'T migrate. */
+  warnings: string[];
+};
+
 // ─── Runtime mode ────────────────────────────────────────────────────────────
 
 export type RuntimeMode = "docker" | "bare";

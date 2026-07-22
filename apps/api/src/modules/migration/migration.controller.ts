@@ -16,7 +16,7 @@ import { isServerInOrg, param } from "../../lib/controller-helpers";
 import { streamRunSSE } from "../../lib/run-sse";
 import { streamSSE } from "../../lib/sse";
 import { discoverServerStack } from "./docker-inspect.service";
-import { adoptServerStack } from "./migrate.service";
+import { adoptServerStack, reimportOpenshipProject } from "./migrate.service";
 import { buildMigrationPreview } from "./migration-preflight";
 import { migrationOrchestrator } from "./migration.orchestrator";
 import { migrationRunBus } from "./migration.sse";
@@ -164,6 +164,49 @@ export async function adoptServer(c: Context) {
     return c.json({ success: true, ...result });
   } catch (err) {
     return c.json({ error: `Adopt failed: ${safeErrorMessage(err)}` }, 502);
+  }
+}
+
+/**
+ * POST /migration/reimport  { serverId, projectId, projectName?, serviceNames? }
+ *
+ * Recover an ORPHANED Openship project (DR / cross-instance) from a server,
+ * preserving its original id so the running containers re-attach. Records only —
+ * the user redeploys from the project to finalize. `organizationId` comes from
+ * the request context, never from server-supplied data.
+ */
+export async function reimportServer(c: Context) {
+  const body = await c.req.json<{
+    serverId?: string;
+    projectId?: string;
+    projectName?: string;
+    serviceNames?: string[];
+  }>();
+  const { serverId, projectId, projectName, serviceNames } = body;
+  if (!serverId) return c.json({ error: "serverId is required" }, 400);
+  if (!projectId?.trim()) return c.json({ error: "projectId is required" }, 400);
+
+  const ctx = getRequestContext(c);
+  await permission.assert(ctx, {
+    resourceType: "server",
+    resourceId: serverId,
+    action: "write",
+  });
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+
+  try {
+    const result = await reimportOpenshipProject({
+      serverId,
+      organizationId: ctx.organizationId,
+      projectId: projectId.trim(),
+      projectName: projectName?.trim() || undefined,
+      serviceNames: Array.isArray(serviceNames) ? serviceNames : undefined,
+    });
+    return c.json({ success: true, ...result });
+  } catch (err) {
+    return c.json({ error: `Re-import failed: ${safeErrorMessage(err)}` }, 502);
   }
 }
 

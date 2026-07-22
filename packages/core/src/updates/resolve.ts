@@ -30,12 +30,14 @@ export type DesktopUpdateCheck =
  * Installer asset name the release pipeline publishes for a platform/arch.
  * Must match `.github/workflows/release.yml` exactly: macOS ships per-arch dmgs,
  * Windows a single x64 zip (NOT a Squirrel Setup.exe — forge uses maker-zip),
- * Linux a single AppImage. Returns null for an unknown platform.
+ * Linux a per-arch AppImage — x64 keeps the legacy `Openship.AppImage` name
+ * (so already-installed x64 clients keep auto-updating), arm64 is a distinct
+ * asset. Returns null for an unknown platform.
  */
 export function desktopAssetName(platform: string, arch: string): string | null {
   if (platform === "darwin") return arch === "arm64" ? "Openship-arm64.dmg" : "Openship-x64.dmg";
   if (platform === "win32") return "Openship-win32-x64.zip";
-  if (platform === "linux") return "Openship.AppImage";
+  if (platform === "linux") return arch === "arm64" ? "Openship-arm64.AppImage" : "Openship.AppImage";
   return null;
 }
 

@@ -267,14 +267,21 @@ async function promptLocalAdmin(): Promise<{ name: string; email: string; passwo
 }
 
 /** Consume the self-register SSE stream, driving the spinner until done. */
-async function streamProvision(port: string, sessionId: string, s: ReturnType<typeof spinner>): Promise<boolean> {
+async function streamProvision(
+  port: string,
+  sessionId: string,
+  s: ReturnType<typeof spinner>,
+): Promise<{ ok: boolean; detail?: string }> {
   let ok = false;
+  // Remember the last warn/error line so a failure (e.g. an existing proxy still
+  // on 80/443, or a cert issue) reports WHY instead of a generic "not ready".
+  let detail: string | undefined;
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/system/self-register/stream?id=${sessionId}`, {
       headers: { "X-Internal-Token": ensureInternalToken() },
       signal: AbortSignal.timeout(300_000),
     });
-    if (!res.ok || !res.body) return false;
+    if (!res.ok || !res.body) return { ok: false };
     const reader = (res.body as ReadableStream<Uint8Array>).getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -292,25 +299,31 @@ async function streamProvision(port: string, sessionId: string, s: ReturnType<ty
         if (event === "log" && dataRaw) {
           try {
             const d = JSON.parse(dataRaw);
-            if (d.message) s.message(String(d.message).replace(/\s+/g, " ").slice(0, 68));
+            if (d.message) {
+              const msg = String(d.message).replace(/\s+/g, " ");
+              s.message(msg.slice(0, 68));
+              if (d.level === "warn" || d.level === "error") detail = msg;
+            }
           } catch {
             /* ignore */
           }
         } else if (event === "complete" && dataRaw) {
           try {
-            ok = JSON.parse(dataRaw).status === "completed";
+            const d = JSON.parse(dataRaw);
+            ok = d.status === "completed";
+            if (!ok && typeof d.error === "string") detail = d.error;
           } catch {
             /* ignore */
           }
         } else if (event === "end") {
-          return ok;
+          return { ok, detail };
         }
       }
     }
   } catch {
-    return ok;
+    return { ok, detail };
   }
-  return ok;
+  return { ok, detail };
 }
 
 export async function runWizard(): Promise<void> {
@@ -703,6 +716,29 @@ export async function runWizard(): Promise<void> {
     if (status && !status.canProceedClean && status.occupants?.length) {
       const owner = status.occupants.map((o) => o.command ?? `port ${o.port}`).join(", ");
       const known = status.classification === "known";
+
+      // Show WHAT would be migrated (not just a count) so the operator can audit
+      // it before handing us their edge. Mirrors the dashboard takeover modal.
+      const sites = (pf.ok && Array.isArray(pf.data?.sites) ? pf.data.sites : []) as Array<{
+        serverNames?: string[];
+        ssl?: boolean;
+        target?: { kind?: string; url?: string; root?: string };
+        source?: string;
+      }>;
+      if (sites.length > 0) {
+        const lines = sites.map((st) => {
+          const host = (st.serverNames ?? []).join(", ") || "(no server_name)";
+          const dest = st.target?.kind === "static" ? `static: ${st.target?.root ?? ""}` : st.target?.url ?? "";
+          return `${chalk.bold(host)} → ${chalk.dim(dest)}${st.ssl ? chalk.green(" [TLS]") : ""}`;
+        });
+        note(lines.join("\n"), `Detected ${sites.length} site${sites.length === 1 ? "" : "s"} on ${owner}`);
+      }
+      const warns = (pf.ok && Array.isArray(pf.data?.warnings) ? pf.data.warnings : []) as string[];
+      if (warns.length > 0) {
+        log.warn(`${warns.length} config item${warns.length === 1 ? "" : "s"} won't migrate automatically:`);
+        for (const w of warns.slice(0, 8)) log.message(chalk.dim(`• ${w}`));
+      }
+
       const choice = ensure(
         await select({
           message: known
@@ -755,10 +791,13 @@ export async function runWizard(): Promise<void> {
       if (res.ok && res.data?.sessionId) {
         const s2 = spinner();
         s2.start("Issuing HTTPS certificate (OpenResty + Let's Encrypt)");
-        const done = await streamProvision(port, res.data.sessionId, s2);
+        const { ok: done, detail } = await streamProvision(port, res.data.sessionId, s2);
         liveUrl = res.data.url ?? liveUrl;
         if (done) s2.stop(`HTTPS ready: ${liveUrl}`);
-        else s2.stop("HTTPS isn't ready yet — it retries on reboot; the site serves over HTTP meanwhile.", 1);
+        else {
+          s2.stop("HTTPS isn't ready yet — it retries on reboot; the site serves over HTTP meanwhile.", 1);
+          if (detail) log.warn(detail);
+        }
       } else {
         log.warn(`Couldn't start domain provisioning: ${res.data?.error || "failed"}`);
       }

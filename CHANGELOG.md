@@ -3,6 +3,55 @@
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 
+## 0.2.4
+
+Native Apple Silicon builds, drop-in compatibility with other platforms' deploy
+config, and a batch of self-hosting and reliability fixes.
+
+### Downloads
+- **Native Apple Silicon (arm64) desktop app** — macOS now ships separate
+  **arm64** and Intel **x64** dmgs (both built and SHA-256-checksummed in CI), so
+  Apple Silicon Macs run natively instead of under Rosetta. Windows (x64) and
+  Linux (AppImage) are unchanged.
+
+### Deploy · stack detection
+- **Deploys repos already configured for another platform, as-is** — the stack
+  detector now reads **`railway.toml`/`railway.json`** and **`vercel.json`**
+  (build / install / start / output commands, framework, and routing) and folds
+  them over its own detection. A repo that already tells Railway or Vercel how to
+  build it deploys the same way here, no reconfiguration. Every config source
+  runs through one shared parser registry (no per-source special-casing).
+- **`openship.json`** — an optional repo-root config to declare build, routing,
+  env, and domains up front; it's authoritative over auto-detection and rides the
+  same engine, for the repo root and each monorepo sub-app.
+
+### Self-hosting
+- **Deploys to your own server by default** — a self-hosted instance targets the
+  server it runs on, never Openship Cloud, unless you explicitly choose cloud.
+- **Health checks work when the control plane is containerized** — the
+  post-deploy probe reaches your app through the host gateway, so a containerized
+  self-host no longer fail-reverts an otherwise-healthy deploy.
+- **OpenResty installs on newer distros** — the edge install no longer pins the
+  APT repo to a codename that doesn't exist yet (e.g. Ubuntu 26.04), and self-heals
+  a box already broken by the old pin.
+
+### CLI
+- **`openship stop` actually stops** — the service and its children are reaped by
+  process group and any ports it held are swept, so a restart can't strand the
+  old process on a new port.
+
+### Reliability & fixes
+- Malformed JSON request bodies now return **400**, not 500.
+- **Cloud static-output path is confined** — the Pages output path resolves
+  through one shared, sandboxed resolver so a build can't escape its output dir.
+- Mail DNS scan **detects duplicate DMARC records**.
+- OAuth discovery metadata is served correctly **behind a public URL**.
+- SSH exec streams **close cleanly on timeout** instead of leaking.
+- Bumped the Laravel deploy **test fixture** off a vulnerable `laravel/framework`
+  (CRLF email advisory) — a fixture only, never a shipped dependency.
+
+> Highlights, not exhaustive — trim/adjust before tagging.
+
 ## 0.2.2
 
 Apps and Jobs grow up, a self-hosted server can now talk to GitHub on its own,

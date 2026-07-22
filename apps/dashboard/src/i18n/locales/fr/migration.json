@@ -88,6 +88,18 @@
     "nEnv": "{n} variables d'env",
     "alreadyManaged": "{count} conteneur(s) déjà géré(s) par Openship ont été ignorés."
   },
+  "reimport": {
+    "title": "Projets Openship détectés",
+    "intro": "Ces projets Openship s'exécutent sur ce serveur mais sont absents de cette instance (base de données réinitialisée, ou serveur provenant d'une autre instance Openship). Ré-importez-les pour les récupérer — l'identifiant d'origine est conservé pour que les conteneurs actifs se rattachent.",
+    "services": "{n} service(s)",
+    "action": "Ré-importer",
+    "working": "Ré-importation…",
+    "reimported": "Ré-importé",
+    "openProject": "Ouvrir le projet",
+    "alreadyManaged": "{n} conteneur(s) déjà géré(s) par cette instance.",
+    "finalizeNote": "La ré-importation restaure les enregistrements du projet ; redéployez depuis le projet pour placer les conteneurs entièrement sous gestion.",
+    "failed": "Échec de la ré-importation"
+  },
   "scanFailed": "Échec de l'inspection Docker",
   "adoptFailed": "Impossible de créer le projet",
   "entry": {

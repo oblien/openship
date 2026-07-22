@@ -263,7 +263,13 @@
       "port": "Porta",
       "process": "Processo",
       "unitDescription": "Descrição da Unidade",
-      "openshipDeployment": "Implantação Openship"
+      "openshipDeployment": "Implantação Openship",
+      "sites": {
+        "lead": "O proxy existente serve atualmente {count} site(s). A migração os importa para o Openship antes de assumir as portas 80/443:",
+        "tlsBadge": "TLS",
+        "staticLabel": "estático:",
+        "warningsTitle": "Não puderam ser migrados automaticamente — adicione-os manualmente:"
+      }
     },
     "title": {
       "cancelled": "Implantação Cancelada",

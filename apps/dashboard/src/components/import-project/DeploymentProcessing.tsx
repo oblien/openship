@@ -17,6 +17,7 @@ import {
 import type { Terminal } from "@xterm/xterm";
 import BuildTerminal from "./BuildTerminal";
 import { PortAdvisoryModal } from "./PortAdvisoryModal";
+import { PromptDetails } from "./PromptDetails";
 import { generateIcon } from "@/utils/icons";
 import { useRouter } from "next/navigation";
 import { encodeRepoSlug } from "@/utils/repoSlug";
@@ -110,33 +111,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
   // and navigates to the new deployment (or re-enables on failure).
   const [isRedeploying, setIsRedeploying] = useState(false);
 
-  const renderPromptDetails = useCallback((details?: Record<string, unknown>) => {
-    if (!details) return null;
-
-    const rows: Array<{ label: string; value: string | null }> = [
-      { label: dp.promptDetails.port, value: details.port != null ? String(details.port) : null },
-      { label: dp.promptDetails.process, value: typeof details.command === "string" ? details.command : null },
-      { label: "PID", value: details.pid != null ? String(details.pid) : null },
-      { label: "Systemd Unit", value: typeof details.systemdUnit === "string" ? details.systemdUnit : null },
-      { label: dp.promptDetails.unitDescription, value: typeof details.systemdDescription === "string" ? details.systemdDescription : null },
-      { label: dp.promptDetails.openshipDeployment, value: typeof details.deploymentId === "string" ? details.deploymentId : null },
-    ].filter((row): row is { label: string; value: string } => Boolean(row.value));
-
-    if (rows.length === 0) return null;
-
-    return (
-      <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-3">
-        {rows.map((row) => (
-          <div key={row.label} className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">{row.label}</span>
-            <span className="text-sm text-foreground break-all">{row.value}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }, [dp]);
-
-  // ── Pipeline prompt modal (e.g. port conflict) ─────────────────────────
+  // ── Pipeline prompt modal (port conflict / edge takeover) ──────────────
   useEffect(() => {
     if (!state.pendingPrompt) return;
     const { promptId, title, message, actions, details } = state.pendingPrompt;
@@ -153,7 +128,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
             <p className="text-sm leading-relaxed text-muted-foreground">{message}</p>
           </div>
 
-          {renderPromptDetails(details)}
+          <PromptDetails details={details} />
 
           <div className="flex items-center justify-end gap-3 pt-2">
             {actions.map((action) => {
@@ -184,7 +159,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
       width: "560px",
       maxWidth: "92vw",
     });
-  }, [state.pendingPrompt, showModal, hideModal, respondToPrompt, renderPromptDetails]);
+  }, [state.pendingPrompt, showModal, hideModal, respondToPrompt]);
 
   // Build domain for display
   const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName);

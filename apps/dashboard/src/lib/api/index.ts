@@ -59,6 +59,8 @@ export type {
   DiscoveredGroup,
   DiscoveredService,
   DiscoveredVolumeMount,
+  OpenshipProjectGroup,
+  ReimportResult,
   AdoptResult,
   MigrationPreview,
   MigrationPreviewService,

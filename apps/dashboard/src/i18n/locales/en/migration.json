@@ -95,6 +95,18 @@
     "nEnv": "{n} env vars",
     "alreadyManaged": "{count} container(s) already managed by Openship were skipped."
   },
+  "reimport": {
+    "title": "Openship projects found",
+    "intro": "These Openship projects are running on this server but aren't in this instance (a reset database, or a server from another Openship). Re-import to recover them — the original id is preserved so the live containers re-attach.",
+    "services": "{n} service(s)",
+    "action": "Re-import",
+    "working": "Re-importing…",
+    "reimported": "Re-imported",
+    "openProject": "Open project",
+    "alreadyManaged": "{n} container(s) are already managed by this instance.",
+    "finalizeNote": "Re-import restores the project records; redeploy from the project to bring the running containers fully under management.",
+    "failed": "Re-import failed"
+  },
   "scanFailed": "Docker inspection failed",
   "adoptFailed": "Couldn't create the project",
   "entry": {

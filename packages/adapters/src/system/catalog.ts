@@ -95,6 +95,14 @@ function rsyncInstallPlan(profile: EnvironmentProfile): InstallPlan {
  * deviate. Expects $REPO set to "ubuntu" or "debian"; assumes wget is installed.
  */
 const OPENRESTY_APT_SOURCES: string[] = [
+  // ARM64: openresty.org publishes aarch64 debs under a SEPARATE path
+  // (openresty.org/package/arm64/<repo>); the default path is amd64-only, so on
+  // aarch64 `apt-get install openresty` finds no candidate and `set -e` aborts
+  // the whole setup (issue #109). Switch the base URL by arch and tag the deb
+  // line with `arch=` so apt fetches the right index. `dpkg --print-architecture`
+  // returns exactly amd64/arm64 (matches OpenResty's path + arch qualifier).
+  'OR_ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"',
+  'if [ "$OR_ARCH" = arm64 ]; then OR_BASE="http://openresty.org/package/arm64/$REPO"; else OR_BASE="http://openresty.org/package/$REPO"; fi',
   // `|| REPO_CODENAME=""` so a failed substitution (no lsb_release AND no
   // /etc/os-release, e.g. a stripped container) doesn't trip `set -e` before
   // the empty-var fallback below can pick a default.
@@ -102,11 +110,11 @@ const OPENRESTY_APT_SOURCES: string[] = [
   'if [ "$REPO" = debian ]; then OR_FALLBACKS="bookworm bullseye"; else OR_FALLBACKS="noble jammy focal"; fi',
   'OR_CODENAME=""',
   'for c in $REPO_CODENAME $OR_FALLBACKS; do',
-  '  if wget -q --spider --tries=2 --timeout=15 "http://openresty.org/package/$REPO/dists/$c/Release"; then OR_CODENAME="$c"; break; fi',
+  '  if wget -q --spider --tries=2 --timeout=15 "$OR_BASE/dists/$c/Release"; then OR_CODENAME="$c"; break; fi',
   'done',
   'if [ -z "$OR_CODENAME" ]; then case "$REPO" in debian) OR_CODENAME=bookworm ;; *) OR_CODENAME=noble ;; esac; fi',
   '[ "$OR_CODENAME" = "$REPO_CODENAME" ] || echo "[openresty] apt repo has no codename $REPO_CODENAME; using nearest supported LTS $OR_CODENAME" >&2',
-  'echo "deb [signed-by=/usr/share/keyrings/openresty.gpg] http://openresty.org/package/$REPO $OR_CODENAME main" > /etc/apt/sources.list.d/openresty.list',
+  'echo "deb [arch=$OR_ARCH signed-by=/usr/share/keyrings/openresty.gpg] $OR_BASE $OR_CODENAME main" > /etc/apt/sources.list.d/openresty.list',
 ];
 
 function openrestyInstallPlan(profile: EnvironmentProfile): InstallPlan {

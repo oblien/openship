@@ -263,7 +263,13 @@
       "port": "ポート",
       "process": "プロセス",
       "unitDescription": "ユニットの説明",
-      "openshipDeployment": "Openship デプロイ"
+      "openshipDeployment": "Openship デプロイ",
+      "sites": {
+        "lead": "既存のプロキシは現在 {count} 件のサイトを配信しています。移行すると、ポート 80/443 を引き継ぐ前にそれらを Openship にインポートします：",
+        "tlsBadge": "TLS",
+        "staticLabel": "静的:",
+        "warningsTitle": "自動的に移行できませんでした — 手動で再追加してください："
+      }
     },
     "title": {
       "cancelled": "デプロイをキャンセルしました",

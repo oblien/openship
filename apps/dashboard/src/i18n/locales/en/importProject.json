@@ -265,7 +265,13 @@
       "port": "Port",
       "process": "Process",
       "unitDescription": "Unit Description",
-      "openshipDeployment": "Openship Deployment"
+      "openshipDeployment": "Openship Deployment",
+      "sites": {
+        "lead": "{count} site(s) are currently served by the existing proxy. Migrating imports them into Openship before it takes over ports 80/443:",
+        "tlsBadge": "TLS",
+        "staticLabel": "static:",
+        "warningsTitle": "Couldn't be migrated automatically — re-add these manually:"
+      }
     },
     "portAdvisory": {
       "title": "Is that the right port?",

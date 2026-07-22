@@ -291,9 +291,12 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       BETTER_AUTH_SECRET: authSecret,
       INTERNAL_TOKEN: internalToken,
       // The compiled API binary loads ssh2/dockerode (externalized from the
-      // --compile bundle) from the staged Resources/node_modules — without this
-      // the SSH/Docker connect hangs. Verified: Bun compiled binaries honor
-      // NODE_PATH for external module resolution.
+      // --compile bundle) from the staged Resources/node_modules via NODE_PATH.
+      // This ONLY works on Bun < 1.3.4: Bun 1.3.4 regressed `--compile --external`
+      // resolution to the virtual $bunfs root, ignoring NODE_PATH/CWD (oven-sh/bun
+      // #25500), which broke desktop startup with "Cannot find package 'ssh2'"
+      // (issue #111). The build pins a pre-1.3.4 Bun (.bun-version) + a stage.ts
+      // canary — do NOT bump Bun past that until #25500 is fixed upstream.
       NODE_PATH: nodeModulesDir,
     });
 

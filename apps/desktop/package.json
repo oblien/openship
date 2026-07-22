@@ -1,7 +1,7 @@
 {
   "name": "@repo/desktop",
   "productName": "Openship",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": true,
   "description": "Openship Desktop - Electron wrapper for the deployment dashboard",
   "author": "Oblien",

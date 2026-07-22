@@ -230,9 +230,13 @@ export function createProjectRepo(db: Database) {
       };
     },
 
-    async create(data: Omit<NewProject, "id">) {
-      const id = generateId("proj");
-      const row = { id, ...data };
+    async create(data: Omit<NewProject, "id"> & { id?: string }) {
+      // `id` is normally generated, but re-import (recovering an Openship project
+      // from a server's `.openship/manifest.json`) passes the ORIGINAL id so the
+      // still-running containers' `openship.project` labels re-attach immediately.
+      const { id: providedId, ...rest } = data;
+      const id = providedId ?? generateId("proj");
+      const row = { id, ...rest };
       await db.insert(project).values(row);
       return { ...row, createdAt: new Date(), updatedAt: new Date() } as Project;
     },

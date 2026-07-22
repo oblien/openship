@@ -357,6 +357,77 @@ async function createProductionProject(
   }
 }
 
+/**
+ * Create a `services` project while PRESERVING an explicit project id — the
+ * re-import path (recovering an Openship project from a server's manifest). The
+ * preserved id means the server's still-running containers (labelled
+ * `openship.project=<id>`) re-attach immediately: teardown/reclaim/network
+ * reconcile recognize them, and a later redeploy replaces same-id containers
+ * cleanly. The slug is preserved when free, else uniquified (so the free
+ * subdomain regenerates to the original). Enforces the quota and creates a
+ * fresh project group; rolls the group back if the project insert fails.
+ *
+ * This deliberately does NOT go through `ensureProject` (name-based dedupe +
+ * generated id) — re-import needs the exact id and a create-only path.
+ */
+export async function createServicesProjectWithId(opts: {
+  id: string;
+  name: string;
+  slug: string;
+  organizationId: string;
+  hasBuild?: boolean;
+  runtimeMode?: "bare" | "docker";
+  gitProvider?: string | null;
+  gitOwner?: string | null;
+  gitRepo?: string | null;
+  gitBranch?: string | null;
+  autoDeploy?: boolean;
+}): Promise<Project> {
+  await assertProjectQuota(opts.organizationId);
+  const slug = await uniqueProjectSlug(opts.organizationId, opts.slug);
+
+  const group = await repos.projectGroup.create({
+    organizationId: opts.organizationId,
+    name: opts.name,
+    slug,
+    gitProvider: opts.gitProvider ?? undefined,
+    gitOwner: opts.gitOwner ?? undefined,
+    gitRepo: opts.gitRepo ?? undefined,
+    gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+  });
+
+  try {
+    const routing = deriveNextProjectRouteState({ slug }, { slug });
+    const created = await repos.project.create({
+      id: opts.id,
+      organizationId: opts.organizationId,
+      groupId: group.id,
+      name: opts.name,
+      slug,
+      environmentName: "Production",
+      environmentSlug: "production",
+      environmentType: "production",
+      gitProvider: opts.gitProvider ?? "github",
+      gitOwner: opts.gitOwner ?? undefined,
+      gitRepo: opts.gitRepo ?? undefined,
+      gitBranch: opts.gitBranch ?? "main",
+      gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+      autoDeploy: !!opts.autoDeploy,
+      framework: "unknown", // services project — the stack lives on each service row
+      packageManager: "npm",
+      hasServer: true,
+      hasBuild: opts.hasBuild ?? false,
+      // services ⇒ docker runtime (same rule buildProductionProjectInput applies).
+      runtimeMode: opts.runtimeMode === "bare" ? "bare" : "docker",
+    });
+    await persistProjectRouteState(created.id, routing.publicEndpoints);
+    return created;
+  } catch (err) {
+    await repos.projectGroup.softDelete(group.id).catch(() => {});
+    throw err;
+  }
+}
+
 async function uniqueProjectSlug(organizationId: string, baseSlug: string) {
   let slug = baseSlug;
   let suffix = 2;

@@ -24,6 +24,8 @@ r.post("/scan", { tag: "server:write", collection: true }, migration.scanServer)
 r.get("/scan/stream", { tag: "server:write", collection: true }, migration.scanServerStream);
 // Create an Openship project from the selected discovered services (records only).
 r.post("/adopt", { tag: "server:write", collection: true }, migration.adoptServer);
+// Re-import an orphaned Openship project (DR / cross-instance), preserving its id.
+r.post("/reimport", { tag: "server:write", collection: true }, migration.reimportServer);
 
 // Read-only preview of a full migration (registry/build, volumes, warnings).
 r.post("/preview", { tag: "server:write", collection: true }, migration.previewMigration);

@@ -7,7 +7,7 @@
  */
 
 import type { CommandExecutor, LogEntry } from "../types";
-import type { InstallerConfig, InstallResult, SystemLogCallback, SystemLog } from "./types";
+import type { EdgeConflictDetails, InstallerConfig, InstallResult, SystemLogCallback, SystemLog } from "./types";
 import { systemCatalog } from "./catalog";
 import { resolveEnvironment, type EnvironmentProfile } from "./environment";
 import { elevatedExecutor } from "./elevated-executor";
@@ -287,16 +287,25 @@ async function ensureEdgeClear(
     }
     const migratable = scan && scan.sites.length > 0;
 
+    // Openship terminates TLS + routes on its own OpenResty edge, so it must own
+    // 80/443. Spell that out — the operator is choosing to hand their load
+    // balancer to us, and "migrate" imports the existing sites first so nothing
+    // they're serving goes dark.
     const message = migratable
-      ? `Openship needs ports 80 and 443, but ${owner} is already serving them ` +
-        `(${scan!.sites.length} site${scan!.sites.length === 1 ? "" : "s"}). Migrate those sites ` +
-        `into Openship and take over, just stop it and take over, or cancel?`
+      ? `Openship runs its own load balancer (OpenResty) on ports 80 and 443, but ${owner} is ` +
+        `already serving them (${scan!.sites.length} site${scan!.sites.length === 1 ? "" : "s"}). ` +
+        `Migrate those sites into Openship and take over, just stop it and take over, or cancel?`
       : known
-        ? `Openship needs ports 80 and 443, but ${owner} is already serving them. ` +
-          `Stop it and take over, or cancel and leave it running?`
-        : `Openship needs ports 80 and 443, but ${owner} is already using them and ` +
-          `we can't identify it. Stop it and take over, or cancel and leave it running?`;
+        ? `Openship runs its own load balancer (OpenResty) on ports 80 and 443, but ${owner} is ` +
+          `already serving them. Stop it and take over, or cancel and leave it running?`
+        : `Openship runs its own load balancer (OpenResty) on ports 80 and 443, but ${owner} is ` +
+          `already using them and we can't identify it. Stop it and take over, or cancel and leave it running?`;
 
+    const details: EdgeConflictDetails = {
+      edge: status,
+      sites: scan?.sites ?? [],
+      warnings: scan?.warnings ?? [],
+    };
     const action = await config.promptUser({
       promptId: "edge_conflict",
       title: known ? "Existing reverse proxy detected" : "Ports 80/443 are in use",
@@ -308,7 +317,7 @@ async function ensureEdgeClear(
         { id: "override", label: "Stop it & take over", variant: "danger" },
         { id: "cancel", label: "Cancel", variant: "secondary" },
       ],
-      details: { edge: status, sites: scan?.sites ?? [], warnings: scan?.warnings ?? [] },
+      details,
     });
 
     if (action === "migrate" && scan) {

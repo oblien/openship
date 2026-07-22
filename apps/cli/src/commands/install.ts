@@ -36,7 +36,9 @@ function assetForPlatform(): { name: string; kind: AssetKind } {
     return { name: arch === "arm64" ? "Openship-arm64.dmg" : "Openship-x64.dmg", kind: "dmg" };
   }
   if (platform === "win32") return { name: "Openship-win32-x64.zip", kind: "zip" };
-  if (platform === "linux") return { name: "Openship.AppImage", kind: "appimage" };
+  if (platform === "linux") {
+    return { name: arch === "arm64" ? "Openship-arm64.AppImage" : "Openship.AppImage", kind: "appimage" };
+  }
   throw new Error(`Unsupported platform: ${platform} (${arch})`);
 }
 

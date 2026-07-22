@@ -263,7 +263,13 @@
       "port": "Puerto",
       "process": "Proceso",
       "unitDescription": "Descripción de la unidad",
-      "openshipDeployment": "Despliegue de Openship"
+      "openshipDeployment": "Despliegue de Openship",
+      "sites": {
+        "lead": "El proxy existente sirve actualmente {count} sitio(s). Al migrar, se importan a Openship antes de tomar el control de los puertos 80/443:",
+        "tlsBadge": "TLS",
+        "staticLabel": "estáticos:",
+        "warningsTitle": "No se pudieron migrar automáticamente — vuelve a añadirlos manualmente:"
+      }
     },
     "title": {
       "cancelled": "Despliegue cancelado",

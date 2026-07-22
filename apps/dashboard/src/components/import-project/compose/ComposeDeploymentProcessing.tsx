@@ -6,6 +6,7 @@ import { Loader2, CheckCircle2, XCircle, SlidersHorizontal } from "lucide-react"
 import ComposeSidebar from "./ComposeSidebar";
 import BuildTerminal from "../BuildTerminal";
 import { PortAdvisoryModal } from "../PortAdvisoryModal";
+import { PromptDetails } from "../PromptDetails";
 import { generateIcon } from "@/utils/icons";
 import { useRouter } from "next/navigation";
 import { useDeployment } from "@/context/DeploymentContext";
@@ -158,7 +159,7 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
   // ── Pipeline prompt modal ──────────────────────────────────────────────
   useEffect(() => {
     if (!state.pendingPrompt) return;
-    const { promptId, title, message, actions } = state.pendingPrompt;
+    const { promptId, title, message, actions, details } = state.pendingPrompt;
     if (promptModalRef.current === promptId) return;
     promptModalRef.current = promptId;
 
@@ -171,6 +172,9 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
             <h3 className="text-xl font-bold text-foreground">{title}</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">{message}</p>
           </div>
+
+          <PromptDetails details={details} />
+
           <div className="flex items-center justify-end gap-3 pt-2">
             {actions.map((action) => {
               const variant = (action.variant || "secondary") as "secondary" | "danger" | "primary";

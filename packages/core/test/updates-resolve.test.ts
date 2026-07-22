@@ -26,6 +26,7 @@ describe("desktopAssetName", () => {
     expect(desktopAssetName("darwin", "x64")).toBe("Openship-x64.dmg");
     expect(desktopAssetName("win32", "x64")).toBe("Openship-win32-x64.zip");
     expect(desktopAssetName("linux", "x64")).toBe("Openship.AppImage");
+    expect(desktopAssetName("linux", "arm64")).toBe("Openship-arm64.AppImage");
     expect(desktopAssetName("aix", "x64")).toBeNull();
   });
 });

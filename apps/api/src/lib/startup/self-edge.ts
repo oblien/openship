@@ -21,6 +21,9 @@ export interface SelfEdgeInfraProgress {
 export interface SelfEdgeInfraResult {
   ok: boolean;
   reason?: string;
+  /** When reason === "edge_conflict": what holds 80/443 and how many sites it serves. */
+  occupants?: string;
+  siteCount?: number;
 }
 
 export interface SelfEdgeOptions {
@@ -98,9 +101,36 @@ async function runEnsure(
     return { ok: true };
   }
 
+  // Halt + report: with no pre-authorized takeover, if a foreign proxy already
+  // holds 80/443, do NOT install (OpenResty couldn't bind, and we never blind-kill
+  // someone's proxy). Report what's there — and how many sites it serves — so the
+  // operator re-runs with migrate/take-over, instead of a bare downstream cert error.
+  if (!options?.edgeTakeover) {
+    const status = await probeEdge(executor);
+    if (!status.canProceedClean && status.occupants.length > 0) {
+      const owner = status.occupants.map((o) => o.command ?? `port ${o.port}`).join(", ");
+      let siteCount = 0;
+      try {
+        const proxy = status.occupants.find((o) => o.proxy)?.proxy;
+        if (proxy && canImportProxy(proxy)) {
+          siteCount = (await scanImportableSites(executor, proxy)).sites.length;
+        }
+      } catch {
+        /* best-effort site count only */
+      }
+      const sitesNote = siteCount > 0 ? ` serving ${siteCount} site${siteCount === 1 ? "" : "s"}` : "";
+      log(
+        `An existing proxy (${owner})${sitesNote} is using ports 80 and 443. Openship needs its own ` +
+          `load balancer (OpenResty) there for managed HTTPS — left it running. Re-run setup and choose ` +
+          `migrate or take-over to continue.`,
+        "warn",
+      );
+      return { ok: false, reason: "edge_conflict", occupants: owner, siteCount };
+    }
+  }
+
   // Install OpenResty + certbot (idempotent). edgeTakeover authorizes reclaiming
-  // 80/443 from an existing proxy; without it an occupied edge throws instead of
-  // blind-killing.
+  // 80/443 from an existing proxy without prompting.
   const installerConfig = options?.edgeTakeover
     ? { edgePolicy: { mode: "takeover" as const, stopTargets: [] } }
     : undefined;

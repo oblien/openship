@@ -265,7 +265,13 @@
       "port": "المنفذ",
       "process": "العملية",
       "unitDescription": "وصف الوحدة",
-      "openshipDeployment": "نشر Openship"
+      "openshipDeployment": "نشر Openship",
+      "sites": {
+        "lead": "يخدم الوكيل الحالي {count} موقعًا في الوقت الحالي. يؤدي الترحيل إلى استيرادها إلى Openship قبل الاستيلاء على المنفذين 80/443:",
+        "tlsBadge": "TLS",
+        "staticLabel": "ثابت:",
+        "warningsTitle": "تعذّر ترحيلها تلقائيًا — أعد إضافتها يدويًا:"
+      }
     },
     "title": {
       "cancelled": "تم إلغاء النشر",

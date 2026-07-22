@@ -366,6 +366,7 @@ export const endpoints = {
     scan: "migration/scan",
     scanStream: "migration/scan/stream",
     adopt: "migration/adopt",
+    reimport: "migration/reimport",
     preview: "migration/preview",
     migrate: "migration/migrate",
     migration: (id: string) => `migration/migrations/${id}`,

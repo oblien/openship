@@ -42,7 +42,7 @@ export {
   probeEdge,
   stopTargetsForStatus,
 } from "./edge-preflight";
-export type { ImportedSite, ProxyScanResult } from "./types";
+export type { EdgeConflictDetails, ImportedSite, ProxyScanResult } from "./types";
 export { scanImportableSites, canImportProxy } from "./proxy-import";
 export {
   runEdgeTakeover,

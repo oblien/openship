@@ -14,7 +14,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -84,6 +84,10 @@ function main(): void {
     // staged into resources/node_modules below and resolved at runtime via
     // NODE_PATH (services.ts). cpu-features is ssh2's optional native dep whose
     // .node binding can't be embedded either; ssh2 guards it and falls back.
+    // NOTE: runtime resolution of these externals only works on Bun < 1.3.4 —
+    // Bun 1.3.4 regressed --compile external resolution to the $bunfs root
+    // (oven-sh/bun #25500, issue #111). Build is pinned pre-1.3.4 (.bun-version)
+    // and the canary in step 1c fails the build if a bump reintroduces the bug.
     // --target pins the output arch so we can cross-compile x64 on an arm64 host.
     execFileSync(
       BUN,
@@ -110,11 +114,21 @@ function main(): void {
     process.stdout.write(`  ${API_BIN}: ${sizeOf(out)}\n`);
   });
 
-  // 1b. Stage the SSH/Docker native stack (externalized above) as a real
-  //     node_modules the compiled binary resolves at runtime via NODE_PATH
-  //     (set in services.ts). npm produces a hoisted tree with all transitive
-  //     deps (asn1, bcrypt-pbkdf, …); versions track packages/adapters so the
-  //     shipped copy matches what the API was built against.
+  // 1b. Stage the SSH/Docker stack (externalized above) as a real node_modules
+  //     the compiled binary resolves at runtime via NODE_PATH (set in
+  //     services.ts). npm produces a hoisted tree with all transitive deps
+  //     (asn1, bcrypt-pbkdf, docker-modem, …); versions track packages/adapters
+  //     so the shipped copy matches what the API was built against.
+  //
+  //     `--omit=optional` is LOAD-BEARING for cross-arch correctness: the only
+  //     native module in this tree is `cpu-features` (ssh2's optional CPU probe),
+  //     and it has NO prebuilds — node-gyp compiles it for the BUILD-HOST arch,
+  //     so a cross-built x64 dmg on the arm64 runner would ship an arm64
+  //     `cpu-features.node`. Dropping it makes the tree 100% arch-independent
+  //     (zero `.node` files → correct on x64 AND arm64, win/mac/linux); ssh2
+  //     falls back to pure-JS/WASM crypto (negligible for control-plane SSH),
+  //     dockerode is pure JS. This is why every platform's artifact ships a
+  //     complete, working module set with nothing arch-mismatched.
   step("staging ssh2 + dockerode → resources/node_modules", () => {
     const adapters = JSON.parse(
       readFileSync(join(REPO_ROOT, "packages/adapters/package.json"), "utf8"),
@@ -126,6 +140,7 @@ function main(): void {
         "--prefix",
         RESOURCES,
         "--omit=dev",
+        "--omit=optional",
         "--no-audit",
         "--no-fund",
         "--no-package-lock",
@@ -137,6 +152,48 @@ function main(): void {
     process.stdout.write(
       `  node_modules: ${existsSync(join(RESOURCES, "node_modules", "ssh2")) ? "ssh2+dockerode staged" : "MISSING"}\n`,
     );
+  });
+
+  // 1c. CANARY for oven-sh/bun #25500 (issue #111). Bun 1.3.4 regressed
+  //     `--compile --external` resolution to the virtual $bunfs root, ignoring
+  //     NODE_PATH/CWD — so the compiled API silently can't load the externalized
+  //     ssh2 and the desktop dies at startup with "Cannot find package 'ssh2'".
+  //     Build is pinned pre-1.3.4 (.bun-version); this compiles a tiny probe with
+  //     the SAME bun + --external and confirms ssh2 still resolves from the staged
+  //     node_modules, so any future Bun bump that reintroduces the bug FAILS THE
+  //     BUILD instead of shipping a broken app. Probe is host-arch (not
+  //     BUN_TARGET) so it runs on the build machine — the regression is version-,
+  //     not arch-, specific.
+  step("verifying externalized ssh2 resolves in a compiled binary (bun #25500 canary)", () => {
+    const probeSrc = join(RESOURCES, "__ssh2-probe.ts");
+    const probeBin = join(RESOURCES, isWin ? "__ssh2-probe.exe" : "__ssh2-probe");
+    writeFileSync(
+      probeSrc,
+      'const m: any = await import("ssh2");\n' +
+        'if (typeof m.Client !== "function") { console.error("NO_CLIENT"); process.exit(1); }\n' +
+        'console.log("SSH2_PROBE_OK");\n',
+    );
+    try {
+      execFileSync(BUN, ["build", probeSrc, "--compile", "--external", "ssh2", "--outfile", probeBin], {
+        cwd: REPO_ROOT,
+        stdio: "inherit",
+      });
+      const out = execFileSync(probeBin, [], {
+        env: { ...process.env, NODE_PATH: join(RESOURCES, "node_modules") },
+        encoding: "utf8",
+      });
+      if (!out.includes("SSH2_PROBE_OK")) throw new Error(`probe did not confirm ssh2 (got: ${out.trim()})`);
+    } catch (err) {
+      throw new Error(
+        "ssh2 external-resolution canary FAILED — the compiled binary can't load ssh2 from node_modules. " +
+          "This is the Bun #25500 --compile regression (>=1.3.4). Keep .bun-version on a pre-1.3.4 release " +
+          `until it is fixed upstream. Underlying: ${(err as Error).message}`,
+      );
+    } finally {
+      rmSync(probeSrc, { force: true });
+      rmSync(probeBin, { force: true });
+    }
+    process.stdout.write("  ssh2 resolves from node_modules ✓\n");
   });
 
   // 2. Dashboard → build fresh with prod/local env, then copy the Next

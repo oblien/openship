@@ -263,7 +263,13 @@
       "port": "端口",
       "process": "进程",
       "unitDescription": "单元描述",
-      "openshipDeployment": "Openship 部署"
+      "openshipDeployment": "Openship 部署",
+      "sites": {
+        "lead": "现有代理当前提供 {count} 个站点。迁移会先将它们导入 Openship，然后接管 80/443 端口：",
+        "tlsBadge": "TLS",
+        "staticLabel": "静态：",
+        "warningsTitle": "无法自动迁移 — 请手动重新添加："
+      }
     },
     "title": {
       "cancelled": "部署已取消",

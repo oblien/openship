@@ -62,3 +62,37 @@ describe("openresty install plan — #86 codename handling", () => {
     expect(cmd(linux({ distro: "debian" }))).toContain("REPO=debian");
   });
 });
+
+/**
+ * Regression guard for GitHub #109: openresty.org publishes aarch64 debs under a
+ * SEPARATE path (openresty.org/package/arm64/<repo>); the default path is
+ * amd64-only. The apt install must resolve the base URL by the host's dpkg arch
+ * and tag the deb line with `arch=`, or `apt-get install openresty` finds no
+ * candidate and aborts the whole setup on ARM64. Arch is decided at RUNTIME
+ * (shell), so both the direct apt branch and the runtime-probe branch carry it.
+ */
+describe("openresty install plan — #109 arm64 apt repo", () => {
+  for (const [name, profile] of [
+    ["apt/ubuntu", linux({ packageManager: "apt", distro: "ubuntu" })],
+    ["apt/debian", linux({ packageManager: "apt", distro: "debian" })],
+    ["runtime-probe", linux({ packageManager: "none" })],
+  ] as const) {
+    describe(name, () => {
+      const c = cmd(profile);
+
+      it("detects the host arch via dpkg", () => {
+        expect(c).toContain("dpkg --print-architecture");
+      });
+
+      it("switches to the arm64 package path on aarch64, keeps amd64 default", () => {
+        expect(c).toContain("http://openresty.org/package/arm64/$REPO");
+        expect(c).toContain('OR_BASE="http://openresty.org/package/$REPO"');
+      });
+
+      it("probes the arch-correct base and tags the deb line with arch=", () => {
+        expect(c).toContain('"$OR_BASE/dists/$c/Release"');
+        expect(c).toMatch(/deb \[arch=\$OR_ARCH signed-by=[^\]]*openresty\.gpg\] \$OR_BASE \$OR_CODENAME main/);
+      });
+    });
+  }
+});
