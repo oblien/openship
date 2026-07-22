@@ -39,10 +39,7 @@ export function extractStringArrayFromSection(
   // Locate `key = [` inside the body, then scan forward to the matching `]`,
   // tracking bracket depth and quote state so values like "foo[1]" don't
   // truncate the array early.
-  const keyStart = new RegExp(
-    `(?:^|\\n)\\s*${escapeRegex(key)}\\s*=\\s*\\[`,
-    "i",
-  );
+  const keyStart = new RegExp(`(?:^|\\n)\\s*${escapeRegex(key)}\\s*=\\s*\\[`, "i");
   const keyMatch = keyStart.exec(body);
   if (!keyMatch) return [];
 
@@ -56,7 +53,8 @@ export function extractStringArrayFromSection(
 /**
  * Walk `body` forward from `start` and return the index of the `]` that closes
  * the array opened just before `start`. Respects string literals (single and
- * double quoted) and nested `[`. Returns -1 if no closing bracket is found.
+ * double quoted), `#` comments, and nested `[`. Returns -1 if no closing
+ * bracket is found.
  */
 function findClosingBracket(body: string, start: number): number {
   let depth = 1; // we're already past the opening `[`
@@ -79,6 +77,15 @@ function findClosingBracket(body: string, start: number): number {
     }
     if (inSingle) {
       if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (ch === "#") {
+      // Comment: everything to end of line is not TOML syntax. Skipping it
+      // keeps an apostrophe ("don't") from opening a phantom string literal
+      // and a `]` from closing the array early.
+      const newline = body.indexOf("\n", i);
+      if (newline === -1) return -1; // unterminated array - comment runs to EOF
+      i = newline;
       continue;
     }
     if (ch === '"') {
@@ -105,7 +112,10 @@ function findClosingBracket(body: string, start: number): number {
 function parseTomlStringArray(arrayBody: string): string[] {
   const items: string[] = [];
   // Match either "double-quoted" or 'single-quoted' strings, ignoring commas/whitespace/comments.
-  const itemPattern = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^']*)'/g;
+  // The trailing `#[^\n]*` alternative consumes comments so quoted-looking text
+  // inside one (`# use "quotes" here`) isn't collected as a member. Strings are
+  // matched first at any given position, so a `#` inside a value stays part of it.
+  const itemPattern = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^']*)'|#[^\n]*/g;
   let match: RegExpExecArray | null;
   while ((match = itemPattern.exec(arrayBody)) !== null) {
     const value = (match[1] ?? match[2] ?? "").trim();
