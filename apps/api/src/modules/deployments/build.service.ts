@@ -104,6 +104,9 @@ export async function runDeploymentPreflight(
      *  GitHub App is installed for this owner before the build pipeline
      *  spends resources cloning a repo it can't access. */
     gitOwner?: string | null;
+    gitRepo?: string | null;
+    gitProvider?: string | null;
+    gitlabProjectId?: number | null;
     /** Project id — passed to the remote-clone-token preflight check so
      *  project-scoped clone tokens are considered. */
     projectId?: string;
@@ -120,6 +123,9 @@ export async function runDeploymentPreflight(
     ...(opts.composeServices ? { composeServices: opts.composeServices } : {}),
     ...(opts.multiService !== undefined ? { multiService: opts.multiService } : {}),
     ...(opts.gitOwner !== undefined ? { gitOwner: opts.gitOwner } : {}),
+    ...(opts.gitRepo !== undefined ? { gitRepo: opts.gitRepo } : {}),
+    ...(opts.gitProvider !== undefined ? { gitProvider: opts.gitProvider } : {}),
+    ...(opts.gitlabProjectId !== undefined ? { gitlabProjectId: opts.gitlabProjectId } : {}),
     ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),
     buildStrategy: snapshot.buildStrategy as "local" | "server" | undefined,
   });
@@ -979,6 +985,9 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
     gitOwner: project.gitOwner,
+    gitRepo: project.gitRepo,
+    gitProvider: project.gitProvider,
+    gitlabProjectId: project.gitProvider === "gitlab" ? project.installationId : null,
     projectId: project.id,
   });
   const env = environment || "production";
@@ -1468,6 +1477,9 @@ export async function triggerDeployment(
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
     gitOwner: project.gitOwner,
+    gitRepo: project.gitRepo,
+    gitProvider: project.gitProvider,
+    gitlabProjectId: project.gitProvider === "gitlab" ? project.installationId : null,
     projectId: project.id,
   });
 

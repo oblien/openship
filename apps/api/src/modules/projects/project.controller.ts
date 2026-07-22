@@ -1350,12 +1350,16 @@ export async function linkRepo(c: Context) {
   const organizationId = ctx.organizationId;
   const id = param(c, "id");
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: id, action: "write" });
-  const { owner, repo, branch, installationId } = await c.req.json<{
+  const body = await c.req.json<{
     owner: string;
     repo: string;
     branch?: string;
     installationId?: number;
+    provider?: string;
+    gitUrl?: string;
   }>();
+  const { owner, repo, branch, installationId, gitUrl: bodyGitUrl } = body;
+  const provider = body.provider === "gitlab" ? "gitlab" : "github";
 
   if (!owner?.trim() || !repo?.trim()) {
     return c.json({ success: false, error: "owner and repo are required" }, 400);
@@ -1366,6 +1370,21 @@ export async function linkRepo(c: Context) {
     assertResourceInOrg(project, "Project", organizationId, id);
   } catch {
     return c.json({ error: "Project not found" }, 404);
+  }
+
+  if (provider === "gitlab") {
+    return linkGitlabRepo(c, {
+      ctx,
+      userId,
+      organizationId,
+      id,
+      project: project!,
+      owner: owner.trim(),
+      repo: repo.trim(),
+      branch,
+      installationId,
+      gitUrl: bodyGitUrl,
+    });
   }
 
   // Update git fields on the project
@@ -1473,10 +1492,138 @@ export async function linkRepo(c: Context) {
   });
 }
 
+async function linkGitlabRepo(
+  c: Context,
+  args: {
+    ctx: RequestContext;
+    userId: string;
+    organizationId: string;
+    id: string;
+    project: Project;
+    owner: string;
+    repo: string;
+    branch?: string;
+    installationId?: number;
+    gitUrl?: string;
+  },
+) {
+  const { ctx, userId, organizationId, id, project, owner, repo, branch, installationId } =
+    args;
+
+  if (!installationId || !Number.isFinite(installationId)) {
+    return c.json(
+      {
+        success: false,
+        error: "installationId (GitLab project id) is required when provider is gitlab",
+      },
+      400,
+    );
+  }
+
+  const { getProject: getGitlabProject, registerWebhook: registerGitlabWebhook } =
+    await import("../gitlab/gitlab.service");
+  const { sharedGitlabWebhookUrl, domainGitlabWebhookUrl } = await import("../../lib/public-url");
+  const { gitlabWebBase } = await import("../gitlab/gitlab.http");
+
+  const glProject = await getGitlabProject(ctx, installationId);
+  const defaultBranch = branch?.trim() || glProject.defaultBranch || "main";
+  const gitUrl =
+    args.gitUrl?.trim() ||
+    glProject.cloneUrl ||
+    `${gitlabWebBase()}/${owner}/${repo}.git`;
+
+  const gitFields: Record<string, unknown> = {
+    gitProvider: "gitlab",
+    gitOwner: owner,
+    gitRepo: repo,
+    gitBranch: defaultBranch,
+    gitUrl,
+    installationId,
+  };
+
+  const strategy = await resolveWebhookStrategy(project);
+  // GitLab has no App install dance — register a project Push Hook whenever a
+  // reachable webhook URL exists (domain / repo / cloud shared endpoint).
+  if (strategy === "app" || strategy === "repo") {
+    try {
+      const result = await registerGitlabWebhook(ctx, installationId, sharedGitlabWebhookUrl(), {
+        projectId: project.id,
+      });
+      gitFields.webhookId = result.hookId;
+      gitFields.autoDeploy = true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Webhook registration failed";
+      return c.json({ success: false, error: message }, 400);
+    }
+  } else if (strategy === "domain") {
+    try {
+      const webhookUrl = domainGitlabWebhookUrl(project.webhookDomain!);
+      const result = await registerGitlabWebhook(ctx, installationId, webhookUrl, {
+        projectId: project.id,
+      });
+      gitFields.webhookId = result.hookId;
+      gitFields.autoDeploy = true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Webhook registration failed";
+      return c.json({ success: false, error: message }, 400);
+    }
+  }
+
+  await repos.project.update(id, gitFields);
+  if (project.groupId) {
+    await repos.projectGroup.update(project.groupId, {
+      gitProvider: "gitlab",
+      gitOwner: owner,
+      gitRepo: repo,
+      gitUrl,
+      installationId,
+    });
+    const sharedGitFields = {
+      gitProvider: "gitlab",
+      gitOwner: owner,
+      gitRepo: repo,
+      gitUrl,
+      installationId,
+      ...(typeof gitFields.webhookId === "number" ? { webhookId: gitFields.webhookId } : {}),
+    };
+    const siblings = await repos.project.listByGroup(project.groupId);
+    await Promise.all(
+      siblings
+        .filter((sibling) => sibling.id !== id)
+        .map((sibling) => repos.project.update(sibling.id, sharedGitFields)),
+    );
+  }
+
+  audit.recordAsync(auditContextFrom(c, organizationId, userId), {
+    eventType: "project.updated",
+    resourceType: "project",
+    resourceId: id,
+    after: {
+      action: "git.linked",
+      gitProvider: "gitlab",
+      gitOwner: owner,
+      gitRepo: repo,
+      gitBranch: defaultBranch,
+      webhookStrategy: strategy,
+      autoDeploy: !!gitFields.autoDeploy,
+    },
+  });
+
+  return c.json({
+    success: true,
+    provider: "gitlab",
+    owner,
+    repo,
+    branch: defaultBranch,
+    webhook_strategy: strategy,
+    auto_deploy: !!gitFields.autoDeploy,
+  });
+}
+
 async function listOrgRepoProjects(organizationId: string, owner: string, repo: string) {
   const ownerKey = owner.toLowerCase();
   const repoKey = repo.toLowerCase();
-  const projects = await repos.project.findByGitRepo(owner, repo);
+  const projects = await repos.project.findByGitRepo(owner, repo, "github");
   return projects.filter(
     (p) =>
       p.organizationId === organizationId &&
@@ -1531,7 +1678,7 @@ async function disableSharedWebhookIfUnused(
   repo: string,
   webhookId: number | null,
 ) {
-  const repoProjects = await repos.project.findByGitRepo(owner, repo);
+  const repoProjects = await repos.project.findByGitRepo(owner, repo, "github");
   if (repoProjects.some((p) => p.autoDeploy)) return;
 
   const projects = repoProjects.filter((p) => p.organizationId === organizationId);

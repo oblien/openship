@@ -36,6 +36,8 @@ import {
   resolveGitHubAuthMode,
 } from "../github/github.auth";
 import { canResolveTokenFor } from "../github/github.token";
+import { canResolveTokenFor as canResolveGitlabTokenFor } from "../gitlab/gitlab.token";
+import { isPublicGitlabProject } from "../gitlab/gitlab.http";
 import { canResolveServerGitCredential } from "../github/server-github.service";
 import { parseRepoUrl } from "../github/github.service";
 import { resolveRecords, lookupAddresses } from "../../lib/dns-resolver";
@@ -126,6 +128,10 @@ export interface PreflightOptions {
    *  PUBLIC and, if so, skip the credential checks (a public repo clones with
    *  no auth). Falls back to parsing the snapshot's repoUrl when omitted. */
   gitRepo?: string | null;
+  /** Source provider — when "gitlab", skip GitHub App checks and use GitLab tokens. */
+  gitProvider?: string | null;
+  /** Numeric GitLab project id (stored as installationId) for public probes. */
+  gitlabProjectId?: number | null;
   /** Project id — passed to `tokenFor` so per-project clone tokens are
    *  considered as a valid remote-clone source. Optional because the
    *  project row may not exist yet during a first-deploy preflight. */
@@ -328,6 +334,36 @@ async function checkRemoteCloneToken(
       `No GitHub credential available to clone "${owner}" onto the build worker. ` +
       `Install the Openship App on this owner, add a per-project clone token, ` +
       `or switch to "Build on this machine" so the credential stays on the API host.`,
+  };
+}
+
+async function checkRemoteGitlabCloneToken(
+  ctx: RequestContext | null,
+  projectId: string | undefined,
+  effectiveTarget: string,
+  buildStrategy: "local" | "server" | undefined,
+): Promise<PreflightCheck> {
+  const baseCheck = {
+    id: "remote-clone-token",
+    label: "Remote clone credential",
+  };
+  if (!ctx) return { ...baseCheck, status: "pass" };
+  if (buildStrategy === "local") return { ...baseCheck, status: "pass" };
+  if (effectiveTarget === "local") return { ...baseCheck, status: "pass" };
+
+  const source = await canResolveGitlabTokenFor(ctx, "remote", { projectId }).catch(
+    () => null,
+  );
+  if (source) return { ...baseCheck, status: "pass" };
+
+  return {
+    ...baseCheck,
+    status: "fail",
+    code: PREFLIGHT_ERROR_CODES.GITHUB_REMOTE_TOKEN_REQUIRED,
+    message:
+      `No GitLab credential available to clone onto the build worker. ` +
+      `Connect GitLab in Settings (OAuth or personal access token), add a per-project clone token, ` +
+      `or switch to "Build on this machine".`,
   };
 }
 
@@ -1246,33 +1282,32 @@ export async function runPreflightChecks(
   const effectiveBuildStrategy =
     opts?.buildStrategy ?? (snapshot.buildStrategy as "local" | "server" | undefined);
 
-  // A PUBLIC github.com repo clones with NO credential, so none of the
-  // credential checks below should block it — this is how a public repo
-  // deploys on Vercel. Probe tokenlessly (cached, fails CLOSED): private /
-  // unknown / non-github ⇒ repoIsPublic=false ⇒ existing behavior, nothing
-  // regresses. When public, we skip the App-install AND remote-clone-token
-  // demands, and the deploy-time clone goes anonymous (clone-auth.ts).
-  const ghRepo = parseGithubOwnerRepo(snapshot.repoUrl, opts?.gitOwner, opts?.gitRepo);
-  const repoIsPublic = ghRepo ? await isPublicRepo(ghRepo.owner, ghRepo.repo) : false;
+  // A PUBLIC repo clones with NO credential. GitHub uses api.github.com;
+  // GitLab uses the project id public probe.
+  const isGitlab = opts?.gitProvider === "gitlab";
+  const ghRepo = !isGitlab
+    ? parseGithubOwnerRepo(snapshot.repoUrl, opts?.gitOwner, opts?.gitRepo)
+    : null;
+  const repoIsPublic = isGitlab
+    ? opts?.gitlabProjectId
+      ? await isPublicGitlabProject(opts.gitlabProjectId)
+      : false
+    : ghRepo
+      ? await isPublicRepo(ghRepo.owner, ghRepo.repo)
+      : false;
 
-  // GitHub App installation check — only relevant when the repo is cloned on a
-  // REMOTE build worker (server build). A LOCAL build ("Build on this machine")
-  // clones on the API host using local credentials (gh CLI / OAuth), so the
-  // cloud App installation is irrelevant — skip it. This mirrors the
-  // remote-clone-token check below, which already passes for local builds.
-  if (!repoIsPublic && getGitHubAuthMode() === "app" && effectiveBuildStrategy !== "local") {
+  // GitHub App installation check — GitHub only, remote builds.
+  if (
+    !isGitlab &&
+    !repoIsPublic &&
+    getGitHubAuthMode() === "app" &&
+    effectiveBuildStrategy !== "local"
+  ) {
     checks.push(
       await checkGitHubAppInstallation(githubCtx, opts?.gitOwner),
     );
   }
 
-  // A remote clone credential is only needed when the repo is actually cloned
-  // ON the remote build worker. Per the build pipeline (build-pipeline.ts:774),
-  // that is ONLY the bare runtime on a server build: Docker builds — including
-  // EVERY services deploy — clone on the orchestrator (the token never leaves
-  // the API host), and cloud builds clone inside the workspace. So the two
-  // credential checks below apply only to bare + server; otherwise the clone is
-  // local and these checks would wrongly demand a remote/App/cloud credential.
   const runtimeMode = snapshot.runtimeMode ?? "docker";
   const clonesOnRemote =
     !repoIsPublic &&
@@ -1281,24 +1316,28 @@ export async function runPreflightChecks(
     effectiveBuildStrategy !== "local";
 
   if (clonesOnRemote) {
-    // Remote-build credential check. For App-scoped modes (app / cloud-app):
-    // pass. For cli mode: hard FAIL (matches clone-auth's refusal to ship a gh
-    // CLI token to a remote worker). For oauth/token: warn only.
-    checks.push(
-      await checkRemoteBuildTokenLeak(githubCtx, effectiveTarget, effectiveBuildStrategy, snapshot.serverId),
-    );
+    if (!isGitlab) {
+      checks.push(
+        await checkRemoteBuildTokenLeak(githubCtx, effectiveTarget, effectiveBuildStrategy, snapshot.serverId),
+      );
+    }
 
-    // Atomic remote-clone-token check — mirrors clone-auth.ts at deploy time so
-    // any failure here means the remote clone would have failed downstream.
     checks.push(
-      await checkRemoteCloneToken(
-        githubCtx,
-        opts?.gitOwner,
-        opts?.projectId,
-        effectiveTarget,
-        effectiveBuildStrategy,
-        snapshot.serverId,
-      ),
+      isGitlab
+        ? await checkRemoteGitlabCloneToken(
+            githubCtx,
+            opts?.projectId,
+            effectiveTarget,
+            effectiveBuildStrategy,
+          )
+        : await checkRemoteCloneToken(
+            githubCtx,
+            opts?.gitOwner,
+            opts?.projectId,
+            effectiveTarget,
+            effectiveBuildStrategy,
+            snapshot.serverId,
+          ),
     );
   }
 

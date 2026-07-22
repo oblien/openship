@@ -41,6 +41,7 @@ import {
 import { normalizeTargetPath } from "../../lib/public-endpoints";
 import { withDefaults } from "../../lib/resources";
 import { resolveBuildGitToken } from "../github/clone-auth";
+import { resolveBuildGitToken as resolveGitlabBuildGitToken } from "../gitlab/clone-auth";
 import { openDeployRelay } from "../../lib/git-forwarding";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import {
@@ -558,26 +559,36 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
         ? enabledSvcs.some((s) => s.kind === "monorepo" || !!s.build || !!s.dockerfile)
         : snapshot.hasBuild !== false;
 
-    const gitCred: Awaited<ReturnType<typeof resolveBuildGitToken>> = needsGitSource
-      ? await resolveBuildGitToken({
-          ctx: buildBackgroundContext({
-            userId: actorUserId,
-            organizationId: dep.organizationId,
-            label: "build:resolve-git-token",
-          }),
-          projectId: project.id,
-          owner: project.gitOwner ?? undefined,
-          repo: project.gitRepo ?? undefined,
-          buildStrategy: clonePlan.cloneBuildStrategy,
-          // Only meaningful for an on-server clone — lets a per-server GitHub auth
-          // config (device token / PAT / SSH key) win for that server.
-          serverId: clonePlan.runsOnServer ? resolved.serverId : null,
-          allowRelayFallback,
-          // Docker clone-on-server can degrade to an api-host clone, so resolve
-          // gracefully (a LOCAL fallback credential, flagged apiHostFallback) instead
-          // of hard-failing at token resolution after the server is provisioned.
-          allowApiHostFallback: clonePlan.dockerClonesOnServer,
-        })
+    const isGitlab = project.gitProvider === "gitlab";
+    const gitCred = needsGitSource
+      ? isGitlab
+        ? await resolveGitlabBuildGitToken({
+            ctx: buildBackgroundContext({
+              userId: actorUserId,
+              organizationId: dep.organizationId,
+              label: "build:resolve-git-token",
+            }),
+            projectId: project.id,
+            owner: project.gitOwner ?? undefined,
+            repo: project.gitRepo ?? undefined,
+            gitlabProjectId: project.installationId ?? undefined,
+            buildStrategy: clonePlan.cloneBuildStrategy,
+            allowApiHostFallback: clonePlan.dockerClonesOnServer,
+          })
+        : await resolveBuildGitToken({
+            ctx: buildBackgroundContext({
+              userId: actorUserId,
+              organizationId: dep.organizationId,
+              label: "build:resolve-git-token",
+            }),
+            projectId: project.id,
+            owner: project.gitOwner ?? undefined,
+            repo: project.gitRepo ?? undefined,
+            buildStrategy: clonePlan.cloneBuildStrategy,
+            serverId: clonePlan.runsOnServer ? resolved.serverId : null,
+            allowRelayFallback,
+            allowApiHostFallback: clonePlan.dockerClonesOnServer,
+          })
       : {};
 
     // Clone-on-server needs a SHIPPABLE credential that can travel to the build
@@ -589,8 +600,8 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // clones on the target and is gated by preflight separately, so this fallback
     // only changes DOCKER behavior.)
     const cloneCredentialAvailable =
-      gitCred.relay === true ||
-      !!gitCred.ssh ||
+      ("relay" in gitCred && gitCred.relay === true) ||
+      ("ssh" in gitCred && !!gitCred.ssh) ||
       (!!gitCred.token && !gitCred.apiHostFallback);
     const effectiveCloneOnServer =
       cloneOnServer && (runtime.name === "bare" || cloneCredentialAvailable);
@@ -614,6 +625,12 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       envVars: buildEnv.envVars,
       resources: buildResources,
       gitToken: gitCred.token,
+      gitTokenUsername:
+        "tokenUsername" in gitCred
+          ? gitCred.tokenUsername
+          : isGitlab
+            ? "oauth2"
+            : undefined,
     });
     // Folder-upload cloud deploy: the browser uploaded the source straight into
     // a pre-provisioned workspace — adopt it and skip clone + transfer. (The
@@ -629,7 +646,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     buildConfig.cloneOnServer = effectiveCloneOnServer;
     // Per-server SSH clone credential (ssh-server-key / ssh-deploy-key mode).
     // Consumed by the adapter clone step (git@github.com + GIT_SSH_COMMAND).
-    if (gitCred.ssh) buildConfig.gitSsh = gitCred.ssh;
+    if ("ssh" in gitCred && gitCred.ssh) buildConfig.gitSsh = gitCred.ssh;
 
     // Desktop git-credential relay opener, shared by the single-app and compose
     // paths. Opens the reverse tunnel + remote helper (nothing persisted on the
@@ -639,7 +656,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       scriptPath: string;
       close: () => Promise<void>;
     } | null> => {
-      if (!gitCred.relay) return null;
+      if (!("relay" in gitCred) || !gitCred.relay) return null;
       if (!targetExecutor || !resolved.serverId) {
         throw new Error(
           "Git credential forwarding is enabled, but no SSH executor is available for this server.",
@@ -719,7 +736,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           runtimeResources: prodResources,
           gitToken: gitCred.token,
           gitCredentialHelperPath: composeRelay?.scriptPath,
-          gitSsh: gitCred.ssh,
+          gitSsh: "ssh" in gitCred ? gitCred.ssh : undefined,
           cloneOnServer: effectiveCloneOnServer,
         });
       } finally {
