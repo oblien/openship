@@ -67,7 +67,7 @@ export const updateCommand = new Command("update")
     const argv = pm === "bun" ? ["add", "-g", ref] : ["install", "-g", ref];
 
     info(`Updating v${current} → v${latest} (${cliInstallCommand(pm, latest)})...`);
-    const res = spawnSync(pm, argv, { stdio: "inherit" });
+    const res = spawnSync(pm, argv, { stdio: "inherit", shell: process.platform === "win32" });
     if (res.status !== 0) {
       err(`Update failed (${pm} exited ${res.status ?? "with a signal"}). Reinstall manually: ${cliInstallCommand(pm, latest)}`);
       process.exitCode = 1;
