@@ -636,6 +636,12 @@ export function useDeploymentBuild(
         gitProvider: isSourceless
           ? (isUpload ? "upload" : undefined)
           : (config.gitProvider === "gitlab" ? "gitlab" : "github"),
+        // GitLab numeric project id — required for public-repo probes and
+        // preferred when resolving clone tokens / webhooks.
+        installationId:
+          !isSourceless && config.gitProvider === "gitlab" && config.installationId
+            ? config.installationId
+            : undefined,
         framework: config.framework,
         packageManager: config.packageManager,
         buildImage: config.buildImage,

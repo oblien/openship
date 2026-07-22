@@ -177,8 +177,23 @@ export async function enrichProjectsBatch(
   });
 }
 
-function projectGitUrl(owner?: string | null, repo?: string | null) {
-  return owner && repo ? `https://github.com/${owner}/${repo}.git` : undefined;
+/**
+ * HTTPS clone URL for a git-backed project. GitLab must use GITLAB_BASE_URL
+ * (default gitlab.com) — hardcoding github.com here made every GitLab ensure/
+ * create write a GitHub URL, so deploys authenticated with a GitLab PAT against
+ * github.com and failed with "Invalid username or token".
+ */
+function projectGitUrl(
+  owner?: string | null,
+  repo?: string | null,
+  provider?: string | null,
+) {
+  if (!owner || !repo) return undefined;
+  if (provider === "gitlab") {
+    const base = env.GITLAB_BASE_URL.replace(/\/$/, "");
+    return `${base}/${owner}/${repo}.git`;
+  }
+  return `https://github.com/${owner}/${repo}.git`;
 }
 
 function resolveProjectSource(data: TCreateProjectBody) {
@@ -190,13 +205,18 @@ function resolveProjectSource(data: TCreateProjectBody) {
   const safeLocalPath = !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
   const gitOwner = isRelease || safeLocalPath ? undefined : data.gitOwner;
   const gitRepo = isRelease || safeLocalPath ? undefined : data.gitRepo;
+  const gitProvider = isRelease
+    ? "release"
+    : safeLocalPath
+      ? "local"
+      : (data.gitProvider ?? "github");
 
   return {
     safeLocalPath,
     gitOwner,
     gitRepo,
-    gitProvider: isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github"),
-    gitUrl: projectGitUrl(gitOwner, gitRepo),
+    gitProvider,
+    gitUrl: projectGitUrl(gitOwner, gitRepo, gitProvider),
     releaseSource: isRelease ? ((data.releaseSource as ReleaseSource | undefined) ?? null) : null,
   };
 }
@@ -386,6 +406,9 @@ export async function createServicesProjectWithId(opts: {
   await assertProjectQuota(opts.organizationId);
   const slug = await uniqueProjectSlug(opts.organizationId, opts.slug);
 
+  const gitProvider = opts.gitProvider ?? "github";
+  const gitUrl = projectGitUrl(opts.gitOwner, opts.gitRepo, gitProvider);
+
   const group = await repos.projectGroup.create({
     organizationId: opts.organizationId,
     name: opts.name,
@@ -393,7 +416,7 @@ export async function createServicesProjectWithId(opts: {
     gitProvider: opts.gitProvider ?? undefined,
     gitOwner: opts.gitOwner ?? undefined,
     gitRepo: opts.gitRepo ?? undefined,
-    gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+    gitUrl,
   });
 
   try {
@@ -407,11 +430,11 @@ export async function createServicesProjectWithId(opts: {
       environmentName: "Production",
       environmentSlug: "production",
       environmentType: "production",
-      gitProvider: opts.gitProvider ?? "github",
+      gitProvider,
       gitOwner: opts.gitOwner ?? undefined,
       gitRepo: opts.gitRepo ?? undefined,
       gitBranch: opts.gitBranch ?? "main",
-      gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+      gitUrl,
       autoDeploy: !!opts.autoDeploy,
       framework: "unknown", // services project — the stack lives on each service row
       packageManager: "npm",
@@ -622,6 +645,24 @@ export async function ensureProject(
         update.gitUrl = null;
       }
     }
+    // Keep git source fields in sync when the wizard re-ensures (first GitLab
+    // deploys used to leave a github.com gitUrl behind — rewrite it here).
+    if (!update.localPath && (data.gitOwner || data.gitRepo || data.gitProvider || data.installationId !== undefined)) {
+      if (typeof data.gitProvider === "string") update.gitProvider = data.gitProvider;
+      if (typeof data.gitOwner === "string") update.gitOwner = data.gitOwner;
+      if (typeof data.gitRepo === "string") update.gitRepo = data.gitRepo;
+      if (typeof data.gitBranch === "string") update.gitBranch = data.gitBranch;
+      if (typeof data.installationId === "number") update.installationId = data.installationId;
+      const owner =
+        (typeof update.gitOwner === "string" ? update.gitOwner : null) ?? project.gitOwner;
+      const repo =
+        (typeof update.gitRepo === "string" ? update.gitRepo : null) ?? project.gitRepo;
+      const provider =
+        (typeof update.gitProvider === "string" ? update.gitProvider : null) ??
+        project.gitProvider;
+      const nextUrl = projectGitUrl(owner, repo, provider);
+      if (nextUrl && nextUrl !== project.gitUrl) update.gitUrl = nextUrl;
+    }
     if (data.rollbackWindow !== undefined) {
       update.rollbackWindow =
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
@@ -632,6 +673,25 @@ export async function ensureProject(
 
     if (Object.keys(update).length > 0) {
       await repos.project.update(project.id, update);
+    }
+
+    if (
+      project.groupId &&
+      (typeof update.gitUrl === "string" ||
+        typeof update.gitProvider === "string" ||
+        typeof update.gitOwner === "string" ||
+        typeof update.gitRepo === "string" ||
+        typeof update.installationId === "number")
+    ) {
+      await repos.projectGroup.update(project.groupId, {
+        ...(typeof update.gitProvider === "string" ? { gitProvider: update.gitProvider } : {}),
+        ...(typeof update.gitOwner === "string" ? { gitOwner: update.gitOwner } : {}),
+        ...(typeof update.gitRepo === "string" ? { gitRepo: update.gitRepo } : {}),
+        ...(typeof update.gitUrl === "string" ? { gitUrl: update.gitUrl } : {}),
+        ...(typeof update.installationId === "number"
+          ? { installationId: update.installationId }
+          : {}),
+      });
     }
 
     // Reconcile routes AFTER persisting the project (best-effort) so a route-sync
@@ -757,11 +817,13 @@ export async function updateProject(
     update.slug = newSlug;
   }
 
-  if (data.gitOwner || data.gitRepo) {
+  if (data.gitOwner || data.gitRepo || data.gitProvider) {
     const owner = data.gitOwner ?? p.gitOwner;
     const repo = data.gitRepo ?? p.gitRepo;
+    const provider =
+      typeof data.gitProvider === "string" ? data.gitProvider : p.gitProvider;
     if (owner && repo) {
-      update.gitUrl = `https://github.com/${owner}/${repo}.git`;
+      update.gitUrl = projectGitUrl(owner, repo, provider);
     }
   }
 

@@ -80,6 +80,8 @@ export const projectsApi = {
     gitProvider?: string;
     gitRepo?: string;
     gitBranch?: string;
+    /** GitHub App installation id, or GitLab numeric project id. */
+    installationId?: number;
     framework?: string;
     localPath?: string;
     packageManager?: string;

@@ -67,6 +67,24 @@ import {
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
 import { resolveReleaseDist, resolveLatestVersion, readApiVersion } from "../../lib/release-resolver";
+import { env } from "../../config";
+
+/**
+ * Clone URL for a project. GitLab rows created before provider-aware gitUrl
+ * construction may still point at github.com — rewrite those so a GitLab PAT
+ * never authenticates against GitHub.
+ */
+function resolveProjectRepoUrl(project: Project): string {
+  const owner = project.gitOwner;
+  const repo = project.gitRepo;
+  if (project.gitProvider === "gitlab" && owner && repo) {
+    const stored = project.gitUrl ?? "";
+    if (!stored || /github\.com/i.test(stored)) {
+      return `${env.GITLAB_BASE_URL.replace(/\/$/, "")}/${owner}/${repo}.git`;
+    }
+  }
+  return project.gitUrl ?? "";
+}
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -295,7 +313,7 @@ export function buildConfigSnapshot(
     // shows "no cloud account connected". Set it here once, at the
     // source, where every snapshot consumer can rely on it.
     organizationId: project.organizationId,
-    repoUrl: project.gitUrl ?? "",
+    repoUrl: resolveProjectRepoUrl(project),
     branch: branch || project.gitBranch || (project.localPath ? "main" : ""),
     framework: project.framework!,
     buildImage: project.buildImage!,
