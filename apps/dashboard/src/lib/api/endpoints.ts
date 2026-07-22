@@ -179,6 +179,24 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  GitLab                                                          */
+  /* ---------------------------------------------------------------- */
+  gitlab: {
+    status: "gitlab/status",
+    home: "gitlab/home",
+    connect: "gitlab/connect",
+    connectRedirect: "gitlab/connect/redirect",
+    disconnect: "gitlab/disconnect",
+    namespaces: "gitlab/namespaces",
+    projects: "gitlab/projects",
+    project: (projectId: string | number) => `gitlab/projects/${projectId}`,
+    branches: (projectId: string | number) => `gitlab/projects/${projectId}/branches`,
+    webhooks: (projectId: string | number) => `gitlab/projects/${projectId}/webhooks`,
+    cloneToken: (projectId: string | number) => `gitlab/projects/${projectId}/clone-token`,
+    parseUrl: "gitlab/parse-url",
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  Icons                                                           */
   /* ---------------------------------------------------------------- */
   icons: {
