@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useRef } from "react";
-import { GitBranch, Rocket, Github, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key, Plus, Copy, ExternalLink } from "lucide-react";
+import { GitBranch, Rocket, Github, Gitlab, Loader2, Globe, Container, Server, Layers, Check, AlertCircle, Key, Plus, Copy, ExternalLink } from "lucide-react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -441,11 +441,15 @@ const Sidebar: React.FC = () => {
         </div>
         <div className="p-4 pt-3">
           <div className="flex items-center gap-3">
-            <Github className="size-4 text-muted-foreground shrink-0" />
+            {config.gitProvider === "gitlab" ? (
+              <Gitlab className="size-4 text-muted-foreground shrink-0" />
+            ) : (
+              <Github className="size-4 text-muted-foreground shrink-0" />
+            )}
             <div className="flex-1 min-w-0">
               {config.owner && config.owner !== "local" && config.repo ? (
                 <a
-                  href={`https://github.com/${config.owner}/${config.repo}`}
+                  href={`${config.gitProvider === "gitlab" ? "https://gitlab.com" : "https://github.com"}/${config.owner}/${config.repo}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   title={`${config.owner}/${config.repo}`}

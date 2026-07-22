@@ -355,10 +355,19 @@ export const projectsApi = {
   /** Get git settings */
   getGit: (id: string | number) => api.get<any>(endpoints.projects.git(id)),
 
-  /** Link a GitHub repo to an existing project + register webhook */
+  /** Link a GitHub or GitLab repo to an existing project + register webhook.
+   *  `installationId` is the GitHub App installation id for GitHub, or the
+   *  GitLab numeric project id (REQUIRED) when `provider` is "gitlab". */
   linkRepo: (
     id: string | number,
-    body: { owner: string; repo: string; branch?: string; installationId?: number },
+    body: {
+      owner: string;
+      repo: string;
+      branch?: string;
+      installationId?: number;
+      provider?: "github" | "gitlab";
+      gitUrl?: string;
+    },
   ) => api.post<any>(endpoints.projects.gitLink(id), body),
 
   /** List branches */

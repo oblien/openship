@@ -5,6 +5,16 @@ import type { CloudResourceTier, CloudResourceCustom, PublicEndpoint, PortCheckU
 
 export type PrepareProjectSource =
   | { source?: "github"; owner: string; repo: string; branch?: string; force?: string | boolean }
+  // GitLab: pass numeric project id as installationId (or projectId).
+  | {
+      source: "gitlab";
+      owner: string;
+      repo: string;
+      branch?: string;
+      projectId?: number;
+      installationId?: number;
+      force?: string | boolean;
+    }
   | { source: "local"; path: string };
 
 export interface PrepareComposeService {

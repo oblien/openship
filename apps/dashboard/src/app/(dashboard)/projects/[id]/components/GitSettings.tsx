@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -11,6 +11,7 @@ import {
   GitCommit,
   Globe,
   Github,
+  Gitlab,
   Key,
   Loader2,
   RotateCcw,
@@ -21,6 +22,7 @@ import {
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useGitHub } from "@/context/GitHubContext";
 import type { GitHubRepo } from "@/context/GitHubContext";
+import { useGitLab } from "@/context/GitLabContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { formatDate } from "@/utils/date";
@@ -28,11 +30,15 @@ import { projectsApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { Modal } from "@/components/ui/Modal";
 import { RepositoryList } from "../../../library/components/RepositoryList";
+import { GitLabConnectPrompt } from "../../../library/components/GitLabConnectPrompt";
 import { AppSource } from "./AppSource";
+
+type LinkProvider = "github" | "gitlab";
 
 export const GitSettings = () => {
   const { gitData, refreshGit, id, projectData, updateProjectData } = useProjectSettings();
   const github = useGitHub();
+  const gitlab = useGitLab();
   const { showToast } = useToast();
   const { t } = useI18n();
   const [isTogglingAutoDeploy, setIsTogglingAutoDeploy] = useState(false);
@@ -40,6 +46,32 @@ export const GitSettings = () => {
   const [savingRollbackWindow, setSavingRollbackWindow] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  // Which provider the bind picker is browsing — defaults to GitHub, a
+  // click away from GitLab. Independent of the eventually-linked repo's
+  // own provider (gitData.gitProvider), which only exists once linked.
+  const [linkProvider, setLinkProvider] = useState<LinkProvider>("github");
+  const gitlabRepos = useMemo(
+    () =>
+      gitlab.projects.map((p) => ({
+        id: p.id,
+        full_name: p.fullName,
+        name: p.repo,
+        description: p.description ?? "",
+        private: p.private,
+        stars: 0,
+        forks: 0,
+        language: "",
+        updated_at: p.updatedAt,
+        default_branch: p.defaultBranch,
+        owner: p.owner,
+        html_url: p.htmlUrl,
+      })) as GitHubRepo[],
+    [gitlab.projects],
+  );
+  const gitlabAccountRows = useMemo(
+    () => gitlab.accounts.map((a) => ({ login: a.fullPath, avatar_url: a.avatarUrl ?? "" })),
+    [gitlab.accounts],
+  );
   const [isSettingDomain, setIsSettingDomain] = useState(false);
   const [showDomainMenu, setShowDomainMenu] = useState(false);
   const hasRefreshed = useRef(false);
@@ -214,7 +246,15 @@ export const GitSettings = () => {
     const handleLinkRepo = async (ownerLogin: string, repo: GitHubRepo) => {
       setIsLinking(true);
       try {
-        const result = await projectsApi.linkRepo(id, { owner: ownerLogin, repo: repo.name });
+        const result =
+          linkProvider === "gitlab"
+            ? await projectsApi.linkRepo(id, {
+                owner: ownerLogin,
+                repo: repo.name,
+                installationId: repo.id,
+                provider: "gitlab",
+              })
+            : await projectsApi.linkRepo(id, { owner: ownerLogin, repo: repo.name });
         if (result.success) {
           showToast(interpolate(t.projectSettings.git.toast.linked, { repo: `${ownerLogin}/${repo.name}` }), "success");
           setShowPicker(false);
@@ -233,8 +273,8 @@ export const GitSettings = () => {
       }
     };
 
-    // Not connected to GitHub at all
-    if (!github.connected && !github.loading) {
+    // Not connected to either provider at all
+    if (!github.connected && !github.loading && !gitlab.connected && !gitlab.loading) {
       return (
         <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-muted/40">
@@ -244,19 +284,29 @@ export const GitSettings = () => {
           <p className="mt-1 text-sm text-muted-foreground">
             {t.projectSettings.git.connectFirst.description}
           </p>
-          <button
-            onClick={() => void github.connect()}
-            disabled={github.connecting}
-            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
-          >
-            {github.connecting ? <Loader2 className="size-4 animate-spin" /> : <Github className="size-4" />}
-            {github.connecting ? t.projectSettings.git.connectFirst.connecting : t.projectSettings.git.connectFirst.connect}
-          </button>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <button
+              onClick={() => void github.connect()}
+              disabled={github.connecting}
+              className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-[13px] font-medium text-background transition-colors hover:bg-foreground/90 disabled:opacity-50"
+            >
+              {github.connecting ? <Loader2 className="size-4 animate-spin" /> : <Github className="size-4" />}
+              {github.connecting ? t.projectSettings.git.connectFirst.connecting : t.projectSettings.git.connectFirst.connect}
+            </button>
+            <button
+              onClick={() => void gitlab.connect()}
+              disabled={gitlab.connecting}
+              className="inline-flex items-center gap-2 rounded-xl bg-foreground/[0.06] px-4 py-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1] disabled:opacity-50"
+            >
+              {gitlab.connecting ? <Loader2 className="size-4 animate-spin" /> : <Gitlab className="size-4" />}
+              {gitlab.connecting ? t.projectSettings.git.connectFirst.connecting : "Connect GitLab"}
+            </button>
+          </div>
         </div>
       );
     }
 
-    // Connected - show CTA + modal picker
+    // Connected (to at least one provider) - show CTA + modal picker
     return (
       <>
         <div className="rounded-2xl border border-border/50 bg-card p-8 text-center">
@@ -285,9 +335,31 @@ export const GitSettings = () => {
           showCloseButton
           overflow="hidden"
         >
-          <div className="px-5 py-4 border-b border-border/50">
-            <h2 className="text-base font-semibold text-foreground">{t.projectSettings.git.picker.title}</h2>
-            <p className="mt-0.5 text-sm text-muted-foreground">{t.projectSettings.git.picker.description}</p>
+          <div className="px-5 py-4 border-b border-border/50 space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">{t.projectSettings.git.picker.title}</h2>
+              <p className="mt-0.5 text-sm text-muted-foreground">{t.projectSettings.git.picker.description}</p>
+            </div>
+            <div className="inline-flex items-center bg-muted/40 border border-border/50 rounded-lg p-0.5">
+              <button
+                onClick={() => setLinkProvider("github")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  linkProvider === "github" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Github className="size-3.5" />
+                GitHub
+              </button>
+              <button
+                onClick={() => setLinkProvider("gitlab")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  linkProvider === "gitlab" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Gitlab className="size-3.5" />
+                GitLab
+              </button>
+            </div>
           </div>
           {isLinking && (
             <div className="flex items-center gap-2 px-5 py-2.5 bg-primary/5 border-b border-border/50 text-sm text-primary">
@@ -295,17 +367,37 @@ export const GitSettings = () => {
               {t.projectSettings.git.picker.linking}
             </div>
           )}
-          <div className="overflow-y-auto" style={{ maxHeight: "calc(80vh - 120px)" }}>
-            <RepositoryList
-              repos={github.repos}
-              accounts={github.accounts}
-              selectedOwner={github.selectedOwner}
-              setSelectedOwner={github.setSelectedOwner}
-              loading={false}
-              loadingRepos={github.loadingRepos}
-              onSelect={handleLinkRepo}
-              installUrl={github.installUrl}
-            />
+          <div className="overflow-y-auto" style={{ maxHeight: "calc(80vh - 170px)" }}>
+            {linkProvider === "github" ? (
+              <RepositoryList
+                repos={github.repos}
+                accounts={github.accounts}
+                selectedOwner={github.selectedOwner}
+                setSelectedOwner={github.setSelectedOwner}
+                loading={false}
+                loadingRepos={github.loadingRepos}
+                onSelect={handleLinkRepo}
+                installUrl={github.installUrl}
+              />
+            ) : gitlab.connected ? (
+              <RepositoryList
+                repos={gitlabRepos}
+                accounts={gitlabAccountRows}
+                selectedOwner={gitlab.selectedNamespace}
+                setSelectedOwner={gitlab.setSelectedNamespace}
+                loading={false}
+                loadingRepos={gitlab.loadingProjects}
+                onSelect={handleLinkRepo}
+              />
+            ) : (
+              <div className="p-5">
+                <GitLabConnectPrompt
+                  connecting={gitlab.connecting}
+                  onConnect={gitlab.connect}
+                  oauthConfigured={gitlab.state.oauthConfigured}
+                />
+              </div>
+            )}
           </div>
         </Modal>
       </>
@@ -314,8 +406,9 @@ export const GitSettings = () => {
 
   return (
     <div className="space-y-5">
-      {/* Install GitHub App banner - cloud-deployed projects that lack the app */}
-      {projectData.deployTarget === "cloud" && !gitData.installationInstalled && (
+      {/* Install GitHub App banner - cloud-deployed GitHub projects that lack the app.
+          GitLab has no App-installation concept, so this never applies there. */}
+      {gitData.gitProvider !== "gitlab" && projectData.deployTarget === "cloud" && !gitData.installationInstalled && (
         <div className="flex items-start gap-3 rounded-2xl border border-warning-border bg-warning-bg px-5 py-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-warning-bg">
             <AlertTriangle className="size-4 text-warning" />
@@ -357,7 +450,7 @@ export const GitSettings = () => {
         <SectionCard
           title={t.projectSettings.git.source.title}
           description={t.projectSettings.git.source.description}
-          icon={Github}
+          icon={gitData.gitProvider === "gitlab" ? Gitlab : Github}
           iconTone="primary"
         >
           <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3.5">
@@ -397,7 +490,7 @@ export const GitSettings = () => {
 
           {/* Only show auto-deploy/webhook when prerequisites are met */}
           {!(
-            (projectData.deployTarget === "cloud" && !gitData.installationInstalled) ||
+            (gitData.gitProvider !== "gitlab" && projectData.deployTarget === "cloud" && !gitData.installationInstalled) ||
             (gitData.webhookStrategy === "none" && !gitData.verifiedDomains?.length)
           ) && (
             <>

@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { FolderUp, Github, Link2, Sparkles, Boxes } from "lucide-react";
-import { useGitHub } from "@/context/GitHubContext";
+import { useRouter } from "next/navigation";
+import { FolderUp, Github, Gitlab, Link2, Sparkles, Boxes } from "lucide-react";
+import { useGitHub, type GitHubRepo } from "@/context/GitHubContext";
+import { useGitLab, type GitLabProject } from "@/context/GitLabContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { ConnectPrompt } from "./components/ConnectPrompt";
+import { GitLabConnectPrompt } from "./components/GitLabConnectPrompt";
 import { LoadingSkeleton } from "./components/LoadingSkeleton";
 import { RepositoryList } from "./components/RepositoryList";
 import { LocalProjects } from "./components/LocalProjects";
@@ -17,6 +20,30 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
 import { useI18n } from "@/components/i18n-provider";
 import { useToast } from "@/context/ToastContext";
+import { encodeRepoSlug } from "@/utils/repoSlug";
+
+type GitProvider = "github" | "gitlab";
+
+/** Adapt GitLab's project/account shapes into the GitHub-shaped ones
+ *  RepositoryList already knows how to render — avoids forking that
+ *  component for a second provider. `id` carries the GitLab numeric
+ *  project id (the REQUIRED `installationId` for git/link). */
+function gitlabProjectsToRepoShape(projects: GitLabProject[]): GitHubRepo[] {
+  return projects.map((p) => ({
+    id: p.id,
+    full_name: p.fullName,
+    name: p.repo,
+    description: p.description ?? "",
+    private: p.private,
+    stars: 0,
+    forks: 0,
+    language: "",
+    updated_at: p.updatedAt,
+    default_branch: p.defaultBranch,
+    owner: p.owner,
+    html_url: p.htmlUrl,
+  }));
+}
 
 type Tab = "folder" | "repositories" | "url" | "template" | "server";
 
@@ -29,6 +56,7 @@ interface TabItem {
 export default function LibraryPage() {
   const { t } = useI18n();
   const { showToast } = useToast();
+  const router = useRouter();
   const {
     state,
     connected,
@@ -44,6 +72,18 @@ export default function LibraryPage() {
     refresh,
     installUrl,
   } = useGitHub();
+  const {
+    state: gitlabState,
+    connected: gitlabConnected,
+    connecting: gitlabConnecting,
+    loading: gitlabLoading,
+    connect: connectGitLab,
+    accounts: gitlabAccounts,
+    selectedNamespace,
+    setSelectedNamespace,
+    projects: gitlabProjects,
+    loadingProjects: loadingGitlabProjects,
+  } = useGitLab();
   const { selfHosted, deployMode } = usePlatform();
   // Only the desktop app can read the user's folder off disk (native picker +
   // co-located API). A remote self-hosted browser can't — it uploads like SaaS.
@@ -55,6 +95,25 @@ export default function LibraryPage() {
   // are one click away for local/self-hosted deploys.
   const [activeTab, setActiveTab] = useState<Tab>("repositories");
   const [showMigrate, setShowMigrate] = useState(false);
+  // Git provider picker — lives inside the "repositories" tab. GitHub stays
+  // the default everywhere; GitLab is a click away without needing its own
+  // top-level tab.
+  const [gitProvider, setGitProvider] = useState<GitProvider>("github");
+
+  const gitlabRepos = React.useMemo(() => gitlabProjectsToRepoShape(gitlabProjects), [gitlabProjects]);
+  const gitlabAccountRows = React.useMemo(
+    () => gitlabAccounts.map((a) => ({ login: a.fullPath, avatar_url: a.avatarUrl ?? "" })),
+    [gitlabAccounts],
+  );
+
+  // GitLab select-for-deploy: encode the slug like GitHub, but tag the query
+  // string with `provider=gitlab` + the numeric GitLab project id (the
+  // REQUIRED `installationId` for git/link) so the deploy wizard and the
+  // eventual project-git-link both resolve through the GitLab source.
+  const handleSelectGitLabRepo = (ownerLogin: string, repo: GitHubRepo) => {
+    const slug = encodeRepoSlug(ownerLogin, repo.name);
+    router.push(`/deploy/${slug}?provider=gitlab&installationId=${repo.id}`);
+  };
 
   // One "Folder" tab, environment-dependent behavior:
   //   - self-hosted / desktop → deploy straight from a path on the box (native
@@ -137,42 +196,158 @@ export default function LibraryPage() {
               <UrlImport />
             ) : activeTab === "template" ? (
               <TemplateGrid />
-            ) : loading ? (
-              <LoadingSkeleton />
-            ) : !connected ? (
-              <ConnectPrompt
-                connecting={connecting}
-                onConnect={connect}
-                cliAction={cliAction}
-                onRefresh={refresh}
-                selfHosted={selfHosted}
-                cloudConnected={cloudConnected}
-                onConnectCloud={startCloudConnect}
-              />
             ) : (
-              <RepositoryList
-                repos={repos}
-                accounts={accounts}
-                selectedOwner={selectedOwner}
-                setSelectedOwner={setSelectedOwner}
-                loading={loading}
-                loadingRepos={loadingRepos}
-                installUrl={installUrl}
-              />
+              <>
+                {/* Provider picker — GitHub is the default everywhere; GitLab
+                    is a click away without needing its own top-level tab. */}
+                <div className="inline-flex items-center bg-muted/40 border border-border/50 rounded-xl p-0.5">
+                  <button
+                    onClick={() => setGitProvider("github")}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                      gitProvider === "github"
+                        ? "bg-foreground text-background shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Github className="size-3.5" />
+                    GitHub
+                  </button>
+                  <button
+                    onClick={() => setGitProvider("gitlab")}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                      gitProvider === "gitlab"
+                        ? "bg-foreground text-background shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Gitlab className="size-3.5" />
+                    GitLab
+                  </button>
+                </div>
+
+                {gitProvider === "github" ? (
+                  loading ? (
+                    <LoadingSkeleton />
+                  ) : !connected ? (
+                    <ConnectPrompt
+                      connecting={connecting}
+                      onConnect={connect}
+                      cliAction={cliAction}
+                      onRefresh={refresh}
+                      selfHosted={selfHosted}
+                      cloudConnected={cloudConnected}
+                      onConnectCloud={startCloudConnect}
+                    />
+                  ) : (
+                    <RepositoryList
+                      repos={repos}
+                      accounts={accounts}
+                      selectedOwner={selectedOwner}
+                      setSelectedOwner={setSelectedOwner}
+                      loading={loading}
+                      loadingRepos={loadingRepos}
+                      installUrl={installUrl}
+                    />
+                  )
+                ) : gitlabLoading ? (
+                  <LoadingSkeleton />
+                ) : !gitlabConnected ? (
+                  <GitLabConnectPrompt
+                    connecting={gitlabConnecting}
+                    onConnect={connectGitLab}
+                    oauthConfigured={gitlabState.oauthConfigured}
+                  />
+                ) : (
+                  <RepositoryList
+                    repos={gitlabRepos}
+                    accounts={gitlabAccountRows}
+                    selectedOwner={selectedNamespace}
+                    setSelectedOwner={setSelectedNamespace}
+                    loading={gitlabLoading}
+                    loadingRepos={loadingGitlabProjects}
+                    onSelect={handleSelectGitLabRepo}
+                  />
+                )}
+              </>
             )}
           </div>
 
           {/* ── RIGHT COLUMN ───────────────────────────────────────── */}
-          <LibrarySidebar
-            selectedOwner={selectedOwner}
-            repos={repos}
-            selfHosted={selfHosted}
-            state={state}
-            cloudConnected={cloudConnected}
-          />
+          {activeTab === "repositories" && gitProvider === "gitlab" ? (
+            <GitLabSidebar
+              connected={gitlabConnected}
+              login={gitlabState.login}
+              mode={gitlabState.mode}
+              projectCount={gitlabRepos.length}
+            />
+          ) : (
+            <LibrarySidebar
+              selectedOwner={selectedOwner}
+              repos={repos}
+              selfHosted={selfHosted}
+              state={state}
+              cloudConnected={cloudConnected}
+            />
+          )}
         </div>
 
         <ServerMigrationWizard isOpen={showMigrate} onClose={() => setShowMigrate(false)} />
     </PageContainer>
+  );
+}
+
+/** Minimal GitLab counterpart to LibrarySidebar — GitLab has one credential
+ *  slot (no dual App/CLI sources), so there's no need for its richer layout. */
+function GitLabSidebar({
+  connected,
+  login,
+  mode,
+  projectCount,
+}: {
+  connected: boolean;
+  login: string | null;
+  mode: "oauth" | "pat" | null;
+  projectCount: number;
+}) {
+  return (
+    <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+      <div className="bg-card rounded-2xl border border-border/50 p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Gitlab className="size-4 text-muted-foreground" />
+          <h3 className="font-semibold text-foreground text-sm">Connection</h3>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                connected ? "bg-success-bg" : "bg-muted/60"
+              }`}
+            >
+              <Gitlab className={`size-4 ${connected ? "text-success" : "text-muted-foreground"}`} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">GitLab</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {connected ? `@${login}${mode === "pat" ? " · PAT" : ""}` : "Not connected"}
+              </p>
+            </div>
+          </div>
+          <span
+            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${
+              connected ? "bg-success-bg text-success" : "bg-muted/60 text-muted-foreground"
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-success-solid" : "bg-muted-foreground/40"}`} />
+            {connected ? "Connected" : "—"}
+          </span>
+        </div>
+        {connected && (
+          <div className="mt-4 pt-4 border-t border-border/40 flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Projects</span>
+            <span className="text-lg font-semibold text-foreground">{projectCount}</span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

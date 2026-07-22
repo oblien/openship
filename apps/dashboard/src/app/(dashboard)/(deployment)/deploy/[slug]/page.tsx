@@ -65,6 +65,11 @@ const DeployRepository: React.FC = () => {
     const force = searchParams.get("force") || undefined;
     const projectId = searchParams.get("projectId") || undefined;
     const branch = searchParams.get("branch") || undefined;
+    // GitLab source hint — set when the repo was picked from the Library's
+    // GitLab tab or imported via a gitlab.com URL (see UrlImport.tsx).
+    const provider = searchParams.get("provider") === "gitlab" ? "gitlab" as const : undefined;
+    const installationIdParam = searchParams.get("installationId");
+    const installationId = installationIdParam ? Number(installationIdParam) : undefined;
     // Folder-upload: the user picked the stack up front (no auto-detection);
     // carry it (and the folder name) so the wizard seeds from the stack defaults.
     const uploadStack = searchParams.get("stack") || undefined;
@@ -215,6 +220,8 @@ const DeployRepository: React.FC = () => {
                 result = await initializeFromRepo(decoded.owner, decoded.repo, force, {
                     branch: branch ?? decoded.branch,
                     projectId: projectId ?? decoded.projectId,
+                    provider,
+                    installationId,
                 });
             }
 
@@ -267,7 +274,7 @@ const DeployRepository: React.FC = () => {
         };
 
         initialize();
-    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, force, projectId, branch, uploadStack, uploadName, toast, t]);
+    }, [slug, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, isConfigEdit, force, projectId, branch, provider, installationId, uploadStack, uploadName, toast, t]);
 
     if (loading) {
         return <SkeletonLoader source={decodedSource} />;
