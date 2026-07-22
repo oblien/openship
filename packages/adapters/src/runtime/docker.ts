@@ -837,6 +837,7 @@ export class DockerRuntime implements RuntimeAdapter {
     const { cloneUrl, gitEnv: GIT_ENV, credFlag: CRED } = assembleGitClone({
       repoUrl: config.repoUrl,
       gitToken: config.gitToken,
+      gitTokenUsername: config.gitTokenUsername,
       gitCredentialHelperPath: config.gitCredentialHelperPath,
       ssh: sshFiles,
     });

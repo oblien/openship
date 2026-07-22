@@ -150,6 +150,8 @@ export interface BuildConfig {
   resources: ResourceConfig;
   /** Ephemeral token for cloning private repos - never persisted */
   gitToken?: string;
+  /** HTTPS username for `gitToken` injection (default x-access-token; GitLab uses oauth2). */
+  gitTokenUsername?: string;
   /**
    * Desktop-only: absolute path to a git credential-helper script on the
    * REMOTE build host (written by the deploy git-credential relay). When set,
