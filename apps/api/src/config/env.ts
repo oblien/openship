@@ -145,6 +145,14 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
 
+  /* ---------- GitLab OAuth / webhooks ---------- */
+  GITLAB_CLIENT_ID: z.string().optional(),
+  GITLAB_CLIENT_SECRET: z.string().optional(),
+  /** gitlab.com by default; self-hosted base URL when set (no trailing slash). */
+  GITLAB_BASE_URL: z.string().default("https://gitlab.com"),
+  /** Optional instance-level webhook secret-token fallback. */
+  GITLAB_WEBHOOK_SECRET: z.string().optional(),
+
   /* ---------- GitHub Auth Strategy ---------- */
   /**
    * Controls how the API authenticates with GitHub:

@@ -192,6 +192,11 @@ export function sharedWebhookUrl(): string {
   return `${resolveApiPublicUrl()}/api/webhooks/github`;
 }
 
+/** Shared GitLab webhook callback — peer of `sharedWebhookUrl` for GitHub. */
+export function sharedGitlabWebhookUrl(): string {
+  return `${resolveApiPublicUrl()}/api/webhooks/gitlab`;
+}
+
 /**
  * The domain-strategy webhook callback URL: delivered directly to a project's
  * own verified domain via the `/_openship/hooks/` OpenResty location (proxied to
@@ -199,6 +204,14 @@ export function sharedWebhookUrl(): string {
  */
 export function domainWebhookUrl(hostname: string, scheme: "http" | "https" = "https"): string {
   return `${scheme}://${hostname}/_openship/hooks/github`;
+}
+
+/** Domain-strategy GitLab webhook callback (peer of domainWebhookUrl). */
+export function domainGitlabWebhookUrl(
+  hostname: string,
+  scheme: "http" | "https" = "https",
+): string {
+  return `${scheme}://${hostname}/_openship/hooks/gitlab`;
 }
 
 /**
