@@ -5,6 +5,7 @@
     "tabs": {
       "folder": "مجلد",
       "github": "GitHub",
+      "gitlab": "GitLab",
       "url": "رابط Git",
       "template": "قالب"
     }

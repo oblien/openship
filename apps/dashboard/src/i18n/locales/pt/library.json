@@ -5,6 +5,7 @@
     "tabs": {
       "folder": "Pasta",
       "github": "GitHub",
+      "gitlab": "GitLab",
       "url": "URL do Git",
       "template": "Modelo"
     }

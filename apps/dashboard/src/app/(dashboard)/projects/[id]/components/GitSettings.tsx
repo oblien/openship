@@ -388,6 +388,7 @@ export const GitSettings = () => {
                 loading={false}
                 loadingRepos={gitlab.loadingProjects}
                 onSelect={handleLinkRepo}
+                provider="gitlab"
               />
             ) : (
               <div className="p-5">

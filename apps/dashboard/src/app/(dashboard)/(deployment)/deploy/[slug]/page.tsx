@@ -102,8 +102,9 @@ const DeployRepository: React.FC = () => {
             owner: d.owner,
             repo: d.repo,
             branch: branch ?? d.branch,
+            provider: provider === "gitlab" ? ("gitlab" as const) : ("github" as const),
         };
-    }, [slug, branch, isConfigEdit, t]);
+    }, [slug, branch, isConfigEdit, provider, t]);
 
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<DeployError | null>(null);

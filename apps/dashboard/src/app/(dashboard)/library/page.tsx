@@ -19,10 +19,7 @@ import { TemplateGrid } from "./components/TemplateGrid";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
 import { useI18n } from "@/components/i18n-provider";
-import { useToast } from "@/context/ToastContext";
 import { encodeRepoSlug } from "@/utils/repoSlug";
-
-type GitProvider = "github" | "gitlab";
 
 /** Adapt GitLab's project/account shapes into the GitHub-shaped ones
  *  RepositoryList already knows how to render — avoids forking that
@@ -45,7 +42,7 @@ function gitlabProjectsToRepoShape(projects: GitLabProject[]): GitHubRepo[] {
   }));
 }
 
-type Tab = "folder" | "repositories" | "url" | "template" | "server";
+type Tab = "folder" | "repositories" | "gitlab" | "url" | "template" | "server";
 
 interface TabItem {
   key: Tab;
@@ -55,7 +52,6 @@ interface TabItem {
 
 export default function LibraryPage() {
   const { t } = useI18n();
-  const { showToast } = useToast();
   const router = useRouter();
   const {
     state,
@@ -95,10 +91,6 @@ export default function LibraryPage() {
   // are one click away for local/self-hosted deploys.
   const [activeTab, setActiveTab] = useState<Tab>("repositories");
   const [showMigrate, setShowMigrate] = useState(false);
-  // Git provider picker — lives inside the "repositories" tab. GitHub stays
-  // the default everywhere; GitLab is a click away without needing its own
-  // top-level tab.
-  const [gitProvider, setGitProvider] = useState<GitProvider>("github");
 
   const gitlabRepos = React.useMemo(() => gitlabProjectsToRepoShape(gitlabProjects), [gitlabProjects]);
   const gitlabAccountRows = React.useMemo(
@@ -123,6 +115,7 @@ export default function LibraryPage() {
   const tabs: TabItem[] = [
     { key: "folder", label: t.library.page.tabs.folder, icon: FolderUp },
     { key: "repositories", label: t.library.page.tabs.github, icon: Github },
+    { key: "gitlab", label: t.library.page.tabs.gitlab, icon: Gitlab },
     { key: "url", label: t.library.page.tabs.url, icon: Link2 },
     { key: "template", label: t.library.page.tabs.template, icon: Sparkles },
     // Adopting a running Docker deployment needs SSH into the user's own box —
@@ -196,84 +189,54 @@ export default function LibraryPage() {
               <UrlImport />
             ) : activeTab === "template" ? (
               <TemplateGrid />
-            ) : (
-              <>
-                {/* Provider picker — GitHub is the default everywhere; GitLab
-                    is a click away without needing its own top-level tab. */}
-                <div className="inline-flex items-center bg-muted/40 border border-border/50 rounded-xl p-0.5">
-                  <button
-                    onClick={() => setGitProvider("github")}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
-                      gitProvider === "github"
-                        ? "bg-foreground text-background shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Github className="size-3.5" />
-                    GitHub
-                  </button>
-                  <button
-                    onClick={() => setGitProvider("gitlab")}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
-                      gitProvider === "gitlab"
-                        ? "bg-foreground text-background shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Gitlab className="size-3.5" />
-                    GitLab
-                  </button>
-                </div>
-
-                {gitProvider === "github" ? (
-                  loading ? (
-                    <LoadingSkeleton />
-                  ) : !connected ? (
-                    <ConnectPrompt
-                      connecting={connecting}
-                      onConnect={connect}
-                      cliAction={cliAction}
-                      onRefresh={refresh}
-                      selfHosted={selfHosted}
-                      cloudConnected={cloudConnected}
-                      onConnectCloud={startCloudConnect}
-                    />
-                  ) : (
-                    <RepositoryList
-                      repos={repos}
-                      accounts={accounts}
-                      selectedOwner={selectedOwner}
-                      setSelectedOwner={setSelectedOwner}
-                      loading={loading}
-                      loadingRepos={loadingRepos}
-                      installUrl={installUrl}
-                    />
-                  )
-                ) : gitlabLoading ? (
-                  <LoadingSkeleton />
-                ) : !gitlabConnected ? (
-                  <GitLabConnectPrompt
-                    connecting={gitlabConnecting}
-                    onConnect={connectGitLab}
-                    oauthConfigured={gitlabState.oauthConfigured}
-                  />
-                ) : (
+            ) : activeTab === "gitlab" ? (
+              gitlabLoading ? (
+                <LoadingSkeleton />
+              ) : !gitlabConnected ? (
+                <GitLabConnectPrompt
+                  connecting={gitlabConnecting}
+                  onConnect={connectGitLab}
+                  oauthConfigured={gitlabState.oauthConfigured}
+                />
+              ) : (
                   <RepositoryList
-                    repos={gitlabRepos}
-                    accounts={gitlabAccountRows}
-                    selectedOwner={selectedNamespace}
-                    setSelectedOwner={setSelectedNamespace}
-                    loading={gitlabLoading}
-                    loadingRepos={loadingGitlabProjects}
-                    onSelect={handleSelectGitLabRepo}
-                  />
-                )}
-              </>
+                  repos={gitlabRepos}
+                  accounts={gitlabAccountRows}
+                  selectedOwner={selectedNamespace}
+                  setSelectedOwner={setSelectedNamespace}
+                  loading={gitlabLoading}
+                  loadingRepos={loadingGitlabProjects}
+                  onSelect={handleSelectGitLabRepo}
+                  provider="gitlab"
+                />
+              )
+            ) : loading ? (
+              <LoadingSkeleton />
+            ) : !connected ? (
+              <ConnectPrompt
+                connecting={connecting}
+                onConnect={connect}
+                cliAction={cliAction}
+                onRefresh={refresh}
+                selfHosted={selfHosted}
+                cloudConnected={cloudConnected}
+                onConnectCloud={startCloudConnect}
+              />
+            ) : (
+              <RepositoryList
+                repos={repos}
+                accounts={accounts}
+                selectedOwner={selectedOwner}
+                setSelectedOwner={setSelectedOwner}
+                loading={loading}
+                loadingRepos={loadingRepos}
+                installUrl={installUrl}
+              />
             )}
           </div>
 
           {/* ── RIGHT COLUMN ───────────────────────────────────────── */}
-          {activeTab === "repositories" && gitProvider === "gitlab" ? (
+          {activeTab === "gitlab" ? (
             <GitLabSidebar
               connected={gitlabConnected}
               login={gitlabState.login}

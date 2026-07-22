@@ -104,6 +104,7 @@
     "local2": "Lendo manifestos",
     "local3": "Detectando framework",
     "repo1": "Conectando ao GitHub",
+    "repo1Gitlab": "Conectando ao GitLab",
     "repo2": "Buscando repositório",
     "repo3": "Analisando estrutura"
   },

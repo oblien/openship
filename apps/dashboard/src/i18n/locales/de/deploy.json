@@ -104,6 +104,7 @@
     "local2": "Manifeste werden gelesen",
     "local3": "Framework wird erkannt",
     "repo1": "Verbindung zu GitHub wird hergestellt",
+    "repo1Gitlab": "Verbindung zu GitLab wird hergestellt",
     "repo2": "Repository wird abgerufen",
     "repo3": "Struktur wird analysiert"
   },

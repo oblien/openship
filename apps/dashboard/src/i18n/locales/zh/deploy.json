@@ -104,6 +104,7 @@
     "local2": "正在读取清单文件",
     "local3": "正在检测框架",
     "repo1": "正在连接 GitHub",
+    "repo1Gitlab": "正在连接 GitLab",
     "repo2": "正在获取仓库",
     "repo3": "正在分析结构"
   },

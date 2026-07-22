@@ -5,6 +5,7 @@
     "tabs": {
       "folder": "Carpeta",
       "github": "GitHub",
+      "gitlab": "GitLab",
       "url": "URL de Git",
       "template": "Plantilla"
     }
