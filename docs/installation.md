@@ -61,14 +61,36 @@ Once it's up, **Openship registers itself as an app** (dashboard → Apps → *O
 ```bash
 git clone https://github.com/oblien/openship.git && cd openship
 cp .env.example .env
-docker compose up -d
+# Set INTERNAL_TOKEN + BETTER_AUTH_SECRET to long random values before starting
+docker compose up -d --build
+```
+
+Open the dashboard at `http://localhost:3001` and create the **first admin** account
+there. The dashboard proxies signup to the API with the compose `INTERNAL_TOKEN`, which
+is what unlocks empty-DB first signup on Docker (the API peer is the dashboard container,
+not loopback). After that account exists, public signup stays disabled — invite teammates
+from **Settings → Team**.
+
+If you prefer not to use the web form, you can also mint the first admin with the same
+token the CLI uses:
+
+```bash
+docker compose exec api bun -e '
+  const token = process.env.INTERNAL_TOKEN;
+  const res = await fetch("http://127.0.0.1:4000/api/system/bootstrap-admin", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-internal-token": token },
+    body: JSON.stringify({ name: "Admin", email: "admin@example.com", password: "changeme-please" }),
+  });
+  console.log(await res.json());
+'
 ```
 
 ---
 
 ## Users & access (self-hosted)
 
-- **Public signup is disabled.** The first admin is created by `openship up`'s setup wizard.
+- **Public signup is disabled.** The first admin is created by the `openship` setup wizard, the Docker dashboard signup on a fresh install, or `POST /api/system/bootstrap-admin` with `INTERNAL_TOKEN`.
 - **Invite teammates** from **Settings → Team**. They get an accept link at your instance's URL (so the instance needs to be reachable — a public URL or your LAN).
 - **Lost the admin password?** Run `openship reset-admin-password` on the box (no sign-in needed; uses the local internal token).
 

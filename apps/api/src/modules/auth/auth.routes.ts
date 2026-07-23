@@ -15,7 +15,7 @@ import { Hono } from "hono";
 import { db, schema } from "@repo/db";
 import { env } from "../../config/env";
 import { auth, isSaasDeployment } from "../../lib/auth";
-import { internalAuth } from "../../middleware/internal-auth";
+import { hasValidInternalToken, internalAuth } from "../../middleware/internal-auth";
 import { isLoopbackRequest } from "../../middleware/loopback-peer";
 import * as ctrl from "./auth.controller";
 
@@ -32,14 +32,18 @@ if (env.DEPLOY_MODE === "desktop") {
 
 // Invite-only sign-up guard (runs BEFORE the Better Auth catch-all). SaaS keeps
 // open public signup. On self-host the ONLY Better Auth signup allowed is the
-// FIRST account and only from loopback (CLI bootstrap / local dev) — this closes
-// the remote first-admin race and public invite-hijack signup. Every other new
-// account is created via the token-bound POST /api/system/invite-signup, so a
-// remote peer can never create an account through /sign-up here.
+// FIRST account, and only from a trusted local path:
+//   - loopback (CLI bootstrap / local dev), OR
+//   - valid X-Internal-Token (dashboard same-origin proxy on Docker Compose —
+//     the API peer is the dashboard container's bridge IP, not 127.0.0.1).
+// This closes the remote first-admin race for direct hits on a published API
+// port (no token → refused) while still letting `docker compose up` → open
+// dashboard → create first admin work. Every other new account is created via
+// the token-bound POST /api/system/invite-signup.
 authRoutes.on("POST", "/sign-up/*", async (c, next) => {
   if (isSaasDeployment) return next();
   const [anyUser] = await db.select({ id: schema.user.id }).from(schema.user).limit(1);
-  if (!anyUser && isLoopbackRequest(c)) return next();
+  if (!anyUser && (isLoopbackRequest(c) || hasValidInternalToken(c))) return next();
   return c.json(
     {
       error: "Public sign-up is disabled on this instance. Use your invitation link to join.",

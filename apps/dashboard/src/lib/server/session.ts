@@ -114,6 +114,12 @@ export type DeploymentInfo = {
   machineName?: string;
   hostDomain?: string;
   /**
+   * True when the user table is empty on a self-hosted instance — the login
+   * page may offer first-admin signup (Docker Compose / #138). Absent on
+   * older API builds; treat as false.
+   */
+  bootstrapRequired?: boolean;
+  /**
    * Multi-user migration state. When non-default, the dashboard
    * should render a launcher screen pointing at migrationTargetUrl
    * instead of the normal UI — this instance no longer owns the

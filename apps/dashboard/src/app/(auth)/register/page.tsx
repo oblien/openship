@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signUp } from "@/lib/auth-client";
@@ -33,7 +33,7 @@ function RegisterPageInner() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
-  const { selfHosted } = useAuthContext();
+  const { selfHosted, bootstrapRequired } = useAuthContext();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -42,6 +42,24 @@ function RegisterPageInner() {
   const [loading, setLoading] = useState(false);
 
   const postLoginUrl = getPostAuthRedirect(searchParams);
+  const blockSelfHostRegister = selfHosted && !bootstrapRequired;
+
+  // Self-host after first admin: register is invite-only — bounce to login.
+  useEffect(() => {
+    if (blockSelfHostRegister) {
+      router.replace(buildAuthPageHref("/login", searchParams));
+    }
+  }, [blockSelfHostRegister, router, searchParams]);
+
+  if (blockSelfHostRegister) {
+    return (
+      <AuthShell>
+        <div className="flex justify-center py-8">
+          <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+        </div>
+      </AuthShell>
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

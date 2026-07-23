@@ -64,16 +64,21 @@ healthRoutes.get("/env", async (c) => {
   let teamMode: string = "single_user";
   let migrationTargetUrl: string | null = null;
   let migrationInProgress: boolean = false;
+  // Empty user table → Docker / self-host first-admin signup is still open
+  // (see auth.routes.ts + dashboard proxy token injection, #138).
+  let bootstrapRequired = false;
 
   if (env.DEPLOY_MODE === "desktop") {
     // Desktop: authMode is set during onboarding (none or cloud)
     try {
-      const { repos } = await import("@repo/db");
+      const { repos, db, schema } = await import("@repo/db");
       const settings = await repos.instanceSettings.get();
       authMode = settings?.authMode ?? "none";
       teamMode = settings?.teamMode ?? "single_user";
       migrationTargetUrl = settings?.migrationTargetUrl ?? null;
       migrationInProgress = settings?.migrationInProgress ?? false;
+      const [anyUser] = await db.select({ id: schema.user.id }).from(schema.user).limit(1);
+      bootstrapRequired = !anyUser;
     } catch {
       authMode = "none";
     }
@@ -86,12 +91,16 @@ healthRoutes.get("/env", async (c) => {
     // screen on an instance whose API requires no login.
     authMode = "local";
     try {
-      const { repos } = await import("@repo/db");
+      const { repos, db, schema } = await import("@repo/db");
       const settings = await repos.instanceSettings.get();
       authMode = settings?.authMode ?? "local";
       teamMode = settings?.teamMode ?? "single_user";
       migrationTargetUrl = settings?.migrationTargetUrl ?? null;
       migrationInProgress = settings?.migrationInProgress ?? false;
+      if (!env.CLOUD_MODE) {
+        const [anyUser] = await db.select({ id: schema.user.id }).from(schema.user).limit(1);
+        bootstrapRequired = !anyUser;
+      }
     } catch {
       // settings table may be unavailable mid-migration; defaults are safe.
     }
@@ -105,6 +114,7 @@ healthRoutes.get("/env", async (c) => {
     teamMode,
     migrationTargetUrl,
     migrationInProgress,
+    bootstrapRequired,
     // Both respect OPENSHIP_CLOUD_TARGET (cloudRuntimeTarget). The dashboard
     // must use these, not its static table, to reach the right cloud.
     cloudAuthUrl: cloudRuntimeTarget.dashboard,

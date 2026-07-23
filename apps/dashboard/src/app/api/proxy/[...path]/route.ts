@@ -127,6 +127,21 @@ async function proxy(req: NextRequest, pathSegments: string[]): Promise<Response
   const upstream = buildUpstreamUrl(req, pathSegments);
   const headers = buildForwardedHeaders(req, upstream);
 
+  // Docker Compose first-admin (#138): browser signup is rewritten here, so the
+  // API's TCP peer is the dashboard container (bridge IP), not loopback. Inject
+  // INTERNAL_TOKEN only for Better Auth sign-up so the API's empty-DB gate can
+  // accept it — never for other routes (that would mint god-mode for the browser).
+  const internalToken = process.env.INTERNAL_TOKEN?.trim();
+  const isSignUp =
+    req.method === "POST" &&
+    pathSegments.length >= 3 &&
+    pathSegments[0] === "api" &&
+    pathSegments[1] === "auth" &&
+    pathSegments[2] === "sign-up";
+  if (internalToken && isSignUp && !headers.has("x-internal-token")) {
+    headers.set("x-internal-token", internalToken);
+  }
+
   // Body: pass through directly. fetch accepts a ReadableStream and
   // won't double-buffer it.  duplex:'half' lets the body stream upstream
   // while we wait for the response (required by undici when body is a

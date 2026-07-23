@@ -100,7 +100,12 @@ export default async function AuthLayout({
   if (!deploymentInfo) return <ApiUnavailable />;
 
   return (
-    <AuthProviders authMode={deploymentInfo.authMode} cloudAuthUrl={deploymentInfo.cloudAuthUrl} selfHosted={deploymentInfo.selfHosted}>
+    <AuthProviders
+      authMode={deploymentInfo.authMode}
+      cloudAuthUrl={deploymentInfo.cloudAuthUrl}
+      selfHosted={deploymentInfo.selfHosted}
+      bootstrapRequired={Boolean(deploymentInfo.bootstrapRequired)}
+    >
       <div className="th-page">{children}</div>
     </AuthProviders>
   );

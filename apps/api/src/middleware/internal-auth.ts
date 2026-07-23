@@ -4,6 +4,22 @@ import { env } from "../config";
 import { isLoopbackRequest, peerAddress } from "./loopback-peer";
 
 /**
+ * True when `X-Internal-Token` matches `INTERNAL_TOKEN` (timing-safe).
+ * Used by `internalAuth` and by the empty-DB first-signup gate so the
+ * dashboard same-origin proxy can vouch for Docker-compose signup without
+ * widening `isLoopbackRequest` to RFC1918 peers.
+ */
+export function hasValidInternalToken(c: Context): boolean {
+  if (!env.INTERNAL_TOKEN) return false;
+  const token = c.req.header("X-Internal-Token");
+  if (!token) return false;
+
+  const expected = Buffer.from(env.INTERNAL_TOKEN, "utf-8");
+  const received = Buffer.from(token, "utf-8");
+  return expected.length === received.length && timingSafeEqual(expected, received);
+}
+
+/**
  * Middleware that validates the internal token for Electron → API calls.
  *
  * The desktop app generates a shared secret on first run and passes it
@@ -48,16 +64,7 @@ export async function internalAuth(c: Context, next: Next) {
     return;
   }
 
-  const token = c.req.header("X-Internal-Token");
-  if (!token) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
-  // Timing-safe comparison - prevents response-time side-channel attacks.
-  const expected = Buffer.from(env.INTERNAL_TOKEN, "utf-8");
-  const received = Buffer.from(token, "utf-8");
-
-  if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
+  if (!hasValidInternalToken(c)) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
