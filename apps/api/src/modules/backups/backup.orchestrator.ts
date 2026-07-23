@@ -468,10 +468,22 @@ export class BackupOrchestrator {
     // sha256 + byte count as bytes flow.
     artifact.stream.pipe(hasher);
 
+    // S3 stores each metadata key as an `x-amz-meta-*` HTTP header, and
+    // header values may only contain printable ASCII — no newlines. Some
+    // producers (e.g. custom_command) stash multiline shell commands in
+    // metadata for restore, so only header-safe values go to the put call.
+    // The unfiltered `artifact.metadata` is still recorded on the backup
+    // run below (`recorded.metadata`), which is what restore reads from.
+    const headerSafeMetadata = Object.fromEntries(
+      Object.entries(artifact.metadata ?? {}).filter(
+        ([, v]) => typeof v === "string" && /^[\x20-\x7e]*$/.test(v),
+      ),
+    );
+
     await destination.put(key, hasher, {
       size: artifact.sizeHint,
       contentType: "application/octet-stream",
-      metadata: artifact.metadata as Record<string, string>,
+      metadata: headerSafeMetadata as Record<string, string>,
     });
 
     const { sha256, bytesWritten } = hasher.summary();
