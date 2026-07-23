@@ -148,17 +148,21 @@ export function extractOwnerRepoFromUrl(
     }
 
     // GitLab — namespace can nest arbitrarily (group/subgroup/.../project), so
-    // take everything up to the last path segment as the owner.
-    // https://gitlab.com/group/subgroup/project(.git)?
-    const gitlabHttpsMatch = url.match(/gitlab\.com\/([^?#]+?)(?:\.git)?\/?$/);
+    // take everything up to the last path segment as the owner. Matches
+    // gitlab.com and self-hosted hosts (any non-github.com HTTPS/SSH forge URL).
+    const gitlabHttpsMatch = url.match(
+      /^https?:\/\/(?!github\.com)([^\/]+)\/([^?#]+?)(?:\.git)?\/?$/i,
+    );
     if (gitlabHttpsMatch) {
-      const split = splitOwnerRepo(gitlabHttpsMatch[1]);
+      const split = splitOwnerRepo(gitlabHttpsMatch[2]!);
       if (split) return { ...split, provider: "gitlab" };
     }
-    // git@gitlab.com:group/subgroup/project.git
-    const gitlabSshMatch = url.match(/gitlab\.com:([^?#]+?)(?:\.git)?\/?$/);
+    // git@host:group/subgroup/project.git (not github.com)
+    const gitlabSshMatch = url.match(
+      /^git@(?!github\.com)([^:]+):([^?#]+?)(?:\.git)?\/?$/i,
+    );
     if (gitlabSshMatch) {
-      const split = splitOwnerRepo(gitlabSshMatch[1]);
+      const split = splitOwnerRepo(gitlabSshMatch[2]!);
       if (split) return { ...split, provider: "gitlab" };
     }
 

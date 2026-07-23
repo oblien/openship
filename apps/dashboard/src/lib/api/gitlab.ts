@@ -15,9 +15,10 @@ export const gitlabApi = {
   /**
    * Start a GitLab connection.
    *   - { mode: "oauth" } → redirect flow, kicks off Better Auth's GitLab OAuth.
-   *   - { mode: "pat", token } → verify + store a personal access token.
+   *   - { mode: "pat", token, baseUrl? } → verify + store a personal access token
+   *     (optional baseUrl for self-hosted GitLab).
    */
-  connect: (body: { mode?: "oauth" | "pat"; token?: string }) =>
+  connect: (body: { mode?: "oauth" | "pat"; token?: string; baseUrl?: string }) =>
     api.post<any>(endpoints.gitlab.connect, body),
 
   /**

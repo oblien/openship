@@ -72,8 +72,11 @@ interface GitLabContextValue {
 
   /** OAuth redirect flow. */
   connect: () => Promise<void>;
-  /** Personal access token flow — verifies + stores the token. */
-  connectWithToken: (token: string) => Promise<{ success: boolean; error?: string }>;
+  /** Personal access token flow — verifies + stores the token (and optional self-hosted base URL). */
+  connectWithToken: (
+    token: string,
+    baseUrl?: string,
+  ) => Promise<{ success: boolean; error?: string }>;
   disconnect: (source?: "oauth" | "pat" | "all") => Promise<void>;
 
   accounts: GitLabAccount[];
@@ -217,10 +220,14 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
 
   /* ── Connect (Personal Access Token) ────────────────────────────── */
   const connectWithToken = useCallback(
-    async (token: string) => {
+    async (token: string, baseUrl?: string) => {
       setConnecting(true);
       try {
-        const res = await gitlabApi.connect({ mode: "pat", token });
+        const res = await gitlabApi.connect({
+          mode: "pat",
+          token,
+          ...(baseUrl?.trim() ? { baseUrl: baseUrl.trim() } : {}),
+        });
         if (res?.success) {
           await refresh();
           return { success: true };
