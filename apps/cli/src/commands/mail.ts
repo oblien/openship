@@ -407,7 +407,7 @@ function resolveWebmailTarget(
 const installCmd = new Command("install")
   .description("Install the standalone webmail dashboard for a self-hosted mail server")
   .argument("<serverId>", "Mail server ID to install the webmail dashboard for")
-  .requiredOption("-d, --domain <host>", "Public host for the webmail UI (e.g. mail.example.com)")
+  .option("-d, --domain <host>", "Public host for the webmail UI (e.g. mail.example.com)")
   .option("-t, --target <target>", 'Where to deploy: "mail" (the mail server itself, default), "cloud", or an openship server ID')
   .option("--internal-port <n>", "Internal container port for the webmail UI")
   .option("--list-targets", "List the servers the webmail can be installed on, then exit")
@@ -432,6 +432,13 @@ const installCmd = new Command("install")
           ["target", "kind", "label", "available"],
         );
         return;
+      }
+
+      // --domain is required to install, but not to --list-targets (a read-only
+      // discovery run before a host is chosen), so it's enforced here.
+      if (!opts.domain) {
+        err("  --domain is required (e.g. --domain mail.example.com). Use --list-targets to explore targets first.");
+        process.exit(1);
       }
 
       let internalPort: number | undefined;
