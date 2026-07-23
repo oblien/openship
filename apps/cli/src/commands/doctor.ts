@@ -30,6 +30,33 @@ function bunVersion(): string | null {
   }
 }
 
+function dockerCheck(): { status: "pass" | "warn"; detail: string } {
+  try {
+    const versionOutput = execFileSync("docker", ["--version"], {
+      encoding: "utf8",
+      timeout: 3000,
+    }).trim();
+    const match = versionOutput.match(/Docker version\s+([^\s,]+)/i);
+    const ver = match ? match[1] : versionOutput;
+
+    try {
+      execFileSync("docker", ["info"], {
+        encoding: "utf8",
+        timeout: 4000,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      return { status: "pass", detail: `${ver} (running)` };
+    } catch {
+      return { status: "warn", detail: `${ver} (installed, but daemon is not running)` };
+    }
+  } catch {
+    return {
+      status: "warn",
+      detail: "not installed (optional for CLI, required for container builds)",
+    };
+  }
+}
+
 export const doctorCommand = new Command("doctor")
   .description("Diagnose the CLI setup (config, active context, runtime)")
   .action(async () => {
@@ -48,7 +75,9 @@ export const doctorCommand = new Command("doctor")
     checks.push({
       name: "context",
       status: hasToken ? "pass" : "warn",
-      detail: hasToken ? `${context} (${apiUrl})` : `${context} has no token; run \`openship login\``,
+      detail: hasToken
+        ? `${context} (${apiUrl})`
+        : `${context} has no token; run \`openship login\``,
     });
 
     let reachable = false;
@@ -70,6 +99,12 @@ export const doctorCommand = new Command("doctor")
       name: "bun",
       status: bun ? "pass" : "warn",
       detail: bun ?? "not installed (optional)",
+    });
+    const docker = dockerCheck();
+    checks.push({
+      name: "docker",
+      status: docker.status,
+      detail: docker.detail,
     });
 
     if (isJsonMode()) {
