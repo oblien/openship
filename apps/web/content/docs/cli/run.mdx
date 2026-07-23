@@ -87,6 +87,7 @@ openship up --dry-run
 | `--port <port>` | API port to listen on. | `4000` |
 | `--data-dir <dir>` | Directory for the embedded database. | `~/.openship/data` |
 | `--dashboard-port <port>` | Dashboard port. | `3001` |
+| `--host <addr>` | Dashboard bind address. Use `0.0.0.0` or a LAN IP so another host (homelab reverse proxy) can reach the dashboard **without** `--public-url`. The API stays on loopback. | `127.0.0.1` (or `0.0.0.0` with `--public-url` unless `--managed-edge`) |
 | `--no-ui` | Run the API only — don't download or serve the dashboard. | — |
 | `--ui-version <tag>` | Dashboard release tag to run. | this CLI's version |
 | `-f`, `--foreground` | Run attached in this terminal instead of as a background service. | — |
@@ -95,6 +96,11 @@ openship up --dry-run
 | `--trust-proxy` | Trust the `X-Real-IP` set by a reverse proxy in front (the proxy MUST overwrite it with the real client IP, e.g. `proxy_set_header X-Real-IP $remote_addr`) — enables per-client rate limiting. | — |
 | `--managed-edge` | Install OpenResty + a free Let's Encrypt cert on this box and route `--public-url`'s domain to the dashboard — no separate reverse proxy needed. | — |
 | `--acme-email <email>` | Contact email for the Let's Encrypt certificates (managed edge). | — |
+
+```bash
+# Homelab: listen on all interfaces so your ingress VM can reverse-proxy here
+openship up --host 0.0.0.0 --trust-proxy
+```
 
 <Callout title="The dashboard is downloaded on first run">
 Unless you pass `--no-ui`, the dashboard bundle is lazy-downloaded from GitHub releases the first time you run

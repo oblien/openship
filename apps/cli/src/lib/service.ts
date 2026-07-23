@@ -29,6 +29,8 @@ export interface UpFlags {
   port?: string;
   dataDir?: string;
   dashboardPort?: string;
+  /** Dashboard bind address (`openship up --host`). */
+  host?: string;
   /** false → pass --no-ui */
   ui?: boolean;
   uiVersion?: string;
@@ -54,6 +56,7 @@ function upArgs(flags: UpFlags): string[] {
   if (flags.port) a.push("--port", flags.port);
   if (flags.dataDir) a.push("--data-dir", flags.dataDir);
   if (flags.dashboardPort) a.push("--dashboard-port", flags.dashboardPort);
+  if (flags.host) a.push("--host", flags.host);
   if (flags.ui === false) a.push("--no-ui");
   if (flags.uiVersion) a.push("--ui-version", flags.uiVersion);
   if (flags.publicUrl) a.push("--public-url", flags.publicUrl);

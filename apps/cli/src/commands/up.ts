@@ -12,11 +12,20 @@ import { ensureDashboard } from "../lib/dashboard";
 import { installAndStart, preview } from "../lib/service";
 import { resolvePorts } from "../lib/ports";
 import { prepareFromSource, type FromSourceRun } from "../lib/from-source";
+import { resolveDashboardHost } from "./up-host";
+
+export { resolveDashboardHost } from "./up-host";
 
 interface UpOpts {
   port?: string;
   dataDir?: string;
   dashboardPort?: string;
+  /**
+   * Dashboard bind address. Homelab reverse proxies need this when there is no
+   * public URL — default remains loopback; `--public-url` without managed edge
+   * still defaults to all interfaces unless `--host` overrides.
+   */
+  host?: string;
   ui?: boolean;
   uiVersion?: string;
   foreground?: boolean;
@@ -102,6 +111,10 @@ export const upCommand = new Command("up")
   .option("--port <port>", "API port to listen on", "4000")
   .option("--data-dir <dir>", "Directory for the embedded database")
   .option("--dashboard-port <port>", "Dashboard port", "3001")
+  .option(
+    "--host <addr>",
+    "Dashboard bind address (default: 127.0.0.1; 0.0.0.0 with --public-url unless --managed-edge). Use 0.0.0.0 or a LAN IP so a reverse proxy on another host can reach the dashboard without --public-url",
+  )
   .option("--no-ui", "Run the API only — don't download/serve the dashboard")
   .option("--ui-version <tag>", "Dashboard release tag to run (default: this CLI's version)")
   .option("-f, --foreground", "Run attached in this terminal instead of as a background service")
@@ -171,6 +184,7 @@ export async function startService(
       port: opts.port,
       dataDir: opts.dataDir,
       dashboardPort: opts.dashboardPort,
+      host: opts.host,
       ui: opts.ui,
       uiVersion: opts.uiVersion,
       publicUrl,
@@ -201,6 +215,7 @@ export async function startService(
     port,
     dataDir: opts.dataDir,
     dashboardPort: dashPort,
+    host: opts.host,
     ui: opts.ui,
     uiVersion: opts.uiVersion,
     publicUrl,
@@ -452,10 +467,13 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
             NODE_ENV: "production",
             OPENSHIP_TARGET: "local",
             PORT: dashPort,
-            // Reachable remotely when public; loopback-only otherwise. Under
-            // managed edge the local OpenResty fronts the dashboard, so it stays
-            // on loopback even though there's a public URL.
-            HOSTNAME: publicUrl && !managedEdge ? "0.0.0.0" : "127.0.0.1",
+            // Homelab / LAN reverse proxies: `--host 0.0.0.0` (or a private IP)
+            // without requiring `--public-url`. See resolveDashboardHost.
+            HOSTNAME: resolveDashboardHost({
+              host: opts.host,
+              publicUrl,
+              managedEdge,
+            }),
             // The dashboard's same-origin proxy (NEXT_PUBLIC_API_PROXY, baked
             // into the release build) forwards /api/proxy/* to this address, so
             // the browser never needs to know where the API lives. Set in every
