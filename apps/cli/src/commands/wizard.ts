@@ -602,7 +602,7 @@ export async function runWizard(): Promise<void> {
     if (reason && /lock/i.test(reason)) {
       log.info("The database is locked by another instance — run `openship stop`, then re-run `openship`.");
     } else {
-      log.info("Check logs: `openship logs` (or `openship up --foreground`).");
+      log.info("Run `openship up --foreground` to run it attached and see the error.");
     }
     process.exit(1);
   }
