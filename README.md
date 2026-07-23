@@ -202,7 +202,9 @@ first reports.
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=oblien/openship&type=Date)](https://star-history.com/#oblien/openship&Date)
+<!-- star-history:start -->
+<!-- The chart is generated and committed by .github/workflows/star-history.yml -->
+<!-- star-history:end -->
 
 ---
 

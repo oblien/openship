@@ -1,0 +1,33 @@
+name: Star History
+
+# Regenerates the star-history chart and commits it into the repo so the
+# README embeds a static file (always renders, no live-API rate limits) that
+# still refreshes on a schedule.
+on:
+  schedule:
+    - cron: '37 */12 * * *' # twice a day (offset off the hour on purpose)
+  workflow_dispatch: {} # allow a manual first run to generate the initial chart
+
+permissions:
+  contents: write
+
+concurrency:
+  group: star-history
+  cancel-in-progress: true
+
+jobs:
+  star-history:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: narayann7/star-history-action@v1
+        with:
+          repos: ${{ github.repository }}
+          # Fine-grained PAT (Metadata: read, Contents: read+write).
+          # As of Jul 2026 the default github.token can't read stargazers.
+          token: ${{ secrets.STAR_HISTORY_TOKEN }}
+          output-dir: assets/star-history
+          type: Date
+          themes: light,dark
+          update-readme: true
+          readme: README.md
