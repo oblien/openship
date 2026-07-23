@@ -18,8 +18,8 @@ Start with [Deploy from GitLab](/docs/guides/deploy-from-gitlab) if you haven't 
    redirect URI matches your API public URL. Disconnect and connect again from Settings.
 2. **PAT** — create a GitLab personal access token with the `api` scope, paste it into the GitLab
    card, and save.
-3. **Self-hosted** — set `GITLAB_BASE_URL` to your instance origin (no trailing slash) and restart
-   the API.
+3. **Self-hosted** — in Settings → GitLab, set **GitLab URL** to your instance when pasting a PAT,
+   or set `GITLAB_BASE_URL` on the API (instance-wide default / OAuth issuer) and restart.
 
 ## Webhook registration failed when linking
 

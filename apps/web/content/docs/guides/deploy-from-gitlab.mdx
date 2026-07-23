@@ -64,7 +64,11 @@ it does **not** silently claim push-to-deploy is active.
 
 ## Self-hosted GitLab
 
-Set on the API:
+Two options:
+
+1. **Per-user (Settings → GitLab)** — when connecting with a personal access token, set the **GitLab URL** to your instance origin (e.g. `https://gitlab.example.com`). Openship stores it with the PAT and uses it for API calls and clone URLs.
+
+2. **Instance-wide** — set on the API (applies to OAuth and as the default when a user leaves the URL blank):
 
 ```bash
 GITLAB_BASE_URL=https://gitlab.example.com
