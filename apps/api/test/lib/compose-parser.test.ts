@@ -305,6 +305,47 @@ services:
     expect(parsed.services[0]?.ports).toEqual(["80:80", "443:443"]);
   });
 
+  it("folds long-form `host_ip` into the leading `<ip>:` (loopback publish stays private)", () => {
+    const parsed = parseComposeFile(`
+services:
+  db:
+    image: postgres
+    ports:
+      - target: 5432
+        host_ip: 127.0.0.1
+        published: 5432
+      - target: 80
+        host_ip: 127.0.0.1
+        published: 8080
+        protocol: tcp
+`);
+    // Dropping host_ip would collapse these to "5432:5432" / "8080:80", which
+    // bind 0.0.0.0 — publishing to the whole internet a service the config
+    // pinned to loopback. The ip must survive as the leading short-form segment
+    // that the docker runtime honors ("127.0.0.1:8080:80").
+    expect(parsed.services[0]?.ports).toEqual(["127.0.0.1:5432:5432", "127.0.0.1:8080:80"]);
+  });
+
+  it("keeps host_ip when published is omitted, and omits it when absent", () => {
+    const parsed = parseComposeFile(`
+services:
+  x:
+    image: nginx
+    ports:
+      - target: 80
+        host_ip: 127.0.0.1
+      - target: 443
+        published: 8443
+      - target: 53
+        host_ip: 0.0.0.0
+        published: 53
+        protocol: udp
+`);
+    // host_ip with no published → ip-scoped random host port ("127.0.0.1::80");
+    // published with no host_ip → unchanged; protocol suffix still applies.
+    expect(parsed.services[0]?.ports).toEqual(["127.0.0.1::80", "8443:443", "0.0.0.0:53:53/udp"]);
+  });
+
   it("extracts depends_on as array", () => {
     const parsed = parseComposeFile(`
 services:

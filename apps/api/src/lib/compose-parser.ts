@@ -133,8 +133,19 @@ function parsePorts(ports: unknown, env: Record<string, string>): string[] {
       // fold it back into the "/proto" suffix so the string form is lossless.
       const proto = typeof port.protocol === "string" ? port.protocol.toLowerCase() : undefined;
       const suffix = proto && proto !== "tcp" ? `/${proto}` : "";
+      // Long form carries the bind interface as a separate `host_ip` field;
+      // fold it back into the leading "<ip>:" segment the short form spells.
+      const hostIp =
+        typeof port.host_ip === "string" ? interpolateComposeString(port.host_ip, env) : undefined;
       if (target) {
-        return published ? `${published}:${target}${suffix}` : `${target}${suffix}`;
+        const hostPart = published
+          ? hostIp
+            ? `${hostIp}:${published}:`
+            : `${published}:`
+          : hostIp
+            ? `${hostIp}::`
+            : "";
+        return `${hostPart}${target}${suffix}`;
       }
     }
     return String(p);
