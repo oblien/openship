@@ -199,13 +199,28 @@ Good-faith security research is **authorized** under our
 first reports.
 
 ---
+## ⭐ Star History
 
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=oblien/openship&type=Date)](https://star-history.com/#oblien/openship&Date)
+<p align="center">
+  <a href="https://star-history.com/#oblien/openship&Date">
+    <picture>
+      <source
+        media="(prefers-color-scheme: dark)"
+        srcset="https://api.star-history.com/svg?repos=oblien/openship&type=Date&theme=dark"
+      />
+      <source
+        media="(prefers-color-scheme: light)"
+        srcset="https://api.star-history.com/svg?repos=oblien/openship&type=Date"
+      />
+      <img
+        alt="Star History Chart"
+        src="https://api.star-history.com/svg?repos=oblien/openship&type=Date"
+      />
+    </picture>
+  </a>
+</p>
 
 ---
-
 ## License
 
 Openship is **open-source** software, licensed under the [Apache License 2.0](LICENSE).
