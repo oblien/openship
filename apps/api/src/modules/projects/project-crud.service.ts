@@ -843,10 +843,14 @@ export async function updateProject(
     }
 
     // Re-apply the live route so a domain/port edit takes effect without a
-    // redeploy (best-effort — the DB rows are already committed).
+    // redeploy. Remote routing can take longer than the dashboard's request
+    // timeout (SSH connection + route removal/registration), while the domain
+    // rows above are already canonical. Keep this best-effort work in the
+    // background so the mutation can return success as soon as persistence is
+    // complete instead of surfacing a false client-side timeout.
     const refreshed = await repos.project.findById(projectId);
     if (refreshed) {
-      await reapplyProjectLiveRoutes(refreshed, previousHostnames).catch((err) =>
+      void reapplyProjectLiveRoutes(refreshed, previousHostnames).catch((err) =>
         console.warn(
           `[updateProject] live route re-apply failed (non-fatal): ${safeErrorMessage(err)}`,
         ),
@@ -1358,5 +1362,4 @@ export async function getLatestDeploymentSession(
       : null,
   };
 }
-
 
