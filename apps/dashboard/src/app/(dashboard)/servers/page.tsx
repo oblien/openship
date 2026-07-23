@@ -413,7 +413,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
           {t.servers.list.addFirstServer}
         </button>
         <a
-          href="https://openship.io/docs/self-hosting"
+          href="https://openship.io/docs/guides/custom-servers"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted"
