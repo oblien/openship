@@ -407,6 +407,13 @@
       "when": 1784750000000,
       "tag": "0057_gitlab_webhook_event",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784830000000,
+      "tag": "0058_gitlab_base_url",
+      "breakpoints": true
     }
   ]
 }

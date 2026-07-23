@@ -266,6 +266,12 @@ export const userSettings = pgTable("user_settings", {
    */
   gitlabCloneTokenEncrypted: text("gitlab_clone_token_encrypted"),
   gitlabCloneTokenSetAt: timestamp("gitlab_clone_token_set_at"),
+  /**
+   * GitLab instance origin for this user's PAT (e.g. https://gitlab.example.com).
+   * Null falls back to the API-wide GITLAB_BASE_URL (default https://gitlab.com).
+   * OAuth always uses the instance-wide issuer; this column only applies to PAT.
+   */
+  gitlabBaseUrl: text("gitlab_base_url"),
 
   // ── Timestamps ─────────────────────────────────────────────────────────────
 
