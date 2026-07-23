@@ -295,6 +295,7 @@ export class BackupOrchestrator {
       let totalBytes = 0;
 
       const producerOpts = {
+        ...((policy.payloadConfig as Record<string, unknown>) ?? {}),
         sourceIds: (policy.payloadConfig as { sourceIds?: string[] })?.sourceIds,
         command: (policy.payloadConfig as { command?: string })?.command,
         exclude: (policy.payloadConfig as { exclude?: string[] })?.exclude,
