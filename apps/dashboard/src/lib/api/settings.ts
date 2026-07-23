@@ -56,10 +56,10 @@ export const settingsApi = {
    *   - asDefault         → whether `resolveCloneToken` should use it
    */
   updateCloneCredentials: (data: { token?: string | null; asDefault?: boolean }) =>
-    api.patch<CloneCredentialsState & { cloneStrategyPreference: CloneStrategyPreference }>(
-      endpoints.settings.cloneCredentials,
-      data,
-    ),
+    api.patch<{
+      cloneToken: CloneCredentialsState;
+      cloneStrategyPreference: CloneStrategyPreference;
+    }>(endpoints.settings.cloneCredentials, data),
 
   /** Save the first-time-deploy nudge choice. */
   updateCloneStrategyPreference: (preference: CloneStrategyPreference) =>
