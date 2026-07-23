@@ -8,7 +8,11 @@ import { repos } from "@repo/db";
 import { env } from "../../config/env";
 import { auth } from "../../lib/auth";
 import { encrypt, decrypt } from "../../lib/encryption";
-import { glFetchSoft, gitlabWebBase } from "./gitlab.http";
+import {
+  glFetchSoft,
+  gitlabWebBase,
+  normalizeGitlabBaseUrl,
+} from "./gitlab.http";
 import type { GitLabConnectionState, GitLabUser } from "./gitlab.types";
 
 export function isGitlabOAuthConfigured(): boolean {
@@ -38,13 +42,31 @@ export async function readUserGitlabPat(userId: string): Promise<string | null> 
   }
 }
 
-export async function saveUserGitlabPat(userId: string, token: string): Promise<void> {
+/**
+ * Per-user GitLab origin for PAT calls. Falls back to GITLAB_BASE_URL when
+ * unset (OAuth-only users, or legacy PAT rows before gitlab_base_url existed).
+ */
+export async function resolveUserGitlabBaseUrl(userId: string): Promise<string> {
+  const settings = await repos.settings.findByUser(userId);
+  if (settings?.gitlabBaseUrl) {
+    return gitlabWebBase(settings.gitlabBaseUrl);
+  }
+  return gitlabWebBase();
+}
+
+export async function saveUserGitlabPat(
+  userId: string,
+  token: string,
+  baseUrl: string,
+): Promise<void> {
   const existing = await repos.settings.findByUser(userId);
   const encrypted = encrypt(token);
   const now = new Date();
+  const normalized = normalizeGitlabBaseUrl(baseUrl) ?? gitlabWebBase();
   const updates = {
     gitlabCloneTokenEncrypted: encrypted,
     gitlabCloneTokenSetAt: now,
+    gitlabBaseUrl: normalized,
   };
   if (existing) {
     await repos.settings.update(userId, updates);
@@ -62,6 +84,7 @@ export async function clearUserGitlabPat(userId: string): Promise<void> {
   await repos.settings.update(userId, {
     gitlabCloneTokenEncrypted: null,
     gitlabCloneTokenSetAt: null,
+    gitlabBaseUrl: null,
   });
 }
 
@@ -81,7 +104,7 @@ export async function resolveGitlabUserCredential(
 export async function getGitlabConnectionState(
   userId: string,
 ): Promise<GitLabConnectionState> {
-  const baseUrl = gitlabWebBase();
+  const baseUrl = await resolveUserGitlabBaseUrl(userId);
   const oauthConfigured = isGitlabOAuthConfigured();
   const cred = await resolveGitlabUserCredential(userId);
   if (!cred) {
@@ -95,7 +118,10 @@ export async function getGitlabConnectionState(
     };
   }
 
-  const user = await glFetchSoft<GitLabUser>(cred.token, { path: "/user" });
+  const user = await glFetchSoft<GitLabUser>(cred.token, {
+    path: "/user",
+    baseUrl,
+  });
   if (!user) {
     return {
       connected: false,

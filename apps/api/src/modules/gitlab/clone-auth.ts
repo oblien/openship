@@ -5,6 +5,7 @@
 import { type BuildStrategy } from "@repo/core";
 import { tokenFor, requireTokenFor, type GitLabTokenContext } from "./gitlab.token";
 import { isPublicGitlabProject } from "./gitlab.http";
+import { resolveUserGitlabBaseUrl } from "./gitlab.auth";
 import type { RequestContext } from "../../lib/request-context";
 
 export interface BuildGitLabCredential {
@@ -37,11 +38,11 @@ export async function resolveBuildGitToken(opts: {
     return { token: r.token, tokenUsername: "oauth2" };
   }
 
-  if (
-    opts.gitlabProjectId &&
-    (await isPublicGitlabProject(opts.gitlabProjectId))
-  ) {
-    return {};
+  if (opts.gitlabProjectId) {
+    const baseUrl = await resolveUserGitlabBaseUrl(opts.ctx.userId);
+    if (await isPublicGitlabProject(opts.gitlabProjectId, baseUrl)) {
+      return {};
+    }
   }
 
   if (opts.allowApiHostFallback && purpose === "remote") {

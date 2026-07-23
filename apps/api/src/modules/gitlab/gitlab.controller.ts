@@ -4,12 +4,11 @@
 
 import type { Context } from "hono";
 import { auth } from "../../lib/auth";
-import { env } from "../../config/env";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveApiPublicUrl } from "../../lib/public-url";
 import * as gitlabAuth from "./gitlab.auth";
 import * as gitlabService from "./gitlab.service";
-import { glFetchSoft } from "./gitlab.http";
+import { glFetchSoft, gitlabWebBase, normalizeGitlabBaseUrl } from "./gitlab.http";
 import type { GitLabUser } from "./gitlab.types";
 
 export async function getStatus(c: Context) {
@@ -36,24 +35,37 @@ export async function connect(c: Context) {
   const body = await c.req.json().catch(() => ({}));
   const mode = body?.mode as string | undefined;
   const pat = typeof body?.token === "string" ? body.token.trim() : "";
+  const rawBaseUrl = typeof body?.baseUrl === "string" ? body.baseUrl.trim() : "";
 
   if (mode === "pat" || pat) {
     if (!pat) {
       return c.json({ success: false, error: "token is required for PAT connect" }, 400);
     }
-    const user = await glFetchSoft<GitLabUser>(pat, { path: "/user" });
+    let baseUrl = gitlabWebBase();
+    if (rawBaseUrl) {
+      const normalized = normalizeGitlabBaseUrl(rawBaseUrl);
+      if (!normalized) {
+        return c.json(
+          { success: false, error: "Invalid GitLab URL. Use an origin like https://gitlab.example.com" },
+          400,
+        );
+      }
+      baseUrl = normalized;
+    }
+    const user = await glFetchSoft<GitLabUser>(pat, { path: "/user", baseUrl });
     if (!user) {
       return c.json(
         { success: false, error: "Invalid GitLab personal access token" },
         400,
       );
     }
-    await gitlabAuth.saveUserGitlabPat(ctx.userId, pat);
+    await gitlabAuth.saveUserGitlabPat(ctx.userId, pat, baseUrl);
     return c.json({
       success: true,
       connected: true,
       mode: "pat" as const,
       login: user.username,
+      baseUrl,
     });
   }
 
@@ -198,13 +210,15 @@ export async function getCloneToken(c: Context) {
     token: result.token,
     username: result.username,
     cloneUrl,
-    baseUrl: env.GITLAB_BASE_URL,
+    baseUrl: result.cloneUrlPrefix,
   });
 }
 
 export async function parseUrl(c: Context) {
+  const ctx = getRequestContext(c);
   const url = c.req.query("url") || "";
-  const parsed = gitlabService.parseGitlabRepoUrl(url);
+  const baseUrl = await gitlabAuth.resolveUserGitlabBaseUrl(ctx.userId);
+  const parsed = gitlabService.parseGitlabRepoUrl(url, { baseUrl });
   if (!parsed) {
     return c.json({ success: false, error: "Not a GitLab repository URL" }, 400);
   }

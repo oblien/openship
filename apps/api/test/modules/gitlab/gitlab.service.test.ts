@@ -34,6 +34,7 @@ vi.mock("../../../src/modules/gitlab/gitlab.auth", () => ({
   resolveGitlabUserCredential: vi.fn(),
   getUserGitlabToken: vi.fn(),
   readUserGitlabPat: vi.fn(),
+  resolveUserGitlabBaseUrl: vi.fn(async () => "https://gitlab.com"),
   requireTokenFor: undefined,
 }));
 
@@ -69,6 +70,24 @@ describe("parseGitlabRepoUrl", () => {
 
   it("rejects github.com", () => {
     expect(parseGitlabRepoUrl("https://github.com/acme/app.git")).toBeNull();
+  });
+
+  it("parses self-hosted https when baseUrl is provided", () => {
+    expect(
+      parseGitlabRepoUrl("https://gitlab.example.com/acme/app.git", {
+        baseUrl: "https://gitlab.example.com",
+      }),
+    ).toEqual({
+      owner: "acme",
+      repo: "app",
+      host: "gitlab.example.com",
+    });
+  });
+
+  it("rejects unrelated self-hosted hosts without matching baseUrl", () => {
+    expect(
+      parseGitlabRepoUrl("https://gitlab.other.com/acme/app.git"),
+    ).toBeNull();
   });
 });
 

@@ -11,6 +11,8 @@ export const ProjectIdParams = Type.Object({
 export const ConnectBody = Type.Object({
   mode: Type.Optional(Type.Union([Type.Literal("oauth"), Type.Literal("pat")])),
   token: Type.Optional(Type.String({ minLength: 1 })),
+  /** GitLab instance origin for PAT connect (self-hosted). Defaults to GITLAB_BASE_URL. */
+  baseUrl: Type.Optional(Type.String({ minLength: 1 })),
 });
 
 export const DisconnectBody = Type.Object({

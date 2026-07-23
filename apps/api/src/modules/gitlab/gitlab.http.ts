@@ -2,7 +2,8 @@
  * @module gitlab.http
  *
  * GitLab REST API v4 HTTP primitive. Token resolution lives in gitlab.token /
- * gitlab.auth — this file only issues requests against GITLAB_BASE_URL.
+ * gitlab.auth — this file only issues requests. Callers may override the
+ * instance origin for per-user self-hosted PATs; otherwise GITLAB_BASE_URL.
  */
 
 import { env } from "../../config/env";
@@ -12,16 +13,40 @@ export interface GlRequest {
   method?: string;
   params?: Record<string, unknown>;
   headers?: Record<string, string>;
+  /** Override instance origin (self-hosted per-user PAT). */
+  baseUrl?: string;
 }
 
 const GL_FETCH_TIMEOUT_MS = 20_000;
 
-export function gitlabApiBase(): string {
-  return `${env.GITLAB_BASE_URL.replace(/\/$/, "")}/api/v4`;
+/**
+ * Normalize a user- or env-supplied GitLab origin to `https://host` (no path).
+ * Accepts bare hosts (`gitlab.example.com`) and strips trailing slashes.
+ */
+export function normalizeGitlabBaseUrl(input: string): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  try {
+    const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const u = new URL(withProto);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (!u.hostname) return null;
+    return u.origin;
+  } catch {
+    return null;
+  }
 }
 
-export function gitlabWebBase(): string {
+export function gitlabWebBase(baseUrl?: string | null): string {
+  if (baseUrl) {
+    const normalized = normalizeGitlabBaseUrl(baseUrl);
+    if (normalized) return normalized;
+  }
   return env.GITLAB_BASE_URL.replace(/\/$/, "");
+}
+
+export function gitlabApiBase(baseUrl?: string | null): string {
+  return `${gitlabWebBase(baseUrl)}/api/v4`;
 }
 
 function withQuery(url: string, method: string, params?: Record<string, unknown>): string {
@@ -47,7 +72,7 @@ async function timedFetch(url: string, init: RequestInit): Promise<Response> {
 
 export async function glFetch<T = unknown>(token: string, req: GlRequest): Promise<T> {
   const method = req.method ?? "GET";
-  const url = withQuery(`${gitlabApiBase()}${req.path}`, method, req.params);
+  const url = withQuery(`${gitlabApiBase(req.baseUrl)}${req.path}`, method, req.params);
   const res = await timedFetch(url, {
     method,
     headers: {
@@ -87,9 +112,12 @@ export async function glFetchSoft<T = unknown>(
 }
 
 /** Public project probe (no token). Returns true when visibility is public. */
-export async function isPublicGitlabProject(projectId: number): Promise<boolean> {
+export async function isPublicGitlabProject(
+  projectId: number,
+  baseUrl?: string | null,
+): Promise<boolean> {
   try {
-    const res = await timedFetch(`${gitlabApiBase()}/projects/${projectId}`, {
+    const res = await timedFetch(`${gitlabApiBase(baseUrl)}/projects/${projectId}`, {
       method: "GET",
       headers: { Accept: "application/json" },
     });

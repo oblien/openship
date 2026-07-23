@@ -9,7 +9,7 @@ import { sharedGitlabWebhookUrl } from "../../lib/public-url";
 import type { RequestContext } from "../../lib/request-context";
 import { requireTokenFor, tokenFor } from "./gitlab.token";
 import { glFetch, gitlabWebBase, gitlabApiBase } from "./gitlab.http";
-import { resolveGitlabUserCredential } from "./gitlab.auth";
+import { resolveGitlabUserCredential, resolveUserGitlabBaseUrl } from "./gitlab.auth";
 import type {
   GitLabBranch,
   GitLabHook,
@@ -44,18 +44,23 @@ function mapProject(p: GitLabProject): MappedGitLabProject {
 }
 
 async function requireCred(ctx: RequestContext) {
-  return requireTokenFor(ctx, "local", {});
+  const [{ token, source }, baseUrl] = await Promise.all([
+    requireTokenFor(ctx, "local", {}),
+    resolveUserGitlabBaseUrl(ctx.userId),
+  ]);
+  return { token, source, baseUrl };
 }
 
 export async function listNamespaces(ctx: RequestContext): Promise<MappedGitLabAccount[]> {
-  const { token } = await requireCred(ctx);
+  const { token, baseUrl } = await requireCred(ctx);
   const groups = await glFetch<GitLabNamespace[]>(token, {
     path: "/groups",
     params: { min_access_level: 30, per_page: 100 },
+    baseUrl,
   });
   const user = await glFetch<{ id: number; username: string; name: string; avatar_url: string }>(
     token,
-    { path: "/user" },
+    { path: "/user", baseUrl },
   );
 
   const accounts: MappedGitLabAccount[] = [
@@ -83,7 +88,7 @@ export async function listProjects(
   ctx: RequestContext,
   opts: { namespace?: string; search?: string } = {},
 ): Promise<MappedGitLabProject[]> {
-  const { token } = await requireCred(ctx);
+  const { token, baseUrl } = await requireCred(ctx);
   const params: Record<string, unknown> = {
     membership: true,
     simple: false,
@@ -101,10 +106,11 @@ export async function listProjects(
       projects = await glFetch<GitLabProject[]>(token, {
         path: `/groups/${encoded}/projects`,
         params: { include_subgroups: true, per_page: 100, order_by: "last_activity_at", sort: "desc" },
+        baseUrl,
       });
     } catch {
       // User namespace (not a group) — fall back to membership list + filter.
-      const all = await glFetch<GitLabProject[]>(token, { path: "/projects", params });
+      const all = await glFetch<GitLabProject[]>(token, { path: "/projects", params, baseUrl });
       const ns = opts.namespace.toLowerCase();
       projects = all.filter(
         (p) =>
@@ -113,7 +119,7 @@ export async function listProjects(
       );
     }
   } else {
-    projects = await glFetch<GitLabProject[]>(token, { path: "/projects", params });
+    projects = await glFetch<GitLabProject[]>(token, { path: "/projects", params, baseUrl });
   }
 
   return projects.map(mapProject);
@@ -123,9 +129,10 @@ export async function getProject(
   ctx: RequestContext,
   projectId: number,
 ): Promise<MappedGitLabProject> {
-  const { token } = await requireCred(ctx);
+  const { token, baseUrl } = await requireCred(ctx);
   const p = await glFetch<GitLabProject>(token, {
     path: `/projects/${projectId}`,
+    baseUrl,
   });
   return mapProject(p);
 }
@@ -135,7 +142,7 @@ export async function listTree(
   projectId: number,
   opts: { ref?: string; path?: string; recursive?: boolean } = {},
 ): Promise<Array<{ name: string; path: string; type: "tree" | "blob" }>> {
-  const { token } = await requireCred(ctx);
+  const { token, baseUrl } = await requireCred(ctx);
   return glFetch(token, {
     path: `/projects/${projectId}/repository/tree`,
     params: {
@@ -144,6 +151,7 @@ export async function listTree(
       recursive: opts.recursive ?? false,
       per_page: 100,
     },
+    baseUrl,
   });
 }
 
@@ -153,10 +161,10 @@ export async function getFileRaw(
   filePath: string,
   ref = "HEAD",
 ): Promise<string | undefined> {
-  const { token } = await requireCred(ctx);
+  const { token, baseUrl } = await requireCred(ctx);
   const encoded = encodeURIComponent(filePath);
   try {
-    const base = gitlabApiBase();
+    const base = gitlabApiBase(baseUrl);
     const url = `${base}/projects/${projectId}/repository/files/${encoded}/raw?ref=${encodeURIComponent(ref)}`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -172,10 +180,11 @@ export async function listBranches(
   ctx: RequestContext,
   projectId: number,
 ): Promise<Array<{ name: string; protected: boolean; default: boolean }>> {
-  const { token } = await requireCred(ctx);
+  const { token, baseUrl } = await requireCred(ctx);
   const branches = await glFetch<GitLabBranch[]>(token, {
     path: `/projects/${projectId}/repository/branches`,
     params: { per_page: 100 },
+    baseUrl,
   });
   return branches.map((b) => ({
     name: b.name,
@@ -212,7 +221,7 @@ export async function registerWebhook(
   webhookUrl = sharedGitlabWebhookUrl(),
   opts: { projectId?: string } = {},
 ): Promise<{ hookId: number; url: string }> {
-  const { token } = await requireCred(ctx);
+  const { token, baseUrl } = await requireCred(ctx);
   const secret = opts.projectId
     ? await ensureProjectWebhookSecret(opts.projectId)
     : mintWebhookSecret();
@@ -227,6 +236,7 @@ export async function registerWebhook(
         push_events: true,
         enable_ssl_verification: true,
       },
+      baseUrl,
     });
     return { hookId: hook.id, url: webhookUrl };
   } catch (err) {
@@ -250,6 +260,7 @@ export async function registerWebhook(
             push_events: true,
             enable_ssl_verification: true,
           },
+          baseUrl,
         });
         return { hookId: match.id, url: webhookUrl };
       }
@@ -262,9 +273,10 @@ export async function listWebhooks(
   ctx: RequestContext,
   gitlabProjectId: number,
 ): Promise<GitLabHook[]> {
-  const { token } = await requireCred(ctx);
+  const { token, baseUrl } = await requireCred(ctx);
   return glFetch<GitLabHook[]>(token, {
     path: `/projects/${gitlabProjectId}/hooks`,
+    baseUrl,
   });
 }
 
@@ -278,30 +290,40 @@ function normalizeUrl(url: string): string {
   }
 }
 
+function allowedGitlabHosts(extraBaseUrl?: string | null): Set<string> {
+  const hosts = new Set<string>(["gitlab.com"]);
+  try {
+    hosts.add(new URL(gitlabWebBase()).hostname.toLowerCase());
+  } catch {
+    /* keep gitlab.com */
+  }
+  if (extraBaseUrl) {
+    try {
+      hosts.add(new URL(gitlabWebBase(extraBaseUrl)).hostname.toLowerCase());
+    } catch {
+      /* ignore */
+    }
+  }
+  return hosts;
+}
+
 /**
  * Parse a GitLab HTTPS/SSH URL into owner (namespace path) + repo.
- * Supports nested groups and self-hosted hosts matching GITLAB_BASE_URL.
+ * Supports nested groups and self-hosted hosts matching GITLAB_BASE_URL
+ * and/or a per-user baseUrl.
  */
 export function parseGitlabRepoUrl(
   repoUrl?: string,
+  opts?: { baseUrl?: string | null },
 ): { owner: string; repo: string; host: string } | null {
   if (!repoUrl?.trim()) return null;
-  const configuredHost = (() => {
-    try {
-      return new URL(gitlabWebBase()).hostname.toLowerCase();
-    } catch {
-      return "gitlab.com";
-    }
-  })();
+  const allowed = allowedGitlabHosts(opts?.baseUrl);
 
   // SSH: git@host:group/sub/project.git
   const ssh = repoUrl.match(/^git@([^:]+):(.+?)(?:\.git)?\/?$/i);
   if (ssh) {
     const host = ssh[1]!.toLowerCase();
-    if (host !== configuredHost && host !== "gitlab.com") {
-      // Allow configured host or gitlab.com; reject unrelated hosts.
-      if (configuredHost !== host) return null;
-    }
+    if (!allowed.has(host)) return null;
     const path = ssh[2]!.replace(/\/$/, "");
     const lastSlash = path.lastIndexOf("/");
     if (lastSlash <= 0) return null;
@@ -316,7 +338,7 @@ export function parseGitlabRepoUrl(
     const u = new URL(repoUrl);
     if (u.protocol !== "http:" && u.protocol !== "https:") return null;
     const host = u.hostname.toLowerCase();
-    if (host !== configuredHost && host !== "gitlab.com") return null;
+    if (!allowed.has(host)) return null;
     const parts = u.pathname
       .replace(/^\//, "")
       .replace(/\.git$/i, "")
@@ -349,6 +371,7 @@ export async function resolveCloneToken(
   ctx: RequestContext,
   projectId?: string,
 ): Promise<{ token: string; username: string; cloneUrlPrefix: string } | null> {
+  const baseUrl = await resolveUserGitlabBaseUrl(ctx.userId);
   const r = await tokenFor(ctx, "local", { projectId });
   if (!r) {
     const cred = await resolveGitlabUserCredential(ctx.userId);
@@ -356,12 +379,12 @@ export async function resolveCloneToken(
     return {
       token: cred.token,
       username: "oauth2",
-      cloneUrlPrefix: gitlabWebBase(),
+      cloneUrlPrefix: baseUrl,
     };
   }
   return {
     token: r.token,
     username: "oauth2",
-    cloneUrlPrefix: gitlabWebBase(),
+    cloneUrlPrefix: baseUrl,
   };
 }

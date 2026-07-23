@@ -21,6 +21,7 @@ import * as projectTeardown from "./project-teardown";
 import { checkProjectPorts } from "./port-check.service";
 import { checkProjectOutput } from "./output-check.service";
 import { AppError, safeErrorMessage } from "@repo/core";
+import { resolveUserGitlabBaseUrl } from "../gitlab/gitlab.auth";
 import type {
   TCreateProjectBody,
   TCreateProjectEnvironmentBody,
@@ -98,7 +99,13 @@ export async function ensure(c: Context) {
   }
 
   try {
-    const result = await projectService.ensureProject(body, ctx.organizationId);
+    const gitlabBaseUrl =
+      body.gitProvider === "gitlab"
+        ? await resolveUserGitlabBaseUrl(ctx.userId)
+        : undefined;
+    const result = await projectService.ensureProject(body, ctx.organizationId, {
+      gitlabBaseUrl,
+    });
     audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
       eventType: result.created ? "project.created" : "project.updated",
       resourceType: "project",
@@ -357,7 +364,13 @@ export async function create(c: Context) {
   const ctx = getRequestContext(c);
   const { userId, organizationId } = ctx;
   const body = await c.req.json<TCreateProjectBody>();
-  const project = await projectService.createProject(body, organizationId);
+  const gitlabBaseUrl =
+    body.gitProvider === "gitlab"
+      ? await resolveUserGitlabBaseUrl(userId)
+      : undefined;
+  const project = await projectService.createProject(body, organizationId, {
+    gitlabBaseUrl,
+  });
   audit.recordAsync(auditContextFrom(c, organizationId, userId), {
     eventType: "project.created",
     resourceType: "project",
@@ -445,7 +458,13 @@ export async function update(c: Context) {
   const id = param(c, "id");
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: id, action: "write" });
   const body = await c.req.json<TUpdateProjectBody>();
-  const project = await projectService.updateProject(id, body, organizationId);
+  const gitlabBaseUrl =
+    body.gitProvider === "gitlab" || body.gitOwner || body.gitRepo
+      ? await resolveUserGitlabBaseUrl(userId)
+      : undefined;
+  const project = await projectService.updateProject(id, body, organizationId, {
+    gitlabBaseUrl,
+  });
   audit.recordAsync(auditContextFrom(c, organizationId, userId), {
     eventType: "project.updated",
     resourceType: "project",

@@ -178,25 +178,29 @@ export async function enrichProjectsBatch(
 }
 
 /**
- * HTTPS clone URL for a git-backed project. GitLab must use GITLAB_BASE_URL
- * (default gitlab.com) — hardcoding github.com here made every GitLab ensure/
- * create write a GitHub URL, so deploys authenticated with a GitLab PAT against
- * github.com and failed with "Invalid username or token".
+ * HTTPS clone URL for a git-backed project. GitLab must use the user's
+ * instance origin (or GITLAB_BASE_URL) — hardcoding github.com here made every
+ * GitLab ensure/create write a GitHub URL, so deploys authenticated with a
+ * GitLab PAT against github.com and failed with "Invalid username or token".
  */
 function projectGitUrl(
   owner?: string | null,
   repo?: string | null,
   provider?: string | null,
+  gitlabBaseUrl?: string | null,
 ) {
   if (!owner || !repo) return undefined;
   if (provider === "gitlab") {
-    const base = env.GITLAB_BASE_URL.replace(/\/$/, "");
+    const base = (gitlabBaseUrl ?? env.GITLAB_BASE_URL).replace(/\/$/, "");
     return `${base}/${owner}/${repo}.git`;
   }
   return `https://github.com/${owner}/${repo}.git`;
 }
 
-function resolveProjectSource(data: TCreateProjectBody) {
+function resolveProjectSource(
+  data: TCreateProjectBody,
+  gitlabBaseUrl?: string | null,
+) {
   // Release/dist source: a prebuilt dist, no git repo and no stored localPath
   // (its dir is resolved per-deploy). The source repo, if any, lives in
   // releaseSource — the project-level gitOwner/gitRepo columns stay null so the
@@ -216,7 +220,7 @@ function resolveProjectSource(data: TCreateProjectBody) {
     gitOwner,
     gitRepo,
     gitProvider,
-    gitUrl: projectGitUrl(gitOwner, gitRepo, gitProvider),
+    gitUrl: projectGitUrl(gitOwner, gitRepo, gitProvider, gitlabBaseUrl),
     releaseSource: isRelease ? ((data.releaseSource as ReleaseSource | undefined) ?? null) : null,
   };
 }
@@ -239,11 +243,12 @@ async function ensureProjectApp(
   data: TCreateProjectBody,
   slug: string,
   organizationId: string,
+  gitlabBaseUrl?: string | null,
 ) {
   let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
   if (app) return { app, created: false };
 
-  const source = resolveProjectSource(data);
+  const source = resolveProjectSource(data, gitlabBaseUrl);
 
   app = await repos.projectGroup.create({
     organizationId,
@@ -265,8 +270,9 @@ function buildProductionProjectInput(
   slug: string,
   routing: ProjectRouteState,
   organizationId: string,
+  gitlabBaseUrl?: string | null,
 ): Omit<NewProject, "id"> {
-  const source = resolveProjectSource(data);
+  const source = resolveProjectSource(data, gitlabBaseUrl);
 
   return {
     organizationId,
@@ -353,8 +359,14 @@ async function createProductionProject(
   data: TCreateProjectBody,
   slug: string,
   organizationId: string,
+  gitlabBaseUrl?: string | null,
 ) {
-  const { app, created: appCreated } = await ensureProjectApp(data, slug, organizationId);
+  const { app, created: appCreated } = await ensureProjectApp(
+    data,
+    slug,
+    organizationId,
+    gitlabBaseUrl,
+  );
   const routing = deriveNextProjectRouteState({
     slug,
   }, {
@@ -364,7 +376,7 @@ async function createProductionProject(
 
   try {
     const created = await repos.project.create(
-      buildProductionProjectInput(app.id, data, slug, routing, organizationId),
+      buildProductionProjectInput(app.id, data, slug, routing, organizationId, gitlabBaseUrl),
     );
     await persistProjectRouteState(created.id, routing.publicEndpoints);
     await persistMonorepoApps(created.id, data);
@@ -562,9 +574,11 @@ async function assertProjectQuota(organizationId: string): Promise<void> {
 export async function ensureProject(
   data: EnsureProjectBody,
   organizationId: string,
+  opts?: { gitlabBaseUrl?: string | null },
 ) {
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
+  const gitlabBaseUrl = opts?.gitlabBaseUrl;
 
   let project: Project | null = null;
   if (data.projectId) {
@@ -588,6 +602,7 @@ export async function ensureProject(
       data,
       desiredSlug,
       organizationId,
+      gitlabBaseUrl,
     );
     created = true;
   } else {
@@ -660,7 +675,7 @@ export async function ensureProject(
       const provider =
         (typeof update.gitProvider === "string" ? update.gitProvider : null) ??
         project.gitProvider;
-      const nextUrl = projectGitUrl(owner, repo, provider);
+      const nextUrl = projectGitUrl(owner, repo, provider, gitlabBaseUrl);
       if (nextUrl && nextUrl !== project.gitUrl) update.gitUrl = nextUrl;
     }
     if (data.rollbackWindow !== undefined) {
@@ -784,6 +799,7 @@ export async function getProject(projectId: string, organizationId: string) {
 export async function createProject(
   data: TCreateProjectBody,
   organizationId: string,
+  opts?: { gitlabBaseUrl?: string | null },
 ) {
   const slug = slugify(data.name);
 
@@ -792,7 +808,7 @@ export async function createProject(
   const existing = await findProjectByAppSlug(organizationId, slug);
   if (existing) throw new ConflictError(`Project "${data.name}" already exists`);
 
-  const p = await createProductionProject(data, slug, organizationId);
+  const p = await createProductionProject(data, slug, organizationId, opts?.gitlabBaseUrl);
 
   return enrichProject(p);
 }
@@ -803,6 +819,7 @@ export async function updateProject(
   projectId: string,
   data: TUpdateProjectBody,
   organizationId: string,
+  opts?: { gitlabBaseUrl?: string | null },
 ) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
@@ -823,7 +840,7 @@ export async function updateProject(
     const provider =
       typeof data.gitProvider === "string" ? data.gitProvider : p.gitProvider;
     if (owner && repo) {
-      update.gitUrl = projectGitUrl(owner, repo, provider);
+      update.gitUrl = projectGitUrl(owner, repo, provider, opts?.gitlabBaseUrl);
     }
   }
 

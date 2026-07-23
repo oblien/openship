@@ -38,6 +38,7 @@ import {
 import { canResolveTokenFor } from "../github/github.token";
 import { canResolveTokenFor as canResolveGitlabTokenFor } from "../gitlab/gitlab.token";
 import { isPublicGitlabProject } from "../gitlab/gitlab.http";
+import { resolveUserGitlabBaseUrl } from "../gitlab/gitlab.auth";
 import { canResolveServerGitCredential } from "../github/server-github.service";
 import { parseRepoUrl } from "../github/github.service";
 import { resolveRecords, lookupAddresses } from "../../lib/dns-resolver";
@@ -1290,7 +1291,12 @@ export async function runPreflightChecks(
     : null;
   const repoIsPublic = isGitlab
     ? opts?.gitlabProjectId
-      ? await isPublicGitlabProject(opts.gitlabProjectId)
+      ? await isPublicGitlabProject(
+          opts.gitlabProjectId,
+          opts?.ctx?.userId
+            ? await resolveUserGitlabBaseUrl(opts.ctx.userId)
+            : undefined,
+        )
       : false
     : ghRepo
       ? await isPublicRepo(ghRepo.owner, ghRepo.repo)
