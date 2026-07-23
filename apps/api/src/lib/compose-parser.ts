@@ -396,12 +396,14 @@ function interpolateComposeString(input: string, env: Record<string, string>): s
   const escapedDollar = "\0COMPOSE_ESCAPED_DOLLAR\0";
   const protectedInput = input.replace(/\$\$/g, escapedDollar);
 
-  const withBraced = protectedInput.replace(/\$\{([^}]+)\}/g, (_match, expression: string) =>
-    resolveInterpolationExpression(expression, env).value,
-  );
-
-  return withBraced
-    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, key: string) => env[key] ?? "")
+  return protectedInput
+    .replace(
+      /\$(?:\{([^}]+)\}|([A-Za-z_][A-Za-z0-9_]*))/g,
+      (_match, braced: string | undefined, bare: string | undefined) =>
+        braced !== undefined
+          ? resolveInterpolationExpression(braced, env).value
+          : (env[bare!] ?? ""),
+    )
     .replaceAll(escapedDollar, "$");
 }
 
