@@ -218,6 +218,18 @@ BAZ=qux
     });
   });
 
+  it("does NOT interpolate inside single-quoted values (literal)", () => {
+    expect(parseComposeEnvFile(`BASE=foo\nA='$BASE-bar'\nB='\${BASE}-bar'`)).toEqual({
+      BASE: "foo",
+      A: "$BASE-bar",
+      B: "${BASE}-bar",
+    });
+  });
+
+  it("keeps '$$' literal inside single-quoted values (no un-escaping)", () => {
+    expect(parseComposeEnvFile(`PWD='p@$$w0rd'`)).toEqual({ PWD: "p@$$w0rd" });
+  });
+
   it("handles CRLF line endings", () => {
     expect(parseComposeEnvFile("FOO=bar\r\nBAZ=qux\r\n")).toEqual({ FOO: "bar", BAZ: "qux" });
   });

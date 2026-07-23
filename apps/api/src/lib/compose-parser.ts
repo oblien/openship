@@ -333,6 +333,7 @@ function buildInterpolationEnv(options: ComposeParseOptions): Record<string, str
 
 export function parseComposeEnvFile(content: string): Record<string, string> {
   const result: Record<string, string> = {};
+  const literalKeys = new Set<string>();
 
   for (const rawLine of content.replace(/^\uFEFF/, "").split(/\r?\n/)) {
     let line = rawLine.trim();
@@ -345,35 +346,43 @@ export function parseComposeEnvFile(content: string): Record<string, string> {
     const key = line.slice(0, eqIdx).trim();
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
 
-    result[key] = parseEnvValue(line.slice(eqIdx + 1));
+    const parsed = parseEnvValue(line.slice(eqIdx + 1));
+    result[key] = parsed.value;
+    if (parsed.expand) literalKeys.delete(key);
+    else literalKeys.add(key);
   }
 
   for (const [key, value] of Object.entries(result)) {
+    if (literalKeys.has(key)) continue;
     result[key] = interpolateComposeString(value, result);
   }
 
   return result;
 }
 
-function parseEnvValue(rawValue: string): string {
+function parseEnvValue(rawValue: string): { value: string; expand: boolean } {
   const value = rawValue.trimStart();
-  if (!value) return "";
+  if (!value) return { value: "", expand: true };
 
   if (value.startsWith('"')) {
     const end = findClosingQuote(value, '"');
     const quoted = end >= 0 ? value.slice(1, end) : value.slice(1);
-    return quoted.replace(/\\([nrt"\\])/g, (_m, ch: string) =>
-      ch === "n" ? "\n" : ch === "r" ? "\r" : ch === "t" ? "\t" : ch,
-    );
+    return {
+      value: quoted.replace(/\\([nrt"\\])/g, (_m, ch: string) =>
+        ch === "n" ? "\n" : ch === "r" ? "\r" : ch === "t" ? "\t" : ch,
+      ),
+      expand: true,
+    };
   }
 
   if (value.startsWith("'")) {
     const end = findClosingQuote(value, "'");
-    return end >= 0 ? value.slice(1, end) : value.slice(1);
+    return { value: end >= 0 ? value.slice(1, end) : value.slice(1), expand: false };
   }
 
   const commentMatch = value.match(/\s+#/);
-  return (commentMatch?.index === undefined ? value : value.slice(0, commentMatch.index)).trimEnd();
+  const bare = commentMatch?.index === undefined ? value : value.slice(0, commentMatch.index);
+  return { value: bare.trimEnd(), expand: true };
 }
 
 function findClosingQuote(value: string, quote: '"' | "'"): number {
