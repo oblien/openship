@@ -37,6 +37,7 @@ import { notificationsRoutes } from "./modules/notifications/notifications.route
 import { updatesRoutes } from "./modules/updates/updates.routes";
 import { imageRoutes } from "./modules/images/images.routes";
 import { backupRoutes } from "./modules/backups/backup.routes";
+import { contactRoutes } from "./modules/contact/contact.routes";
 import { auditRoutes } from "./modules/audit/audit.routes";
 import { permissionsRoutes } from "./modules/permissions/permissions.routes";
 import { backupWebhookRoutes } from "./modules/backups/webhook.routes";
@@ -114,6 +115,7 @@ app.use("/api/auth/mcp/authorize", forceMcpConsent);
 
 /* ---------- Shared routes (self-hosted + cloud + desktop) ---------- */
 app.route("/api/health", healthRoutes);
+app.route("/api/contact", contactRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/projects", projectRoutes);
 app.route("/api/apps", appRoutes);
