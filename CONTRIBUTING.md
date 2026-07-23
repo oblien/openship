@@ -71,6 +71,20 @@ maintain their own strict TypeScript configurations.
 - **Code style**: Prettier - run `bun format` before committing
 - **Types**: TypeScript strict mode everywhere
 
+## Localization
+
+Dashboard dictionaries live in `apps/dashboard/src/i18n/locales/<locale>/`. When adding or
+updating a locale:
+
+1. Keep the same files, nested keys, and interpolation placeholders (for example `{name}`)
+   as the English dictionaries in `apps/dashboard/src/i18n/locales/en/`.
+2. Register the locale in `apps/dashboard/src/i18n/index.ts` and expose it in the dashboard
+   and onboarding language selectors.
+3. Add a translated README under `docs/i18n/README.<locale>.md`, then add its language badge
+   to the root README and every localized README.
+4. Preserve product names, commands, URLs, code blocks, and established technical terms.
+5. Run the dashboard tests, TypeScript check, and Prettier before submitting the change.
+
 ## API Module Pattern
 
 Each API module lives in `apps/api/src/modules/<name>/` and follows this structure:

@@ -1,0 +1,157 @@
+{
+  "page": {
+    "title": "Yeni Proje",
+    "subtitle": "Bir depoyu içe aktarın, bir URL yapıştırın veya bir şablondan başlayın",
+    "tabs": {
+      "folder": "Klasör",
+      "github": "GitHub",
+      "url": "Git URL'si",
+      "template": "Şablon"
+    }
+  },
+  "connect": {
+    "connectGithub": "GitHub'a Bağlan",
+    "manageInSettings": "Ayarlarda Yönet",
+    "terminal": {
+      "title": "GitHub'a Bağlan",
+      "checkConnection": "Bağlantıyı Kontrol Et",
+      "afterLogin": "Giriş yaptıktan sonra devam etmek için \"Bağlantıyı Kontrol Et\" butonuna tıklayın."
+    },
+    "deviceFlow": {
+      "title": "Bu kodu GitHub üzerinde girin",
+      "goToPrefix": "Adrese gidin: ",
+      "goToSuffix": "ve yukarıdaki kodu girin.",
+      "waiting": "Yetkilendirme bekleniyor…"
+    },
+    "default": {
+      "title": "Dağıtım yapmak için GitHub'a bağlanın",
+      "descSelfHosted": "Openship'in depolarınıza nasıl erişeceğini seçin.",
+      "descSaas": "Depolara göz atmak ve her push işleminde dağıtım yapmak için GitHub hesabınızı bağlayın.",
+      "recommended": "Önerilen",
+      "cloudApp": "Openship Bulut Uygulaması",
+      "cloudAppDesc": "Kısa ömürlü jetonlarla uzak sunuculara dağıtın.",
+      "connectCloud": "Openship Bulut'a Bağlan",
+      "localBuilds": "Yerel derlemeler",
+      "ghCli": "gh CLI ile giriş yapın",
+      "ghCliDesc": "Makinenizin GitHub girişini kullanın. Bulut gerekmez.",
+      "useGhCli": "gh CLI Kullan",
+      "connecting": "Bağlanılıyor…"
+    }
+  },
+  "folderUpload": {
+    "emptyFolder": "Bu klasör boş görünüyor (veya her şey yoksayıldı). Bir proje klasörü seçin.",
+    "uploadError": "Klasör yüklenemedi",
+    "stackTitle": "Ne dağıtıyorsunuz?",
+    "stackDesc": "Klasörünüz için teknoloji yığınını seçin — bu derleme ortamını belirler. Bir sonraki adımda yükleyeceksiniz.",
+    "backToStack": "Yığın seçimine dön",
+    "uploadTitle": "{stack} klasörünüzü yükleyin",
+    "uploadSubtitle": "Tarayıcınızda paketlenir — node_modules, .git ve derleme çıktıları atlanır",
+    "dropTitle": "Proje klasörünüzü sürükleyin veya göz atmak için tıklayın",
+    "dropSubtitle": "Tüm klasör bir {stack} uygulaması olarak yüklenir ve derlenir",
+    "filesSingular": "{count} dosya",
+    "filesPlural": "{count} dosya",
+    "clearSelection": "Seçimi temizle",
+    "packing": "Klasör paketleniyor…",
+    "uploading": "Yükleniyor…",
+    "continue": "Devam et"
+  },
+  "localProjects": {
+    "title": "Yerel Projeler",
+    "loading": "Yükleniyor...",
+    "projectCountSingular": "{count} proje",
+    "projectCountPlural": "{count} proje",
+    "import": "İçe Aktar",
+    "empty": {
+      "title": "Henüz yerel proje yok",
+      "description": "Yerel olarak taramak, derlemek ve dağıtmak için bilgisayarınızdan bir proje klasörünü içe aktarın",
+      "importProject": "Proje İçe Aktar",
+      "howItWorks": "Nasıl çalışır",
+      "dropTitle": "Bırakın veya göz atın",
+      "dropDesc": "Herhangi bir proje klasörünü seçin",
+      "autoDetectTitle": "Otomatik tespit",
+      "autoDetectDesc": "Framework ve yapılandırma bulundu",
+      "deployTitle": "Yerel olarak dağıtın",
+      "deployDesc": "Bilgisayarınızda derleyin ve çalıştırın"
+    },
+    "form": {
+      "title": "Klasörden içe aktar",
+      "scanErrorDefault": "Dizin taranamadı",
+      "dropTitle": "Bir klasörü buraya bırakın veya göz atmak için tıklayın",
+      "dropSubtitle": "Framework'ü otomatik tespit etmek için proje klasörünüzü seçin",
+      "folderViaBrowser": "Klasör tarayıcı üzerinden seçildi - lütfen tam mutlak yolu girin ve Tara'ya basın",
+      "folderDropped": "Klasör bırakıldı - lütfen tam mutlak yolu girin ve Tara'ya basın",
+      "pathPlaceholder": "/projenizin/tam/yolu",
+      "browse": "Göz at",
+      "scan": "Tara",
+      "importError": "Proje içe aktarılamadı",
+      "projectName": "Proje adı",
+      "detected": "Tespit Edildi",
+      "build": "Derleme:",
+      "install": "Yükleme:",
+      "output": "Çıktı:",
+      "start": "Başlatma:",
+      "importing": "İçe aktarılıyor...",
+      "importProject": "Proje İçe Aktar"
+    }
+  },
+  "repositoryList": {
+    "searchPlaceholder": "Depolarda ara...",
+    "visibility": {
+      "all": "Tümü",
+      "public": "Herkese açık",
+      "private": "Özel"
+    },
+    "sort": {
+      "recent": "En Son",
+      "name": "Ad",
+      "stars": "Yıldızlar"
+    },
+    "addAccount": "GitHub hesabı ekle",
+    "installTitle": "GitHub Uygulamasını Kur",
+    "installDesc": "Depolarınıza erişim izni vermek için GitHub Uygulamasını hesabınıza veya organizasyonunuza kurun.",
+    "installButton": "GitHub Uygulamasını Kur",
+    "noMatching": "Eşleşen depo yok",
+    "noRepos": "Depo bulunamadı",
+    "noMatchingDesc": "Farklı bir arama terimi deneyin veya filtrelerinizi ayarlayın",
+    "noReposDesc": "Bu hesabın henüz hiç deposu yok",
+    "privateBadge": "Özel",
+    "localOnly": "Yalnızca yerel",
+    "localOnlyTooltip": "Openship Uygulaması {owner} hesabında kurulu değil. Yalnızca yerel derleme yapılabilir — uzak dağıtımları etkinleştirmek için uygulamayı bu hesaba kurun.",
+    "repoCountSingular": "{count} depo",
+    "repoCountPlural": "{count} depo",
+    "matching": "\"{query}\" ile eşleşen",
+    "time": {
+      "justNow": "az önce",
+      "minutesAgo": "{n}dk önce",
+      "hoursAgo": "{n}sa önce",
+      "daysAgo": "{n}g önce",
+      "monthsAgo": "{n}ay önce"
+    }
+  },
+  "sidebar": {
+    "overview": "Genel Bakış",
+    "total": "Toplam",
+    "public": "Herkese açık",
+    "private": "Özel",
+    "quickTip": "Hızlı İpucu",
+    "quickTipDesc": "Anında dağıtmak için herhangi bir depoyu seçin. Her push işleminde otomatik dağıtımları yapılandırın.",
+    "connection": "Bağlantı",
+    "openshipGithubApp": "Openship GitHub Uygulaması",
+    "connected": "Bağlandı",
+    "notConnected": "Bağlı değil",
+    "ghCli": "gh CLI",
+    "runGhAuth": "`gh auth login` çalıştırın",
+    "openshipCloudApp": "Openship Bulut Uygulaması",
+    "checking": "Kontrol ediliyor…",
+    "notConnectedManage": "Bağlı değil — Ayarlar kısmında yönetin",
+    "optional": "İsteğe bağlı",
+    "footnote": "gh CLI üzerinden yerel kütüphane; uzak dağıtımlar kısa ömürlü jetonlar kullanır —",
+    "manageGithubSettings": "GitHub'ı Ayarlar kısmında yönetin"
+  },
+  "urlImport": {
+    "invalidUrl": "Geçerli bir GitHub depo URL'si girin",
+    "title": "Git URL'sinden İçe Aktar",
+    "description": "İçe aktarmak için herkese açık bir depo URL'si yapıştırın. GitHub bağlantısı gerekmez.",
+    "importButton": "Depoyu İçe Aktar"
+  }
+}
