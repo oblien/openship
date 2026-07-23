@@ -95,7 +95,7 @@ export function Hero() {
               </svg>
             </a>
             <a
-              href="/docs/quickstart"
+              href="/docs/getting-started/quickstart"
               className="th-btn-ghost group rounded-full px-7 py-3 text-[15px] font-medium"
             >
               Self host
