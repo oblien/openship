@@ -665,7 +665,8 @@
       "none": "Bu alan adı için eklenecek kayıt yok."
     },
     "verifyMissing": {
-      "both": "Ne CNAME ne de TXT kaydı henüz çözümlenmiyor — aşağıdaki kayıtları ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın.",
+      "both": "Ne yönlendirme ne de TXT kaydı henüz çözümlenmiyor — aşağıdaki kayıtları ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın.",
+      "a": "A kaydı henüz çözümlenmiyor — aşağıdan ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın.",
       "cname": "CNAME kaydı henüz çözümlenmiyor — aşağıdan ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın.",
       "txt": "TXT doğrulama kaydı henüz çözümlenmiyor — aşağıdan ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın."
     },

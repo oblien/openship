@@ -233,6 +233,7 @@ export async function verifyDomain(ctx: RequestContext, domainId: string) {
   if (domain.verified) {
     return {
       verified: true,
+      recordVerified: true,
       cnameVerified: true,
       txtVerified: true,
       message: "Already verified",
@@ -244,18 +245,24 @@ export async function verifyDomain(ctx: RequestContext, domainId: string) {
   const token = domain.verificationToken ?? generateToken(domain.hostname);
   const external = domain.externalIngress;
 
-  // 1. Routing record — cloud: CNAME via Oblien; self-hosted: A record. With
-  //    externally-managed ingress the hostname points at the user's own edge
-  //    (Cloudflare/LB), not this box — so there's nothing to check here;
-  //    ownership (TXT) alone gates activation.
-  const routeOk = external
-    ? true
+  // Check routing and ownership concurrently. Each DNS lookup can spend up to
+  // 5s on DoH and another 5s on the local-resolver fallback; running these
+  // sequentially can therefore exceed the dashboard's 15s request timeout.
+  //
+  // Routing record — cloud: CNAME via Oblien; self-hosted: A record. With
+  // externally-managed ingress the hostname points at the user's own edge
+  // (Cloudflare/LB), not this box — so there's nothing to check here;
+  // ownership (TXT) alone gates activation.
+  const routeCheck = external
+    ? Promise.resolve(true)
     : target === "cloud"
-      ? await verifyCname(domain.hostname)
-      : await verifyARecord(domain.hostname, project);
+      ? verifyCname(domain.hostname)
+      : verifyARecord(domain.hostname, project);
 
-  // 2. Ownership - TXT record with verification hash
-  const txtOk = await verifyTxt(domain.hostname, token);
+  const [routeOk, txtOk] = await Promise.all([
+    routeCheck,
+    verifyTxt(domain.hostname, token),
+  ]);
 
   if (routeOk && txtOk) {
     await repos.domain.markVerified(domainId);
@@ -280,6 +287,7 @@ export async function verifyDomain(ctx: RequestContext, domainId: string) {
       await repos.domain.updateSsl(domainId, { sslStatus: "external" });
       return {
         verified: true,
+        recordVerified: true,
         cnameVerified: true,
         txtVerified: true,
         message: "Domain verified — TLS is handled by your external ingress; no certificate is issued here.",
@@ -304,6 +312,7 @@ export async function verifyDomain(ctx: RequestContext, domainId: string) {
 
     return {
       verified: true,
+      recordVerified: true,
       cnameVerified: true,
       txtVerified: true,
       message: "Domain verified — SSL provisioning started",

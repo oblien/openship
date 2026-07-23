@@ -308,7 +308,7 @@ export const DomainSettings = () => {
   // After a failed verify, remember which record(s) still aren't resolving so
   // the pending card can name them and auto-open its DNS records. Keyed by row.
   const [verifyFailure, setVerifyFailure] = useState<
-    { domainId: string; cnameVerified: boolean; txtVerified: boolean } | null
+    { domainId: string; recordVerified: boolean; txtVerified: boolean } | null
   >(null);
   // Live port reachability of the active deployment (advisory) — drives the
   // per-card "nothing responded on port X" hint. [] = no signal → no hint.
@@ -654,11 +654,12 @@ export const DomainSettings = () => {
           t.projectSettings.domains.toast.verifiedTitle,
         );
       } else {
-        // 422 path. cnameVerified/txtVerified pinpoint what's still missing —
+        // 422 path. recordVerified/txtVerified pinpoint what's still missing —
         // stash it so the pending card names the record + opens its DNS panel.
         setVerifyFailure({
           domainId,
-          cnameVerified: !!result.cnameVerified,
+          // cnameVerified is the compatibility field returned by older APIs.
+          recordVerified: !!(result.recordVerified ?? result.cnameVerified),
           txtVerified: !!result.txtVerified,
         });
         showToast(
@@ -684,8 +685,8 @@ export const DomainSettings = () => {
   const verifyHintFor = (domainId?: string): string | null => {
     if (!domainId || verifyFailure?.domainId !== domainId) return null;
     const vm = t.projectSettings.domains.verifyMissing;
-    if (!verifyFailure.cnameVerified && !verifyFailure.txtVerified) return vm.both;
-    if (!verifyFailure.cnameVerified) return vm.cname;
+    if (!verifyFailure.recordVerified && !verifyFailure.txtVerified) return vm.both;
+    if (!verifyFailure.recordVerified) return selfHosted ? vm.a : vm.cname;
     if (!verifyFailure.txtVerified) return vm.txt;
     return null;
   };
@@ -2258,4 +2259,3 @@ function DnsRecordRow({
     </div>
   );
 }
-

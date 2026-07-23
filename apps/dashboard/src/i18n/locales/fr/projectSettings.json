@@ -652,8 +652,9 @@
       "none": "Aucun enregistrement à ajouter pour ce domaine."
     },
     "verifyMissing": {
-      "both": "Ni le CNAME ni le TXT ne sont encore résolus — ajoutez les enregistrements ci-dessous, attendez la propagation DNS, puis Vérifiez.",
-      "cname": "L'enregistrement CNAME n'est pas encore résolu — ajoutez-le ci-dessous, attendez la propagation DNS, puis Vérifiez.",
+      "both": "Ni l'enregistrement de routage ni le TXT ne sont encore résolus — ajoutez les enregistrements ci-dessous, attendez la propagation DNS, puis vérifiez.",
+      "a": "L'enregistrement A n'est pas encore résolu — ajoutez-le ci-dessous, attendez la propagation DNS, puis vérifiez.",
+      "cname": "L'enregistrement CNAME n'est pas encore résolu — ajoutez-le ci-dessous, attendez la propagation DNS, puis vérifiez.",
       "txt": "L'enregistrement TXT de vérification n'est pas encore résolu — ajoutez-le ci-dessous, attendez la propagation DNS, puis Vérifiez."
     },
     "portHint": {

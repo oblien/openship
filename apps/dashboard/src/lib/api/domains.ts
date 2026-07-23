@@ -3,6 +3,8 @@ import { endpoints } from "./endpoints";
 
 export interface DomainVerifyResult {
   verified: boolean;
+  recordVerified?: boolean;
+  /** @deprecated Compatibility alias for API versions before recordVerified. */
   cnameVerified?: boolean;
   txtVerified?: boolean;
   message?: string;
@@ -42,7 +44,7 @@ export const domainsApi = {
    *
    * Returns the verify result on BOTH success and failure — the backend
    * returns 422 with the same shape when verification fails so the UI
-   * can surface cnameVerified/txtVerified/message inline without a
+   * can surface recordVerified/txtVerified/message inline without a
    * second request. Any error other than 422 (network, 4xx, 5xx) is
    * re-thrown so callers can show a generic failure toast.
    */

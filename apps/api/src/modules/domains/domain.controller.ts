@@ -81,6 +81,7 @@ export async function verify(c: Context) {
     resourceId: id,
     after: {
       verified: result.verified,
+      recordVerified: result.recordVerified,
       cnameVerified: result.cnameVerified,
       txtVerified: result.txtVerified,
     },
@@ -88,7 +89,8 @@ export async function verify(c: Context) {
 
   // Failed verification returns 422 so the dashboard's React Query / fetch
   // wrapper can use the standard error path while still reading
-  // message/cnameVerified/txtVerified from the body. 200 on success.
+  // message/recordVerified/txtVerified from the body. cnameVerified remains a
+  // compatibility alias for older dashboard builds. 200 on success.
   return c.json(result, result.verified ? 200 : 422);
 }
 

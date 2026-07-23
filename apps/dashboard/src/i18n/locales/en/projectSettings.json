@@ -665,7 +665,8 @@
       "none": "No records to add for this domain."
     },
     "verifyMissing": {
-      "both": "Neither the CNAME nor the TXT record is resolving yet — add the records below, wait for DNS to propagate, then Verify.",
+      "both": "Neither the routing nor the TXT record is resolving yet — add the records below, wait for DNS to propagate, then Verify.",
+      "a": "The A record isn't resolving yet — add it below, wait for DNS to propagate, then Verify.",
       "cname": "The CNAME record isn't resolving yet — add it below, wait for DNS to propagate, then Verify.",
       "txt": "The TXT verification record isn't resolving yet — add it below, wait for DNS to propagate, then Verify."
     },
