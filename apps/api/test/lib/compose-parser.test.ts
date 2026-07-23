@@ -415,6 +415,29 @@ services:
     ]);
   });
 
+  it("folds long-form `bind.selinux` and `volume.nocopy` into their mode suffix", () => {
+    const parsed = parseComposeFile(`
+services:
+  app:
+    image: nginx
+    volumes:
+      - type: bind
+        source: /host/data
+        target: /data
+        bind:
+          selinux: Z
+      - type: volume
+        source: cache
+        target: /cache
+        volume:
+          nocopy: true
+`);
+    // Dropping these would collapse both to their bare "source:target" — the
+    // MODE_SUFFIX regex downstream (volume-namespace.ts) already recognizes
+    // z/Z/nocopy, same as :ro; the long form just never emitted them.
+    expect(parsed.services[0]?.volumes).toEqual(["/host/data:/data:Z", "cache:/cache:nocopy"]);
+  });
+
   it("throws on invalid YAML (callers wrap in try/catch)", () => {
     // parseComposeFile is expected to throw on syntax errors. The caller in
     // prepare.service.ts swallows the error and continues without services.

@@ -217,9 +217,22 @@ function parseVolumes(vols: unknown, env: Record<string, string>): string[] {
       const vol = v as Record<string, unknown>;
       const src = vol.source ?? vol.name;
       const tgt = vol.target;
-      // Long form carries read-only intent as a separate `read_only: true`
-      // field; fold it back into the ":ro" mode suffix the short form spells.
-      const mode = vol.read_only === true ? ":ro" : "";
+      // Long form carries read-only/selinux/nocopy intent as separate nested
+      // fields; fold them back into the single mode suffix the short-form
+      // string spells (the downstream MODE_SUFFIX regex in volume-namespace.ts
+      // only matches ONE flag, no combining — so read_only wins when more than
+      // one is set, since silently granting write access is the worse miss).
+      const bindOpts = vol.bind as Record<string, unknown> | undefined;
+      const volumeOpts = vol.volume as Record<string, unknown> | undefined;
+      const selinux = typeof bindOpts?.selinux === "string" ? bindOpts.selinux : undefined;
+      const mode =
+        vol.read_only === true
+          ? ":ro"
+          : volumeOpts?.nocopy === true
+            ? ":nocopy"
+            : selinux === "z" || selinux === "Z"
+              ? `:${selinux}`
+              : "";
       if (src && tgt) return `${src}:${tgt}${mode}`;
       if (tgt) return String(tgt);
     }
