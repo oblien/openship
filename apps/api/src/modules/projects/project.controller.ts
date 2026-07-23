@@ -1727,14 +1727,44 @@ export async function setAutoDeploy(c: Context) {
   }
 
   try {
-    if (strategy === "app") {
+    if (project.gitProvider === "gitlab") {
+      // GitLab has no App install dance — register a project Push Hook whenever
+      // we can reach a webhook URL. Prefer the project's webhookDomain when set
+      // (even if resolveWebhookStrategy short-circuits to "app" in GitHub App mode).
+      if (!enabled) {
+        await repos.project.update(id, { autoDeploy: false });
+      } else {
+        const gitlabProjectId = project.installationId;
+        if (!gitlabProjectId || !Number.isFinite(gitlabProjectId)) {
+          return c.json(
+            {
+              success: false,
+              error:
+                "GitLab project id is missing. Re-link the repository from Git settings, then try again.",
+            },
+            400,
+          );
+        }
+        const { registerWebhook: registerGitlabWebhook } = await import("../gitlab/gitlab.service");
+        const { sharedGitlabWebhookUrl, domainGitlabWebhookUrl } = await import(
+          "../../lib/public-url"
+        );
+        const webhookUrl = project.webhookDomain
+          ? domainGitlabWebhookUrl(project.webhookDomain)
+          : sharedGitlabWebhookUrl();
+        const result = await registerGitlabWebhook(ctx, gitlabProjectId, webhookUrl, {
+          projectId: project.id,
+        });
+        await repos.project.update(id, { autoDeploy: true, webhookId: result.hookId });
+      }
+    } else if (strategy === "app") {
       // GitHub App handles push events natively - just toggle the DB flag
       await repos.project.update(id, { autoDeploy: enabled });
     } else if (strategy === "domain") {
       // User has a verified domain - direct webhook delivery
       if (enabled) {
         // strategy === "domain" ⟹ webhookDomain is set (resolveWebhookStrategy).
-    const webhookUrl = domainWebhookUrl(project.webhookDomain!);
+        const webhookUrl = domainWebhookUrl(project.webhookDomain!);
         const webhookId = await ensureSharedWebhook(ctx, project, owner, repo, webhookUrl);
         if (!webhookId) {
           return c.json(
@@ -1778,17 +1808,29 @@ export async function setAutoDeploy(c: Context) {
         401,
       );
     }
+    if (msg.includes("No GitLab token")) {
+      return c.json(
+        {
+          success: false,
+          error: "GitLab is not connected. Connect GitLab in Settings (OAuth or PAT) first.",
+        },
+        401,
+      );
+    }
     if (msg.includes("404")) {
       await repos.project.update(id, { webhookId: null, autoDeploy: false });
       return c.json(
         {
           success: false,
-          error: "Webhook was deleted on GitHub. Try disabling and re-enabling auto-deploy.",
+          error:
+            project.gitProvider === "gitlab"
+              ? "Webhook was deleted on GitLab. Try disabling and re-enabling auto-deploy."
+              : "Webhook was deleted on GitHub. Try disabling and re-enabling auto-deploy.",
         },
         410,
       );
     }
-    if (msg.includes("403")) {
+    if (msg.includes("403") || msg.includes("lacks permission to register webhooks")) {
       return c.json(
         {
           success: false,
@@ -1891,8 +1933,12 @@ export async function setWebhookDomain(c: Context) {
 
   await repos.project.update(id, { webhookDomain: hostname });
 
-  const scheme = dom.sslStatus === "active" ? "https" : "http";
-  const webhookUrl = domainWebhookUrl(hostname, scheme);
+  const scheme = dom.sslStatus === "active" || dom.sslStatus === "external" ? "https" : "http";
+  const { domainGitlabWebhookUrl } = await import("../../lib/public-url");
+  const webhookUrl =
+    project.gitProvider === "gitlab"
+      ? domainGitlabWebhookUrl(hostname, scheme)
+      : domainWebhookUrl(hostname, scheme);
 
   audit.recordAsync(auditContextFrom(c, organizationId, userId), {
     eventType: "project.updated",
