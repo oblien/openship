@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 
 // A plain static import: schemas.ts pulls in only zod, with no transitive
 // reach into src/env, so there is nothing to sequence behind an await.

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, setSystemTime } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // A plain static import: rate-limit.ts is self-contained and never reaches
 // src/env, so there is no secret-writing side effect to sequence around.
@@ -15,12 +15,19 @@ function makeLimiter(...args: Parameters<CreateRateLimiter>): RateLimiter {
   return limiter;
 }
 
+// Fake timers drive both `Date.now()` and the GC `setInterval`, so the window
+// arithmetic and the sweep can be advanced deterministically instead of slept
+// through. Every case starts from a known epoch.
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 // Always restore the clock and stop timers, even when an assertion fails. A
 // leaked fake clock or GC interval can change the result of another test.
 afterEach(() => {
   for (const limiter of activeLimiters) limiter.destroy();
   activeLimiters.clear();
-  setSystemTime();
+  vi.useRealTimers();
 });
 
 describe("createRateLimiter", () => {
@@ -34,23 +41,23 @@ describe("createRateLimiter", () => {
   });
 
   it("rolls over at resetAt but not one millisecond before it", () => {
-    setSystemTime(10_000);
+    vi.setSystemTime(10_000);
     const limiter = makeLimiter({ windowMs: 100, max: 1 });
 
     expect(limiter.hit("user")).toEqual({ ok: true, remaining: 0, retryAfter: 0 });
-    setSystemTime(10_099);
+    vi.setSystemTime(10_099);
     // Expiring early gives an attacker an extra attempt inside the same window.
     expect(limiter.hit("user")).toEqual({ ok: false, remaining: 0, retryAfter: 1 });
-    setSystemTime(10_100);
+    vi.setSystemTime(10_100);
     expect(limiter.hit("user")).toEqual({ ok: true, remaining: 0, retryAfter: 0 });
   });
 
   it("never reports a zero retry delay while a rejected window is still live", () => {
-    setSystemTime(20_000);
+    vi.setSystemTime(20_000);
     const limiter = makeLimiter({ windowMs: 1000, max: 1 });
 
     limiter.hit("user");
-    setSystemTime(20_999);
+    vi.setSystemTime(20_999);
     // A zero retry value near rollover can make clients retry in a tight loop.
     expect(limiter.hit("user")).toEqual({ ok: false, remaining: 0, retryAfter: 1 });
   });
@@ -106,20 +113,30 @@ describe("createRateLimiter", () => {
     }
   });
 
-  it("GC removes expired buckets but keeps live buckets", async () => {
-    setSystemTime(30_000);
+  it("GC removes expired buckets but keeps live buckets", () => {
+    vi.setSystemTime(30_000);
     const limiter = makeLimiter({ windowMs: 10, max: 1 });
 
-    limiter.hit("expired");
-    setSystemTime(30_005);
-    limiter.hit("live");
-    setSystemTime(30_010);
-    await Bun.sleep(20);
-    setSystemTime(30_005);
+    limiter.hit("expired"); // resetAt 30_010
+
+    // `advanceTimersByTime` rather than `setSystemTime` for the steps: only
+    // the former moves the timer queue, and the GC interval has to actually
+    // fire. setSystemTime would move Date.now() while leaving the sweep
+    // pending, so nothing would be collected.
+    vi.advanceTimersByTime(5);
+    limiter.hit("live"); // resetAt 30_015
+
+    // Lands exactly on the interval (windowMs = 10), firing the sweep with
+    // only the first bucket at its deadline.
+    vi.advanceTimersByTime(5);
 
     // GC is a memory concern, not a correctness one: hit() checks expiry on
-    // its own. Rewinding below the old deadline proves GC removed only the
-    // expired bucket, while the live bucket still blocks a second hit.
+    // its own. Rewinding below the live bucket's deadline is what makes the
+    // two cases distinguishable — a swept bucket reads as fresh, while a
+    // retained one still blocks. Without the rewind, both would simply look
+    // expired and the assertion would prove nothing about the sweep.
+    vi.setSystemTime(30_005);
+
     expect(limiter.hit("expired")).toEqual({ ok: true, remaining: 0, retryAfter: 0 });
     expect(limiter.hit("live")).toEqual({ ok: false, remaining: 0, retryAfter: 1 });
   });

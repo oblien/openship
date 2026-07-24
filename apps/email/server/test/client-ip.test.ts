@@ -1,5 +1,21 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
+
+// `client-ip.ts` imports `hono/bun`, whose barrel also pulls in the SSG and
+// websocket adapters — those dereference the `Bun` global at module load, so
+// importing it under vitest's Node runtime throws `Bun is not defined` before
+// a single test runs. Only `getConnInfo` is actually used here, and its own
+// module is runtime-agnostic: it reads `env.server.requestIP(c.req.raw)`.
+// Re-implementing that one function keeps the real `clientIp` under test
+// (header precedence, trimming, and the throwing-fallback path are all its
+// own logic) while sidestepping the unrelated adapter side effects.
+vi.mock("hono/bun", () => ({
+  getConnInfo: (c: { env?: ConnectionEnv; req: { raw: Request } }) => {
+    const server = c.env?.server;
+    if (!server) throw new Error("env.server is not defined");
+    return { remote: server.requestIP(c.req.raw) ?? {} };
+  },
+}));
 
 import { clientIp } from "../src/lib/client-ip";
 
@@ -14,9 +30,9 @@ type ConnectionEnv = {
 // `Record<string, string>` rather than `HeadersInit`: the package compiles with
 // `lib: ["ES2022"]` and no DOM lib, so the global DOM alias isn't in scope here.
 //
-// Resolve the promise here rather than asserting through `.resolves`: Bun types
-// that matcher as returning void, so `await expect(...).resolves` awaits a
-// non-thenable and the assertion would still pass if it never ran.
+// Resolve the promise before asserting rather than going through `.resolves`:
+// that keeps the assertion on a plain value, so a matcher that silently no-ops
+// can't let a case pass without ever running.
 async function requestClientIp(headers?: Record<string, string>, env?: ConnectionEnv) {
   const app = new Hono();
   app.get("/", (c) => c.text(clientIp(c)));

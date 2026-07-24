@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 const INITIAL_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
