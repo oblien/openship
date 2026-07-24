@@ -574,7 +574,9 @@ export async function renewOrgCerts(ctx: RequestContext) {
   for (const p of projects.rows) {
     const domains = await repos.domain.listByProject(p.id);
     for (const d of domains) {
-      if (d.sslStatus !== "active" || !d.sslExpiresAt) continue;
+      // Include "error": a domain whose last renew failed still needs retrying,
+      // otherwise this org-wide sweep can't recover a stuck cert either.
+      if ((d.sslStatus !== "active" && d.sslStatus !== "error") || !d.sslExpiresAt) continue;
       const daysLeft = (new Date(d.sslExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
       if (daysLeft > 14) continue;
       try {
