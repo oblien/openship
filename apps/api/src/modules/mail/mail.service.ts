@@ -23,6 +23,13 @@ import {
   installCertbot,
 } from "@repo/adapters";
 
+// ─── Shell quoting helper ─────────────────────────────────────────────────────
+
+/** Single-quote a value for safe shell interpolation. */
+function sq(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 // ─── Engine source-of-truth ──────────────────────────────────────────────────
 
 /**
@@ -353,7 +360,7 @@ export async function stepSetHostname(
 
   log(stepId, "info", `Setting hostname to ${mailDomain}...`);
   try {
-    await exec.exec(`hostnamectl set-hostname ${mailDomain}`);
+    await exec.exec(`hostnamectl set-hostname ${sq(mailDomain)}`);
   } catch (err) {
     return { stepId, success: false, message: `Failed to set hostname: ${errMsg(err)}` };
   }
@@ -372,12 +379,14 @@ export async function stepUpdateHosts(
   const mailDomain = `mail.${domain}`;
   log(stepId, "info", "Checking /etc/hosts...");
 
-  const countStr = await exec.exec("grep -c '^127.0.1.1' /etc/hosts || echo 0");
+  const countStr = await exec.exec(`grep -c '^127.0.1.1' /etc/hosts || echo 0`);
   const hasEntry = parseInt(countStr.trim(), 10) > 0;
 
   if (hasEntry) {
+    const pattern = `^127\\.0\\.1\\.1.*${mailDomain}`;
     const correctStr = await exec.exec(
-      `grep -c '^127.0.1.1.*${mailDomain}' /etc/hosts || echo 0`,
+      `grep -c ${sq(pattern)} /etc/hosts || echo 0`,
+    );
     );
     if (parseInt(correctStr.trim(), 10) > 0) {
       log(stepId, "info", "/etc/hosts already configured correctly");
@@ -385,13 +394,15 @@ export async function stepUpdateHosts(
     }
 
     log(stepId, "info", "Updating existing 127.0.1.1 entry...");
+    const sedReplace = `s/^127\\.0\\.1\\.1.*/127.0.1.1 ${mailDomain} ${domain}/`;
     await exec.exec(
-      `sed -i 's/^127.0.1.1.*/127.0.1.1 ${mailDomain} ${domain}/' /etc/hosts`,
+      `sed -i ${sq(sedReplace)} /etc/hosts`,
     );
   } else {
     log(stepId, "info", "Adding 127.0.1.1 entry...");
+    const sedAppend = `/127.0.0.1/a 127.0.1.1 ${mailDomain} ${domain}`;
     await exec.exec(
-      `sed -i '/127.0.0.1/a 127.0.1.1 ${mailDomain} ${domain}' /etc/hosts`,
+      `sed -i ${sq(sedAppend)} /etc/hosts`,
     );
   }
 
@@ -1022,7 +1033,7 @@ export async function provisionDomainDkim(
   // amavisd genrsa exits non-zero if the file already exists; treat that
   // as success so re-runs are idempotent.
   await exec.exec(
-    `[ -s ${keyPath} ] || ${amavisBin} genrsa ${keyPath}`,
+    `[ -s ${sq(keyPath)} ] || ${amavisBin} genrsa ${sq(keyPath)}`,
   );
   await exec.exec(`chown -R amavis:amavis /var/lib/dkim 2>/dev/null || true`);
 
@@ -1043,7 +1054,7 @@ export async function provisionDomainDkim(
   );
 
   // ── Step 5: read the public key out ──────────────────────────────────
-  const showOutput = await exec.exec(`${amavisBin} showkeys ${newDomain} 2>&1`);
+  const showOutput = await exec.exec(`${amavisBin} showkeys ${sq(newDomain)} 2>&1`);
   const matches = showOutput.match(/"([^"]+)"/g);
   const dkimValue = matches
     ? matches.map((m: string) => m.replace(/"/g, "")).join("").replace(/\s+/g, "")
@@ -1151,7 +1162,7 @@ export async function stepRequestSSL(
 
   const cert = await streamCmd(
     exec,
-    `certbot certonly --standalone --agree-tos --register-unsafely-without-email -d ${mailDomain} --non-interactive 2>&1`,
+    `certbot certonly --standalone --agree-tos --register-unsafely-without-email -d ${sq(mailDomain)} --non-interactive 2>&1`,
     stepId, log,
   );
 

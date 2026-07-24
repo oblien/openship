@@ -157,6 +157,36 @@ async function sendEmail(
   });
 }
 
+/** Validate a webhook URL to prevent SSRF. */
+function assertPublicWebhookUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Webhook URL is malformed");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error("Webhook URL must use HTTPS");
+  }
+  const host = parsed.hostname.toLowerCase();
+  const blocked =
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host === "127.0.0.1" ||
+    host.endsWith(".local") ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^0\./.test(host) ||
+    host === "[::1]";
+  if (blocked) {
+    throw new Error(`Webhook URL targets a private or loopback host: ${host}`);
+  }
+}
+
 async function sendWebhook(
   delivery: NotificationDelivery,
   channel: NotificationChannel,
@@ -165,6 +195,7 @@ async function sendWebhook(
   if (!config?.url) {
     throw new Error("Webhook channel has no URL configured");
   }
+  assertPublicWebhookUrl(config.url);
 
   const payload = (delivery.payload ?? {}) as Record<string, unknown>;
   const body = JSON.stringify({

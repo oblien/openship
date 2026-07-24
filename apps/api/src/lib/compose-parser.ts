@@ -501,9 +501,11 @@ function resolveInterpolationExpression(
         return { value: fallback, source: "default", variable: key, defaultValue: fallback };
       }
     case ":?":
-      return { value: isNonEmpty ? value : "", source: isNonEmpty ? "env-file" : "missing", variable: key };
+      if (isNonEmpty) return { value, source: "env-file", variable: key };
+      throw new Error(word());
     case "?":
-      return { value: hasValue ? value : "", source: hasValue ? "env-file" : "missing", variable: key };
+      if (hasValue) return { value, source: "env-file", variable: key };
+      throw new Error(word());
     case ":+":
       if (!isNonEmpty) return { value: "", source: "missing", variable: key };
       {

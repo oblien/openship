@@ -1,6 +1,7 @@
 import type { Domain, Service } from "@repo/db";
 import { getRoutingBaseDomain } from "./routing-domains";
 import { resolveServicePort } from "./deployable-service";
+import { env } from "../config/env";
 
 // OpenResty management port (packages/adapters openresty-lua.ts OPENRESTY_MGMT_PORT).
 // Hardcoded here so this leaf module doesn't pull the adapters barrel or the
@@ -18,8 +19,8 @@ const OPENRESTY_MGMT_PORT = 9145;
  * process.env directly (raw, no validated `env` import) to keep this leaf light.
  */
 export function isReservedLoopbackPort(port: number): boolean {
-  const apiPort = Number(process.env.PORT) || 4000;
-  const dashboardPort = Number(process.env.OPENSHIP_DASHBOARD_PORT) || 3001;
+  const apiPort = env.PORT;
+  const dashboardPort = env.OPENSHIP_DASHBOARD_PORT;
   return port === apiPort || port === dashboardPort || port === OPENRESTY_MGMT_PORT;
 }
 
