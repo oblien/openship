@@ -248,3 +248,38 @@ describe("openship domain verify-ssl", () => {
     expect(JSON.parse(out)).toEqual(data);
   });
 });
+
+// ─── renew-all (org-wide) ────────────────────────────────────────────────────
+
+describe("openship domain renew-all", () => {
+  const RESULT = {
+    data: { renewed: 2, results: [
+      { domain: "a.example.com", status: "renewed" },
+      { domain: "b.example.com", status: "failed", error: "rate limited" },
+    ] },
+  };
+
+  it("POSTs /domains/renew-all and tabulates the per-domain results", async () => {
+    fetchStub = stubFetch(() => ({ json: RESULT }));
+    const { out, code } = await runCommand(domainCommand, ["renew-all"]);
+    expect(code).toBe(0);
+    expect(fetchStub.calls[0].method).toBe("POST");
+    expect(fetchStub.calls[0].url).toBe(`${API}/domains/renew-all`);
+    expect(out).toContain("b.example.com");
+    expect(out).toContain("rate limited");
+  });
+
+  it("notes when nothing needed renewal", async () => {
+    fetchStub = stubFetch(() => ({ json: { data: { renewed: 0, results: [] } } }));
+    const { err, code } = await runCommand(domainCommand, ["renew-all"]);
+    expect(code).toBe(0);
+    expect(err).toContain("Nothing needed renewal");
+  });
+
+  it("emits the renew-all result as JSON in json mode", async () => {
+    setJsonMode(true);
+    fetchStub = stubFetch(() => ({ json: RESULT }));
+    const { out } = await runCommand(domainCommand, ["renew-all"]);
+    expect(JSON.parse(out)).toEqual(RESULT.data);
+  });
+});
