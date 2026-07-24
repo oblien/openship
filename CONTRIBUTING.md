@@ -63,7 +63,7 @@ cd openship
 bun install --frozen-lockfile
 cp apps/api/.env.example apps/api/.env
 cp apps/dashboard/.env.example apps/dashboard/.env
-bun dev:local
+bun dev
 ```
 
 This starts the API and dashboard used for local development:
