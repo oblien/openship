@@ -67,16 +67,21 @@ export async function transferLocalDirectory(
  * Verify that a transfer via CommandExecutor actually produced files.
  * Checks for non-empty directory and the presence of at least one
  * expected marker file (package.json, index.html, etc.).
+ *
+ * Exported for testing.
  */
-async function verifyExecutorTransfer(
+export async function verifyExecutorTransfer(
   executor: CommandExecutor,
   targetPath: string,
   logger: BuildLogger,
 ): Promise<void> {
   // Quick check: is the target directory non-empty?
   try {
+    // `-mindepth 1` excludes the target directory itself. `-not -name '.'`
+    // only filters a literal `.`, which an absolute targetPath never is, so
+    // find always listed the directory and the count never reached 0.
     const countOutput = await executor.exec(
-      `find ${sq(targetPath)} -maxdepth 1 -not -name '.' | head -5 | wc -l`,
+      `find ${sq(targetPath)} -mindepth 1 -maxdepth 1 | head -5 | wc -l`,
     );
     const fileCount = parseInt(countOutput.trim(), 10);
     if (fileCount === 0) {

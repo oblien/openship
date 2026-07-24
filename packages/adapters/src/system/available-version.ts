@@ -69,9 +69,11 @@ async function probeCandidate(
     return out?.trim().split(/\s+/)[1]?.trim() ?? null;
   }
   if (pm === "apk") {
-    // `apk policy` prints the repo versions; the last indented line is newest.
+    // `apk policy` prints one `  <version>:` line per available version (colon at
+    // end of line), each followed by indented source lines (installed marker, repo
+    // URLs); the last version line is newest.
     const out = await tryExec(executor, `apk policy ${q} 2>/dev/null`);
-    const versions = [...(out?.matchAll(/^\s+([\w.+~-]+):/gm) ?? [])].map((m) => m[1]!);
+    const versions = [...(out?.matchAll(/^\s+([\w.+~-]+):\s*$/gm) ?? [])].map((m) => m[1]!);
     return versions.length ? versions[versions.length - 1]! : null;
   }
   return null;

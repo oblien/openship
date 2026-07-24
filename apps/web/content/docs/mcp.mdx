@@ -157,6 +157,12 @@ UI can flag a destructive call before it runs.
 | `get_github_repos` | `/api/github` | [GitHub API](/docs/api/github) |
 | `get_analytics` | `/api/analytics` | [Analytics API](/docs/api/analytics) |
 | `get_notifications_channels` | `/api/notifications` | [Notifications API](/docs/api/notifications) |
+| `get_settings`, `patch_settings_build_mode` | `/api/settings` | [Settings API](/docs/api/settings) |
+| `get_projects_by_projectId_backup_policies`, `post_backup_policies_by_policyId_run` | `/api/backups` | [Backups API](/docs/api/backups) |
+| `get_cloud_status`, `get_cloud_workspaces` | `/api/cloud` | [Cloud API](/docs/api/cloud) |
+| `get_jobs`, `post_jobs_by_key_run` | `/api/jobs` | [Jobs guide](/docs/guides/jobs) |
+| `get_apps_catalog`, `post_apps` | `/api/apps` | *(REST reference pending)* |
+| `get_updates`, `post_updates_scan` | `/api/updates` | [Updating Openship](/docs/guides/updating) |
 
 <Callout title="Credentials and auth are never exposed" type="info">
 The `tokens`, `auth`, and `mcp` modules are hard-blocked from ever becoming tools — a full-access MCP token

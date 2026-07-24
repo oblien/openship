@@ -736,7 +736,7 @@ const ProjectSettingsContent = () => {
       label: t.projects.help.joinCommunity,
       icon: <ExternalLink className="w-4 h-4" />,
       onClick: () => {
-        window.open("https://discord.gg/openship", "_blank");
+        window.open("https://discord.gg/Q9eWNCeXjg", "_blank");
       },
     },
   ];

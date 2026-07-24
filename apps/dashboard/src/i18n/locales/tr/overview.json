@@ -1,0 +1,152 @@
+{
+  "activity": {
+    "title": "Etkinlik",
+    "thisWeek": "bu hafta",
+    "deploymentSingular": "{count} dağıtım",
+    "deploymentPlural": "{count} dağıtım"
+  },
+  "apiRequests": {
+    "title": "API İstekleri",
+    "last7Days": "Son 7 gün",
+    "totalRequests": "Toplam istek",
+    "requestsTooltip": "{count} istek"
+  },
+  "credits": {
+    "title": "Kredi Bakiyesi",
+    "availableToUse": "Kullanılabilir bakiye",
+    "spentThisMonth": "Bu ay harcanan",
+    "add": "Ekle"
+  },
+  "deployments": {
+    "title": "Dağıtımlar",
+    "lastNDays": "son {period} gün",
+    "deploymentSingular": "{count} dağıtım",
+    "deploymentPlural": "{count} dağıtım"
+  },
+  "homeTip": {
+    "quickTip": "Hızlı İpucu",
+    "connectText": "Her push işleminde otomatik dağıtımlar için GitHub deponuzu bağlayın.",
+    "connectLabel": "GitHub'a Bağlan",
+    "createText": "Dağıtıma başlamak için ilk projenizi oluşturun.",
+    "createLabel": "Yeni Proje",
+    "settingsText": "Proje ayarlarında ortam değişkenlerini ve özel alan adlarını yapılandırın.",
+    "settingsLabel": "Proje Ayarları",
+    "connected": "Bağlı",
+    "tips": {
+      "envVars": {
+        "text": "Herhangi bir projeye şifrelenmiş ortam değişkenleri ve gizli veriler ekleyin.",
+        "label": "Projeleri aç"
+      },
+      "customDomain": {
+        "text": "Bir projeye özel alan adı yönlendirin — HTTPS otomatik sağlanır.",
+        "label": "Projeleri aç"
+      },
+      "autoDeploy": {
+        "text": "Her push işlemini otomatik dağıtmak için GitHub'ı bağlayın, CI yapılandırmanıza gerek kalmaz.",
+        "label": "Git ayarlarını aç"
+      },
+      "rollback": {
+        "text": "Tek tıkla önceki herhangi bir dağıtıma geri dönün.",
+        "label": "Dağıtımları görüntüle"
+      },
+      "apps": {
+        "text": "Gitea, n8n ve Metabase gibi kendi sunucunuzda barındırılan uygulamaları tek tıkla kurun.",
+        "label": "Uygulamalara göz at"
+      },
+      "servers": {
+        "text": "Kendi sunucularınızı SSH ile bağlayın ve buradan dağıtım yapın.",
+        "label": "Sunucuları yönet"
+      },
+      "jobs": {
+        "text": "Komutları cron görevleriyle zamanlayın — tekrar denemeler, canlı günlükler ve geçmiş dahil.",
+        "label": "Görevleri aç"
+      },
+      "backups": {
+        "text": "Veritabanlarınız ve disk birimleriniz için otomatik yedeklemeler kurun.",
+        "label": "Yedekleri yapılandır"
+      },
+      "mail": {
+        "text": "E-posta sunucunuzu ve webmail'inizi tamamen kendi sunucunuzda çalıştırın.",
+        "label": "E-posta kur"
+      },
+      "team": {
+        "text": "Ekip arkadaşlarınızı davet edin ve proje bazlı erişim yetkileri verin.",
+        "label": "Ekibi yönet"
+      }
+    }
+  },
+  "welcome": {
+    "title": "İlk projenizi başlatın",
+    "subtitle": "Bir depoyu bağlayın veya bir şablondan başlayın — Openship dakikalar içinde derler, dağıtır ve canlı URL sunar.",
+    "createProject": "Proje oluştur",
+    "importGithub": "GitHub'dan içe aktar",
+    "tipPrefix": "İpucu: İstediğiniz yere hızlıca geçmek için",
+    "tipSuffix": "tuşuna basın"
+  },
+  "header": {
+    "goodMorning": "Günaydın",
+    "goodAfternoon": "İyi günler",
+    "goodEvening": "İyi akşamlar",
+    "greetingWithName": "{greeting}, {name}",
+    "overview": "Genel Bakış",
+    "subtitle": "Platform kullanımınızı izleyin ve kaynakları yönetin",
+    "creditsBalance": "Kredi Bakiyesi",
+    "topUp": "Kredi Yükle"
+  },
+  "hero": {
+    "title": "Platform Etkinliği",
+    "subtitle": "Jeton kullanımı ve API istekleri",
+    "tokens": "Jetonlar",
+    "requests": "İstekler",
+    "lastNDays": "Son {period} gün",
+    "agents": "Ajanlar",
+    "environments": "Ortamlar",
+    "total": "Toplam",
+    "production": "Canlı ortam",
+    "testing": "Test",
+    "prodCount": "{count} canlı",
+    "testCount": "{count} test"
+  },
+  "projects": {
+    "title": "Projeler",
+    "activeDeployments": "Aktif dağıtımlar",
+    "total": "Toplam",
+    "live": "Yayında",
+    "building": "Derleniyor",
+    "needAttentionSingular": "{count} projenin müdahaleye ihtiyacı var",
+    "needAttentionPlural": "{count} projenin müdahaleye ihtiyacı var"
+  },
+  "sandboxes": {
+    "title": "Korumalı Alanlar (Sandboxes)",
+    "developmentEnvironments": "Geliştirme ortamları",
+    "totalSandboxes": "Toplam korumalı alan",
+    "active": "Aktif",
+    "runningCount": "{count} çalışıyor",
+    "stoppedCount": "{count} durdurulmuş"
+  },
+  "stats": {
+    "creditsBalance": "Kredi Bakiyesi",
+    "tokenUsage": "Jeton Kullanımı",
+    "thisMonth": "Bu ay",
+    "apiRequests": "API İstekleri",
+    "last7Days": "Son 7 gün",
+    "deployments": "Dağıtımlar",
+    "successfulCount": "{count} başarılı",
+    "activeProjects": "Aktif Projeler",
+    "sandboxes": "Korumalı Alanlar",
+    "activeCount": "{count} aktif"
+  },
+  "tokenUsage": {
+    "title": "Jeton Kullanımı",
+    "lastNDays": "son {period} gün",
+    "tokensTooltip": "{count} jeton"
+  },
+  "updates": {
+    "title": "Güncellemeler mevcut",
+    "updateAction": "Güncelle",
+    "updating": "Güncelleniyor…",
+    "newVersion": "Yeni sürüm",
+    "started": "{name} güncelleniyor…",
+    "failed": "Güncelleme başlatılamadı. Lütfen tekrar deneyin."
+  }
+}

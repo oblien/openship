@@ -232,6 +232,33 @@ export async function syncProjectRouteState(
  * Static-path routes (served straight from the web root) are left to the next
  * deploy — they have no live upstream to point at here.
  */
+export interface ReapplyProjectLiveRoutesOptions {
+  /**
+   * The self-app (control plane) project legitimately routes its public
+   * hostname to its OWN dashboard port on loopback — that's the whole point
+   * of self-deploy.ts. Only self-deploy.ts's own call sites may pass this;
+   * it must never be derived from `project.appTemplateId`, which is
+   * client-writable via the ordinary create/update project APIs and would
+   * let any project forge its way past the reserved-port guard.
+   */
+  isSelfApp?: boolean;
+}
+
+/**
+ * True when a resolved upstream must NOT be used for a public route: a
+ * loopback host pointed at a reserved control-plane/mgmt port (the admin
+ * API, the dashboard, or the unauthenticated OpenResty mgmt port) would
+ * expose an internal service to the internet. `isSelfApp` is the one
+ * exception — the control-plane project's own route to itself.
+ */
+export function shouldRefuseLoopbackRoute(
+  host: string,
+  port: number,
+  opts: ReapplyProjectLiveRoutesOptions = {},
+): boolean {
+  return isLoopbackHost(host) && isReservedLoopbackPort(port) && !opts.isSelfApp;
+}
+
 export async function reapplyProjectLiveRoutes(
   project: Pick<
     Project,
@@ -245,6 +272,7 @@ export async function reapplyProjectLiveRoutes(
     | "routeStrategy"
   >,
   previousHostnames: string[],
+  opts: ReapplyProjectLiveRoutesOptions = {},
 ): Promise<void> {
   const isCloud = !!project.cloudWorkspaceId;
   if (!isCloud && !project.activeDeploymentId) return;
@@ -317,9 +345,10 @@ export async function reapplyProjectLiveRoutes(
     // Never proxy a public route at a reserved control-plane/mgmt port on the
     // host loopback — that would expose the admin API (env.PORT) or the
     // unauthenticated OpenResty mgmt port (9145). Only guards loopback: a
-    // container's own bridge IP:<port> is the app's, not ours.
+    // container's own bridge IP:<port> is the app's, not ours. The self-app is
+    // exempt (see ReapplyProjectLiveRoutesOptions.isSelfApp).
     const m = url.match(/^https?:\/\/([^:/]+):(\d+)$/);
-    if (m && isLoopbackHost(m[1]) && isReservedLoopbackPort(Number(m[2]))) {
+    if (m && shouldRefuseLoopbackRoute(m[1], Number(m[2]), opts)) {
       console.warn(
         `[project-route] ${project.slug}: refusing reserved loopback upstream port ${m[2]} for a public route`,
       );

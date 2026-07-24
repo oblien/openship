@@ -241,7 +241,7 @@ export async function provisionSelfAppEdge(
     return { verified: false, reason: "no_project" };
   }
   try {
-    await reapplyProjectLiveRoutes(project, []);
+    await reapplyProjectLiveRoutes(project, [], { isSelfApp: true });
   } catch (err) {
     log?.(safeErrorMessage(err), "error");
     progress.onStep?.("route", "failed");
@@ -360,7 +360,7 @@ export function registerSelfAdoptReconcile(): void {
         const blocked = (await foreignProxyBlocksEdge((m) => console.warn(`[self-deploy] ${m}`))).blocked;
         if (fresh && !blocked) {
           try {
-            await reapplyProjectLiveRoutes(fresh, []);
+            await reapplyProjectLiveRoutes(fresh, [], { isSelfApp: true });
           } catch (err) {
             console.warn(`[self-deploy] route reapply failed: ${safeErrorMessage(err)}`);
           }

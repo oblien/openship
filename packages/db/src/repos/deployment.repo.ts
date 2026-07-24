@@ -1,7 +1,7 @@
 import { eq, and, desc, gte, lte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { deployment, buildSession } from "../schema";
+import { deployment, buildSession, project } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,6 +86,32 @@ export function createDeploymentRepo(db: Database) {
         .where(eq(deployment.organizationId, organizationId));
 
       return { rows, total: Number(total), page, perPage };
+    },
+
+    /**
+     * Deployment counts grouped by status across every non-deleted project
+     * in an organization. One aggregate query — powers the dashboard home
+     * stats without walking projects one by one. Joins through `project`
+     * (rather than using deployment.organizationId directly) so deployments
+     * of soft-deleted projects stay out of the counts, matching what the
+     * org-scoped project listings show.
+     */
+    async countByStatusForOrganization(
+      organizationId: string,
+    ): Promise<Record<string, number>> {
+      const rows = await db
+        .select({
+          status: deployment.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(deployment)
+        .innerJoin(project, eq(deployment.projectId, project.id))
+        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt)))
+        .groupBy(deployment.status);
+
+      const out: Record<string, number> = {};
+      for (const r of rows) out[r.status] = Number(r.count);
+      return out;
     },
 
     /**

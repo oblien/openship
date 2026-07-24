@@ -128,7 +128,7 @@ export function Footer() {
             </a>
             {/* Discord */}
             <a
-              href="https://discord.gg/openship"
+              href="https://discord.gg/Q9eWNCeXjg"
               target="_blank"
               rel="noopener noreferrer"
               className="th-text-muted transition-colors hover:text-[var(--th-text-strong)]"

@@ -1,0 +1,202 @@
+{
+  "home": {
+    "goodMorning": "Günaydın",
+    "goodAfternoon": "İyi günler",
+    "goodEvening": "İyi akşamlar",
+    "subtitle": "Projelerinizde olan bitenler burada",
+    "statsProjects": "Projeler",
+    "statsDeployments": "Dağıtımlar",
+    "statsSuccessful": "Başarılı",
+    "statsFailed": "Başarısız",
+    "recentProjects": "Son Projeler",
+    "yourLatestActivity": "Son etkinlikleriniz",
+    "viewAll": "Hepsini görüntüle",
+    "noProjectsYet": "Henüz proje yok",
+    "createFirstProject": "İlk projenizi oluşturun",
+    "justNow": "az önce",
+    "minutesAgo": "{n}dk önce",
+    "hoursAgo": "{n}sa önce",
+    "daysAgo": "{n}g önce",
+    "monthsAgo": "{n}ay önce",
+    "statusLive": "Yayında",
+    "statusPaused": "Duraklatıldı",
+    "yourProjects": "Projeleriniz",
+    "loading": "Yükleniyor...",
+    "projectCountOne": "{count} proje",
+    "projectCountOther": "{count} proje",
+    "viewAllProjects": "Tüm {count} projeyi görüntüle →",
+    "greetingName": "{greeting}, {name}",
+    "importGit": "Git'ten İçe Aktar",
+    "importGitDesc": "Depodan",
+    "mcpDeploy": "MCP Dağıtımı",
+    "mcpDeployDesc": "Yapay zeka ajanı bağla",
+    "settingsCard": "Ayarlar",
+    "settingsCardDesc": "Hesap ve ekip",
+    "docs": "Dokümanlar",
+    "docsDesc": "Daha fazla bilgi edinin",
+    "activityTitle": "Etkinlik",
+    "successRate": "Başarı oranı",
+    "recentTitle": "Son",
+    "activityEmpty": "Etkinlikleriniz burada görünecek",
+    "appsEmptyTitle": "Henüz uygulama yok",
+    "appsEmptyDesc": "Tek tıkla, tamamen kendi sunucunuzda barındırılan veritabanları, otomasyon araçları, analitik çözümleri, şifre kasaları ve daha fazlası.",
+    "allSystemsOperational": "Tüm sistemler çalışır durumda",
+    "runningSmoothly": "Projeleriniz sorunsuz çalışıyor",
+    "time": {
+      "justNow": "az önce",
+      "minutes": "{n}dk önce",
+      "hours": "{n}sa önce",
+      "days": "{n}g önce",
+      "months": "{n}ay önce"
+    }
+  },
+  "nav": {
+    "home": "Ana Sayfa",
+    "new-project": "Yeni Proje",
+    "projects": "Projeler",
+    "apps": "Uygulamalar",
+    "deployments": "Dağıtımlar",
+    "backups": "Yedekler",
+    "domains": "Alan Adları",
+    "monitoring": "İzleme",
+    "servers": "Sunucular",
+    "emails": "E-postalar",
+    "jobs": "Görevler",
+    "settings": "Ayarlar",
+    "billing": "Faturalandırma",
+    "sections": {
+      "main": "Ana Menü",
+      "settings": "Ayarlar",
+      "infrastructure": "Altyapı",
+      "account": "Hesap"
+    }
+  },
+  "sidebar": {
+    "expand": "Kenar çubuğunu genişlet",
+    "collapse": "Kenar çubuğunu daralt"
+  },
+  "user": {
+    "logout": "Çıkış Yap",
+    "loggingOut": "Çıkış yapılıyor…",
+    "profile": "Profil",
+    "preferences": "Tercihler"
+  },
+  "pages": {
+    "apps": {
+      "title": "Uygulamalar",
+      "description": "Tek tıkla yönetilen servisler — Convex, WordPress, e-posta ve daha fazlasını kurun ve çalıştırın.",
+      "createButton": "Uygulama Kur",
+      "loading": "Uygulamalar yükleniyor…",
+      "countOne": "{count} uygulama kurulu",
+      "countOther": "{count} uygulama kurulu",
+      "emptyTitle": "İlk uygulamanızı kurun",
+      "emptyDescription": "Convex, n8n, Ghost ve daha fazlasını tek tıkla, tamamen kendi sunucunuzda çalıştırın. Başlamak için birini seçin.",
+      "popular": "Popüler uygulamalar",
+      "alsoDeploy": "Ayrıca dağıtabilirsiniz",
+      "browseAll": "Tüm uygulamalara göz atın",
+      "catalogTitle": "Uygulama kur",
+      "catalogDescription": "Tek tıkla yönetilen servisler. Kurmak için bir uygulama seçin.",
+      "catalogSearchPlaceholder": "Uygulama ara…",
+      "catalogNoResults": "Aramanızla eşleşen uygulama bulunamadı.",
+      "categories": {
+        "all": "Tümü",
+        "backend": "Backend",
+        "database": "Veritabanı",
+        "cms": "İçerik Yönetimi (CMS)",
+        "analytics": "Analitik",
+        "automation": "Otomasyon",
+        "mail": "E-posta",
+        "other": "Araçlar"
+      },
+      "installing": "Kuruluyor…",
+      "install": "Kur",
+      "cancel": "İptal",
+      "nameLabel": "Ad",
+      "configTitle": "{app} yapılandır",
+      "comingSoon": "Yakında"
+    },
+    "projects": {
+      "title": "Projeler",
+      "description": "Uygulamalarınızı kolayca dağıtın ve yönetin",
+      "createButton": "Proje Oluştur",
+      "stats": {
+        "totalProjects": "Toplam Proje",
+        "liveNow": "Şu An Yayında",
+        "avgPerDay": "Günlük Ortalama",
+        "successRate": "Başarı Oranı"
+      },
+      "searchPlaceholder": "Projelerde ara...",
+      "pinnedProjects": "Sabitlenen Projeler",
+      "otherProjects": "Diğer Projeler",
+      "noResultsFound": "\"{query}\" ile eşleşen proje bulunamadı",
+      "emptyState": {
+        "title": "İlk projenize başlayın",
+        "description": "Bir Git deposunu içe aktarın, şablon kullanın veya CLI üzerinden dağıtın. Projeleriniz burada görünecek.",
+        "createProject": "Proje Oluştur",
+        "browseTemplates": "Şablonlara Göz At",
+        "zeroConfig": "Sıfır yapılandırmalı dağıtım",
+        "instant": "Anında",
+        "instantDesc": "Saniyeler içinde dağıtın",
+        "global": "Küresel",
+        "globalDesc": "100+ edge bölgesi",
+        "previews": "Önizlemeler",
+        "previewsDesc": "Dal başına URL",
+        "rollbacks": "Geri almalar",
+        "rollbacksDesc": "Tek tıkla geri alma",
+        "commandPalette": "Veya komut paletini açmak için {key} tuşuna basın"
+      }
+    },
+    "deployments": {
+      "title": "Dağıtımlar",
+      "description": "Dağıtım geçmişinizi görüntüleyin ve yönetin."
+    },
+    "domains": {
+      "title": "Alan Adları",
+      "description": "Özel alan adlarını ve DNS kayıtlarını yönetin."
+    },
+    "monitoring": {
+      "title": "İzleme",
+      "description": "Servisleriniz için günlükler, metrikler ve sağlık kontrolleri."
+    },
+    "servers": {
+      "title": "Sunucular",
+      "description": "Dağıtım sunucularınızı ve altyapınızı yönetin."
+    },
+    "settings": {
+      "title": "Ayarlar",
+      "description": "Hesap, ekip ve platform ayarları."
+    },
+    "billing": {
+      "title": "Faturalandırma",
+      "description": "Abonelik, kullanım ve ödeme yöntemlerinizi yönetin."
+    }
+  },
+  "quickLinks": {
+    "title": "Hızlı İşlemler",
+    "subtitle": "Yaygın görevlere hızlıca geçin",
+    "deployProject": {
+      "title": "Proje Dağıt",
+      "description": "Git'ten aktar"
+    },
+    "projects": {
+      "title": "Projeler",
+      "description": "Tüm projeler"
+    },
+    "deployments": {
+      "title": "Dağıtımlar",
+      "description": "Derleme geçmişi"
+    },
+    "settings": {
+      "title": "Ayarlar",
+      "description": "Erişimi yönet"
+    },
+    "domains": {
+      "title": "Alan Adları",
+      "description": "Özel alan adları"
+    },
+    "billing": {
+      "title": "Faturalandırma",
+      "description": "Kullanım ve planlar"
+    }
+  }
+}

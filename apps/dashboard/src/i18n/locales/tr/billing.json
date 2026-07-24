@@ -1,0 +1,190 @@
+{
+  "header": {
+    "credits": "Krediler",
+    "creditsSuffix": "toplam {limit}",
+    "overQuota": "Kullanım kotası aşıldı",
+    "bandwidth": "Bant Genişliği",
+    "bandwidthNote": "gelen + giden trafik",
+    "build": "Derleme süresi",
+    "min": "dk",
+    "capacity": "Kapasite",
+    "workspaces": "çalışma alanı",
+    "vcpus": "vCPU",
+    "ram": "RAM",
+    "diskCap": "disk"
+  },
+  "tabs": {
+    "overview": "Genel Bakış",
+    "usage": "Kullanım",
+    "plans": "Planlar",
+    "topups": "Kredi Yükleme",
+    "payment": "Ödeme Yöntemi",
+    "invoices": "Faturalar"
+  },
+  "portal": {
+    "openButton": "Stripe Portalını Aç",
+    "errorMissingUrl": "Yanıtta portal URL'si bulunamadı",
+    "errorOpenFailed": "Stripe portalı açılamadı"
+  },
+  "unavailable": {
+    "notConnected": {
+      "title": "Faturalandırmayı yönetmek için Openship Bulut'a bağlanın",
+      "description": "Yerel Openship kurulumunuz henüz Openship Bulut'a bağlı değil. Abonelik durumunu, kullanımı, faturaları ve kredi yüklemelerini görüntülemek için bağlanın.",
+      "connect": "Openship Bulut'a Bağlan",
+      "connecting": "Giriş yapılması bekleniyor…"
+    },
+    "sessionExpired": {
+      "title": "Openship Bulut oturumunuzun süresi doldu",
+      "description": "Hâlâ bağlısınız ancak Openship Bulut tarafından sağlanan oturum jetonu artık geçerli değil. Yenilemek için yeniden bağlanın — önce bağlantıyı kesmeniz gerekmez.",
+      "reconnect": "Openship Bulut'a Tekrar Bağlan",
+      "connecting": "Giriş yapılması bekleniyor…"
+    },
+    "unreachable": {
+      "title": "Openship Bulut faturalandırma servisine ulaşılamadı",
+      "description": "Bulut oturumunuzun süresi dolmuş olabilir veya bulut servisi geçici olarak kullanılamıyor olabilir. Tekrar deneyin ya da Ayarlar → Bulut bölümünden tekrar bağlanın.",
+      "tryAgain": "Tekrar dene",
+      "reconnect": "Tekrar Bağlan"
+    },
+    "notEnabled": {
+      "title": "Bu organizasyon için faturalandırma etkin değil",
+      "description": "Faturalandırma yapılandırılmış ancak bu organizasyon için aktif değil. Etkinleştirmek için yöneticinizle iletişime geçin."
+    }
+  },
+  "plansRoute": {
+    "loadError": "Planlar yüklenemedi",
+    "genericError": "Bir sorun oluştu",
+    "tryAgain": "Tekrar dene",
+    "checkoutError": "Ödeme adımı başlatılamadı"
+  },
+  "pricing": {
+    "custom": "Özel",
+    "comingSoon": "Yakında",
+    "mostPopular": "En popüler",
+    "currentPlan": "Mevcut plan",
+    "contactSales": "Satış ekibiyle iletişime geçin",
+    "freeForever": "Sonsuza kadar ücretsiz",
+    "upgrade": "Yükselt"
+  },
+  "topups": {
+    "loadError": "Kredi paketleri yüklenemedi",
+    "title": "Kredi yükle",
+    "description": "Stripe üzerinden ücretlendirilen tek seferlik kredi paketleri. Kredilerin süresi dolmaz ve aylık kotanıza eklenir.",
+    "tryAgain": "Tekrar dene",
+    "credits": "kredi",
+    "redirecting": "Yönlendiriliyor…",
+    "buy": "Satın Al",
+    "empty": "Şu anda kullanılabilir kredi paketi yok.",
+    "receiptsTitle": "Son kredi yüklemeleri",
+    "receiptsDescription": "Makbuzlar Stripe üzerinden yönetilir — fatura geçmişinizi görüntülemek ve makbuzları indirmek için faturalandırma portalını açın.",
+    "opening": "Açılıyor…",
+    "openPortal": "Stripe Portalını Aç",
+    "checkoutError": "Ödeme adımı başlatılamadı",
+    "portalError": "Faturalandırma portalı açılamadı"
+  },
+  "overview": {
+    "creditsLeft": "kalan kredi",
+    "planLabel": "{name} planı",
+    "usedThisPeriod": "Bu dönemde kullanılan",
+    "resets": "Yenilenme",
+    "resetsInDay": "{n} gün içinde",
+    "resetsInDays": "{n} gün içinde",
+    "none": "—",
+    "upgradeToPro": "Pro Plana Yükselt",
+    "recentActivity": "Son etkinlikler",
+    "last7Days": "Son 7 gün",
+    "viewFullUsage": "Tüm kullanımı görüntüle",
+    "noUsageYet": "Henüz kullanım yok",
+    "usageError": "Kullanım bilgileri yüklenemedi",
+    "needMoreCredits": "Daha fazla krediye mi ihtiyacınız var?",
+    "oneTimeTopups": "Abonelik değişikliği gerektirmeyen tek seferlik kredi yüklemeleri",
+    "seeAllPacks": "Tüm paketleri gör",
+    "packsError": "Paketler yüklenemedi",
+    "noPacks": "Kredi paketi bulunamadı.",
+    "creditsAmount": "{n} kredi",
+    "oneTime": "{price} tek seferlik",
+    "buy": "Satın Al",
+    "checkoutError": "Ödeme adımı başlatılamadı"
+  },
+  "usage": {
+    "loadError": "Kullanım bilgileri yüklenemedi",
+    "kpi": {
+      "balance": "Bakiye",
+      "balanceSuffix": "toplam {limit} kredi",
+      "consumed": "Bu dönemde tüketilen",
+      "credits": "kredi",
+      "burnRate": "Tüketim hızı",
+      "burnRateSuffix": "kredi/gün (son 7 gün)",
+      "projected": "Dönem sonu kullanım tahmini",
+      "noPeriod": "dönem belirlenmedi"
+    },
+    "granularity": {
+      "day": "gün",
+      "week": "hafta"
+    },
+    "chart": {
+      "title": "Zaman içindeki kullanım",
+      "subtitle": "Her {unit} için ölçülen birimler yığılmış olarak gösterilir."
+    },
+    "breakdown": {
+      "title": "Kaynak dağılımı",
+      "subtitle": "Krediler, seçilen aralıktaki ölçülmüş kaynak kullanımına orantılı olarak dağıtılır.",
+      "resource": "Kaynak",
+      "units": "Birimler",
+      "credits": "Krediler",
+      "percentOfTotal": "Toplam içindeki pay (%)",
+      "loading": "Yükleniyor…",
+      "empty": "Seçilen aralıkta kullanım bulunamadı."
+    },
+    "resources": {
+      "cpu": { "label": "CPU süresi", "units": "vCPU-saat" },
+      "memory": { "label": "Bellek", "units": "GB-saat" },
+      "disk": { "label": "Disk G/Ç", "units": "GB" },
+      "network": { "label": "Ağ", "units": "GB" }
+    },
+    "toolbar": {
+      "workspace": "Çalışma Alanı",
+      "workspaceTooltip": "Çalışma alanı bazlı detaylı raporlama v1.1 sürümünde gelecektir",
+      "allWorkspaces": "Tüm çalışma alanları",
+      "to": "-"
+    },
+    "empty": "Seçilen aralık için kullanım verisi yok."
+  },
+  "chart": {
+    "cpu": "CPU",
+    "memory": "Bellek",
+    "diskIo": "Disk G/Ç",
+    "network": "Ağ",
+    "weekTick": "{n}. hafta"
+  },
+  "layout": {
+    "title": "Faturalandırma",
+    "subtitle": "Aboneliğinizi, kullanımınızı ve ödeme yöntemlerinizi yönetin."
+  },
+  "sidebar": {
+    "planSuffix": "{name} Planı",
+    "status": "Durum",
+    "statusInactive": "Pasif",
+    "upgradeTo": "{name} Planına Yükselt",
+    "contactSales": "Satış ekibiyle iletişime geçin",
+    "freeForever": "Sonsuza kadar ücretsiz",
+    "perMonth": "${price}/ay",
+    "statuses": {
+      "active": "Aktif",
+      "trialing": "Deneme Sürecinde",
+      "past_due": "Ödemesi Gecikmiş",
+      "canceled": "İptal Edildi",
+      "incomplete": "Tamamlanmamış",
+      "incomplete_expired": "Süresi Doldu",
+      "unpaid": "Ödenmemiş",
+      "paused": "Duraklatıldı"
+    }
+  },
+  "paymentPanel": {
+    "title": "Ödeme yöntemi",
+    "description": "Kartlar, banka hesapları ve faturalandırma bilgileri Stripe Müşteri Portalı üzerinden yönetilir. Ödeme yöntemlerinizi eklemek, kaldırmak veya güncellemek için portalı açın."
+  },
+  "invoicesPanel": {
+    "title": "Faturalar",
+    "description": "Faturalar ve makbuzlar Stripe Müşteri Portalı'nda yer alır. Fatura geçmişinizi görüntülemek ve PDF faturalarınızı indirmek için portalı açın."
+  }
+}

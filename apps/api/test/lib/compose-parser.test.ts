@@ -126,6 +126,24 @@ services:
     expect(parsed.services[0]?.command).toBe("echo $BETTER_AUTH_SECRET");
     expect(parsed.services[0]?.environment.LITERAL).toBe("$BETTER_AUTH_SECRET");
   });
+
+  it("does not re-interpolate a '$' inside a resolved value embedded in a larger string", () => {
+    const parsed = parseComposeFile(
+      `
+services:
+  app:
+    environment:
+      DIRECT: \${DB_PASS}
+      EMBEDDED: postgres://user:\${DB_PASS}@db:5432/app
+`,
+      { envFileContent: `DB_PASS='p$ss'\n` },
+    );
+
+    expect(parsed.services[0]?.environment).toEqual({
+      DIRECT: "p$ss",
+      EMBEDDED: "postgres://user:p$ss@db:5432/app",
+    });
+  });
 });
 
 // ─── parseComposeEnvFile - direct .env content scenarios ─────────────────────
@@ -169,6 +187,14 @@ BAZ=qux
     expect(parseComposeEnvFile(`MSG='line1\\nline2'`)).toEqual({ MSG: "line1\\nline2" });
   });
 
+  it("treats an escaped backslash as a literal `\\` before the next char", () => {
+    expect(parseComposeEnvFile(String.raw`WINPATH="C:\\nginx\\conf"`)).toEqual({
+      WINPATH: "C:\\nginx\\conf",
+    });
+    expect(parseComposeEnvFile(String.raw`X="a\\nb"`)).toEqual({ X: "a\\nb" });
+    expect(parseComposeEnvFile(String.raw`Y="a\nb"`)).toEqual({ Y: "a\nb" });
+  });
+
   it("accepts 'export' prefix (POSIX shell convention)", () => {
     expect(parseComposeEnvFile(`export FOO=bar\nexport BAZ="qux qux"`)).toEqual({
       FOO: "bar",
@@ -208,6 +234,25 @@ BAZ=qux
       BASE: "foo",
       FULL: "foo-bar",
     });
+  });
+
+  it("does NOT interpolate inside single-quoted values (literal)", () => {
+    expect(parseComposeEnvFile(`BASE=foo\nA='$BASE-bar'\nB='\${BASE}-bar'`)).toEqual({
+      BASE: "foo",
+      A: "$BASE-bar",
+      B: "${BASE}-bar",
+    });
+  });
+
+  it("does not re-interpolate a literal '$' carried in by an interpolated entry", () => {
+    expect(parseComposeEnvFile(`PW='a$bc'\nURL=x\${PW}y`)).toEqual({
+      PW: "a$bc",
+      URL: "xa$bcy",
+    });
+  });
+
+  it("keeps '$$' literal inside single-quoted values (no un-escaping)", () => {
+    expect(parseComposeEnvFile(`PWD='p@$$w0rd'`)).toEqual({ PWD: "p@$$w0rd" });
   });
 
   it("handles CRLF line endings", () => {
@@ -305,6 +350,47 @@ services:
     expect(parsed.services[0]?.ports).toEqual(["80:80", "443:443"]);
   });
 
+  it("folds long-form `host_ip` into the leading `<ip>:` (loopback publish stays private)", () => {
+    const parsed = parseComposeFile(`
+services:
+  db:
+    image: postgres
+    ports:
+      - target: 5432
+        host_ip: 127.0.0.1
+        published: 5432
+      - target: 80
+        host_ip: 127.0.0.1
+        published: 8080
+        protocol: tcp
+`);
+    // Dropping host_ip would collapse these to "5432:5432" / "8080:80", which
+    // bind 0.0.0.0 — publishing to the whole internet a service the config
+    // pinned to loopback. The ip must survive as the leading short-form segment
+    // that the docker runtime honors ("127.0.0.1:8080:80").
+    expect(parsed.services[0]?.ports).toEqual(["127.0.0.1:5432:5432", "127.0.0.1:8080:80"]);
+  });
+
+  it("keeps host_ip when published is omitted, and omits it when absent", () => {
+    const parsed = parseComposeFile(`
+services:
+  x:
+    image: nginx
+    ports:
+      - target: 80
+        host_ip: 127.0.0.1
+      - target: 443
+        published: 8443
+      - target: 53
+        host_ip: 0.0.0.0
+        published: 53
+        protocol: udp
+`);
+    // host_ip with no published → ip-scoped random host port ("127.0.0.1::80");
+    // published with no host_ip → unchanged; protocol suffix still applies.
+    expect(parsed.services[0]?.ports).toEqual(["127.0.0.1::80", "8443:443", "0.0.0.0:53:53/udp"]);
+  });
+
   it("extracts depends_on as array", () => {
     const parsed = parseComposeFile(`
 services:
@@ -350,6 +436,51 @@ services:
       "pgdata:/var/lib/postgresql/data",
       "./init.sql:/docker-entrypoint-initdb.d/init.sql:ro",
     ]);
+  });
+
+  it("folds long-form `read_only: true` into a :ro bind (read-only intent survives)", () => {
+    const parsed = parseComposeFile(`
+services:
+  app:
+    image: nginx
+    volumes:
+      - type: bind
+        source: /host/config
+        target: /etc/nginx/conf.d
+        read_only: true
+      - type: volume
+        source: cache
+        target: /var/cache
+`);
+    // read_only must produce the ":ro" suffix downstream honors — dropping it
+    // would create a writable mount despite the config declaring read-only.
+    expect(parsed.services[0]?.volumes).toEqual([
+      "/host/config:/etc/nginx/conf.d:ro",
+      "cache:/var/cache",
+    ]);
+  });
+
+  it("folds long-form `bind.selinux` and `volume.nocopy` into their mode suffix", () => {
+    const parsed = parseComposeFile(`
+services:
+  app:
+    image: nginx
+    volumes:
+      - type: bind
+        source: /host/data
+        target: /data
+        bind:
+          selinux: Z
+      - type: volume
+        source: cache
+        target: /cache
+        volume:
+          nocopy: true
+`);
+    // Dropping these would collapse both to their bare "source:target" — the
+    // MODE_SUFFIX regex downstream (volume-namespace.ts) already recognizes
+    // z/Z/nocopy, same as :ro; the long form just never emitted them.
+    expect(parsed.services[0]?.volumes).toEqual(["/host/data:/data:Z", "cache:/cache:nocopy"]);
   });
 
   it("throws on invalid YAML (callers wrap in try/catch)", () => {

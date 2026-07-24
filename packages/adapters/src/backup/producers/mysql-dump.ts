@@ -29,6 +29,13 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+export function mysqlCredentials(env: Record<string, string>): { user: string; password: string } {
+  if (env.MYSQL_ROOT_PASSWORD) {
+    return { user: "root", password: env.MYSQL_ROOT_PASSWORD };
+  }
+  return { user: env.MYSQL_USER ?? "root", password: env.MYSQL_PASSWORD ?? "" };
+}
+
 class MysqlDumpProducerImpl implements BackupProducer {
   readonly kind = "mysql_dump" as const;
 
@@ -42,9 +49,7 @@ class MysqlDumpProducerImpl implements BackupProducer {
     executor: BackupExecutor,
     _opts: ProducerOpts,
   ): AsyncIterable<Artifact> {
-    const password =
-      service.env.MYSQL_ROOT_PASSWORD ?? service.env.MYSQL_PASSWORD ?? "";
-    const user = service.env.MYSQL_USER ?? "root";
+    const { user, password } = mysqlCredentials(service.env);
     // If a specific DB isn't named, dump all-databases.
     const db = service.env.MYSQL_DATABASE ?? "";
     const dbArg = db ? `--databases ${shellEscape(db)}` : "--all-databases";
@@ -79,9 +84,7 @@ class MysqlDumpProducerImpl implements BackupProducer {
     artifact: ArtifactRef,
     _opts: RestoreOpts,
   ): Promise<void> {
-    const password =
-      service.env.MYSQL_ROOT_PASSWORD ?? service.env.MYSQL_PASSWORD ?? "";
-    const user = service.env.MYSQL_USER ?? "root";
+    const { user, password } = mysqlCredentials(service.env);
 
     // Collapsed to a SINGLE `sh -c` level. `export` so MYSQL_PWD
     // reaches mysql (the second process in the pipeline) — the

@@ -1,0 +1,50 @@
+{
+  "accountSwitcher": {
+    "workspacesCount": "{count} çalışma alanı",
+    "newWorkspace": "Yeni çalışma alanı",
+    "createTitle": "Çalışma alanı oluştur",
+    "createDescription": "Projeler, dağıtımlar, sunucular ve üyeler için ayrı bir organizasyon.",
+    "nameLabel": "Ad",
+    "namePlaceholder": "Acme Şirketi",
+    "cancel": "İptal",
+    "create": "Oluştur",
+    "toastTitle": "Organizasyon",
+    "switchFailed": "Organizasyon değiştirilemedi",
+    "createFailed": "Organizasyon oluşturulamadı"
+  },
+  "sidebar": {
+    "workspaceFallback": "Çalışma Alanı",
+    "workspacesCount": "{count} çalışma alanı",
+    "switchOrganization": "Organizasyonu değiştir",
+    "current": "Mevcut",
+    "cloudLabel": "Bulut: {email}",
+    "linkedToCloud": "Openship Bulut'a {email} hesabıyla bağlı",
+    "backToSetup": "Kurulum ekranına dön",
+    "personal": "Kişisel"
+  },
+  "migration": {
+    "inProgressTitle": "Taşıma işlemi devam ediyor",
+    "inProgressBody": "Verileriniz taşınıyor. Geçiş tamamlandığında bu sayfa yenilenecektir — genellikle 30-90 saniye sürer.",
+    "inProgressHint": "Bu sekmeyi kapatmayın. Taşıma durumunu birkaç saniyede bir kontrol ediyoruz ve sayfayı otomatik olarak yeniden yükleyeceğiz.",
+    "newLocation": "Yeni konum",
+    "switchBackPrompt": "Bu makinede yeniden tek kullanıcılı moda mı ihtiyacınız var?",
+    "switchBackAction": "Tek kullanıcılı moda geri dön",
+    "cloudTitle": "Bu Openship kurulumu Openship Bulut'a taşındı",
+    "cloudBody": "Ekibiniz artık aşağıdaki URL üzerinden iş birliği yapıyor. Bu yerel Openship kurulumu artık projelerinizi, ayarlarınızı veya dağıtımlarınızı barındırmıyor — devam etmek için bulut panelini açın.",
+    "cloudCta": "Bulut panelini aç",
+    "tunneledTitle": "Openship kurulumunuza artık tünel üzerinden erişilebilir",
+    "tunneledBody": "Makineniz çevrimiçi olduğunda ekip arkadaşlarınız aşağıdaki URL'den giriş yapabilir. Veriler hâlâ bu cihazda bulunur — tünel yalnızca cihazınızı Oblien edge ağı üzerinden erişime açar.",
+    "tunneledCta": "Tünel URL'sini aç",
+    "serverTitle": "Bu Openship kurulumu sunucunuza taşındı",
+    "serverBody": "Ekibiniz artık aşağıdaki URL üzerinden iş birliği yapıyor. Bu yerel Openship kurulumu artık projelerinizi, ayarlarınızı veya dağıtımlarınızı barındırmıyor — devam etmek için ekip panelini açın.",
+    "serverCta": "Ekip panelini aç"
+  },
+  "notFound": {
+    "title": "Sayfa bulunamadı",
+    "descGlobal": "Aradığınız sayfa mevcut değil veya taşınmış.",
+    "descDashboard": "Bu sayfa mevcut değil veya taşınmış olabilir. URL'yi kontrol edin veya panele geri dönün.",
+    "backToDashboard": "Panele geri dön",
+    "viewDeployments": "Dağıtımları görüntüle",
+    "copyId": "Kimliği kopyala"
+  }
+}

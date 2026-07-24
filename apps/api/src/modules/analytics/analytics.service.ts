@@ -88,18 +88,21 @@ function toMgmtBucket(b: {
 }
 
 /** Reduce an array of buckets into a summary. */
-function summariseBuckets(buckets: MgmtAnalyticsBucket[], lastUpdated: string): AnalyticsSummary {
+export function summariseBuckets(
+  buckets: MgmtAnalyticsBucket[],
+  lastUpdated: string,
+): AnalyticsSummary {
   const totalReqs = buckets.reduce((s, b) => s + b.requests, 0);
   const totalUnique = buckets.reduce((s, b) => s + b.unique_requests, 0);
   const totalIn = buckets.reduce((s, b) => s + b.bandwidth_in, 0);
   const totalOut = buckets.reduce((s, b) => s + b.bandwidth_out, 0);
-  const avgRt = buckets.reduce((s, b) => s + b.response_time, 0) / buckets.length;
+  const weightedRt = buckets.reduce((s, b) => s + b.response_time * b.requests, 0);
   return {
     totalRequests: totalReqs,
     uniqueVisitors: totalUnique,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
-    avgResponseTimeMs: Math.round(avgRt * 1000),
+    avgResponseTimeMs: totalReqs > 0 ? Math.round((weightedRt / totalReqs) * 1000) : 0,
     lastUpdated,
   };
 }
@@ -124,7 +127,7 @@ function summariseCloudBuckets(
   };
 }
 
-function buildHourlyPeriods(
+export function buildHourlyPeriods(
   buckets: MgmtAnalyticsBucket[],
   fromMinute: number,
   toMinute: number,
@@ -136,8 +139,7 @@ function buildHourlyPeriods(
       uniqueVisitors: number;
       bandwidthIn: number;
       bandwidthOut: number;
-      responseTimeTotal: number;
-      bucketCount: number;
+      responseTimeWeighted: number;
     }
   >();
 
@@ -148,16 +150,14 @@ function buildHourlyPeriods(
       uniqueVisitors: 0,
       bandwidthIn: 0,
       bandwidthOut: 0,
-      responseTimeTotal: 0,
-      bucketCount: 0,
+      responseTimeWeighted: 0,
     };
 
     current.requests += bucket.requests;
     current.uniqueVisitors += bucket.unique_requests;
     current.bandwidthIn += bucket.bandwidth_in;
     current.bandwidthOut += bucket.bandwidth_out;
-    current.responseTimeTotal += bucket.response_time;
-    current.bucketCount += 1;
+    current.responseTimeWeighted += bucket.response_time * bucket.requests;
     hourly.set(hourKey, current);
   }
 
@@ -178,8 +178,8 @@ function buildHourlyPeriods(
       bandwidthIn: current?.bandwidthIn ?? 0,
       bandwidthOut: current?.bandwidthOut ?? 0,
       avgResponseTimeMs:
-        current && current.bucketCount > 0
-          ? Math.round((current.responseTimeTotal / current.bucketCount) * 1000)
+        current && current.requests > 0
+          ? Math.round((current.responseTimeWeighted / current.requests) * 1000)
           : 0,
       topPaths: [],
       trafficByHour: {},
@@ -519,28 +519,18 @@ export async function getContainerInfo(ctx: RequestContext, projectId: string) {
  * the active org only (not cross-org).
  */
 export async function getDashboardStats(ctx: RequestContext) {
-  const { rows: projects, total: totalProjects } = await repos.project.listByOrganization(
-    ctx.organizationId,
-    { page: 1, perPage: 10_000 },
-  );
+  const [projectCounts, deploymentsByStatus] = await Promise.all([
+    repos.project.countByOrganization(ctx.organizationId),
+    repos.deployment.countByStatusForOrganization(ctx.organizationId),
+  ]);
 
-  const activeProjects = projects.filter((p) => p.activeDeploymentId).length;
-
-  // Aggregate deployment counts across all projects
   let totalDeployments = 0;
-  let failedDeployments = 0;
-  let successDeployments = 0;
-
-  for (const p of projects.slice(0, 50)) {
-    // Limit to 50 projects for perf
-    const { rows } = await repos.deployment.listByProject(p.id, { page: 1, perPage: 100 });
-    totalDeployments += rows.length;
-    failedDeployments += rows.filter((d) => d.status === "failed").length;
-    successDeployments += rows.filter((d) => d.status === "ready").length;
-  }
+  for (const count of Object.values(deploymentsByStatus)) totalDeployments += count;
+  const successDeployments = deploymentsByStatus["ready"] ?? 0;
+  const failedDeployments = deploymentsByStatus["failed"] ?? 0;
 
   return {
-    projects: { total: totalProjects, active: activeProjects },
+    projects: { total: projectCounts.total, active: projectCounts.active },
     deployments: {
       total: totalDeployments,
       success: successDeployments,

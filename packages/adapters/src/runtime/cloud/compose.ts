@@ -73,9 +73,10 @@ function firstContainerPort(portSpecs: string[]): number | undefined {
   return undefined;
 }
 
-function restartPolicyForWorkload(policy?: string): "always" | "on-failure" | "never" {
-  if (policy === "no" || policy === "never") return "never";
-  if (policy === "on-failure") return "on-failure";
+export function restartPolicyForWorkload(policy?: string): "always" | "on-failure" | "never" {
+  const base = policy?.split(":")[0];
+  if (base === "no" || base === "never") return "never";
+  if (base === "on-failure") return "on-failure";
   return "always";
 }
 

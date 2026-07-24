@@ -1,0 +1,149 @@
+{
+  "common": {
+    "goBack": "Geri dön",
+    "continue": "Devam Et",
+    "back": "Geri",
+    "optional": "(isteğe bağlı)"
+  },
+  "topBar": {
+    "website": "Web Sitesi",
+    "github": "GitHub",
+    "theme": "Temayı Değiştir",
+    "language": "Dil"
+  },
+  "choose": {
+    "title": "Openship'e Hoş Geldiniz",
+    "subtitle": "Openship'i nasıl çalıştırmak istediğinizi seçin. Her iki seçenek de tüm özellikleri sunar — istediğiniz zaman değiştirebilirsiniz.",
+    "cloud": {
+      "name": "Openship Bulut",
+      "desc": "Altyapıyı, güncellemeleri ve yedeklemeleri biz hallederiz. Sadece giriş yapın ve dağıtıma başlayın.",
+      "perk1": "Sunucu gerekmez",
+      "perk2": "Ücretsiz paket dahil",
+      "perk3": "Yönetilen ve her zaman güncel",
+      "cta": "Bulut ile Devam Et"
+    },
+    "or": "veya",
+    "selfhost": {
+      "name": "Kendi Sunucunuzda (Self-Hosted)",
+      "desc": "Openship'i kendi donanımınızda çalıştırın. Uzak bir sunucu bağlayın veya bu bilgisayarı kullanın.",
+      "perk1": "Tam veri sahipliği",
+      "perk2": "Uzak sunucu veya bu bilgisayar",
+      "perk3": "Geri kalanını biz hallederiz",
+      "cta": "Sunucumu Kur"
+    },
+    "migrateNote": "Tek tıkla Bulut ve Self-Hosted arasında istediğiniz zaman geçiş yapın — kilitlenme yok.",
+    "skip": "Şimdilik atla"
+  },
+  "selfhost": {
+    "title": "Openship nerede çalışmalı?",
+    "subtitleLine1": "Openship platformunu nerede kuracağınızı seçin.",
+    "subtitleLine2": "Her iki seçenek de size tam kontrol ve veri sahipliği sağlar.",
+    "local": {
+      "title": "Bu Bilgisayar",
+      "badge": "Beta",
+      "desc": "Openship'i hemen buraya kurun — SSH veya uzak kurulum gerekmez",
+      "comingSoon": "Yakında",
+      "comingSoonDesc": "Openship'i doğrudan bu bilgisayarda çalıştırmak henüz hazır değil — şimdilik bir sunucu bağlayın."
+    },
+    "remote": {
+      "title": "Başka Bir Sunucu",
+      "desc": "SSH üzerinden uzak bir sunucuya, VPS'e veya ağınızdaki herhangi bir makineye bağlanın"
+    }
+  },
+  "ssh": {
+    "title": "Sunucunuza bağlanın",
+    "subtitleLine1": "Sunucu detaylarınızı girin ve bir kimlik doğrulama yöntemi seçin.",
+    "subtitleLine2": "Her şeyi otomatik olarak kurup yapılandıracağız.",
+    "serverNameLabel": "Sunucu Adı",
+    "serverNamePlaceholder": "Production, Staging, Dev...",
+    "serverIpLabel": "Sunucu IP Adresi",
+    "usernameLabel": "Kullanıcı Adı",
+    "methodPassword": "Şifre",
+    "methodKey": "SSH Anahtarı",
+    "methodAgent": "SSH agent",
+    "agentHint": "Bu makinenin SSH agent'ını kullanarak bağlanır — VS Code'da olduğu gibi şifre veya anahtar girmeniz gerekmez. Openship'i çalıştıran ana makinenin bu sunucuya zaten erişebilmesi gerekir (ssh-agent'a bir anahtar yüklenmiş olmalıdır).",
+    "passwordLabel": "Şifre",
+    "passwordPlaceholder": "Sunucu şifresi",
+    "keyPathLabel": "Anahtar Yolu",
+    "browse": "Göz at",
+    "passphraseLabel": "Parola (Passphrase)",
+    "passphrasePlaceholder": "Yoksa boş bırakın",
+    "advanced": "Gelişmiş",
+    "sshPortLabel": "SSH Portu",
+    "jumpHostLabel": "Ara sunucu (Jump Host)",
+    "extraArgsLabel": "Ek SSH Parametreleri",
+    "submit": "Kaydet ve Devam Et",
+    "tutorial": "Adım adım kurulum öğreticisi",
+    "testConnection": "Bağlantıyı test et",
+    "testing": "Test ediliyor…",
+    "connected": "Bağlandı",
+    "testFailed": "Bağlantı başarısız oldu",
+    "testHint": "Devam etmeden önce sunucunun erişilebilir olduğunu doğrulayın."
+  },
+  "tunnel": {
+    "title": "İnternet Erişimi",
+    "subtitle": "Webhooks, SSL ve herkese açık erişim için sunucunuza internetten ulaşılabilmesi gerekir.",
+    "providers": {
+      "edge": {
+        "title": "Openship Edge",
+        "desc": "Sıfır yapılandırma. Otomatik SSL, yüksek erişilebilirlik ve DDoS koruması — hepsi dahili.",
+        "badge": "Önerilen"
+      },
+      "cloudflare": {
+        "title": "Cloudflare Tüneli",
+        "desc": "Kendi Cloudflare hesabınızı kullanın. Ücretsiz paket mevcut."
+      },
+      "ngrok": {
+        "title": "ngrok",
+        "desc": "Servisleri ngrok kimlik doğrulama jetonunuzla dışa açın."
+      }
+    },
+    "cloudflareTokenLabel": "Cloudflare Tünel Jetonu",
+    "ngrokTokenLabel": "ngrok Kimlik Doğrulama Jetonu",
+    "cloudflarePlaceholder": "Tünel jetonunuzu yapıştırın",
+    "ngrokPlaceholder": "ngrok kimlik doğrulama jetonunuzu yapıştırın",
+    "edgeHint": "Openship Edge bir Openship hesabı gerektirir. Devam etmek için giriş yapacaksınız.",
+    "signInContinue": "Giriş Yap ve Devam Et"
+  },
+  "preferences": {
+    "title": "Derleme Tercihleri",
+    "subtitleLine1": "Dağıtım yaparken projelerinizin nasıl derleneceğini seçin.",
+    "subtitleLine2": "Bunu daha sonra ayarlardan değiştirebilirsiniz.",
+    "options": {
+      "auto": {
+        "title": "Otomatik",
+        "desc": "Framework'e göre en iyi seçeneği biz belirleriz"
+      },
+      "server": {
+        "title": "Uzak Sunucu",
+        "desc": "Doğrudan dağıtım sunucusunda derleyin"
+      },
+      "local": {
+        "title": "Yerel",
+        "desc": "Bu bilgisayarda derleyin, ardından sunucuya gönderin"
+      }
+    },
+    "hint": "Git push dağıtımları her zaman sunucuda derlenir — bu yalnızca manuel dağıtımlar için geçerlidir."
+  },
+  "loading": {
+    "connecting": "Bağlanılıyor…",
+    "verifying": "Sunucunuz doğrulanıyor",
+    "retry": "Tekrar dene",
+    "openingCloud": "Openship Bulut açılıyor…",
+    "waitingAuth": "Kimlik doğrulamasının tamamlanması bekleniyor",
+    "couldNotStartAuthTitle": "Bulut kimlik doğrulaması başlatılamadı",
+    "authFailedTitle": "Bulut kimlik doğrulaması başarısız oldu",
+    "couldNotStartAuthMsg": "Masaüstü kimlik doğrulama akışı başlatılamadı.",
+    "authFailedMsg": "Lütfen tekrar deneyin ve tarayıcınızda girişi tamamlayın.",
+    "completingSignIn": "Giriş tamamlanıyor…",
+    "returningToOpenship": "Openship'e dönülüyor",
+    "redirectingCloud": "Openship Bulut'a yönlendiriliyor…",
+    "newTabSignIn": "Giriş işlemini yeni bir sekmeyle tamamlayacaksınız",
+    "couldNotSaveTitle": "Yapılandırma kaydedilemedi",
+    "couldNotSaveMsg": "API yanıt vermedi. Servislerin çalıştığından emin olun.",
+    "savingConfig": "Yapılandırma kaydediliyor…",
+    "almostThere": "Neredeyse bitti",
+    "settingUpAccount": "Hesabınız kuruluyor…",
+    "creatingSession": "Oturumunuz oluşturuluyor"
+  }
+}

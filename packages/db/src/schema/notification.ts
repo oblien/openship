@@ -26,6 +26,8 @@
  *   webhook   POST to user-configured URL, signed with HMAC
  *   in_app    delivery row read by the dashboard's bell icon
  *   slack     POST to Slack incoming-webhook URL the user pasted
+ *   discord   POST to Discord webhook URL with a markdown-aware embed
+ *   msteams   POST Adaptive Card to a Teams Workflows / legacy connector webhook URL
  */
 
 import {
@@ -53,9 +55,10 @@ export const notificationChannel = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
 
-    /** "email" | "webhook" | "in_app" | "slack". Stored as text so we can
-     *  add new channel kinds without a schema migration. The dispatcher's
-     *  channel registry decides which kinds are dispatchable. */
+    /** "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams".
+     *  Stored as text so we can add new channel kinds without a schema
+     *  migration. The dispatcher's channel registry decides which kinds
+     *  are dispatchable. */
     kind: text("kind").notNull(),
 
     /** Display label the user picks ("My personal Slack", "On-call email").
@@ -68,6 +71,8 @@ export const notificationChannel = pgTable(
      *   webhook → { url: string, hmacSecret: string (encrypted) }
      *   in_app  → {} (no config)
      *   slack   → { webhookUrl: string (encrypted), channelName?: string }
+     *   discord → { webhookUrl: string (encrypted) }
+     *   msteams → { webhookUrl: string (encrypted) }
      */
     config: jsonb("config").notNull().default({}),
 
@@ -86,9 +91,7 @@ export const notificationChannel = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (table) => [
-    index("idx_notification_channel_user").on(table.userId),
-  ],
+  (table) => [index("idx_notification_channel_user").on(table.userId)],
 );
 
 // ─── notification_subscription ───────────────────────────────────────────────
@@ -164,10 +167,7 @@ export const notificationDefault = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("uq_notification_default_org_category").on(
-      table.organizationId,
-      table.category,
-    ),
+    uniqueIndex("uq_notification_default_org_category").on(table.organizationId, table.category),
   ],
 );
 
@@ -233,16 +233,10 @@ export const notificationDelivery = pgTable(
   },
   (table) => [
     // Dashboard inbox: list a user's deliveries newest-first.
-    index("idx_notification_delivery_user_created").on(
-      table.userId,
-      table.createdAt,
-    ),
+    index("idx_notification_delivery_user_created").on(table.userId, table.createdAt),
     // Worker queue scan: pick up queued rows in FIFO order.
     index("idx_notification_delivery_queued").on(table.status, table.createdAt),
     // Org-level "what notifications did this org send today" reports.
-    index("idx_notification_delivery_org_created").on(
-      table.organizationId,
-      table.createdAt,
-    ),
+    index("idx_notification_delivery_org_created").on(table.organizationId, table.createdAt),
   ],
 );

@@ -29,6 +29,8 @@
     "cli": "bun dist/index.js",
     "dev": "bun run build && bun run build/stage-dashboard.ts && OPENSHIP_DASHBOARD_DIR=\"$(cd ../dashboard/.next/standalone && pwd)\" bun dist/index.js",
     "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist .turbo node_modules README.md",
     "prepack": "cp ../../README.md README.md"
   },
@@ -47,6 +49,7 @@
     "@types/node": "^22.13.0",
     "tsx": "^4.21.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

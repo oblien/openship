@@ -444,12 +444,16 @@
     },
     "describe": {
       "slackWebhook": "Slack webhook",
+      "discordWebhook": "Discord webhook",
+      "msteamsWebhook": "Microsoft Teams webhook",
       "inApp": "仪表盘铃铛图标"
     },
     "kinds": {
       "email": "电子邮件",
       "webhook": "Webhook",
       "slack": "Slack",
+      "discord": "Discord",
+      "msteams": "Microsoft Teams",
       "in_app": "应用内"
     },
     "form": {
@@ -457,6 +461,8 @@
       "emailPlaceholder": "you@example.com",
       "webhookPlaceholder": "https://example.com/openship-hook",
       "slackPlaceholder": "https://hooks.slack.com/services/...",
+      "discordPlaceholder": "https://discord.com/api/webhooks/...",
+      "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
       "adding": "正在添加…",
       "addChannel": "添加渠道",
       "labelRequired": "标签为必填项"

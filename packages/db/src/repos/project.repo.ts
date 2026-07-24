@@ -186,6 +186,24 @@ export function createProjectRepo(db: Database) {
     },
 
     /**
+     * Project counts for the dashboard home — total and with-an-active-
+     * deployment, in one aggregate query instead of listing every row.
+     */
+    async countByOrganization(
+      organizationId: string,
+    ): Promise<{ total: number; active: number }> {
+      const [row] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${project.activeDeploymentId} is not null)::int`,
+        })
+        .from(project)
+        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt)));
+
+      return { total: Number(row?.total ?? 0), active: Number(row?.active ?? 0) };
+    },
+
+    /**
      * Every non-deleted project across ALL orgs — for the instance-wide
      * updates:scan job (each row carries its own organizationId). Capped so a
      * pathological instance can't run an unbounded sweep.

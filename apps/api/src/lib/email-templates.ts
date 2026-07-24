@@ -12,6 +12,21 @@
 
 const BRAND = "Openship";
 
+/**
+ * Escape a value for interpolation into HTML text/attribute content
+ * (`&`, `<`, `>`, `"`, `'`). Applied to user-controlled fields in the `html`
+ * output only; the `subject` and `text` parts are plaintext and keep the raw
+ * value.
+ */
+function htmlEscape(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function layout(body: string) {
   return `
 <!DOCTYPE html>
@@ -44,7 +59,7 @@ function ctaButton(url: string, label: string) {
 }
 
 function greeting(name?: string | null) {
-  return `<p style="color:#111;font-size:15px;margin:0 0 16px">Hi ${name || "there"},</p>`;
+  return `<p style="color:#111;font-size:15px;margin:0 0 16px">Hi ${htmlEscape(name || "there")},</p>`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -148,16 +163,18 @@ export function organizationInviteEmail(opts: {
   url: string;
 }) {
   const inviterLabel = opts.inviter.name || opts.inviter.email;
+  const inviterLabelHtml = htmlEscape(inviterLabel);
+  const organizationNameHtml = htmlEscape(opts.organizationName);
   const html = layout(`
-    <p style="color:#111827;font-size:16px;font-weight:600;margin:0 0 12px">You're invited to ${opts.organizationName}</p>
+    <p style="color:#111827;font-size:16px;font-weight:600;margin:0 0 12px">You're invited to ${organizationNameHtml}</p>
     <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 4px">
-      ${inviterLabel} invited you to collaborate on <strong>${opts.organizationName}</strong> in ${BRAND}.
+      ${inviterLabelHtml} invited you to collaborate on <strong>${organizationNameHtml}</strong> in ${BRAND}.
       Accept the invite to join the team and access shared projects, deployments, and servers.
     </p>
     ${ctaButton(opts.url, "Accept invitation")}
     <p style="color:#9ca3af;font-size:13px;margin:0">
       If you don't have an Openship account yet, you'll be asked to create one with this email
-      (${opts.invitee.email}). The invitation expires in 7 days.
+      (${htmlEscape(opts.invitee.email)}). The invitation expires in 7 days.
     </p>
   `);
 

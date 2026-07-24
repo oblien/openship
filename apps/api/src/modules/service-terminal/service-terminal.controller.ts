@@ -49,6 +49,12 @@ import {
   touchServiceSession,
   unregisterServiceSession,
 } from "../../lib/service-terminal-session-manager";
+import {
+  safeWsSend,
+  safeWsClose,
+  safeShellWrite,
+  safeShellClose,
+} from "../../lib/terminal-helpers";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -381,11 +387,7 @@ function buildHandlers(ctx: HandshakeCtx) {
       state.ws = ws;
       const dataPump = (chunk: Buffer) => {
         if (state.closed) return;
-        try {
-          ws.send(chunk);
-        } catch {
-          /* peer gone */
-        }
+        safeWsSend(ws, chunk);
       };
 
       // RESUME path
@@ -400,11 +402,7 @@ function buildHandlers(ctx: HandshakeCtx) {
             code: "resume_failed",
             message: "Session is no longer available",
           });
-          try {
-            ws.close(1011, "resume_failed");
-          } catch {
-            /* already closing */
-          }
+          safeWsClose(ws, 1011, "resume_failed");
           return;
         }
 
@@ -414,11 +412,7 @@ function buildHandlers(ctx: HandshakeCtx) {
 
         existing.shell.onClose((code: number | null, signal?: string) => {
           sendControl(ws, { type: "exit", code, signal });
-          try {
-            ws.close(1000, "remote_exit");
-          } catch {
-            /* already closing */
-          }
+          safeWsClose(ws, 1000, "remote_exit");
           void teardown(state, "remote_exit", code);
         });
 
@@ -455,11 +449,7 @@ function buildHandlers(ctx: HandshakeCtx) {
           code,
           message: safeErrorMessage(err),
         });
-        try {
-          ws.close(1011, code);
-        } catch {
-          /* already closing */
-        }
+        safeWsClose(ws, 1011, code);
         return;
       }
 
@@ -490,11 +480,7 @@ function buildHandlers(ctx: HandshakeCtx) {
             code: reason as ErrorCode,
             message: reason,
           });
-          try {
-            ws.close(1011, reason);
-          } catch {
-            /* already closing */
-          }
+          safeWsClose(ws, 1011, reason);
           void teardown(state, reason, null, true, true);
         },
       });
@@ -510,11 +496,7 @@ function buildHandlers(ctx: HandshakeCtx) {
 
       shell.onClose((code: number | null, signal?: string) => {
         sendControl(ws, { type: "exit", code, signal });
-        try {
-          ws.close(1000, "remote_exit");
-        } catch {
-          /* already closing */
-        }
+        safeWsClose(ws, 1000, "remote_exit");
         void teardown(state, "remote_exit", code, false, true);
       });
 
@@ -537,20 +519,12 @@ function buildHandlers(ctx: HandshakeCtx) {
       const data = evt.data;
       if (data instanceof ArrayBuffer) {
         if (state.sessionId) touchServiceSession(state.sessionId);
-        try {
-          state.shell.stdin.write(Buffer.from(data));
-        } catch {
-          /* shell gone */
-        }
+        safeShellWrite(state.shell, Buffer.from(data));
         return;
       }
       if (data instanceof Uint8Array || Buffer.isBuffer(data)) {
         if (state.sessionId) touchServiceSession(state.sessionId);
-        try {
-          state.shell.stdin.write(Buffer.from(data as Uint8Array));
-        } catch {
-          /* shell gone */
-        }
+        safeShellWrite(state.shell, Buffer.from(data as Uint8Array));
         return;
       }
       if (typeof data === "string") {
@@ -573,11 +547,7 @@ function buildHandlers(ctx: HandshakeCtx) {
         }
         if (msg?.type === "close") {
           state.userTerminated = true;
-          try {
-            ws.close(1000, "client_terminate");
-          } catch {
-            /* already closing */
-          }
+          safeWsClose(ws, 1000, "client_terminate");
           return;
         }
       }
@@ -620,11 +590,7 @@ async function teardown(
   }
 
   if (state.shell) {
-    try {
-      state.shell.close();
-    } catch {
-      /* best-effort */
-    }
+    safeShellClose(state.shell);
     state.shell = null;
   }
 
@@ -645,22 +611,14 @@ async function teardown(
 }
 
 function sendControl(ws: WSLike, msg: ControlOut): void {
-  try {
-    ws.send(JSON.stringify(msg));
-  } catch {
-    /* peer gone */
-  }
+  safeWsSend(ws, JSON.stringify(msg));
 }
 
 function openInitFailure(code: ErrorCode, message: string, closeCode: number) {
   return {
     onOpen(_evt: unknown, ws: WSLike) {
       sendControl(ws, { type: "error", code, message });
-      try {
-        ws.close(closeCode, code);
-      } catch {
-        /* already closing */
-      }
+      safeWsClose(ws, closeCode, code);
     },
     onMessage() {
       /* drop */

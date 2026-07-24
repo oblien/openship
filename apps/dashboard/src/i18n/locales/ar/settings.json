@@ -444,12 +444,16 @@
     },
     "describe": {
       "slackWebhook": "‏Webhook الخاص بـ Slack",
+      "discordWebhook": "Discord webhook",
+      "msteamsWebhook": "‏Webhook الخاص بـ Microsoft Teams",
       "inApp": "أيقونة الجرس في لوحة التحكم"
     },
     "kinds": {
       "email": "البريد الإلكتروني",
       "webhook": "Webhook",
       "slack": "Slack",
+      "discord": "Discord",
+      "msteams": "Microsoft Teams",
       "in_app": "داخل التطبيق"
     },
     "form": {
@@ -457,6 +461,8 @@
       "emailPlaceholder": "you@example.com",
       "webhookPlaceholder": "https://example.com/openship-hook",
       "slackPlaceholder": "https://hooks.slack.com/services/...",
+      "discordPlaceholder": "https://discord.com/api/webhooks/...",
+      "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
       "adding": "جارٍ الإضافة…",
       "addChannel": "إضافة قناة",
       "labelRequired": "التسمية مطلوبة"

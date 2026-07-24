@@ -15,9 +15,11 @@
  *   - absolute path, no `..` segments, no null bytes
  *   - must sit under an allowed root (operator-controlled directories
  *     OR an env-configured override)
- *   - deny common system paths even when nested under an allowed root
+ *   - deny common system paths even when nested under an env-configured or
+ *     caller-supplied root (the built-in DEFAULT_ROOTS are exempt — one of
+ *     them, /etc/openship/ssh-keys, deliberately sits under /etc)
  *
- * Tests live alongside in __tests__/ssh-key-path.test.ts.
+ * Tests live in test/lib/ssh-key-path.test.ts.
  */
 
 import { isAbsolute, resolve, sep } from "node:path";
@@ -72,11 +74,23 @@ export function resolveSafeSshKeyPath(
 
   const resolved = resolve(trimmed);
 
-  for (const denied of SYSTEM_DENY) {
-    if (resolved === denied || resolved.startsWith(denied + sep)) {
-      throw new Error(
-        `sshKeyPath is inside a protected system directory (${denied}): ${trimmed}`,
-      );
+  // SYSTEM_DENY is deliberately broad (`/etc`), and one of the built-in
+  // DEFAULT_ROOTS sits inside it (`/etc/openship/ssh-keys`). Those roots are
+  // hardcoded here — not operator- or caller-supplied — so a path under one is
+  // an explicit carve-out and skips the denylist. Env-configured and caller
+  // supplied roots deliberately do NOT get this exemption, so an `extraRoots`
+  // of `/` (or a `$HOME` of `/`) still can't unlock `/etc/shadow`.
+  const underDefaultRoot = DEFAULT_ROOTS.map((r) => resolve(r)).some(
+    (root) => resolved === root || resolved.startsWith(root + sep),
+  );
+
+  if (!underDefaultRoot) {
+    for (const denied of SYSTEM_DENY) {
+      if (resolved === denied || resolved.startsWith(denied + sep)) {
+        throw new Error(
+          `sshKeyPath is inside a protected system directory (${denied}): ${trimmed}`,
+        );
+      }
     }
   }
 

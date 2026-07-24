@@ -69,7 +69,7 @@ export function CloneCredentials() {
         // They can toggle off afterward.
         asDefault: state?.asDefault ?? true,
       });
-      setState({ hasToken: next.hasToken, setAt: next.setAt, asDefault: next.asDefault });
+      setState(next.cloneToken);
       setTokenInput("");
       setEditing(false);
       showToast(t.settings.cloneCredentials.toast.saved, "success", t.settings.common.toast.cloneCredentials);
@@ -84,7 +84,7 @@ export function CloneCredentials() {
     setSaving(true);
     try {
       const next = await settingsApi.updateCloneCredentials({ token: null });
-      setState({ hasToken: next.hasToken, setAt: next.setAt, asDefault: next.asDefault });
+      setState(next.cloneToken);
       setTokenInput("");
       setEditing(false);
       showToast(t.settings.cloneCredentials.toast.cleared, "success", t.settings.common.toast.cloneCredentials);
@@ -99,7 +99,7 @@ export function CloneCredentials() {
     setTogglingDefault(true);
     try {
       const updated = await settingsApi.updateCloneCredentials({ asDefault: next });
-      setState({ hasToken: updated.hasToken, setAt: updated.setAt, asDefault: updated.asDefault });
+      setState(updated.cloneToken);
     } catch (err) {
       showToast(getApiErrorMessage(err, t.settings.cloneCredentials.toast.updateDefaultFailed), "error", t.settings.common.toast.cloneCredentials);
     } finally {

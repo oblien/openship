@@ -52,8 +52,13 @@ describe("isValidCustomHostname", () => {
       "example.com.", // trailing dot
       "a..b.com", // empty label
       "exa mple.com", // whitespace
+      `${"a".repeat(64)}.example.com`, // label over the 63-octet DNS limit
     ]) {
       expect(isValidCustomHostname(h)).toBe(false);
     }
+  });
+
+  it("accepts a label at exactly the 63-octet DNS limit", () => {
+    expect(isValidCustomHostname(`${"a".repeat(63)}.example.com`)).toBe(true);
   });
 });

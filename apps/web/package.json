@@ -22,6 +22,7 @@
     "marked": "^15.0.0",
     "motion": "12.4.7",
     "next": "^16.1.6",
+    "nodemailer": "^6.9.16",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-wrap-balancer": "^1.1.1",

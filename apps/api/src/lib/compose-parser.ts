@@ -133,8 +133,19 @@ function parsePorts(ports: unknown, env: Record<string, string>): string[] {
       // fold it back into the "/proto" suffix so the string form is lossless.
       const proto = typeof port.protocol === "string" ? port.protocol.toLowerCase() : undefined;
       const suffix = proto && proto !== "tcp" ? `/${proto}` : "";
+      // Long form carries the bind interface as a separate `host_ip` field;
+      // fold it back into the leading "<ip>:" segment the short form spells.
+      const hostIp =
+        typeof port.host_ip === "string" ? interpolateComposeString(port.host_ip, env) : undefined;
       if (target) {
-        return published ? `${published}:${target}${suffix}` : `${target}${suffix}`;
+        const hostPart = published
+          ? hostIp
+            ? `${hostIp}:${published}:`
+            : `${published}:`
+          : hostIp
+            ? `${hostIp}::`
+            : "";
+        return `${hostPart}${target}${suffix}`;
       }
     }
     return String(p);
@@ -206,7 +217,23 @@ function parseVolumes(vols: unknown, env: Record<string, string>): string[] {
       const vol = v as Record<string, unknown>;
       const src = vol.source ?? vol.name;
       const tgt = vol.target;
-      if (src && tgt) return `${src}:${tgt}`;
+      // Long form carries read-only/selinux/nocopy intent as separate nested
+      // fields; fold them back into the single mode suffix the short-form
+      // string spells (the downstream MODE_SUFFIX regex in volume-namespace.ts
+      // only matches ONE flag, no combining — so read_only wins when more than
+      // one is set, since silently granting write access is the worse miss).
+      const bindOpts = vol.bind as Record<string, unknown> | undefined;
+      const volumeOpts = vol.volume as Record<string, unknown> | undefined;
+      const selinux = typeof bindOpts?.selinux === "string" ? bindOpts.selinux : undefined;
+      const mode =
+        vol.read_only === true
+          ? ":ro"
+          : volumeOpts?.nocopy === true
+            ? ":nocopy"
+            : selinux === "z" || selinux === "Z"
+              ? `:${selinux}`
+              : "";
+      if (src && tgt) return `${src}:${tgt}${mode}`;
       if (tgt) return String(tgt);
     }
     return String(v);
@@ -306,6 +333,7 @@ function buildInterpolationEnv(options: ComposeParseOptions): Record<string, str
 
 export function parseComposeEnvFile(content: string): Record<string, string> {
   const result: Record<string, string> = {};
+  const literalKeys = new Set<string>();
 
   for (const rawLine of content.replace(/^\uFEFF/, "").split(/\r?\n/)) {
     let line = rawLine.trim();
@@ -318,38 +346,43 @@ export function parseComposeEnvFile(content: string): Record<string, string> {
     const key = line.slice(0, eqIdx).trim();
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
 
-    result[key] = parseEnvValue(line.slice(eqIdx + 1));
+    const parsed = parseEnvValue(line.slice(eqIdx + 1));
+    result[key] = parsed.value;
+    if (parsed.expand) literalKeys.delete(key);
+    else literalKeys.add(key);
   }
 
   for (const [key, value] of Object.entries(result)) {
+    if (literalKeys.has(key)) continue;
     result[key] = interpolateComposeString(value, result);
   }
 
   return result;
 }
 
-function parseEnvValue(rawValue: string): string {
+function parseEnvValue(rawValue: string): { value: string; expand: boolean } {
   const value = rawValue.trimStart();
-  if (!value) return "";
+  if (!value) return { value: "", expand: true };
 
   if (value.startsWith('"')) {
     const end = findClosingQuote(value, '"');
     const quoted = end >= 0 ? value.slice(1, end) : value.slice(1);
-    return quoted
-      .replace(/\\n/g, "\n")
-      .replace(/\\r/g, "\r")
-      .replace(/\\t/g, "\t")
-      .replace(/\\"/g, '"')
-      .replace(/\\\\/g, "\\");
+    return {
+      value: quoted.replace(/\\([nrt"\\])/g, (_m, ch: string) =>
+        ch === "n" ? "\n" : ch === "r" ? "\r" : ch === "t" ? "\t" : ch,
+      ),
+      expand: true,
+    };
   }
 
   if (value.startsWith("'")) {
     const end = findClosingQuote(value, "'");
-    return end >= 0 ? value.slice(1, end) : value.slice(1);
+    return { value: end >= 0 ? value.slice(1, end) : value.slice(1), expand: false };
   }
 
   const commentMatch = value.match(/\s+#/);
-  return (commentMatch?.index === undefined ? value : value.slice(0, commentMatch.index)).trimEnd();
+  const bare = commentMatch?.index === undefined ? value : value.slice(0, commentMatch.index);
+  return { value: bare.trimEnd(), expand: true };
 }
 
 function findClosingQuote(value: string, quote: '"' | "'"): number {
@@ -363,12 +396,14 @@ function interpolateComposeString(input: string, env: Record<string, string>): s
   const escapedDollar = "\0COMPOSE_ESCAPED_DOLLAR\0";
   const protectedInput = input.replace(/\$\$/g, escapedDollar);
 
-  const withBraced = protectedInput.replace(/\$\{([^}]+)\}/g, (_match, expression: string) =>
-    resolveInterpolationExpression(expression, env).value,
-  );
-
-  return withBraced
-    .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, key: string) => env[key] ?? "")
+  return protectedInput
+    .replace(
+      /\$(?:\{([^}]+)\}|([A-Za-z_][A-Za-z0-9_]*))/g,
+      (_match, braced: string | undefined, bare: string | undefined) =>
+        braced !== undefined
+          ? resolveInterpolationExpression(braced, env).value
+          : (env[bare!] ?? ""),
+    )
     .replaceAll(escapedDollar, "$");
 }
 
@@ -466,9 +501,11 @@ function resolveInterpolationExpression(
         return { value: fallback, source: "default", variable: key, defaultValue: fallback };
       }
     case ":?":
-      return { value: isNonEmpty ? value : "", source: isNonEmpty ? "env-file" : "missing", variable: key };
+      if (isNonEmpty) return { value, source: "env-file", variable: key };
+      throw new Error(word());
     case "?":
-      return { value: hasValue ? value : "", source: hasValue ? "env-file" : "missing", variable: key };
+      if (hasValue) return { value, source: "env-file", variable: key };
+      throw new Error(word());
     case ":+":
       if (!isNonEmpty) return { value: "", source: "missing", variable: key };
       {

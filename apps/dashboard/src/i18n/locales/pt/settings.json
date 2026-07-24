@@ -444,12 +444,16 @@
     },
     "describe": {
       "slackWebhook": "Webhook do Slack",
+      "discordWebhook": "Webhook do Discord",
+      "msteamsWebhook": "Webhook do Microsoft Teams",
       "inApp": "Ícone de sino do painel"
     },
     "kinds": {
       "email": "E-mail",
       "webhook": "Webhook",
       "slack": "Slack",
+      "discord": "Discord",
+      "msteams": "Microsoft Teams",
       "in_app": "No aplicativo"
     },
     "form": {
@@ -457,6 +461,8 @@
       "emailPlaceholder": "voce@example.com",
       "webhookPlaceholder": "https://example.com/openship-hook",
       "slackPlaceholder": "https://hooks.slack.com/services/...",
+      "discordPlaceholder": "https://discord.com/api/webhooks/...",
+      "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
       "adding": "Adicionando…",
       "addChannel": "Adicionar canal",
       "labelRequired": "O rótulo é obrigatório"

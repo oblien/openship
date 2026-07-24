@@ -33,6 +33,28 @@ function fakeExecutor(candidates: Record<string, string>): CommandExecutor {
   } as unknown as CommandExecutor;
 }
 
+const APK: EnvironmentProfile = {
+  os: "linux", arch: "amd64", distro: "alpine",
+  packageManager: "apk", serviceManager: "none", isRoot: true, canSudo: false,
+};
+
+/** Fake `apk policy <pkg>` output: version lines end in `:`, each followed by
+ *  indented source lines including an HTTPS repo URL (whose own `:` must not be
+ *  read as a version). */
+function fakeApkExecutor(policies: Record<string, string>): CommandExecutor {
+  return {
+    exec: async (cmd: string) => {
+      const m = cmd.match(/apk policy '([^']+)'/);
+      if (m) {
+        const out = policies[m[1]!];
+        if (out === undefined) throw new Error("no such package");
+        return out;
+      }
+      throw new Error("unexpected command");
+    },
+  } as unknown as CommandExecutor;
+}
+
 const status = (name: string, version: string): ComponentStatus => ({
   name, label: name, description: "", installable: true, installed: true, version, healthy: true, message: "",
 });
@@ -76,5 +98,34 @@ describe("enrichAvailableVersions", () => {
     ];
     await enrichAvailableVersions(fakeExecutor({ git: "2.44.0-1" }), APT, s);
     expect(s[0]!.updateAvailable).toBeUndefined();
+  });
+
+  it("apk: reads the newest version line, not the repo URL that follows it", async () => {
+    const policy = [
+      "git policy:",
+      "  2.30.0-r0:",
+      "    lib/apk/db/installed",
+      "  2.43.0-r0:",
+      "    https://dl-cdn.alpinelinux.org/alpine/v3.19/main",
+      "",
+    ].join("\n");
+    const s = [status("git", "2.30.0")];
+    await enrichAvailableVersions(fakeApkExecutor({ git: policy }), APK, s);
+    expect(s[0]!.availableVersion).toBe("2.43.0");
+    expect(s[0]!.updateAvailable).toBe(true);
+  });
+
+  it("apk: does NOT flag when the only available version equals installed", async () => {
+    const policy = [
+      "rsync policy:",
+      "  3.2.7-r0:",
+      "    lib/apk/db/installed",
+      "    https://dl-cdn.alpinelinux.org/alpine/v3.19/main",
+      "",
+    ].join("\n");
+    const s = [status("rsync", "3.2.7")];
+    await enrichAvailableVersions(fakeApkExecutor({ rsync: policy }), APK, s);
+    expect(s[0]!.updateAvailable).toBeUndefined();
+    expect(s[0]!.availableVersion).toBeUndefined();
   });
 });

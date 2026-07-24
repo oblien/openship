@@ -30,7 +30,7 @@ export type NotificationDefault = typeof notificationDefault.$inferSelect;
 export type NotificationDelivery = typeof notificationDelivery.$inferSelect;
 export type NewNotificationDelivery = typeof notificationDelivery.$inferInsert;
 
-export type ChannelKind = "email" | "webhook" | "in_app" | "slack";
+export type ChannelKind = "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams";
 export type DeliveryStatus = "queued" | "sending" | "sent" | "failed" | "seen";
 
 // ─── notification_channel repo ───────────────────────────────────────────────

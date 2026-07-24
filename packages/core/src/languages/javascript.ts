@@ -17,6 +17,9 @@ function parsePackageJsonDeps(content: string): Record<string, string> {
   } catch {
     return {};
   }
+  // `JSON.parse("null")` succeeds → guard before property access, or a stray
+  // `null` file would throw and crash detection (cf. metadata/railway.ts).
+  if (typeof parsed !== "object" || parsed === null) return {};
 
   const deps = (parsed.dependencies as Record<string, string> | undefined) ?? {};
   const devDeps = (parsed.devDependencies as Record<string, string> | undefined) ?? {};

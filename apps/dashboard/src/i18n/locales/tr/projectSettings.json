@@ -1,0 +1,780 @@
+{
+  "settingSection": {
+    "edit": "Düzenle",
+    "save": "Kaydet",
+    "cancel": "İptal"
+  },
+  "appSource": {
+    "title": "Kaynak",
+    "description": "Bu uygulama bir sürümden (release) dağıtılır — push yapılacak bir repo yoktur; güncellemeler yeni sürümler olarak gelir.",
+    "sourceType": "Kaynak",
+    "kindRelease": "Sürüm (Release)",
+    "kindImage": "Konteyner imajı",
+    "current": "Mevcut sürüm",
+    "latest": "En son sürüm",
+    "notChecked": "Henüz kontrol edilmedi",
+    "upToDate": "Güncel",
+    "updateAvailable": "Güncelleme mevcut",
+    "checkForUpdates": "Güncellemeleri kontrol et",
+    "checkFailed": "Güncellemeler kontrol edilemedi",
+    "update": "Güncelle",
+    "updateTo": "{version} sürümüne güncelle",
+    "updating": "Güncelleniyor…",
+    "updateFailed": "Güncelleme başarısız oldu",
+    "toastTitle": "Kaynak"
+  },
+  "appSettings": {
+    "modeApp": "Uygulama ayarları",
+    "modeDeployment": "Dağıtım",
+    "saveChanges": "Değişiklikleri kaydet",
+    "saving": "Kaydediliyor…",
+    "saved": "Ayarlar kaydedildi",
+    "saveHint": "Bu değişiklikleri saklamak için kaydedin — bir sonraki dağıtımda geçerli olacaklardır.",
+    "applyNow": "Şimdi uygula",
+    "applying": "Uygulanıyor…",
+    "applied": "Değişiklikler uygulanıyor",
+    "restartNote": "Uygulamayı yeni ayarlarla yeniden başlatmak için şimdi uygulayın, aksi takdirde bir sonraki dağıtımda yürürlüğe girerler.",
+    "redeployNote": "Bu değişiklikleri uygulamak uygulamayı yeniden oluşturur — daha sonra yönetim panelinde veya CLI'da yeniden oturum açmanız gerekebilir.",
+    "advancedShow": "Gelişmişi göster",
+    "advancedHide": "Gelişmişi gizle",
+    "secretSet": "Ayarlandı — mevcut değeri korumak için boş bırakın",
+    "loadError": "Uygulama ayarları yüklenemedi.",
+    "saveFailed": "Ayarlar kaydedilemedi.",
+    "applyFailed": "Değişiklikler uygulanamadı.",
+    "unmanaged": "Bu uygulamanın henüz yapılandırılabilir bir ayarı yok."
+  },
+  "appInstall": {
+    "install": "Kur",
+    "installing": "Kuruluyor…",
+    "advanced": "Gelişmiş dağıtım seçenekleri",
+    "domainTitle": "Nerede barınacak?",
+    "domainFree": "Ücretsiz alt alan adı",
+    "domainFreeHint": "{domain} üzerinde ücretsiz bir alt alan adı",
+    "domainCustom": "Kendi alan adınız",
+    "domainCustomPlaceholder": "uygulamam.example.com",
+    "domainNone": "Herkese açık URL yok",
+    "domainNoneHint": "Yalnızca dahili — herkese açık adres yok.",
+    "customRequired": "Alan adınızı girin veya başka bir seçenek belirleyin.",
+    "progressPreparing": "Hazırlanıyor…",
+    "progressDeploying": "Dağıtılıyor…",
+    "progressLive": "Uygulamanız yayında",
+    "openApp": "Uygulamayı aç",
+    "goToApp": "Uygulamaya git",
+    "installFailed": "Kurulum başarısız oldu",
+    "viewDetails": "Teknik detayları görüntüle",
+    "back": "Geri",
+    "destinationTitle": "Nereye kurulacak",
+    "destinationHint": "Bu uygulamanın çalışacağı sunucuyu veya bulutu seçin.",
+    "destLocal": "Bu bilgisayar",
+    "destLocalDesc": "Burada, bu Openship sunucusunda çalıştırın.",
+    "mail": {
+      "title": "E-posta kur",
+      "subtitle": "Kendi alan adınızda webmail dağıtın veya mevcut bir posta kutusunu bağlayın.",
+      "chooseSelf": "Kendi e-posta sunucunuzu barındırın (Self-host)",
+      "chooseSelfDesc": "Sunucunuzda tam SMTP/IMAP + webmail (iRedMail) — her şeyi biz hazırlıyoruz.",
+      "chooseConnect": "Mevcut bir posta kutusunu bağlayın",
+      "chooseConnectDesc": "Amazon SES, Gmail, Fastmail veya herhangi bir IMAP/SMTP altyapısına bağlanan yalnızca webmail arayüzünü dağıtın.",
+      "provider": "Sağlayıcı",
+      "presets": {
+        "custom": "Özel",
+        "ses": "Amazon SES",
+        "gmail": "Gmail",
+        "fastmail": "Fastmail"
+      },
+      "sesNote": "Amazon SES yalnızca e-posta gönderir — IMAP'i e-postalarınızın saklandığı ve okunduğu yere yönlendirin.",
+      "sesSelfHostCta": "Posta kutunuz yok mu? Şimdi kendiniz barındırın ve giden e-postaları SES üzerinden iletin →",
+      "hostname": "Webmail adresi",
+      "hostnameHint": "Kullanıcıların e-postalarını okumak için açtığı herkese açık URL, örn. mail.example.com.",
+      "imapHost": "IMAP sunucusu",
+      "imapPort": "IMAP portu",
+      "smtpHost": "SMTP sunucusu",
+      "smtpPort": "SMTP portu",
+      "deploy": "Webmail dağıt",
+      "deploying": "Dağıtılıyor…",
+      "hostnameRequired": "Webmail adresini girin.",
+      "hostsRequired": "Hem IMAP hem de SMTP sunucu adresini girin."
+    }
+  },
+  "advanced": {
+    "projectInfo": {
+      "title": "Proje Bilgisi",
+      "description": "Mevcut yapılandırma özeti"
+    },
+    "metric": {
+      "status": "Durum",
+      "project": "Proje",
+      "hostedOn": "Barındığı Yer"
+    },
+    "statusActive": "Aktif",
+    "statusDisabled": "Pasif",
+    "hostedCloud": "Openship Bulut",
+    "hostedServer": "Sunucu",
+    "hostedLocal": "Yerel",
+    "projectStatus": {
+      "title": "Proje Durumu",
+      "description": "Projenin yayında mı yoksa duraklatılmış mı olduğunu kontrol edin",
+      "active": "Proje Aktif",
+      "disabled": "Proje Pasif",
+      "liveAccessible": "Yayında ve erişilebilir",
+      "pausedInaccessible": "Duraklatıldı ve erişilemez",
+      "disable": "Devre Dışı Bırak",
+      "enable": "Etkinleştir"
+    },
+    "cache": {
+      "title": "Önbellek",
+      "description": "Önbelleğe alınmış derleme çıktılarını ve bağımlılık kurulumlarını temizleyin",
+      "clearInstall": "Kurulum Önbelleğini Temizle",
+      "clearInstallDesc": "Önbelleğe alınmış node_modules klasörünü kaldır",
+      "clearBuild": "Derleme Önbelleğini Temizle",
+      "clearBuildDesc": "Önbelleğe alınmış derleme çıktısını kaldır"
+    },
+    "transfer": {
+      "title": "Taşıma ve Klonlama",
+      "description": "Bu projeyi farklı bir ortama taşıyın veya çoğaltın",
+      "current": "Mevcut",
+      "transfer": "Taşı",
+      "clone": "Klonla",
+      "anotherServer": "Başka bir sunucu",
+      "targetLocal": "Yerel Bilgisayar",
+      "targetServer": "Self-Hosted Sunucu",
+      "targetCloud": "Openship Bulut"
+    },
+    "danger": {
+      "title": "Tehlikeli Bölge",
+      "description": "Bu proje için geri alınamaz eylemler",
+      "body": "Bu projeyi silmek; tüm dağıtımları, özel alan adlarını, ortam değişkenlerini ve analitik verilerini kalıcı olarak kaldıracaktır.",
+      "delete": "Projeyi Sil"
+    },
+    "toast": {
+      "toggleFailed": "Proje durumu değiştirilemedi",
+      "clearInstallFailed": "Kurulum önbelleği temizlenemedi",
+      "clearBuildFailed": "Derleme önbelleği temizlenemedi"
+    }
+  },
+  "routeRules": {
+    "title": "Rota kuralları",
+    "description": "Edge üzerinde uygulanan istek sınırlama (rate-limit), engelleme ve izin verme/reddetme kuralları — anında uygulanır, yeniden dağıtım gerekmez.",
+    "loading": "Kurallar yükleniyor…",
+    "empty": "Henüz rota kuralı yok. Aşağıdan bir tane ekleyin.",
+    "allHosts": "Tüm ana makine adları",
+    "allPaths": "Tüm yollar",
+    "addTitle": "Kural ekle",
+    "pathLabel": "Yol ön eki (isteğe bağlı)",
+    "rps": "İstek / saniye",
+    "burst": "Ani istek kapasitesi (burst)",
+    "methods": "Sadece bu metotlara izin ver",
+    "banIps": "IP'leri / CIDR bloklarını engelle",
+    "banCountries": "Ülkeleri engelle (ISO)",
+    "allowCountries": "Yalnızca bu ülkelere izin ver (ISO)",
+    "denyCidrs": "CIDR bloklarını reddet",
+    "allowReferers": "Hotlink: referer adreslerine izin ver",
+    "banUserAgents": "User-agent değerlerini engelle (alt dize)",
+    "blockEmptyUa": "Boş user-agent değerini engelle",
+    "blockStatus": "Engelleme yanıt kodu",
+    "add": "Kural ekle",
+    "remove": "Kaldır",
+    "enabled": "Etkin",
+    "disabled": "Pasif",
+    "saved": "Kural kaydedildi",
+    "saveFailed": "Kural kaydedilemedi",
+    "loadFailed": "Kurallar yüklenemedi"
+  },
+  "backup": {
+    "live": {
+      "title": "Canlı yedekleme",
+      "description": "Az önce başlattığınız yedekleme işleminin gerçek zamanlı ilerlemesi. Sayfa yenilense de izlenmeye devam eder.",
+      "dismiss": "Kapat"
+    },
+    "destinations": {
+      "title": "Yedekleme hedefleri",
+      "description": "Kullanıcı bazlı depolama hedefleri. S3-uyumlu bucket'lar, SFTP sunucuları veya yerel diskler ekleyin.",
+      "manage": "Yönet",
+      "loading": "Yükleniyor…",
+      "emptyPrefix": "Henüz hedef yok. ",
+      "emptyLink": "Bir tane oluşturun",
+      "emptySuffix": " ve yedeklemeye başlayın.",
+      "verified": "Doğrulandı",
+      "failed": "Başarısız"
+    },
+    "services": {
+      "title": "Servisler + ilkeler",
+      "description": "Her servisin kendi yedekleme ilkesi (zamanlama + hedef) olabilir. Proje düzeyindeki varsayılanlar 2. bölümde yer alır.",
+      "refresh": "Yenile",
+      "empty": "Bu projenin henüz servisi yok. Bazı servisler eklediğinizde servis düzeyinde yedekler burada görünecektir.",
+      "policyLabel": "İlke:",
+      "manualOnly": "yalnızca manuel",
+      "preDeploy": "dağıtım öncesi",
+      "webhook": "webhook",
+      "noPolicy": "İlke yok",
+      "backupNow": "Şimdi yedekle",
+      "editPolicy": "İlkeyi düzenle",
+      "addDestinationFirst": "Önce bir hedef ekleyin",
+      "createPolicyHint": "Bu servis için bir yedekleme ilkesi oluşturun",
+      "createPolicy": "İlke oluştur"
+    },
+    "recent": {
+      "title": "Son yedeklemeler",
+      "description": "Bu projedeki tüm servislerin son 25 yedekleme işlemi.",
+      "loading": "Yükleniyor…",
+      "empty": "Henüz yedek yok.",
+      "protectedTitle": "Saklama süresi temizliğinden korunanlar",
+      "protected": "Korunan",
+      "restoreTitle": "Bu yedekten geri yükle",
+      "allowPrune": "Saklama süresi dolduğunda silinmesine izin ver",
+      "protectFrom": "Saklama süresi temizliğinden koru"
+    },
+    "toast": {
+      "runFailed": "Yedekleme işlemi başarısız oldu",
+      "toggleProtectionFailed": "Koruma durumu değiştirilemedi"
+    }
+  },
+  "build": {
+    "edit": "Düzenle",
+    "webmail": {
+      "title": "Openship tarafından yönetilmektedir",
+      "description": "Webmail sabit bir derleme ve başlatma hattı kullanır — yükleme, derleme ve çalıştırma komutları yapılandırılamaz. Güncellemeleri almak için e-posta genel bakışından yeniden dağıtın."
+    },
+    "services": {
+      "title": "Servis bazlı ayarlar",
+      "descriptionTemplate": "Bu projede {serviceLabel} bulunuyor. Derleme komutları, framework, portlar ve çalıştırma komutları her servis satırında yer alır — bunları Servisler sekmesinde görüntüleyin ve düzenleyin.",
+      "open": "Servisleri Aç",
+      "subAppOne": "{count} alt uygulama",
+      "subAppOther": "{count} alt uygulama",
+      "composeOne": "{count} compose servisi",
+      "composeOther": "{count} compose servisi",
+      "both": "{subApps} ve {composeServices}"
+    },
+    "runtime": {
+      "title": "Çalışma zamanı yapılandırması",
+      "description": "Salt okunur. Dağıtım sihirbazı aracılığıyla düzenleyin, böylece her değişiklik yeni bir sürüm olarak yayınlansın.",
+      "framework": "Framework",
+      "packageManager": "Paket yöneticisi",
+      "runtimeIsolation": "Çalışma zamanı izolasyonu",
+      "resources": "Kaynaklar",
+      "resourcesValue": "{cpu} vCPU · {memory} MB",
+      "runtimePort": "Çalışma zamanı portu",
+      "installCommand": "Yükleme komutu",
+      "buildCommand": "Derleme komutu",
+      "noBuildStep": "Derleme adımı yok",
+      "outputDirectory": "Çıktı dizini",
+      "rootDirectory": "Kök dizin",
+      "startCommand": "Başlatma komutu",
+      "staticNoServer": "Statik (sunucu yok)",
+      "modeSandboxed": "Korumalı Alan (konteyner)",
+      "modeDirect": "Doğrudan (ana makine süreci)",
+      "modeDefault": "Varsayılan (dağıtımda çözümlenir)"
+    },
+    "env": {
+      "title": "Ortam değişkenleri",
+      "description": "Depolanırken şifrelenir. Gizli veriler maskeli kalır — yalnızca değiştirdiğiniz değerler yazılır.",
+      "edit": "Düzenle"
+    }
+  },
+  "envVars": {
+    "cancel": "İptal",
+    "saveChanges": "Değişiklikleri kaydet",
+    "close": "Kapat",
+    "applyTitle": "Yeniden derleme olmadan uygula",
+    "applyText": "Kaydedildi. Bunları çalışan servise uygulayın — yeni ortam değişkenleriyle yeniden başlatılır, klonlama veya yeniden derleme yapılmaz.",
+    "applyButton": "Uygula (yeniden başlat, derleme yok)",
+    "title": "Ortam değişkenleri",
+    "description": "Canlı ortam. Depolanırken şifrelenir. Gizli veriler ayarlandı olarak görünür — değiştirmek için yazın; korumak için boş bırakın.",
+    "empty": "Henüz ortam değişkeni yok.",
+    "keyPlaceholder": "ANAHTAR",
+    "secretPlaceholder": "•••••••• (ayarlandı — değiştirmek için yazın)",
+    "valuePlaceholder": "değer",
+    "hideValue": "Değeri gizle",
+    "showValue": "Değeri göster",
+    "markedSecret": "Gizli veri olarak işaretlendi",
+    "markSecret": "Gizli veri olarak işaretle",
+    "removeVariable": "Değişkeni kaldır",
+    "addVariable": "Değişken ekle",
+    "toast": {
+      "loadFailed": "Ortam değişkenleri yüklenemedi",
+      "loadFailedTitle": "Hata",
+      "validationTitle": "Doğrulama",
+      "saved": "Ortam değişkenleri kaydedildi",
+      "savedTitle": "Kaydedildi",
+      "saveFailed": "Ortam değişkenleri kaydedilemedi",
+      "saveFailedTitle": "Kaydetme başarısız oldu",
+      "applying": "Servis yeni ortam değişkenleriyle yeniden başlatılıyor — derleme yok.",
+      "applyingTitle": "Uygulanıyor",
+      "applyFailed": "Ortam değişkenleri çalışan servise uygulanamadı",
+      "applyFailedTitle": "Uygulama başarısız oldu"
+    }
+  },
+  "gitInfo": {
+    "repository": "Depo",
+    "autoDeploy": "Otomatik dağıtım",
+    "deploysOnPush": "Her push işleminde dağıtılır",
+    "manualOnly": "Yalnızca manuel dağıtımlar",
+    "branchToDeploy": "Dağıtılacak dal",
+    "chooseBranch": "Deponuzdan hangi dalın dağıtılacağını seçin",
+    "save": "Kaydet",
+    "cancel": "İptal",
+    "viewOnGithub": "GitHub'da Görüntüle",
+    "recentCommits": "Son commitler",
+    "totalCommits": "toplam {count}",
+    "noCommits": "Henüz commit yok",
+    "toast": {
+      "fetchBranchesFailed": "Dallar çekilemedi",
+      "errorTitle": "Hata",
+      "branchUpdated": "Dal başarıyla güncellendi",
+      "updatedTitle": "Güncellendi",
+      "branchUpdateFailed": "Dal güncellenemedi",
+      "autoDeployEnabled": "Otomatik dağıtım etkinleştirildi",
+      "autoDeployDisabled": "Otomatik dağıtım devre dışı bırakıldı",
+      "autoDeployFailed": "Otomatik dağıtım güncellenemedi"
+    }
+  },
+  "git": {
+    "connectFirst": {
+      "title": "Önce GitHub'a bağlanın",
+      "description": "Bu projeye bir depo bağlamak için GitHub hesabınızı bağlayın.",
+      "connecting": "Bağlanılıyor…",
+      "connect": "GitHub'a Bağlan"
+    },
+    "link": {
+      "title": "Bir Depo Bağlayın",
+      "description": "Webhook tetiklemeli dağıtımları etkinleştirmek için bir GitHub deposu bağlayın.",
+      "select": "Depo Seç"
+    },
+    "picker": {
+      "title": "Bir depo seçin",
+      "description": "Bu projeye bağlanacak bir depo seçin",
+      "linking": "Depo bağlanıyor…"
+    },
+    "appBanner": {
+      "title": "GitHub Uygulaması kurulu değil",
+      "description": "Bulut projeleri için otomatik dağıtımı ve webhook tetiklemeli dağıtımları etkinleştirmek üzere GitHub Uygulamasını hesabınıza veya organizasyonunuza kurun.",
+      "install": "GitHub Uygulamasını Kur"
+    },
+    "webhookBanner": {
+      "title": "Otomatik dağıtımı etkinleştirin",
+      "description": "Otomatik dağıtım doğrudan bir webhook uç noktasına ihtiyaç duyar. Bu Openship API'sini herkese açık bir URL'de kullanıma sunun veya doğrudan teslimat için doğrulanmış bir webhook alan adı yapılandırın."
+    },
+    "source": {
+      "title": "Kaynak Depo",
+      "description": "Git entegrasyonu, dağıtım tetikleyicileri ve depo sağlığı",
+      "repository": "Depo",
+      "open": "Aç"
+    },
+    "webhookEndpoint": {
+      "title": "Webhook Uç Noktası",
+      "descriptionSet": "GitHub push olaylarını doğrudan bu alan adına teslim eder",
+      "descriptionUnset": "Doğrudan webhook teslimatı için bir alan adı seçin",
+      "updating": "Güncelleniyor...",
+      "select": "Alan adı seçin...",
+      "clear": "Seçimi temizle"
+    },
+    "autoDeployCard": {
+      "title": "Otomatik Dağıtım",
+      "enabled": "Etkin",
+      "disabled": "Pasif",
+      "descDelivers": "Push işlemleri {domain} adresine teslim edilir",
+      "descAuto": "Push işlemleri dağıtımları otomatik tetikler",
+      "descManual": "Dağıtımlar manuel olarak başlatılmalıdır"
+    },
+    "webhookCard": {
+      "title": "Webhook",
+      "direct": "Doğrudan",
+      "active": "Aktif",
+      "inactive": "Pasif",
+      "descDirect": "Olaylar {domain} üzerinden doğrudan teslim edilir",
+      "descActive": "Depo olayları Openship'e ulaşıyor",
+      "descInactive": "Webhook yapılandırılmadı veya yanıt vermiyor"
+    },
+    "rollbackStrategy": {
+      "title": "Geri alma stratejisi",
+      "rebuild": "Yeniden derle (git)",
+      "instant": "Anında (anlık görüntü - snapshot)",
+      "descRebuild": "Geri alma eski commit'i tekrar klonlar ve derler — daha ucuzdur ancak daha yavaştır ve o commit artık derlenmiyorsa başarısız olabilir.",
+      "descInstant": "Saniyeler içinde geri dönmek için her sürümün derleme çıktısını diskte saklar. Ek disk kullanır, geçmiş limitiyle sınırlıdır.",
+      "toggleAria": "Anlık görüntü saklamayı değiştir"
+    },
+    "rollbackHistory": {
+      "title": "Geri alma geçmişi",
+      "valueOne": "{count} sürüm",
+      "valueOther": "{count} sürüm",
+      "descSnapshot": "Geri alma için kaç son sürümün derleme çıktısının saklanacağını belirler. Daha eski çıktılar disk alanı açmak için temizlenir.",
+      "descGit": "Yalnızca Anında (anlık görüntü) modu için geçerlidir — Git modu derleme çıktısı saklamaz.",
+      "decreaseAria": "Geri alma geçmişini azalt",
+      "increaseAria": "Geri alma geçmişini artır"
+    },
+    "commits": {
+      "title": "Son commitler",
+      "subtitle": "{branch} dalındaki son commitler",
+      "empty": "Commit bulunamadı",
+      "emptyDesc": "Deponuza push yaptığınızda son commit etkinlikleri burada görünür.",
+      "viewAll": "Tüm commitleri GitHub'da görüntüle"
+    },
+    "cloneToken": {
+      "title": "Proje Klonlama Jetonu (Özel)",
+      "description": "Genel jetonunuza veya GitHub Uygulamasına geçmeden önce klonlama modülünün kullandığı, proje kapsamına özel jeton",
+      "loading": "Yükleniyor…",
+      "explainer": "YALNIZCA bu proje için kullanılmak üzere bir GitHub PAT yapıştırın. Klonlama zincirinde en yüksek önceliğe sahiptir — ayarlar düzeyindeki jetonunuzu ve GitHub Uygulamasını geçersiz kılar.",
+      "hide": "Jetonu gizle",
+      "show": "Jetonu göster",
+      "saveToken": "Jetonu kaydet",
+      "cancel": "İptal",
+      "savedTitle": "Jeton bu proje için kaydedildi",
+      "lastUpdated": "Son güncelleme: {when}",
+      "justNow": "az önce",
+      "replace": "Değiştir",
+      "clear": "Temizle"
+    },
+    "toast": {
+      "pasteToken": "Kaydetmeden önce bir jeton yapıştırın",
+      "cloneTokenTitle": "Klonlama jetonu",
+      "tokenSaved": "Proje klonlama jetonu kaydedildi",
+      "tokenSaveFailed": "Jeton kaydedilemedi",
+      "tokenCleared": "Proje klonlama jetonu temizlendi",
+      "tokenClearFailed": "Jeton temizlenemedi",
+      "autoDeployEnabled": "Otomatik dağıtım etkinleştirildi",
+      "autoDeployDisabled": "Otomatik dağıtım devre dışı bırakıldı",
+      "autoDeployFailed": "Otomatik dağıtım güncellenemedi",
+      "rollbackGit": "Geri alma stratejisi: Git tabanlı (anlık görüntü yok)",
+      "rollbackSnapshot": "Geri alma stratejisi: Anlık görüntü (derleme çıktıları saklanır)",
+      "rollbackStrategyFailed": "Geri alma stratejisi güncellenemedi",
+      "rollbackWindowOne": "Geri alma için son {count} sürüm saklanıyor",
+      "rollbackWindowOther": "Geri alma için son {count} sürüm saklanıyor",
+      "rollbackHistoryFailed": "Geri alma geçmişi güncellenemedi",
+      "webhookDomainSet": "Webhook alan adı {domain} olarak ayarlandı",
+      "webhookDomainCleared": "Webhook alan adı temizlendi",
+      "webhookDomainFailed": "Webhook alan adı ayarlanamadı",
+      "linked": "{repo} deposuna bağlandı",
+      "appNotInstalled": "GitHub Uygulaması bu hesap için kurulu değil",
+      "linkFailed": "Depo bağlanamadı"
+    }
+  },
+  "logs": {
+    "noRuntime": "Çalışma zamanı günlüğü yok",
+    "noRuntimeDesc": "Bu proje statik bir uygulama olarak dağıtılmıştır, bu nedenle günlük akışı yapılacak çalışan bir sunucu süreci yoktur.",
+    "terminal": "Terminal",
+    "server": "Sunucu",
+    "requests": "İstekler",
+    "target": "Çalışma zamanı günlük hedefi",
+    "targetDescProject": "Proje çalışma zamanı ile servis çalışma zamanları arasında geçiş yapın.",
+    "targetDescService": "Servis çalışma zamanları arasında geçiş yapın.",
+    "projectRuntime": "Proje çalışma zamanı",
+    "selectService": "Çalışma zamanı günlüklerini görmek için bir servis seçin.",
+    "projectFallback": "Proje"
+  },
+  "resources": {
+    "title": "Makine Gücü",
+    "description": "Projeniz için makine gücünü yapılandırın.",
+    "tiers": {
+      "lightweight": {
+        "name": "Hafif (Lightweight)",
+        "description": "Küçük uygulamalar ve statik siteler"
+      },
+      "standard": {
+        "name": "Standart",
+        "description": "Çoğu web uygulaması"
+      },
+      "performance": {
+        "name": "Performans",
+        "description": "Yüksek trafikli uygulamalar"
+      },
+      "enterprise": {
+        "name": "Kurumsal",
+        "description": "Büyük ölçekli canlı ortam uygulamaları"
+      },
+      "autoscale": {
+        "name": "Otomatik Ölçekleme",
+        "description": "Talebe göre ölçeklenir"
+      }
+    },
+    "dynamic": "Dinamik",
+    "custom": {
+      "name": "Özel",
+      "description": "Kendi kaynaklarınızı tanımlayın",
+      "clickToConfigure": "Yapılandırmak için tıklayın"
+    },
+    "cpuValue": "{cpu} vCPU",
+    "customPanel": {
+      "title": "Özel Kaynakları Yapılandır",
+      "cpuCores": "CPU Çekirdekleri",
+      "cpuRange": "Aralık: 0.25 - 4.00",
+      "memory": "Bellek (MB)",
+      "memoryRange": "Aralık: 128 - 8192",
+      "cancel": "İptal",
+      "saving": "Kaydediliyor...",
+      "save": "Yapılandırmayı Kaydet"
+    },
+    "toast": {
+      "updated": "Kaynaklar başarıyla güncellendi",
+      "updateFailed": "Kaynaklar güncellenemedi",
+      "cpuRange": "CPU 0.25 ile 4.00 çekirdek arasında olmalıdır",
+      "memoryRange": "Bellek 128 MB ile 8192 MB arasında olmalıdır",
+      "customSaved": "Özel kaynaklar başarıyla kaydedildi",
+      "customSaveFailed": "Özel kaynaklar kaydedilemedi"
+    }
+  },
+  "sleep": {
+    "title": "Makine Modu",
+    "description": "Kullanılabilirliği ve maliyet verimliliğini kontrol edin",
+    "autoSleep": "Otomatik Uyku",
+    "recommended": "ÖNERİLEN",
+    "autoSleepDesc": "Boştayken durur, anında uyanır",
+    "autoSleepMeta": "Maliyet açısından verimli • Soğuk başlatma yok",
+    "alwaysOn": "Her Zaman Açık",
+    "alwaysOnDesc": "Konteyner asla durmaz",
+    "alwaysOnMeta": "Maksimum kullanılabilirlik • Daha yüksek maliyet",
+    "infoTitle": "Otomatik Uyku nasıl çalışır",
+    "infoBefore": "İstek olduğunda konteyneriniz çalışmaya devam eder. Hareketsizlikten sonra maliyet tasarrufu için uyur. Bir sonraki istekte ",
+    "infoEmphasis": "anında",
+    "infoAfter": " uyanır — soğuk başlatma gecikmesi yaşanmaz.",
+    "toast": {
+      "updated": "Uyku modu başarıyla güncellendi",
+      "updateFailed": "Uyku modu güncellenemedi"
+    }
+  },
+  "deleteDialog": {
+    "title": "Projeyi Sil",
+    "bodyPrefix": "Silmek istediğinizden emin misiniz: ",
+    "bodySuffix": "? Bu işlem geri alınamaz ve tüm proje verilerini, dağıtımları ve ayarları kalıcı olarak siler.",
+    "cancel": "İptal",
+    "delete": "Projeyi Sil"
+  },
+  "deletion": {
+    "title": "Projeyi sil",
+    "cannotUndo": "Bu işlem geri alınamaz.",
+    "aboutToPrefix": "Şunu silmek üzeresiniz: ",
+    "aboutToSuffix": ".",
+    "deleteAllAria": "Tüm ortamları sil",
+    "deleteAll": "Tüm ortamları sil",
+    "deleteAllOn": "Proje uygulamasını ve altındaki her dal ortamını kaldırır.",
+    "deleteAllOff": "Yalnızca bu ortamı kaldırır. Diğer dallar kalır.",
+    "scanning": "Bağlı servisler ve disk birimleri taranıyor…",
+    "wipeAria": "Ayrıca servis verilerini de sil",
+    "wipeLabelOne": "Ayrıca servis verilerini de sil ({count} disk birimi)",
+    "wipeLabelOther": "Ayrıca servis verilerini de sil ({count} disk birimi)",
+    "wipeOn": "Disk birimleri kalıcı olarak kaldırılacaktır - veritabanı içerikleri, önbellekler, yüklemeler, bu servisler tarafından saklanan her şey silinecektir.",
+    "wipeOff": "Kapalı: konteynerler kaldırılır ancak adlandırılmış disk birimleri diskte kalır. Daha sonra adlarıyla tekrar bağlayabilirsiniz.",
+    "appData": "Uygulama verileri",
+    "volOne": "{count} disk birimi",
+    "volOther": "{count} disk birimi",
+    "amberWipe": "Tüm dağıtımlar, alan adları, ortam değişkenleri ve kalıcı servis verileri kalıcı olarak kaldırılacaktır.",
+    "amberNoWipe": "Tüm dağıtımlar, alan adları, ortam değişkenleri ve analiz verileri kalıcı olarak kaldırılacaktır.",
+    "typePrefix": "Onaylamak için ",
+    "typeSuffix": " yazın.",
+    "cancel": "İptal",
+    "confirmDeleteWipe": "Sil + verileri temizle",
+    "confirmDeleteEnvWipe": "Ortamı sil + verileri temizle",
+    "confirmDelete": "Projeyi sil",
+    "confirmDeleteEnv": "Ortamı sil"
+  },
+  "routing": {
+    "title": "Yönlendirme",
+    "description": "Yeniden yazmalar, yönlendirmeler ve başlıklar. Kaydedildiğinde uygulanır — yeniden derleme yok.",
+    "saving": "Kaydediliyor…",
+    "save": "Kaydet",
+    "summaryNone": "Hiçbiri yapılandırılmadı",
+    "summaryActive": "Yapılandırıldı",
+    "toast": {
+      "title": "Yönlendirme",
+      "updated": "Yönlendirme güncellendi — canlı dağıtıma uygulandı.",
+      "failed": "Yönlendirme güncellenemedi"
+    }
+  },
+  "domains": {
+    "status": {
+      "verified": "Doğrulandı",
+      "active": "Aktif",
+      "failed": "Başarısız",
+      "removing": "Kaldırılıyor",
+      "pending": "Beklemede"
+    },
+    "ssl": {
+      "includedByHost": "Barındırma hizmeti tarafından sağlanır",
+      "active": "Aktif",
+      "provisioning": "Sağlanıyor",
+      "expired": "Süresi Doldu",
+      "error": "Hata",
+      "inactive": "Pasif",
+      "external": "Harici TLS",
+      "manual": "Manuel sertifika"
+    },
+    "typeCustom": "Özel alan adı",
+    "typeFree": "Ücretsiz alt alan adı",
+    "primaryDomainTitle": "Birincil alan adı",
+    "domainNTitle": "Alan adı {n}",
+    "portLabel": "Port {port}",
+    "noPortSelected": "Port seçilmedi",
+    "meta": {
+      "accessTitle": "Erişim URL'si",
+      "accessSubtitle": "Yerel geliştirme uç noktası",
+      "local": "Yerel",
+      "availableOnMachine": "Bu bilgisayarda kullanılabilir",
+      "primaryTitle": "Birincil Alan Adı",
+      "primaryAcross": "{count} alan adında birincil rota",
+      "hostManaged": "Ana makine tarafından yönetilen canlı ortam URL'si",
+      "customProduction": "Özel canlı ortam alan adı"
+    },
+    "route": {
+      "disabled": "Pasif",
+      "routePaused": "Rota duraklatıldı",
+      "serviceDisabled": "Servis pasif",
+      "internal": "Dahili",
+      "notExposed": "Dışa açık değil",
+      "public": "Herkese açık"
+    },
+    "actions": {
+      "visit": "Aç",
+      "editDomains": "Alan adlarını düzenle",
+      "hideSetup": "Kurulumu gizle",
+      "addDomain": "Alan adı ekle"
+    },
+    "add": {
+      "title": "Alan adı ekle",
+      "description": "Bir rota ekleyin: ücretsiz veya özel bir alan adı ve eşleştiği portu seçin.",
+      "free": "Ücretsiz alt alan adı",
+      "custom": "Özel alan adı",
+      "domainName": "Alan adı",
+      "subdomain": "Alt alan adı",
+      "customPlaceholder": "alanadiniz.com",
+      "defaultAppName": "uygulamam",
+      "mapsToPort": "Eşleştiği port",
+      "servesPath": "Sunulan yol",
+      "servesPathHint": "Bu alan adına gelen istekler, derleme çıktınızdaki bu yoldan sunulur.",
+      "servesPathRedeploy": "Yeni yollar bir sonraki dağıtımınızda geçerli olur.",
+      "includeWww": "www dahil et",
+      "includeWwwDesc": "Ayrıca www.{domain} için de kayıtlar oluştur",
+      "includeWwwFallback": "alanadiniz.com",
+      "externalIngress": "Harici trafik girişi ve TLS",
+      "externalIngressDesc": "TLS upstream katmanında sonlandırılır (Cloudflare Tunnel veya yük dengeleyici). Yalnızca TXT kaydıyla doğrulayın — alan adının bu sunucuya yönlenmesi gerekmez ve Openship sertifika düzenlemez.",
+      "noWww": "Alan adını \"www.\" olmadan girin — eklemek için aşağıdan \"www dahil et\" seçeneğini açın.",
+      "adding": "Ekleniyor...",
+      "submit": "Alan adı ekle"
+    },
+    "dns": {
+      "title": "DNS Kayıtları",
+      "descPreview": "Bu kayıtları DNS sağlayıcınıza ekleyin, ardından bağlamak için Alan adı ekle'ye tıklayın",
+      "descApply": "Bu kayıtları DNS sağlayıcınızda uygulayın, ardından yayılmasını bekleyin",
+      "infoPreview": "Önce bu kayıtları ekleyin — eklendikten sonra değişmezler, böylece yayılma şimdi başlar. Ardından bağlamak için Alan adı ekle'ye basın ve son olarak DNS çözümlendiğinde Doğrula'ya tıklayın.",
+      "infoApply": "DNS değişikliklerinin küresel olarak yayılması 48 saati bulabilir. Kayıtlar çözümlendiğinde aşağıdan Doğrula'ya tıklayın — DNS'i kontrol edeceğiz, alan adını etkinleştireceğiz ve arka planda SSL sağlayacağız.",
+      "verifying": "Doğrulanıyor...",
+      "verify": "{hostname} adresini doğrula",
+      "copy": "Kopyala"
+    },
+    "records": {
+      "toggle": "DNS kayıtları",
+      "hint": "Bunları DNS sağlayıcınıza ekleyin, ardından Doğrula'ya tıklayın.",
+      "loading": "Kayıtlar yükleniyor…",
+      "none": "Bu alan adı için eklenecek kayıt yok."
+    },
+    "verifyMissing": {
+      "both": "Ne CNAME ne de TXT kaydı henüz çözümlenmiyor — aşağıdaki kayıtları ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın.",
+      "cname": "CNAME kaydı henüz çözümlenmiyor — aşağıdan ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın.",
+      "txt": "TXT doğrulama kaydı henüz çözümlenmiyor — aşağıdan ekleyin, DNS yayılmasını bekleyin ve ardından Doğrula'ya basın."
+    },
+    "portHint": {
+      "body": "Port {port} üzerinde hiçbir şey yanıt vermedi — uygulama orayı dinleyene kadar istekler 502 hatası verebilir.",
+      "bodyService": "\"{service}\" servisi: port {port} üzerinde hiçbir şey yanıt vermedi — orayı dinleyene kadar istekler 502 hatası verebilir."
+    },
+    "outputHint": {
+      "body": "{path} yolunda derleme çıktısı bulunamadı — Çıktı Dizininizi kontrol edip yeniden dağıtın."
+    },
+    "overview": {
+      "primary": "Birincil",
+      "mappedTo": "Eşleştiği yer:",
+      "status": "Durum",
+      "ssl": "SSL",
+      "visit": "Aç"
+    },
+    "cold": {
+      "localUrl": "Yerel URL",
+      "type": "Tür",
+      "status": "Durum"
+    },
+    "edit": {
+      "title": "Alan adlarını düzenle",
+      "descServer": "Her alan adının hangi dahili porta yönleneceğini düzenleyin.",
+      "descStatic": "Her alan adının hangi statik yolu sunacağını düzenleyin.",
+      "cancel": "İptal",
+      "saving": "Kaydediliyor...",
+      "save": "Değişiklikleri kaydet"
+    },
+    "addRoute": {
+      "cancel": "İptal",
+      "add": "Rota ekle",
+      "free": "Ücretsiz alt alan adı",
+      "custom": "Özel alan adı",
+      "customPlaceholder": "uygulama.example.com",
+      "defaultServiceName": "servisim",
+      "port": "Port",
+      "portPlaceholder": "8080",
+      "submit": "Ekle",
+      "loading": "Rotalar yükleniyor...",
+      "emptyPrefix": "Henüz alan adı yok. Bir servisin portuna alan adı yönlendirmek için ",
+      "emptyAction": "Rota ekle",
+      "emptySuffix": " seçeneğine tıklayın."
+    },
+    "editRoute": {
+      "title": "Rotayı düzenle",
+      "internalOnly": "Yalnızca dahili",
+      "close": "Kapat",
+      "disabledWarning": "Servis pasif - servis tekrar etkinleştirilene kadar rotalar pasiftir.",
+      "save": "Değişiklikleri kaydet"
+    },
+    "menu": {
+      "editRoute": "Rotayı düzenle",
+      "settingPrimary": "Birincil olarak ayarlanıyor...",
+      "setPrimary": "Birincil olarak ayarla",
+      "verifying": "Doğrulanıyor...",
+      "verify": "Doğrula",
+      "renewing": "Yenileniyor...",
+      "renewSsl": "SSL Yenile",
+      "rechecking": "Tekrar kontrol ediliyor...",
+      "recheckSsl": "SSL'i Tekrar Kontrol Et",
+      "uploadCert": "Sertifika yükle"
+    },
+    "certUpload": {
+      "title": "Sertifika yükle",
+      "desc": "Let's Encrypt yerine kendi sertifikanızla (size ait bir sertifika veya Cloudflare Origin CA) TLS sunun. Bu seçeneği, alan adının önünde bir upstream proxy bulunduğunda ve origin sunucunun yine de gerçek bir sertifikaya ihtiyaç duyduğu durumlarda kullanın (Cloudflare Full Strict). Sertifika yüklendiğinde Certbot bu alan adı için devre dışı bırakılır; yenilemek için yeni sertifikayı yükleyin.",
+      "certLabel": "Sertifika (fullchain PEM)",
+      "certPlaceholder": "-----BEGIN CERTIFICATE-----",
+      "keyLabel": "Özel anahtar (PEM)",
+      "keyPlaceholder": "-----BEGIN PRIVATE KEY-----",
+      "submit": "Sertifikayı kur",
+      "submitting": "Kuruluyor...",
+      "close": "İptal"
+    },
+    "toast": {
+      "enterPort": "Bu alan adının yönleneceği portu girin (1–65535).",
+      "addDomainTitle": "Alan adı ekle",
+      "addDomainFailed": "Alan adı eklenemedi",
+      "addDomainFailedTitle": "Alan adı ekleme başarısız oldu",
+      "addedCustom": "{label} eklendi — DNS kayıtlarını uygulayın, ardından Doğrula'ya basın.",
+      "addedFree": "{label} eklendi.",
+      "copied": "Panoya kopyalandı",
+      "verifiedSuccess": "{hostname} doğrulandı — SSL arka planda sağlanıyor.",
+      "verifiedTitle": "Alan adı doğrulandı",
+      "verifyNotYet": "{hostname} henüz doğrulanamadı.",
+      "verifyFailedTitle": "Doğrulama başarısız oldu",
+      "verifyFailed": "Alan adı doğrulanamadı.",
+      "sslRenewed": "{hostname} için SSL yenilendi.",
+      "sslRenewFailed": "{hostname} için SSL yenilenemedi.",
+      "sslTitle": "SSL",
+      "sslVerified": "{hostname} için SSL doğrulandı.",
+      "sslNoCert": "{hostname} için henüz geçerli bir sertifika bulunamadı. Az önce dağıtım yaptıysanız Let's Encrypt'e biraz zaman verip tekrar kontrol edin.",
+      "sslRecheckFailed": "{hostname} için SSL tekrar kontrol edilemedi.",
+      "certUploaded": "{hostname} için sertifika kuruldu.",
+      "certUploadFailed": "{hostname} için sertifika kurulamadı.",
+      "completeEndpoints": "Kaydetmeden önce her alan adını ve eşleşen portu tamamlayın",
+      "domainsTitle": "Alan Adları",
+      "routingUpdated": "Alan adı yönlendirmesi güncellendi",
+      "routingUpdateFailed": "Alan adı yönlendirmesi güncellenemedi",
+      "primaryUpdated": "Birincil alan adı güncellendi",
+      "setPrimaryFailed": "Birincil alan adı ayarlanamadı",
+      "routeUpdateFailed": "Servis rotası güncellenemedi",
+      "publishing": "Yayınlanıyor — edge servisini kurmak ve alan adınızı uygulamak için dağıtılıyor…",
+      "publishFailed": "Alan adı kaydedildi ancak dağıtım başlamadı — yayınlamak için yeniden dağıtın.",
+      "enterPortShort": "Bu alan adının yönleneceği portu girin.",
+      "noServicePort": "Hiçbir servis {port} portunu dışa açmıyor. Önce bu portu bir servise ekleyin.",
+      "enterCustom": "Özel bir alan adı girin.",
+      "enterSubdomain": "Bir alt alan adı girin."
+    }
+  }
+}
