@@ -511,6 +511,7 @@
       "discord": "Discord",
       "msteams": "Microsoft Teams",
       "telegram": "Telegram",
+      "in_app": "In-app"
     },
     "form": {
       "labelPlaceholder": "Label (e.g. On-call email)",
