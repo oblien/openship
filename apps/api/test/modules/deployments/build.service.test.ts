@@ -16,6 +16,7 @@ const {
     project: {
       findById: vi.fn(),
       getEnvMap: vi.fn(),
+      listByGroup: vi.fn(),
     },
     deployment: {
       listByProject: vi.fn(),
@@ -70,16 +71,26 @@ vi.mock("../../../src/modules/deployments/smart-route", () => ({
 }));
 
 import {
+  resolveDeploymentProject,
   triggerDeployment,
   type DeploymentConfigSnapshot,
 } from "../../../src/modules/deployments/build.service";
 
-const ctx = { userId: "user-1", organizationId: "org-1" } as any;
+const ctx = {
+  userId: "user-1",
+  organizationId: "org-1",
+  role: "member",
+  tokenScope: null,
+} as any;
 
 function baseProject(overrides: Record<string, unknown> = {}) {
   return {
     id: "project-1",
     organizationId: "org-1",
+    groupId: "app-1",
+    environmentName: "Production",
+    environmentSlug: "production",
+    environmentType: "production",
     appTemplateId: null,
     activeDeploymentId: null,
     gitUrl: null,
@@ -163,6 +174,7 @@ describe("triggerDeployment", () => {
 
     repos.project.findById.mockResolvedValue(baseProject());
     repos.project.getEnvMap.mockResolvedValue({});
+    repos.project.listByGroup.mockResolvedValue([baseProject()]);
     repos.deployment.listByProject.mockResolvedValue({ rows: [] });
     repos.deployment.getLatestSuccessfulForBranch.mockResolvedValue(null);
     repos.deployment.create.mockResolvedValue({ id: "dep-1", projectId: "project-1" });
@@ -234,5 +246,74 @@ describe("triggerDeployment", () => {
         composeServices,
       }),
     );
+  });
+
+  it("routes an explicit preview deploy to the sibling project for its branch", async () => {
+    const production = baseProject();
+    const previewOne = baseProject({
+      id: "project-preview-one",
+      environmentName: "Feature one",
+      environmentSlug: "feature-one",
+      environmentType: "preview",
+      gitBranch: "feature/one",
+    });
+    const previewTwo = baseProject({
+      id: "project-preview-two",
+      environmentName: "Feature two",
+      environmentSlug: "feature-two",
+      environmentType: "preview",
+      gitBranch: "feature/two",
+    });
+    repos.project.findById.mockResolvedValue(production);
+    repos.project.listByGroup.mockResolvedValue([production, previewOne, previewTwo]);
+    repos.deployment.create.mockImplementation(async (input: Record<string, unknown>) => ({
+      id: "dep-preview",
+      ...input,
+    }));
+
+    await triggerDeployment(ctx, {
+      projectId: "project-1",
+      environment: "preview",
+      branch: "feature/two",
+      commitSha: "preview123",
+    });
+
+    expect(repos.deployment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-preview-two",
+        environment: "preview",
+        branch: "feature/two",
+      }),
+    );
+    expect(kickoffBuild).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "project-preview-two" }),
+      expect.objectContaining({ id: "dep-preview", projectId: "project-preview-two" }),
+    );
+  });
+
+  it("rejects a preview deploy when no isolated preview project exists", async () => {
+    repos.project.listByGroup.mockResolvedValue([baseProject()]);
+
+    await expect(
+      resolveDeploymentProject(ctx, "project-1", "preview", "feature/missing"),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "DEPLOYMENT_ENVIRONMENT_NOT_CONFIGURED",
+    });
+  });
+
+  it("requires restricted principals to name a sibling environment project directly", async () => {
+    await expect(
+      resolveDeploymentProject(
+        { ...ctx, role: "restricted" },
+        "project-1",
+        "preview",
+        "feature/one",
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 403,
+      code: "DEPLOYMENT_ENVIRONMENT_PROJECT_REQUIRED",
+    });
+    expect(repos.project.listByGroup).not.toHaveBeenCalled();
   });
 });

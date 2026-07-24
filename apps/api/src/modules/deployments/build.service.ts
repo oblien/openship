@@ -67,6 +67,10 @@ import {
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
 import { resolveReleaseDist, resolveLatestVersion, readApiVersion } from "../../lib/release-resolver";
+import {
+  projectMatchesDeploymentEnvironment,
+  selectDeploymentEnvironmentProject,
+} from "./deployment-environment";
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -82,6 +86,76 @@ function throwPreflightFailure(preflight: PreflightResult): never {
       : "PRE_DEPLOY_CHECKS_FAILED";
 
   throw new AppError(`Pre-deploy checks failed: ${failures}`, 403, errorCode);
+}
+
+/**
+ * Resolve an environment selector (for example `--env preview`) to the
+ * isolated project row that owns that environment. Deploying against the
+ * caller-supplied production row and merely stamping `environment=preview` on
+ * the deployment would let onSuccess replace production's active pointer.
+ *
+ * Restricted principals must pass the environment project's id explicitly so
+ * the route-level permission check evaluates that exact grant instead of
+ * silently crossing from one project grant to a sibling row.
+ */
+export async function resolveDeploymentProject(
+  ctx: RequestContext,
+  projectId: string,
+  requestedEnvironment?: string,
+  requestedBranch?: string,
+): Promise<Project> {
+  const base = await repos.project.findById(projectId);
+  if (!base) {
+    throw new NotFoundError("Project", projectId);
+  }
+
+  const environment = requestedEnvironment?.trim();
+  if (!environment) return base;
+
+  const baseMatches = projectMatchesDeploymentEnvironment(base, environment);
+  if (ctx.role === "restricted" || ctx.tokenScope) {
+    if (baseMatches) return base;
+    throw new AppError(
+      `The "${environment}" environment uses a different project. Pass that environment's project id so its permission grant can be verified.`,
+      403,
+      "DEPLOYMENT_ENVIRONMENT_PROJECT_REQUIRED",
+    );
+  }
+
+  const branch = requestedBranch?.trim();
+  if (
+    baseMatches &&
+    (environment.toLowerCase() === "production" || !branch || base.gitBranch === branch)
+  ) {
+    return base;
+  }
+
+  const siblings = await repos.project.listByGroup(base.groupId);
+  const selection = selectDeploymentEnvironmentProject(base, siblings, environment, branch);
+
+  if (selection.status === "matched") {
+    return selection.project;
+  }
+  if (selection.status === "missing") {
+    throw new AppError(
+      `No "${environment}" environment exists for this project. Create it first or pass the target environment's project id.`,
+      409,
+      "DEPLOYMENT_ENVIRONMENT_NOT_CONFIGURED",
+    );
+  }
+
+  const branches = selection.candidates
+    .map((project) => project.gitBranch)
+    .filter((branch): branch is string => Boolean(branch));
+  const branchHint =
+    branches.length > 0
+      ? ` Pass --branch with one of: ${[...new Set(branches)].join(", ")}.`
+      : " Pass the target environment's project id.";
+  throw new AppError(
+    `Multiple "${environment}" environments match this project.${branchHint}`,
+    409,
+    "DEPLOYMENT_ENVIRONMENT_AMBIGUOUS",
+  );
 }
 
 /** Wrap a snapshot with the project's currently-active deployment id (rollback target). */
@@ -799,10 +873,7 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
     cloneStrategy,
   } = input;
 
-  const project = await repos.project.findById(projectId);
-  if (!project) {
-    throw new NotFoundError("Project", projectId);
-  }
+  const project = await resolveDeploymentProject(ctx, projectId, environment, branch);
   // Org-membership is verified by the route-level requirePermission
   // middleware before this is reached.
   // GitHub access gate: default-deny for everyone but the org owner —
@@ -1354,10 +1425,12 @@ export async function triggerDeployment(
     releaseVersion?: string;
   },
 ) {
-  const project = await repos.project.findById(data.projectId);
-  if (!project) {
-    throw new NotFoundError("Project", data.projectId);
-  }
+  const project = await resolveDeploymentProject(
+    ctx,
+    data.projectId,
+    data.environment,
+    data.branch,
+  );
   // The Openship control plane IS the running host service, not a redeployable
   // workload — it updates itself via the CLI. It's a release-provider project, so
   // the git/localPath 403 below would NOT catch it; guard it explicitly.
