@@ -189,8 +189,9 @@ certificate.
 <Callout title="One more thing to check: the hostname itself" type="info">
 If **Add domain** is rejected before you even reach verification, the hostname failed a basic check — e.g.
 `Domain "app.example.com" is already in use` (it's attached elsewhere) or
-`"…" is not a valid public hostname.` (a bare IP, `localhost`, or a single-label name). Free `*.opsh.io`-style
-subdomains aren't added here either — those live in the project's public endpoints, not as custom domains.
+`"…" is not a valid public hostname.` (a bare IP, `localhost`, a single-label name, or a dot-separated label
+longer than 63 characters). Free `*.opsh.io`-style subdomains aren't added here either — those live in the
+project's public endpoints, not as custom domains.
 </Callout>
 
 <Cards>
