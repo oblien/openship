@@ -13,6 +13,7 @@
  * Every subcommand is [self-host] only: gated via caps.requireSelfHost.
  */
 import { Command } from "commander";
+import { createInterface } from "node:readline";
 import chalk from "chalk";
 import ora from "ora";
 import { apiRequest, ApiError } from "../lib/api-client";
@@ -43,6 +44,16 @@ function guard<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args
       process.exit(1);
     }
   };
+}
+
+/** Interactive y/N confirm. Non-interactive (piped / CI) proceeds — the API's
+ *  own active-deployment guard is the real safety net there. */
+async function confirm(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return true;
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  const answer = await new Promise<string>((resolve) => rl.question(`${question} [y/N] `, resolve));
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
 }
 
 interface ServerRow {
@@ -145,9 +156,16 @@ server
   .command("rm <id>")
   .alias("remove")
   .description("Delete a server")
+  .option("-f, --force", "Delete without confirmation, even if it has active deployments (orphans their containers)")
   .action(
-    guard(async (id: string) => {
-      await apiRequest(`/system/servers/${encodeURIComponent(id)}`, { method: "DELETE" });
+    guard(async (id: string, opts: { force?: boolean }) => {
+      if (!opts.force && !(await confirm(`Delete server ${id}? Any containers still running on it will be orphaned.`))) {
+        info("Aborted.");
+        return;
+      }
+      // force skips the API's active-deployment guard too (see deleteServer).
+      const qs = opts.force ? "?force=true" : "";
+      await apiRequest(`/system/servers/${encodeURIComponent(id)}${qs}`, { method: "DELETE" });
       if (isJsonMode()) return printJson({ ok: true, id });
       ok(`  Removed server ${id}`);
     }),
@@ -337,6 +355,7 @@ server
 
       // Non-streaming: install each component sequentially.
       const results: unknown[] = [];
+      let anyFailed = false;
       for (const component of components) {
         const spinner = isJsonMode() ? null : ora(`Installing ${component}…`).start();
         const res = await apiRequest<{ success: boolean; component: string; version?: string; error?: string }>(
@@ -344,11 +363,15 @@ server
           { method: "POST", body: JSON.stringify({ serverId, component }) },
         );
         results.push(res);
+        if (!res.success) anyFailed = true;
         if (isJsonMode()) spinner?.stop();
         else if (res.success) spinner?.succeed(`${component} installed${res.version ? ` (${res.version})` : ""}`);
         else spinner?.fail(`${component} failed: ${res.error ?? "unknown error"}`);
       }
       if (isJsonMode()) printJson(results);
+      // Match the streaming path: a failed component must fail the command so CI
+      // and scripts don't read a partial install as success.
+      if (anyFailed) process.exit(1);
     }),
   );
 
