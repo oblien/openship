@@ -175,3 +175,26 @@ describe("openship domain primary", () => {
     expect(JSON.parse(out)).toEqual(PRIMARY.data);
   });
 });
+
+// ─── records ─────────────────────────────────────────────────────────────────
+
+describe("openship domain records", () => {
+  const RECORDS = { data: { mode: "selfhosted", records: [{ type: "A", host: "@", value: "203.0.113.5" }] } };
+
+  it("GETs the existing DNS records for a domain", async () => {
+    fetchStub = stubFetch(() => ({ json: RECORDS }));
+    const { out, err, code } = await runCommand(domainCommand, ["records", "d1"]);
+    expect(code).toBe(0);
+    expect(fetchStub.calls[0].method).toBe("GET");
+    expect(fetchStub.calls[0].url).toBe(`${API}/domains/d1/records`);
+    expect(err).toContain("DNS mode: selfhosted");
+    expect(out).toContain("203.0.113.5");
+  });
+
+  it("emits the records result as JSON in json mode", async () => {
+    setJsonMode(true);
+    fetchStub = stubFetch(() => ({ json: RECORDS }));
+    const { out } = await runCommand(domainCommand, ["records", "d1"]);
+    expect(JSON.parse(out)).toEqual(RECORDS.data);
+  });
+});
