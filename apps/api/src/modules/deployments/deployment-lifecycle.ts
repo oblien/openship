@@ -28,6 +28,7 @@ import {
   markWebmailInstalled,
   mailServerIdFromWebmailSlug,
 } from "../mail/webmail/webmail-project.service";
+import { deploymentMayBecomeActive } from "./deployment-environment";
 
 export interface LifecycleContext {
   /**
@@ -315,7 +316,18 @@ export async function onSuccess(
     version,
   });
 
-  await repos.project.setActiveDeployment(project.id, dep.id);
+  if (deploymentMayBecomeActive(project, dep.environment)) {
+    await repos.project.setActiveDeployment(project.id, dep.id);
+  } else {
+    // Defense in depth: public deploy entry points resolve the environment to
+    // its own project row before the build starts. If an internal caller ever
+    // bypasses that routing, keep production's live pointer intact.
+    console.error(
+      `[deployment-lifecycle] refused to activate deployment ${dep.id}: ` +
+        `environment=${dep.environment} does not match project ${project.id} ` +
+        `(${project.environmentSlug}/${project.environmentType})`,
+    );
+  }
 
   // A newer release makes a prior held keep/reject decision moot — mark it
   // superseded so no stale deployment reads as "Action Required". Best-effort.
