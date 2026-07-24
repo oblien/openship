@@ -378,6 +378,109 @@ const forgetCmd = new Command("forget")
     }),
   );
 
+// ─── Standalone webmail dashboard ─────────────────────────────────────────────
+
+interface WebmailTargetOption {
+  kind: "mail" | "server" | "opshcloud";
+  serverId: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+/**
+ * Resolve a `--target` token to the deploy-project target body. "mail" (the
+ * default) and a bare openship server ID both deploy onto an openship server
+ * (`kind: "self"`); "cloud"/"opshcloud" hands off to Opshcloud.
+ */
+function resolveWebmailTarget(
+  token: string | undefined,
+  mailServerId: string,
+): { kind: "self"; serverId: string } | { kind: "cloud" } {
+  const t = token?.trim();
+  if (!t || t === "mail") return { kind: "self", serverId: mailServerId };
+  if (t === "cloud" || t === "opshcloud") return { kind: "cloud" };
+  return { kind: "self", serverId: t };
+}
+
+const installCmd = new Command("install")
+  .description("Install the standalone webmail dashboard for a self-hosted mail server")
+  .argument("<serverId>", "Mail server ID to install the webmail dashboard for")
+  .option("-d, --domain <host>", "Public host for the webmail UI (e.g. mail.example.com)")
+  .option("-t, --target <target>", 'Where to deploy: "mail" (the mail server itself, default), "cloud", or an openship server ID')
+  .option("--internal-port <n>", "Internal container port for the webmail UI")
+  .option("--list-targets", "List the servers the webmail can be installed on, then exit")
+  .option("--no-watch", "Queue the install without streaming the build logs")
+  .action(
+    guard(async (serverId: string, opts) => {
+      // `--list-targets`: reuse the same picker the dashboard wizard reads.
+      if (opts.listTargets) {
+        const res = await apiRequest<{ options: WebmailTargetOption[] }>(
+          `/mail/webmail/targets?serverId=${encodeURIComponent(serverId)}`,
+        );
+        const rows = res.options ?? [];
+        if (isJsonMode()) return printJson(rows);
+        if (rows.length === 0) return info("  No deploy targets.");
+        printTable(
+          rows.map((o) => ({
+            target: o.kind === "opshcloud" ? "cloud" : o.kind === "mail" ? "mail" : o.serverId,
+            kind: o.kind,
+            label: o.label,
+            available: o.disabled ? `no (${o.disabledReason ?? "unavailable"})` : "yes",
+          })),
+          ["target", "kind", "label", "available"],
+        );
+        return;
+      }
+
+      // --domain is required to install, but not to --list-targets (a read-only
+      // discovery run before a host is chosen), so it's enforced here.
+      if (!opts.domain) {
+        err("  --domain is required (e.g. --domain mail.example.com). Use --list-targets to explore targets first.");
+        process.exit(1);
+      }
+
+      let internalPort: number | undefined;
+      if (opts.internalPort !== undefined) {
+        internalPort = Number(opts.internalPort);
+        if (!Number.isInteger(internalPort) || internalPort < 1 || internalPort > 65535) {
+          err("  --internal-port must be an integer between 1 and 65535.");
+          process.exit(1);
+        }
+      }
+
+      const body: Record<string, unknown> = {
+        mailServerId: serverId,
+        hostname: opts.domain,
+        target: resolveWebmailTarget(opts.target, serverId),
+      };
+      if (internalPort !== undefined) body.internalPort = internalPort;
+
+      const sp = spin("Queuing webmail install…");
+      let res: { deploymentId?: string; projectId?: string };
+      try {
+        res = await apiRequest<{ deploymentId?: string; projectId?: string }>(
+          "/mail/webmail/deploy-project",
+          { method: "POST", body: JSON.stringify(body) },
+        );
+      } catch (e) {
+        sp?.fail("Webmail install failed to start");
+        throw e;
+      }
+      const deploymentId = res.deploymentId;
+      sp?.succeed(deploymentId ? `Webmail install queued: ${deploymentId}` : "Webmail install queued");
+
+      // Same build-session SSE the dashboard subscribes to at /build/[deploymentId].
+      if (isJsonMode() && opts.watch === false) return printJson(res);
+      if (!deploymentId) return info("  No deployment id returned; nothing to watch.");
+      if (opts.watch === false) return info(`  Follow with: openship logs ${deploymentId} --follow`);
+
+      const result = await streamDeploymentLogs(deploymentId);
+      if (result.success === false || result.status === "cancelled") process.exit(1);
+    }),
+  );
+
 // ─── Post-install ─────────────────────────────────────────────────────────────
 
 const healthCmd = new Command("health")
@@ -468,6 +571,7 @@ export const mailCommand = new Command("mail")
   .addCommand(ptrAckCmd)
   .addCommand(resetCmd)
   .addCommand(forgetCmd)
+  .addCommand(installCmd)
   .addCommand(healthCmd)
   .addCommand(logsCmd)
   .addCommand(postmasterCmd);
