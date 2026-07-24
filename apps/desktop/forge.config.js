@@ -1,6 +1,6 @@
 // @ts-check
 const { execFileSync } = require("node:child_process");
-const { chmodSync, existsSync } = require("node:fs");
+const { chmodSync, existsSync, renameSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
 
 const ICON_BASE = path.join(__dirname, "assets/icon"); // packager appends .icns/.ico
@@ -90,6 +90,34 @@ module.exports = {
       for (const out of options.outputPaths) {
         const p = path.join(out, "resources/bin/openship-api");
         if (existsSync(p)) chmodSync(p, 0o755);
+
+        // When unprivileged userns is blocked, Electron's sandbox falls back to
+        // its SUID helper, which can't run from a nosuid AppImage mount, the
+        // app aborts at launch. 
+        // This makes wrapper adds --no-sandbox only in these cases
+        const exe = path.join(out, "openship");
+        if (existsSync(exe)) {
+          renameSync(exe, path.join(out, "openship.bin"));
+          writeFileSync(
+            exe,
+            [
+              "#!/bin/sh",
+              '# $0 is a bare word when invoked via PATH; resolve it before readlink.',
+              'self="$0"',
+              'case "$self" in */*) ;; *) self="$(command -v -- "$self")" || self="$0";; esac',
+              'dir="$(dirname "$(readlink -f "$self")")"',
+              'if { [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = "1" ] &&',
+              '     [ "$(cat /sys/module/apparmor/parameters/enabled 2>/dev/null)" = "Y" ]; } ||',
+              '   [ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null)" = "0" ] ||',
+              '   [ "$(cat /proc/sys/user/max_user_namespaces 2>/dev/null)" = "0" ]; then',
+              '  set -- --no-sandbox "$@"',
+              "fi",
+              'exec "$dir/openship.bin" "$@"',
+              "",
+            ].join("\n"),
+          );
+          chmodSync(exe, 0o755);
+        }
       }
     },
 
