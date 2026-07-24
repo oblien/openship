@@ -97,6 +97,9 @@ export const notificationsApi = {
 
   deleteChannel: (id: string) => api.delete<{ ok: true }>(endpoints.notifications.channel(id)),
 
+  testChannel: (id: string) =>
+    api.post<{ ok: boolean; error?: string }>(endpoints.notifications.channelTest(id)),
+
   // ── Subscriptions
   listSubscriptions: () =>
     api.get<{ subscriptions: NotificationSubscription[] }>(endpoints.notifications.subscriptions),

@@ -374,6 +374,7 @@ export const endpoints = {
     categories: "notifications/categories",
     channels: "notifications/channels",
     channel: (id: string) => `notifications/channels/${id}`,
+    channelTest: (id: string) => `notifications/channels/${id}/test`,
     subscriptions: "notifications/subscriptions",
     subscription: (id: string) => `notifications/subscriptions/${id}`,
     defaults: "notifications/defaults",

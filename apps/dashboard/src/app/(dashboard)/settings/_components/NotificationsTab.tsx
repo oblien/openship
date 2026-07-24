@@ -31,6 +31,7 @@ import {
   Trash2,
   Loader2,
   AlertTriangle,
+  Play,
 } from "lucide-react";
 import { systemApi } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
@@ -172,6 +173,32 @@ function ChannelsCard({
   const { showToast } = useToast();
   const { t } = useI18n();
   const [showForm, setShowForm] = useState(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
+
+  const handleTest = async (id: string) => {
+    setTestingId(id);
+    try {
+      const result = await notificationsApi.testChannel(id);
+      if (result.ok) {
+        showToast(
+          t.settings.notifications.channels.testSuccess,
+          "success",
+          t.settings.common.toast.notifications,
+        );
+        await onChange();
+      } else {
+        showToast(
+          `${t.settings.notifications.channels.testFailed}: ${result.error ?? ""}`,
+          "error",
+          t.settings.common.toast.notifications,
+        );
+      }
+    } catch (err) {
+      showToast(getApiErrorMessage(err), "error", t.settings.common.toast.notifications);
+    } finally {
+      setTestingId(null);
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm(t.settings.notifications.channels.confirmDelete)) return;
@@ -221,6 +248,21 @@ function ChannelsCard({
                       {t.settings.notifications.channels.unverified}
                     </span>
                   ) : null}
+                  {ch.kind !== "in_app" && !ch.verified && (
+                    <button
+                      type="button"
+                      onClick={() => handleTest(ch.id)}
+                      disabled={testingId === ch.id}
+                      className="p-1.5 rounded-md hover:bg-foreground/[0.04] text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+                      aria-label={t.settings.notifications.channels.testChannel}
+                    >
+                      {testingId === ch.id ? (
+                        <Loader2 className="size-4 animate-spin" strokeWidth={1.7} />
+                      ) : (
+                        <Play className="size-4" strokeWidth={1.7} />
+                      )}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDelete(ch.id)}
