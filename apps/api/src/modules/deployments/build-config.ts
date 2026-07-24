@@ -30,13 +30,26 @@ export interface BuildConfigFactoryOptions {
   envVars: Record<string, string>;
   resources: ResourceConfig;
   gitToken?: string;
+  /** HTTPS username for gitToken injection (GitLab: oauth2). */
+  gitTokenUsername?: string;
   /** Desktop-only: remote credential-helper script path (deploy relay fallback). */
   gitCredentialHelperPath?: string;
   overrides?: Partial<BuildConfig>;
 }
 
 export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig {
-  const { project, dep, snapshot, sessionId, envVars, resources, gitToken, gitCredentialHelperPath, overrides } = opts;
+  const {
+    project,
+    dep,
+    snapshot,
+    sessionId,
+    envVars,
+    resources,
+    gitToken,
+    gitTokenUsername,
+    gitCredentialHelperPath,
+    overrides,
+  } = opts;
 
   return {
     sessionId,
@@ -63,6 +76,7 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     envVars,
     resources,
     gitToken,
+    gitTokenUsername,
     gitCredentialHelperPath,
     ...overrides,
   };

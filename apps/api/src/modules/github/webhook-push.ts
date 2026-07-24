@@ -242,7 +242,7 @@ async function triggerBranchDeployments(
   input: BranchDeploymentTrigger,
 ): Promise<WebhookHandlerResult> {
   // Dedup lives upstream now (delivery-id claim + commit-sha guard) — no Set here.
-  const projects = await repos.project.findByGitRepo(input.owner, input.repo);
+  const projects = await repos.project.findByGitRepo(input.owner, input.repo, "github");
   const defaultBranch = await resolveDefaultBranch(input, projects);
   const autoDeployProjects = projects.filter(
     (p) => p.autoDeploy && projectWebhookBranch(p, defaultBranch) === input.branch,

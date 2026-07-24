@@ -104,6 +104,7 @@
     "local2": "Reading manifests",
     "local3": "Detecting framework",
     "repo1": "Connecting to GitHub",
+    "repo1Gitlab": "Connecting to GitLab",
     "repo2": "Fetching repository",
     "repo3": "Analyzing structure"
   },

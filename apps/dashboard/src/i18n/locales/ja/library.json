@@ -5,6 +5,7 @@
     "tabs": {
       "folder": "フォルダ",
       "github": "GitHub",
+      "gitlab": "GitLab",
       "url": "Git URL",
       "template": "テンプレート"
     }

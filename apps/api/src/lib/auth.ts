@@ -186,6 +186,24 @@ export const auth = betterAuth({
           },
         }
       : {}),
+    ...(env.GITLAB_CLIENT_ID && env.GITLAB_CLIENT_SECRET
+      ? {
+          gitlab: {
+            clientId: env.GITLAB_CLIENT_ID,
+            clientSecret: env.GITLAB_CLIENT_SECRET,
+            issuer: env.GITLAB_BASE_URL.replace(/\/$/, ""),
+            // api covers browse + clone + webhook management; read_user is default.
+            scope: ["api", "read_user"],
+            mapProfileToUser: (profile: any) => ({
+              name: profile.name || profile.username,
+              email:
+                profile.email ||
+                `${profile.id}+${profile.username}@users.noreply.gitlab.com`,
+              image: profile.avatar_url,
+            }),
+          },
+        }
+      : {}),
     ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
       ? {
           google: {
@@ -202,7 +220,7 @@ export const auth = betterAuth({
     accountLinking: {
       enabled: true,
       allowDifferentEmails: true,
-      trustedProviders: ["github", "google"],
+      trustedProviders: ["github", "gitlab", "google"],
     },
   },
 

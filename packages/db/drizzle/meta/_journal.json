@@ -400,6 +400,20 @@
       "when": 1784734564556,
       "tag": "0056_moaning_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784750000000,
+      "tag": "0057_gitlab_webhook_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784830000000,
+      "tag": "0058_gitlab_base_url",
+      "breakpoints": true
     }
   ]
 }

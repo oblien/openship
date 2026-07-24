@@ -20,14 +20,19 @@ export function sq(value: string): string {
 /**
  * Inject a token into an HTTPS git URL for private repo access:
  *   https://github.com/owner/repo.git → https://x-access-token:<token>@github.com/owner/repo.git
+ *   https://gitlab.com/g/p.git → https://oauth2:<token>@gitlab.com/g/p.git (pass username "oauth2")
  * Unchanged when no token or the URL isn't HTTPS.
  */
-export function injectGitToken(repoUrl: string, token?: string): string {
+export function injectGitToken(
+  repoUrl: string,
+  token?: string,
+  username = "x-access-token",
+): string {
   if (!token) return repoUrl;
   try {
     const url = new URL(repoUrl);
     if (url.protocol !== "https:") return repoUrl;
-    url.username = "x-access-token";
+    url.username = username;
     url.password = token;
     return url.toString();
   } catch {
@@ -54,6 +59,8 @@ export function toGitHubSshUrl(repoUrl: string): string {
 export interface GitCloneAuth {
   repoUrl: string;
   gitToken?: string;
+  /** HTTPS username for token injection. Defaults to GitHub's `x-access-token`. */
+  gitTokenUsername?: string;
   gitCredentialHelperPath?: string;
   /** SSH mode — key + known_hosts files ALREADY written (0600/0700) by caller. */
   ssh?: { keyFile: string; knownHostsFile: string };
@@ -103,7 +110,7 @@ export function assembleGitClone(auth: GitCloneAuth): GitCloneInvocation {
   // Token / public: token (if any) in the URL; disable host credential helpers
   // so the URL token is the only auth (GIT_ASKPASS=/bin/echo fails fast).
   return {
-    cloneUrl: injectGitToken(auth.repoUrl, auth.gitToken),
+    cloneUrl: injectGitToken(auth.repoUrl, auth.gitToken, auth.gitTokenUsername),
     gitEnv: "GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/echo",
     credFlag: "-c credential.helper=",
   };

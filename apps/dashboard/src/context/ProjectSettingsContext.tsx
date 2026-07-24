@@ -75,6 +75,10 @@ interface GitData {
   recentCommits: any[];
   isLoading: boolean;
   error: string | null;
+  /** Which git host this project's repo lives on — drives GitHub vs GitLab
+   *  labels/icons/URLs across GitSettings and GitInfo. Defaults to "github"
+   *  for pre-GitLab projects (undefined `provider` in the API response). */
+  gitProvider?: "github" | "gitlab";
   autoDeployEnabled?: boolean;
   webhookActive?: boolean;
   webhookStrategy?: "app" | "domain" | "repo" | "none";
@@ -479,12 +483,17 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           url: commit.url,
         }));
 
+        const gitProvider = response.provider === "gitlab" ? "gitlab" : "github";
         setGitData({
           repository: {
             name: `${response.owner}/${response.repo}`,
-            provider: "GitHub",
-            url: `https://github.com/${response.owner}/${response.repo}`,
+            provider: gitProvider === "gitlab" ? "GitLab" : "GitHub",
+            url:
+              gitProvider === "gitlab"
+                ? `https://gitlab.com/${response.owner}/${response.repo}`
+                : `https://github.com/${response.owner}/${response.repo}`,
           },
+          gitProvider,
           branch: response.branch || "main",
           recentCommits: mappedCommits,
           isLoading: false,

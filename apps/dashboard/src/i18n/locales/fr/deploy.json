@@ -104,6 +104,7 @@
     "local2": "Lecture des manifestes",
     "local3": "Détection du framework",
     "repo1": "Connexion à GitHub",
+    "repo1Gitlab": "Connexion à GitLab",
     "repo2": "Récupération du dépôt",
     "repo3": "Analyse de la structure"
   },

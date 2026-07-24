@@ -45,7 +45,8 @@ Copy the project's page address from GitHub — the plain `https://github.com/ow
 browser's address bar — and paste it into the box. Then press **Import Repository**.
 
 <Callout title="It has to be a public GitHub repo" type="info">
-This box reads **public** repositories on **github.com**. You don't need to connect anything — Openship
+This box reads **public** repositories on **github.com** and **gitlab.com** (plus your configured
+GitLab host). You don't need to connect anything for public GitHub URLs — Openship
 just fetches the code. Private repos and other hosts won't work here; for those, connect your account with
 [Deploy from GitHub](/docs/guides/deploy-from-github).
 </Callout>
@@ -119,8 +120,10 @@ openship deploy
 ## If something goes wrong
 
 <Callout title="“Enter a valid GitHub repository URL”" type="warn">
-Openship couldn't find an owner and repository in what you pasted. The box only accepts **github.com**
-links shaped like `https://github.com/owner/repo`. This error usually means the link points at another
+Openship couldn't find an owner and repository in what you pasted. The box accepts **github.com**
+and **gitlab.com** links (including nested GitLab groups), shaped like
+`https://github.com/owner/repo` or `https://gitlab.com/group/subgroup/project`. This error usually
+means the link points at another
 host (like GitLab or Bitbucket), or it's missing the owner or the repository name. Copy the address from
 the repo's page on GitHub and try again.
 </Callout>

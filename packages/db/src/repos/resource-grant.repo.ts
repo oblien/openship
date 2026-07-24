@@ -32,6 +32,7 @@ export type ResourceType =
   // "github_repository" (resourceId = "owner/repo") = a single repo.
   | "github_installation"
   | "github_repository"
+  | "gitlab"
   | "permissions"
   | "domain"
   | "settings"

@@ -62,16 +62,24 @@ export function createProjectRepo(db: Database) {
       });
     },
 
-    /** Find all projects linked to a given git owner/repo (for webhook dispatch) */
-    async findByGitRepo(owner: string, repo: string) {
+    /**
+     * Find all projects linked to a given git owner/repo (for webhook dispatch).
+     * Pass `provider` (e.g. "github" | "gitlab") to avoid cross-provider collisions
+     * when the same path exists on both hosts.
+     */
+    async findByGitRepo(owner: string, repo: string, provider?: string) {
       const ownerKey = owner.toLowerCase();
       const repoKey = repo.toLowerCase();
+      const conditions: SQL[] = [
+        sql`lower(${project.gitOwner}) = ${ownerKey}`,
+        sql`lower(${project.gitRepo}) = ${repoKey}`,
+        isNull(project.deletedAt),
+      ];
+      if (provider) {
+        conditions.push(eq(project.gitProvider, provider));
+      }
       return db.query.project.findMany({
-        where: and(
-          sql`lower(${project.gitOwner}) = ${ownerKey}`,
-          sql`lower(${project.gitRepo}) = ${repoKey}`,
-          isNull(project.deletedAt),
-        ),
+        where: and(...conditions),
       });
     },
 

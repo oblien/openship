@@ -1,0 +1,61 @@
+---
+title: GitLab connection & deploy
+description: Fix GitLab connect failures, missing projects, clone errors, and push webhooks that never fire.
+---
+
+Most GitLab problems fall into four buckets: Openship isn't connected, a project won't list or bind,
+a private clone fails at deploy time, or pushes don't trigger auto-deploy.
+
+Start with [Deploy from GitLab](/docs/guides/deploy-from-gitlab) if you haven't connected yet.
+
+## Can't connect / empty project list
+
+**What you see:** The GitLab card shows disconnected, or Library → GitLab is empty.
+
+**Fix:**
+
+1. **OAuth** — ensure `GITLAB_CLIENT_ID` and `GITLAB_CLIENT_SECRET` are set, and the OAuth app's
+   redirect URI matches your API public URL. Disconnect and connect again from Settings.
+2. **PAT** — create a GitLab personal access token with the `api` scope, paste it into the GitLab
+   card, and save.
+3. **Self-hosted** — in Settings → GitLab, set **GitLab URL** to your instance when pasting a PAT,
+   or set `GITLAB_BASE_URL` on the API (instance-wide default / OAuth issuer) and restart.
+
+## Webhook registration failed when linking
+
+**What you see:** Linking a project returns an error about webhook permission / `api` scope.
+
+**What it means:** Openship refuses to silently skip webhook registration. Your OAuth token or PAT
+must be allowed to create project hooks.
+
+**Fix:** Reconnect with `api` scope (OAuth) or a Maintainer+ PAT that can manage webhooks, then link
+again.
+
+## Private clone fails mid-deploy
+
+**What you see:** Deploy fails with "No GitLab token available" or a 401/403 from git clone.
+
+**Fix:**
+
+1. Reconnect GitLab (OAuth or PAT) in Settings.
+2. Or set a per-project clone token on the project (stored encrypted; used first in the token chain).
+3. Confirm the project still exists and your credential can read it.
+
+Openship never falls back to a GitHub credential for a `gitProvider=gitlab` project.
+
+## Push doesn't redeploy
+
+**Checklist:**
+
+1. Project **Auto-deploy** is on and `gitBranch` matches the pushed branch.
+2. The Push Hook still exists on the GitLab project and points at
+   `https://<your-api>/api/webhooks/gitlab`.
+3. `X-Gitlab-Token` matches the project's webhook secret (or `GITLAB_WEBHOOK_SECRET`).
+4. GitLab can reach your public API URL (self-hosted / firewall / TLS).
+
+Invalid or missing tokens are rejected with `401` so GitLab can retry after you fix the secret.
+
+## Related
+
+- [GitLab API](/docs/api/gitlab)
+- [Deploy from GitLab](/docs/guides/deploy-from-gitlab)

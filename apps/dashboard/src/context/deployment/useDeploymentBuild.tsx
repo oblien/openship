@@ -625,8 +625,23 @@ export function useDeploymentBuild(
         gitBranch: isSourceless ? undefined : config.branch || undefined,
         localPath: config.localPath || undefined,
         // Folder-upload projects: mark the source so it renders correctly and
-        // can later be switched to a GitHub repo (Source tab / linkRepo).
-        gitProvider: isUpload ? "upload" : undefined,
+        // can later be switched to a GitHub/GitLab repo (Source tab / linkRepo).
+        // For a git-sourced project, stamp the actual provider explicitly
+        // (not just when truthy) — the update path only overwrites gitProvider
+        // when it's a string, so an existing gitlab-linked project must keep
+        // re-sending "gitlab" on every save or it'd silently stick at
+        // whatever was last written (never actually reverting, but never
+        // confirmed either — being explicit here keeps it correct going
+        // forward, e.g. if a project is ever re-linked to a different host).
+        gitProvider: isSourceless
+          ? (isUpload ? "upload" : undefined)
+          : (config.gitProvider === "gitlab" ? "gitlab" : "github"),
+        // GitLab numeric project id — required for public-repo probes and
+        // preferred when resolving clone tokens / webhooks.
+        installationId:
+          !isSourceless && config.gitProvider === "gitlab" && config.installationId
+            ? config.installationId
+            : undefined,
         framework: config.framework,
         packageManager: config.packageManager,
         buildImage: config.buildImage,

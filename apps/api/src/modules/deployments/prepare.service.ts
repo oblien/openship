@@ -35,7 +35,7 @@ import {
   type OpenshipMonorepoApp,
 } from "@repo/core";
 import { env } from "../../config";
-import { createGitHubReader, type ProjectReader } from "./project-reader";
+import { createGitHubReader, createGitLabReader, type ProjectReader } from "./project-reader";
 
 const PREPARE_FILE_CONTENTS = [
   ...MANIFEST_FILES,
@@ -60,6 +60,15 @@ export type Source =
        *  getRepository can resolve org-scoped install + cache keys.
        *  Optional in the type for back-compat with old callers; the
        *  github resolver throws when it's missing. */
+      ctx?: RequestContext;
+    }
+  | {
+      source: "gitlab";
+      owner: string;
+      repo: string;
+      /** Numeric GitLab project id. */
+      projectId: number;
+      branch?: string;
       ctx?: RequestContext;
     }
   | { source: "local"; path: string };
@@ -456,6 +465,19 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch);
   }
 
+  if (input.source === "gitlab") {
+    if (!input.ctx) {
+      throw new Error("resolveProjectInfo(gitlab): ctx is required");
+    }
+    return resolveFromGitLab(
+      input.ctx,
+      input.projectId,
+      input.owner,
+      input.repo,
+      input.branch,
+    );
+  }
+
   if (env.CLOUD_MODE) {
     throw new Error("Local project resolution is not available in cloud mode");
   }
@@ -510,6 +532,43 @@ async function resolveFromGitHub(
 
   return resolveFromReader(
     createGitHubReader(ctx, owner, repo, selectedBranch),
+    repository,
+    selectedBranch,
+  );
+}
+
+async function resolveFromGitLab(
+  ctx: RequestContext,
+  projectId: number,
+  owner: string,
+  repo: string,
+  branch?: string,
+): Promise<ProjectInfo> {
+  const { getProject, listBranches } = await import("../gitlab/gitlab.service");
+  const project = await getProject(ctx, projectId);
+  const requestedBranch = branch?.trim();
+  const selectedBranch = requestedBranch || project.defaultBranch || "main";
+
+  if (requestedBranch) {
+    const branches = await listBranches(ctx, projectId);
+    if (!branches.some((b) => b.name === selectedBranch)) {
+      throw new Error(`Branch "${selectedBranch}" was not found for ${owner}/${repo}`);
+    }
+  }
+
+  const repository = {
+    name: project.name,
+    full_name: project.fullName,
+    owner,
+    private: project.private,
+    default_branch: project.defaultBranch,
+    clone_url: project.cloneUrl,
+    html_url: project.htmlUrl,
+    branches: (await listBranches(ctx, projectId)).map((b) => ({ name: b.name })),
+  };
+
+  return resolveFromReader(
+    createGitLabReader(ctx, projectId, selectedBranch),
     repository,
     selectedBranch,
   );

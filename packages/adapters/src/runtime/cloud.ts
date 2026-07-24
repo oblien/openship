@@ -909,7 +909,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       await this.ensureWorkspaceGit(provisioned.runtime, logger, "Dockerfile source workspace");
 
       const executor = this.workspaceExecutor(provisioned.runtime);
-      const cloneUrl = injectGitToken(config.repoUrl, config.gitToken);
+      const cloneUrl = injectGitToken(config.repoUrl, config.gitToken, config.gitTokenUsername);
       const fetchCommand = [
         "set -e",
         `rm -rf ${sq(sourceDir)}`,
@@ -1179,7 +1179,7 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
       throw new Error("Dockerfile build context escapes the repository source.");
     }
 
-    const cloneUrl = injectGitToken(config.repoUrl, config.gitToken);
+    const cloneUrl = injectGitToken(config.repoUrl, config.gitToken, config.gitTokenUsername);
     const depthArgs = config.commitSha ? "--depth 50 " : "--depth 1 ";
     const cloneTarget = contextRelativePath ? repoRoot : contextRoot;
     const contextSource = contextRelativePath

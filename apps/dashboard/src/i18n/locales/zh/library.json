@@ -5,6 +5,7 @@
     "tabs": {
       "folder": "文件夹",
       "github": "GitHub",
+      "gitlab": "GitLab",
       "url": "Git URL",
       "template": "模板"
     }

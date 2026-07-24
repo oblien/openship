@@ -25,6 +25,7 @@ import { BuildPreferences } from "./_components/BuildPreferences";
 import { DeployDefaults } from "./_components/DeployDefaults";
 import { CloudConnection } from "./_components/CloudConnection";
 import { GitHubConnection } from "./_components/GitHubConnection";
+import { GitLabConnection } from "./_components/GitLabConnection";
 import { CloneCredentials } from "./_components/CloneCredentials";
 import { PersonalAccessTokens } from "./_components/PersonalAccessTokens";
 import { McpConnection } from "./_components/McpConnection";
@@ -101,6 +102,7 @@ function SettingsPageInner() {
           {activeTab === "general" && (
             <>
               <GitHubConnection />
+              <GitLabConnection />
               {showDeployDefaults && <DeployDefaults />}
               {showBuildPreferences && <BuildPreferences />}
               <LanguageSetting />

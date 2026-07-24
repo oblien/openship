@@ -67,6 +67,30 @@ import {
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
 import { resolveReleaseDist, resolveLatestVersion, readApiVersion } from "../../lib/release-resolver";
+import { env } from "../../config";
+import { resolveUserGitlabBaseUrl } from "../gitlab/gitlab.auth";
+
+/**
+ * Clone URL for a project. GitLab rows created before provider-aware gitUrl
+ * construction may still point at github.com — rewrite those so a GitLab PAT
+ * never authenticates against GitHub. Prefer the caller's stored instance
+ * origin when rewriting.
+ */
+function resolveProjectRepoUrl(
+  project: Project,
+  gitlabBaseUrl?: string | null,
+): string {
+  const owner = project.gitOwner;
+  const repo = project.gitRepo;
+  if (project.gitProvider === "gitlab" && owner && repo) {
+    const stored = project.gitUrl ?? "";
+    if (!stored || /github\.com/i.test(stored)) {
+      const base = (gitlabBaseUrl ?? env.GITLAB_BASE_URL).replace(/\/$/, "");
+      return `${base}/${owner}/${repo}.git`;
+    }
+  }
+  return project.gitUrl ?? "";
+}
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -104,6 +128,9 @@ export async function runDeploymentPreflight(
      *  GitHub App is installed for this owner before the build pipeline
      *  spends resources cloning a repo it can't access. */
     gitOwner?: string | null;
+    gitRepo?: string | null;
+    gitProvider?: string | null;
+    gitlabProjectId?: number | null;
     /** Project id — passed to the remote-clone-token preflight check so
      *  project-scoped clone tokens are considered. */
     projectId?: string;
@@ -120,6 +147,9 @@ export async function runDeploymentPreflight(
     ...(opts.composeServices ? { composeServices: opts.composeServices } : {}),
     ...(opts.multiService !== undefined ? { multiService: opts.multiService } : {}),
     ...(opts.gitOwner !== undefined ? { gitOwner: opts.gitOwner } : {}),
+    ...(opts.gitRepo !== undefined ? { gitRepo: opts.gitRepo } : {}),
+    ...(opts.gitProvider !== undefined ? { gitProvider: opts.gitProvider } : {}),
+    ...(opts.gitlabProjectId !== undefined ? { gitlabProjectId: opts.gitlabProjectId } : {}),
     ...(opts.projectId !== undefined ? { projectId: opts.projectId } : {}),
     buildStrategy: snapshot.buildStrategy as "local" | "server" | undefined,
   });
@@ -277,6 +307,7 @@ function toRuntimeMode(value: string | null | undefined): "bare" | "docker" | un
 export function buildConfigSnapshot(
   project: Project,
   branch?: string,
+  opts?: { gitlabBaseUrl?: string | null },
 ): DeploymentConfigSnapshot {
   const runtimeImage = resolveRuntimeImage(project);
 
@@ -289,7 +320,7 @@ export function buildConfigSnapshot(
     // shows "no cloud account connected". Set it here once, at the
     // source, where every snapshot consumer can rely on it.
     organizationId: project.organizationId,
-    repoUrl: project.gitUrl ?? "",
+    repoUrl: resolveProjectRepoUrl(project, opts?.gitlabBaseUrl),
     branch: branch || project.gitBranch || (project.localPath ? "main" : ""),
     framework: project.framework!,
     buildImage: project.buildImage!,
@@ -819,7 +850,11 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   const resolvedBranch = await resolveProjectBranch(ctx, project, branch);
   const projectDomains = await listProjectRouteRows(project.id);
   let routeState = await resolveProjectRouteState(project, { projectDomains });
-  const snapshot = buildConfigSnapshot(project, resolvedBranch);
+  const gitlabBaseUrl =
+    project.gitProvider === "gitlab"
+      ? await resolveUserGitlabBaseUrl(ctx.userId)
+      : undefined;
+  const snapshot = buildConfigSnapshot(project, resolvedBranch, { gitlabBaseUrl });
 
   // Release/dist source: resolve version → prebuilt dist dir → snapshot.localPath
   // (no build). Runs here, not in the sync buildConfigSnapshot, because the
@@ -979,6 +1014,9 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
     gitOwner: project.gitOwner,
+    gitRepo: project.gitRepo,
+    gitProvider: project.gitProvider,
+    gitlabProjectId: project.gitProvider === "gitlab" ? project.installationId : null,
     projectId: project.id,
   });
   const env = environment || "production";
@@ -1129,7 +1167,11 @@ export async function redeployBuildSession(
 
   // Prefer the old deployment's snapshot; fall back to a fresh one from the project
   const frozenMeta = oldDep.meta as DeploymentConfigSnapshot | null;
-  const meta = frozenMeta ?? buildConfigSnapshot(project, resolvedBranch);
+  const gitlabBaseUrl =
+    !frozenMeta && project.gitProvider === "gitlab"
+      ? await resolveUserGitlabBaseUrl(ctx.userId)
+      : undefined;
+  const meta = frozenMeta ?? buildConfigSnapshot(project, resolvedBranch, { gitlabBaseUrl });
   const branch = meta.branch || resolvedBranch;
 
   if (!frozenMeta) {
@@ -1416,9 +1458,13 @@ export async function triggerDeployment(
   // (its build config was already resolved + valid at original-deploy time).
   // Normal path: build a fresh snapshot from the project's current columns.
   const reuse = data.reuseSnapshot;
+  const gitlabBaseUrl =
+    !reuse && project.gitProvider === "gitlab"
+      ? await resolveUserGitlabBaseUrl(ctx.userId)
+      : undefined;
   const snapshot = reuse
     ? ({ ...reuse.meta } as DeploymentConfigSnapshot)
-    : buildConfigSnapshot(project, branch);
+    : buildConfigSnapshot(project, branch, { gitlabBaseUrl });
   const routeState = await resolveProjectRouteState(project);
 
   // Resolve the snapshot's target (deployTarget + serverId + runtimeMode) from
@@ -1468,6 +1514,9 @@ export async function triggerDeployment(
     composeServices: servicePreflightServices,
     multiService: useServicePipeline,
     gitOwner: project.gitOwner,
+    gitRepo: project.gitRepo,
+    gitProvider: project.gitProvider,
+    gitlabProjectId: project.gitProvider === "gitlab" ? project.installationId : null,
     projectId: project.id,
   });
 

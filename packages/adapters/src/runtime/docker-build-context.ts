@@ -225,7 +225,7 @@ async function cloneGitSource(
     };
     cloneUrl = toGitHubSshUrl(config.repoUrl);
   } else {
-    cloneUrl = injectGitToken(config.repoUrl, config.gitToken);
+    cloneUrl = injectGitToken(config.repoUrl, config.gitToken, config.gitTokenUsername);
   }
 
   try {

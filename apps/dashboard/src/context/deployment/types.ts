@@ -241,6 +241,14 @@ export interface DeploymentConfig {
   projectName: string;
   repo: string;
   owner: string;
+  /** Which git host `owner`/`repo` live on. Defaults to "github" — set to
+   *  "gitlab" when the source was picked from the Library's GitLab tab or
+   *  imported via a gitlab.com URL. Threaded through to deployApi.prepare /
+   *  projectsApi.ensure so those calls don't hardcode GitHub. */
+  gitProvider?: "github" | "gitlab";
+  /** GitLab numeric project id — REQUIRED alongside gitProvider "gitlab" for
+   *  git/link (GitHub instead resolves its installation id by owner). */
+  installationId?: number;
   /** Absolute path for local projects (mutually exclusive with owner/repo git source) */
   localPath?: string;
   /** Folder-upload deploy: the upload session whose workspace/staging dir holds
@@ -730,7 +738,15 @@ export interface DeploymentContextType {
     owner: string,
     repo: string,
     force?: string,
-    context?: { branch?: string; projectId?: string },
+    context?: {
+      branch?: string;
+      projectId?: string;
+      /** Git host to resolve the repo from. Defaults to "github". */
+      provider?: "github" | "gitlab";
+      /** GitLab numeric project id — carried through to config for the
+       *  eventual git/link call once the project is created. */
+      installationId?: number;
+    },
   ) => Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }>;
   initializeFromLocal: (
     path: string,

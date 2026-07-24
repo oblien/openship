@@ -37,6 +37,13 @@ vi.mock("@repo/db", () => ({
   repos,
 }));
 
+// build.service imports resolveUserGitlabBaseUrl → gitlab.auth → Better Auth /
+// provision-user, which needs `schema` from @repo/db. Stub the auth helper so
+// this unit test never loads that graph.
+vi.mock("../../../src/modules/gitlab/gitlab.auth", () => ({
+  resolveUserGitlabBaseUrl: vi.fn(async () => "https://gitlab.com"),
+}));
+
 vi.mock("../../../src/modules/deployments/preflight", () => ({
   runPreflightChecks,
 }));

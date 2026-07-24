@@ -1,0 +1,84 @@
+---
+title: GitLab API
+description: Connect GitLab via OAuth or PAT, browse projects and branches, and manage push webhooks.
+---
+
+The GitLab API connects an Openship instance to gitlab.com (or a self-hosted GitLab via `GITLAB_BASE_URL`)
+and lets you browse namespaces/projects, bind them to Openship projects, and register Push Hooks for
+auto-deploy. In the dashboard this is the **GitLab** connection card in Settings and the GitLab picker
+in the Library.
+
+<Callout title="Base path & auth">
+All paths are under **`/api`** — e.g. `https://your-host/api/gitlab/home`.
+Send `Authorization: Bearer <token>` or use a dashboard session cookie.
+</Callout>
+
+## Endpoints
+
+| Method & path | Permission | What it does |
+|---|---|---|
+| `GET /api/gitlab/status` | `gitlab:read` | Connection status. |
+| `GET /api/gitlab/home` | `gitlab:read` | Connection + namespaces + projects. |
+| `POST /api/gitlab/connect` | `gitlab:write` | Start OAuth or save a PAT (`{ mode, token }`). |
+| `GET /api/gitlab/connect/redirect` | public | Begin Better Auth GitLab OAuth link. |
+| `POST /api/gitlab/disconnect` | `gitlab:admin` | Clear OAuth and/or stored PAT. |
+| `GET /api/gitlab/namespaces` | `gitlab:list` | List user + groups. |
+| `GET /api/gitlab/projects` | `gitlab:list` | List projects (`?namespace=&search=`). |
+| `GET /api/gitlab/projects/:projectId` | `gitlab:read` | Project metadata. |
+| `GET /api/gitlab/projects/:projectId/branches` | `gitlab:list` | List branches. |
+| `GET /api/gitlab/projects/:projectId/clone-token` | `gitlab:read` | Resolve a clone credential. |
+| `POST /api/gitlab/projects/:projectId/webhooks` | `gitlab:write` | Register the Openship Push Hook. |
+| `GET /api/gitlab/parse-url` | `gitlab:read` | Parse a GitLab HTTPS/SSH URL. |
+
+## Connect
+
+```bash
+# OAuth (requires GITLAB_CLIENT_ID / GITLAB_CLIENT_SECRET)
+curl -X POST https://your-host/api/gitlab/connect \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"oauth"}'
+
+# Personal access token
+curl -X POST https://your-host/api/gitlab/connect \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"pat","token":"glpat-..."}'
+```
+
+## Bind a project
+
+Link via the projects API with `provider: "gitlab"` and the numeric GitLab project id as
+`installationId`:
+
+```bash
+curl -X POST https://your-host/api/projects/$PROJECT_ID/git/link \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "gitlab",
+    "owner": "group/subgroup",
+    "repo": "my-app",
+    "installationId": 42,
+    "branch": "main"
+  }'
+```
+
+## Webhooks
+
+Inbound deliveries hit `POST /api/webhooks/gitlab`. Openship verifies `X-Gitlab-Token` against the
+per-project secret (or `GITLAB_WEBHOOK_SECRET`), dedupes on `X-Gitlab-Event-UUID`, and triggers a
+deploy for Push Hooks that match the project's tracked branch.
+
+## Environment
+
+| Variable | Purpose |
+|---|---|
+| `GITLAB_CLIENT_ID` / `GITLAB_CLIENT_SECRET` | OAuth Application |
+| `GITLAB_BASE_URL` | Default `https://gitlab.com`; instance-wide default / OAuth issuer. Per-user PAT hosts are set in Settings → GitLab. |
+| `GITLAB_WEBHOOK_SECRET` | Optional instance-level webhook token fallback |
+
+## Related
+
+- [Deploy from GitLab](/docs/guides/deploy-from-gitlab)
+- [Troubleshooting → GitLab](/docs/troubleshooting/gitlab)
