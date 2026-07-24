@@ -67,6 +67,7 @@ import {
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
 import { resolveReleaseDist, resolveLatestVersion, readApiVersion } from "../../lib/release-resolver";
+import { env } from "../../config";
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -341,6 +342,14 @@ export async function applyReleaseSourceToSnapshot(
   snapshot: DeploymentConfigSnapshot,
   opts?: { version?: string },
 ): Promise<string> {
+  // Backstop: release/dist resolution downloads + extracts a prebuilt dir onto
+  // THIS box (~/.openship) — a self-hosted runtime op that must never run on the
+  // multi-tenant SaaS control plane. Creation is already blocked in cloud mode
+  // (resolveProjectSource); this also covers redeploy/webhook paths for any
+  // project that predates the gate.
+  if (env.CLOUD_MODE) {
+    throw new ForbiddenError("Release/dist source deploys are not available in cloud mode");
+  }
   const source = (project.releaseSource as ReleaseSource | null) ?? null;
   if (!source) {
     throw new AppError(
@@ -1119,6 +1128,17 @@ export async function redeployBuildSession(
   opts?: { useExistingCommit?: boolean; trigger?: string; preDeployBackup?: boolean },
 ) {
   const { dep: oldDep, project } = await loadDeployment(deploymentId);
+  // The Openship control plane updates itself via the CLI — never a redeploy.
+  // The apply-update endpoint (updates.service) reaches redeploy directly, and
+  // the self-app is a repo-less release project so the GitHub gate below
+  // short-circuits without catching it — guard explicitly here too, matching
+  // triggerDeployment. Otherwise "Apply update" no-ops on the adopt deployment
+  // and fakes success while the running control plane is untouched.
+  if (project.appTemplateId === "openship") {
+    throw new ForbiddenError(
+      "The Openship control plane updates itself — run the CLI upgrade, not a redeploy.",
+    );
+  }
   // GitHub access gate (default-deny): a member can redeploy a
   // GitHub-backed project only when granted this repo.
   await assertGitHubRepoAccess(ctx, {

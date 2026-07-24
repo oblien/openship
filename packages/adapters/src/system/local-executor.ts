@@ -33,8 +33,13 @@ export class LocalExecutor implements CommandExecutor {
           env: getLocalExecEnv(),
         },
         (err, stdout, stderr) => {
-          if (err) reject(new Error(stderr.trim() || err.message));
-          else resolve(stdout.trim());
+          // Fold BOTH streams into the failure error. Many CLIs (certbot in
+          // particular) print the real cause to stdout while stderr only carries
+          // boilerplate ("Saving debug log to …"); dropping stdout hid the reason.
+          if (err) {
+            const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+            reject(new Error(detail || err.message));
+          } else resolve(stdout.trim());
         },
       );
     });

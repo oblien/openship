@@ -28,6 +28,7 @@ import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { resolveServicePort } from "../../lib/deployable-service";
 import { buildServiceRouteDomain } from "../../lib/routing-domains";
 import { buildCompositeRegistration, planCompositeRoute } from "../deployments/compose/composite-route";
+import { buildUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 
 export async function applyProjectRouting(projectId: string): Promise<void> {
   const project = await repos.project.findById(projectId);
@@ -53,16 +54,18 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
 
     // Self-hosted: compile to OpenResty locations and reconcile the domain.
     if (!routing) return;
-    const ipByService = new Map(liveRows.map((row) => [row.serviceId, row.ip]));
+    const rowByService = new Map(liveRows.map((row) => [row.serviceId, row]));
+    const routeStrategy = resolveRouteStrategy(project.routeStrategy);
 
     const composite = buildCompositeRegistration({
       services: defs,
       routingConfig: project.routingConfig,
       resolveTargetUrl: (serviceId) => {
         const def = defs.find((s) => s.id === serviceId);
-        const ip = ipByService.get(serviceId);
+        const row = rowByService.get(serviceId);
         const port = def ? resolveServicePort(def, project.port) : null;
-        return ip && port ? `http://${ip}:${port}` : null;
+        if (!port) return null;
+        return buildUpstreamUrl({ strategy: routeStrategy, ip: row?.ip, hostPort: row?.hostPort, containerPort: port });
       },
       resolveDomain: (serviceId) => {
         const def = defs.find((s) => s.id === serviceId);

@@ -15,6 +15,8 @@
     "connectedToast": "GitHub connected for this server",
     "patPlaceholder": "ghp_… (paste a token)",
     "patHint": "A personal access token stored encrypted for this server.",
+    "patLabel": "Personal access token",
+    "or": "or",
     "save": "Save",
     "savedToast": "Saved",
     "saveFailed": "Save failed",
@@ -60,7 +62,9 @@
     "errors": "Errors",
     "seeDocs": "See docs",
     "projects": "Projects",
-    "regions": "Regions"
+    "regions": "Regions",
+    "thisServer": "This Server",
+    "currentHost": "Current host"
   },
   "tabsNav": {
     "servers": "Servers",
@@ -120,6 +124,7 @@
   "detail": {
     "tabs": {
       "overview": "Overview",
+      "services": "Services",
       "components": "Components",
       "github": "Git auth",
       "security": "Security",
@@ -304,7 +309,34 @@
     "toastRemoved": "Rate limit removed",
     "toastFailedRemove": "Failed to remove rate limit",
     "toastInvalidIp": "Invalid IP/CIDR format",
-    "toastAlreadyWhitelisted": "Already in whitelist"
+    "toastAlreadyWhitelisted": "Already in whitelist",
+    "ports": {
+      "title": "Port exposure",
+      "subtitle": "See which listening ports are reachable from the network",
+      "introHint": "Scan every port listening on this machine and flag the ones bound to a public interface instead of loopback.",
+      "scanButton": "Scan ports",
+      "scanning": "Scanning listening ports…",
+      "rescan": "Rescan",
+      "retry": "Retry",
+      "scanFailed": "Couldn't scan ports",
+      "scanFailedHint": "The server may be unreachable. Retry once it's back online.",
+      "summary": "{total} listening ports · {exposed} exposed to the network",
+      "summaryZeroExposed": "{total} listening ports · none exposed to the network",
+      "exposed": "Exposed",
+      "loopback": "Local only",
+      "noProcessInfo": "Process names unavailable (ss not installed on this host).",
+      "unknownProcess": "Unknown process",
+      "empty": "No listening ports found.",
+      "inconclusive": "Scan inconclusive",
+      "inconclusiveHint": "Couldn't read the socket table on this host. Retry, or check SSH access.",
+      "reachable": "Reachable",
+      "firewalled": "Firewalled",
+      "expectedOpen": "Expected to be open",
+      "sensitiveHint": "Shouldn't be internet-facing",
+      "sensitiveReachable": "Sensitive service reachable from the internet",
+      "reachableLegend": "“Reachable” was confirmed by dialing the port from off-box; “Firewalled” is bound but blocked (e.g. by a cloud firewall).",
+      "summaryReachable": "{total} listening ports · {reachable} reachable from the internet · {firewalled} firewall-blocked"
+    }
   },
   "terminal": {
     "title": "Terminal",

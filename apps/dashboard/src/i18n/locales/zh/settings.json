@@ -112,9 +112,18 @@
     "noServers": "尚未配置任何服务器 —— 请从部署选择器中添加一个。",
     "clearDefault": "清除默认（每次都询问）",
     "targets": {
-      "local": { "label": "本机", "desc": "本地 Docker / 运行时" },
-      "server": { "label": "我的服务器", "desc": "已配置的 SSH 服务器" },
-      "cloud": { "label": "OpenShip Cloud", "desc": "托管云基础设施" }
+      "local": {
+        "label": "本机",
+        "desc": "本地 Docker / 运行时"
+      },
+      "server": {
+        "label": "我的服务器",
+        "desc": "已配置的 SSH 服务器"
+      },
+      "cloud": {
+        "label": "OpenShip Cloud",
+        "desc": "托管云基础设施"
+      }
     },
     "labelFor": {
       "yourServer": "你的服务器",
@@ -134,9 +143,18 @@
     "loading": "正在加载偏好设置…",
     "intro": "为新部署选择默认构建策略。按项目的覆盖设置可在项目设置中配置。",
     "modes": {
-      "auto": { "label": "自动", "desc": "按框架智能选择" },
-      "server": { "label": "服务器", "desc": "在远程构建" },
-      "local": { "label": "本地", "desc": "在本机构建" }
+      "auto": {
+        "label": "自动",
+        "desc": "按框架智能选择"
+      },
+      "server": {
+        "label": "服务器",
+        "desc": "在远程构建"
+      },
+      "local": {
+        "label": "本地",
+        "desc": "在本机构建"
+      }
     },
     "toast": {
       "setTo": "构建模式已设置为 {mode}",
@@ -285,6 +303,14 @@
       "subtitle": "授权适用于受限成员。所有者/管理员/成员默认拥有组织范围内的访问权限。",
       "saveLabel": "保存访问权限"
     },
+    "serverAccessWarning": {
+      "title": "授予完整的服务器访问权限？",
+      "body": "{member} 将获得对 {scope} 的完全控制 — 每个部署及其数据、其上运行的所有应用、存储的机密和环境变量、终端访问，以及任何已连接的集成（例如为其存储的 GitHub 令牌和部署密钥）。他们将能够管理或删除这些资源。",
+      "scopeAllServers": "本组织的所有服务器",
+      "scopeThisServer": "此服务器",
+      "scopeCount": "{count} 台服务器",
+      "confirm": "授予访问权限"
+    },
     "confirmRemove": "将此成员从组织中移除？",
     "workspace": {
       "deleteWorkspace": "删除工作区",
@@ -408,6 +434,8 @@
       "empty": "尚无渠道。添加一个以开始接收通知。",
       "verified": "已验证",
       "unverified": "未验证",
+      "sendTest": "发送测试",
+      "testSent": "测试已发送",
       "deleteChannel": "删除渠道",
       "addChannel": "添加渠道",
       "confirmDelete": "删除此渠道？使用它的订阅将停止。",
@@ -663,5 +691,29 @@
     "toastLoadStateFailed": "加载状态失败",
     "toastRemoteUnreachable": "远程无法访问。勾选\"不要拉取远程数据\"以仍然切换回。",
     "toastSwitchBackFailed": "切换回失败"
+  },
+  "routePreferences": {
+    "title": "路由",
+    "description": "边缘如何访问应用的上游",
+    "loading": "正在加载偏好设置…",
+    "intro": "为新的自托管项目选择默认的上游寻址方式。按项目的覆盖设置位于项目设置中。",
+    "modes": {
+      "auto": {
+        "label": "自动",
+        "desc": "推荐（回环端口）"
+      },
+      "loopbackPort": {
+        "label": "回环端口",
+        "desc": "私有 127.0.0.1 主机端口"
+      },
+      "containerIp": {
+        "label": "容器 IP",
+        "desc": "高级 — 网桥 IP"
+      }
+    },
+    "toast": {
+      "setTo": "路由策略已设为 {mode}",
+      "failed": "更新路由策略失败"
+    }
   }
 }

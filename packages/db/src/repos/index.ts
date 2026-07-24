@@ -37,6 +37,7 @@ export {
 } from "./deployment.repo";
 export { createDomainRepo, type Domain, type NewDomain } from "./domain.repo";
 export { createRouteRuleRepo, type RouteRule, type NewRouteRule } from "./route-rule.repo";
+export { createWebhookSourceRepo, type WebhookSource, type NewWebhookSource } from "./webhook-source.repo";
 export { createSystemNoticeRepo, type SystemNotice, type NewSystemNotice } from "./system-notice.repo";
 export { createUpdateStatusRepo, type UpdateStatus, type NewUpdateStatus } from "./update-status.repo";
 export {
@@ -203,10 +204,12 @@ import { createProjectRepo } from "./project.repo";
 import { createDeploymentRepo } from "./deployment.repo";
 import { createDomainRepo } from "./domain.repo";
 import { createRouteRuleRepo } from "./route-rule.repo";
+import { createWebhookSourceRepo } from "./webhook-source.repo";
 import { createSystemNoticeRepo } from "./system-notice.repo";
 import { createUpdateStatusRepo } from "./update-status.repo";
 import { createServerModuleStatusRepo } from "./server-module-status.repo";
 import { createCloudWebhookBindingRepo } from "./cloud-webhook-binding.repo";
+import { createProjectConnectionRepo } from "./project-connection.repo";
 import { createGithubWebhookEventRepo } from "./github-webhook-event.repo";
 import { createServiceRepo } from "./service.repo";
 import { createServiceDeploymentRepo } from "./service-deployment.repo";
@@ -270,10 +273,12 @@ export const repos = {
   deployment: createDeploymentRepo(db),
   domain: createDomainRepo(db),
   routeRule: createRouteRuleRepo(db),
+  webhookSource: createWebhookSourceRepo(db),
   notice: createSystemNoticeRepo(db),
   updateStatus: createUpdateStatusRepo(db),
   serverModuleStatus: createServerModuleStatusRepo(db),
   cloudWebhookBinding: createCloudWebhookBindingRepo(db),
+  projectConnection: createProjectConnectionRepo(db),
   githubWebhookEvent: createGithubWebhookEventRepo(db),
   service: createServiceRepo(db),
   serviceDeployment: createServiceDeploymentRepo(db),

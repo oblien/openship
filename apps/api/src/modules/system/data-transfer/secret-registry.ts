@@ -33,6 +33,7 @@ const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> =
   "project.cloneTokenEncrypted": { table: schema.project, scheme: "scalar" },
   "project.webhookSecret": { table: schema.project, scheme: "scalar" },
   "cloud_webhook_binding.webhookSecret": { table: schema.cloudWebhookBinding, scheme: "scalar" },
+  "webhook_source.secret": { table: schema.webhookSource, scheme: "scalar" },
   "env_var.value": { table: schema.envVar, scheme: "scalar" },
   "backup_destination.accessKeyIdEnc": { table: schema.backupDestination, scheme: "enc1" },
   "backup_destination.secretAccessKeyEnc": { table: schema.backupDestination, scheme: "enc1" },

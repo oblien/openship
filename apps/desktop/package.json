@@ -12,6 +12,7 @@
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make",
     "lint": "tsc --noEmit",
+    "test": "vitest run",
     "clean": "rm -rf out dist .turbo node_modules"
   },
   "devDependencies": {
@@ -24,7 +25,8 @@
     "electron": "40.8.0",
     "electronmon": "^2.0.4",
     "esbuild": "^0.25.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   },
   "dependencies": {
     "@repo/core": "workspace:*",

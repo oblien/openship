@@ -22,6 +22,9 @@ function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
   return {
     id: s.id,
     name: s.name,
+    // The auto-registered host row (VPS / server-host mode). The dashboard
+    // badges it "This Server" and hides SSH-credential fields for it.
+    isLocal: s.isLocal,
     sshHost: s.sshHost,
     sshPort: s.sshPort,
     sshUser: s.sshUser,
@@ -204,6 +207,11 @@ export async function deleteServer(c: Context) {
   const ctx = getRequestContext(c);
   const existing = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!existing) return c.json({ error: "Server not found" }, 404);
+  // The auto-registered host ("This Server") is not user-removable — it IS the
+  // machine OpenShip runs on, and the boot reconcile would just recreate it.
+  if (existing.isLocal) {
+    return c.json({ error: "This is the current host and can't be removed." }, 400);
+  }
 
   await repos.server.delete(id);
   // Server is hard-deleted — purge any per-server resource grants so

@@ -131,7 +131,12 @@ export const githubWebhookProvider: WebhookProvider = {
     // fallback. Deliveries without a routable repo (installation/ping) yield no
     // per-project candidates and rely on env — the SaaS App secret.
     const candidates = await collectDeliverySecrets(payload, headers);
-    if (env.GITHUB_WEBHOOK_SECRET && !candidates.includes(env.GITHUB_WEBHOOK_SECRET)) {
+    // env.GITHUB_WEBHOOK_SECRET is the legacy/App fallback — append it ONLY when
+    // this delivery has no per-project or cloud-binding candidate of its own
+    // (installation/ping, or a repo Openship doesn't manage). Appending it for a
+    // routable delivery that already has a per-project secret would make it a
+    // cross-repo skeleton key that validates any managed repo's webhook.
+    if (candidates.length === 0 && env.GITHUB_WEBHOOK_SECRET) {
       candidates.push(env.GITHUB_WEBHOOK_SECRET);
     }
 

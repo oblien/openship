@@ -201,6 +201,12 @@ export interface DeployConfig {
   environment: string;
   /** Port the application listens on */
   port: number;
+  /**
+   * Pinned LOOPBACK host port to publish (docker: `127.0.0.1:<hostPort>:<port>`)
+   * under the loopback-port route strategy. When unset, docker falls back to a
+   * random loopback host port. Ignored by bare (the app owns 127.0.0.1:<port>).
+   */
+  hostPort?: number;
   /** Shell command to start the application (e.g. "npm start", "node server.js") */
   startCommand?: string;
   /** Detected framework / stack (e.g. "nextjs", "express") */

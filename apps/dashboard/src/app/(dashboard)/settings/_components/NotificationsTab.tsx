@@ -19,19 +19,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Bell,
-  Mail,
-  Webhook,
-  MessageSquare,
-  MessageCircle,
-  MessagesSquare,
-  Smartphone,
-  Plus,
-  Trash2,
-  Loader2,
-  AlertTriangle,
-} from "lucide-react";
+import { Bell, Mail, Webhook, MessageSquare, MessageCircle, MessagesSquare, Smartphone, Plus, Trash2, Loader2, AlertTriangle, Send, type LucideIcon } from "lucide-react";
+import { AppLogo } from "@/components/AppLogo";
+import { PillSwitcher } from "@/components/ui/PillSwitcher";
 import { systemApi } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
@@ -48,13 +38,18 @@ import { getApiErrorMessage } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
-const CHANNEL_ICONS: Record<ChannelKind, React.ElementType> = {
+const CHANNEL_ICONS: Record<ChannelKind, LucideIcon> = {
   email: Mail,
   webhook: Webhook,
   slack: MessageSquare,
   discord: MessageCircle,
   msteams: MessagesSquare,
   in_app: Smartphone,
+};
+
+/** Brand slug per kind (real logo via AppLogo) — only where a brand mark exists. */
+const CHANNEL_LOGOS: Partial<Record<ChannelKind, string>> = {
+  slack: "slack",
 };
 
 const CHANNEL_LABELS: Record<ChannelKind, string> = {
@@ -65,6 +60,14 @@ const CHANNEL_LABELS: Record<ChannelKind, string> = {
   msteams: "Microsoft Teams",
   in_app: "In-app",
 };
+
+/** Clean per-kind logo: the Slack brand mark (simpleicons via AppLogo), lucide
+ *  glyphs for the generic kinds (webhook/email/in-app have no brand). */
+function ChannelLogo({ kind, className = "size-4" }: { kind: ChannelKind; className?: string }) {
+  if (kind === "slack") return <AppLogo slug="slack" icon={MessageSquare} className={className} />;
+  const Icon = CHANNEL_ICONS[kind];
+  return <Icon className={`${className} text-foreground`} strokeWidth={1.7} />;
+}
 
 export function NotificationsTab() {
   const { showToast } = useToast();
@@ -172,6 +175,7 @@ function ChannelsCard({
   const { showToast } = useToast();
   const { t } = useI18n();
   const [showForm, setShowForm] = useState(false);
+  const [testing, setTesting] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
     if (!confirm(t.settings.notifications.channels.confirmDelete)) return;
@@ -188,6 +192,22 @@ function ChannelsCard({
     }
   };
 
+  // Send a real test message through the channel's worker. On success the server
+  // marks it verified (the dispatcher only delivers to verified channels), so we
+  // re-pull to flip the badge; on failure we surface the provider's error.
+  const handleTest = async (id: string) => {
+    setTesting(id);
+    try {
+      await notificationsApi.testChannel(id);
+      showToast(t.settings.notifications.channels.testSent, "success", t.settings.common.toast.notifications);
+      await onChange();
+    } catch (err) {
+      showToast(getApiErrorMessage(err), "error", t.settings.common.toast.notifications);
+    } finally {
+      setTesting(null);
+    }
+  };
+
   return (
     <SettingsSection
       icon={Bell}
@@ -198,41 +218,49 @@ function ChannelsCard({
         <p className="text-sm text-muted-foreground">{t.settings.notifications.channels.empty}</p>
       ) : (
         <ul className="divide-y divide-border/40">
-          {channels.map((ch) => {
-            const Icon = CHANNEL_ICONS[ch.kind];
-            return (
-              <li key={ch.id} className="flex items-center gap-3 py-3">
-                <div className="size-9 rounded-lg bg-muted flex items-center justify-center">
-                  <Icon className="size-4 text-foreground" strokeWidth={1.7} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground truncate">{ch.label}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {describeChannel(ch, t.settings.notifications.describe)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {ch.verified ? (
-                    <span className="text-[11px] uppercase tracking-wide text-success">
-                      {t.settings.notifications.channels.verified}
-                    </span>
-                  ) : ch.kind !== "in_app" ? (
-                    <span className="text-[11px] uppercase tracking-wide text-warning">
-                      {t.settings.notifications.channels.unverified}
-                    </span>
-                  ) : null}
+          {channels.map((ch) => (
+            <li key={ch.id} className="flex items-center gap-3 py-3">
+              <div className="size-9 rounded-lg bg-muted flex items-center justify-center">
+                <ChannelLogo kind={ch.kind} className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-foreground truncate">{ch.label}</p>
+                <p className="text-xs text-muted-foreground truncate">{describeChannel(ch, t.settings.notifications.describe)}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {ch.verified ? (
+                  <span className="text-[11px] uppercase tracking-wide text-success">{t.settings.notifications.channels.verified}</span>
+                ) : ch.kind !== "in_app" ? (
+                  <span className="text-[11px] uppercase tracking-wide text-warning">{t.settings.notifications.channels.unverified}</span>
+                ) : null}
+                {/* In-app has nothing to prove; everything else can send a test to
+                    verify reachability (and flip the Unverified badge). */}
+                {ch.kind !== "in_app" && (
                   <button
                     type="button"
-                    onClick={() => handleDelete(ch.id)}
-                    className="p-1.5 rounded-md hover:bg-foreground/[0.04] text-muted-foreground hover:text-destructive transition"
-                    aria-label={t.settings.notifications.channels.deleteChannel}
+                    onClick={() => handleTest(ch.id)}
+                    disabled={testing === ch.id}
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground transition disabled:opacity-50"
                   >
-                    <Trash2 className="size-4" strokeWidth={1.7} />
+                    {testing === ch.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Send className="size-3.5" strokeWidth={1.7} />
+                    )}
+                    {t.settings.notifications.channels.sendTest}
                   </button>
-                </div>
-              </li>
-            );
-          })}
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleDelete(ch.id)}
+                  className="p-1.5 rounded-md hover:bg-foreground/[0.04] text-muted-foreground hover:text-destructive transition"
+                  aria-label={t.settings.notifications.channels.deleteChannel}
+                >
+                  <Trash2 className="size-4" strokeWidth={1.7} />
+                </button>
+              </div>
+            </li>
+          ))}
         </ul>
       )}
 
@@ -352,27 +380,25 @@ function NewChannelForm({
 
   return (
     <div className="border border-border/50 rounded-xl p-4 space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
-        <select
-          value={kind}
-          onChange={(e) => setKind(e.target.value as ChannelKind)}
-          className="bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
-        >
-          <option value="email">{t.settings.notifications.kinds.email}</option>
-          <option value="webhook">{t.settings.notifications.kinds.webhook}</option>
-          <option value="slack">{t.settings.notifications.kinds.slack}</option>
-          <option value="discord">{t.settings.notifications.kinds.discord}</option>
-          <option value="msteams">{t.settings.notifications.kinds.msteams}</option>
-          <option value="in_app">{t.settings.notifications.kinds.in_app}</option>
-        </select>
-        <input
-          type="text"
-          placeholder={t.settings.notifications.form.labelPlaceholder}
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          className="bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
-        />
-      </div>
+      {/* Kind picker — one reusable switcher (real brand logos; scrolls with
+          edge-fade + chevrons once the kinds outgrow the width). */}
+      <PillSwitcher
+        options={(["email", "webhook", "slack", "in_app"] as ChannelKind[]).map((k) => ({
+          value: k,
+          label: t.settings.notifications.kinds[k],
+          logo: CHANNEL_LOGOS[k],
+          icon: CHANNEL_ICONS[k],
+        }))}
+        value={kind}
+        onChange={setKind}
+      />
+      <input
+        type="text"
+        placeholder={t.settings.notifications.form.labelPlaceholder}
+        value={label}
+        onChange={(e) => setLabel(e.target.value)}
+        className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+      />
 
       {kind === "email" && (
         <input

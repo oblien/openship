@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useCallback } from "react";
-import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
-import { useI18n } from "@/components/i18n-provider";
-import type { PublicEndpoint } from "@/context/deployment/types";
+import { useI18n, interpolate } from "@/components/i18n-provider";
+import { usePlatform } from "@/context/PlatformContext";
+import { RoutingModePicker, type RoutingMode } from "@/components/routing/RoutingModePicker";
+import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 
 interface DomainSettingsProps {
   projectId?: string;
@@ -14,6 +15,9 @@ interface DomainSettingsProps {
   hasServer: boolean;
   runtimePort: string;
   setEndpoints: (endpoints: PublicEndpoint[], runtimePort?: string) => void;
+  /** "None" routing — deploy with no public URL. */
+  noPublicRoute: boolean;
+  setNoPublicRoute: (value: boolean) => void;
 }
 
 function buildPublicEndpointPayload(
@@ -65,9 +69,12 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
   hasServer,
   runtimePort,
   setEndpoints,
+  noPublicRoute,
+  setNoPublicRoute,
 }) => {
   const { showToast } = useToast();
   const { t } = useI18n();
+  const { baseDomain } = usePlatform();
 
   const handleChange = useCallback(async (
     nextEndpoints: PublicEndpoint[],
@@ -100,15 +107,45 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
     }
   }, [hasServer, projectId, setEndpoints, showToast]);
 
+  const mode: RoutingMode = noPublicRoute
+    ? "none"
+    : endpoints[0]?.domainType === "custom"
+      ? "custom"
+      : "free";
+
+  const handleModeChange = useCallback(
+    (next: RoutingMode) => {
+      if (next === "none") {
+        setNoPublicRoute(true);
+        return;
+      }
+      setNoPublicRoute(false);
+      // Free/Custom set the (first) endpoint's domainType — seed one if the set
+      // was emptied. The inner card's own type toggle is hidden, so this is the
+      // single source of the free-vs-custom choice.
+      const base = endpoints[0] ?? createPublicEndpoint({ domainType: next });
+      void handleChange([{ ...base, domainType: next }, ...endpoints.slice(1)]);
+    },
+    [endpoints, handleChange, setNoPublicRoute],
+  );
+
   return (
-    <PublicEndpointsCard
+    <RoutingModePicker
+      mode={mode}
+      onModeChange={handleModeChange}
+      labels={{
+        freeLabel: t.deploy.domainSettings.routeFreeLabel,
+        freeDesc: interpolate(t.deploy.domainSettings.routeFreeDesc, { domain: baseDomain }),
+        customLabel: t.deploy.domainSettings.routeCustomLabel,
+        customDesc: t.deploy.domainSettings.routeCustomDesc,
+        noneLabel: t.deploy.domainSettings.routeNoneLabel,
+        noneDesc: t.deploy.domainSettings.routeNoneDesc,
+      }}
       projectName={projectName}
       endpoints={endpoints}
       hasServer={hasServer}
       runtimePort={runtimePort}
-      allowPortEdit={false}
-      saveMode="change"
-      onChange={handleChange}
+      onEndpointsChange={handleChange}
     />
   );
 };

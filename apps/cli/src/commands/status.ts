@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { apiRequest, getApiUrl, ApiError } from "../lib/api-client";
 import { getActiveContext } from "../lib/config";
 import { serviceStatus } from "../lib/service";
+import { readInstallMethod, composePs } from "../lib/compose";
 import { isJsonMode, printJson } from "../lib/output";
 
 interface Health {
@@ -46,6 +47,22 @@ export const statusCommand = new Command("status")
   .action(async () => {
     const context = getActiveContext();
     const apiUrl = getApiUrl();
+
+    // Compose install → the bare service manager reads "not installed", which is
+    // misleading. Show the stack (docker compose ps) + a health probe instead.
+    if (readInstallMethod() === "compose" && !isJsonMode()) {
+      console.log(chalk.bold("\n  Openship status (Docker Compose)\n"));
+      composePs();
+      try {
+        const h = await apiRequest<Health>("/health", { signal: AbortSignal.timeout(8000) });
+        console.log(chalk.dim(`\n  API: ${apiUrl} — `) + chalk.green(h.status ?? "ok") + "\n");
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : (e as Error).message;
+        console.log(chalk.dim(`\n  API: ${apiUrl} — `) + chalk.red("not reachable") + chalk.dim(`  ${msg}\n`));
+      }
+      return;
+    }
+
     const svc = serviceStatus();
     const ports = readPorts();
 

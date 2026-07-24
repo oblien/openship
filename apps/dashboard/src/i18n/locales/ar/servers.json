@@ -15,6 +15,8 @@
     "connectedToast": "تم ربط GitHub لهذا الخادم",
     "patPlaceholder": "ghp_… (ألصق رمزًا)",
     "patHint": "رمز وصول شخصي مُخزَّن مشفّرًا لهذا الخادم.",
+    "patLabel": "رمز الوصول الشخصي",
+    "or": "أو",
     "save": "حفظ",
     "savedToast": "تم الحفظ",
     "saveFailed": "فشل الحفظ",
@@ -57,7 +59,9 @@
     "authKey": "مفتاح",
     "authPassword": "كلمة مرور",
     "projects": "المشاريع",
-    "regions": "المناطق"
+    "regions": "المناطق",
+    "thisServer": "هذا الخادم",
+    "currentHost": "المضيف الحالي"
   },
   "form": {
     "sshConnection": "اتصال SSH",
@@ -104,6 +108,7 @@
   },
   "detail": {
     "tabs": {
+      "services": "الخدمات",
       "overview": "نظرة عامة",
       "components": "المكوّنات",
       "github": "Git",
@@ -282,7 +287,34 @@
     "toastRemoved": "تمت إزالة حد المعدل",
     "toastFailedRemove": "فشل إزالة حد المعدل",
     "toastInvalidIp": "تنسيق IP/CIDR غير صالح",
-    "toastAlreadyWhitelisted": "موجود بالفعل في القائمة البيضاء"
+    "toastAlreadyWhitelisted": "موجود بالفعل في القائمة البيضاء",
+    "ports": {
+      "title": "تعرّض المنافذ",
+      "subtitle": "اعرف أي منافذ الاستماع يمكن الوصول إليها من الشبكة",
+      "introHint": "افحص كل منفذ يستمع على هذا الجهاز وميّز المنافذ المرتبطة بواجهة عامة بدلاً من الحلقة المحلية.",
+      "scanButton": "فحص المنافذ",
+      "scanning": "جارٍ فحص منافذ الاستماع…",
+      "rescan": "إعادة الفحص",
+      "retry": "إعادة المحاولة",
+      "scanFailed": "تعذّر فحص المنافذ",
+      "scanFailedHint": "قد يكون الخادم غير قابل للوصول. أعد المحاولة عند عودته للعمل.",
+      "summary": "{total} منفذ استماع · {exposed} معرّض للشبكة",
+      "summaryZeroExposed": "{total} منفذ استماع · لا شيء معرّض للشبكة",
+      "exposed": "معرّض",
+      "loopback": "محلي فقط",
+      "noProcessInfo": "أسماء العمليات غير متاحة (ss غير مثبّت على هذا المضيف).",
+      "unknownProcess": "عملية غير معروفة",
+      "empty": "لم يُعثر على منافذ استماع.",
+      "inconclusive": "الفحص غير حاسم",
+      "inconclusiveHint": "تعذّرت قراءة جدول المقابس على هذا المضيف. أعد المحاولة أو تحقق من وصول SSH.",
+      "reachable": "قابل للوصول",
+      "firewalled": "محجوب بالجدار الناري",
+      "expectedOpen": "من المتوقع أن يكون مفتوحاً",
+      "sensitiveHint": "يجب ألا يكون معرّضاً للإنترنت",
+      "sensitiveReachable": "خدمة حسّاسة قابلة للوصول من الإنترنت",
+      "reachableLegend": "«قابل للوصول» تم تأكيده بالاتصال بالمنفذ من خارج الخادم؛ «محجوب» يعني مرتبطاً لكنه محظور (مثل جدار ناري سحابي).",
+      "summaryReachable": "{total} منفذ استماع · {reachable} قابل للوصول من الإنترنت · {firewalled} محجوب بالجدار الناري"
+    }
   },
   "terminal": {
     "title": "الطرفية",

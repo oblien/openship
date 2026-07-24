@@ -1,4 +1,13 @@
 {
+  "ghCliConsent": {
+    "title": "Lire vos dépôts ?",
+    "body": "OpenShip peut lister vos dépôts GitHub via la CLI gh à laquelle vous êtes déjà connecté.",
+    "bodyWithLogin": "OpenShip peut lister vos dépôts GitHub via la CLI gh connectée en tant que @{login}.",
+    "pointNoCloud": "Rien n'est envoyé au cloud — la liste ne quitte jamais cette machine.",
+    "pointDesktopOnly": "Fonctionne uniquement dans l'app de bureau, avec votre authentification gh locale.",
+    "pointReadOnly": "Lecture seule : liste les dépôts pour que vous en choisissiez un à déployer.",
+    "allow": "Autoriser"
+  },
   "page": {
     "title": "Nouveau projet",
     "subtitle": "Importez un dépôt, collez une URL ou partez d'un modèle",

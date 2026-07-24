@@ -25,6 +25,7 @@
     "projectCountOne": "{count} مشروع",
     "projectCountOther": "{count} مشاريع",
     "viewAllProjects": "عرض كل المشاريع ({count}) ←",
+    "viewAllApps": "عرض كل التطبيقات ({count}) ←",
     "greetingName": "{greeting}، {name}",
     "importGit": "استيراد Git",
     "importGitDesc": "من مستودع",

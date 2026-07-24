@@ -324,9 +324,13 @@ export function useUpdates(): UseUpdates {
       .catch(() => setUpdatePhase("idle"));
   }, []);
 
-  // Force a fresh GitHub check (the session cache is otherwise reused).
+  // Force a fresh GitHub check (the session cache is otherwise reused). Also
+  // prime the desktop main process so its pending-update state — which the
+  // native wizard + install act on — re-checks in lockstep with the renderer,
+  // instead of only being set by the boot check.
   const refresh = useCallback(() => {
     remoteCache = null;
+    void window.desktop?.updates?.check?.();
     void load();
   }, [load]);
 

@@ -1,0 +1,33 @@
+{
+  "available": false,
+  "id": "metabase",
+  "name": "Metabase",
+  "description": "Open-source business intelligence — dashboards and questions over your data.",
+  "kind": "template",
+  "logo": "metabase",
+  "category": "analytics",
+  "tags": [
+    "analytics",
+    "bi",
+    "dashboards"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "metabase",
+      "image": "metabase/metabase:latest",
+      "ports": [
+        "3000:3000"
+      ],
+      "exposedPort": 3000,
+      "exposed": true,
+      "environment": {
+        "MB_DB_FILE": "/metabase-data/metabase.db"
+      },
+      "volumes": [
+        "metabase_data:/metabase-data"
+      ],
+      "restart": "unless-stopped"
+    }
+  ]
+}

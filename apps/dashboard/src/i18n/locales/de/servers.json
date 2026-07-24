@@ -15,6 +15,8 @@
     "connectedToast": "GitHub für diesen Server verbunden",
     "patPlaceholder": "ghp_… (Token einfügen)",
     "patHint": "Ein Personal Access Token, verschlüsselt für diesen Server gespeichert.",
+    "patLabel": "Persönliches Zugriffstoken",
+    "or": "oder",
     "save": "Speichern",
     "savedToast": "Gespeichert",
     "saveFailed": "Speichern fehlgeschlagen",
@@ -57,7 +59,9 @@
     "authKey": "Schlüssel",
     "authPassword": "Passwort",
     "projects": "Projekte",
-    "regions": "Regionen"
+    "regions": "Regionen",
+    "thisServer": "Dieser Server",
+    "currentHost": "Aktueller Host"
   },
   "form": {
     "sshConnection": "SSH-Verbindung",
@@ -104,6 +108,7 @@
   },
   "detail": {
     "tabs": {
+      "services": "Dienste",
       "overview": "Übersicht",
       "components": "Komponenten",
       "github": "Git",
@@ -282,7 +287,34 @@
     "toastRemoved": "Ratenbegrenzung entfernt",
     "toastFailedRemove": "Ratenbegrenzung konnte nicht entfernt werden",
     "toastInvalidIp": "Ungültiges IP-/CIDR-Format",
-    "toastAlreadyWhitelisted": "Bereits auf der Whitelist"
+    "toastAlreadyWhitelisted": "Bereits auf der Whitelist",
+    "ports": {
+      "title": "Port-Exposition",
+      "subtitle": "Sehen Sie, welche lauschenden Ports aus dem Netzwerk erreichbar sind",
+      "introHint": "Scannen Sie jeden lauschenden Port auf dieser Maschine und markieren Sie die, die an eine öffentliche Schnittstelle statt an Loopback gebunden sind.",
+      "scanButton": "Ports scannen",
+      "scanning": "Lauschende Ports werden gescannt…",
+      "rescan": "Erneut scannen",
+      "retry": "Erneut versuchen",
+      "scanFailed": "Ports konnten nicht gescannt werden",
+      "scanFailedHint": "Der Server ist möglicherweise nicht erreichbar. Versuchen Sie es erneut, sobald er wieder online ist.",
+      "summary": "{total} lauschende Ports · {exposed} zum Netzwerk exponiert",
+      "summaryZeroExposed": "{total} lauschende Ports · keiner zum Netzwerk exponiert",
+      "exposed": "Exponiert",
+      "loopback": "Nur lokal",
+      "noProcessInfo": "Prozessnamen nicht verfügbar (ss ist auf diesem Host nicht installiert).",
+      "unknownProcess": "Unbekannter Prozess",
+      "empty": "Keine lauschenden Ports gefunden.",
+      "inconclusive": "Scan nicht eindeutig",
+      "inconclusiveHint": "Die Socket-Tabelle konnte auf diesem Host nicht gelesen werden. Erneut versuchen oder SSH-Zugang prüfen.",
+      "reachable": "Erreichbar",
+      "firewalled": "Durch Firewall blockiert",
+      "expectedOpen": "Sollte offen sein",
+      "sensitiveHint": "Sollte nicht aus dem Internet erreichbar sein",
+      "sensitiveReachable": "Sensibler Dienst aus dem Internet erreichbar",
+      "reachableLegend": "„Erreichbar“ wurde durch Verbinden mit dem Port von außerhalb des Servers bestätigt; „Durch Firewall blockiert“ ist gebunden, aber blockiert (z. B. durch eine Cloud-Firewall).",
+      "summaryReachable": "{total} lauschende Ports · {reachable} aus dem Internet erreichbar · {firewalled} durch Firewall blockiert"
+    }
   },
   "terminal": {
     "title": "Terminal",

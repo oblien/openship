@@ -548,11 +548,10 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
         <p className="text-xs text-muted-foreground/60 uppercase tracking-wider mb-4">
           {m.supportedTitle}
         </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <KindCard icon={Cloud} label={m.kindS3} sub={m.cardS3Sub} />
           <KindCard icon={Server} label={m.kindSftp} sub={m.cardSftpSub} />
           <KindCard icon={Server} label={m.kindServer} sub={m.cardServerSub} />
-          <KindCard icon={HardDrive} label={m.kindLocal} sub={m.cardLocalSub} />
         </div>
       </div>
     </div>

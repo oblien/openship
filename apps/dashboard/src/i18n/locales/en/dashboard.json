@@ -25,6 +25,7 @@
     "projectCountOne": "{count} project",
     "projectCountOther": "{count} projects",
     "viewAllProjects": "View all {count} projects →",
+    "viewAllApps": "View all {count} apps →",
     "greetingName": "{greeting}, {name}",
     "importGit": "Import Git",
     "importGitDesc": "From repository",

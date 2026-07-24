@@ -19,10 +19,13 @@
 
 import type { CommandExecutor } from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
+import type { DatabaseDump } from "@repo/db";
 import {
   OPENSHIP_DIR,
   readOpenshipFile,
   writeOpenshipFile,
+  removeOpenshipFile,
+  openshipFileExists,
 } from "./openship-server-store";
 
 /** Bare filename within the shared `.openship/` dir; folder + atomic-write
@@ -132,4 +135,65 @@ export async function removeProjectFromManifest(
   const projects = current.projects.filter((p) => p.id !== projectId);
   if (projects.length === current.projects.length) return; // nothing to remove
   await writeManifest(exec, { ...current, projects });
+}
+
+// ─── Per-project full-subgraph snapshot ──────────────────────────────────────
+//
+// The manifest above is a lightweight structural INDEX (read during a scan for
+// display). This is the full, secret-free `dumpSubgraph({kind:"project"})` — the
+// exact DB rows (project + services + deployments + service_deployments + domains
+// + env structure) — written beside it so re-import can `restoreSubgraph` the
+// project FAITHFULLY instead of reconstructing it from live docker. Flat file
+// (no subdir) so it reuses the atomic openship-file helpers verbatim.
+
+/** `.openship/snapshot-<projectId>.json`. projectId is `proj_<alnum>` (safe
+ *  filename) — enforce it here so a crafted id can never traverse the path or
+ *  inject into the remote command that consumes this name. */
+function snapshotFile(projectId: string): string {
+  if (!/^proj_[A-Za-z0-9]+$/.test(projectId)) {
+    throw new Error(`Refusing unsafe snapshot projectId: ${projectId}`);
+  }
+  return `snapshot-${projectId}.json`;
+}
+
+/** Write the full project-subgraph dump (secret-free) to the server. */
+export async function writeProjectSnapshot(
+  exec: CommandExecutor,
+  projectId: string,
+  dump: DatabaseDump,
+): Promise<void> {
+  await writeOpenshipFile(exec, snapshotFile(projectId), JSON.stringify(dump));
+}
+
+/** Read + parse a project snapshot. Null when absent / unparseable / wrong shape. */
+export async function readProjectSnapshot(
+  exec: CommandExecutor,
+  projectId: string,
+): Promise<DatabaseDump | null> {
+  const raw = await readOpenshipFile(exec, snapshotFile(projectId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as DatabaseDump;
+    if (parsed?.scope?.kind !== "project" || !parsed.tables) return null;
+    return parsed;
+  } catch (err) {
+    console.warn(`[openship-snapshot] failed to parse snapshot for ${projectId}: ${safeErrorMessage(err)}`);
+    return null;
+  }
+}
+
+/** Cheap existence check (no read) — is a snapshot available for this project? */
+export async function projectSnapshotExists(
+  exec: CommandExecutor,
+  projectId: string,
+): Promise<boolean> {
+  return openshipFileExists(exec, snapshotFile(projectId));
+}
+
+/** Delete a project's snapshot (teardown). Idempotent. */
+export async function removeProjectSnapshot(
+  exec: CommandExecutor,
+  projectId: string,
+): Promise<void> {
+  await removeOpenshipFile(exec, snapshotFile(projectId));
 }

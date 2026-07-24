@@ -1,0 +1,33 @@
+{
+  "available": true,
+  "id": "grafana",
+  "name": "Grafana",
+  "description": "Dashboards and visualization for your metrics and logs. First login is admin / admin.",
+  "kind": "template",
+  "logo": "grafana",
+  "category": "analytics",
+  "tags": [
+    "analytics",
+    "dashboards",
+    "monitoring"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "grafana",
+      "image": "grafana/grafana:latest",
+      "ports": [
+        "3007:3000"
+      ],
+      "exposedPort": 3000,
+      "exposed": true,
+      "environment": {
+        "GF_SERVER_ROOT_URL": "{{publicUrl:grafana}}"
+      },
+      "volumes": [
+        "grafana_data:/var/lib/grafana"
+      ],
+      "restart": "unless-stopped"
+    }
+  ]
+}

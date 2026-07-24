@@ -112,9 +112,18 @@
     "noServers": "Nenhum servidor configurado ainda - adicione um pelo seletor de implantação.",
     "clearDefault": "Limpar padrão (perguntar sempre)",
     "targets": {
-      "local": { "label": "Esta Máquina", "desc": "Docker / runtime local" },
-      "server": { "label": "Meu Servidor", "desc": "Um servidor SSH configurado" },
-      "cloud": { "label": "OpenShip Cloud", "desc": "Infraestrutura em nuvem gerenciada" }
+      "local": {
+        "label": "Esta Máquina",
+        "desc": "Docker / runtime local"
+      },
+      "server": {
+        "label": "Meu Servidor",
+        "desc": "Um servidor SSH configurado"
+      },
+      "cloud": {
+        "label": "OpenShip Cloud",
+        "desc": "Infraestrutura em nuvem gerenciada"
+      }
     },
     "labelFor": {
       "yourServer": "seu servidor",
@@ -134,9 +143,18 @@
     "loading": "Carregando preferências…",
     "intro": "Escolha a estratégia de build padrão para novas implantações. Substituições por projeto estão disponíveis nas configurações do projeto.",
     "modes": {
-      "auto": { "label": "Automático", "desc": "Inteligente por framework" },
-      "server": { "label": "Servidor", "desc": "Build no remoto" },
-      "local": { "label": "Local", "desc": "Build na máquina" }
+      "auto": {
+        "label": "Automático",
+        "desc": "Inteligente por framework"
+      },
+      "server": {
+        "label": "Servidor",
+        "desc": "Build no remoto"
+      },
+      "local": {
+        "label": "Local",
+        "desc": "Build na máquina"
+      }
     },
     "toast": {
       "setTo": "Modo de build definido como {mode}",
@@ -285,6 +303,14 @@
       "subtitle": "As concessões se aplicam a membros restritos. Proprietário/administrador/membro têm acesso a toda a organização por padrão.",
       "saveLabel": "Salvar acesso"
     },
+    "serverAccessWarning": {
+      "title": "Conceder acesso total ao servidor?",
+      "body": "{member} terá controle total de {scope} — cada implantação e seus dados, todos os apps em execução nele, segredos e variáveis de ambiente armazenados, acesso ao terminal e quaisquer integrações conectadas (por exemplo, tokens do GitHub e chaves de implantação guardadas para ele). Poderá gerenciar ou excluir esses recursos.",
+      "scopeAllServers": "todos os servidores desta organização",
+      "scopeThisServer": "este servidor",
+      "scopeCount": "{count} servidores",
+      "confirm": "Conceder acesso"
+    },
     "confirmRemove": "Remover este membro da organização?",
     "workspace": {
       "deleteWorkspace": "Excluir espaço de trabalho",
@@ -408,6 +434,8 @@
       "empty": "Nenhum canal ainda. Adicione um para começar a receber notificações.",
       "verified": "Verificado",
       "unverified": "Não verificado",
+      "sendTest": "Enviar teste",
+      "testSent": "Teste enviado",
       "deleteChannel": "Excluir canal",
       "addChannel": "Adicionar canal",
       "confirmDelete": "Excluir este canal? As assinaturas que o utilizam serão interrompidas.",
@@ -663,5 +691,29 @@
     "toastLoadStateFailed": "Falha ao carregar o estado",
     "toastRemoteUnreachable": "Remoto inacessível. Marque \"não puxar dados remotos\" para reverter mesmo assim.",
     "toastSwitchBackFailed": "Reversão falhou"
+  },
+  "routePreferences": {
+    "title": "Roteamento",
+    "description": "Como o edge alcança os upstreams dos seus apps",
+    "loading": "Carregando preferências…",
+    "intro": "Escolha o endereçamento de upstream padrão para novos projetos auto-hospedados. As substituições por projeto ficam nas configurações do projeto.",
+    "modes": {
+      "auto": {
+        "label": "Automático",
+        "desc": "Recomendado (porta loopback)"
+      },
+      "loopbackPort": {
+        "label": "Porta loopback",
+        "desc": "Porta de host privada 127.0.0.1"
+      },
+      "containerIp": {
+        "label": "IP do contêiner",
+        "desc": "Avançado — IP da bridge"
+      }
+    },
+    "toast": {
+      "setTo": "Estratégia de roteamento definida como {mode}",
+      "failed": "Falha ao atualizar a estratégia de roteamento"
+    }
   }
 }

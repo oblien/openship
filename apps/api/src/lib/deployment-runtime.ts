@@ -1,5 +1,6 @@
 import {
   createPlatform,
+  createHostExecutor,
   DockerRuntime,
   type CommandExecutor,
   type DockerConnectionOptions,
@@ -300,6 +301,22 @@ export async function resolveTargetPlatform(
     // fetch and no non-org fallback. (resolveOrgServer throws if the org
     // is missing or the server isn't in it.)
     const server = await resolveOrgServer(serverId, organizationId);
+
+    // The auto-registered "This Server" row IS the OpenShip host (VPS /
+    // server-host mode). It has no real SSH — resolve it to the LOCAL host
+    // executor (createHostExecutor: LocalExecutor when bare, SSH→host when the
+    // API is containerized), exactly like the self-deploy path. Docker uses the
+    // host's socket (DooD). Everything downstream (routing/SSL) is on-box.
+    if (server.isLocal) {
+      return createPlatform({
+        target: "selfhosted",
+        runtime: runtimeMode,
+        executor: createHostExecutor(),
+        docker: runtimeMode === "docker" ? { transport: "socket" as const } : undefined,
+        provisionLock: createProvisionLock("provision:local"),
+      });
+    }
+
     const executor = await sshManager.acquire(server.id);
 
     // SSH config for the Docker SSH transport (dockerode uses its own connection).

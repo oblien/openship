@@ -30,6 +30,7 @@ import {
 import { useModal } from "@/context/ModalContext";
 import { GrantPickerModal } from "./GrantPickerModal";
 import { InviteMemberModal } from "./InviteMemberModal";
+import { serversNewlyGranted, hasNewServerGrant, confirmServerAccess } from "@/components/permissions/confirm-server-access";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { TeamWorkspaceCard } from "./TeamWorkspaceCard";
@@ -332,6 +333,27 @@ export function TeamTab() {
             availableTypes={availableTypes}
             saveLabel={t.settings.team.memberPanel.saveLabel}
             onSave={async (grants) => {
+              // Warn before newly granting server access — it exposes all data,
+              // apps, and connected integrations on that server. Throwing keeps
+              // the picker open (its onSave contract) when the owner backs out.
+              const delta = serversNewlyGranted(initial, grants);
+              if (hasNewServerGrant(delta)) {
+                const w = t.settings.team.serverAccessWarning;
+                const scope = delta.wildcard
+                  ? w.scopeAllServers
+                  : delta.ids.length === 1
+                    ? w.scopeThisServer
+                    : interpolate(w.scopeCount, { count: String(delta.ids.length) });
+                const ok = await confirmServerAccess({
+                  showModal,
+                  hideModal,
+                  title: w.title,
+                  message: interpolate(w.body, { member: m.user.name || m.user.email, scope }),
+                  confirmLabel: w.confirm,
+                  cancelLabel: t.settings.common.cancel,
+                });
+                if (!ok) throw new Error("server-access-declined");
+              }
               await permissionsApi.replaceGrants(m.userId, grants);
               showToast(t.settings.team.toast.accessUpdated, "success", t.settings.common.toast.permissions);
             }}

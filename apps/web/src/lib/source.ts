@@ -1,4 +1,4 @@
-import { docs, resources, changelog } from "@/.source/server";
+import { docs, resources } from "@/.source/server";
 import { loader } from "fumadocs-core/source";
 
 export const docsSource = loader({
@@ -9,11 +9,6 @@ export const docsSource = loader({
 export const resourcesSource = loader({
   baseUrl: "/resources",
   source: resources.toFumadocsSource(),
-});
-
-export const changelogSource = loader({
-  baseUrl: "/changelog",
-  source: changelog.toFumadocsSource(),
 });
 
 export interface ResourceFrontmatter {
@@ -33,11 +28,3 @@ export interface DocFrontmatter {
   toc: unknown;
 }
 
-export interface ChangelogFrontmatter {
-  title: string;
-  description?: string;
-  version: string;
-  date: string;
-  tags?: string[];
-  body: React.ComponentType;
-}

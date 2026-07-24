@@ -93,3 +93,26 @@ export function formatDuration(seconds: number): string {
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/**
+ * Race a promise against a timeout, rejecting with `Error(message)` after `ms`.
+ * `ms` of 0/undefined disables the timeout (returns the promise as-is). Clears
+ * the timer on settle so it never leaks. One shared impl — callers pass their
+ * own message so prior error contracts are preserved.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number | undefined, message: string): Promise<T> {
+  if (!ms) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}

@@ -22,6 +22,7 @@ declare global {
       getAll: () => Promise<Record<string, unknown>>;
     };
     updates?: {
+      check: () => Promise<{ available: boolean; version?: string }>;
       start: () => Promise<boolean>;
       open: () => Promise<boolean>;
       dismiss: () => Promise<boolean>;

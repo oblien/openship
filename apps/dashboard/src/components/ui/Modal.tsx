@@ -95,7 +95,7 @@ export function Modal({
       <div
         className="relative w-full border border-border/60 ring-1 ring-inset ring-foreground/[0.06] rounded-2xl shadow-2xl backdrop-blur-2xl flex flex-col transition-all duration-300 !overflow-x-hidden"
         style={{
-          background: 'color-mix(in oklab, var(--th-card-bg-solid) 93%, transparent)',
+          background: 'color-mix(in oklab, var(--th-card-bg-solid) 50%, transparent)',
           width,
           overflow,
           maxWidth,

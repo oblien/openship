@@ -303,6 +303,14 @@
       "subtitle": "Les octrois s'appliquent aux membres restreints. Les propriétaires/administrateurs/membres ont par défaut un accès à toute l'organisation.",
       "saveLabel": "Enregistrer l'accès"
     },
+    "serverAccessWarning": {
+      "title": "Accorder un accès complet au serveur ?",
+      "body": "{member} obtiendra le contrôle total de {scope} — chaque déploiement et ses données, toutes les applications qui y tournent, les secrets et variables d'environnement stockés, l'accès au terminal, et toute intégration connectée (par ex. les jetons GitHub et clés de déploiement qui y sont stockés). Il pourra gérer ou supprimer ces ressources.",
+      "scopeAllServers": "tous les serveurs de cette organisation",
+      "scopeThisServer": "ce serveur",
+      "scopeCount": "{count} serveurs",
+      "confirm": "Accorder l'accès"
+    },
     "confirmRemove": "Supprimer ce membre de l'organisation ?",
     "workspace": {
       "deleteWorkspace": "Supprimer l'espace de travail",
@@ -450,6 +458,8 @@
       "empty": "Aucun canal pour l'instant. Ajoutez-en un pour commencer à recevoir des notifications.",
       "verified": "Vérifié",
       "unverified": "Non vérifié",
+      "sendTest": "Envoyer un test",
+      "testSent": "Test envoyé",
       "deleteChannel": "Supprimer le canal",
       "addChannel": "Ajouter un canal",
       "confirmDelete": "Supprimer ce canal ? Les abonnements qui l'utilisent seront arrêtés.",
@@ -705,5 +715,29 @@
     "toastLoadStateFailed": "Échec du chargement de l'état",
     "toastRemoteUnreachable": "Distant injoignable. Cochez « ne pas récupérer les données distantes » pour revenir en arrière quand même.",
     "toastSwitchBackFailed": "Échec du retour en arrière"
+  },
+  "routePreferences": {
+    "title": "Routage",
+    "description": "Comment l'edge atteint les upstreams de vos apps",
+    "loading": "Chargement des préférences…",
+    "intro": "Choisissez l'adressage upstream par défaut pour les nouveaux projets auto-hébergés. Les remplacements par projet se trouvent dans les paramètres du projet.",
+    "modes": {
+      "auto": {
+        "label": "Auto",
+        "desc": "Recommandé (port loopback)"
+      },
+      "loopbackPort": {
+        "label": "Port loopback",
+        "desc": "Port hôte privé 127.0.0.1"
+      },
+      "containerIp": {
+        "label": "IP du conteneur",
+        "desc": "Avancé — IP du bridge"
+      }
+    },
+    "toast": {
+      "setTo": "Stratégie de routage définie sur {mode}",
+      "failed": "Échec de la mise à jour de la stratégie de routage"
+    }
   }
 }

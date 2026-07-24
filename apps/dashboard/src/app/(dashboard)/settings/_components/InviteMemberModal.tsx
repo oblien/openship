@@ -22,6 +22,8 @@ import {
   type ResourceType,
 } from "@/lib/api";
 import { ResourcePicker } from "@/components/permissions/ResourcePicker";
+import { useModal } from "@/context/ModalContext";
+import { serversNewlyGranted, hasNewServerGrant, confirmServerAccess } from "@/components/permissions/confirm-server-access";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 type MemberRole = "owner" | "admin" | "member" | "restricted";
@@ -53,6 +55,7 @@ export function InviteMemberModal({
   onClose: () => void;
 }) {
   const { showToast } = useToast();
+  const { showModal, hideModal } = useModal();
   const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<MemberRole>("member");
@@ -109,6 +112,26 @@ export function InviteMemberModal({
     setInviting(true);
     try {
       if (role === "restricted" && grants.length > 0) {
+        // Warn before inviting with server access — at invite time every server
+        // grant is new, so diff against an empty set.
+        const delta = serversNewlyGranted([], grants);
+        if (hasNewServerGrant(delta)) {
+          const w = t.settings.team.serverAccessWarning;
+          const scope = delta.wildcard
+            ? w.scopeAllServers
+            : delta.ids.length === 1
+              ? w.scopeThisServer
+              : interpolate(w.scopeCount, { count: String(delta.ids.length) });
+          const ok = await confirmServerAccess({
+            showModal,
+            hideModal,
+            title: w.title,
+            message: interpolate(w.body, { member: email.trim(), scope }),
+            confirmLabel: w.confirm,
+            cancelLabel: t.settings.common.cancel,
+          });
+          if (!ok) return;
+        }
         await permissionsApi.inviteWithGrants({ email: email.trim(), role, grants });
       } else {
         const res = await orgClient.inviteMember({ email: email.trim(), role });

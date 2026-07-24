@@ -108,6 +108,8 @@
     "local": "Local",
     "production": "Producción",
     "lastDeploy": "Último despliegue",
+    "noDomain": "Sin dominio",
+    "addDomain": "Añadir dominio",
     "tabs": {
       "appSettings": "Ajustes",
       "overview": "Resumen",

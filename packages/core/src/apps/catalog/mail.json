@@ -1,0 +1,20 @@
+{
+  "available": true,
+  "id": "mail",
+  "name": "Openship Mail",
+  "description": "A complete self-hosted mail server — SMTP/IMAP + webmail on your own domain.",
+  "kind": "flow",
+  "logo": "mail-webmail",
+  "category": "mail",
+  "tags": [
+    "mail",
+    "email",
+    "smtp",
+    "imap"
+  ],
+  "flowHref": "/apps/new/mail",
+  "management": {
+    "kind": "custom",
+    "href": "/emails"
+  }
+}

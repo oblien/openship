@@ -403,13 +403,17 @@ export async function sendTestEmail(c: Context) {
 /** DELETE /system/settings - remove server configuration */
 export async function deleteSettings(c: Context) {
   const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
+  const ctx = getRequestContext(c);
 
   await repos.instanceSettings.delete();
 
-  // Also clear all servers since SSH config lives in the servers table.
-  // Purge per-server grants alongside each server so we don't leave
-  // orphan resource_grant rows pointing at deleted resources.
-  const serverList = await repos.server.list();
+  // Clear the CALLER'S-ORG servers only (SSH config lives in the servers table).
+  // MUST be org-scoped: `repos.server.list()` returns every org's servers, so a
+  // global delete here let an org owner wipe OTHER organizations' servers
+  // (broken access control). Scope to ctx.organizationId — same scope as the
+  // Servers list / `server:admin` delete. Purge per-server grants alongside each
+  // so no orphan resource_grant rows point at deleted resources.
+  const serverList = await repos.server.listByOrganization(ctx.organizationId);
   for (const s of serverList) {
     if (s.organizationId) {
       await repos.resourceGrant

@@ -8,19 +8,29 @@ import {
 } from "drizzle-orm/pg-core";
 import { project } from "./project";
 import { service } from "./service";
+import { webhookSource } from "./webhook-source";
 
 // ─── Domains ─────────────────────────────────────────────────────────────────
 
 /**
- * Custom domains linked to projects.
+ * Custom domains linked to a project OR a webhook source (polymorphic owner).
  * Each domain goes through a verification flow (DNS TXT record check)
  * before becoming active and getting SSL provisioned.
  */
 export const domain = pgTable("domain", {
   id: text("id").primaryKey(), // "dom_..."
+  /**
+   * Owner discriminator: "project" (the default — routes to a deployed app) or
+   * "webhook" (routes to the inbound webhook receiver for `webhookSourceId`).
+   * Existing rows backfill to "project" via the column default.
+   */
+  ownerType: text("owner_type").notNull().default("project"),
+  /** Owning project — NULL for a webhook-owned domain (ownerType='webhook'). */
   projectId: text("project_id")
-    .notNull()
     .references(() => project.id, { onDelete: "cascade" }),
+  /** Owning webhook source — set when ownerType='webhook'; routes to the receiver. */
+  webhookSourceId: text("webhook_source_id")
+    .references(() => webhookSource.id, { onDelete: "cascade" }),
   /** Service ID for service-scoped domain routing (null = project-level / main service) */
   serviceId: text("service_id").references(() => service.id, { onDelete: "cascade" }),
 
@@ -92,4 +102,5 @@ export const domain = pgTable("domain", {
   // Routing hot path — every request that resolves a hostname hits this.
   index("idx_domain_project").on(t.projectId),
   index("idx_domain_project_hostname").on(t.projectId, t.hostname),
+  index("idx_domain_webhook_source").on(t.webhookSourceId),
 ]);

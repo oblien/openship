@@ -94,21 +94,33 @@ interface ServerPickerProps {
 
 /** Server-glyph avatar + name + host line — shared by the collapsed trigger and
  *  each list row. */
-const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ server, active }) => (
-  <>
-    <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
-      active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
-    }`}>
-      <Server className="size-3.5" />
-    </div>
-    <div className="flex-1 min-w-0">
-      <p className="text-sm font-medium text-foreground truncate">{server.name || server.sshHost}</p>
-      <p className="text-[11px] text-muted-foreground truncate">
-        {server.sshUser || "root"}@{server.sshHost}:{server.sshPort || 22}
-      </p>
-    </div>
-  </>
-);
+const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ server, active }) => {
+  const { t } = useI18n();
+  return (
+    <>
+      <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
+        active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
+      }`}>
+        <Server className="size-3.5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">
+          {server.name || server.sshHost}
+          {server.isLocal && (
+            <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
+              {t.deploy.targetStep.thisServerBadge}
+            </span>
+          )}
+        </p>
+        <p className="text-[11px] text-muted-foreground truncate">
+          {server.isLocal
+            ? t.deploy.targetStep.thisServerHost
+            : `${server.sshUser || "root"}@${server.sshHost}:${server.sshPort || 22}`}
+        </p>
+      </div>
+    </>
+  );
+};
 
 const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSelect, onAddServer }) => {
   const { t } = useI18n();
@@ -843,10 +855,16 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     setIsFirstBuildHint(!buildHintFlag.isSet());
   }, []);
 
-  // First-deploy-only: auto-match build to deploy target until the user makes
-  // an explicit pick in the Advanced disclosure (buildStrategyTouchedRef).
+  // First-deploy-only: preselect the build strategy until the user makes an
+  // explicit pick in the Advanced disclosure (buildStrategyTouchedRef).
+  // UNIFIED build: build on the same place you deploy — a SERVER target builds
+  // on that server (no separate "This Machine" step), and cloud builds in the
+  // cloud runtime. Only the bare "local" target builds locally (it IS the host,
+  // so buildStrategy is inert there anyway). A server deploy that lacks a clone
+  // credential still auto-downgrades to a local build at deploy time
+  // (Sidebar.handleDeploy), so this never hard-fails a credential-less box.
   useEffect(() => {
-    // Never override an explicit user pick — only auto-match on the untouched
+    // Never override an explicit user pick — only preselect on the untouched
     // first-deploy default.
     if (!isFirstBuildHint || buildStrategyTouchedRef.current) return;
     const want: BuildStrategy = config.deployTarget === "local" ? "local" : "server";
@@ -926,6 +944,17 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
               applied = true;
             }
           }
+        }
+
+        // No saved default and no usable last-pick? Default to a SERVER when one
+        // exists (including the auto-added "This Server" in server-host mode),
+        // with a unified build — matches "deploy to your server by default".
+        // Prefer the local host server. Cloud stays the fallback only when no
+        // server exists at all (handled by the single-option auto-select below).
+        if (!applied && servers.length > 0) {
+          const preferred = servers.find((s) => s.isLocal) ?? servers[0];
+          updateConfig({ deployTarget: "server", serverId: preferred.id });
+          applied = true;
         }
 
         // Collapse to compact summary only when defaults applied cleanly
@@ -1159,30 +1188,32 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     },
   ];
 
-  // Whether the selected server's SSH auth can host the credential-forwarding
-  // relay. The relay is desktop-only and can't run over agent auth, so we only
-  // default forwarding on for key/password servers — an agent server falls back
-  // to a stored credential (per-server GitHub / App / PAT) or the backend's
-  // graceful degrade to an api-host clone, never the relay hard-fail.
+  // Whether the credential-forwarding relay can run for this target. The relay
+  // is desktop-only and needs a real SSH reverse tunnel — which every remote
+  // server has (key, password, OR agent), and only a local/no-SSH target lacks.
+  // So any server with a configured SSH auth method is relay-capable; the
+  // backend re-checks the true capability (executor.reverseForward) + a local gh
+  // before actually forwarding, and degrades to an api-host clone otherwise.
   const selectedServerAuth = servers.find((s) => s.id === config.serverId)?.sshAuthMethod ?? null;
-  const relayCapable = selectedServerAuth === "key" || selectedServerAuth === "password";
+  const relayCapable = selectedServerAuth != null;
   // Single source of truth for "forward the git credential for a server clone":
-  // relay is desktop-only and can't run over agent auth. Both the default effect
-  // and the manual clone-card pick read this, so they can never drift.
+  // desktop + an SSH-reachable server. Both the default effect and the manual
+  // clone-card pick read this, so they can never drift.
   const canForwardServerClone = isDesktop && relayCapable;
 
-  // Default the clone location to "on the server" and keep the forward flag in
-  // sync with the server's relay capability. Only for a brand-new deploy — a
-  // saved project keeps its stored choice.
+  // Default the clone location to "on the server" and, for a capable desktop
+  // server clone, default forwarding ON — the secure + atomic path (clone on the
+  // build host, nothing persisted). Only for a brand-new deploy, and only when
+  // the choice is UNSET: never override an explicit user pick, so an opt-out
+  // (unchecking → forwardGitCredentials=false) sticks.
   useEffect(() => {
     if (config.projectId) return;
     if (!showCloneStrategy) return;
     const clone: CloneStrategy = config.cloneStrategy ?? "server";
-    const wantForward = clone === "server" && canForwardServerClone;
     const patch: { cloneStrategy?: CloneStrategy; forwardGitCredentials?: boolean } = {};
     if (config.cloneStrategy == null) patch.cloneStrategy = clone;
-    if ((config.forwardGitCredentials === true) !== wantForward) {
-      patch.forwardGitCredentials = wantForward ? true : undefined;
+    if (config.forwardGitCredentials == null && clone === "server" && canForwardServerClone) {
+      patch.forwardGitCredentials = true;
     }
     if (Object.keys(patch).length > 0) updateConfig(patch);
   }, [
@@ -1581,10 +1612,11 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                             onSelect={() =>
                               updateConfig({
                                 cloneStrategy: opt.value,
-                                // Only forward when the relay can actually run
-                                // (desktop + key/password auth); otherwise leave
-                                // it off so an agent server degrades instead of
-                                // hitting the relay hard-fail.
+                                // "Clone on the server" forwards the git identity
+                                // (desktop + SSH-reachable server); "api-host" is
+                                // the explicit opt-out (false → clone here +
+                                // transfer). The backend re-checks the real relay
+                                // capability + a local gh before forwarding.
                                 forwardGitCredentials:
                                   opt.value === "server" && canForwardServerClone,
                               })

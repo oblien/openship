@@ -44,6 +44,8 @@ interface ServerEntry {
   user: string;
   auth: "key" | "password" | null;
   country: string | null;
+  /** The auto-registered host row ("This Server") — deploys run locally, not SSH. */
+  isLocal: boolean;
   /** Projects currently deployed to this server (active deployment → this host). */
   projectCount: number;
 }
@@ -82,6 +84,7 @@ export default function ServersPage() {
           user: s.sshUser ?? "root",
           auth: (s.sshAuthMethod as "key" | "password" | null) ?? null,
           country: s.country ?? null,
+          isLocal: s.isLocal ?? false,
           projectCount: s.projectCount ?? 0,
         })),
       );
@@ -248,8 +251,17 @@ export default function ServersPage() {
 
                       {/* Name + host (fixed column — keeps meta aligned, no dead gap) */}
                       <div className="w-44 min-w-0 shrink-0 text-start lg:w-56">
-                        <p className="truncate text-sm font-medium text-foreground">{server.name}</p>
-                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{server.host}</p>
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {server.name}
+                          {server.isLocal && (
+                            <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
+                              {t.servers.list.thisServer}
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                          {server.isLocal ? t.servers.list.currentHost : server.host}
+                        </p>
                       </div>
 
                       {/* Meta chips */}

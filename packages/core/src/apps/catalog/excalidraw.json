@@ -1,0 +1,27 @@
+{
+  "available": true,
+  "id": "excalidraw",
+  "name": "Excalidraw",
+  "description": "Virtual whiteboard for sketches and diagrams. Stateless — drawings save in your browser.",
+  "kind": "template",
+  "logo": "excalidraw",
+  "category": "other",
+  "tags": [
+    "whiteboard",
+    "diagrams",
+    "drawing"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "excalidraw",
+      "image": "excalidraw/excalidraw:latest",
+      "ports": [
+        "8203:80"
+      ],
+      "exposedPort": 80,
+      "exposed": true,
+      "restart": "unless-stopped"
+    }
+  ]
+}

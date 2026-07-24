@@ -35,7 +35,7 @@ function fakeExecutor(candidates: Record<string, string>): CommandExecutor {
 
 const APK: EnvironmentProfile = {
   os: "linux", arch: "amd64", distro: "alpine",
-  packageManager: "apk", serviceManager: "openrc", isRoot: true, canSudo: false,
+  packageManager: "apk", serviceManager: "none", isRoot: true, canSudo: false,
 };
 
 /** Fake `apk policy <pkg>` output: version lines end in `:`, each followed by

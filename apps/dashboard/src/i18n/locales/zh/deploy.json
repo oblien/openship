@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "保存域名失败",
-    "toastTitle": "域名"
+    "toastTitle": "域名",
+    "routeFreeLabel": "免费子域名",
+    "routeFreeDesc": "免费的 {domain} 网址，即刻可用。",
+    "routeCustomLabel": "自定义域名",
+    "routeCustomDesc": "将您自己的域名指向此部署。",
+    "routeNoneLabel": "无",
+    "routeNoneDesc": "无公开网址 — 仅内部访问。通过主机端口访问。"
   },
   "dns": {
     "title": "DNS 配置",
@@ -119,6 +125,8 @@
     "addServer": "添加你自己的服务器",
     "continue": "继续",
     "chooseServer": "选择一台服务器",
+    "thisServerBadge": "此服务器",
+    "thisServerHost": "当前主机 — 部署在此运行",
     "searchPlaceholder": "搜索服务器…",
     "noServersMatch": "没有与搜索匹配的服务器。",
     "requireCloudFeature": "部署到 Openship Cloud",

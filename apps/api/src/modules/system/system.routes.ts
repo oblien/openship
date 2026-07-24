@@ -59,7 +59,10 @@ r.public("post", "/self-edge/preflight", { reason: "CLI setup — detect what ow
 /* ── Authenticated routes (dashboard settings page) ─────────────── */
 r.get("/settings", { tag: "settings:read" }, setup.getSetup);
 r.patch("/settings", { tag: "settings:write" }, setup.updateSettings);
-r.delete("/settings", { tag: "settings:admin" }, setup.deleteSettings);
+// Destructive reset — owner-only (like the other destructive settings routes),
+// and the handler is org-scoped (it only clears the CALLER's-org servers, never
+// every org's — see deleteSettings).
+r.delete("/settings", { tag: "settings:admin" }, requireRole("owner"), setup.deleteSettings);
 
 // Instance SMTP (Settings → Email) — self-hosted operator transport for all
 // system mail (password reset, verification, invites, notifications).
@@ -100,6 +103,7 @@ r.delete("/servers/:id", { tag: "server:admin" }, serversCtrl.deleteServer);
 /* ── Per-server rate limiting (OpenResty level) ─────────────────── */
 r.get("/servers/:id/rate-limit", { tag: "server:read" }, rateLimit.getRateLimit);
 r.patch("/servers/:id/rate-limit", { tag: "server:write" }, rateLimit.updateRateLimit);
+r.post("/servers/:id/ports/scan", { tag: "server:read", readOnly: true }, serverCheck.scanExposedPorts);
 
 // ── Native-module versioning + migration (OpenResty, …). The `:id` server is
 //    the permission resource; handlers hard-guard cloud + org-scope. ──

@@ -20,6 +20,7 @@ import * as ctrl from "./project.controller";
 import * as folder from "./folder/folder.controller";
 import * as transfer from "./transfer.controller";
 import * as routeRules from "../route-rules/route-rule.controller";
+import * as ensureEdgeCtrl from "../domains/ensure-edge.controller";
 import {
   CreateProjectBody,
   EnsureProjectBody,
@@ -178,6 +179,12 @@ r.post("/:id/disable", { tag: "project:write", mcp: { description: "Disable a pr
 
 /* ─── Retry free-domain edge routing (no rebuild) ──────────────────────── */
 r.post("/:id/routing/retry", { tag: "project:write", mcp: { description: "Retry syncing the project's free .opsh.io edge route (no rebuild); clears the routing 'Action Required' warning on success." } }, cloudProjectProxy, ctrl.retryRouting);
+
+/* ─── Set up / take over the self-hosted edge (OpenResty on 80/443) + apply
+      the project's routes, WITHOUT a container redeploy. SSE so the port-80/443
+      takeover consent can be prompted mid-flight (answered via .../respond). ── */
+r.post("/:id/routing/ensure-edge/stream", { tag: "project:write" }, ensureEdgeCtrl.ensureEdgeStream);
+r.post("/:id/routing/ensure-edge/respond", { tag: "project:write" }, ensureEdgeCtrl.ensureEdgeRespond);
 
 /* ─── Environment variables ────────────────────────────────────────────── */
 // Project-scoped bulk routes (no per-env_var id in the URL) → gate on the

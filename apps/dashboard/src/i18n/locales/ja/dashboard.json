@@ -25,6 +25,7 @@
     "projectCountOne": "{count}件のプロジェクト",
     "projectCountOther": "{count}件のプロジェクト",
     "viewAllProjects": "{count}件のプロジェクトをすべて表示 →",
+    "viewAllApps": "{count}件のアプリをすべて表示 →",
     "greetingName": "{greeting}、{name}さん",
     "importGit": "Gitからインポート",
     "importGitDesc": "リポジトリから",

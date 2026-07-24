@@ -14,6 +14,7 @@ export * from "./metadata";
 export * from "./openship-config";
 export * from "./mail-server";
 export * from "./app-templates";
+export { appTemplateSchema, isValidAppTemplate } from "./apps/schema";
 export * from "./app-settings";
 export * from "./project-source";
 export * from "./updates";

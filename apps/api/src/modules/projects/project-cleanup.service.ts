@@ -470,7 +470,12 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
   const previewServices: DeletionPreviewService[] = [];
   const deploymentVolumes: string[] = [];
   const networkSlugs = new Set<string>();
-  let selfHosted = false;
+  // Self-hosted is a STATIC fact of the project (anything not cloud-managed), not
+  // something to infer from a live runtime probe: an imported/migrated project on
+  // an unreachable server would otherwise resolve to `false` and hide the
+  // record-only ("Remove from Openship") delete — exactly when it's most useful.
+  // The loop below only strengthens (never un-sets) this.
+  let selfHosted = !project.cloudWorkspaceId;
 
   // Map service id → its container id (most recent deployment wins, which
   // matches the order rows come back in). We resolve volumes per container.

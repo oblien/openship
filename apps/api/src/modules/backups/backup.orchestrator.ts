@@ -17,7 +17,13 @@
  * surface stays identical.
  */
 
-import { repos, type Service, type BackupRunStatus } from "@repo/db";
+import {
+  repos,
+  type Service,
+  type BackupRunStatus,
+  type BackupPolicy,
+  type BackupDestination,
+} from "@repo/db";
 import { containerIdForService } from "../services/service-container";
 import { backupRunBus } from "./backup.sse";
 import { getJobRunner } from "../../lib/job-runner";
@@ -55,6 +61,10 @@ export interface RunBackupInput {
    *  the payload kind + hooks. */
   policyId: string;
   trigger: BackupTrigger;
+  /** Concrete service to back up. Set by the project-default fan-out to spawn
+   *  one child run per service; omitted for direct per-service / mail / cron
+   *  triggers (the source is then derived from the policy). */
+  serviceId?: string;
 }
 
 /** Source-agnostic context the shared upload/manifest pipeline needs,
@@ -84,7 +94,7 @@ export class BackupOrchestrator {
    * In Chunk 1 the actual work runs via setImmediate. Chunk 2 swaps
    * to BullMQ.add() — this method's contract doesn't change.
    */
-  async enqueue(input: RunBackupInput): Promise<{ runId: string }> {
+  async enqueue(input: RunBackupInput): Promise<{ runId: string; runIds: string[] }> {
     const policy = await repos.backupPolicy.findById(input.policyId);
     if (!policy) {
       throw new Error(`Backup policy ${input.policyId} not found`);
@@ -108,6 +118,66 @@ export class BackupOrchestrator {
     const organizationId =
       policyProject?.organizationId ?? destination.organizationId ?? null;
 
+    // Resolve which SOURCE(s) this trigger backs up:
+    //  - explicit serviceId (a fan-out child call) → that one service
+    //  - mail_server policy → the mail server
+    //  - per-service policy → its service
+    //  - project-default policy (no serviceId) → fan out to every ENABLED
+    //    service of the project, one child run each. Single-app projects have
+    //    no service rows → nothing to back up (surfaced as an error).
+    if (input.serviceId) {
+      const runId = await this.spawnRun(policy, destination, organizationId, { serviceId: input.serviceId }, input.trigger);
+      return { runId, runIds: [runId] };
+    }
+    if (policy.sourceKind === "mail_server") {
+      const runId = await this.spawnRun(policy, destination, organizationId, { mailServerId: policy.mailServerId ?? null }, input.trigger);
+      return { runId, runIds: [runId] };
+    }
+    if (policy.serviceId) {
+      const runId = await this.spawnRun(policy, destination, organizationId, { serviceId: policy.serviceId }, input.trigger);
+      return { runId, runIds: [runId] };
+    }
+
+    // Project-default: fan out across the project's enabled services.
+    if (!policy.projectId) {
+      throw new Error(`Backup policy ${policy.id} has neither a service nor a project to back up`);
+    }
+    const services = (await repos.service.listByProject(policy.projectId)).filter((s) => s.enabled);
+    if (services.length === 0) {
+      throw new Error("Project has no services to back up — add a service or pick one.");
+    }
+    const runIds: string[] = [];
+    for (const svc of services) {
+      try {
+        runIds.push(
+          await this.spawnRun(policy, destination, organizationId, { serviceId: svc.id }, input.trigger),
+        );
+      } catch (err) {
+        console.warn(
+          `[backup-orchestrator] failed to enqueue service ${svc.id} for policy ${policy.id}: ${safeErrorMessage(err)}`,
+        );
+      }
+    }
+    if (runIds.length === 0) {
+      throw new Error("Failed to enqueue any service backups for this project.");
+    }
+    return { runId: runIds[0], runIds };
+  }
+
+  /**
+   * Create one queued backup_run row for a concrete source (a single service or
+   * a mail server) and hand it to the JobRunner. The runner is BullMQ-backed
+   * when Redis is reachable, in-process otherwise — the backup_run row is the
+   * crash-safe record either way (stale-run sweep on boot reconciles). Falls
+   * back to inline execution if the runner enqueue throws. Returns the run id.
+   */
+  private async spawnRun(
+    policy: BackupPolicy,
+    destination: BackupDestination,
+    organizationId: string,
+    target: { serviceId: string } | { mailServerId: string | null },
+    trigger: BackupTrigger,
+  ): Promise<string> {
     const runId = `bkr_${crypto.randomUUID()}`;
     await repos.backupRun.create({
       id: runId,
@@ -115,22 +185,18 @@ export class BackupOrchestrator {
       destinationId: destination.id,
       sourceKind: policy.sourceKind,
       projectId: policy.projectId,
-      serviceId: policy.serviceId,
-      mailServerId: policy.mailServerId ?? null,
+      serviceId: "serviceId" in target ? target.serviceId : null,
+      mailServerId: "mailServerId" in target ? target.mailServerId : null,
       organizationId,
       status: "queued",
-      triggeredBy: input.trigger.source,
+      triggeredBy: trigger.source,
       triggeredByUserId:
-        input.trigger.source === "manual" || input.trigger.source === "webhook"
-          ? input.trigger.userId
+        trigger.source === "manual" || trigger.source === "webhook"
+          ? trigger.userId
           : null,
-      clientIp: input.trigger.clientIp ?? null,
+      clientIp: trigger.clientIp ?? null,
     });
 
-    // Hand off to the JobRunner. The runner is BullMQ-backed when
-    // Redis is reachable, in-process otherwise — orchestrator doesn't
-    // care which, the row in backup_run guarantees crash-safety either
-    // way (stale-run sweep on boot reconciles).
     try {
       const runner = await getJobRunner();
       await runner.enqueueRun(runId);
@@ -147,7 +213,7 @@ export class BackupOrchestrator {
       });
     }
 
-    return { runId };
+    return runId;
   }
 
   /**
@@ -204,14 +270,16 @@ export class BackupOrchestrator {
         executor = built.executor;
         ctx = built.ctx;
       } else {
-        if (!policy.serviceId) {
+        // The concrete service lives on the RUN row (set at spawn for both
+        // per-service policies and project-default fan-out children), so a
+        // project-default policy resolves to a real service here.
+        if (!run.serviceId) {
           throw new Error(
-            "Project-default backup policies aren't executable yet. " +
-              "Create a per-service policy.",
+            `Backup run ${run.id} has no service to back up`,
           );
         }
-        const serviceRow = await repos.service.findById(policy.serviceId);
-        if (!serviceRow) throw new Error(`Service ${policy.serviceId} disappeared`);
+        const serviceRow = await repos.service.findById(run.serviceId);
+        if (!serviceRow) throw new Error(`Service ${run.serviceId} disappeared`);
 
         const project = await repos.project.findById(serviceRow.projectId);
         if (!project) throw new Error(`Project ${serviceRow.projectId} disappeared`);

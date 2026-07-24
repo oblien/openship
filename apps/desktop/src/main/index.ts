@@ -442,14 +442,35 @@ app.on("before-quit", () => {
 
 // ─── IPC: Updates ─────────────────────────────────────────────────────────────
 
+/** Ensure `pendingUpdate` reflects the latest release. The boot check used to be
+ *  the ONLY writer, so a release published after launch (or an offline-at-boot
+ *  check) left it null and the dashboard's "Update now" hit a silent no-op that
+ *  only a restart fixed. Re-check on demand here so the button + native wizard
+ *  work without a restart. `checkForUpdate` never throws. */
+async function ensurePendingUpdate(): Promise<void> {
+  if (pendingUpdate) return;
+  const result = await checkForUpdate();
+  if (result.available) pendingUpdate = result;
+}
+
 ipcMain.handle("update:dismiss", () => {
   closeUpdateWindow();
   return true;
 });
 
-// Reopen the native update window on demand (e.g. the dashboard's "Update now"
-// when notifications were muted at launch). No-op if there's no pending update.
-ipcMain.handle("update:open", () => {
+// Re-check GitHub on demand and stage the result — drives the dashboard's
+// "Check now" so a check happens without a restart. Returns the check result so
+// the renderer can reflect it.
+ipcMain.handle("update:check", async () => {
+  const result = await checkForUpdate();
+  if (result.available) pendingUpdate = result;
+  return result;
+});
+
+// Open the native update window on demand (the dashboard's "Update now"). Stages
+// the pending update first, so it works even when the boot check found nothing.
+ipcMain.handle("update:open", async () => {
+  await ensurePendingUpdate();
   if (!pendingUpdate) return false;
   openUpdateWindow(mainWindow, pendingUpdate);
   return true;
@@ -461,6 +482,7 @@ ipcMain.handle("update:open", () => {
  *  the bar lives in the header the user already has — not stuck in the modal.
  *  Shared by the user-initiated IPC handler and the auto-update path. */
 async function runUpdate(): Promise<boolean> {
+  await ensurePendingUpdate();
   if (!pendingUpdate) return false;
   // Close the notify modal — from here on progress belongs to the dashboard.
   closeUpdateWindow();

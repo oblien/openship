@@ -9,6 +9,7 @@ interface DashboardProvidersProps {
   children: React.ReactNode;
   selfHosted: boolean;
   deployMode: string;
+  isServerHost?: boolean;
   authMode: "cloud" | "local" | "none";
   cloudAuthUrl: string;
   cloudApiUrl: string;
@@ -24,6 +25,7 @@ export function DashboardProviders({
   initialUser,
   selfHosted,
   deployMode,
+  isServerHost,
   authMode,
   cloudAuthUrl,
   cloudApiUrl,
@@ -35,6 +37,7 @@ export function DashboardProviders({
       <PlatformProvider
         selfHosted={selfHosted}
         deployMode={deployMode}
+        isServerHost={isServerHost}
         authMode={authMode}
         cloudAuthUrl={cloudAuthUrl}
         cloudApiUrl={cloudApiUrl}

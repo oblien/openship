@@ -34,6 +34,9 @@ export interface InstanceEmailSettings {
 export interface ServerInfo {
   id: string;
   name: string | null;
+  /** The auto-registered host row (VPS / server-host mode) — "This Server".
+   *  Deploys to it run on the local host, and its SSH fields are placeholders. */
+  isLocal?: boolean;
   sshHost: string;
   sshPort: number;
   sshUser: string;
@@ -199,6 +202,38 @@ export interface ServerRateLimitConfig {
   rps: number;
   burst: number;
   whitelist: string[];
+}
+
+/** One listening socket found by the port-exposure scan. */
+export interface HostListener {
+  proto: "tcp" | "udp";
+  family: "ipv4" | "ipv6";
+  address: string;
+  port: number;
+  exposed: boolean;
+  pid: number | null;
+  process: string | null;
+  /** Well-known service label ("SSH", "HTTPS", "PostgreSQL") or null. */
+  service: string | null;
+  /** Expected-open platform port (SSH, edge 80/443). */
+  required?: boolean;
+  /** Should almost never face the internet (databases, Docker API). */
+  sensitive?: boolean;
+  /** Confirmed off-box: true = reachable from the internet, false = bound but
+   *  firewall-blocked, null/undefined = not probed (loopback, UDP, local target). */
+  reachable?: boolean | null;
+}
+
+export interface PortScanResult {
+  listeners: HostListener[];
+  totalCount: number;
+  exposedCount: number;
+  source: "ss" | "procfs";
+  scanned: boolean;
+  /** Whether the API confirmed reachability by dialing exposed ports off-box. */
+  reachabilityProbed?: boolean;
+  /** Exposed TCP ports confirmed reachable from the internet. */
+  reachableCount?: number;
 }
 
 export interface SetupProgressEvent {
@@ -383,6 +418,14 @@ export const systemApi = {
       endpoints.system.serverRateLimit(serverId),
       data,
     ),
+
+  // ── Port exposure scan (per-server) ────────────────────────────────────────
+
+  /** Enumerate every listening socket on the server and classify exposed vs
+   *  loopback. Read-only; runs through the executor middleware server-side.
+   *  Generous timeout — a cold SSH probe against a real box needs headroom. */
+  scanPorts: (serverId: string) =>
+    api.post<PortScanResult>(endpoints.system.serverPortsScan(serverId), {}, { timeout: 30_000 }),
 
   // ── Port-forward tunnels (desktop-only) ────────────────────────────────────
 

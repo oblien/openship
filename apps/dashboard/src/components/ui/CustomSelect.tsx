@@ -157,7 +157,7 @@ export function CustomSelect<T extends string>({
         <div
           ref={menuRef}
           role="listbox"
-          className="fixed z-[70] overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
+          className="fixed z-[10050] overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl shadow-black/[0.08]"
           style={{
             left: menuPosition.left,
             width: menuPosition.width,

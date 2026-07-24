@@ -337,6 +337,7 @@ const Sidebar: React.FC = () => {
 
     if (
       !isServices &&
+      !config.noPublicRoute &&
       canConnectCloud &&
       config.deployTarget !== "cloud" &&
       publicEndpointsNeedCloud(config.publicEndpoints)
@@ -534,6 +535,8 @@ const Sidebar: React.FC = () => {
                 }
               : {}),
           })}
+          noPublicRoute={config.noPublicRoute ?? false}
+          setNoPublicRoute={(noPublicRoute) => updateConfig({ noPublicRoute })}
         />
       )}
 

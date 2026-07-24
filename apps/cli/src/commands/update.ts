@@ -17,6 +17,7 @@ import { spawnSync } from "node:child_process";
 import { resolveCliUpdatePlan, cliInstallCommand, type CliPackageManager } from "@repo/core";
 import { resolveLatestTag } from "../lib/github-releases";
 import { restart as restartService } from "../lib/service";
+import { readInstallMethod, composeUpdate } from "../lib/compose";
 import { err, info, isJsonMode, ok, printJson } from "../lib/output";
 
 declare const __CLI_VERSION__: string;
@@ -71,6 +72,22 @@ export const updateCommand = new Command("update")
     if (res.status !== 0) {
       err(`Update failed (${pm} exited ${res.status ?? "with a signal"}). Reinstall manually: ${cliInstallCommand(pm, latest)}`);
       process.exitCode = 1;
+      return;
+    }
+
+    // Compose install → pull the new-version images + recreate the stack (the
+    // CLI package update above refreshed the compose template/pin). Bare install
+    // → restart the process service so it picks up the new bundle.
+    if (readInstallMethod() === "compose") {
+      const pulled = composeUpdate(latest);
+      if (isJsonMode()) {
+        printJson({ updated: true, from: current, to: latest, via: pm, method: "compose", pulled });
+      } else if (pulled) {
+        ok(`Updated to v${latest} and pulled the new images — the compose stack is on the new version.`);
+      } else {
+        err(`Updated the CLI to v${latest}, but \`docker compose pull\` failed. Run \`openship up\` to retry.`);
+        process.exitCode = 1;
+      }
       return;
     }
 

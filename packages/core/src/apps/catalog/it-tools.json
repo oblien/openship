@@ -1,0 +1,27 @@
+{
+  "available": false,
+  "id": "it-tools",
+  "name": "IT-Tools",
+  "description": "A handy collection of developer and sysadmin utilities. No login, no setup.",
+  "kind": "template",
+  "logo": "it-tools",
+  "category": "other",
+  "tags": [
+    "developer",
+    "tools",
+    "utilities"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "it-tools",
+      "image": "corentinth/it-tools:latest",
+      "ports": [
+        "80:80"
+      ],
+      "exposedPort": 80,
+      "exposed": true,
+      "restart": "unless-stopped"
+    }
+  ]
+}

@@ -21,7 +21,8 @@
     "updateTo": "Update to {version}",
     "updating": "Updating…",
     "updateFailed": "Update failed",
-    "toastTitle": "Source"
+    "toastTitle": "Source",
+    "cliManaged": "This is the Openship control plane — it updates itself. Run \"openship update\" on the host to upgrade it; there's nothing to change here."
   },
   "appSettings": {
     "modeApp": "App settings",
@@ -47,6 +48,8 @@
     "install": "Install",
     "installing": "Installing…",
     "advanced": "Advanced deployment options",
+    "nameLabel": "Name",
+    "nameHint": "How this app appears in Openship.",
     "domainTitle": "Where should it live?",
     "domainFree": "Free subdomain",
     "domainFreeHint": "A free subdomain on {domain}",
@@ -62,18 +65,39 @@
     "goToApp": "Go to app",
     "installFailed": "Install failed",
     "viewDetails": "View technical details",
+    "showLogs": "Show logs",
+    "hideLogs": "Hide logs",
+    "deployLogs": "deploy logs",
     "back": "Back",
     "destinationTitle": "Where to install",
     "destinationHint": "Pick the server or cloud this app runs on.",
     "destLocal": "This machine",
     "destLocalDesc": "Run it here, on this Openship host.",
+    "routePortLabel": "Port only (no domain)",
+    "routePortDesc": "Reachable at the host address and port — no domain or Cloud needed.",
+    "routeFreeLabel": "Free subdomain",
+    "routeFreeDesc": "A free subdomain on {domain}, routed by Openship Cloud.",
+    "routeFreeNeedsCloud": "Connect Openship Cloud to use a free subdomain.",
+    "routeCustomLabel": "Your own domain",
+    "routeCustomDesc": "Point a domain you own at this app.",
+    "routeDomainLabel": "Domain",
+    "routeDomainDesc": "Reach it on a domain — a free subdomain or your own.",
+    "exposeTitle": "Exposure",
+    "httpBadge": "Web",
+    "tcpBadge": "Database",
+    "tcpPublishLabel": "Publish port",
+    "tcpPublishDesc": "Publish it on the host so external tools can connect.",
+    "tcpInternalLabel": "Internal only",
+    "tcpInternalDesc": "Only other services in this app can reach it.",
+    "tcpFirewallNote": "Open port {port} on your server firewall to connect from outside.",
+    "desktopReachNote": "On desktop you can open it on localhost — or forward the port from Servers → Ports for a remote server.",
     "mail": {
       "title": "Set up mail",
       "subtitle": "Deploy webmail on your own domain, or connect an existing mailbox.",
       "chooseSelf": "Self-host a mail server",
       "chooseSelfDesc": "Full SMTP/IMAP + webmail (iRedMail) on your server — we provision everything.",
       "chooseConnect": "Connect an existing mailbox",
-      "chooseConnectDesc": "Deploy just the webmail UI, pointed at Amazon SES, Gmail, Fastmail, or any IMAP/SMTP backend.",
+      "chooseConnectDesc": "Deploy just the webmail UI, pointed at any external SMTP/IMAP provider — Amazon SES, Oracle Cloud, Gmail, Fastmail, and more.",
       "provider": "Provider",
       "presets": {
         "custom": "Custom",
@@ -149,6 +173,30 @@
       "toggleFailed": "Failed to toggle project",
       "clearInstallFailed": "Failed to clear install cache",
       "clearBuildFailed": "Failed to clear build cache"
+    },
+    "routing": {
+      "title": "Routing",
+      "description": "How the edge reaches this app's upstream",
+      "intro": "Choose how the edge addresses this project's container.",
+      "note": "Loopback port is recommended: a private 127.0.0.1 host port, stable across restarts and never network-exposed. Container IP is advanced (zero-downtime swaps; needs the edge on the Docker bridge; not supported on Docker Desktop).",
+      "modes": {
+        "auto": {
+          "label": "Auto",
+          "desc": "Recommended (loopback port)"
+        },
+        "loopbackPort": {
+          "label": "Loopback port",
+          "desc": "Private 127.0.0.1 host port"
+        },
+        "containerIp": {
+          "label": "Container IP",
+          "desc": "Advanced — bridge IP"
+        }
+      },
+      "toast": {
+        "saved": "Routing set to {mode}",
+        "failed": "Failed to update routing"
+      }
     }
   },
   "routeRules": {
@@ -563,7 +611,12 @@
     "confirmDeleteWipe": "Delete + wipe data",
     "confirmDeleteEnvWipe": "Delete environment + wipe data",
     "confirmDelete": "Delete project",
-    "confirmDeleteEnv": "Delete environment"
+    "confirmDeleteEnv": "Delete environment",
+    "recordOnlyLabel": "Remove from Openship only",
+    "recordOnlyDesc": "Keeps the app and its data running on your server — only the Openship record is removed. You can re-import it later.",
+    "recordOnlyReversible": "Reversible — the app stays on your server.",
+    "recordOnlyNote": "Nothing on the server is touched — the app keeps running with its data. Only Openship's record is removed, and it can be re-imported later.",
+    "confirmRecordOnly": "Remove record"
   },
   "routing": {
     "title": "Routing",

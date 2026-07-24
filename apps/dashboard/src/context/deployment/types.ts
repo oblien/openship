@@ -252,6 +252,13 @@ export interface DeploymentConfig {
   deployTarget: DeployTarget;
   /** Which server to deploy to when deployTarget === "server" */
   serverId?: string;
+  /**
+   * "None" routing: deploy with NO public URL (internal / port-only). When true
+   * the deploy sends `publicEndpoints: []` regardless of what's staged, and the
+   * domain picker collapses. Backend treats [] as no route (preflight warns, no
+   * Cloud gate). Free/Custom are expressed via each endpoint's domainType.
+   */
+  noPublicRoute?: boolean;
   /** Display name of the target server (resolved by the API for the detail UI). */
   serverName?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
@@ -341,6 +348,7 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   packageManager: "npm",
   buildImage: "node:22",
   publicEndpoints: [],
+  noPublicRoute: false,
   branch: "main",
   branches: [],
   services: [],

@@ -398,6 +398,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "project", column: "cloneTokenEncrypted" },
   { table: "project", column: "webhookSecret" },
   { table: "cloud_webhook_binding", column: "webhookSecret" },
+  { table: "webhook_source", column: "secret" },
   { table: "env_var", column: "value" },
   { table: "backup_destination", column: "accessKeyIdEnc" },
   { table: "backup_destination", column: "secretAccessKeyEnc" },
@@ -635,6 +636,56 @@ export interface RestoreOptions {
   mergeConflictSkip?: string[];
 }
 
+/**
+ * Cross-tenant ingest guard for the REMAP path (cloud ingest + project transfer,
+ * where `remapOrgId` rewrites organizationId on org-owned rows). A CHILD row's
+ * parent FK (projectId / deploymentId / serviceId / groupId) is NOT remapped, so
+ * a crafted dump could point e.g. `service.projectId` at a VICTIM's project id
+ * and attach the row to another tenant's project — cross-tenant write, and RCE
+ * via a planted service.image/command or routing/SSL hijack via a planted
+ * domain (SaaS audit, critical). Require the dump to be SELF-CONTAINED: every
+ * such FK must reference a parent row PRESENT IN THE DUMP (which is org-remapped
+ * on insert), never a pre-existing row that may belong to another tenant.
+ * dumpSubgraph always emits self-contained subgraphs, so legitimate transfers
+ * pass; a malicious partial dump is rejected. Throws on the first violation.
+ * Exported for testing. Pure — no DB access.
+ */
+export function assertDumpSelfContained(dump: DatabaseDump): void {
+  // Column → parent table (sqlName). These are exactly the FK columns the TABLES
+  // scope resolvers use (`via:"fk"` columns + the from-root-project sourceColumn).
+  const FK_PARENT: Record<string, string> = {
+    projectId: "project",
+    deploymentId: "deployment",
+    serviceId: "service",
+    groupId: "project_app",
+  };
+  const dumpedIds: Record<string, Set<string>> = {};
+  for (const [sqlName, rows] of Object.entries(dump.tables)) {
+    if (!rows) continue;
+    dumpedIds[sqlName] = new Set(
+      rows
+        .map((r) => (r as { id?: unknown }).id)
+        .filter((id): id is string => typeof id === "string"),
+    );
+  }
+  for (const [sqlName, rows] of Object.entries(dump.tables)) {
+    if (!rows) continue;
+    for (const r of rows) {
+      const row = r as Record<string, unknown>;
+      for (const [col, parent] of Object.entries(FK_PARENT)) {
+        const v = row[col];
+        if (v == null) continue;
+        if (!dumpedIds[parent]?.has(String(v))) {
+          throw new Error(
+            `restore rejected: ${sqlName}.${col}="${String(v)}" references a ${parent} not present in the dump — ` +
+              `a remapped ingest may not attach rows to a pre-existing (cross-tenant) parent.`,
+          );
+        }
+      }
+    }
+  }
+}
+
 export async function restoreSubgraph(
   dump: DatabaseDump,
   opts: RestoreOptions,
@@ -644,6 +695,10 @@ export async function restoreSubgraph(
       `Dump format version ${dump.formatVersion} cannot be restored by this build (expected ${DUMP_FORMAT_VERSION}).`,
     );
   }
+
+  // Remap path (cloud ingest / project transfer) is the only place an untrusted
+  // caller supplies a dump for a DIFFERENT org — reject cross-tenant FKs there.
+  if (opts.remapOrgId) assertDumpSelfContained(dump);
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);

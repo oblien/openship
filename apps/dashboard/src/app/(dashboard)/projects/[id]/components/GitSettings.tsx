@@ -203,10 +203,22 @@ export const GitSettings = () => {
     );
   }
 
-  // Release/image apps (self-app, n8n, Convex, webmail…) deploy from a release
-  // or registry tag, not a pushable git repo — show their release source +
-  // version + update instead of the git-link/webhook UI.
+  // Release/image apps (n8n, Convex, webmail…) deploy from a release or registry
+  // tag, not a pushable git repo — show their release source + version + update
+  // instead of the git-link/webhook UI. The Openship control plane is the one
+  // exception: it updates itself via the CLI, and its per-app "Update" button
+  // would no-op against its adopt deployment (the backend now 403s that path),
+  // so show a CLI note instead of the update UI.
   if (projectData.isApp) {
+    if (projectData.appTemplateId === "openship") {
+      return (
+        <div className="rounded-2xl border border-border/50 bg-card p-5">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {t.projectSettings.appSource.cliManaged}
+          </p>
+        </div>
+      );
+    }
     return <AppSource />;
   }
 

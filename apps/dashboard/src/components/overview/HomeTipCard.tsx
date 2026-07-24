@@ -30,7 +30,7 @@ export default function HomeTipCard({ projectCount, loading }: HomeTipCardProps)
   // connect GitHub if disconnected, else create the first project.
   const busy = loading || gitHub.loading;
   const contextual: HomeTip | null = !gitHub.connected
-    ? { text: c.connectText, href: "/settings/git", label: c.connectLabel }
+    ? { text: c.connectText, href: "/settings", label: c.connectLabel }
     : !busy && projectCount === 0
       ? { text: c.createText, href: "/new", label: c.createLabel }
       : null;

@@ -75,6 +75,7 @@ export {
   type DeployRouting,
   type DeployPipelineInput,
   type DeployPipelineResult,
+  type PromptPayload,
   type PromptUserFn,
   runDeployPipeline,
 } from "./runtime/deploy-pipeline";
@@ -88,6 +89,11 @@ export {
   probeListeningPort,
   ensurePortAvailable,
 } from "./runtime/port-conflict";
+export {
+  allocateHostPort,
+  pickHostPort,
+  type AllocateHostPortOptions,
+} from "./runtime/host-port";
 export { type RuntimeMode, type CreateRuntimeOptions, createRuntime } from "./runtime/index";
 export { resolveDockerfileCandidates } from "./runtime/docker-paths";
 
@@ -143,14 +149,16 @@ export {
   freeEdgeTargets,
   probeEdge,
   stopTargetsForStatus,
-} from "./system/edge-preflight";
-export { scanImportableSites, canImportProxy } from "./system/proxy-import";
+} from "./system/proxy/detect";
+export { scanImportableSites, canImportProxy, scanOpenshipEdge } from "./system/proxy/import";
 export {
   runEdgeTakeover,
   recoverInterruptedTakeover,
   type EdgeTakeoverOptions,
   type EdgeTakeoverResult,
-} from "./system/edge-takeover";
+} from "./system/proxy/takeover";
+// The consolidated reverse-proxy / edge facade (single point for the chain).
+export { detectEdge, importSites, takeoverOnMigrate, foreignProxyOnEdge, ensureEdge } from "./system/proxy";
 
 export type { SetupState, SetupStateStore, ComponentState } from "./system/state";
 export { FileStateStore } from "./system/state";
@@ -199,9 +207,22 @@ export {
   type PortProbeExecutor,
   type PortProbeResult,
 } from "./system/port-listen";
+export {
+  scanPorts,
+  parseSsListeners,
+  parseProcNetListeners,
+  isLoopbackAddress,
+  describeService,
+  type PortScanExecutor,
+  type PortScanResult,
+  type HostListener,
+  type PortProto,
+  type PortFamily,
+} from "./system/port-scan";
 export { probeStaticOutput, type OutputProbeResult } from "./system/output-exists";
 
-export { LocalExecutor, SshExecutor, SystemSshExecutor, createExecutor } from "./system/executor";
+export { LocalExecutor, SshExecutor, SystemSshExecutor, createExecutor, createHostExecutor } from "./system/executor";
+export { DockerEdgeExecutor } from "./system/docker-edge-executor";
 export {
   ensureRemoteJournal,
   runJournaled,

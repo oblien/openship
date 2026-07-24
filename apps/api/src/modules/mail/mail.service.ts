@@ -21,6 +21,7 @@ import {
   installRsync,
   installOpenResty,
   installCertbot,
+  foreignProxyOnEdge,
 } from "@repo/adapters";
 
 // ─── Shell quoting helper ─────────────────────────────────────────────────────
@@ -322,17 +323,16 @@ export async function stepEnsureReverseProxy(
     }
   }
 
-  // Confirm OpenResty is the listener on :80. Anything else means another
-  // service has the port - we surface it as an error rather than try to
-  // resolve in-band; the operator can stop it and rerun the step.
-  const port80 = (
-    await exec.exec("ss -ltnp 'sport = :80' 2>/dev/null | tail -n +2 || true")
-  ).trim();
-  if (port80 && !/openresty|nginx/i.test(port80)) {
+  // Confirm OUR OpenResty owns 80/443 — via the SHARED edge detector (same one
+  // the deploy pipeline / self-app use), not an ad-hoc ss/regex. A foreign proxy
+  // holding the ports is surfaced as an error; mail never blind-takes-over
+  // someone's proxy (the operator stops/migrates it via the dashboard and reruns).
+  const { blocked, owner } = await foreignProxyOnEdge(exec);
+  if (blocked) {
     return {
       stepId,
       success: false,
-      message: `Port 80 is held by an unexpected process: ${port80.slice(0, 200)}`,
+      message: `Ports 80/443 are held by another proxy (${owner}). Stop it, or migrate it from the dashboard, then rerun.`,
     };
   }
 
@@ -386,7 +386,6 @@ export async function stepUpdateHosts(
     const pattern = `^127\\.0\\.1\\.1.*${mailDomain}`;
     const correctStr = await exec.exec(
       `grep -c ${sq(pattern)} /etc/hosts || echo 0`,
-    );
     );
     if (parseInt(correctStr.trim(), 10) > 0) {
       log(stepId, "info", "/etc/hosts already configured correctly");
@@ -1142,11 +1141,11 @@ export function spliceAmavisConf(
 /**
  * Step 12: Request a Let's Encrypt cert for `mail.<domain>`.
  *
- * Uses certbot in standalone mode: we briefly stop OpenResty (which owns
- * :80 from step 2) so certbot can bind it for the HTTP-01 challenge, then
- * bring OpenResty back. (Future cleanup: switch to webroot mode and skip
- * the stop/start dance entirely by serving `.well-known/acme-challenge/`
- * through OpenResty.)
+ * Webroot mode through the RUNNING OpenResty: its default server already serves
+ * `/.well-known/acme-challenge/` from `/var/www/acme` (deployLuaScripts), so the
+ * HTTP-01 challenge is answered without ever stopping OpenResty. This is what
+ * keeps every app behind the shared edge UP during mail cert issuance — the old
+ * `systemctl stop openresty` + `--standalone` dance took the whole box dark.
  */
 export async function stepRequestSSL(
   exec: CommandExecutor,
@@ -1155,18 +1154,20 @@ export async function stepRequestSSL(
 ): Promise<StepResult> {
   const stepId = 12;
   const mailDomain = `mail.${domain}`;
+  // Guard before the value reaches a shell command (never interpolate an
+  // unvalidated hostname into `certbot -d …`).
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(mailDomain)) {
+    return { stepId, success: false, message: `Invalid mail domain: ${mailDomain}` };
+  }
   log(stepId, "info", `Requesting SSL certificate for ${mailDomain}...`);
 
-  log(stepId, "info", "Pausing OpenResty for standalone ACME challenge...");
-  await exec.exec("systemctl stop openresty 2>/dev/null || true");
-
+  // OpenResty's default server serves the challenge from here — no stop needed.
+  await exec.exec("mkdir -p /var/www/acme");
   const cert = await streamCmd(
     exec,
-    `certbot certonly --standalone --agree-tos --register-unsafely-without-email -d ${sq(mailDomain)} --non-interactive 2>&1`,
+    `certbot certonly --webroot -w /var/www/acme --agree-tos --register-unsafely-without-email -d ${sq(mailDomain)} --non-interactive 2>&1`,
     stepId, log,
   );
-
-  await exec.exec("systemctl start openresty 2>/dev/null || true");
 
   if (cert.code !== 0) {
     return {
@@ -1176,7 +1177,7 @@ export async function stepRequestSSL(
     };
   }
 
-  log(stepId, "info", "SSL certificate obtained");
+  log(stepId, "info", "SSL certificate obtained (OpenResty stayed up — apps unaffected)");
   return { stepId, success: true, message: `SSL certificate obtained for ${mailDomain}` };
 }
 

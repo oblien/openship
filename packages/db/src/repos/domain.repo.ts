@@ -98,6 +98,7 @@ export function createDomainRepo(db: Database) {
       // Prefer isPrimary=true; fall back to first row encountered per project.
       const out = new Map<string, Domain>();
       for (const row of rows) {
+        if (!row.projectId) continue; // webhook-owned domains have no project
         const existing = out.get(row.projectId);
         if (!existing || (row.isPrimary && !existing.isPrimary)) {
           out.set(row.projectId, row);

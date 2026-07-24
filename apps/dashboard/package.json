@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
+    "i18n:check": "node scripts/check-i18n.mjs",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {

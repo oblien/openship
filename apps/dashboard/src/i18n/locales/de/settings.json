@@ -112,9 +112,18 @@
     "noServers": "Noch keine Server konfiguriert – füge einen über den Deploy-Picker hinzu.",
     "clearDefault": "Standard zurücksetzen (jedes Mal fragen)",
     "targets": {
-      "local": { "label": "Dieser Rechner", "desc": "Lokales Docker / Laufzeitumgebung" },
-      "server": { "label": "Mein Server", "desc": "Ein konfigurierter SSH-Server" },
-      "cloud": { "label": "OpenShip Cloud", "desc": "Verwaltete Cloud-Infrastruktur" }
+      "local": {
+        "label": "Dieser Rechner",
+        "desc": "Lokales Docker / Laufzeitumgebung"
+      },
+      "server": {
+        "label": "Mein Server",
+        "desc": "Ein konfigurierter SSH-Server"
+      },
+      "cloud": {
+        "label": "OpenShip Cloud",
+        "desc": "Verwaltete Cloud-Infrastruktur"
+      }
     },
     "labelFor": {
       "yourServer": "dein Server",
@@ -134,9 +143,18 @@
     "loading": "Einstellungen werden geladen…",
     "intro": "Wähle die Standard-Build-Strategie für neue Deployments. Projektspezifische Überschreibungen sind in den Projekteinstellungen verfügbar.",
     "modes": {
-      "auto": { "label": "Auto", "desc": "Intelligent je Framework" },
-      "server": { "label": "Server", "desc": "Build auf entferntem Server" },
-      "local": { "label": "Lokal", "desc": "Build auf dem Rechner" }
+      "auto": {
+        "label": "Auto",
+        "desc": "Intelligent je Framework"
+      },
+      "server": {
+        "label": "Server",
+        "desc": "Build auf entferntem Server"
+      },
+      "local": {
+        "label": "Lokal",
+        "desc": "Build auf dem Rechner"
+      }
     },
     "toast": {
       "setTo": "Build-Modus auf {mode} gesetzt",
@@ -285,6 +303,14 @@
       "subtitle": "Berechtigungen gelten für eingeschränkte Mitglieder. Eigentümer/Admin/Mitglied haben standardmäßig organisationsweiten Zugriff.",
       "saveLabel": "Zugriff speichern"
     },
+    "serverAccessWarning": {
+      "title": "Vollen Serverzugriff gewähren?",
+      "body": "{member} erhält die vollständige Kontrolle über {scope} — jedes Deployment und dessen Daten, alle darauf laufenden Apps, gespeicherte Secrets und Umgebungsvariablen, Terminalzugriff sowie alle verbundenen Integrationen (z. B. dafür gespeicherte GitHub-Tokens und Deploy-Keys). Diese Ressourcen können verwaltet oder gelöscht werden.",
+      "scopeAllServers": "alle Server in dieser Organisation",
+      "scopeThisServer": "diesen Server",
+      "scopeCount": "{count} Server",
+      "confirm": "Zugriff gewähren"
+    },
     "confirmRemove": "Dieses Mitglied aus der Organisation entfernen?",
     "workspace": {
       "deleteWorkspace": "Arbeitsbereich löschen",
@@ -408,6 +434,8 @@
       "empty": "Noch keine Kanäle. Füge einen hinzu, um Benachrichtigungen zu erhalten.",
       "verified": "Verifiziert",
       "unverified": "Nicht verifiziert",
+      "sendTest": "Test senden",
+      "testSent": "Test gesendet",
       "deleteChannel": "Kanal löschen",
       "addChannel": "Kanal hinzufügen",
       "confirmDelete": "Diesen Kanal löschen? Abonnements, die ihn verwenden, werden gestoppt.",
@@ -663,5 +691,29 @@
     "toastLoadStateFailed": "Status konnte nicht geladen werden",
     "toastRemoteUnreachable": "Remote nicht erreichbar. Aktiviere „Keine Remote-Daten abrufen“, um trotzdem zurückzuwechseln.",
     "toastSwitchBackFailed": "Zurückwechseln fehlgeschlagen"
+  },
+  "routePreferences": {
+    "title": "Routing",
+    "description": "Wie der Edge die Upstreams deiner Apps erreicht",
+    "loading": "Einstellungen werden geladen…",
+    "intro": "Wähle die Standard-Upstream-Adressierung für neue selbst gehostete Projekte. Projektspezifische Überschreibungen findest du in den Projekteinstellungen.",
+    "modes": {
+      "auto": {
+        "label": "Auto",
+        "desc": "Empfohlen (Loopback-Port)"
+      },
+      "loopbackPort": {
+        "label": "Loopback-Port",
+        "desc": "Privater 127.0.0.1-Host-Port"
+      },
+      "containerIp": {
+        "label": "Container-IP",
+        "desc": "Fortgeschritten – Bridge-IP"
+      }
+    },
+    "toast": {
+      "setTo": "Routing-Strategie auf {mode} gesetzt",
+      "failed": "Routing-Strategie konnte nicht aktualisiert werden"
+    }
   }
 }

@@ -395,6 +395,10 @@ export const ServicesTab = () => {
           initialTab={slug?.[2]}
           onRefresh={fetchData}
           onDeleted={closeService}
+          projectType={(projectData as { projectType?: string })?.projectType}
+          activeDeploymentId={projectData?.activeDeploymentId}
+          deployTarget={projectData?.deployTarget}
+          siblingServices={servicesData.services}
         />
       </div>
     );
@@ -526,6 +530,19 @@ export const ServicesTab = () => {
             : svc.image || svc.build || "";
           const urlHost = resolvedUrl?.replace("https://", "");
 
+          // Published host port (first `host:container` mapping) — what the
+          // service is reachable on off-box; falls back to the managed-route
+          // target port. Surfaced as a chip so port-only services (e.g. Kong on
+          // 8000) show WHERE they listen even without a domain.
+          const hostPort =
+            ((svc.ports as string[] | null) ?? [])
+              .map((p) => {
+                const parts = String(p).split(":");
+                return parts.length >= 2 ? Number(parts[parts.length - 2]) : NaN;
+              })
+              .find((n) => Number.isFinite(n)) ??
+            (svc.exposedPort ? Number(svc.exposedPort) : undefined);
+
           return (
             <button
               key={svc.id}
@@ -547,6 +564,11 @@ export const ServicesTab = () => {
                     <Globe className="size-2.5" />
                     {svc.exposed ? t.projects.services.public : t.projects.services.internal}
                   </span>
+                  {hostPort !== undefined && Number.isFinite(hostPort) && (
+                    <span className="inline-flex items-center rounded-full bg-muted/60 px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground/70">
+                      :{hostPort}
+                    </span>
+                  )}
                   {svc.drift && svc.drift.changes.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning">
                       <AlertTriangle className="size-2.5" />

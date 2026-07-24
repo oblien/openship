@@ -17,7 +17,7 @@
  * to `runtimeTarget.api` / `runtimeTarget.dashboard`, preserving today's behavior.
  */
 
-import { env, runtimeTarget } from "../config/env";
+import { env, runtimeTarget, localDashboardUrl } from "../config/env";
 import { repos, db, schema, eq } from "@repo/db";
 
 /**
@@ -46,6 +46,16 @@ function publicUrl(): string | null {
   const raw = env.OPENSHIP_PUBLIC_URL?.trim();
   if (raw) return raw.replace(/\/+$/, "");
   return cachedSelfAppUrl;
+}
+
+/**
+ * The origin this API is actually reachable at (OPENSHIP_ADVERTISED_ORIGIN),
+ * normalized. Desktop sets it to its dynamic loopback API origin. URL
+ * construction ONLY — see the env field doc; never a security gate.
+ */
+function advertisedOrigin(): string | null {
+  const raw = env.OPENSHIP_ADVERTISED_ORIGIN?.trim();
+  return raw ? raw.replace(/\/+$/, "") : null;
 }
 
 /** Locate the self-app project id (cloud-linked or founding-admin org). */
@@ -167,9 +177,13 @@ export async function getInstanceReachability(): Promise<InstanceReachability> {
   };
 }
 
-/** Public origin serving the DASHBOARD (== the CLI `--public-url`), else the runtime target. */
+/** Public origin serving the DASHBOARD (== the CLI `--public-url`), else the
+ *  ACTUAL local dashboard origin (dynamic port on desktop, via
+ *  OPENSHIP_LOCAL_DASHBOARD_URL), else the static runtime target. Used for the
+ *  MCP loginPage/consentPage + invite/OIDC links — so on desktop these point at
+ *  the real dashboard port, not the dead static one. */
 export function resolveDashboardPublicUrl(): string {
-  return publicUrl() ?? runtimeTarget.dashboard;
+  return publicUrl() ?? localDashboardUrl;
 }
 
 /**
@@ -212,25 +226,55 @@ export function domainWebhookUrl(hostname: string, scheme: "http" | "https" = "h
  * request in scope, so a `DynamicBaseURLConfig` resolves to an empty issuer
  * there; a discovery `issuer` also has to be stable across requests.
  *
- * Without a public URL (cloud / dev / desktop) fall back to the static
- * `runtimeTarget.api` — zero behavior change.
+ * Without a public URL, use OPENSHIP_ADVERTISED_ORIGIN when set (the desktop
+ * app's real dynamic loopback API origin) so discovery/issuer/authorize/token
+ * are reachable, else fall back to the static `runtimeTarget.api`.
  */
 export function resolveAuthBaseUrl(): string {
-  return publicUrl() ?? runtimeTarget.api;
+  return publicUrl() ?? advertisedOrigin() ?? runtimeTarget.api;
+}
+
+/** First value of a (possibly comma-listed) forwarded header, trimmed, or null. */
+function firstForwardedValue(raw: string | null): string | null {
+  if (!raw) return null;
+  const first = raw.split(",")[0]?.trim();
+  return first || null;
 }
 
 /**
- * The public origin for a given inbound request — from `x-forwarded-host`/`-proto`
- * when the same-origin proxy set them, else the configured public URL, else the
- * request's own origin. Used to advertise reachable discovery URLs (MCP 401
- * `WWW-Authenticate`) instead of the loopback origin the API actually binds to.
+ * A well-formed forwarded host — hostname/IPv4 (optional `:port`) or
+ * `[IPv6](:port)`. The `[a-zA-Z0-9.-]` charset rejects CRLF, spaces, schemes
+ * (`//`), paths (`/`), and userinfo (`@`), so a spoofed `x-forwarded-host` can't
+ * be reflected into an advertised URL (host-header injection / metadata poison).
+ */
+function isSafeForwardedHost(host: string): boolean {
+  if (host.length > 260) return false;
+  return (
+    /^[a-zA-Z0-9.-]{1,253}(:\d{1,5})?$/.test(host) ||
+    /^\[[0-9a-fA-F:]{2,45}\](:\d{1,5})?$/.test(host)
+  );
+}
+
+/**
+ * The public origin for a given inbound request — the configured public URL when
+ * set, else the same-origin proxy's `x-forwarded-host`/`-proto` (validated).
+ * Used to advertise reachable discovery URLs (MCP 401 `WWW-Authenticate`)
+ * instead of the loopback origin the API actually binds to.
  */
 export function requestPublicOrigin(req: Request): string {
-  const host = req.headers.get("x-forwarded-host");
-  const proto = req.headers.get("x-forwarded-proto");
-  if (host && proto) return `${proto}://${host}`;
-  const pub = publicUrl();
+  // Prefer the CONFIGURED origin so a properly-set-up instance never reflects an
+  // attacker-controllable x-forwarded-host into advertised discovery URLs.
+  const pub = publicUrl() ?? advertisedOrigin();
   if (pub) return pub;
+  // Unconfigured (e.g. a bare loopback API behind a same-origin proxy with no
+  // OPENSHIP_PUBLIC_URL): fall back to the proxy's forwarded host so discovery
+  // stays reachable — but VALIDATE proto + host so a spoofed x-forwarded-host
+  // can't poison the advertised origin. Never feeds an auth/zero-auth gate.
+  const host = firstForwardedValue(req.headers.get("x-forwarded-host"));
+  const proto = firstForwardedValue(req.headers.get("x-forwarded-proto"));
+  if (host && (proto === "http" || proto === "https") && isSafeForwardedHost(host)) {
+    return `${proto}://${host}`;
+  }
   try {
     return new URL(req.url).origin;
   } catch {

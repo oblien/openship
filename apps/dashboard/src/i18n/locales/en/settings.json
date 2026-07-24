@@ -152,9 +152,18 @@
     "noServers": "No servers configured yet - add one from the deploy picker.",
     "clearDefault": "Clear default (ask every time)",
     "targets": {
-      "local": { "label": "This Machine", "desc": "Local Docker / runtime" },
-      "server": { "label": "My Server", "desc": "A configured SSH server" },
-      "cloud": { "label": "OpenShip Cloud", "desc": "Managed cloud infra" }
+      "local": {
+        "label": "This Machine",
+        "desc": "Local Docker / runtime"
+      },
+      "server": {
+        "label": "My Server",
+        "desc": "A configured SSH server"
+      },
+      "cloud": {
+        "label": "OpenShip Cloud",
+        "desc": "Managed cloud infra"
+      }
     },
     "labelFor": {
       "yourServer": "your server",
@@ -174,9 +183,18 @@
     "loading": "Loading preferences…",
     "intro": "Choose the default build strategy for new deployments. Per-project overrides are available in project settings.",
     "modes": {
-      "auto": { "label": "Auto", "desc": "Smart per-framework" },
-      "server": { "label": "Server", "desc": "Build on remote" },
-      "local": { "label": "Local", "desc": "Build on machine" }
+      "auto": {
+        "label": "Auto",
+        "desc": "Smart per-framework"
+      },
+      "server": {
+        "label": "Server",
+        "desc": "Build on remote"
+      },
+      "local": {
+        "label": "Local",
+        "desc": "Build on machine"
+      }
     },
     "toast": {
       "setTo": "Build mode set to {mode}",
@@ -336,6 +354,14 @@
       "subtitle": "Grants apply to restricted members. Owner/admin/member have org-wide access by default.",
       "saveLabel": "Save access"
     },
+    "serverAccessWarning": {
+      "title": "Grant full server access?",
+      "body": "{member} will gain full control of {scope} — every deployment and its data, all apps running on it, stored secrets and environment variables, terminal access, and any connected integrations (e.g. GitHub tokens and deploy keys held for it). They'll be able to manage or delete these resources.",
+      "scopeAllServers": "all servers in this organization",
+      "scopeThisServer": "this server",
+      "scopeCount": "{count} servers",
+      "confirm": "Grant access"
+    },
     "confirmRemove": "Remove this member from the organization?",
     "workspace": {
       "deleteWorkspace": "Delete workspace",
@@ -491,6 +517,8 @@
       "empty": "No channels yet. Add one to start receiving notifications.",
       "verified": "Verified",
       "unverified": "Unverified",
+      "sendTest": "Send test",
+      "testSent": "Test sent",
       "deleteChannel": "Delete channel",
       "addChannel": "Add channel",
       "confirmDelete": "Delete this channel? Subscriptions using it will stop.",
@@ -749,5 +777,29 @@
     "toastLoadStateFailed": "Failed to load state",
     "toastRemoteUnreachable": "Remote unreachable. Tick \"don't pull remote data\" to switch back anyway.",
     "toastSwitchBackFailed": "Switch back failed"
+  },
+  "routePreferences": {
+    "title": "Routing",
+    "description": "How the edge reaches your apps' upstreams",
+    "loading": "Loading preferences…",
+    "intro": "Choose the default upstream addressing for new self-hosted projects. Per-project overrides live in project settings.",
+    "modes": {
+      "auto": {
+        "label": "Auto",
+        "desc": "Recommended (loopback port)"
+      },
+      "loopbackPort": {
+        "label": "Loopback port",
+        "desc": "Private 127.0.0.1 host port"
+      },
+      "containerIp": {
+        "label": "Container IP",
+        "desc": "Advanced — bridge IP"
+      }
+    },
+    "toast": {
+      "setTo": "Route strategy set to {mode}",
+      "failed": "Failed to update route strategy"
+    }
   }
 }

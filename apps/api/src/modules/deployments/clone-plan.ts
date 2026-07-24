@@ -33,7 +33,12 @@ export interface ClonePlanInput {
   buildStrategy?: "local" | "server";
   /** Whether this instance is the desktop app (relay is desktop-only). */
   isDesktop: boolean;
-  /** Per-deploy opt-in to forward the operator's git identity to the server. */
+  /** Forward the operator's git identity to the server for an on-server clone.
+   *  Tri-state: `true`/`undefined` = forward when possible (the secure + atomic
+   *  default for a desktop server clone); `false` = opt out (force an api-host
+   *  clone + context transfer). Whether it ACTUALLY forwards still hinges on a
+   *  real SSH tunnel + a local `gh` identity, probed at runtime by the pipeline /
+   *  resolver — this only expresses the operator's preference. */
   forwardGitCredentials?: boolean | null;
   /** Repo is hosted on GitHub (`gitProvider === "github"` / has a parsed owner) →
    *  the server can download the source tarball directly (source-tarball.ts), so
@@ -102,6 +107,10 @@ export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
     dockerClonesOnServer,
     runsLocally,
     cloneBuildStrategy: runsLocally ? "local" : "server",
-    relayEligible: runsOnServer && input.isDesktop && input.forwardGitCredentials === true,
+    // Forward is the DEFAULT for a desktop server clone (secure + atomic: clone
+    // on the build host with the operator's gh identity, nothing persisted),
+    // opt-out via forwardGitCredentials === false. Real capability (SSH tunnel +
+    // local gh) is verified at runtime; this is the config-level eligibility.
+    relayEligible: runsOnServer && input.isDesktop && input.forwardGitCredentials !== false,
   };
 }

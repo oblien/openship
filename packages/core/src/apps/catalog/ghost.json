@@ -1,0 +1,76 @@
+{
+  "available": false,
+  "id": "ghost",
+  "name": "Ghost",
+  "description": "Modern publishing platform for blogs, newsletters, and membership sites.",
+  "kind": "template",
+  "logo": "ghost",
+  "category": "cms",
+  "tags": [
+    "cms",
+    "blog",
+    "newsletter"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "ghost-db",
+      "image": "mysql:8.0",
+      "environment": {
+        "MYSQL_DATABASE": "ghost"
+      },
+      "secretEnv": [
+        "MYSQL_ROOT_PASSWORD"
+      ],
+      "volumes": [
+        "ghost_db:/var/lib/mysql"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "ghost",
+      "image": "ghost:5-alpine",
+      "ports": [
+        "2368:2368"
+      ],
+      "exposedPort": 2368,
+      "exposed": true,
+      "dependsOn": [
+        "ghost-db"
+      ],
+      "environment": {
+        "NODE_ENV": "production",
+        "url": "{{publicUrl:ghost}}",
+        "database__client": "mysql",
+        "database__connection__host": "ghost-db",
+        "database__connection__user": "root",
+        "database__connection__database": "ghost"
+      },
+      "secretEnv": [
+        "database__connection__password"
+      ],
+      "volumes": [
+        "ghost_content:/var/lib/ghost/content"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "MYSQL_ROOT_PASSWORD",
+      "service": "ghost-db",
+      "label": "Database password",
+      "generate": "secret",
+      "generateGroup": "ghostdb",
+      "secret": true
+    },
+    {
+      "key": "database__connection__password",
+      "service": "ghost",
+      "label": "Ghost DB password",
+      "generate": "secret",
+      "generateGroup": "ghostdb",
+      "secret": true
+    }
+  ]
+}

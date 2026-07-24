@@ -551,11 +551,15 @@ export function useDeploymentConfig() {
     });
   }, [normalizeConfig]);
 
-  /** Resolve initial buildStrategy: user global pref > stack default > "server" */
+  /** Resolve initial buildStrategy: user global pref > stack default > "local".
+   *  App stacks already ship defaultBuildStrategy:"local"; the fallback covers
+   *  stacks with no explicit default so an untouched server/local deploy is
+   *  consistently local build (docker/services are coerced to "server" in
+   *  normalizeBuildStrategy below; cloud is forced to "server" downstream). */
   const resolveInitialStrategy = useCallback((stackDef: StackDefinition | undefined): BuildStrategy => {
     const pref = userBuildPref.current;
     if (pref === "server" || pref === "local") return pref;
-    return stackDef?.defaultBuildStrategy ?? "server";
+    return stackDef?.defaultBuildStrategy ?? "local";
   }, []);
 
   const normalizeBuildStrategy = useCallback(

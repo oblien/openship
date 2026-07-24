@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 import { ensureDashboard } from "../lib/dashboard";
 import { installAndStart, preview } from "../lib/service";
+import { composeUp, composeIsViableDefault, hasDockerCompose } from "../lib/compose";
 import { resolvePorts } from "../lib/ports";
 import { prepareFromSource, type FromSourceRun } from "../lib/from-source";
 
@@ -23,6 +24,9 @@ interface UpOpts {
   dryRun?: boolean;
   publicUrl?: string;
   trustProxy?: boolean;
+  /** Bind the dashboard to this interface (e.g. 0.0.0.0 or a LAN IP) so an
+   *  upstream reverse proxy can reach it; default 127.0.0.1 (loopback). */
+  host?: string;
   /** Install OpenResty + Let's Encrypt on this box and route --public-url here. */
   managedEdge?: boolean;
   /** ACME contact email for the managed edge. */
@@ -35,6 +39,10 @@ interface UpOpts {
   source?: string;
   /** Git remote to clone for --from-source (default: oblien/openship). */
   repo?: string;
+  /** Install via Docker Compose (published images). Default when Docker is present on Linux. */
+  compose?: boolean;
+  /** Force the bare process service (the pre-compose install). */
+  bare?: boolean;
 }
 
 /** Normalize a URL/host to `scheme://host`, or null if unparseable. Shared with
@@ -115,6 +123,10 @@ export const upCommand = new Command("up")
     "Trust the X-Real-IP set by a reverse proxy in front (the proxy MUST overwrite X-Real-IP with the real client IP, e.g. `proxy_set_header X-Real-IP $remote_addr`, and the app port MUST be firewalled so only the proxy can reach it; enables per-client rate limiting)",
   )
   .option(
+    "--host <addr>",
+    "Bind the dashboard to this interface so an upstream reverse proxy (or another LAN host) can reach it — e.g. 0.0.0.0 or a LAN IP like 192.168.1.50. Default 127.0.0.1. The API stays on loopback (the dashboard proxies to it). A concrete IP auto-trusts that browser origin for login; for 0.0.0.0 or a domain also pass --public-url (or set OPENSHIP_EXTRA_TRUSTED_ORIGINS) so login isn't rejected.",
+  )
+  .option(
     "--managed-edge",
     "Managed edge: install OpenResty + a free Let's Encrypt cert on this box and route --public-url's domain to the dashboard (no reverse proxy needed)",
   )
@@ -123,12 +135,58 @@ export const upCommand = new Command("up")
   .option("--ref <branch>", "Git branch/tag/sha to build with --from-source (default: main)")
   .option("--source <path>", "Build from an existing local Openship checkout instead of cloning")
   .option("--repo <url>", "Git remote to clone for --from-source (default: oblien/openship)")
+  .option("--compose", "Install via Docker Compose using the published images (postgres + redis + api + dashboard + edge on :80/:443). Default when Docker is available on Linux.")
+  .option("--bare", "Install as the bare process service (embedded DB, no Docker) instead of Compose")
   .action(async (opts: UpOpts) => {
-    // From-source is a preview build — always attached (not a boot service).
+    // From-source + foreground are bare-only (attached / dev preview).
     if (opts.fromSource || opts.source) return runFromSource(opts);
     if (opts.foreground) return runForeground(opts);
+    // Install method: Compose is the default when it can actually work (Docker
+    // present on Linux — the edge container needs host networking); else bare.
+    const method = opts.bare ? "bare" : opts.compose ? "compose" : composeIsViableDefault() ? "compose" : "bare";
+    if (method === "compose") return runCompose(opts);
     await startService(opts);
   });
+
+/**
+ * `openship up` (Docker Compose): bring up the published images as a stack
+ * (postgres + redis + api + dashboard + the OpenResty edge on :80/:443). The
+ * heavier, production-shaped profile — Postgres/Redis instead of the bare
+ * embedded PGlite. Managed via `docker compose` (openship stop/update/status).
+ */
+async function runCompose(opts: UpOpts): Promise<void> {
+  if (!hasDockerCompose()) {
+    console.error(
+      chalk.red("\n  Docker + `docker compose` are required for the Compose install.\n") +
+        chalk.dim("  Install Docker, or run `openship up --bare` for the process mode.\n"),
+    );
+    process.exit(1);
+  }
+  const publicUrl = opts.publicUrl ? normalizePublicUrl(opts.publicUrl) : undefined;
+  const spinner = ora("Starting Openship via Docker Compose…").start();
+  const res = composeUp({
+    apiPort: opts.port,
+    dashboardPort: opts.dashboardPort,
+    publicUrl,
+    trustProxy: opts.trustProxy,
+  });
+  if (!res.ok) {
+    spinner.fail("docker compose failed to start the stack");
+    console.error(
+      chalk.dim("\n  Check `docker compose -f ~/.openship/compose/docker-compose.yml logs`.\n") +
+        chalk.dim("  If ports 80/443 are held by another proxy, free them first (the edge binds them).\n"),
+    );
+    process.exit(1);
+  }
+  const dashboardUrl = publicUrl ?? `http://localhost:${res.dashPort}`;
+  spinner.succeed("Openship is running via Docker Compose.");
+  console.log(
+    chalk.dim(`  Dashboard: ${dashboardUrl}  (login required)\n`) +
+      chalk.dim("  Images:    api + dashboard + edge (OpenResty on :80/:443)\n") +
+      chalk.dim("  Manage:    openship stop · openship update · openship status\n") +
+      chalk.dim("  Create an admin: open the dashboard and register the first account.\n"),
+  );
+}
 
 /**
  * `openship up --from-source`: build a branch (or a local checkout) from source
@@ -175,6 +233,7 @@ export async function startService(
       uiVersion: opts.uiVersion,
       publicUrl,
       trustProxy: opts.trustProxy || opts.managedEdge,
+      host: opts.host,
       managedEdge: opts.managedEdge,
       acmeEmail: opts.acmeEmail,
     });
@@ -205,6 +264,7 @@ export async function startService(
     uiVersion: opts.uiVersion,
     publicUrl,
     trustProxy: opts.trustProxy || opts.managedEdge, // managed edge = OpenResty sets XFF
+    host: opts.host,
     managedEdge: opts.managedEdge,
     acmeEmail: opts.acmeEmail,
   };
@@ -323,6 +383,11 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     if (publicUrl) {
       // Serve the dashboard publicly; it proxies to the loopback API above.
       env.OPENSHIP_PUBLIC_URL = publicUrl;
+    } else if (opts.host && !/^(0\.0\.0\.0|127\.|::1?$|localhost$)/i.test(opts.host.trim())) {
+      // --host bound to a concrete LAN IP (no public URL): trust the exact origin
+      // the browser will use, or originGuard 403s the login POST. For 0.0.0.0 or a
+      // domain we can't infer the origin — the user passes --public-url instead.
+      env.OPENSHIP_EXTRA_TRUSTED_ORIGINS = `http://${opts.host.trim()}:${dashPort}`;
     }
     // Only trust the forwarded client IP (X-Real-IP) when an operator confirms a
     // real proxy is in front that OVERWRITES it — otherwise a client that can
@@ -455,7 +520,7 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
             // Reachable remotely when public; loopback-only otherwise. Under
             // managed edge the local OpenResty fronts the dashboard, so it stays
             // on loopback even though there's a public URL.
-            HOSTNAME: publicUrl && !managedEdge ? "0.0.0.0" : "127.0.0.1",
+            HOSTNAME: opts.host?.trim() || (publicUrl && !managedEdge ? "0.0.0.0" : "127.0.0.1"),
             // The dashboard's same-origin proxy (NEXT_PUBLIC_API_PROXY, baked
             // into the release build) forwards /api/proxy/* to this address, so
             // the browser never needs to know where the API lives. Set in every

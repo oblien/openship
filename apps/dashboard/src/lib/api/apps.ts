@@ -1,6 +1,6 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { AppManagement, AppSettingGroup } from "@repo/core";
+import type { AppManagement, AppSettingGroup, AppTemplate } from "@repo/core";
 
 /** One catalog entry as returned by GET /apps/catalog. */
 export interface AppCatalogField {
@@ -55,9 +55,29 @@ export interface AppSettingChange {
   value: string;
 }
 
+/** One resolved connection value (URL or generated key) for the app Overview. */
+export interface AppConnectionOutput {
+  id: string;
+  label: string;
+  help?: string;
+  secret: boolean;
+  /** Resolved value; "" when not resolvable yet (renders as "—"). */
+  value: string;
+}
+
+export interface AppConnectionView {
+  title?: string;
+  description?: string;
+  outputs: AppConnectionOutput[];
+}
+
 export const appsApi = {
   /** The installable app catalog. */
   catalog: () => api.get<{ data: AppCatalogEntry[] }>(endpoints.apps.catalog),
+
+  /** One app's full template (runtime catalog — overlay-fresh) for the install
+   *  wizard, so a repo-fresh app opens + installs without a redeploy. */
+  template: (id: string) => api.get<{ data: AppTemplate }>(endpoints.apps.catalogEntry(id)),
 
   /** Install an app from the catalog. Template apps return the new project;
    *  flow apps return the wizard route to hand off to. */
@@ -75,4 +95,9 @@ export const appsApi = {
       endpoints.apps.settings(projectId),
       { changes },
     ),
+
+  /** An installed app's resolved connection details (public URL + generated keys).
+   *  Values (incl. secrets) come pre-resolved from the backing services' env. */
+  getConnection: (projectId: string | number) =>
+    api.get<{ data: AppConnectionView }>(endpoints.apps.connection(projectId)),
 };

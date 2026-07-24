@@ -36,6 +36,13 @@ export interface ServerSelectorProps {
   compact?: boolean;
   /** Open the dropdown upward (for selectors pinned near the bottom of a modal). */
   dropUp?: boolean;
+  /**
+   * Pre-select the first server on load even when there are several (nothing
+   * chosen yet). A lone server always auto-selects; this extends that to the
+   * "many servers" case so an install wizard opens with a destination already
+   * picked. Off by default — flows that must not guess (adopt / migrate) skip it.
+   */
+  autoSelectFirst?: boolean;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -60,6 +67,7 @@ export default function ServerSelector({
   disabled = false,
   compact = false,
   dropUp = false,
+  autoSelectFirst = false,
 }: ServerSelectorProps) {
   const router = useRouter();
   const { t } = useI18n();
@@ -76,8 +84,9 @@ export default function ServerSelector({
       if (list.length > 0) {
         const opts = list.map(serverInfoToOption);
         setServers(opts);
-        // Auto-select if only one
-        if (opts.length === 1) onSelect(opts[0]);
+        // Auto-select the lone server, or the first one when the caller asked
+        // for a default and nothing's chosen yet (captured initial `value`).
+        if (opts.length === 1 || (autoSelectFirst && !value)) onSelect(opts[0]);
       } else {
         setServers([]);
         onSelect(null);

@@ -2,15 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
-import {
-  Rocket,
-  Activity,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Zap,
-  ArrowRight,
-} from "lucide-react";
+import { Rocket, Activity, CheckCircle2, XCircle, Loader2, Zap, ArrowRight } from "lucide-react";
 import { deployApi, projectsApi } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { DeploymentsFilters } from "./DeploymentsFilters";
@@ -30,6 +22,8 @@ interface DeploymentsContentProps {
   projectName?: string;
   hideHeader?: boolean;
   hideSidebar?: boolean;
+  /** Catalog-app template id — rows show the app logo instead of the stack icon. */
+  appTemplateId?: string;
 }
 
 export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
@@ -37,6 +31,7 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
   projectName,
   hideHeader = false,
   hideSidebar = false,
+  appTemplateId,
 }) => {
   const { t } = useI18n();
   const isProject = !!projectId;
@@ -48,9 +43,7 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
     "all" | "success" | "failed" | "building" | "pending" | "canceled"
   >("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProjectId, setSelectedProjectId] = useState<string | "all">(
-    "all"
-  );
+  const [selectedProjectId, setSelectedProjectId] = useState<string | "all">("all");
 
   const fetchDeployments = useCallback(async () => {
     setIsLoading(true);
@@ -63,7 +56,7 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
             ...r,
             projectId,
             projectName: projectName ?? r.projectName,
-          })
+          }),
         );
         setDeployments(sortDeploymentsByDate(mapped));
         setProjects([]);
@@ -102,13 +95,10 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
         searchQuery,
         projectId: selectedProjectId,
       }),
-    [deployments, filter, searchQuery, selectedProjectId]
+    [deployments, filter, searchQuery, selectedProjectId],
   );
 
-  const stats = useMemo(
-    () => calculateDeploymentStats(deployments),
-    [deployments]
-  );
+  const stats = useMemo(() => calculateDeploymentStats(deployments), [deployments]);
 
   const activeCount = (stats.building || 0) + (stats.pending || 0);
   const failedCount = (stats.failed || 0) + (stats.canceled || 0);
@@ -165,12 +155,9 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
 
               <DeploymentsList
                 deployments={filteredDeployments}
-                hasFilters={
-                  filter !== "all" ||
-                  searchQuery !== "" ||
-                  selectedProjectId !== "all"
-                }
+                hasFilters={filter !== "all" || searchQuery !== "" || selectedProjectId !== "all"}
                 onStatusChange={fetchDeployments}
+                appTemplateId={appTemplateId}
               />
             </>
           )}
@@ -178,120 +165,143 @@ export const DeploymentsContent: React.FC<DeploymentsContentProps> = ({
 
         {/* RIGHT COLUMN (Sticky) */}
         {!hideSidebar && (
-        <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          {/* Activity Overview */}
-          <div className="bg-card rounded-2xl border border-border/50 p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Activity className="size-4 text-muted-foreground" />
-              <h3 className="font-semibold text-foreground text-sm">{t.deployments.sidebar.overview.title}</h3>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Rocket className="size-4 text-primary" />
-                  </div>
-                  <span className="text-sm text-muted-foreground">{t.deployments.sidebar.overview.total}</span>
-                </div>
-                <span className="text-lg font-semibold text-foreground">
-                  {isLoading ? "–" : stats.total}
-                </span>
+          <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+            {/* Activity Overview */}
+            <div className="bg-card rounded-2xl border border-border/50 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Activity className="size-4 text-muted-foreground" />
+                <h3 className="font-semibold text-foreground text-sm">
+                  {t.deployments.sidebar.overview.title}
+                </h3>
               </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center">
-                    <CheckCircle2 className="size-4 text-success" />
-                  </div>
-                  <span className="text-sm text-muted-foreground">{t.deployments.sidebar.overview.successful}</span>
-                </div>
-                <span className="text-lg font-semibold text-foreground">
-                  {isLoading ? "–" : stats.success}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-danger-bg flex items-center justify-center">
-                    <XCircle className="size-4 text-danger" />
-                  </div>
-                  <span className="text-sm text-muted-foreground">{t.deployments.sidebar.overview.failed}</span>
-                </div>
-                <span className="text-lg font-semibold text-foreground">
-                  {isLoading ? "–" : failedCount}
-                </span>
-              </div>
-
-              {activeCount > 0 && (
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-warning-bg flex items-center justify-center">
-                      <Loader2 className="size-4 text-warning animate-spin" />
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Rocket className="size-4 text-primary" />
                     </div>
-                    <span className="text-sm text-muted-foreground">{t.deployments.sidebar.overview.inProgress}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {t.deployments.sidebar.overview.total}
+                    </span>
                   </div>
-                  <span className="text-lg font-semibold text-foreground">{activeCount}</span>
+                  <span className="text-lg font-semibold text-foreground">
+                    {isLoading ? "–" : stats.total}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center">
+                      <CheckCircle2 className="size-4 text-success" />
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {t.deployments.sidebar.overview.successful}
+                    </span>
+                  </div>
+                  <span className="text-lg font-semibold text-foreground">
+                    {isLoading ? "–" : stats.success}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-danger-bg flex items-center justify-center">
+                      <XCircle className="size-4 text-danger" />
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {t.deployments.sidebar.overview.failed}
+                    </span>
+                  </div>
+                  <span className="text-lg font-semibold text-foreground">
+                    {isLoading ? "–" : failedCount}
+                  </span>
+                </div>
+
+                {activeCount > 0 && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-warning-bg flex items-center justify-center">
+                        <Loader2 className="size-4 text-warning animate-spin" />
+                      </div>
+                      <span className="text-sm text-muted-foreground">
+                        {t.deployments.sidebar.overview.inProgress}
+                      </span>
+                    </div>
+                    <span className="text-lg font-semibold text-foreground">{activeCount}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Success/failure proportion — at-a-glance fleet health, same
+                semantic colors as the stat rows above. */}
+              {!isLoading && stats.total > 0 && (
+                <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-muted/40">
+                  {stats.success > 0 && (
+                    <div
+                      className="bg-success-solid"
+                      style={{ width: `${(stats.success / stats.total) * 100}%` }}
+                    />
+                  )}
+                  {failedCount > 0 && (
+                    <div
+                      className="bg-danger-solid"
+                      style={{ width: `${(failedCount / stats.total) * 100}%` }}
+                    />
+                  )}
+                  {activeCount > 0 && (
+                    <div
+                      className="bg-warning-solid"
+                      style={{ width: `${(activeCount / stats.total) * 100}%` }}
+                    />
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Success/failure proportion — at-a-glance fleet health, same
-                semantic colors as the stat rows above. */}
-            {!isLoading && stats.total > 0 && (
-              <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-muted/40">
-                {stats.success > 0 && (
-                  <div className="bg-success-solid" style={{ width: `${(stats.success / stats.total) * 100}%` }} />
+            {/* Quick Tip */}
+            {deployments.length > 0 ? (
+              <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Zap className="size-4 text-primary" />
+                  <h3 className="font-semibold text-foreground text-sm">
+                    {t.deployments.sidebar.autoDeploy.title}
+                  </h3>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {t.deployments.sidebar.autoDeploy.description}
+                </p>
+                {!isProject && (
+                  <Link
+                    href="/projects"
+                    className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 mt-3 transition-colors"
+                  >
+                    {t.deployments.sidebar.autoDeploy.cta}
+                    <ArrowRight className="size-3.5 rtl:rotate-180" />
+                  </Link>
                 )}
-                {failedCount > 0 && (
-                  <div className="bg-danger-solid" style={{ width: `${(failedCount / stats.total) * 100}%` }} />
-                )}
-                {activeCount > 0 && (
-                  <div className="bg-warning-solid" style={{ width: `${(activeCount / stats.total) * 100}%` }} />
-                )}
+              </div>
+            ) : (
+              <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Zap className="size-4 text-primary" />
+                  <h3 className="font-semibold text-foreground text-sm">
+                    {t.deployments.sidebar.getStarted.title}
+                  </h3>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {t.deployments.sidebar.getStarted.description}
+                </p>
+                <Link
+                  href="/library"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 mt-3 transition-colors"
+                >
+                  {t.deployments.sidebar.getStarted.cta}
+                  <ArrowRight className="size-3.5 rtl:rotate-180" />
+                </Link>
               </div>
             )}
           </div>
-
-          {/* Quick Tip */}
-          {deployments.length > 0 ? (
-            <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <Zap className="size-4 text-primary" />
-                <h3 className="font-semibold text-foreground text-sm">{t.deployments.sidebar.autoDeploy.title}</h3>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {t.deployments.sidebar.autoDeploy.description}
-              </p>
-              {!isProject && (
-                <Link
-                  href="/projects"
-                  className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 mt-3 transition-colors"
-                >
-                  {t.deployments.sidebar.autoDeploy.cta}
-                  <ArrowRight className="size-3.5 rtl:rotate-180" />
-                </Link>
-              )}
-            </div>
-          ) : (
-            <div className="bg-gradient-to-br from-primary/5 via-primary/3 to-transparent rounded-2xl border border-primary/10 p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <Zap className="size-4 text-primary" />
-                <h3 className="font-semibold text-foreground text-sm">{t.deployments.sidebar.getStarted.title}</h3>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                {t.deployments.sidebar.getStarted.description}
-              </p>
-              <Link
-                href="/library"
-                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80 mt-3 transition-colors"
-              >
-                {t.deployments.sidebar.getStarted.cta}
-                <ArrowRight className="size-3.5 rtl:rotate-180" />
-              </Link>
-            </div>
-          )}
-        </div>
         )}
       </div>
     </div>

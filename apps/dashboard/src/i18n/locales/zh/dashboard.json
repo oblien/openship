@@ -25,6 +25,7 @@
     "projectCountOne": "{count} 个项目",
     "projectCountOther": "{count} 个项目",
     "viewAllProjects": "查看全部 {count} 个项目 →",
+    "viewAllApps": "查看全部 {count} 个应用 →",
     "greetingName": "{greeting}，{name}",
     "importGit": "导入 Git",
     "importGitDesc": "从代码仓库导入",

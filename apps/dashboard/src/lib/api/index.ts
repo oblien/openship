@@ -58,6 +58,7 @@ export type {
   DiscoveredGroup,
   DiscoveredService,
   DiscoveredVolumeMount,
+  ComposeRepoService,
   OpenshipProjectGroup,
   ReimportResult,
   AdoptResult,

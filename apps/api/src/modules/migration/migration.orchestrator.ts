@@ -37,9 +37,10 @@ import type { RequestContext } from "../../lib/request-context";
 import { createServerDockerRuntime } from "../../lib/deployment-runtime";
 import { withKeyedMutex } from "../../lib/provision-lock";
 import { requestBuildAccess } from "../deployments/build.service";
+import { linkProjectRepo } from "../projects/project-crud.service";
 import { teardownProject } from "../projects/project-teardown";
 import { discoverServerStack } from "./docker-inspect.service";
-import { adoptServerStack } from "./migrate.service";
+import { adoptServerStack, attachLiveRuntime } from "./migrate.service";
 import { isMovableBind } from "./migration-preflight";
 import { migrationRunBus } from "./migration.sse";
 
@@ -62,6 +63,17 @@ export interface StartMigrationInput {
    *  Absent = "auto" (topology-aware) in the transfer core. */
   transferMode?: TransferMode;
   transferCompression?: TransferCompression;
+  /** Optional project-level git repo to link to the migrated project (records
+   *  source + binds push auto-deploy). The running image is still reused — no
+   *  rebuild during migrate. Absent = no repo linked (today's behavior). */
+  gitSource?: { provider: "github"; owner: string; repo: string; branch?: string };
+  /** serviceName → build subpath inside the linked repo. Metadata only. */
+  serviceSubpaths?: Record<string, string>;
+  /** serviceName → env override (defaults to the discovered container's env). */
+  serviceEnv?: Record<string, Record<string, string>>;
+  /** Adopt in flat-docker mode — MUST match the scan the user selected from, or
+   *  openship-labeled containers get treated as managed and "none are found". */
+  flatDocker?: boolean;
 }
 
 const VERIFY_TIMEOUT_MS = 20 * 60 * 1000; // 20 min for the target deploy
@@ -174,7 +186,9 @@ class MigrationOrchestratorImpl {
     try {
       // ── adopt ──
       await this.transition(id, "adopting");
-      const stack = await discoverServerStack(sourceServerId, organizationId);
+      const stack = await discoverServerStack(sourceServerId, organizationId, undefined, {
+        flatDocker: input.flatDocker,
+      });
       const selected = stack.services.filter((s) => serviceNames.includes(s.name));
       if (selected.length === 0) {
         throw new Error("None of the selected services were found on the server.");
@@ -199,8 +213,21 @@ class MigrationOrchestratorImpl {
             .join(", ")}. Publish an image or link a repo first.`,
         );
       }
+      // Per-service volume strategy decides the takeover mode on the SAME server:
+      //   reuse → ATTACH the already-running container live, in place (no
+      //           redeploy, no volume move, zero downtime).
+      //   copy  → DEPLOY a fresh container on a duplicated volume.
+      // Cross-server is always a deploy (the volume streams to a fresh target).
+      const isAttach = (name: string) =>
+        sameServer && (input.volumeStrategies?.[name] ?? "reuse") !== "copy";
+      const attachChosen = chosen.filter((s) => isAttach(s.name));
+      const deployChosen = chosen.filter((s) => !isAttach(s.name));
+
+      // Only the DEPLOY set's originals are quiesced / copied / cut over —
+      // attach-live containers are adopted as-is and must never be stopped or
+      // killed (that would take down the very containers we're taking control of).
       scannedContainerIds = Object.fromEntries(
-        chosen.filter((s) => s.containerId).map((s) => [s.name, s.containerId as string]),
+        deployChosen.filter((s) => s.containerId).map((s) => [s.name, s.containerId as string]),
       );
 
       const adopt = await adoptServerStack({
@@ -210,60 +237,122 @@ class MigrationOrchestratorImpl {
         serviceNames,
         sameServer,
         volumeStrategies: input.volumeStrategies,
+        serviceSubpaths: input.serviceSubpaths,
+        serviceEnv: input.serviceEnv,
+        flatDocker: input.flatDocker,
       });
       const projectId = adopt.projectId;
       if (adopt.created) createdProjectId = projectId;
       await this.transition(id, "adopting", { projectId, scannedContainerIds });
 
-      // ── moving_data: quiesce originals (both) + copy volumes (cross-server) ──
-      await this.transition(id, "moving_data");
-      const bytesMoved = await this.moveData(
-        projectId,
-        sourceServerId,
-        targetServerId,
-        organizationId,
-        scannedContainerIds,
-        sameServer,
-        input.volumeStrategies ?? {},
-        { mode: input.transferMode, compression: input.transferCompression },
-        (m) => console.log(`[migration] ${id}: ${m}`),
+      // Link the repo (if the user picked one) BEFORE deploy so source + push
+      // auto-deploy are bound from the first release. Best-effort: adopted rows
+      // carry an image, so the deploy reuses it regardless — a GitHub hiccup must
+      // never block the (destructive) migration.
+      if (input.gitSource) {
+        const linked = await linkProjectRepo(ctx, projectId, input.gitSource).catch(
+          (err) => ({ ok: false as const, code: "invalid" as const, message: safeErrorMessage(err) }),
+        );
+        if (!linked.ok) {
+          console.warn(`[migration] ${id}: repo link skipped (${linked.code})`);
+        }
+      }
+
+      const attachNames = new Set(attachChosen.map((s) => s.name));
+      const attachRows = (await repos.service.listByProject(projectId)).filter((r) =>
+        attachNames.has(r.name),
       );
-      await this.transition(id, "moving_data", { bytesMoved });
 
-      // ── deploying ──
-      await this.transition(id, "deploying");
-      const dep = await requestBuildAccess(ctx, {
-        projectId,
-        deployTarget: "server",
-        serverId: targetServerId,
-        runtimeMode: "docker",
-        serviceDeploymentMode: "services",
-      });
-      deploymentId = dep.deployment_id;
-      await this.transition(id, "deploying", { deploymentId });
+      if (deployChosen.length > 0) {
+        // ── moving_data: quiesce the deploy set's originals + copy volumes ──
+        await this.transition(id, "moving_data");
+        const bytesMoved = await this.moveData(
+          projectId,
+          sourceServerId,
+          targetServerId,
+          organizationId,
+          scannedContainerIds,
+          sameServer,
+          input.volumeStrategies ?? {},
+          { mode: input.transferMode, compression: input.transferCompression },
+          (m) => console.log(`[migration] ${id}: ${m}`),
+        );
+        await this.transition(id, "moving_data", { bytesMoved });
 
-      // ── verifying ──
-      await this.transition(id, "verifying");
-      const verified = await this.waitForDeployment(deploymentId);
-      if (!verified || verified.status !== "ready") {
-        // Surface WHY, not a dead-end "did not become ready": a timeout, or the
-        // deployment's own error PLUS which service(s) failed (so a
-        // "partial_failure" names the culprit instead of a bare status).
-        const mins = Math.round(VERIFY_TIMEOUT_MS / 60000);
-        const reason = !verified
-          ? `it was still deploying after ${mins} minutes`
-          : await this.describeDeployFailure(deploymentId, verified);
-        throw new Error(`The target deployment did not become ready — ${reason}.`);
+        // ── deploying ──
+        // Scope the compose deploy to the deploy set: attach-live rows are
+        // temporarily disabled so the build skips them (deployComposeServices
+        // only deploys enabled rows), then re-enabled + attached below. Restored
+        // in finally so a failure never leaves rows disabled.
+        await this.transition(id, "deploying");
+        for (const r of attachRows) {
+          await repos.service.update(r.id, { enabled: false });
+        }
+        try {
+          const dep = await requestBuildAccess(ctx, {
+            projectId,
+            deployTarget: "server",
+            serverId: targetServerId,
+            runtimeMode: "docker",
+            serviceDeploymentMode: "services",
+          });
+          deploymentId = dep.deployment_id;
+        } finally {
+          for (const r of attachRows) {
+            await repos.service.update(r.id, { enabled: true }).catch(() => {});
+          }
+        }
+        await this.transition(id, "deploying", { deploymentId });
+
+        // ── verifying ──
+        await this.transition(id, "verifying");
+        const verified = await this.waitForDeployment(deploymentId);
+        if (!verified || verified.status !== "ready") {
+          // Surface WHY, not a dead-end "did not become ready": a timeout, or the
+          // deployment's own error PLUS which service(s) failed (so a
+          // "partial_failure" names the culprit instead of a bare status).
+          const mins = Math.round(VERIFY_TIMEOUT_MS / 60000);
+          const reason = !verified
+            ? `it was still deploying after ${mins} minutes`
+            : await this.describeDeployFailure(deploymentId, verified);
+          throw new Error(`The target deployment did not become ready — ${reason}.`);
+        }
+      } else {
+        // Pure attach-live (same-server reuse only): no data move, no build.
+        // Mint the deployment id the reconstructed runtime rows hang off of. No
+        // `deploying` transition WITH this id → the run panel shows no (empty)
+        // build terminal, and the volume-collision guard never runs.
+        deploymentId = `dep_${crypto.randomUUID().replace(/-/g, "")}`;
+      }
+
+      // Attach the reuse set's live containers straight into the deployment
+      // (reconstruct service_deployment rows by container id — no redeploy).
+      if (attachRows.length > 0) {
+        await this.transition(id, "verifying");
+        await attachLiveRuntime({
+          deploymentId: deploymentId!,
+          projectId,
+          organizationId,
+          serverId: sourceServerId,
+          attach: attachChosen,
+          serviceRows: await repos.service.listByProject(projectId),
+        });
       }
 
       // ── cutover (opt-in) / awaiting_cutover ──
-      const run = await repos.dockerMigrationRun.findById(id);
-      if (run?.killOriginals) {
-        await this.transition(id, "cutover");
-        await this.cutover(sourceServerId, organizationId, scannedContainerIds);
-        await this.transition(id, "succeeded");
+      // Only the deploy set has originals to retire. A pure attach-live run
+      // adopted the live containers in place, so there is nothing to cut over.
+      if (deployChosen.length > 0) {
+        const run = await repos.dockerMigrationRun.findById(id);
+        if (run?.killOriginals) {
+          await this.transition(id, "cutover");
+          await this.cutover(sourceServerId, organizationId, scannedContainerIds);
+          await this.transition(id, "succeeded");
+        } else {
+          await this.transition(id, "awaiting_cutover");
+        }
       } else {
-        await this.transition(id, "awaiting_cutover");
+        await this.transition(id, "succeeded");
       }
     } catch (err) {
       await this.rollback(

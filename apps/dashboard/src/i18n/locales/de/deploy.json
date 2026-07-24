@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "Domains konnten nicht gespeichert werden",
-    "toastTitle": "Domains"
+    "toastTitle": "Domains",
+    "routeFreeLabel": "Kostenlose Subdomain",
+    "routeFreeDesc": "Eine kostenlose {domain}-URL, sofort bereit.",
+    "routeCustomLabel": "Eigene Domain",
+    "routeCustomDesc": "Verweise deine eigene Domain auf dieses Deployment.",
+    "routeNoneLabel": "Keine",
+    "routeNoneDesc": "Keine öffentliche URL — nur intern. Erreichbar über den Port auf dem Host."
   },
   "dns": {
     "title": "DNS-Konfiguration",
@@ -119,6 +125,8 @@
     "addServer": "Eigenen Server hinzufügen",
     "continue": "Weiter",
     "chooseServer": "Einen Server auswählen",
+    "thisServerBadge": "Dieser Server",
+    "thisServerHost": "Aktueller Host — Deployments laufen hier",
     "searchPlaceholder": "Server suchen…",
     "noServersMatch": "Keine Server entsprechen deiner Suche.",
     "requireCloudFeature": "Deployen auf Openship Cloud",

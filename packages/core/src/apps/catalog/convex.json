@@ -1,0 +1,161 @@
+{
+  "available": true,
+  "id": "convex",
+  "name": "Convex",
+  "description": "Self-hosted Convex reactive backend + dashboard, with a persistent data volume.",
+  "kind": "template",
+  "logo": "convex",
+  "category": "backend",
+  "tags": [
+    "backend",
+    "database",
+    "realtime"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "backend",
+      "image": "ghcr.io/get-convex/convex-backend:latest",
+      "ports": [
+        "3210:3210",
+        "3211:3211"
+      ],
+      "exposedPort": 3210,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 3210
+        },
+        {
+          "port": 3211,
+          "slugSuffix": "http"
+        }
+      ],
+      "environment": {
+        "INSTANCE_NAME": "convex-self-hosted",
+        "DISABLE_BEACON": "true",
+        "CONVEX_CLOUD_ORIGIN": "{{publicUrl:backend:3210}}",
+        "CONVEX_SITE_ORIGIN": "{{publicUrl:backend:3211}}"
+      },
+      "secretEnv": [
+        "INSTANCE_SECRET"
+      ],
+      "volumes": [
+        "convex_data:/convex/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -f http://localhost:3210/version || exit 1"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "dashboard",
+      "image": "ghcr.io/get-convex/convex-dashboard:latest",
+      "ports": [
+        "6791:6791"
+      ],
+      "exposedPort": 6791,
+      "exposed": true,
+      "dependsOn": [
+        "backend"
+      ],
+      "environment": {
+        "NEXT_PUBLIC_DEPLOYMENT_URL": "{{publicUrl:backend}}"
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "INSTANCE_SECRET",
+      "service": "backend",
+      "label": "Instance secret",
+      "help": "Auto-generated. Signs the admin key and internal tokens.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "prepare": [
+    {
+      "service": "backend",
+      "command": "./generate_admin_key.sh",
+      "capture": "adminKey",
+      "capturePattern": "Admin key:\\s*(\\S+)",
+      "persistAs": {
+        "key": "CONVEX_ADMIN_KEY"
+      },
+      "once": true
+    }
+  ],
+  "connection": {
+    "title": "Connect to this deployment",
+    "description": "Sign in to the Convex dashboard, or point the Convex CLI here, with these values.",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Deployment URL",
+        "source": "env:backend:CONVEX_CLOUD_ORIGIN"
+      },
+      {
+        "id": "adminKey",
+        "label": "Admin Key",
+        "source": "env:backend:CONVEX_ADMIN_KEY",
+        "secret": true,
+        "help": "Paste into the Convex dashboard login (required each time you open it)."
+      }
+    ]
+  },
+  "settings": [
+    {
+      "id": "general",
+      "label": "General",
+      "fields": [
+        {
+          "key": "DISABLE_BEACON",
+          "service": "backend",
+          "label": "Disable telemetry beacon",
+          "type": "boolean",
+          "default": "true"
+        }
+      ]
+    },
+    {
+      "id": "advanced",
+      "label": "Advanced",
+      "description": "Changing these regenerates or invalidates the deployment's admin key — the dashboard and CLI must be re-authenticated afterwards.",
+      "fields": [
+        {
+          "key": "INSTANCE_NAME",
+          "service": "backend",
+          "label": "Instance name",
+          "help": "Sets the deployment name. Changing it AFTER the first deploy invalidates the admin key and locks the dashboard/CLI out — safest to set it here, at install.",
+          "type": "text",
+          "default": "convex-self-hosted",
+          "advanced": true,
+          "requiresRedeploy": true,
+          "installStep": true
+        },
+        {
+          "key": "INSTANCE_SECRET",
+          "service": "backend",
+          "label": "Instance secret",
+          "help": "Signs the admin key and internal tokens. Rotating it invalidates existing admin keys.",
+          "type": "password",
+          "secret": true,
+          "advanced": true,
+          "requiresRedeploy": true
+        }
+      ]
+    }
+  ]
+}

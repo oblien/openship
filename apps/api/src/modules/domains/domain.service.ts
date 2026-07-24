@@ -49,6 +49,7 @@ export async function listDomains(ctx: RequestContext, projectId: string) {
 export async function setPrimaryDomain(ctx: RequestContext, domainId: string) {
   const domain = await repos.domain.findById(domainId);
   if (!domain) throw new NotFoundError("Domain", domainId);
+  if (!domain.projectId) throw new NotFoundError("Domain", domainId); // primary is a project-domain concept
   const project = await repos.project.findById(domain.projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, domain.projectId);
   await repos.domain.setPrimary(domain.projectId, domainId);
@@ -300,7 +301,7 @@ export async function verifyDomain(ctx: RequestContext, domainId: string) {
     // custom primary exists. Free .opsh.io stays as the always-on
     // fallback but the custom domain now becomes the "real" entry point
     // for analytics and the dashboard's "Visit" link.
-    if (domain.domainType === "custom") {
+    if (domain.projectId && domain.domainType === "custom") {
       const peers = await repos.domain.listByProject(domain.projectId);
       const hasOtherCustomPrimary = peers.some(
         (peer) => peer.id !== domainId && peer.isPrimary && peer.domainType === "custom",
@@ -330,7 +331,7 @@ export async function verifyDomain(ctx: RequestContext, domainId: string) {
     // next renewal tick once the cert lands.
     void manageDomainSsl(domain.hostname, {
       action: "provision",
-      projectId: domain.projectId,
+      projectId: domain.projectId ?? undefined,
     }).catch((err) => {
       console.error(
         `[DOMAIN] Background SSL provisioning failed for ${domain.hostname}:`,
@@ -451,7 +452,7 @@ export async function uploadDomainCert(
   const { domain } = await getDomainWithAuth(domainId, ctx.organizationId);
 
   const result = await installDomainCert(domain.hostname, cert, {
-    projectId: domain.projectId,
+    projectId: domain.projectId ?? undefined,
   });
 
   await repos.domain.update(domainId, {

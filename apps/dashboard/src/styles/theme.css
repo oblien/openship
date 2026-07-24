@@ -131,6 +131,9 @@
   --st-warning-fg: #d97706;  --st-warning-bg: rgba(245,158,11,.10);  --st-warning-bd: rgba(245,158,11,.20);
   --st-info-fg:    #2563eb;  --st-info-bg:    rgba(59,130,246,.10);  --st-info-bd:    rgba(59,130,246,.20);
   --st-neutral-fg: #52525b;  --st-neutral-bg: #f4f4f5;  --st-neutral-bd: #e4e4e7;
+
+  /* Solid fills (bars/dots/solid buttons) — vivid mid-tones that read on white. */
+  --st-success-solid: #10b981;  --st-danger-solid: #ef4444;  --st-warning-solid: #f59e0b;  --st-info-solid: #3b82f6;  --st-neutral-solid: #9ca3af;
 }
 
 
@@ -232,10 +235,13 @@
   /* Pre-token hardcoded recipe restored: bg-X-500/10 + border-X-500/20 (shared
      with light), text-X-400 on hard-black. */
   --st-success-fg: #34d399;  --st-success-bg: rgba(16,185,129,.10);  --st-success-bd: rgba(16,185,129,.20);
-  --st-danger-fg:  #f87171;  --st-danger-bg:  rgba(239,68,68,.10);   --st-danger-bd:  rgba(239,68,68,.20);
+  --st-danger-fg:  #f04848;  --st-danger-bg:  rgba(239,68,68,.10);   --st-danger-bd:  rgba(239,68,68,.20);
   --st-warning-fg: #fbbf24;  --st-warning-bg: rgba(245,158,11,.10);  --st-warning-bd: rgba(245,158,11,.20);
   --st-info-fg:    #60a5fa;  --st-info-bg:    rgba(59,130,246,.10);  --st-info-bd:    rgba(59,130,246,.20);
   --st-neutral-fg: rgba(255,255,255,.50);  --st-neutral-bg: rgba(255,255,255,.05);  --st-neutral-bd: rgba(255,255,255,.10);
+
+  /* Solid fills (bars/dots/solid buttons) — desaturated so they read as color, not neon glow. */
+  --st-success-solid: hsl(154 44% 47%);  --st-danger-solid: hsl(0 74% 60%);  --st-warning-solid: hsl(38 66% 52%);  --st-info-solid: hsl(214 58% 56%);  --st-neutral-solid: #8b8f98;
 }
 
 
@@ -338,15 +344,17 @@
   --th-spinner-fill:    #ffffff;
 
   /* ─ Semantic status (dim: warm, softer, lower-contrast for the lifted gray) ─ */
-  /* Success takes the dark theme's emerald verbatim (#34d399 text over the
-     rgba(16,185,129,…) overlay) — the comfortable native green, at the exact
-     temperature of its own bg/icon overlay. No bespoke dim hue. Amber warning,
-     red danger, blue info keep their distinct temperatures below. */
-  --st-success-fg: #34d399;  --st-success-bg: rgba(16,185,129,.14);  --st-success-bd: rgba(16,185,129,.26);
-  --st-danger-fg:  hsl(6 76% 67%);  --st-danger-bg:  hsl(6 70% 52% / .20);   --st-danger-bd:  hsl(6 66% 56% / .36);
-  --st-warning-fg: hsl(40 88% 62%);  --st-warning-bg: hsl(40 82% 50% / .18);  --st-warning-bd: hsl(40 78% 54% / .34);
-  --st-info-fg:    hsl(214 80% 71%);  --st-info-bg:    hsl(214 72% 54% / .18);  --st-info-bd:    hsl(214 68% 58% / .34);
+  /* Success = the SOFT/LIGHT end of the brand-lime CTA gradient (its top,
+     hsl(86 84% 74%)) — light and white-ish, not the bold dark tail — so
+     RUNNING/healthy matches the "New Project" accent without reading harsh. */
+  --st-success-fg: hsl(86 82% 74%);  --st-success-bg: hsl(86 60% 54% / .15);  --st-success-bd: hsl(86 56% 62% / .28);
+  --st-danger-fg:  hsl(4 82% 67%);  --st-danger-bg:  hsl(4 72% 54% / .20);   --st-danger-bd:  hsl(4 68% 58% / .34);
+  --st-warning-fg: hsl(40 78% 63%);  --st-warning-bg: hsl(40 72% 50% / .16);  --st-warning-bd: hsl(40 68% 54% / .30);
+  --st-info-fg:    hsl(214 72% 72%);  --st-info-bg:    hsl(214 64% 54% / .16);  --st-info-bd:    hsl(214 60% 58% / .30);
   --st-neutral-fg: rgba(255,255,255,.70);  --st-neutral-bg: rgba(255,255,255,.09);  --st-neutral-bd: rgba(255,255,255,.18);
+
+  /* Solid fills (bars/dots/solid buttons) — softened to sit on the lifted gray without glare. */
+  --st-success-solid: hsl(85 68% 62%);  --st-danger-solid: hsl(4 72% 57%);  --st-warning-solid: hsl(38 68% 53%);  --st-info-solid: hsl(214 60% 57%);  --st-neutral-solid: rgba(255,255,255,.42);
 }
 
 
@@ -472,8 +480,7 @@
   --info:    var(--st-info-fg);     --info-bg:    var(--st-info-bg);     --info-border:    var(--st-info-bd);
   --neutral: var(--st-neutral-fg);  --neutral-bg: var(--st-neutral-bg);  --neutral-border: var(--st-neutral-bd);
 
-  /* Vivid SOLID fills for bars / dots / solid buttons — a saturated mid tone
-     that reads on any background (the -fg above is text-tuned = too dark on
-     white for a big fill). Theme-independent on purpose. */
-  --success-solid: #10b981;  --danger-solid: #ef4444;  --warning-solid: #f59e0b;  --info-solid: #3b82f6;  --neutral-solid: #9ca3af;
+  /* SOLID fills for bars / dots / solid buttons. Per-theme via --st-*-solid:
+     vivid on light, desaturated on dark/dim so they read as color, not glow. */
+  --success-solid: var(--st-success-solid);  --danger-solid: var(--st-danger-solid);  --warning-solid: var(--st-warning-solid);  --info-solid: var(--st-info-solid);  --neutral-solid: var(--st-neutral-solid);
 }

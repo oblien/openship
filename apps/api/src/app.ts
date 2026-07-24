@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env, trustedOrigins } from "./config/env";
 import { handleApiError } from "./middleware/error-handler";
-import { rateLimiter, rateLimiterFor } from "./middleware/rate-limiter";
+import { rateLimiterFor } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
 import { betterAuthShield } from "./middleware/better-auth-shield";
 import { forceMcpConsent } from "./middleware/mcp-consent";
@@ -19,6 +19,8 @@ import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-a
 import { projectRoutes } from "./modules/projects/project.routes";
 import { appRoutes } from "./modules/apps/app.routes";
 import { appSettingsRoutes } from "./modules/apps/app-settings.routes";
+import { appConnectionRoutes } from "./modules/apps/app-connection.routes";
+import { projectConnectionRoutes } from "./modules/projects/project-connection.routes";
 import { deploymentRoutes } from "./modules/deployments/deployment.routes";
 import { domainRoutes } from "./modules/domains/domain.routes";
 import { jobRoutes } from "./modules/jobs/job.routes";
@@ -87,18 +89,18 @@ app.use("*", migrationGuard);
 // AppError / ZodError get serialized with their statusCode and code.
 app.onError(handleApiError);
 
-// Global rate-limit for the entire /api surface. The middleware picks
-// `default-anon` (per-IP, 100/min) for unauthed requests and
-// `default-authed` (per-user, 600/min) for authed ones. Per-route
-// policies (set via secureRouter's `rateLimit` spec field) override
-// this default — see lib/rate-limit/policies.ts for the catalog.
-app.use("/api/*", rateLimiter);
-
-// Auth-tight bucket for POST /api/auth/* (sign-in, sign-up, password
-// reset, etc.) — 10/min/IP. Catches credential-stuffing well before the
-// default-anon limit fires. GET routes (/get-session, OAuth callbacks)
-// stay on the default-anon policy since they need to be hot.
+// Rate limiting now lives in the route chain, NOT in a global `/api/*`
+// middleware (fixes #123). secureRouter injects a per-route limiter AFTER
+// authMiddleware — `default-authed` (per user) for permission-tagged routes,
+// `default-anon` (per IP) for public ones, or the route's explicit `rateLimit`
+// policy. A global limiter ran upstream of auth, so it could never see `ctx`
+// (always default-anon) and double-charged routes with their own policy.
+//
+// Better Auth is a RAW catch-all (not secureRouter), so it carries its own:
+// POST → `auth-tight` (credential-stuffing), GET (get-session, OAuth
+// callbacks) → `default-anon` (hot). See lib/rate-limit/policies.ts.
 app.on("POST", "/api/auth/*", rateLimiterFor("auth-tight"));
+app.on("GET", "/api/auth/*", rateLimiterFor("default-anon"));
 
 // Shield Better Auth's organization-plugin reads (list-members,
 // list-invitations, get-active-member-role) — they leak admin-tier
@@ -119,6 +121,8 @@ app.route("/api/projects", projectRoutes);
 app.route("/api/apps", appRoutes);
 app.route("/api/projects/:id/services", serviceRoutes);
 app.route("/api/projects/:id/app-settings", appSettingsRoutes);
+app.route("/api/projects/:id/app-connection", appConnectionRoutes);
+app.route("/api/projects/:id/connections", projectConnectionRoutes);
 app.route("/api/deployments", deploymentRoutes);
 app.route("/api/domains", domainRoutes);
 app.route("/api/webhooks", webhookRoutes);

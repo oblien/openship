@@ -38,11 +38,15 @@ export default function NewAppPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return catalog.filter((a) => {
-      if (category !== "all" && a.category !== category) return false;
-      if (!q) return true;
-      return `${a.name} ${a.description} ${(a.tags ?? []).join(" ")}`.toLowerCase().includes(q);
-    });
+    return catalog
+      .filter((a) => {
+        if (category !== "all" && a.category !== category) return false;
+        if (!q) return true;
+        return `${a.name} ${a.description} ${(a.tags ?? []).join(" ")}`.toLowerCase().includes(q);
+      })
+      // Installable apps lead (grouped up front), coming-soon after — a stable
+      // sort keeps catalog order within each group.
+      .sort((a, b) => Number(!!a.comingSoon) - Number(!!b.comingSoon));
   }, [catalog, category, query]);
 
   const catLabel = (c: string) =>

@@ -25,9 +25,9 @@
  */
 
 import type { Context } from "hono";
-import { setSignedCookie } from "hono/cookie";
-import { auth, COOKIE_PREFIX } from "../../lib/auth";
-import { env, localDashboardUrl } from "../../config/env";
+import { auth } from "../../lib/auth";
+import { setSessionCookie } from "../../lib/session-cookie";
+import { localDashboardUrl } from "../../config/env";
 import { alignLoopbackOrigin } from "@repo/core";
 
 // ─── HTML result page ────────────────────────────────────────────────────────
@@ -43,32 +43,6 @@ function desktopResultPage(title: string, message: string, success = false): str
   ${success ? '<p style="color:#555;font-size:14px">This tab can be safely closed.</p>' : ''}
 </div>
 </body></html>`;
-}
-
-/**
- * Stamp the response with a signed Better Auth session cookie. Shared
- * by every successful auth path so cookie attributes (httpOnly, Lax,
- * /, expiry) stay consistent — drift between paths would cause subtle
- * "logged in but redirected to /login" bugs.
- */
-async function setSessionCookie(
-  c: Context,
-  token: string,
-  expiresAt: Date,
-): Promise<void> {
-  await setSignedCookie(
-    c,
-    `${COOKIE_PREFIX}.session_token`,
-    token,
-    env.BETTER_AUTH_SECRET,
-    {
-      httpOnly: true,
-      secure: false,
-      sameSite: "Lax",
-      path: "/",
-      expires: expiresAt,
-    },
-  );
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────

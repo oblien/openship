@@ -21,6 +21,9 @@ interface PublicEndpointsCardProps {
   hideHeader?: boolean;
   /** Place each route's exposed-port field to the right of its domain input. */
   portInline?: boolean;
+  /** Hide each route's internal Free/Custom toggle — for callers that drive the
+   *  domain type from their own outer control (e.g. the migrate wizard). */
+  hideTypeToggle?: boolean;
 }
 
 const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
@@ -33,6 +36,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   saveMode = "change",
   hideHeader = false,
   portInline = false,
+  hideTypeToggle = false,
 }) => {
   const { t } = useI18n();
   const w = t.widgets.routing.publicEndpoints;
@@ -153,6 +157,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
         liveUrl={resolvedUrl}
         actionSlot={actionSlot}
         portInline={portInline}
+        hideTypeToggle={hideTypeToggle}
         onDomainChange={(value) => handleEndpointChange(endpoint.id, { domain: value })}
         onCustomDomainChange={(value) => handleEndpointChange(endpoint.id, { customDomain: value })}
         onDomainTypeChange={(value) => handleEndpointChange(endpoint.id, { domainType: value })}

@@ -1,0 +1,103 @@
+{
+  "available": true,
+  "id": "n8n",
+  "name": "n8n",
+  "description": "Workflow automation — connect apps and APIs with a visual editor.",
+  "kind": "template",
+  "logo": "n8n",
+  "category": "automation",
+  "tags": [
+    "automation",
+    "workflows",
+    "integrations"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "n8n",
+      "image": "n8nio/n8n:latest",
+      "ports": [
+        "5678:5678"
+      ],
+      "exposedPort": 5678,
+      "exposed": true,
+      "environment": {
+        "N8N_PORT": "5678",
+        "N8N_PROTOCOL": "https",
+        "GENERIC_TIMEZONE": "UTC",
+        "WEBHOOK_URL": "{{publicUrl:n8n}}"
+      },
+      "secretEnv": [
+        "N8N_ENCRYPTION_KEY"
+      ],
+      "volumes": [
+        "n8n_data:/home/node/.n8n"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "N8N_ENCRYPTION_KEY",
+      "service": "n8n",
+      "label": "Encryption key",
+      "help": "Auto-generated. Encrypts stored credentials.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "settings": [
+    {
+      "id": "general",
+      "label": "General",
+      "fields": [
+        {
+          "key": "GENERIC_TIMEZONE",
+          "service": "n8n",
+          "label": "Timezone",
+          "help": "Used by Schedule and Cron nodes.",
+          "type": "text",
+          "default": "UTC",
+          "placeholder": "UTC",
+          "installStep": true
+        },
+        {
+          "key": "N8N_DEFAULT_LOCALE",
+          "service": "n8n",
+          "label": "Locale",
+          "type": "text",
+          "default": "en",
+          "placeholder": "en"
+        }
+      ]
+    },
+    {
+      "id": "executions",
+      "label": "Executions",
+      "description": "Bound stored execution history so the data volume doesn't grow without limit.",
+      "fields": [
+        {
+          "key": "EXECUTIONS_DATA_PRUNE",
+          "service": "n8n",
+          "label": "Prune old executions",
+          "type": "boolean",
+          "default": "true"
+        },
+        {
+          "key": "EXECUTIONS_DATA_MAX_AGE",
+          "service": "n8n",
+          "label": "Keep executions for (hours)",
+          "help": "336 hours = 14 days.",
+          "type": "number",
+          "default": "336",
+          "integer": true,
+          "min": 1,
+          "advanced": true
+        }
+      ]
+    }
+  ]
+}

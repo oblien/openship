@@ -54,7 +54,7 @@ export async function renewExpiringCerts(): Promise<RenewalResult> {
   // Pre-fetch project → (org, project name) so the dispatcher knows
   // which org to fan out the notification to. Each org's members each
   // receive notifications via their configured channels.
-  const projectIds = [...new Set(batch.map((d) => d.projectId))];
+  const projectIds = [...new Set(batch.map((d) => d.projectId).filter((p): p is string => p !== null))];
   const projectCache = new Map<
     string,
     { organizationId: string; projectName: string }
@@ -73,7 +73,7 @@ export async function renewExpiringCerts(): Promise<RenewalResult> {
   let failed = 0;
 
   for (const domain of batch) {
-    const ctx = projectCache.get(domain.projectId);
+    const ctx = domain.projectId ? projectCache.get(domain.projectId) : undefined;
 
     try {
       // manageDomainSsl resolves the provider on the serving host and persists
@@ -81,7 +81,7 @@ export async function renewExpiringCerts(): Promise<RenewalResult> {
       // landed — treat as a failure so it's surfaced, not silently "renewed".
       const result = await manageDomainSsl(domain.hostname, {
         action: "renew",
-        projectId: domain.projectId,
+        projectId: domain.projectId ?? undefined,
       });
       if (!result.verified) {
         throw new Error(

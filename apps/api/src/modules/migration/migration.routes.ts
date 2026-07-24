@@ -27,6 +27,8 @@ r.post("/adopt", { tag: "server:write", collection: true }, migration.adoptServe
 // Re-import an orphaned Openship project (DR / cross-instance), preserving its id.
 r.post("/reimport", { tag: "server:write", collection: true }, migration.reimportServer);
 
+// Read-only: parse a linked repo's docker-compose (GitHub API) for the map step.
+r.post("/repo-compose", { tag: "server:read", readOnly: true, collection: true }, migration.repoCompose);
 // Read-only preview of a full migration (registry/build, volumes, warnings).
 r.post("/preview", { tag: "server:write", collection: true }, migration.previewMigration);
 // Start a full migration (adopt → move → deploy → verify → await cutover).

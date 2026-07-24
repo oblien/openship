@@ -23,6 +23,7 @@ import { classifyProxy } from "@repo/adapters";
 import type { ComposeHealthcheck } from "@repo/core";
 import type { ComposeService } from "../../lib/compose-parser";
 import type { ManifestProjectEntry } from "../../lib/openship-manifest";
+import type { ExistingRoute } from "./proxy-route-scan";
 
 export interface DiscoveredVolumeMount {
   /** "volume" reuses a named volume in place; "bind" is a host path. */
@@ -63,6 +64,15 @@ export interface DiscoveredService {
    *  stripped from an imported non-proxy service; the signal that a proxy owns
    *  the edge. */
   edgePorts?: number[];
+  /** A route the server's EXISTING (foreign) reverse proxy already serves for
+   *  this container, matched by a published host port — so the wizard can show
+   *  the current domain(s)+SSL and offer to keep them. Absent = no proxied route
+   *  detected (or no foreign proxy). */
+  existingRoute?: {
+    domains: string[];
+    ssl: { enabled: boolean; certPath?: string; keyPath?: string };
+    source?: string;
+  };
   warnings: string[];
 }
 
@@ -100,8 +110,14 @@ export interface OpenshipProjectGroup {
   runtimeMode?: string | null;
   /** Whether this project id already exists in this instance's DB. */
   knownHere: boolean;
+  /** A full recovery snapshot (`dumpSubgraph`) exists on the server → re-import
+   *  restores it faithfully. False → best-effort reconstruction from live docker. */
+  hasSnapshot: boolean;
   /** Deployment id from the label/manifest — carried for future live-status recovery. */
   deploymentId?: string;
+  /** When this project was last deployed (manifest `updatedAt`) — a "last seen"
+   *  hint in the UI. Absent when there's no manifest (label-only recovery). */
+  updatedAt?: string;
   /** Live service containers reconstructed from runtime state. */
   services: DiscoveredService[];
 }
@@ -247,6 +263,7 @@ export function toDiscoveredService(
   declared: ComposeService | undefined,
   imageDefaults?: Set<string>,
   imageCmd?: string[],
+  proxyRoutesByPort?: Map<number, ExistingRoute>,
 ): DiscoveredService {
   const mounts = toDiscoveredMounts(detail.mounts);
   const warnings: string[] = [];
@@ -290,6 +307,19 @@ export function toDiscoveredService(
       ? classifyProxy([image, command, name].filter(Boolean).join(" "))
       : undefined;
 
+  // Match a route the foreign proxy already serves, by any published host port.
+  let existingRoute: DiscoveredService["existingRoute"];
+  if (proxyRoutesByPort && proxyRoutesByPort.size > 0) {
+    for (const p of detail.ports) {
+      if (!p.publicPort) continue;
+      const hit = proxyRoutesByPort.get(p.publicPort);
+      if (hit) {
+        existingRoute = { domains: hit.domains, ssl: hit.ssl, source: hit.source };
+        break;
+      }
+    }
+  }
+
   return {
     name,
     source: declared ? "compose" : "container",
@@ -309,6 +339,7 @@ export function toDiscoveredService(
     healthcheck,
     proxyKind,
     edgePorts: edgePorts.length > 0 ? edgePorts : undefined,
+    existingRoute,
     warnings,
   };
 }
@@ -331,8 +362,11 @@ export function reconcileStack(opts: {
   imageCmds?: Map<string, string[]>;
   /** Openship projects recovered from the server (computed in the IO shell). */
   openshipProjects?: OpenshipProjectGroup[];
+  /** published host port → route the foreign proxy already serves (from the
+   *  IO-shell proxy scan). Attached per-service by matching published ports. */
+  proxyRoutesByPort?: Map<number, ExistingRoute>;
 }): DiscoveredStack {
-  const { serverId, details, volumes, networks, declared, alreadyManaged, imageDefaults, imageCmds } = opts;
+  const { serverId, details, volumes, networks, declared, alreadyManaged, imageDefaults, imageCmds, proxyRoutesByPort } = opts;
 
   const composeProjects = [
     ...new Set(details.map((d) => d.composeProject).filter((p): p is string => Boolean(p))),
@@ -346,6 +380,7 @@ export function reconcileStack(opts: {
       d.composeService ? declared.get(d.composeService) : undefined,
       imageDefaults?.get(d.image),
       imageCmds?.get(d.image),
+      proxyRoutesByPort,
     ),
   }));
   const services = built.map((b) => b.service);
@@ -412,6 +447,19 @@ export function reconcileStack(opts: {
 }
 
 /**
+ * A TRANSIENT build-helper container — not a live app. The `openship.build`
+ * label alone is NOT sufficient: it's baked into every locally-built image
+ * (`openship/<app>:bld_…`) and Docker inherits image labels onto the running
+ * container, so real deploy containers carry it too. A genuine build helper has
+ * `openship.build` but NO `openship.deployment`/`openship.service` (those are
+ * set only when a real app container is created). Used to keep transient
+ * builders out of both the adopt grid and the re-import set without dropping the
+ * real (locally-built) app containers.
+ */
+export const isBuildHelper = (labels: Record<string, string>) =>
+  !!labels["openship.build"] && !labels["openship.deployment"] && !labels["openship.service"];
+
+/**
  * Reconstruct OPENSHIP-owned projects from their live containers + the server's
  * `.openship/manifest.json`. Pure — the DB cross-reference (which ids are
  * `knownHere`) and the manifest read happen in the IO shell and are passed in.
@@ -428,16 +476,18 @@ export function reconcileOpenshipProjects(opts: {
   manifestById: Map<string, ManifestProjectEntry> | null;
   /** Project ids that already exist in this instance's DB. */
   knownHereIds: Set<string>;
+  /** Project ids with a full recovery snapshot on the server (faithful restore). */
+  snapshotIds: Set<string>;
   imageDefaults?: Map<string, Set<string>>;
   imageCmds?: Map<string, string[]>;
 }): OpenshipProjectGroup[] {
-  const { managedDetails, manifestById, knownHereIds, imageDefaults, imageCmds } = opts;
+  const { managedDetails, manifestById, knownHereIds, snapshotIds, imageDefaults, imageCmds } = opts;
 
   const byProject = new Map<string, DockerContainerDetail[]>();
   for (const d of managedDetails) {
     const projectId = d.labels["openship.project"];
     if (!projectId) continue; // not project-owned (infra/network helper) — skip
-    if (d.labels["openship.build"]) continue; // transient build container — not a service
+    if (isBuildHelper(d.labels)) continue; // transient build container — not a service
     const list = byProject.get(projectId) ?? [];
     list.push(d);
     byProject.set(projectId, list);
@@ -458,6 +508,7 @@ export function reconcileOpenshipProjects(opts: {
     out.push({
       projectId,
       knownHere: knownHereIds.has(projectId),
+      hasSnapshot: snapshotIds.has(projectId),
       suggestedName:
         entry?.name ||
         entry?.slug ||
@@ -475,6 +526,7 @@ export function reconcileOpenshipProjects(opts: {
         : undefined,
       runtimeMode: entry?.runtimeMode ?? undefined,
       deploymentId,
+      updatedAt: entry?.updatedAt,
       services,
     });
   }

@@ -195,6 +195,15 @@ export interface RuntimeAdapter {
    */
   inContainerExecutor?(containerId: string): Promise<PortProbeExecutor>;
 
+  /**
+   * Attach this project's containers to additional networks (by name) — for
+   * cross-project service links, so a consumer joins a linked database app's
+   * `openship-<slug>` network and resolves its service alias with no public
+   * port. Best-effort + idempotent. Optional (docker only; cloud/bare skip —
+   * cloud uses public host:port, its private-link mesh is group-scoped).
+   */
+  attachToExternalNetworks?(projectId: string, networkNames: string[]): Promise<void>;
+
   // ── Rollback primitives ──────────────────────────────────────────────
   //
   // Three atomic ops the RollbackOrchestrator composes into "deploy

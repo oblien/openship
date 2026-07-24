@@ -1,0 +1,460 @@
+{
+  "available": true,
+  "id": "supabase",
+  "name": "Supabase",
+  "description": "Full self-hosted Supabase — Postgres, Auth, REST, Realtime, Storage, and Studio behind one API gateway.",
+  "kind": "template",
+  "logo": "supabase",
+  "category": "backend",
+  "tags": [
+    "backend",
+    "database",
+    "postgres",
+    "auth",
+    "realtime",
+    "storage"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "db",
+      "image": "supabase/postgres:17.6.1.136",
+      "ports": [
+        "5432:5432"
+      ],
+      "environment": {
+        "POSTGRES_HOST": "/var/run/postgresql",
+        "PGPORT": "5432",
+        "POSTGRES_PORT": "5432",
+        "PGPASSWORD": "{{config:POSTGRES_PASSWORD}}",
+        "PGDATABASE": "postgres",
+        "POSTGRES_DB": "postgres",
+        "JWT_EXP": "3600"
+      },
+      "volumes": [
+        "supabase_db_data:/var/lib/postgresql/data"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "pg_isready",
+          "-U",
+          "postgres",
+          "-h",
+          "localhost"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 10
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "kong",
+      "image": "kong:3.9.1",
+      "ports": [
+        "8000:8000"
+      ],
+      "exposedPort": 8000,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 8000
+        }
+      ],
+      "dependsOn": [
+        "auth",
+        "rest",
+        "realtime-dev.supabase-realtime",
+        "storage",
+        "meta",
+        "studio"
+      ],
+      "environment": {
+        "KONG_DATABASE": "off",
+        "KONG_DECLARATIVE_CONFIG": "/usr/local/kong/kong.yml",
+        "KONG_ROUTER_FLAVOR": "traditional_compatible",
+        "KONG_DNS_ORDER": "LAST,A,CNAME",
+        "KONG_PLUGINS": "request-transformer,cors,key-auth,acl,basic-auth,request-termination",
+        "KONG_NGINX_PROXY_PROXY_BUFFER_SIZE": "160k",
+        "KONG_NGINX_PROXY_PROXY_BUFFERS": "64 160k"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "kong",
+          "health"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "auth",
+      "image": "supabase/gotrue:v2.189.0",
+      "dependsOn": [
+        "db"
+      ],
+      "environment": {
+        "GOTRUE_API_HOST": "0.0.0.0",
+        "GOTRUE_API_PORT": "9999",
+        "API_EXTERNAL_URL": "{{publicUrl:kong}}",
+        "GOTRUE_DB_DRIVER": "postgres",
+        "GOTRUE_DB_DATABASE_URL": "postgres://supabase_auth_admin:{{config:POSTGRES_PASSWORD}}@db:5432/postgres",
+        "GOTRUE_SITE_URL": "{{publicUrl:kong}}",
+        "GOTRUE_URI_ALLOW_LIST": "",
+        "GOTRUE_DISABLE_SIGNUP": "false",
+        "GOTRUE_JWT_ADMIN_ROLES": "service_role",
+        "GOTRUE_JWT_AUD": "authenticated",
+        "GOTRUE_JWT_DEFAULT_GROUP_NAME": "authenticated",
+        "GOTRUE_JWT_EXP": "3600",
+        "GOTRUE_JWT_SECRET": "{{config:JWT_SECRET}}",
+        "GOTRUE_EXTERNAL_EMAIL_ENABLED": "true",
+        "GOTRUE_MAILER_AUTOCONFIRM": "true",
+        "GOTRUE_EXTERNAL_PHONE_ENABLED": "false",
+        "GOTRUE_SMS_AUTOCONFIRM": "true"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:9999/health"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 3
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "rest",
+      "image": "postgrest/postgrest:v14.12",
+      "dependsOn": [
+        "db"
+      ],
+      "environment": {
+        "PGRST_DB_URI": "postgres://authenticator:{{config:POSTGRES_PASSWORD}}@db:5432/postgres",
+        "PGRST_DB_SCHEMAS": "public,storage,graphql_public",
+        "PGRST_DB_ANON_ROLE": "anon",
+        "PGRST_JWT_SECRET": "{{config:JWT_SECRET}}",
+        "PGRST_DB_USE_LEGACY_GUCS": "false",
+        "PGRST_APP_SETTINGS_JWT_SECRET": "{{config:JWT_SECRET}}",
+        "PGRST_APP_SETTINGS_JWT_EXP": "3600"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "realtime-dev.supabase-realtime",
+      "image": "supabase/realtime:v2.102.3",
+      "dependsOn": [
+        "db"
+      ],
+      "environment": {
+        "PORT": "4000",
+        "DB_HOST": "db",
+        "DB_PORT": "5432",
+        "DB_USER": "supabase_admin",
+        "DB_PASSWORD": "{{config:POSTGRES_PASSWORD}}",
+        "DB_NAME": "postgres",
+        "DB_AFTER_CONNECT_QUERY": "SET search_path TO _realtime",
+        "DB_ENC_KEY": "supabaserealtime",
+        "API_JWT_SECRET": "{{config:JWT_SECRET}}",
+        "SECRET_KEY_BASE": "{{config:SECRET_KEY_BASE}}",
+        "METRICS_JWT_SECRET": "{{config:JWT_SECRET}}",
+        "ERL_AFLAGS": "-proto_dist inet_tcp",
+        "DNS_NODES": "''",
+        "RLIMIT_NOFILE": "10000",
+        "APP_NAME": "realtime",
+        "SEED_SELF_HOST": "true",
+        "RUN_JANITOR": "true"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "storage",
+      "image": "supabase/storage-api:v1.60.4",
+      "dependsOn": [
+        "db",
+        "rest",
+        "imgproxy"
+      ],
+      "environment": {
+        "ANON_KEY": "{{config:ANON_KEY}}",
+        "SERVICE_KEY": "{{config:SERVICE_ROLE_KEY}}",
+        "POSTGREST_URL": "http://rest:3000",
+        "AUTH_JWT_SECRET": "{{config:JWT_SECRET}}",
+        "DATABASE_URL": "postgres://supabase_storage_admin:{{config:POSTGRES_PASSWORD}}@db:5432/postgres",
+        "FILE_SIZE_LIMIT": "52428800",
+        "STORAGE_BACKEND": "file",
+        "FILE_STORAGE_BACKEND_PATH": "/var/lib/storage",
+        "TENANT_ID": "stub",
+        "REGION": "stub",
+        "GLOBAL_S3_BUCKET": "stub",
+        "ENABLE_IMAGE_TRANSFORMATION": "true",
+        "IMGPROXY_URL": "http://imgproxy:5001"
+      },
+      "volumes": [
+        "supabase_storage_data:/var/lib/storage"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:5000/status"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 3
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "imgproxy",
+      "image": "darthsim/imgproxy:v3.30.1",
+      "environment": {
+        "IMGPROXY_BIND": ":5001",
+        "IMGPROXY_LOCAL_FILESYSTEM_ROOT": "/",
+        "IMGPROXY_USE_ETAG": "true",
+        "IMGPROXY_ENABLE_WEBP_DETECTION": "true"
+      },
+      "volumes": [
+        "supabase_storage_data:/var/lib/storage"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "imgproxy",
+          "health"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 3
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "meta",
+      "image": "supabase/postgres-meta:v0.96.6",
+      "dependsOn": [
+        "db"
+      ],
+      "environment": {
+        "PG_META_PORT": "8080",
+        "PG_META_DB_HOST": "db",
+        "PG_META_DB_PORT": "5432",
+        "PG_META_DB_NAME": "postgres",
+        "PG_META_DB_USER": "postgres",
+        "PG_META_DB_PASSWORD": "{{config:POSTGRES_PASSWORD}}",
+        "CRYPTO_KEY": "{{config:PG_META_CRYPTO_KEY}}"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "studio",
+      "image": "supabase/studio:2026.07.07-sha-a6a04f2",
+      "dependsOn": [
+        "meta"
+      ],
+      "environment": {
+        "HOSTNAME": "0.0.0.0",
+        "STUDIO_PG_META_URL": "http://meta:8080",
+        "POSTGRES_PASSWORD": "{{config:POSTGRES_PASSWORD}}",
+        "POSTGRES_USER_READ_WRITE": "postgres",
+        "DEFAULT_ORGANIZATION_NAME": "Default Organization",
+        "DEFAULT_PROJECT_NAME": "Default Project",
+        "SUPABASE_URL": "http://kong:8000",
+        "SUPABASE_PUBLIC_URL": "{{publicUrl:kong}}",
+        "SUPABASE_ANON_KEY": "{{config:ANON_KEY}}",
+        "SUPABASE_SERVICE_KEY": "{{config:SERVICE_ROLE_KEY}}",
+        "AUTH_JWT_SECRET": "{{config:JWT_SECRET}}",
+        "PG_META_CRYPTO_KEY": "{{config:PG_META_CRYPTO_KEY}}",
+        "POSTGRES_HOST": "db",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_DB": "postgres",
+        "PGRST_DB_SCHEMAS": "public,storage,graphql_public"
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "db",
+      "label": "Database password",
+      "help": "Auto-generated. The password for the Postgres superuser and Supabase service roles.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "JWT_SECRET",
+      "service": "db",
+      "label": "JWT secret",
+      "help": "Auto-generated. Signs the anon and service_role API keys and every user session.",
+      "generate": "secret",
+      "generateGroup": "jwt",
+      "secret": true
+    },
+    {
+      "key": "ANON_KEY",
+      "service": "kong",
+      "label": "Anon key",
+      "help": "Auto-generated. The public API key for client-side (anonymous) requests.",
+      "generate": "jwt",
+      "jwtSecretGroup": "jwt",
+      "jwtRole": "anon"
+    },
+    {
+      "key": "SERVICE_ROLE_KEY",
+      "service": "kong",
+      "label": "Service role key",
+      "help": "Auto-generated. The secret API key that bypasses row-level security — keep it private.",
+      "generate": "jwt",
+      "jwtSecretGroup": "jwt",
+      "jwtRole": "service_role",
+      "secret": true
+    },
+    {
+      "key": "SECRET_KEY_BASE",
+      "service": "realtime-dev.supabase-realtime",
+      "label": "Realtime secret key base",
+      "help": "Auto-generated. Signs the Realtime service's internal tokens.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "PG_META_CRYPTO_KEY",
+      "service": "meta",
+      "label": "Metadata crypto key",
+      "help": "Auto-generated. Encrypts connection credentials stored by postgres-meta.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "DASHBOARD_PASSWORD",
+      "service": "kong",
+      "label": "Studio password",
+      "help": "Auto-generated. The password to sign in to Supabase Studio.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "DASHBOARD_USERNAME",
+      "service": "kong",
+      "label": "Studio username",
+      "help": "The username to sign in to Supabase Studio.",
+      "default": "supabase"
+    }
+  ],
+  "files": [
+    {
+      "service": "kong",
+      "path": "/usr/local/kong/kong.yml",
+      "content": "_format_version: \"3.0\"\n_transform: true\n\nconsumers:\n  - username: DASHBOARD\n  - username: anon\n    keyauth_credentials:\n      - key: {{config:ANON_KEY}}\n  - username: service_role\n    keyauth_credentials:\n      - key: {{config:SERVICE_ROLE_KEY}}\n\nacls:\n  - consumer: anon\n    group: anon\n  - consumer: service_role\n    group: admin\n\nbasicauth_credentials:\n  - consumer: DASHBOARD\n    username: {{config:DASHBOARD_USERNAME}}\n    password: {{config:DASHBOARD_PASSWORD}}\n\nservices:\n  - name: auth-v1-open\n    url: http://auth:9999/verify\n    routes:\n      - name: auth-v1-open\n        strip_path: true\n        paths:\n          - /auth/v1/verify\n    plugins:\n      - name: cors\n  - name: auth-v1-open-callback\n    url: http://auth:9999/callback\n    routes:\n      - name: auth-v1-open-callback\n        strip_path: true\n        paths:\n          - /auth/v1/callback\n    plugins:\n      - name: cors\n  - name: auth-v1-open-authorize\n    url: http://auth:9999/authorize\n    routes:\n      - name: auth-v1-open-authorize\n        strip_path: true\n        paths:\n          - /auth/v1/authorize\n    plugins:\n      - name: cors\n  - name: auth-v1\n    url: http://auth:9999/\n    routes:\n      - name: auth-v1-all\n        strip_path: true\n        paths:\n          - /auth/v1/\n    plugins:\n      - name: cors\n      - name: key-auth\n        config:\n          hide_credentials: false\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n            - anon\n  - name: rest-v1\n    url: http://rest:3000/\n    routes:\n      - name: rest-v1-all\n        strip_path: true\n        paths:\n          - /rest/v1/\n    plugins:\n      - name: cors\n      - name: key-auth\n        config:\n          hide_credentials: true\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n            - anon\n  - name: graphql-v1\n    url: http://rest:3000/rpc/graphql\n    routes:\n      - name: graphql-v1-all\n        strip_path: true\n        paths:\n          - /graphql/v1\n    plugins:\n      - name: cors\n      - name: key-auth\n        config:\n          hide_credentials: true\n      - name: request-transformer\n        config:\n          add:\n            headers:\n              - Content-Profile:graphql_public\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n            - anon\n  - name: realtime-v1-ws\n    url: http://realtime-dev.supabase-realtime:4000/socket/\n    routes:\n      - name: realtime-v1-ws\n        strip_path: true\n        paths:\n          - /realtime/v1/\n    plugins:\n      - name: cors\n      - name: key-auth\n        config:\n          hide_credentials: false\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n            - anon\n  - name: storage-v1\n    url: http://storage:5000/\n    routes:\n      - name: storage-v1-all\n        strip_path: true\n        paths:\n          - /storage/v1/\n    plugins:\n      - name: cors\n  - name: meta\n    url: http://meta:8080/\n    routes:\n      - name: meta-all\n        strip_path: true\n        paths:\n          - /pg/\n    plugins:\n      - name: key-auth\n        config:\n          hide_credentials: false\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n  - name: dashboard\n    url: http://studio:3000/\n    routes:\n      - name: dashboard-all\n        strip_path: true\n        paths:\n          - /\n    plugins:\n      - name: cors\n      - name: basic-auth\n        config:\n          hide_credentials: true\n"
+    },
+    {
+      "service": "db",
+      "path": "/docker-entrypoint-initdb.d/99-roles.sql",
+      "content": "ALTER USER authenticator WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER pgbouncer WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER supabase_auth_admin WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER supabase_functions_admin WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER supabase_storage_admin WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\nALTER USER supabase_admin WITH PASSWORD '{{config:POSTGRES_PASSWORD}}';\n"
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to Supabase",
+    "description": "Point the Supabase client SDKs or Studio at this deployment. The service role key bypasses row-level security — keep it secret.",
+    "outputs": [
+      {
+        "id": "url",
+        "label": "Project URL",
+        "source": "publicUrl:kong"
+      },
+      {
+        "id": "studio",
+        "label": "Studio",
+        "source": "publicUrl:kong",
+        "help": "Open in a browser and sign in with the Studio username + password below."
+      },
+      {
+        "id": "studioUser",
+        "label": "Studio username",
+        "source": "env:kong:DASHBOARD_USERNAME"
+      },
+      {
+        "id": "studioPassword",
+        "label": "Studio password",
+        "source": "env:kong:DASHBOARD_PASSWORD",
+        "secret": true
+      },
+      {
+        "id": "anonKey",
+        "label": "Anon (public) key",
+        "source": "env:kong:ANON_KEY"
+      },
+      {
+        "id": "serviceKey",
+        "label": "Service role key",
+        "source": "env:kong:SERVICE_ROLE_KEY",
+        "secret": true,
+        "help": "Full-access key — never expose it to browsers."
+      },
+      {
+        "id": "dbUrl",
+        "label": "Database URL",
+        "source": "template:postgresql://postgres:{{env:db:POSTGRES_PASSWORD}}@{{host}}:5432/postgres",
+        "secret": true,
+        "help": "Direct Postgres connection (superuser) for psql / ORMs. Published on port 5432."
+      },
+      {
+        "id": "dbPassword",
+        "label": "Database password",
+        "source": "env:db:POSTGRES_PASSWORD",
+        "secret": true
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "kong",
+      "port": 8000,
+      "label": "Studio & API",
+      "kind": "http"
+    },
+    {
+      "service": "db",
+      "port": 5432,
+      "label": "Database",
+      "kind": "tcp"
+    }
+  ],
+  "settings": [
+    {
+      "id": "auth",
+      "label": "Auth",
+      "fields": [
+        {
+          "key": "GOTRUE_DISABLE_SIGNUP",
+          "service": "auth",
+          "label": "Disable new sign-ups",
+          "type": "boolean",
+          "default": "false"
+        },
+        {
+          "key": "GOTRUE_MAILER_AUTOCONFIRM",
+          "service": "auth",
+          "label": "Auto-confirm new emails (no SMTP)",
+          "type": "boolean",
+          "default": "true"
+        }
+      ]
+    }
+  ]
+}

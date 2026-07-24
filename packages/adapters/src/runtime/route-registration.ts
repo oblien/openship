@@ -20,6 +20,18 @@ export interface RouteRegistrationOptions {
   webhookProxy?: string;
 }
 
+/**
+ * Register the deployment's domain routes. Returns a list of per-domain routing
+ * WARNINGS (empty = all good) instead of throwing.
+ *
+ * Domains are OPTIONAL and routing runs AFTER the container is started + healthy
+ * (see deploy-pipeline order), so a routing failure must NEVER fail the deploy:
+ * the app is already up. Each domain that can't be routed (bad/missing upstream,
+ * invalid target, nginx reload failure, …) is logged and collected here; the
+ * caller records the warnings so the project shows "routing action required" and
+ * the user retries from the Domains tab / next deploy. SSL was already
+ * best-effort; this extends the same treatment to the route itself.
+ */
 export async function registerResolvedRoutes(
   logger: BuildLogger,
   routing: DeployRouting | undefined,
@@ -28,19 +40,27 @@ export async function registerResolvedRoutes(
   routeTarget: Omit<RouteConfig, "domain" | "tls"> | null,
   routeTargetsByPort?: Map<number, Omit<RouteConfig, "domain" | "tls">>,
   options?: RouteRegistrationOptions,
-): Promise<void> {
+): Promise<string[]> {
+  const warnings: string[] = [];
+
   if (!routing || domains.length === 0) {
     if (domains.length === 0) {
       logger.log("No domains configured - skipping routing for this deployment.\n", "warn");
     }
-    return;
+    return warnings;
   }
 
   if (!routeTarget) {
-    return;
+    return warnings;
   }
 
-  for (const domain of domains) {
+  // Captured after the guards so the type is narrowed inside the closure below.
+  const routingProvider = routing;
+  const baseRouteTarget = routeTarget;
+
+  // Route ONE domain — throws on any failure; the loop turns that into a
+  // collected warning so an optional domain never fails the deploy.
+  const registerOne = async (domain: RoutedDomainInput): Promise<void> => {
     let routeConfig: RouteConfig;
     const hasPortTarget = domain.targetPort !== undefined;
     const hasPathTarget = typeof domain.targetPath === "string";
@@ -54,8 +74,8 @@ export async function registerResolvedRoutes(
 
     const resolvedRouteTarget =
       domain.targetPort !== undefined
-        ? routeTargetsByPort?.get(domain.targetPort) ?? routeTarget
-        : routeTarget;
+        ? routeTargetsByPort?.get(domain.targetPort) ?? baseRouteTarget
+        : baseRouteTarget;
     const targetUrl = (resolvedRouteTarget as { targetUrl?: string }).targetUrl;
     const staticRoot = (resolvedRouteTarget as { staticRoot?: string }).staticRoot;
 
@@ -95,7 +115,7 @@ export async function registerResolvedRoutes(
       routeConfig.webhookProxy = options.webhookProxy;
     }
 
-    await routing.registerRoute(routeConfig);
+    await routingProvider.registerRoute(routeConfig);
 
     if (domain.provisionSsl && ssl) {
       logger.log(`Checking SSL for ${domain.hostname}...\n`);
@@ -118,5 +138,21 @@ export async function registerResolvedRoutes(
         );
       }
     }
+  };
+
+  for (const domain of domains) {
+    try {
+      await registerOne(domain);
+    } catch (err) {
+      // A failed domain never fails the deploy — the container is already up.
+      const message = safeErrorMessage(err);
+      logger.log(
+        `Routing failed for ${domain.hostname} (deploy continues; the app is up — fix DNS/routing and retry): ${message}\n`,
+        "warn",
+      );
+      warnings.push(`${domain.hostname}: ${message}`);
+    }
   }
+
+  return warnings;
 }

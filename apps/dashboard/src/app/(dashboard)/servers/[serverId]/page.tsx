@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   ArrowLeft,
   Loader2,
@@ -29,7 +29,8 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { ResourceNotFound } from "@/components/resource-not-found";
 import { useSetupStream } from "@/hooks/useSetupStream";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
-import type { ServerInfo, ComponentStatus, SetupComponentProgress, SetupLogEvent, EdgeStatus } from "@/lib/api/system";
+import type { ServerInfo, ComponentStatus, SetupComponentProgress, SetupLogEvent } from "@/lib/api/system";
+import { PromptDetails } from "@/components/import-project/PromptDetails";
 import { ServerForm } from "../_components/server-form";
 import { OverviewTab } from "./_components/overview-tab";
 import { ComponentsTab } from "./_components/components-tab";
@@ -42,16 +43,18 @@ import {
 } from "./_components/connection-banner";
 
 import { RateLimitSettings } from "./_components/rate-limit-settings";
+import { ExposedPortsCard } from "./_components/exposed-ports-card";
 import { PortForwardingCard } from "./_components/port-forwarding-card";
 import { ServerGitHubConnect } from "@/components/github/ServerGitHubConnect";
 import { ServerMigrationWizard } from "@/components/migration/ServerMigrationWizard";
+import { ServerConnectionCard } from "./_components/connection-card";
 import { usePlatform } from "@/context/PlatformContext";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 
 /** ISO-3166-1 alpha-2 → flag component (same source the servers list uses). */
 const FLAGS = CountryFlags as Record<string, React.ComponentType<{ title?: string; className?: string }>>;
 
-type Tab = "overview" | "components" | "github" | "security" | "ports" | "terminal";
+type Tab = "overview" | "services" | "components" | "github" | "security" | "ports" | "terminal";
 type ManualActionMode = "remove" | null;
 
 interface TabDef {
@@ -65,6 +68,7 @@ interface TabDef {
 // its mail-install state at runtime. We don't repeat that UI here.
 const TABS: TabDef[] = [
   { key: "overview",   icon: LayoutGrid },
+  { key: "services",   icon: Boxes },
   { key: "components", icon: Blocks },
   { key: "github",     icon: GitBranch },
   { key: "security",   icon: Shield },
@@ -74,37 +78,13 @@ const TABS: TabDef[] = [
   { key: "terminal",   icon: Terminal },
 ];
 
-/** Render the port-80/443 occupants carried in an edge-conflict prompt's details. */
-function renderEdgeOccupants(details?: Record<string, unknown>) {
-  const edge = details?.edge as EdgeStatus | undefined;
-  if (!edge?.occupants?.length) return null;
-  return (
-    <div className="rounded-xl border border-border bg-muted/40 p-3 space-y-2">
-      {edge.occupants.map((o, i) => (
-        <div key={`${o.port}-${i}`} className="flex items-center gap-2 text-sm">
-          <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-warning/10 text-warning">
-            :{o.port}
-          </span>
-          <span className="text-foreground/90 break-all flex-1">
-            {o.containerName ?? o.systemdUnit ?? o.command ?? `PID ${o.pid ?? "?"}`}
-          </span>
-          {o.proxy && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
-              {o.proxy}
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function ServerDetailPage({
   params,
 }: {
   params: Promise<{ serverId: string }>;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const editing = searchParams.get("edit") === "true";
   const { showToast } = useToast();
@@ -132,7 +112,17 @@ export default function ServerDetailPage({
     const tab = searchParams.get("tab");
     if (tab && TABS.some((td) => td.key === tab)) setActiveTab(tab as Tab);
   }, [searchParams]);
-  const [showMigrate, setShowMigrate] = useState(false);
+  // Switch tab AND persist it in the URL (?tab=), so a reload / "service restart"
+  // reopens the same tab. Shallow replace (no scroll) preserves other params.
+  const changeTab = useCallback(
+    (key: Tab) => {
+      setActiveTab(key);
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      params.set("tab", key);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
   const [showMenu, setShowMenu] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [activeActionComponent, setActiveActionComponent] = useState<string | null>(null);
@@ -194,7 +184,7 @@ export default function ServerDetailPage({
             <h3 className="text-lg font-semibold text-foreground">{pendingPrompt.title}</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">{pendingPrompt.message}</p>
           </div>
-          {renderEdgeOccupants(pendingPrompt.details)}
+          <PromptDetails details={pendingPrompt.details} />
           <div className="flex items-center justify-end gap-3 pt-2">
             {pendingPrompt.actions.map((action) => {
               const variant = (action.variant || "secondary") as "secondary" | "danger" | "primary";
@@ -626,7 +616,7 @@ export default function ServerDetailPage({
           </div>
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => setShowMigrate(true)}
+              onClick={() => changeTab("services")}
               className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
             >
               <Boxes className="size-4" />
@@ -685,30 +675,31 @@ export default function ServerDetailPage({
           />
         )}
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+        {/* Tabs — full-width above the grid so the bar is identical on every tab
+            (including the single-column Services tab). */}
+        <div className="flex items-center gap-1 mb-6 border-b border-border/50 overflow-x-auto">
+          {TABS.filter((tab) => !tab.desktopOnly || isDesktop).map(({ key, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => changeTab(key)}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative shrink-0 ${
+                activeTab === key ? "text-foreground" : "text-muted-foreground hover:text-foreground/70"
+              }`}
+            >
+              <Icon className="size-4" />
+              {t.servers.detail.tabs[key]}
+              {activeTab === key && (
+                <span className="absolute bottom-0 start-0 end-0 h-0.5 bg-primary rounded-full" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Main Grid — the Services tab spans full width (it renders its own
+            right column: connection card → migrate config after a scan). */}
+        <div className={`grid grid-cols-1 gap-6 items-start ${activeTab === "services" ? "" : "lg:grid-cols-[1fr_340px]"}`}>
           {/* Left column */}
           <div className="min-w-0">
-            {/* Tabs */}
-            <div className="flex items-center gap-1 mb-6 border-b border-border/50">
-              {TABS.filter((tab) => !tab.desktopOnly || isDesktop).map(({ key, icon: Icon }) => (
-                <button
-                  key={key}
-                  onClick={() => setActiveTab(key)}
-                  className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors relative ${
-                    activeTab === key
-                      ? "text-foreground"
-                      : "text-muted-foreground hover:text-foreground/70"
-                  }`}
-                >
-                  <Icon className="size-4" />
-                  {t.servers.detail.tabs[key]}
-                  {activeTab === key && (
-                    <span className="absolute bottom-0 start-0 end-0 h-0.5 bg-primary rounded-full" />
-                  )}
-                </button>
-              ))}
-            </div>
 
             {/* Tab content */}
             {activeTab === "overview" && (
@@ -757,14 +748,13 @@ export default function ServerDetailPage({
 
             {activeTab === "security" && (
               <div className="space-y-6">
+                <ExposedPortsCard serverId={serverId} />
                 <RateLimitSettings serverId={serverId} />
               </div>
             )}
 
             {activeTab === "ports" && isDesktop && serverId && (
-              <div className="max-w-2xl">
-                <PortForwardingCard serverId={serverId} />
-              </div>
+              <PortForwardingCard serverId={serverId} />
             )}
 
             {activeTab === "terminal" && (
@@ -774,77 +764,29 @@ export default function ServerDetailPage({
                 enabled={activeTab === "terminal"}
               />
             )}
+
+            {/* Kept MOUNTED (visibility-toggled) so a scan + selection survive
+                switching tabs — the migrate flow is stateful. */}
+            {serverId && (
+              <div className={activeTab === "services" ? "" : "hidden"}>
+                <ServerMigrationWizard
+                  variant="tab"
+                  serverId={serverId}
+                  server={server}
+                  onClose={() => {}}
+                />
+              </div>
+            )}
           </div>
 
-          {/* Right sidebar - offset to align with tab content below tab bar */}
-          <div className="lg:pt-[65px] space-y-4 lg:sticky lg:top-6 lg:self-start">
-            {/* Server details */}
-            <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Server className="size-4 text-muted-foreground" />
-                <h3 className="font-semibold text-foreground text-sm">
-                  {t.servers.detail.connection}
-                </h3>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center">
-                      <Globe className="size-4 text-muted-foreground" />
-                    </div>
-                    <span className="text-sm text-muted-foreground">{t.servers.detail.host}</span>
-                  </div>
-                  <span className="text-sm font-medium text-foreground font-mono truncate ms-3 max-w-[140px]">
-                    {server.sshHost}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center">
-                      <Network className="size-4 text-muted-foreground" />
-                    </div>
-                    <span className="text-sm text-muted-foreground">{t.servers.detail.port}</span>
-                  </div>
-                  <span className="text-sm font-medium text-foreground font-mono">
-                    {server.sshPort ?? 22}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center">
-                      <User className="size-4 text-muted-foreground" />
-                    </div>
-                    <span className="text-sm text-muted-foreground">{t.servers.detail.user}</span>
-                  </div>
-                  <span className="text-sm font-medium text-foreground font-mono">
-                    {server.sshUser ?? "root"}
-                  </span>
-                </div>
-
-                <div className="h-px bg-border/60 my-2" />
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center">
-                      <KeyRound className="size-4 text-muted-foreground" />
-                    </div>
-                    <span className="text-sm text-muted-foreground">{t.servers.detail.auth}</span>
-                  </div>
-                  <span className="text-sm font-medium text-foreground">
-                    {server.sshAuthMethod === "key" ? t.servers.detail.authSshKey : t.servers.detail.authPassword}
-                  </span>
-                </div>
-              </div>
+          {/* Right sidebar — connection summary. Hidden on the Services tab, which
+              renders its own right column (connection card → migrate config). */}
+          {activeTab !== "services" && (
+            <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+              <ServerConnectionCard server={server} />
             </div>
-
-          </div>
+          )}
         </div>
-
-        <ServerMigrationWizard
-          isOpen={showMigrate}
-          onClose={() => setShowMigrate(false)}
-          serverId={serverId}
-        />
     </PageContainer>
   );
 }

@@ -8,6 +8,7 @@ import {
   syncStoredPublicEndpoints,
   type StoredPublicEndpoint,
 } from "../../lib/public-endpoints";
+import { resolveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import { syncProjectPublicRoutes } from "../../lib/project-route-store";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { pushProjectRules } from "../route-rules/route-rule.service";
@@ -268,6 +269,7 @@ export async function reapplyProjectLiveRoutes(
     | "activeDeploymentId"
     | "organizationId"
     | "webhookDomain"
+    | "routeStrategy"
   >,
   previousHostnames: string[],
   opts: ReapplyProjectLiveRoutesOptions = {},
@@ -326,32 +328,33 @@ export async function reapplyProjectLiveRoutes(
   }
 
   const resolveTargetUrl = async (port: number): Promise<string | null> => {
-    let host: string;
-    if (runtime.supports("containerIp")) {
-      const ip = await runtime.getContainerIp(containerId);
-      if (!ip) {
-        console.warn(
-          `[project-route] ${project.slug}: getContainerIp returned null for ${containerId} (target=${effectiveTarget}, server=${serverId ?? "local"})`,
-        );
-        return null;
-      }
-      host = ip;
-    } else {
-      // Bare metal: the app runs directly on the host.
-      host = "127.0.0.1";
+    const strategy = resolveRouteStrategy(project.routeStrategy);
+    // loopback-port: dial the container's published loopback host port (read
+    // live). Bare / no-host-port fall back to container IP (or 127.0.0.1 bare).
+    let hostPort: number | undefined;
+    if (strategy === "loopback-port" && runtime.name !== "bare") {
+      hostPort = (await runtime.getContainerInfo?.(containerId).catch(() => null))?.hostPort ?? undefined;
     }
-    // Never proxy a public route at a reserved control-plane/mgmt port on the
-    // host loopback — that would expose the admin API (env.PORT) or the
-    // unauthenticated OpenResty mgmt port (9145) to the internet. Only guards
-    // loopback: a container's own IP:<port> is the app's, not ours. The
-    // self-app is exempt (see ReapplyProjectLiveRoutesOptions.isSelfApp).
-    if (shouldRefuseLoopbackRoute(host, port, opts)) {
+    const url = await resolveUpstreamUrl({ strategy, runtime, containerId, containerPort: port, hostPort });
+    if (!url) {
       console.warn(
-        `[project-route] ${project.slug}: refusing reserved loopback upstream port ${port} for a public route`,
+        `[project-route] ${project.slug}: could not resolve upstream for ${containerId} (target=${effectiveTarget}, server=${serverId ?? "local"})`,
       );
       return null;
     }
-    return `http://${host}:${port}`;
+    // Never proxy a public route at a reserved control-plane/mgmt port on the
+    // host loopback — that would expose the admin API (env.PORT) or the
+    // unauthenticated OpenResty mgmt port (9145). Only guards loopback: a
+    // container's own bridge IP:<port> is the app's, not ours. The self-app is
+    // exempt (see ReapplyProjectLiveRoutesOptions.isSelfApp).
+    const m = url.match(/^https?:\/\/([^:/]+):(\d+)$/);
+    if (m && shouldRefuseLoopbackRoute(m[1], Number(m[2]), opts)) {
+      console.warn(
+        `[project-route] ${project.slug}: refusing reserved loopback upstream port ${m[2]} for a public route`,
+      );
+      return null;
+    }
+    return url;
   };
 
   const registers: RouteRegister[] = [];

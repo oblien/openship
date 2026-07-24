@@ -248,8 +248,11 @@ export async function startLocalServices(internalToken: string): Promise<void> {
         : await getFreePort();
     if (dashPort === apiPort) dashPort = await getFreePort();
 
-    const apiOrigin = `http://localhost:${apiPort}`;
-    const dashOrigin = `http://localhost:${dashPort}`;
+    // Use 127.0.0.1, not localhost: the API/dashboard bind IPv4 loopback only
+    // (OPENSHIP_API_HOST=127.0.0.1), and clients that resolve `localhost` → ::1
+    // first (e.g. Bun's fetch) get connection-refused before OAuth starts (#119).
+    const apiOrigin = `http://127.0.0.1:${apiPort}`;
+    const dashOrigin = `http://127.0.0.1:${dashPort}`;
 
     // Clean env: strip anything that would steer the API onto an external
     // Postgres. Empty DATABASE_URL + no POSTGRES_* → embedded PGlite.
@@ -282,12 +285,25 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       PGLITE_DATA_DIR: dataDir,
       OPENSHIP_MIGRATIONS_DIR: migrationsDir,
       OPENSHIP_PGLITE_ASSETS_DIR: pgliteDir,
-      // The dashboard runs on a dynamic port not in the API's static origin
-      // table — trust it explicitly so CORS / origin-guard / auth accept it.
-      OPENSHIP_EXTRA_TRUSTED_ORIGINS: `${dashOrigin},http://127.0.0.1:${dashPort}`,
+      // The dashboard + API run on dynamic ports not in the API's static origin
+      // table — trust both loopback spellings of each explicitly so CORS /
+      // origin-guard / auth accept them regardless of which a client resolves.
+      OPENSHIP_EXTRA_TRUSTED_ORIGINS: [
+        `http://127.0.0.1:${dashPort}`,
+        `http://localhost:${dashPort}`,
+        `http://127.0.0.1:${apiPort}`,
+        `http://localhost:${apiPort}`,
+      ].join(","),
       // Where the API redirects after desktop-login / desktop-claim / cloud auth
       // (else it'd send the window to the static localhost:3001 → white screen).
       OPENSHIP_LOCAL_DASHBOARD_URL: dashOrigin,
+      // The origin external MCP/OAuth clients actually reach this API at. Feeds
+      // the OAuth discovery/issuer/authorize/token URLs (resolveAuthBaseUrl) so
+      // they're reachable on the dynamic port instead of the static localhost:4000
+      // fallback (#119). URL-construction ONLY — it must NOT be OPENSHIP_PUBLIC_URL,
+      // which would trip zeroAuthAllowed's "publicly-served" rejection and kill
+      // the desktop's zero-auth session.
+      OPENSHIP_ADVERTISED_ORIGIN: apiOrigin,
       BETTER_AUTH_SECRET: authSecret,
       INTERNAL_TOKEN: internalToken,
       // The compiled API binary loads ssh2/dockerode (externalized from the

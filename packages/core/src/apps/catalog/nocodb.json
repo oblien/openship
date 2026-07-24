@@ -1,0 +1,30 @@
+{
+  "available": false,
+  "id": "nocodb",
+  "name": "NocoDB",
+  "description": "Airtable-style spreadsheet UI over an SQL database. The first sign-up becomes the admin.",
+  "kind": "template",
+  "logo": "nocodb",
+  "category": "database",
+  "tags": [
+    "database",
+    "airtable",
+    "no-code"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "nocodb",
+      "image": "nocodb/nocodb:latest",
+      "ports": [
+        "8080:8080"
+      ],
+      "exposedPort": 8080,
+      "exposed": true,
+      "volumes": [
+        "nocodb_data:/usr/app/data"
+      ],
+      "restart": "unless-stopped"
+    }
+  ]
+}

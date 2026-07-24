@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # ─── Build stage ────────────────────────────────────────
 # Pin bun (was :latest — non-deterministic; drifted to 1.3.14) to .bun-version.
-FROM oven/bun:1.3.10 AS builder
+FROM oven/bun:1.3.3 AS builder
 WORKDIR /app
 
 COPY package.json bun.lock pnpm-workspace.yaml ./
@@ -20,8 +20,17 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
  && cd apps/api && bun run build
 
 # ─── Production stage ──────────────────────────────────
-FROM oven/bun:latest AS runner
+FROM oven/bun:1.3.3 AS runner
 WORKDIR /app
+
+# Remote-server management from the containerized control plane:
+#   • openssh-client — SSH-agent auth + git-credential reverse-forwarding shell
+#     out to the OS `ssh` binary (default password/key SSH is pure-JS ssh2 and
+#     needs neither, but those paths do; also the SSH-to-host executor).
+#   • rsync — release staging on bare deploy targets.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-client rsync \
+ && rm -rf /var/lib/apt/lists/*
 
 # @repo/* are TypeScript-SOURCE workspace packages (package.json main =
 # src/index.ts) resolved via the ROOT package.json "workspaces" field — there

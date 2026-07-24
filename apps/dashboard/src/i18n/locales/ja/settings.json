@@ -112,9 +112,18 @@
     "noServers": "サーバーはまだ構成されていません - デプロイピッカーから追加してください。",
     "clearDefault": "デフォルトをクリア（毎回尋ねる）",
     "targets": {
-      "local": { "label": "このマシン", "desc": "ローカルの Docker / ランタイム" },
-      "server": { "label": "自分のサーバー", "desc": "構成済みの SSH サーバー" },
-      "cloud": { "label": "OpenShip Cloud", "desc": "マネージドのクラウドインフラ" }
+      "local": {
+        "label": "このマシン",
+        "desc": "ローカルの Docker / ランタイム"
+      },
+      "server": {
+        "label": "自分のサーバー",
+        "desc": "構成済みの SSH サーバー"
+      },
+      "cloud": {
+        "label": "OpenShip Cloud",
+        "desc": "マネージドのクラウドインフラ"
+      }
     },
     "labelFor": {
       "yourServer": "自分のサーバー",
@@ -134,9 +143,18 @@
     "loading": "設定を読み込み中…",
     "intro": "新しいデプロイのデフォルトのビルド戦略を選択します。プロジェクトごとの上書きはプロジェクト設定で利用できます。",
     "modes": {
-      "auto": { "label": "自動", "desc": "フレームワークごとにスマートに選択" },
-      "server": { "label": "サーバー", "desc": "リモートでビルド" },
-      "local": { "label": "ローカル", "desc": "マシン上でビルド" }
+      "auto": {
+        "label": "自動",
+        "desc": "フレームワークごとにスマートに選択"
+      },
+      "server": {
+        "label": "サーバー",
+        "desc": "リモートでビルド"
+      },
+      "local": {
+        "label": "ローカル",
+        "desc": "マシン上でビルド"
+      }
     },
     "toast": {
       "setTo": "ビルドモードを {mode} に設定しました",
@@ -285,6 +303,14 @@
       "subtitle": "付与は制限付きメンバーに適用されます。オーナー / 管理者 / メンバーはデフォルトで組織全体へのアクセス権を持ちます。",
       "saveLabel": "アクセスを保存"
     },
+    "serverAccessWarning": {
+      "title": "サーバーへの完全なアクセスを付与しますか？",
+      "body": "{member} は {scope} を完全に制御できるようになります — すべてのデプロイとそのデータ、そこで動作するすべてのアプリ、保存されたシークレットと環境変数、ターミナルアクセス、および接続されたすべての連携（例：そのサーバー用に保存された GitHub トークンやデプロイキー）。これらのリソースを管理または削除できます。",
+      "scopeAllServers": "この組織のすべてのサーバー",
+      "scopeThisServer": "このサーバー",
+      "scopeCount": "{count} 台のサーバー",
+      "confirm": "アクセスを付与"
+    },
     "confirmRemove": "このメンバーを組織から削除しますか？",
     "workspace": {
       "deleteWorkspace": "ワークスペースを削除",
@@ -408,6 +434,8 @@
       "empty": "チャンネルはまだありません。通知の受信を開始するには追加してください。",
       "verified": "検証済み",
       "unverified": "未検証",
+      "sendTest": "テスト送信",
+      "testSent": "テストを送信しました",
       "deleteChannel": "チャンネルを削除",
       "addChannel": "チャンネルを追加",
       "confirmDelete": "このチャンネルを削除しますか？これを使用しているサブスクリプションは停止します。",
@@ -663,5 +691,29 @@
     "toastLoadStateFailed": "状態の読み込みに失敗しました",
     "toastRemoteUnreachable": "リモートに到達できません。それでも元に戻すには「リモートデータを取得しない」をオンにしてください。",
     "toastSwitchBackFailed": "元に戻す処理に失敗しました"
+  },
+  "routePreferences": {
+    "title": "ルーティング",
+    "description": "エッジがアプリのアップストリームに到達する方法",
+    "loading": "設定を読み込み中…",
+    "intro": "新しいセルフホスト型プロジェクトの既定のアップストリーム指定を選択します。プロジェクトごとの上書きはプロジェクト設定にあります。",
+    "modes": {
+      "auto": {
+        "label": "自動",
+        "desc": "推奨（ループバックポート）"
+      },
+      "loopbackPort": {
+        "label": "ループバックポート",
+        "desc": "プライベートな 127.0.0.1 ホストポート"
+      },
+      "containerIp": {
+        "label": "コンテナ IP",
+        "desc": "上級者向け — ブリッジ IP"
+      }
+    },
+    "toast": {
+      "setTo": "ルーティング方式を {mode} に設定しました",
+      "failed": "ルーティング方式の更新に失敗しました"
+    }
   }
 }

@@ -89,15 +89,29 @@ openship deploy
 Full server guide + complete CLI reference: **[docs/installation.md](docs/installation.md)**.
 
 <details>
-<summary>Advanced: run from source with Docker Compose (not the recommended path)</summary>
+<summary>Self-host with Docker Compose (pull-based — no local build)</summary>
 
-Heavier than the CLI, and the compose stack gives the control-plane container access to the host Docker daemon (host-privileged) — use it only if you specifically need a containerized control plane. The CLI and desktop app above are the supported installs.
+Official images are published per release to GitHub Container Registry (`ghcr.io/oblien/*`), so the stack **pulls** — no build tooling, no monorepo compile.
+
+Two ways in — both use the published images, no build:
 
 ```bash
+# A) via the CLI (recommended) — on Linux it defaults to Compose:
+openship up                   # bare vs compose is auto-picked; --bare / --compose to force
+
+# B) raw compose:
 git clone https://github.com/oblien/openship.git && cd openship
-cp .env.example .env
-docker compose up -d
+cp .env.example .env          # then edit
+docker compose up -d          # pulls api + dashboard + edge
 ```
+
+The stack is **postgres + redis + api + dashboard + edge**. The `edge` is OpenResty on **:80/:443** running as a container (`network_mode: host`) — routing + Let's Encrypt TLS, no bare host install. **Linux only** (host networking); on mac/win use `openship up --bare`.
+
+**Upgrade:** `openship update` (or `docker compose pull && docker compose up -d`). Pin `OPENSHIP_VERSION` in `.env` (e.g. `0.2.3`) for reproducible upgrades; `OPENSHIP_IMAGE_REGISTRY` overrides the registry if you mirror the images elsewhere.
+
+The `api` container mounts the host Docker socket (`/var/run/docker.sock`) so the control plane can build + run your apps as host containers, and drives the `edge` container via the socket. It's host-privileged through the socket, so run it only on a trusted host and don't expose the API to untrusted networks.
+
+**Build from source instead** (development): `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`.
 
 </details>
 

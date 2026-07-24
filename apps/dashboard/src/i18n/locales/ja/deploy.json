@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "ドメインの保存に失敗しました",
-    "toastTitle": "ドメイン"
+    "toastTitle": "ドメイン",
+    "routeFreeLabel": "無料サブドメイン",
+    "routeFreeDesc": "無料の {domain} URL。すぐに使えます。",
+    "routeCustomLabel": "カスタムドメイン",
+    "routeCustomDesc": "独自のドメインをこのデプロイに向けます。",
+    "routeNoneLabel": "なし",
+    "routeNoneDesc": "公開 URL なし — 内部のみ。ホストのポートでアクセスします。"
   },
   "dns": {
     "title": "DNS設定",
@@ -119,6 +125,8 @@
     "addServer": "独自のサーバーを追加",
     "continue": "続行",
     "chooseServer": "サーバーを選択",
+    "thisServerBadge": "このサーバー",
+    "thisServerHost": "現在のホスト — デプロイはここで実行されます",
     "searchPlaceholder": "サーバーを検索…",
     "noServersMatch": "検索に一致するサーバーはありません。",
     "requireCloudFeature": "Openship Cloudへのデプロイ",

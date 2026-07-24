@@ -246,8 +246,12 @@ export class SshExecutor implements CommandExecutor {
 
         stream.on("close", (code: number) => {
           finish(() => {
-            if (code !== 0) reject(new Error(stderr.trim() || `Exit code ${code}`));
-            else resolve(stdout.trim());
+            if (code !== 0) {
+              // Include stdout too — certbot & friends write the real error there
+              // while stderr only has boilerplate, so stderr-only hid the cause.
+              const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+              reject(new Error(detail || `Exit code ${code}`));
+            } else resolve(stdout.trim());
           });
         });
       });

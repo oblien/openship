@@ -63,6 +63,17 @@ async function runEnsure(
     else console.log(`[edge] ${message}`);
   };
 
+  // Docker-edge (compose): the edge runs as the `openship-edge` container bound
+  // to host :80/:443 via host networking — there is NO host OpenResty to
+  // apt-install, and a `LocalExecutor` here would target the api CONTAINER, not
+  // the host. The route + cert are still applied through the containerized edge
+  // by the normal pipeline (DockerEdgeExecutor). Freeing a foreign proxy off
+  // :80/:443 is handled by `openship up` on the host, not from inside here.
+  if (process.env.OPENSHIP_EDGE_MODE === "docker") {
+    log("docker edge mode — edge runs as a container; skipping host OpenResty install.");
+    return { ok: true };
+  }
+
   if (process.platform !== "linux") {
     log("managed edge needs a Linux host — skipping (use a reverse proxy in front).", "warn");
     return { ok: false, reason: "not_linux" };
@@ -75,9 +86,8 @@ async function runEnsure(
   const {
     createExecutor,
     SystemManager,
-    probeEdge,
-    scanImportableSites,
-    canImportProxy,
+    foreignProxyOnEdge,
+    importSites,
     runEdgeTakeover,
   } = await import("@repo/adapters");
   const executor = createExecutor(); // LocalExecutor — this same machine
@@ -86,12 +96,8 @@ async function runEnsure(
   // self-app's own route is added AFTER by the pipeline (reapplyProjectLiveRoutes),
   // not here — so no extraRoutes.
   if (options?.edgeMigrate) {
-    const status = await probeEdge(executor);
-    const proxy = status.occupants.find((o) => o.proxy)?.proxy;
-    const scan =
-      proxy && canImportProxy(proxy)
-        ? await scanImportableSites(executor, proxy)
-        : { sites: [], warnings: [] };
+    const { status } = await foreignProxyOnEdge(executor);
+    const scan = await importSites(executor, status);
     const res = await runEdgeTakeover(
       executor,
       { status, sites: scan.sites, acmeEmail: env.OPENSHIP_ACME_EMAIL, extraRoutes: [] },
@@ -106,15 +112,11 @@ async function runEnsure(
   // someone's proxy). Report what's there — and how many sites it serves — so the
   // operator re-runs with migrate/take-over, instead of a bare downstream cert error.
   if (!options?.edgeTakeover) {
-    const status = await probeEdge(executor);
-    if (!status.canProceedClean && status.occupants.length > 0) {
-      const owner = status.occupants.map((o) => o.command ?? `port ${o.port}`).join(", ");
+    const { status, blocked, owner } = await foreignProxyOnEdge(executor);
+    if (blocked) {
       let siteCount = 0;
       try {
-        const proxy = status.occupants.find((o) => o.proxy)?.proxy;
-        if (proxy && canImportProxy(proxy)) {
-          siteCount = (await scanImportableSites(executor, proxy)).sites.length;
-        }
+        siteCount = (await importSites(executor, status)).sites.length;
       } catch {
         /* best-effort site count only */
       }

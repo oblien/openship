@@ -54,10 +54,15 @@ import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { safeFetch, type SafeFetchResponse } from "./safe-fetch";
+import { assertPublicHostLiteral, SsrfError } from "./ssrf-guard";
 
 const SHA256_TIMEOUT_MS = 30_000;
 const TARBALL_TIMEOUT_MS = 5 * 60_000;
 const TAR_TIMEOUT_MS = 5 * 60_000;
+/** Hard cap on a downloaded release artifact (buffered in memory before the
+ *  sha-verify). Generous for real dists; bounds a hostile/oversized response. */
+const MAX_RELEASE_ARTIFACT_BYTES = 512_000_000;
 
 const DEFAULT_REPO = "oblien/openship";
 
@@ -261,53 +266,22 @@ export function assertPublicHttps(url: string, envOverride: string): void {
   ensureHttps(url, envOverride);
   let host: string;
   try {
-    host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    host = new URL(url).hostname;
   } catch {
     throw new ReleaseDownloadError({ reason: `Malformed URL: ${url}`, envOverride });
   }
-  const blocked =
-    host === "localhost" ||
-    host === "ip6-localhost" ||
-    host === "0.0.0.0" ||
-    host === "::1" ||
-    /^127\./.test(host) ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    /^169\.254\./.test(host) ||
-    /^(fe80|fc|fd)/.test(host);
-  if (blocked) {
+  // Delegate to the centralized guard (complete v4/v6/v4-mapped/CGNAT/metadata
+  // classification via ipaddr.js) — the previous hand-rolled regex missed
+  // v4-mapped IPv6, CGNAT, and alternate encodings. This is the sync literal
+  // fast-reject; the download-time safeFetch below also resolves DNS + pins the IP.
+  try {
+    assertPublicHostLiteral(host);
+  } catch (e) {
     throw new ReleaseDownloadError({
-      reason: `Refusing dist URL targeting a private/loopback host: ${host}`,
+      reason: e instanceof SsrfError ? e.message : `Refusing dist URL targeting a private/loopback host: ${host}`,
       url,
       envOverride,
     });
-  }
-}
-
-async function fetchWithTimeout(
-  url: string,
-  timeoutMs: number,
-  envOverride: string,
-): Promise<Response> {
-  ensureHttps(url, envOverride);
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { redirect: "follow", signal: ctl.signal });
-    // Defense in depth: after redirects, confirm the final URL is still HTTPS.
-    // Node's undici refuses cross-protocol downgrade by default, but the
-    // assertion makes the invariant explicit + future-proof.
-    if (!res.url.startsWith("https://")) {
-      throw new ReleaseDownloadError({
-        reason: `Redirect chain landed on non-HTTPS URL: ${res.url}`,
-        url,
-        envOverride,
-      });
-    }
-    return res;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -316,9 +290,10 @@ async function downloadShaSidecar(
   scratchPath: string,
   envOverride: string,
 ): Promise<string> {
-  let res: Response;
+  let res: SafeFetchResponse;
   try {
-    res = await fetchWithTimeout(url, SHA256_TIMEOUT_MS, envOverride);
+    // SSRF-safe: resolves once, pins the validated IP, re-validates redirect hops.
+    res = await safeFetch(url, { timeoutMs: SHA256_TIMEOUT_MS, maxRedirects: 5, maxBodyBytes: 8192 });
   } catch (err) {
     if (err instanceof ReleaseDownloadError) throw err;
     throw new ReleaseDownloadError({
@@ -330,7 +305,7 @@ async function downloadShaSidecar(
   }
   if (!res.ok) {
     throw new ReleaseDownloadError({
-      reason: `GitHub returned ${res.status} ${res.statusText} for SHA-256 sidecar`,
+      reason: `Server returned ${res.status} for SHA-256 sidecar`,
       url,
       envOverride,
     });
@@ -354,9 +329,16 @@ async function downloadTarball(
   scratchPath: string,
   envOverride: string,
 ): Promise<void> {
-  let res: Response;
+  let res: SafeFetchResponse;
   try {
-    res = await fetchWithTimeout(url, TARBALL_TIMEOUT_MS, envOverride);
+    // SSRF-safe: pins the validated IP (closes DNS-rebind), re-validates every
+    // redirect hop, and caps the buffered artifact. Bytes are sha256-verified by
+    // the caller before extraction.
+    res = await safeFetch(url, {
+      timeoutMs: TARBALL_TIMEOUT_MS,
+      maxRedirects: 5,
+      maxBodyBytes: MAX_RELEASE_ARTIFACT_BYTES,
+    });
   } catch (err) {
     if (err instanceof ReleaseDownloadError) throw err;
     throw new ReleaseDownloadError({
@@ -368,19 +350,15 @@ async function downloadTarball(
   }
   if (!res.ok) {
     throw new ReleaseDownloadError({
-      reason: `GitHub returned ${res.status} ${res.statusText} for release tarball`,
+      reason: `Server returned ${res.status} for release tarball`,
       url,
       envOverride,
     });
   }
-  if (!res.body) {
-    throw new ReleaseDownloadError({
-      reason: `Empty response body`,
-      url,
-      envOverride,
-    });
+  const buf = await res.bytes();
+  if (buf.length === 0) {
+    throw new ReleaseDownloadError({ reason: `Empty response body`, url, envOverride });
   }
-  const buf = Buffer.from(await res.arrayBuffer());
   await writeFile(scratchPath, buf);
 }
 

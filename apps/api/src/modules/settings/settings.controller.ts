@@ -11,6 +11,8 @@ import {
   getTransferPrefs,
   isValidTransferMode,
   isValidTransferCompression,
+  getRouteStrategy,
+  isValidRouteStrategy,
   type BuildMode,
 } from "./settings.service";
 
@@ -26,13 +28,43 @@ function generateId() {
 /** GET / - return platform settings for the authenticated user */
 export async function get(c: Context) {
   const ctx = getRequestContext(c);
-  const [buildMode, deployDefaults, cloneCreds, transferPrefs] = await Promise.all([
+  const [buildMode, deployDefaults, cloneCreds, transferPrefs, routeStrategy] = await Promise.all([
     getBuildMode(ctx.userId),
     getDeployDefaults(ctx.userId),
     getCloneCredentialsState(ctx.userId),
     getTransferPrefs(ctx.userId),
+    getRouteStrategy(ctx.userId),
   ]);
-  return c.json({ buildMode, ...deployDefaults, ...cloneCreds, ...transferPrefs });
+  return c.json({ buildMode, ...deployDefaults, ...cloneCreds, ...transferPrefs, routeStrategy });
+}
+
+/** PATCH /route-strategy - update just the edge→app route strategy default */
+export async function updateRouteStrategy(c: Context) {
+  const ctx = getRequestContext(c);
+  const { routeStrategy } = await c.req.json();
+
+  if (!isValidRouteStrategy(routeStrategy)) {
+    return c.json(
+      { error: "routeStrategy must be 'auto', 'loopback-port', or 'container-ip'" },
+      400,
+    );
+  }
+
+  const existing = await repos.settings.findByUser(ctx.userId);
+  if (!existing) {
+    await repos.settings.upsert({ id: generateId(), userId: ctx.userId, routeStrategy });
+  } else {
+    await repos.settings.update(ctx.userId, { routeStrategy });
+  }
+
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "settings.updated",
+    resourceType: "settings",
+    resourceId: ctx.userId,
+    after: { action: "routeStrategy.set", routeStrategy },
+  });
+
+  return c.json({ routeStrategy });
 }
 
 /**

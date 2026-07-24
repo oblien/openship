@@ -171,6 +171,13 @@ export const userSettings = pgTable("user_settings", {
   buildMode: text("build_mode").notNull().default("auto"),
 
   /**
+   * Default edge→app upstream strategy for new deploys: "auto" (→ loopback host
+   * port), "loopback-port", or "container-ip" (advanced). Per-project +
+   * per-deploy overrides win. Mirrors buildMode.
+   */
+  routeStrategy: text("route_strategy").notNull().default("auto"),
+
+  /**
    * Encrypted session token for the user's Openship Cloud account.
    * Used by local instances to fetch namespace tokens from api.openship.io.
    * Null if the user hasn't linked their cloud account.

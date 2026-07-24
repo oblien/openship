@@ -18,6 +18,7 @@ import { deployComposeServices } from "../deployments/compose/deploy.service";
 import type { DeploymentConfigSnapshot } from "../deployments/build.service";
 import { buildServiceRouteDomains, serviceCustomHostnames } from "../../lib/routing-domains";
 import { ensurePendingServiceDomain, removeServiceDomain } from "../domains/domain.service";
+import { buildUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import {
   reconcileProjectRoutes,
   type RouteRegister,
@@ -364,16 +365,22 @@ export async function updateService(
         .filter((route) => !nextByHost.has(route.hostname.toLowerCase()))
         .map((route) => ({ hostname: route.hostname, isCustomDomain: route.domainType === "custom" }));
 
-      // Self-hosted upstream = the active deployment's service-row IP; cloud
-      // ignores targetUrl and routes by port. Resolve the IP once, reuse per port.
+      // Self-hosted upstream = loopback host port (published) or the active
+      // deployment's service-row IP; cloud ignores targetUrl. Resolve once.
       let ip: string | undefined;
+      let hostPort: number | undefined;
       if (isRoutable && nextRoutes.length > 0 && !project.cloudWorkspaceId && project.activeDeploymentId) {
         const rows = await repos.service.listByDeployment(project.activeDeploymentId);
-        ip = rows.find((r) => r.serviceId === serviceId)?.ip ?? undefined;
+        const row = rows.find((r) => r.serviceId === serviceId);
+        ip = row?.ip ?? undefined;
+        hostPort = row?.hostPort ?? undefined;
       }
+      const strategy = resolveRouteStrategy(project.routeStrategy);
       const registers: RouteRegister[] = nextRoutes.map((route) => ({
         hostname: route.hostname,
-        targetUrl: ip && route.targetPort ? `http://${ip}:${route.targetPort}` : undefined,
+        targetUrl: route.targetPort
+          ? (buildUpstreamUrl({ strategy, ip, hostPort, containerPort: route.targetPort }) ?? undefined)
+          : undefined,
         port: route.targetPort,
         isCustomDomain: route.domainType === "custom",
       }));
@@ -736,6 +743,7 @@ async function provisionServiceContainer(
       routing: resolved.platform.routing,
       ssl: resolved.platform.ssl,
       system: resolved.platform.system,
+      executor: resolved.platform.executor,
       usesManagedRouting: resolved.usesManagedRouting,
       serverId: resolved.serverId ?? undefined,
     });

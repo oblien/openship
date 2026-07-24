@@ -13,6 +13,9 @@ export const APP_LOGO: Record<
   { slug?: string; src?: string; fill?: boolean; darkInvert?: boolean }
 > = {
   convex: { src: "https://www.google.com/s2/favicons?domain=convex.dev&sz=128" },
+  // Supabase's official mark, rendered in its brand green by the simpleicons CDN.
+  supabase: { slug: "supabase" },
+  mongodb: { slug: "mongodb" },
   n8n: { slug: "n8n" },
   // Ghost's brand mark is near-black — invert it on the dark themes so it
   // stays visible (it's monochrome, so invert = clean white). Colored logos
@@ -26,11 +29,7 @@ export const APP_LOGO: Record<
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
   gitea: { slug: "gitea" },
-  // Migrate-source brand hints simpleicons doesn't carry → pull each project's
-  // own favicon from its official site (same approach as convex above). Keyed by
-  // slug so the migrate-sources row (which passes `slug`) resolves them.
-  dokku: { src: "https://www.google.com/s2/favicons?domain=dokku.com&sz=128" },
-  dokploy: { src: "https://www.google.com/s2/favicons?domain=dokploy.com&sz=128" },
+  minio: { slug: "minio" },
   freshrss: { slug: "freshrss" },
   excalidraw: { slug: "excalidraw" },
   // Buzz (block/buzz) — vendored bee mark (its own favicon, OS-recolor stripped).

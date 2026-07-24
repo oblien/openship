@@ -15,6 +15,8 @@
     "connectedToast": "已为此服务器连接 GitHub",
     "patPlaceholder": "ghp_…（粘贴令牌）",
     "patHint": "为此服务器加密存储的个人访问令牌。",
+    "patLabel": "个人访问令牌",
+    "or": "或",
     "save": "保存",
     "savedToast": "已保存",
     "saveFailed": "保存失败",
@@ -57,7 +59,9 @@
     "authKey": "密钥",
     "authPassword": "密码",
     "projects": "项目",
-    "regions": "区域"
+    "regions": "区域",
+    "thisServer": "此服务器",
+    "currentHost": "当前主机"
   },
   "form": {
     "sshConnection": "SSH 连接",
@@ -104,6 +108,7 @@
   },
   "detail": {
     "tabs": {
+      "services": "服务",
       "overview": "概览",
       "components": "组件",
       "github": "Git",
@@ -282,7 +287,34 @@
     "toastRemoved": "限流已移除",
     "toastFailedRemove": "移除限流失败",
     "toastInvalidIp": "无效的 IP/CIDR 格式",
-    "toastAlreadyWhitelisted": "已在白名单中"
+    "toastAlreadyWhitelisted": "已在白名单中",
+    "ports": {
+      "title": "端口暴露",
+      "subtitle": "查看哪些监听端口可从网络访问",
+      "introHint": "扫描此机器上所有监听端口，并标记那些绑定到公共接口（而非回环）的端口。",
+      "scanButton": "扫描端口",
+      "scanning": "正在扫描监听端口…",
+      "rescan": "重新扫描",
+      "retry": "重试",
+      "scanFailed": "无法扫描端口",
+      "scanFailedHint": "服务器可能无法访问。恢复在线后请重试。",
+      "summary": "{total} 个监听端口 · {exposed} 个暴露到网络",
+      "summaryZeroExposed": "{total} 个监听端口 · 无端口暴露到网络",
+      "exposed": "已暴露",
+      "loopback": "仅本地",
+      "noProcessInfo": "进程名不可用（此主机未安装 ss）。",
+      "unknownProcess": "未知进程",
+      "empty": "未发现监听端口。",
+      "inconclusive": "扫描结果不确定",
+      "inconclusiveHint": "无法读取此主机的套接字表。请重试或检查 SSH 访问。",
+      "reachable": "可访问",
+      "firewalled": "被防火墙拦截",
+      "expectedOpen": "预期开放",
+      "sensitiveHint": "不应暴露到互联网",
+      "sensitiveReachable": "敏感服务可从互联网访问",
+      "reachableLegend": "“可访问”通过从服务器外部连接该端口确认；“被防火墙拦截”表示已绑定但被拦截（例如云防火墙）。",
+      "summaryReachable": "{total} 个监听端口 · {reachable} 个可从互联网访问 · {firewalled} 个被防火墙拦截"
+    }
   },
   "terminal": {
     "title": "终端",

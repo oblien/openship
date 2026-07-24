@@ -19,6 +19,8 @@ import { repos, type NotificationChannel, type NotificationDelivery } from "@rep
 import { sendMail } from "./mail";
 import { decrypt } from "./encryption";
 import { findCategory } from "./notification-categories";
+import { env } from "../config/env";
+import { safeFetch } from "./safe-fetch";
 import { safeErrorMessage } from "@repo/core";
 
 /* ─── Render helpers ─────────────────────────────────────────────────────── */
@@ -48,6 +50,7 @@ function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   const lines: string[] = [];
 
   if (cat?.description) lines.push(cat.description);
+  if (payload.message) lines.push(String(payload.message));
 
   if (payload.branch) lines.push(`Branch: ${payload.branch}`);
   if (payload.commitSha) {
@@ -225,21 +228,24 @@ async function sendWebhook(
     headers["X-Openship-Signature-256"] = `sha256=${sig}`;
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(config.url, {
-      method: "POST",
-      headers,
-      body,
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Webhook returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timer);
+  // SSRF-safe delivery: safeFetch resolves once, pins the validated IP (closes
+  // the DNS-rebind window a validate-then-fetch leaves open), preserves SNI/Host,
+  // and never follows a 3xx into the internal network (maxRedirects defaults to 0,
+  // so a 3xx is non-2xx → thrown). Multi-tenant (CLOUD_MODE) always rejects
+  // internal targets; a single-tenant box can opt into its own LAN with
+  // NOTIFY_WEBHOOK_ALLOW_INTERNAL.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(config.url, {
+    method: "POST",
+    headers,
+    body,
+    timeoutMs: 10_000,
+    allowHttp: true,
+    allowPrivate,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Webhook returned ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -302,21 +308,19 @@ async function sendSlack(
   const { title, body } = renderMessage(delivery);
   const slackPayload = buildSlackMessage({ title, body });
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(slackPayload),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Slack webhook returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timer);
+  // SSRF-safe: the Slack (or compatible) webhook URL is user-configured, so pin
+  // the resolved IP just like the generic webhook path.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(slackPayload),
+    timeoutMs: 10_000,
+    allowPrivate,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Slack webhook returned ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -389,6 +393,24 @@ const WORKERS: Record<
   discord: sendDiscord,
   msteams: sendMSTeams,
 };
+
+/**
+ * Send a one-off TEST notification to a channel, reusing the exact per-kind
+ * worker — so a passing test proves real delivery works. The verify endpoint
+ * gates channel `verified` on this. Throws on failure (the caller surfaces it).
+ */
+export async function sendTestToChannel(channel: NotificationChannel): Promise<void> {
+  const worker = WORKERS[channel.kind];
+  if (!worker) throw new Error(`No worker for channel kind "${channel.kind}"`);
+  const testDelivery = {
+    id: "test",
+    category: "test",
+    payload: {
+      message: "Openship test notification — this channel is configured correctly.",
+    },
+  } as unknown as NotificationDelivery;
+  await worker(testDelivery, channel);
+}
 
 /* ─── Runner loop ─────────────────────────────────────────────────────────── */
 

@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
-import { changelogSource } from "@/lib/source";
+import { getChangelog } from "@/lib/changelog";
 import { Navbar } from "@/components/landing/navbar";
 import { Footer } from "@/components/landing/footer";
-import { ChangelogEntries, type Entry } from "./_components/changelog-entries";
+import { ChangelogEntries } from "./_components/changelog-entries";
 import "./changelog.css";
 
 const CHANGELOG_DESC = "New features, fixes, and improvements to Openship.";
+
+// Driven by the repo CHANGELOG.md + GitHub releases; refresh on a short cache.
+export const revalidate = 600;
 
 export const metadata: Metadata = {
   // Plain string — the root layout's "%s - Openship" template adds the suffix
@@ -28,16 +31,8 @@ export const metadata: Metadata = {
   },
 };
 
-function sortByDateDesc(entries: Entry[]): Entry[] {
-  return entries
-    .slice()
-    .sort(
-      (a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime(),
-    );
-}
-
-export default function ChangelogPage() {
-  const entries = sortByDateDesc(changelogSource.getPages() as unknown as Entry[]);
+export default async function ChangelogPage() {
+  const entries = await getChangelog();
 
   return (
     <>
@@ -55,7 +50,22 @@ export default function ChangelogPage() {
           </p>
         </header>
 
-        <ChangelogEntries entries={entries} />
+        {entries.length > 0 ? (
+          <ChangelogEntries entries={entries} />
+        ) : (
+          <p className="th-text-muted border-t py-12 text-[15px]" style={{ borderColor: "var(--th-bd-subtle)" }}>
+            Release notes are momentarily unavailable — check back shortly, or see{" "}
+            <a
+              href="https://github.com/oblien/openship/releases"
+              className="underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              releases on GitHub
+            </a>
+            .
+          </p>
+        )}
       </main>
       <Footer />
     </>

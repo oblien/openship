@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
-import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useToast } from "@/context/ToastContext";
 import {
   serviceKind,
@@ -87,6 +86,20 @@ interface ServiceDetailPanelProps {
   initialTab?: string;
   onRefresh: () => void | Promise<void>;
   onDeleted?: () => void;
+  /** Project context — supplied by the caller instead of read from
+   *  ProjectSettingsContext, so the panel renders outside the projects route
+   *  tree (e.g. the server-detail Services tab). The projects route passes these
+   *  from `useProjectSettings()`. */
+  projectType?: string;
+  activeDeploymentId?: string | null;
+  deployTarget?: string | null;
+  /** Sibling services for the header switcher (same project). */
+  siblingServices?: Service[];
+  /** Deep-link the active tab into the URL (projects route). Off at server level. */
+  deepLink?: boolean;
+  /** Override the service switcher — server level swaps in place instead of
+   *  routing to /projects/…. When omitted, routes as before. */
+  onSwitchService?: (targetId: string, tab: string) => void;
 }
 
 /* ── Panel ──────────────────────────────────────────────────────────── */
@@ -99,12 +112,17 @@ export function ServiceDetailPanel({
   initialTab,
   onRefresh,
   onDeleted,
+  projectType,
+  activeDeploymentId,
+  deployTarget,
+  siblingServices,
+  deepLink = true,
+  onSwitchService,
 }: ServiceDetailPanelProps) {
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
-  const { projectData, servicesData } = useProjectSettings();
   const router = useRouter();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -121,7 +139,6 @@ export function ServiceDetailPanel({
 
   // Two-mode split (pipeline vs image app) + launchability — shared helpers so
   // this classification can't drift from the other call sites. See services.ts.
-  const projectType = (projectData as { projectType?: string })?.projectType;
   const usesDeployPipeline = serviceUsesDeployPipeline(service, projectType);
   const canStartWithoutBuild = serviceCanStartWithoutBuild(service);
 
@@ -132,8 +149,9 @@ export function ServiceDetailPanel({
   const changeTab = (tab: ServiceTab) => {
     setActiveTab(tab);
     // Deep-link the tab without a route push (scroll-preserving), matching
-    // ProjectSidebar's tab-sync so back/forward and refresh land on it.
-    if (typeof window !== "undefined") {
+    // ProjectSidebar's tab-sync so back/forward and refresh land on it. Skipped
+    // off the projects route (server level) where that URL shape doesn't apply.
+    if (deepLink && typeof window !== "undefined") {
       const scrollY = window.scrollY;
       window.history.replaceState({}, "", `/projects/${projectId}/services/${service.id}/${tab}`);
       requestAnimationFrame(() => window.scrollTo(0, scrollY));
@@ -146,14 +164,15 @@ export function ServiceDetailPanel({
   // panel is keyed by service id upstream, so it remounts cleanly on the same
   // tab. Backup is compose-only — fall back to Overview if the target can't
   // show it, so a switch never lands on an empty hidden tab.
-  const switchableServices = servicesData?.services ?? [];
+  const switchableServices = siblingServices ?? [];
   const canSwitchService = switchableServices.length > 1;
   const switchService = (targetId: string) => {
     if (targetId === service.id) return;
     const target = switchableServices.find((s) => s.id === targetId);
     const targetTab =
       activeTab === "backup" && target && serviceKind(target) !== "compose" ? "overview" : activeTab;
-    router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
+    if (onSwitchService) onSwitchService(targetId, targetTab);
+    else router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
   };
 
   // ── Env tab state (editable; the panel used to show env read-only) ────
@@ -332,7 +351,6 @@ export function ServiceDetailPanel({
    * apps don't get this — they Start/Stop.
    */
   const handleRedeployService = async () => {
-    const activeDeploymentId = projectData?.activeDeploymentId;
     if (!activeDeploymentId) {
       showToast(t.projectDetail.services.detail.toast.deployFirstRedeploy, "error", service.name);
       return;
@@ -522,12 +540,12 @@ export function ServiceDetailPanel({
                 )}
                 {container?.containerId && (
                   <InfoCard
-                    label={projectData?.deployTarget === "cloud" ? t.projectDetail.services.detail.workspaceId : t.projectDetail.services.detail.containerId}
+                    label={deployTarget === "cloud" ? t.projectDetail.services.detail.workspaceId : t.projectDetail.services.detail.containerId}
                     // Docker ids are 64 chars — the 12-char short id is enough
                     // to `docker exec`. Cloud workspace ids are short/opaque, so
                     // show them in full (you need the whole thing to find it).
                     value={
-                      projectData?.deployTarget === "cloud"
+                      deployTarget === "cloud"
                         ? container.containerId
                         : container.containerId.slice(0, 12)
                     }
@@ -680,7 +698,7 @@ export function ServiceDetailPanel({
                 )}
                 {/* Pipeline services (compose / monorepo / source-built) keep the
                     per-service Redeploy → build page. Image apps never show it. */}
-                {usesDeployPipeline && service.enabled && projectData?.activeDeploymentId && (
+                {usesDeployPipeline && service.enabled && activeDeploymentId && (
                   <ActionButton
                     icon={Rocket}
                     label={redeploying ? t.projectDetail.services.detail.redeploying : t.projectDetail.services.detail.redeploy}

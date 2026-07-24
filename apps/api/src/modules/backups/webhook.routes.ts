@@ -14,7 +14,6 @@
  */
 
 import { Hono, type Context } from "hono";
-import { rateLimiter } from "../../middleware/rate-limiter";
 import { secureRouter } from "../../lib/secure-router";
 import { triggerBackupViaWebhook } from "./triggers/webhook";
 
@@ -22,8 +21,9 @@ const r = secureRouter(new Hono(), {
   module: "backups-webhook",
   basePath: "/api/webhooks/backup",
 });
-
-r.use("*", rateLimiter);
+// No explicit limiter here: secureRouter injects one per route (fixes #123).
+// These are `r.public` token-auth routes → default-anon (per IP), matching the
+// old global-limiter behaviour without double-charging.
 
 function extractClientContext(c: Context): {
   clientIp: string | undefined;

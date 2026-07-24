@@ -29,6 +29,34 @@ export async function getBuildMode(userId: string): Promise<BuildMode> {
   return (settings?.buildMode as BuildMode) ?? "auto";
 }
 
+// ── Route strategy (edge → app upstream addressing) ──────────────────────────
+
+/** How the edge reaches a deployed app's upstream.
+ *   - "auto"          → resolved to loopback-port (the safe self-host default)
+ *   - "loopback-port" → publish + route via a pinned `127.0.0.1:<hostPort>`
+ *   - "container-ip"  → route via the container's bridge IP (advanced; zero-
+ *                       downtime swaps, needs the edge on the docker bridge,
+ *                       unsupported on Docker Desktop) */
+export type RouteStrategyPref = "auto" | "loopback-port" | "container-ip";
+
+const VALID_ROUTE_STRATEGIES: RouteStrategyPref[] = ["auto", "loopback-port", "container-ip"];
+
+export function isValidRouteStrategy(value: unknown): value is RouteStrategyPref {
+  return typeof value === "string" && (VALID_ROUTE_STRATEGIES as string[]).includes(value);
+}
+
+/**
+ * The user's default route strategy (seeds new projects + the deploy wizard).
+ * Unset/invalid → "auto". A per-project value still wins over this; the pure
+ * `resolveRouteStrategy` in lib/upstream-url coerces the effective value to a
+ * concrete strategy at each upstream-resolution site.
+ * @scope user
+ */
+export async function getRouteStrategy(userId: string): Promise<RouteStrategyPref> {
+  const settings = await repos.settings.findByUser(userId);
+  return isValidRouteStrategy(settings?.routeStrategy) ? settings.routeStrategy : "auto";
+}
+
 /**
  * Has the user explicitly opted out of the gh-CLI fallback?
  * Used by github.auth.getUserStatus to honor a disconnect from cli mode.

@@ -8,6 +8,8 @@
  */
 
 import { repos } from "@repo/db";
+import { env } from "../config/env";
+import { safeFetch } from "./safe-fetch";
 
 const FETCH_TIMEOUT = 8_000;
 const FAVICON_REFRESH_TTL_MS = 24 * 60 * 60 * 1000;
@@ -64,17 +66,22 @@ async function probeFavicon(siteUrl: string): Promise<string | null> {
   const faviconUrl = `${base}/favicon.ico`;
 
   const tryProbe = async (method: "HEAD" | "GET") => {
-    const res = await fetch(faviconUrl, {
+    // SSRF-safe: `base` is a project's (attacker-controllable-DNS) domain. Pin the
+    // resolved IP; reject internal targets on the multi-tenant SaaS, allow the
+    // operator's own LAN on self-hosted.
+    const res = await safeFetch(faviconUrl, {
       method,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT),
-      redirect: "follow",
+      timeoutMs: FETCH_TIMEOUT,
+      allowHttp: true,
+      allowPrivate: !env.CLOUD_MODE,
+      maxRedirects: 3,
     });
 
     if (!res.ok) {
       return null;
     }
 
-    const ct = res.headers.get("content-type") ?? "";
+    const ct = res.headers["content-type"] ?? "";
     if (ct.startsWith("image/") || ct === "application/octet-stream") {
       return faviconUrl;
     }

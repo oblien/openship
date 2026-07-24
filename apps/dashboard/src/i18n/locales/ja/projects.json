@@ -108,6 +108,8 @@
     "local": "ローカル",
     "production": "本番環境",
     "lastDeploy": "最終デプロイ",
+    "noDomain": "ドメインなし",
+    "addDomain": "ドメインを追加",
     "tabs": {
       "appSettings": "設定",
       "overview": "概要",

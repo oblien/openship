@@ -1,4 +1,13 @@
 {
+  "ghCliConsent": {
+    "title": "Deine Repositories lesen?",
+    "body": "OpenShip kann deine GitHub-Repositories über die gh-CLI auflisten, bei der du bereits angemeldet bist.",
+    "bodyWithLogin": "OpenShip kann deine GitHub-Repositories über die gh-CLI auflisten, angemeldet als @{login}.",
+    "pointNoCloud": "Es wird nichts in die Cloud gesendet — die Liste verlässt diesen Rechner nie.",
+    "pointDesktopOnly": "Läuft nur in der Desktop-App, mit deiner lokalen gh-Authentifizierung.",
+    "pointReadOnly": "Nur Lesezugriff: listet Repos, damit du eines zum Deployen auswählen kannst.",
+    "allow": "Erlauben"
+  },
   "page": {
     "title": "Neues Projekt",
     "subtitle": "Importiere ein Repository, füge eine URL ein oder starte von einer Vorlage",

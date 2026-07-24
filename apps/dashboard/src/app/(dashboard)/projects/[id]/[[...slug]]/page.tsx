@@ -512,6 +512,10 @@ const ProjectSettingsContent = () => {
   const handleDeleteProject = async (
     deleteApp = true,
     wipeVolumes = false,
+    // Record-only (soft) delete — kept ahead of force/forceOrphan so the delete
+    // modal's (deleteApp, wipeVolumes, recordOnly) call maps positionally, and
+    // so it survives the force/forceOrphan retries below.
+    recordOnly = false,
     force = false,
     forceOrphan = false,
   ) => {
@@ -522,6 +526,7 @@ const ProjectSettingsContent = () => {
       const response = await projectsApi.delete(projectData.id, {
         deleteApp,
         wipeVolumes,
+        recordOnly,
         force,
         forceOrphan,
       });
@@ -593,7 +598,7 @@ const ProjectSettingsContent = () => {
         if (body.code === "PROJECT_HAS_ACTIVE_WORK") {
           if (!force) {
             showToast(t.projects.delete.cancellingActiveWork, "success", t.projects.delete.cleaningUpTitle);
-            void handleDeleteProject(deleteApp, wipeVolumes, true, forceOrphan);
+            void handleDeleteProject(deleteApp, wipeVolumes, recordOnly, true, forceOrphan);
             return;
           }
           showToast(
@@ -655,7 +660,7 @@ const ProjectSettingsContent = () => {
                     type="button"
                     onClick={() => {
                       hideModal(modalId);
-                      void handleDeleteProject(deleteApp, wipeVolumes, force, true);
+                      void handleDeleteProject(deleteApp, wipeVolumes, recordOnly, force, true);
                     }}
                     className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-danger-solid px-4 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90"
                   >

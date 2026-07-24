@@ -36,6 +36,8 @@ export interface UpFlags {
   publicUrl?: string;
   /** Trust X-Forwarded-For from a front proxy. */
   trustProxy?: boolean;
+  /** Bind the dashboard to this interface (reverse-proxy / LAN access). */
+  host?: string;
   /** Managed edge: install OpenResty + Let's Encrypt on this box and route here. */
   managedEdge?: boolean;
   /** ACME contact email for the managed edge. */
@@ -58,6 +60,7 @@ function upArgs(flags: UpFlags): string[] {
   if (flags.uiVersion) a.push("--ui-version", flags.uiVersion);
   if (flags.publicUrl) a.push("--public-url", flags.publicUrl);
   if (flags.trustProxy) a.push("--trust-proxy");
+  if (flags.host) a.push("--host", flags.host);
   if (flags.managedEdge) a.push("--managed-edge");
   if (flags.acmeEmail) a.push("--acme-email", flags.acmeEmail);
   return a;

@@ -31,6 +31,9 @@ r.put("/", { tag: "settings:write" }, ctrl.upsert);
 /** PATCH /build-mode - update only build mode preference */
 r.patch("/build-mode", { tag: "settings:write", mcp: { description: "Set the default build mode (server / local)." } }, ctrl.updateBuildMode);
 
+/** PATCH /route-strategy - update only the edge→app route strategy default */
+r.patch("/route-strategy", { tag: "settings:write", mcp: { description: "Set the default edge→app route strategy (auto / loopback-port / container-ip)." } }, ctrl.updateRouteStrategy);
+
 /** PATCH /deploy-defaults - set/clear the default deploy target + server */
 r.patch("/deploy-defaults", { tag: "settings:write", mcp: { description: "Set/clear the default deploy target (local/server/cloud) and server." } }, ctrl.updateDeployDefaults);
 

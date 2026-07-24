@@ -11,6 +11,9 @@ const DEFAULT_CLOUD_DOMAIN = "opsh.io";
 interface PlatformContextValue {
   selfHosted: boolean;
   deployMode: string;
+  /** OpenShip runs ON a server (self-hosted, non-desktop): the host is itself a
+   *  deployable target, auto-registered as the isLocal "This Server". */
+  isServerHost: boolean;
   authMode: "cloud" | "local" | "none";
   cloudAuthUrl: string;
   cloudApiUrl: string;
@@ -44,6 +47,7 @@ interface PlatformProviderProps {
   children: React.ReactNode;
   selfHosted?: boolean;
   deployMode?: string;
+  isServerHost?: boolean;
   authMode?: "cloud" | "local" | "none";
   cloudAuthUrl?: string;
   cloudApiUrl?: string;
@@ -63,6 +67,7 @@ export function PlatformProvider({
   children,
   selfHosted: initialSelfHosted = true,
   deployMode = "docker",
+  isServerHost = false,
   authMode = "local",
   cloudAuthUrl = CLOUD_DASHBOARD_URL,
   cloudApiUrl = CLOUD_API_URL,
@@ -78,6 +83,7 @@ export function PlatformProvider({
       value={{
         selfHosted,
         deployMode,
+        isServerHost,
         authMode,
         cloudAuthUrl,
         cloudApiUrl,

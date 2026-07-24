@@ -14,27 +14,33 @@
  */
 
 import type { CommandExecutor } from "@repo/adapters";
-import { repos, type Project, type Deployment } from "@repo/db";
+import { repos, dumpSubgraph, type Project, type Deployment } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
-import { platform } from "./controller-helpers";
 import { resolveDeploymentPlatform, type DeploymentMeta } from "./deployment-runtime";
 import {
   upsertProjectIntoManifest,
   removeProjectFromManifest,
+  writeProjectSnapshot,
+  removeProjectSnapshot,
   type ManifestProjectEntry,
 } from "./openship-manifest";
 
 /**
- * FINAL STEP of a successful server deploy: mirror this project's structural
- * config (NO secrets) into the target server's `.openship/manifest.json` so a
- * fresh orchestrator can re-adopt it after a lost PC.
+ * FINAL STEP of a successful server deploy: mirror this project to the target
+ * server so a fresh orchestrator can recover it after a lost/reset DB. Writes
+ * TWO artifacts (NO secrets):
+ *   - `.openship/manifest.json`   — lightweight structural INDEX (read on scan)
+ *   - `.openship/snapshot-<id>.json` — the full project subgraph dump, for a
+ *      FAITHFUL `restoreSubgraph` on re-import.
  *
- * Self-gated — runs ONLY for a desktop-mode deploy to a remote server (the one
- * case the mirror helps); a no-op otherwise. Best-effort: never throws, so a
- * server-write hiccup can't fail the deploy (the orchestrator DB is canonical).
+ * Runs for ANY server deploy (not just desktop) so CLI / self-hosted deploys are
+ * recoverable too. Best-effort: never throws — a server-write hiccup can't fail
+ * the deploy (the orchestrator DB is always canonical). Each artifact is written
+ * independently so one failing doesn't skip the other.
  */
 export async function syncProjectToServerManifest(input: {
-  baseTarget: string;
+  /** Kept for call-site compatibility; the mirror is no longer desktop-gated. */
+  baseTarget?: string;
   effectiveTarget: string;
   serverId: string | null;
   executor: CommandExecutor | null;
@@ -43,9 +49,8 @@ export async function syncProjectToServerManifest(input: {
   containerId: string;
   log?: (message: string) => void;
 }): Promise<void> {
-  const { baseTarget, effectiveTarget, serverId, executor, project, deployment, containerId, log } =
-    input;
-  if (baseTarget !== "desktop" || effectiveTarget !== "server" || !serverId || !executor) {
+  const { effectiveTarget, serverId, executor, project, deployment, containerId, log } = input;
+  if (effectiveTarget !== "server" || !serverId || !executor) {
     return;
   }
   try {
@@ -78,19 +83,30 @@ export async function syncProjectToServerManifest(input: {
       updatedAt: new Date().toISOString(),
     };
     await upsertProjectIntoManifest(executor, entry);
-    log?.("Synced project to server .openship/manifest.json (desktop recovery mirror)");
+    log?.("Synced project to server .openship/manifest.json (recovery index)");
   } catch (err) {
     log?.(`Warning: .openship manifest sync failed (non-fatal): ${safeErrorMessage(err)}`);
+  }
+
+  // Full secret-free subgraph dump — the faithful-restore payload. Independent
+  // best-effort so a large-dump hiccup never blocks the manifest (or the deploy).
+  try {
+    const dump = await dumpSubgraph({ kind: "project", projectId: project.id }, { stripEncrypted: true });
+    await writeProjectSnapshot(executor, project.id, dump);
+    log?.("Wrote server .openship project snapshot (faithful recovery restore)");
+  } catch (err) {
+    log?.(`Warning: .openship project snapshot write failed (non-fatal): ${safeErrorMessage(err)}`);
   }
 }
 
 /**
- * Drop this project from every server's manifest (called on teardown) so a
- * later recover-from-server scan doesn't re-list a deleted project. Desktop-only,
- * best-effort — the reconcile's running-container cross-check is the real guard.
+ * Drop this project's recovery artifacts (manifest entry + snapshot) from every
+ * server it was deployed to (called on teardown) so a later recover-from-server
+ * scan doesn't re-list a deleted project. Runs for any server deploy (non-server
+ * deploys carry no meta.serverId → skipped). Best-effort — the reconcile's
+ * running-container cross-check is the real guard.
  */
 export async function removeProjectFromServerManifests(project: Project): Promise<void> {
-  if (platform().target !== "desktop") return;
   let deps: Deployment[] = [];
   try {
     deps = (await repos.deployment.listByProject(project.id, { perPage: 1000 })).rows;
@@ -107,10 +123,13 @@ export async function removeProjectFromServerManifests(project: Project): Promis
         organizationId: dep.organizationId,
       });
       const exec = resolved.platform.executor;
-      if (exec) await removeProjectFromManifest(exec, project.id);
+      if (exec) {
+        await removeProjectFromManifest(exec, project.id);
+        await removeProjectSnapshot(exec, project.id).catch(() => {});
+      }
     } catch {
-      // Server unreachable / not desktop-server — fine; the reconcile cross-check
-      // (no running container → skip) prevents resurrecting the deleted project.
+      // Server unreachable — fine; the reconcile cross-check (no running
+      // container → skip) prevents resurrecting the deleted project.
     }
   }
 }

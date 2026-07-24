@@ -32,6 +32,7 @@ import type { CommandExecutor, ManualCert, RouteConfig, SslResult } from "../typ
 import type { RoutingProvider, SslProvider } from "./types";
 import { LUA_LOGGER_PATH, RULES_GUARD_PATH, luaSourceAvailable, buildReloadCommand, detectOpenRestyPaths, type OpenRestyPaths } from "./openresty-lua";
 import { safeErrorMessage, sanitizeProxySettings, PROXY_GZIP_TYPES, type ProxySettings } from "@repo/core";
+import { sq } from "../system/local-shell";
 
 /** Reverse-proxy headers shared by every proxy_pass location. */
 const PROXY_HEADERS = `proxy_set_header Host $host;
@@ -46,13 +47,14 @@ const PROXY_HEADERS = `proxy_set_header Host $host;
 function renderProxyLocations(route: RouteConfig): string {
   if (!route.proxyLocations || route.proxyLocations.length === 0) return "";
   return route.proxyLocations
-    .map(
-      (loc) => `
+    .map((loc) => {
+      assertValidUpstream(loc.targetUrl);
+      return `
     location ${loc.pathPrefix} {
         proxy_pass ${loc.targetUrl};
         ${PROXY_HEADERS}
-    }`,
-    )
+    }`;
+    })
     .join("");
 }
 
@@ -184,16 +186,83 @@ function assertValidDomain(domain: string): void {
   }
 }
 
+/**
+ * `proxy_pass`/`root` values are interpolated verbatim into the generated
+ * server{} block and — on proxy adopt/takeover — come from PARSING A FOREIGN
+ * proxy config (semi-trusted). Reject anything that could break out of the
+ * single-token directive and inject arbitrary nginx config. `openresty -t` only
+ * catches MALFORMED output, so a well-formed injection would otherwise slip in.
+ * Normal deploy targets (`http://127.0.0.1:3000`, `/var/www/app`) contain none
+ * of these chars, so this never rejects a legitimate route.
+ */
+function assertNoNginxInjection(value: string, what: string): void {
+  if (/[\s;{}#\\]/.test(value)) {
+    throw new Error(`Invalid ${what} (contains characters that could inject nginx config): ${value}`);
+  }
+}
+
+function assertValidUpstream(targetUrl: string): void {
+  assertNoNginxInjection(targetUrl, "proxy target");
+  if (!/^https?:\/\/.+/.test(targetUrl)) {
+    throw new Error(`Invalid proxy target (must be http/https URL): ${targetUrl}`);
+  }
+}
+
+function assertValidStaticRoot(root: string): void {
+  assertNoNginxInjection(root, "static root");
+  if (!root.startsWith("/") || root.includes("..")) {
+    throw new Error(`Invalid static root (must be an absolute path, no traversal): ${root}`);
+  }
+}
+
 const execFileAsync = promisify(cpExecFile);
+
+/**
+ * Turn certbot's verbose failure output into ONE actionable line.
+ *
+ * certbot buries the cause in a `Type:` / `Detail:` / `Hint:` block and opens with
+ * boilerplate ("Saving debug log to …") that tells the operator nothing. Pull the
+ * meaningful lines and map the common HTTP-01 failure shapes to a plain-English
+ * diagnosis so a failed cert says WHY — DNS, firewall/port-80, or a proxy still on
+ * :80 — instead of the opaque opener.
+ */
+export function summarizeCertbotFailure(output: string, domain: string): string {
+  const text = output || "";
+  const pick = (re: RegExp) => text.match(re)?.[0]?.replace(/\s+/g, " ").trim();
+  const detail = pick(/Detail:\s*[^\n]+/i);
+  const hint = pick(/Hint:\s*[^\n]+/i);
+
+  let diagnosis: string | undefined;
+  if (/timeout during connect|connection refused|failed to connect|Timeout/i.test(text)) {
+    diagnosis =
+      `Port 80 for ${domain} isn't reachable from the internet — a firewall / cloud security group ` +
+      `is blocking it, the domain doesn't point at this server, or another proxy is still bound to :80.`;
+  } else if (/NXDOMAIN|no\s+(A|AAAA)\s+record|DNS problem|could not be resolved|no records? found/i.test(text)) {
+    diagnosis =
+      `${domain} doesn't resolve to this server yet — the DNS A record is missing or hasn't propagated. ` +
+      `Wait for propagation, then retry from the Domains tab.`;
+  } else if (/404|invalid response|unauthorized|"?status"?:?\s*40\d/i.test(text)) {
+    diagnosis =
+      `Port 80 answered but not with our ACME challenge — another web server is still serving :80, so ` +
+      `the takeover didn't complete. Re-run and choose take-over / migrate.`;
+  } else if (/too many certificates|rateLimited|rate limit/i.test(text)) {
+    diagnosis = `Let's Encrypt rate limit reached for ${domain} — wait before retrying.`;
+  }
+
+  const parts = [diagnosis, detail, hint].filter(Boolean);
+  if (parts.length > 0) return parts.join(" — ");
+
+  // Nothing structured matched — surface the last non-empty lines (the tail holds
+  // the real error) rather than the "Saving debug log" opener.
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  return lines.slice(-3).join(" · ") || `certbot failed to issue a certificate for ${domain}`;
+}
 
 interface FileSnapshot {
   exists: boolean;
   content?: string;
 }
 
-function sq(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
 
 // ─── Implementation ──────────────────────────────────────────────────────────
 
@@ -288,8 +357,17 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       const full = args.length ? `${command} ${args.map(sq).join(" ")}` : command;
       return this.executor.exec(full);
     }
-    const { stdout } = await execFileAsync(command, args);
-    return stdout;
+    try {
+      const { stdout } = await execFileAsync(command, args);
+      return stdout;
+    } catch (err) {
+      // execFile's error carries stdout/stderr as props but NOT in .message
+      // ("Command failed: certbot …"). Fold them in so the caller (and the
+      // certbot summarizer) sees the real output, not just the exit boilerplate.
+      const e = err as { stdout?: string; stderr?: string; message?: string };
+      const detail = [e.stderr?.trim(), e.stdout?.trim()].filter(Boolean).join("\n");
+      throw new Error(detail || e.message || String(err));
+    }
   }
 
   private async _captureFile(path: string): Promise<FileSnapshot> {
@@ -328,6 +406,11 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
     const slug = this.domainSlug(route.domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
+    if ("staticRoot" in route && route.staticRoot) {
+      assertValidStaticRoot(route.staticRoot);
+    } else {
+      assertValidUpstream((route as { targetUrl: string }).targetUrl);
+    }
     const locationBody = "staticRoot" in route && route.staticRoot
       ? `root ${route.staticRoot};
         index index.html;
@@ -497,10 +580,15 @@ ${webhookLocation}${extraLocations}
       ? ["--email", this.acmeEmail as string]
       : ["--register-unsafely-without-email"];
 
-    await this._exec("certbot", [
-      "certonly", "--webroot", "-w", "/var/www/acme", "-d", domain,
-      ...emailArgs, "--agree-tos", "--non-interactive",
-    ]);
+    try {
+      await this._exec("certbot", [
+        "certonly", "--webroot", "-w", "/var/www/acme", "-d", domain,
+        ...emailArgs, "--agree-tos", "--non-interactive",
+      ]);
+    } catch (err) {
+      // Replace certbot's opaque opener with the real, actionable cause.
+      throw new Error(summarizeCertbotFailure(safeErrorMessage(err), domain));
+    }
 
     // Rewrite the config with SSL now that certs exist
     const slug = this.domainSlug(domain);

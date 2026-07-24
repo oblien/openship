@@ -78,6 +78,30 @@
       "toggleFailed": "Umschalten des Projekts fehlgeschlagen",
       "clearInstallFailed": "Leeren des Installations-Cache fehlgeschlagen",
       "clearBuildFailed": "Leeren des Build-Cache fehlgeschlagen"
+    },
+    "routing": {
+      "title": "Routing",
+      "description": "Wie der Edge den Upstream dieser App erreicht",
+      "intro": "Wähle, wie der Edge den Container dieses Projekts adressiert.",
+      "note": "Loopback-Port wird empfohlen: ein privater 127.0.0.1-Host-Port, stabil über Neustarts hinweg und nie im Netzwerk exponiert. Container-IP ist fortgeschritten (Zero-Downtime-Wechsel; benötigt den Edge auf der Docker-Bridge; auf Docker Desktop nicht unterstützt).",
+      "modes": {
+        "auto": {
+          "label": "Auto",
+          "desc": "Empfohlen (Loopback-Port)"
+        },
+        "loopbackPort": {
+          "label": "Loopback-Port",
+          "desc": "Privater 127.0.0.1-Host-Port"
+        },
+        "containerIp": {
+          "label": "Container-IP",
+          "desc": "Fortgeschritten – Bridge-IP"
+        }
+      },
+      "toast": {
+        "saved": "Routing auf {mode} gesetzt",
+        "failed": "Routing konnte nicht aktualisiert werden"
+      }
     }
   },
   "backup": {
@@ -365,11 +389,26 @@
     "title": "Maschinenleistung",
     "description": "Konfigurieren Sie die Maschinenleistung für Ihr Projekt.",
     "tiers": {
-      "lightweight": { "name": "Leichtgewichtig", "description": "Kleine Apps und statische Websites" },
-      "standard": { "name": "Standard", "description": "Die meisten Webanwendungen" },
-      "performance": { "name": "Performance", "description": "Anwendungen mit hohem Traffic" },
-      "enterprise": { "name": "Enterprise", "description": "Produktions-Apps in großem Maßstab" },
-      "autoscale": { "name": "Auto Scale", "description": "Skaliert je nach Bedarf" }
+      "lightweight": {
+        "name": "Leichtgewichtig",
+        "description": "Kleine Apps und statische Websites"
+      },
+      "standard": {
+        "name": "Standard",
+        "description": "Die meisten Webanwendungen"
+      },
+      "performance": {
+        "name": "Performance",
+        "description": "Anwendungen mit hohem Traffic"
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "description": "Produktions-Apps in großem Maßstab"
+      },
+      "autoscale": {
+        "name": "Auto Scale",
+        "description": "Skaliert je nach Bedarf"
+      }
     },
     "dynamic": "Dynamisch",
     "custom": {

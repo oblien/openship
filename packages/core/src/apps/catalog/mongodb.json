@@ -1,0 +1,147 @@
+{
+  "available": true,
+  "id": "mongodb",
+  "name": "MongoDB",
+  "description": "MongoDB document database with the Mongo Express web admin UI.",
+  "kind": "template",
+  "logo": "mongodb",
+  "category": "backend",
+  "tags": [
+    "database",
+    "mongodb",
+    "nosql",
+    "documents"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "mongo",
+      "image": "mongo:7.0",
+      "ports": [
+        "27017:27017"
+      ],
+      "environment": {
+        "MONGO_INITDB_ROOT_USERNAME": "root"
+      },
+      "volumes": [
+        "mongo_data:/data/db"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "db.adminCommand('ping')"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "mongo-express",
+      "image": "mongo-express:1.0.2",
+      "exposedPort": 8081,
+      "exposed": true,
+      "ports": [
+        "8081:8081"
+      ],
+      "routes": [
+        {
+          "port": 8081
+        }
+      ],
+      "dependsOn": [
+        "mongo"
+      ],
+      "environment": {
+        "ME_CONFIG_MONGODB_URL": "mongodb://root:{{config:MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/",
+        "ME_CONFIG_MONGODB_ENABLE_ADMIN": "true",
+        "ME_CONFIG_BASICAUTH_USERNAME": "admin"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8081/"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 5,
+        "startPeriod": "20s"
+      },
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "MONGO_INITDB_ROOT_PASSWORD",
+      "service": "mongo",
+      "label": "Database password",
+      "help": "Auto-generated. The password for the MongoDB root user.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "ME_CONFIG_BASICAUTH_PASSWORD",
+      "service": "mongo-express",
+      "label": "Mongo Express password",
+      "help": "Auto-generated. The password to sign in to the Mongo Express web admin.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to MongoDB",
+    "description": "Open the Mongo Express admin in a browser, or point a driver at the database URL.",
+    "outputs": [
+      {
+        "id": "admin",
+        "label": "Mongo Express",
+        "source": "publicUrl:mongo-express",
+        "help": "Sign in with the username + password below."
+      },
+      {
+        "id": "adminUser",
+        "label": "Admin username",
+        "source": "env:mongo-express:ME_CONFIG_BASICAUTH_USERNAME"
+      },
+      {
+        "id": "adminPassword",
+        "label": "Admin password",
+        "source": "env:mongo-express:ME_CONFIG_BASICAUTH_PASSWORD",
+        "secret": true
+      },
+      {
+        "id": "dbUrl",
+        "label": "Database URL",
+        "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@{{host}}:27017/",
+        "secret": true,
+        "help": "Direct MongoDB connection (root user). Published on port 27017."
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "mongo-express",
+      "port": 8081,
+      "label": "Mongo Express",
+      "kind": "http"
+    },
+    {
+      "service": "mongo",
+      "port": 27017,
+      "label": "Database",
+      "kind": "tcp"
+    }
+  ]
+}

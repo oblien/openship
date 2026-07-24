@@ -16,10 +16,16 @@ import { isServerInOrg, param } from "../../lib/controller-helpers";
 import { streamRunSSE } from "../../lib/run-sse";
 import { streamSSE } from "../../lib/sse";
 import { discoverServerStack } from "./docker-inspect.service";
-import { adoptServerStack, reimportOpenshipProject } from "./migrate.service";
+import { adoptServerStack, reimportOpenshipProject, parseRepoCompose } from "./migrate.service";
 import { buildMigrationPreview } from "./migration-preflight";
 import { migrationOrchestrator } from "./migration.orchestrator";
 import { migrationRunBus } from "./migration.sse";
+import {
+  sanitizeVolumeStrategies,
+  sanitizeSubpaths,
+  sanitizeGitSource,
+  sanitizeServiceEnv,
+} from "./migration-input";
 import {
   getTransferPrefs,
   isValidTransferMode,
@@ -27,18 +33,6 @@ import {
 } from "../settings/settings.service";
 
 const TERMINAL_MIGRATION = ["succeeded", "failed", "rolled_back"];
-
-/** Keep only well-formed serviceName → "reuse"|"copy" entries from client input. */
-function sanitizeVolumeStrategies(
-  input: Record<string, unknown> | undefined,
-): Record<string, "reuse" | "copy"> | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
-  const out: Record<string, "reuse" | "copy"> = {};
-  for (const [name, v] of Object.entries(input)) {
-    if (v === "copy" || v === "reuse") out[name] = v;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
 
 /** Assert both source and target servers belong to the caller's org + write. */
 async function assertServersWritable(
@@ -61,6 +55,27 @@ async function assertServersWritable(
 }
 
 /**
+ * POST /migration/repo-compose  { owner, repo, branch? }
+ *
+ * Read-only: parse a linked repo's docker-compose (via the GitHub API, no clone)
+ * so the wizard can map each discovered container to a compose service. Returns
+ * `{ services: [] }` when the repo has no compose file.
+ */
+export async function repoCompose(c: Context) {
+  const ctx = getRequestContext(c);
+  const { owner, repo, branch } = await c.req.json<{ owner?: string; repo?: string; branch?: string }>();
+  if (!owner?.trim() || !repo?.trim()) {
+    return c.json({ error: "owner and repo are required" }, 400);
+  }
+  try {
+    const services = await parseRepoCompose(ctx, owner.trim(), repo.trim(), branch?.trim() || undefined);
+    return c.json({ success: true, services });
+  } catch (err) {
+    return c.json({ error: `Failed to parse repo compose: ${safeErrorMessage(err)}` }, 502);
+  }
+}
+
+/**
  * POST /migration/scan  { serverId }
  *
  * Read-only: enumerate the server's Docker (compose stacks + hand-run
@@ -68,7 +83,7 @@ async function assertServersWritable(
  * stack for the migration wizard to preview. Nothing changes on the server.
  */
 export async function scanServer(c: Context) {
-  const { serverId } = await c.req.json<{ serverId?: string }>();
+  const { serverId, flatDocker } = await c.req.json<{ serverId?: string; flatDocker?: boolean }>();
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
   const ctx = getRequestContext(c);
@@ -82,7 +97,9 @@ export async function scanServer(c: Context) {
   }
 
   try {
-    const stack = await discoverServerStack(serverId, ctx.organizationId);
+    const stack = await discoverServerStack(serverId, ctx.organizationId, undefined, {
+      flatDocker: flatDocker === true,
+    });
     return c.json({ success: true, stack });
   } catch (err) {
     return c.json({ error: `Scan failed: ${safeErrorMessage(err)}` }, 502);
@@ -101,6 +118,7 @@ export async function scanServer(c: Context) {
  */
 export async function scanServerStream(c: Context) {
   const serverId = c.req.query("serverId");
+  const flatDocker = c.req.query("flatDocker") === "1";
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
   const ctx = getRequestContext(c);
@@ -111,9 +129,14 @@ export async function scanServerStream(c: Context) {
 
   return streamSSE(c, async (s) => {
     try {
-      const stack = await discoverServerStack(serverId, ctx.organizationId, (message) => {
-        void s.writeSSE({ event: "progress", data: JSON.stringify({ type: "progress", message }) });
-      });
+      const stack = await discoverServerStack(
+        serverId,
+        ctx.organizationId,
+        (message) => {
+          void s.writeSSE({ event: "progress", data: JSON.stringify({ type: "progress", message }) });
+        },
+        { flatDocker },
+      );
       await s.writeSSE({ event: "result", data: JSON.stringify({ type: "result", stack }) });
     } catch (err) {
       await s.writeSSE({
@@ -136,8 +159,12 @@ export async function adoptServer(c: Context) {
     serverId?: string;
     projectName?: string;
     serviceNames?: string[];
+    flatDocker?: boolean;
+    volumeStrategies?: Record<string, "reuse" | "copy">;
+    serviceSubpaths?: Record<string, string>;
+    serviceEnv?: Record<string, Record<string, string>>;
   }>();
-  const { serverId, projectName, serviceNames } = body;
+  const { serverId, projectName, serviceNames, flatDocker, volumeStrategies, serviceSubpaths, serviceEnv } = body;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
   if (!projectName?.trim()) return c.json({ error: "projectName is required" }, 400);
   if (!Array.isArray(serviceNames) || serviceNames.length === 0) {
@@ -160,6 +187,10 @@ export async function adoptServer(c: Context) {
       organizationId: ctx.organizationId,
       projectName: projectName.trim(),
       serviceNames,
+      flatDocker,
+      volumeStrategies,
+      serviceSubpaths,
+      serviceEnv,
     });
     return c.json({ success: true, ...result });
   } catch (err) {
@@ -265,6 +296,10 @@ export async function startMigration(c: Context) {
     volumeStrategies?: Record<string, unknown>;
     transferMode?: unknown;
     transferCompression?: unknown;
+    gitSource?: unknown;
+    serviceSubpaths?: Record<string, unknown>;
+    serviceEnv?: Record<string, unknown>;
+    flatDocker?: boolean;
   }>();
   const sourceServerId = body.sourceServerId;
   const targetServerId = body.targetServerId || body.sourceServerId;
@@ -301,6 +336,10 @@ export async function startMigration(c: Context) {
       volumeStrategies: sanitizeVolumeStrategies(body.volumeStrategies),
       transferMode,
       transferCompression,
+      gitSource: sanitizeGitSource(body.gitSource),
+      serviceSubpaths: sanitizeSubpaths(body.serviceSubpaths),
+      serviceEnv: sanitizeServiceEnv(body.serviceEnv),
+      flatDocker: body.flatDocker === true,
     });
     return c.json({ success: true, ...result });
   } catch (err) {

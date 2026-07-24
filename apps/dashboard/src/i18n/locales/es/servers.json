@@ -15,6 +15,8 @@
     "connectedToast": "GitHub conectado para este servidor",
     "patPlaceholder": "ghp_… (pega un token)",
     "patHint": "Un token de acceso personal guardado cifrado para este servidor.",
+    "patLabel": "Token de acceso personal",
+    "or": "o",
     "save": "Guardar",
     "savedToast": "Guardado",
     "saveFailed": "Error al guardar",
@@ -57,7 +59,9 @@
     "authKey": "clave",
     "authPassword": "contraseña",
     "projects": "Proyectos",
-    "regions": "Regiones"
+    "regions": "Regiones",
+    "thisServer": "Este servidor",
+    "currentHost": "Host actual"
   },
   "form": {
     "sshConnection": "Conexión SSH",
@@ -104,6 +108,7 @@
   },
   "detail": {
     "tabs": {
+      "services": "Servicios",
       "overview": "Resumen",
       "components": "Componentes",
       "github": "Git",
@@ -282,7 +287,34 @@
     "toastRemoved": "Límite de tasa eliminado",
     "toastFailedRemove": "No se pudo eliminar el límite de tasa",
     "toastInvalidIp": "Formato de IP/CIDR no válido",
-    "toastAlreadyWhitelisted": "Ya está en la lista blanca"
+    "toastAlreadyWhitelisted": "Ya está en la lista blanca",
+    "ports": {
+      "title": "Exposición de puertos",
+      "subtitle": "Comprueba qué puertos en escucha son accesibles desde la red",
+      "introHint": "Analiza todos los puertos en escucha de esta máquina y marca los enlazados a una interfaz pública en lugar de loopback.",
+      "scanButton": "Analizar puertos",
+      "scanning": "Analizando puertos en escucha…",
+      "rescan": "Volver a analizar",
+      "retry": "Reintentar",
+      "scanFailed": "No se pudieron analizar los puertos",
+      "scanFailedHint": "Puede que el servidor no esté accesible. Reintenta cuando vuelva a estar en línea.",
+      "summary": "{total} puertos en escucha · {exposed} expuestos a la red",
+      "summaryZeroExposed": "{total} puertos en escucha · ninguno expuesto a la red",
+      "exposed": "Expuesto",
+      "loopback": "Solo local",
+      "noProcessInfo": "Nombres de proceso no disponibles (ss no está instalado en este host).",
+      "unknownProcess": "Proceso desconocido",
+      "empty": "No se encontraron puertos en escucha.",
+      "inconclusive": "Análisis no concluyente",
+      "inconclusiveHint": "No se pudo leer la tabla de sockets en este host. Reintenta o verifica el acceso SSH.",
+      "reachable": "Accesible",
+      "firewalled": "Bloqueado por firewall",
+      "expectedOpen": "Se espera que esté abierto",
+      "sensitiveHint": "No debería estar expuesto a internet",
+      "sensitiveReachable": "Servicio sensible accesible desde internet",
+      "reachableLegend": "«Accesible» se confirmó conectándose al puerto desde fuera del servidor; «Bloqueado por firewall» está enlazado pero bloqueado (p. ej. por un firewall en la nube).",
+      "summaryReachable": "{total} puertos en escucha · {reachable} accesibles desde internet · {firewalled} bloqueados por firewall"
+    }
   },
   "terminal": {
     "title": "Terminal",

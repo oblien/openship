@@ -108,6 +108,8 @@
     "local": "محلي",
     "production": "الإنتاج",
     "lastDeploy": "آخر نشر",
+    "noDomain": "لا يوجد نطاق",
+    "addDomain": "إضافة نطاق",
     "tabs": {
       "appSettings": "الإعدادات",
       "overview": "نظرة عامة",

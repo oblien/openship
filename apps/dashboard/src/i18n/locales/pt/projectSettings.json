@@ -78,6 +78,30 @@
       "toggleFailed": "Falha ao alternar o projeto",
       "clearInstallFailed": "Falha ao limpar a cache de instalação",
       "clearBuildFailed": "Falha ao limpar a cache de compilação"
+    },
+    "routing": {
+      "title": "Roteamento",
+      "description": "Como o edge alcança o upstream deste app",
+      "intro": "Escolha como o edge endereça o contêiner deste projeto.",
+      "note": "A porta loopback é recomendada: uma porta de host privada 127.0.0.1, estável entre reinicializações e nunca exposta na rede. O IP do contêiner é avançado (trocas sem tempo de inatividade; requer o edge na bridge do Docker; não suportado no Docker Desktop).",
+      "modes": {
+        "auto": {
+          "label": "Automático",
+          "desc": "Recomendado (porta loopback)"
+        },
+        "loopbackPort": {
+          "label": "Porta loopback",
+          "desc": "Porta de host privada 127.0.0.1"
+        },
+        "containerIp": {
+          "label": "IP do contêiner",
+          "desc": "Avançado — IP da bridge"
+        }
+      },
+      "toast": {
+        "saved": "Roteamento definido como {mode}",
+        "failed": "Falha ao atualizar o roteamento"
+      }
     }
   },
   "backup": {
@@ -357,11 +381,26 @@
     "title": "Potência da máquina",
     "description": "Configure a potência da máquina para o seu projeto.",
     "tiers": {
-      "lightweight": { "name": "Leve", "description": "Aplicações pequenas e sites estáticos" },
-      "standard": { "name": "Padrão", "description": "A maioria das aplicações web" },
-      "performance": { "name": "Desempenho", "description": "Aplicações de tráfego elevado" },
-      "enterprise": { "name": "Empresarial", "description": "Aplicações de produção em grande escala" },
-      "autoscale": { "name": "Escalonamento automático", "description": "Escala consoante a procura" }
+      "lightweight": {
+        "name": "Leve",
+        "description": "Aplicações pequenas e sites estáticos"
+      },
+      "standard": {
+        "name": "Padrão",
+        "description": "A maioria das aplicações web"
+      },
+      "performance": {
+        "name": "Desempenho",
+        "description": "Aplicações de tráfego elevado"
+      },
+      "enterprise": {
+        "name": "Empresarial",
+        "description": "Aplicações de produção em grande escala"
+      },
+      "autoscale": {
+        "name": "Escalonamento automático",
+        "description": "Escala consoante a procura"
+      }
     },
     "dynamic": "Dinâmico",
     "custom": {

@@ -70,6 +70,20 @@ const envSchema = z.object({
   OPENSHIP_PUBLIC_URL: z.string().optional(),
 
   /**
+   * The origin THIS API is actually reachable at — used ONLY to construct
+   * absolute auth/OAuth URLs (discovery issuer, authorize, token) so external
+   * MCP clients get a reachable origin instead of the static `runtimeTarget.api`
+   * fallback. The desktop app runs the API on a dynamic loopback port and passes
+   * `http://127.0.0.1:<apiPort>` here.
+   *
+   * SECURITY: this is a URL-CONSTRUCTION signal only. Unlike OPENSHIP_PUBLIC_URL
+   * it must NEVER feed the zero-auth / auth-mode / cookie / trustedOrigins-security
+   * gates — that's the whole point (it lets desktop advertise a reachable origin
+   * WITHOUT tripping `zeroAuthAllowed`'s "publicly-served" rejection).
+   */
+  OPENSHIP_ADVERTISED_ORIGIN: z.string().optional(),
+
+  /**
    * Force login (no zero-auth) even in desktop DEPLOY_MODE. The CLI sets this
    * for every `openship up` — a CLI-managed instance always requires a real
    * admin account (created by the CLI's setup), unlike the Electron desktop app
@@ -194,6 +208,14 @@ const envSchema = z.object({
    * dev) regardless of this flag.
    */
   TRUST_PROXY: envBool("false"),
+  /**
+   * Allow outbound notification webhooks to target internal/loopback/LAN hosts.
+   * Default false → the SSRF guard (assertPublicUrl) runs on self-hosted too, so
+   * a member can't point a channel at 127.0.0.1 / metadata / the private network.
+   * Single-tenant self-hosts that intentionally notify a LAN endpoint can opt in.
+   * Ignored under CLOUD_MODE (multi-tenant always guards).
+   */
+  NOTIFY_WEBHOOK_ALLOW_INTERNAL: envBool("false"),
   /** Public IP of the server - used for A record instructions in self-hosted mode. */
   SERVER_IP: z.string().optional(),
   /**
@@ -436,6 +458,26 @@ if (env.OPENSHIP_PUBLIC_URL) {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(
       `OPENSHIP_PUBLIC_URL must use http or https (got "${parsed.protocol}" in "${raw}").`,
+    );
+  }
+}
+
+// ─── OPENSHIP_ADVERTISED_ORIGIN validation ────────────────────────────────
+// URL-construction only (see the field doc). Same fail-loud shape as
+// OPENSHIP_PUBLIC_URL so a malformed origin can't produce junk discovery URLs.
+if (env.OPENSHIP_ADVERTISED_ORIGIN) {
+  const raw = env.OPENSHIP_ADVERTISED_ORIGIN.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(
+      `OPENSHIP_ADVERTISED_ORIGIN="${raw}" is not a valid absolute URL (expected e.g. http://127.0.0.1:54777).`,
+    );
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(
+      `OPENSHIP_ADVERTISED_ORIGIN must use http or https (got "${parsed.protocol}" in "${raw}").`,
     );
   }
 }

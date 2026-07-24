@@ -8,6 +8,7 @@ import type { Deployment } from "../types";
 import { formatDistanceToNow, formatBuildTime, getStatusConfig } from "../utils";
 import { GitBranch, Clock, ExternalLink, MoreVertical, Archive, Pin, Activity } from "lucide-react";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
+import { AppLogo } from "@/components/AppLogo";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 type ServiceStatusLabels = {
@@ -26,6 +27,10 @@ type ServiceStatusLabels = {
 interface DeploymentCardProps {
   deployment: Deployment;
   onStatusChange?: () => void;
+  /** Catalog-app projects render the app's brand logo instead of the
+   *  stack/framework glyph (an app deploy is a docker-compose stack, but the
+   *  user thinks of it as "Convex", not "Docker Compose"). */
+  appTemplateId?: string;
 }
 
 /**
@@ -70,7 +75,12 @@ function getServiceStatusChipConfig(
     case "deploying":
     case "in_progress":
       return {
-        label: status === "building" ? labels.building : status === "deploying" ? labels.deploying : labels.running,
+        label:
+          status === "building"
+            ? labels.building
+            : status === "deploying"
+              ? labels.deploying
+              : labels.running,
         bgClass: "bg-info-bg",
         textClass: "text-info",
         dotClass: "bg-info-solid",
@@ -102,7 +112,11 @@ function getServiceStatusChipConfig(
   }
 }
 
-export const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onStatusChange }) => {
+export const DeploymentCard: React.FC<DeploymentCardProps> = ({
+  deployment,
+  onStatusChange,
+  appTemplateId,
+}) => {
   const { t } = useI18n();
   const router = useRouter();
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
@@ -123,16 +137,19 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onSt
   const statusLabel = statusLabelMap[deployment.status] ?? t.deployments.status.pending;
 
   const hasCommitData = deployment.commit?.hash && deployment.commit.hash !== "N/A";
-  const hasCommitMessage = deployment.commit?.message && deployment.commit.message !== "Manual deployment";
+  const hasCommitMessage =
+    deployment.commit?.message && deployment.commit.message !== "Manual deployment";
 
   return (
     <div
       className="group relative flex cursor-pointer items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/25"
       onClick={() => router.push(`/build/${deployment.id}`)}
     >
-      {/* Framework icon */}
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted/45 transition-colors group-hover:bg-muted/65">
-        {frameworkConfig.icon ? (
+      {/* App logo (catalog apps) → else framework icon → else initials */}
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/45 transition-colors group-hover:bg-muted/65">
+        {appTemplateId ? (
+          <AppLogo appId={appTemplateId} className="size-5 object-contain" />
+        ) : frameworkConfig.icon ? (
           frameworkConfig.icon("hsl(var(--foreground))")
         ) : (
           <span className="text-xs font-mono font-bold text-muted-foreground">
@@ -150,7 +167,9 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onSt
           {deployment.version != null && (
             <span
               className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground"
-              title={interpolate(t.deployments.card.versionTitle, { version: String(deployment.version) })}
+              title={interpolate(t.deployments.card.versionTitle, {
+                version: String(deployment.version),
+              })}
             >
               v{deployment.version}
             </span>

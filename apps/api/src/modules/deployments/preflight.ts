@@ -356,7 +356,17 @@ async function checkCloneOnServerCredential(
     id: "clone-on-server",
     label: "Clone-on-server credential",
   };
-  if (platformTarget === "desktop") return { ...baseCheck, status: "pass" };
+  if (platformTarget === "desktop") {
+    // Desktop default: clone on the server via the forwarded git identity (used
+    // for the build only, never stored). Opting out clones here + transfers —
+    // either way this never blocks, so it's an informational pass.
+    return {
+      ...baseCheck,
+      status: "pass",
+      message:
+        "Will clone on the server using your forwarded git identity (used for this build only, never stored), or clone here and transfer if you opt out.",
+    };
+  }
   if (!ctx || !owner) return { ...baseCheck, status: "pass" };
 
   // A per-server GitHub credential clones directly on the server — satisfies

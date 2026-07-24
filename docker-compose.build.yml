@@ -1,0 +1,37 @@
+# ──────────────────────────────────────────────────────────
+# From-source override — BUILD the images locally instead of pulling.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# For development and for our own SaaS deploy. Adds a `build:` to api +
+# dashboard (Compose builds and tags them as the base file's `image:` name) and
+# re-adds the `web` landing site, which the pull-based self-host stack omits.
+# ──────────────────────────────────────────────────────────
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+
+  edge:
+    build:
+      context: .
+      dockerfile: apps/edge/Dockerfile
+
+  # ─── Web / Landing (source-build only) ────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${WEB_PORT:-3000}:${WEB_PORT:-3000}"
+    environment:
+      NODE_ENV: production
+      PORT: "${WEB_PORT:-3000}"

@@ -24,7 +24,6 @@ import { RoutingConfigCard } from "./RoutingConfigCard";
 import { RouteRules } from "./RouteRules";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { getApiErrorMessage, projectsApi, deployApi, domainsApi, serviceKind, servicesApi, type Service, type ServiceInput } from "@/lib/api";
-import { openTriggeredBuild } from "@/lib/deploy-nav";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
@@ -32,6 +31,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { resolveServiceHostnameLabel } from "@repo/core";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
+import { useEdgeModal } from "@/hooks/useSystemPrepareModal";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
 import {
   createPublicEndpoint,
@@ -233,6 +233,14 @@ export const DomainSettings = () => {
   const { t } = useI18n();
   const router = useRouter();
   const { baseDomain, selfHosted } = usePlatform();
+  const openEdgeModal = useEdgeModal();
+  // Install/own OpenResty + apply routes reload-free (no redeploy), surfacing the
+  // 80/443 takeover consent if a foreign proxy holds them. Reused by the first
+  // route publish + the "Set up edge" action.
+  const openEdge = useCallback(
+    () => openEdgeModal(id, { onDone: () => { invalidateProjectCaches(id); router.refresh(); } }),
+    [openEdgeModal, id, router],
+  );
 
   const [newDomain, setNewDomain] = useState("");
   // Unified "add domain" = add a route: pick free/custom + the port it maps to.
@@ -858,18 +866,13 @@ export const DomainSettings = () => {
     domainSummaries.length === 0 &&
     !services.some((s) => s.enabled && s.exposed);
 
-  // Redeploy (image-only needs no source) so the deploy preflight installs
-  // OpenResty + registers the new route, then land on the build screen where
-  // the takeover modal surfaces if the old proxy still holds 80/443. Route is
-  // already saved, so a trigger failure is non-fatal (deploy manually).
+  // First route on an edge-less project: instead of a full redeploy, open the
+  // edge-consent flow — it installs/owns OpenResty on the project's server and
+  // applies the routes reload-free (surfacing the SAME 80/443 takeover modal if
+  // a foreign proxy holds them). No container rebuild, so a migrated attach-live
+  // stack is never recreated. The route is already saved when this runs.
   const publishFirstRoute = async () => {
-    try {
-      const res = await deployApi.trigger({ projectId: id });
-      showToast(t.projectSettings.domains.toast.publishing, "success", t.projectSettings.domains.toast.domainsTitle);
-      openTriggeredBuild(router, res, id);
-    } catch (error) {
-      showToast(getApiErrorMessage(error, t.projectSettings.domains.toast.publishFailed), "error", t.projectSettings.domains.toast.domainsTitle);
-    }
+    openEdge();
   };
 
   // Persist a specific ordering of the project's public endpoints. Endpoint
@@ -1653,6 +1656,18 @@ export const DomainSettings = () => {
       {!hasProjectLevelRouting && (servicesLoading || services.length > 0) && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* Migrated/edgeless stacks: routes may be recorded but the server's
+                edge (OpenResty on 80/443) isn't set up yet. This installs/owns it
+                + applies routes reload-free (no redeploy), surfacing the takeover
+                consent if a foreign proxy holds 80/443. Idempotent when the edge
+                is already ours. */}
+            {selfHosted && !!projectData.activeDeploymentId && services.some((s) => s.enabled && s.exposed) && (
+              <ActionButton
+                label="Set up edge"
+                icon={ShieldCheck}
+                onClick={openEdge}
+              />
+            )}
             <ActionButton
               label={showAddRoute ? t.projectSettings.domains.addRoute.cancel : t.projectSettings.domains.addRoute.add}
               icon={Plus}

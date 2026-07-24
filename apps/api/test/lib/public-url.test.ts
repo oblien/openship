@@ -10,6 +10,8 @@ const { mockEnv, mockRuntimeTarget } = vi.hoisted(() => ({
 vi.mock("../../src/config/env", () => ({
   env: mockEnv,
   runtimeTarget: mockRuntimeTarget,
+  // public-url.ts reads localDashboardUrl for resolveDashboardPublicUrl's fallback.
+  localDashboardUrl: mockRuntimeTarget.dashboard,
 }));
 
 import {

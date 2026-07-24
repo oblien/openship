@@ -57,6 +57,7 @@ import {
 import { checkMailHealth, MAIL_COMPONENTS } from "./mail-health.service";
 import { updatePostmasterPassword } from "./mail-credentials.service";
 import { reserveMailSetup } from "./mail-setup-lease";
+import { applyRelayToState } from "./admin/outbound-relay.service";
 import {
   readState,
   writeState,
@@ -881,6 +882,13 @@ export async function startSetup(c: Context) {
             ...state,
             dnsRecords: result.data.dnsRecords as Record<string, unknown>,
           };
+          // stepDkimKeys rebuilds dnsRecords SELF-HOST-ONLY. If an SES outbound
+          // relay is active, re-lay its send-hop records (SPF include + SES
+          // DKIM/MAIL FROM) back on — otherwise a re-install / resume silently
+          // drops them and SES sending breaks / DMARC misaligns.
+          if (state.outboundRelay?.enabled) {
+            state = { ...state, ...applyRelayToState(state, state.outboundRelay) };
+          }
           await stream.writeSSE({
             event: "dns_records",
             data: JSON.stringify({ records: state.dnsRecords }),

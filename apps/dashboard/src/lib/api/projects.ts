@@ -197,12 +197,15 @@ export const projectsApi = {
       wipeVolumes?: boolean;
       force?: boolean;
       forceOrphan?: boolean;
+      /** Record-only: drop the Openship row, keep the server workload (self-hosted). */
+      recordOnly?: boolean;
     } = {},
   ) => {
-    const { force, forceOrphan, ...rest } = body;
+    const { force, forceOrphan, recordOnly, ...rest } = body;
     const query = new URLSearchParams();
     if (force) query.set("force", "true");
     if (forceOrphan) query.set("forceOrphan", "true");
+    if (recordOnly) query.set("recordOnly", "true");
     const qs = query.toString();
     const path = qs ? `${endpoints.projects.item(id)}?${qs}` : endpoints.projects.item(id);
     // Teardown destroys containers/images/volumes over SSH (round-trips + per-

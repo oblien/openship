@@ -91,7 +91,11 @@ describe("resolveBuildGitToken — server build, fall-through when server has no
     expect(res).toEqual({});
   });
 
-  it("signals relay fallback when opted in and the repo is private", async () => {
+  it("signals relay fallback when opted in, the repo is private, and a gh identity exists to forward", async () => {
+    // The relay vends the operator's LOCAL gh token on demand, so resolveBuildGitToken
+    // only signals { relay: true } when a local gh identity actually exists — otherwise
+    // the relay would open with nothing to forward (see clone-auth relay gate).
+    getLocalGhToken.mockResolvedValue("ghtok");
     const res = await resolveBuildGitToken({
       ...base,
       buildStrategy: "server",

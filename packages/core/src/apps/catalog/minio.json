@@ -1,0 +1,75 @@
+{
+  "available": true,
+  "id": "minio",
+  "name": "MinIO",
+  "description": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it.",
+  "kind": "template",
+  "logo": "minio",
+  "category": "database",
+  "tags": [
+    "storage",
+    "s3",
+    "object-storage"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "minio",
+      "image": "minio/minio:latest",
+      "command": "server /data --console-address :9001",
+      "ports": [
+        "9000:9000",
+        "9001:9001"
+      ],
+      "exposedPort": 9001,
+      "routes": [
+        { "port": 9001 },
+        { "port": 9000, "slugSuffix": "s3" }
+      ],
+      "exposed": true,
+      "environment": {
+        "MINIO_BROWSER_REDIRECT_URL": "{{publicUrl:minio}}"
+      },
+      "secretEnv": [
+        "MINIO_ROOT_PASSWORD"
+      ],
+      "volumes": [
+        "minio_data:/data"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "MINIO_ROOT_USER",
+      "service": "minio",
+      "label": "Root user (access key)",
+      "help": "The console + S3 admin username. Minimum 3 characters.",
+      "type": "text",
+      "default": "minio",
+      "required": true
+    },
+    {
+      "key": "MINIO_ROOT_PASSWORD",
+      "service": "minio",
+      "label": "Root password (secret key)",
+      "help": "Auto-generated. The S3 admin secret — shown once after install.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "endpoints": [
+    { "service": "minio", "port": 9001, "label": "Console", "kind": "http" },
+    { "service": "minio", "port": 9000, "label": "S3 API", "kind": "http" }
+  ],
+  "connection": {
+    "title": "S3 connection",
+    "description": "Use these with any S3 client — the endpoint is the S3 API URL, the keys are the root user / password.",
+    "outputs": [
+      { "id": "console", "label": "Console", "source": "publicUrl:minio:9001" },
+      { "id": "endpoint", "label": "S3 endpoint", "source": "publicUrl:minio:9000" },
+      { "id": "accessKey", "label": "Access key", "source": "env:minio:MINIO_ROOT_USER" },
+      { "id": "secretKey", "label": "Secret key", "source": "env:minio:MINIO_ROOT_PASSWORD", "secret": true }
+    ]
+  }
+}

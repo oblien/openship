@@ -15,6 +15,8 @@
     "connectedToast": "このサーバーで GitHub を接続しました",
     "patPlaceholder": "ghp_…（トークンを貼り付け）",
     "patHint": "このサーバー用に暗号化して保存されるパーソナルアクセストークン。",
+    "patLabel": "パーソナルアクセストークン",
+    "or": "または",
     "save": "保存",
     "savedToast": "保存しました",
     "saveFailed": "保存に失敗しました",
@@ -57,7 +59,9 @@
     "authKey": "鍵",
     "authPassword": "パスワード",
     "projects": "プロジェクト",
-    "regions": "リージョン"
+    "regions": "リージョン",
+    "thisServer": "このサーバー",
+    "currentHost": "現在のホスト"
   },
   "form": {
     "sshConnection": "SSH 接続",
@@ -104,6 +108,7 @@
   },
   "detail": {
     "tabs": {
+      "services": "サービス",
       "overview": "概要",
       "components": "コンポーネント",
       "github": "Git",
@@ -282,7 +287,34 @@
     "toastRemoved": "レート制限を削除しました",
     "toastFailedRemove": "レート制限の削除に失敗しました",
     "toastInvalidIp": "無効な IP/CIDR 形式です",
-    "toastAlreadyWhitelisted": "すでにホワイトリストに登録されています"
+    "toastAlreadyWhitelisted": "すでにホワイトリストに登録されています",
+    "ports": {
+      "title": "ポートの公開状況",
+      "subtitle": "待ち受け中のどのポートがネットワークから到達可能かを確認します",
+      "introHint": "このマシンで待ち受け中のすべてのポートをスキャンし、ループバックではなく公開インターフェースにバインドされているものを検出します。",
+      "scanButton": "ポートをスキャン",
+      "scanning": "待ち受けポートをスキャン中…",
+      "rescan": "再スキャン",
+      "retry": "再試行",
+      "scanFailed": "ポートをスキャンできませんでした",
+      "scanFailedHint": "サーバーに到達できない可能性があります。オンラインに戻ったら再試行してください。",
+      "summary": "{total} 個の待ち受けポート · {exposed} 個がネットワークに公開",
+      "summaryZeroExposed": "{total} 個の待ち受けポート · ネットワークへの公開なし",
+      "exposed": "公開",
+      "loopback": "ローカルのみ",
+      "noProcessInfo": "プロセス名は利用できません（このホストに ss がインストールされていません）。",
+      "unknownProcess": "不明なプロセス",
+      "empty": "待ち受けポートが見つかりませんでした。",
+      "inconclusive": "スキャンは不確定です",
+      "inconclusiveHint": "このホストのソケットテーブルを読み取れませんでした。再試行するか、SSH アクセスを確認してください。",
+      "reachable": "到達可能",
+      "firewalled": "ファイアウォールでブロック",
+      "expectedOpen": "開いていることが想定されます",
+      "sensitiveHint": "インターネットに公開すべきではありません",
+      "sensitiveReachable": "機微なサービスがインターネットから到達可能",
+      "reachableLegend": "「到達可能」はサーバー外からポートに接続して確認済み。「ファイアウォールでブロック」はバインドされているがブロックされています（例：クラウドファイアウォール）。",
+      "summaryReachable": "{total} 個の待ち受けポート · {reachable} 個がインターネットから到達可能 · {firewalled} 個がファイアウォールでブロック"
+    }
   },
   "terminal": {
     "title": "ターミナル",

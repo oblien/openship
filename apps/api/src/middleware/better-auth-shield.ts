@@ -96,7 +96,54 @@ const ALWAYS_ALLOWED_FOR_SELF = new Set<string>([
   "/api/auth/organization/set-active",
 ]);
 
-const ALL_PROTECTED = new Set<string>([...READ_PATHS, ...MUTATION_PATHS]);
+/**
+ * Reads that must NOT 403 for member/restricted (the dashboard's
+ * select-org / TeamTab flows call them to read org id/name/own role), but whose
+ * roster + invitation arrays are admin-tier and must be STRIPPED for those
+ * roles. Better Auth's get-full-organization authorizes on membership ONLY (no
+ * role check) and returns every member's email + all pending invitations (SaaS
+ * audit) — so the shield filters the response instead of forwarding it raw.
+ */
+const FILTERED_READ_PATHS = new Set<string>([
+  "/api/auth/organization/get-full-organization",
+]);
+
+const ALL_PROTECTED = new Set<string>([
+  ...READ_PATHS,
+  ...MUTATION_PATHS,
+  ...FILTERED_READ_PATHS,
+]);
+
+/**
+ * Run the downstream handler, then — for a non-privileged caller — strip the
+ * member roster + invitations from a get-full-organization response, keeping
+ * the org fields and the caller's OWN member entry (so the dashboard still
+ * reads its role). Only rewrites a 200 JSON body; anything else passes through.
+ */
+async function filterFullOrganization(c: Context, next: Next, userId: string): Promise<void> {
+  await next();
+  const res = c.res;
+  if (!res || res.status !== 200) return;
+  let data: unknown;
+  try {
+    data = await res.clone().json();
+  } catch {
+    return; // not JSON — leave untouched
+  }
+  if (!data || typeof data !== "object") return;
+  const obj = data as { members?: unknown; invitations?: unknown };
+  const ownMember = Array.isArray(obj.members)
+    ? obj.members.filter((m) => (m as { userId?: unknown })?.userId === userId)
+    : [];
+  const filtered = { ...obj, members: ownMember, invitations: [] };
+  const headers = new Headers(res.headers);
+  // We emit a fresh, uncompressed JSON body: drop content-length (size changed)
+  // AND content-encoding (a stale `gzip` would make the client try to gunzip
+  // plain JSON and fail).
+  headers.delete("content-length");
+  headers.delete("content-encoding");
+  c.res = new Response(JSON.stringify(filtered), { status: 200, headers });
+}
 
 async function extractTargetOrgId(
   c: Context,
@@ -169,6 +216,12 @@ export async function betterAuthShield(c: Context, next: Next) {
   // Owners / admins: full access to the plugin endpoints (plugin's own
   // AC still applies for finer gating).
   if (role === "owner" || role === "admin") return next();
+
+  // member / restricted may READ get-full-organization but only see the org
+  // fields + their own membership — the roster + invitations are stripped.
+  if (FILTERED_READ_PATHS.has(path)) {
+    return filterFullOrganization(c, next, session.user.id);
+  }
 
   // Restricted: deny every protected endpoint EXCEPT leave/set-active
   // (a restricted member must always be able to exit / swap orgs).

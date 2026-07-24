@@ -97,6 +97,12 @@ export const notificationsApi = {
 
   deleteChannel: (id: string) => api.delete<{ ok: true }>(endpoints.notifications.channel(id)),
 
+  // Sends a real test message through the channel's worker; on success the
+  // server flips `verified: true` (the only way to prove reachability). Throws
+  // with the provider's error message on failure.
+  testChannel: (id: string) =>
+    api.post<{ ok: boolean; verified: boolean }>(endpoints.notifications.channelTest(id), {}),
+
   // ── Subscriptions
   listSubscriptions: () =>
     api.get<{ subscriptions: NotificationSubscription[] }>(endpoints.notifications.subscriptions),

@@ -15,6 +15,8 @@
     "connectedToast": "GitHub connecté pour ce serveur",
     "patPlaceholder": "ghp_… (collez un jeton)",
     "patHint": "Un jeton d'accès personnel stocké chiffré pour ce serveur.",
+    "patLabel": "Jeton d'accès personnel",
+    "or": "ou",
     "save": "Enregistrer",
     "savedToast": "Enregistré",
     "saveFailed": "Échec de l'enregistrement",
@@ -57,7 +59,9 @@
     "authKey": "clé",
     "authPassword": "mot de passe",
     "projects": "Projets",
-    "regions": "Régions"
+    "regions": "Régions",
+    "thisServer": "Ce serveur",
+    "currentHost": "Hôte actuel"
   },
   "form": {
     "sshConnection": "Connexion SSH",
@@ -104,6 +108,7 @@
   },
   "detail": {
     "tabs": {
+      "services": "Services",
       "overview": "Aperçu",
       "components": "Composants",
       "github": "Git",
@@ -282,7 +287,34 @@
     "toastRemoved": "Limite de débit supprimée",
     "toastFailedRemove": "Échec de la suppression de la limite de débit",
     "toastInvalidIp": "Format IP/CIDR invalide",
-    "toastAlreadyWhitelisted": "Déjà dans la liste blanche"
+    "toastAlreadyWhitelisted": "Déjà dans la liste blanche",
+    "ports": {
+      "title": "Exposition des ports",
+      "subtitle": "Voyez quels ports en écoute sont accessibles depuis le réseau",
+      "introHint": "Analysez chaque port en écoute sur cette machine et signalez ceux liés à une interface publique plutôt qu'au loopback.",
+      "scanButton": "Analyser les ports",
+      "scanning": "Analyse des ports en écoute…",
+      "rescan": "Relancer l'analyse",
+      "retry": "Réessayer",
+      "scanFailed": "Impossible d'analyser les ports",
+      "scanFailedHint": "Le serveur est peut-être injoignable. Réessayez une fois qu'il est de nouveau en ligne.",
+      "summary": "{total} ports en écoute · {exposed} exposés au réseau",
+      "summaryZeroExposed": "{total} ports en écoute · aucun exposé au réseau",
+      "exposed": "Exposé",
+      "loopback": "Local uniquement",
+      "noProcessInfo": "Noms de processus indisponibles (ss n'est pas installé sur cet hôte).",
+      "unknownProcess": "Processus inconnu",
+      "empty": "Aucun port en écoute trouvé.",
+      "inconclusive": "Analyse non concluante",
+      "inconclusiveHint": "Impossible de lire la table des sockets sur cet hôte. Réessayez ou vérifiez l'accès SSH.",
+      "reachable": "Accessible",
+      "firewalled": "Bloqué par le pare-feu",
+      "expectedOpen": "Doit être ouvert",
+      "sensitiveHint": "Ne devrait pas être exposé à Internet",
+      "sensitiveReachable": "Service sensible accessible depuis Internet",
+      "reachableLegend": "« Accessible » a été confirmé en contactant le port depuis l'extérieur du serveur ; « Bloqué par le pare-feu » est lié mais bloqué (par ex. par un pare-feu cloud).",
+      "summaryReachable": "{total} ports en écoute · {reachable} accessibles depuis Internet · {firewalled} bloqués par le pare-feu"
+    }
   },
   "terminal": {
     "title": "Terminal",

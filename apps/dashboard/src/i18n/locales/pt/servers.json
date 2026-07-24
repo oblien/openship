@@ -15,6 +15,8 @@
     "connectedToast": "GitHub conectado para este servidor",
     "patPlaceholder": "ghp_… (cole um token)",
     "patHint": "Um token de acesso pessoal armazenado criptografado para este servidor.",
+    "patLabel": "Token de acesso pessoal",
+    "or": "ou",
     "save": "Salvar",
     "savedToast": "Salvo",
     "saveFailed": "Falha ao salvar",
@@ -57,7 +59,9 @@
     "authKey": "chave",
     "authPassword": "senha",
     "projects": "Projetos",
-    "regions": "Regiões"
+    "regions": "Regiões",
+    "thisServer": "Este servidor",
+    "currentHost": "Host atual"
   },
   "form": {
     "sshConnection": "Conexão SSH",
@@ -104,6 +108,7 @@
   },
   "detail": {
     "tabs": {
+      "services": "Serviços",
       "overview": "Visão Geral",
       "components": "Componentes",
       "github": "Git",
@@ -282,7 +287,34 @@
     "toastRemoved": "Limite de taxa removido",
     "toastFailedRemove": "Falha ao remover o limite de taxa",
     "toastInvalidIp": "Formato de IP/CIDR inválido",
-    "toastAlreadyWhitelisted": "Já está na lista de permissões"
+    "toastAlreadyWhitelisted": "Já está na lista de permissões",
+    "ports": {
+      "title": "Exposição de portas",
+      "subtitle": "Veja quais portas em escuta são acessíveis pela rede",
+      "introHint": "Analise todas as portas em escuta nesta máquina e sinalize as vinculadas a uma interface pública em vez de loopback.",
+      "scanButton": "Analisar portas",
+      "scanning": "Analisando portas em escuta…",
+      "rescan": "Analisar novamente",
+      "retry": "Tentar novamente",
+      "scanFailed": "Não foi possível analisar as portas",
+      "scanFailedHint": "O servidor pode estar inacessível. Tente novamente quando ele voltar a ficar on-line.",
+      "summary": "{total} portas em escuta · {exposed} expostas à rede",
+      "summaryZeroExposed": "{total} portas em escuta · nenhuma exposta à rede",
+      "exposed": "Exposta",
+      "loopback": "Somente local",
+      "noProcessInfo": "Nomes de processo indisponíveis (ss não está instalado neste host).",
+      "unknownProcess": "Processo desconhecido",
+      "empty": "Nenhuma porta em escuta encontrada.",
+      "inconclusive": "Análise inconclusiva",
+      "inconclusiveHint": "Não foi possível ler a tabela de sockets neste host. Tente novamente ou verifique o acesso SSH.",
+      "reachable": "Acessível",
+      "firewalled": "Bloqueado pelo firewall",
+      "expectedOpen": "Espera-se que esteja aberto",
+      "sensitiveHint": "Não deveria estar exposto à internet",
+      "sensitiveReachable": "Serviço sensível acessível pela internet",
+      "reachableLegend": "«Acessível» foi confirmado conectando-se à porta de fora do servidor; «Bloqueado pelo firewall» está vinculado mas bloqueado (p. ex. por um firewall na nuvem).",
+      "summaryReachable": "{total} portas em escuta · {reachable} acessíveis pela internet · {firewalled} bloqueadas pelo firewall"
+    }
   },
   "terminal": {
     "title": "Terminal",

@@ -1,6 +1,7 @@
-import type { Domain, Service } from "@repo/db";
+import type { Domain, Project, Service } from "@repo/db";
+import { SYSTEM, resolveServiceHostnameLabel } from "@repo/core";
 import { getRoutingBaseDomain } from "./routing-domains";
-import { resolveServicePort } from "./deployable-service";
+import { resolveServicePort, serviceKind } from "./deployable-service";
 import { env } from "../config/env";
 
 // OpenResty management port (packages/adapters openresty-lua.ts OPENRESTY_MGMT_PORT).
@@ -416,6 +417,37 @@ export function resolveServicePublicEndpoints(
       domainType: service.domainType === "custom" ? "custom" : "free",
     },
   ]);
+}
+
+/**
+ * Every public endpoint's assigned domain URL for a service, keyed by container
+ * port. Free → https://<slug>.<cloud>, custom → https://<customDomain>. The
+ * SINGLE source for a service's public URLs, so the deploy that creates a route
+ * and any surface that displays it (the app-settings connection card) resolve
+ * the SAME URL and can't drift apart.
+ */
+export function resolveServiceEndpointUrls(
+  project: Project,
+  service: Service,
+): Array<{ port: number; url: string }> {
+  const urls: Array<{ port: number; url: string }> = [];
+  for (const endpoint of resolveServicePublicEndpoints(service)) {
+    if (endpoint.port === undefined) continue;
+    if (endpoint.domainType === "custom") {
+      if (endpoint.customDomain)
+        urls.push({ port: endpoint.port, url: `https://${endpoint.customDomain}` });
+      continue;
+    }
+    const slug = resolveServiceHostnameLabel(
+      project.slug ?? project.name,
+      service.name,
+      endpoint.domain ?? undefined,
+      serviceKind(service),
+    );
+    if (slug)
+      urls.push({ port: endpoint.port, url: `https://${slug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}` });
+  }
+  return urls;
 }
 
 /**

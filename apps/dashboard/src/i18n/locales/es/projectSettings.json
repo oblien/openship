@@ -78,6 +78,30 @@
       "toggleFailed": "No se pudo cambiar el estado del proyecto",
       "clearInstallFailed": "No se pudo borrar la caché de instalación",
       "clearBuildFailed": "No se pudo borrar la caché de compilación"
+    },
+    "routing": {
+      "title": "Enrutamiento",
+      "description": "Cómo el edge alcanza el upstream de esta app",
+      "intro": "Elige cómo el edge direcciona el contenedor de este proyecto.",
+      "note": "Se recomienda el puerto loopback: un puerto de host privado 127.0.0.1, estable entre reinicios y nunca expuesto en la red. La IP del contenedor es avanzada (cambios sin tiempo de inactividad; requiere el edge en el bridge de Docker; no compatible con Docker Desktop).",
+      "modes": {
+        "auto": {
+          "label": "Automático",
+          "desc": "Recomendado (puerto loopback)"
+        },
+        "loopbackPort": {
+          "label": "Puerto loopback",
+          "desc": "Puerto de host privado 127.0.0.1"
+        },
+        "containerIp": {
+          "label": "IP del contenedor",
+          "desc": "Avanzado: IP del bridge"
+        }
+      },
+      "toast": {
+        "saved": "Enrutamiento establecido en {mode}",
+        "failed": "No se pudo actualizar el enrutamiento"
+      }
     }
   },
   "backup": {
@@ -357,11 +381,26 @@
     "title": "Potencia de la máquina",
     "description": "Configura la potencia de la máquina para tu proyecto.",
     "tiers": {
-      "lightweight": { "name": "Ligero", "description": "Aplicaciones pequeñas y sitios estáticos" },
-      "standard": { "name": "Estándar", "description": "La mayoría de las aplicaciones web" },
-      "performance": { "name": "Rendimiento", "description": "Aplicaciones de alto tráfico" },
-      "enterprise": { "name": "Empresa", "description": "Aplicaciones de producción a gran escala" },
-      "autoscale": { "name": "Escalado automático", "description": "Escala según la demanda" }
+      "lightweight": {
+        "name": "Ligero",
+        "description": "Aplicaciones pequeñas y sitios estáticos"
+      },
+      "standard": {
+        "name": "Estándar",
+        "description": "La mayoría de las aplicaciones web"
+      },
+      "performance": {
+        "name": "Rendimiento",
+        "description": "Aplicaciones de alto tráfico"
+      },
+      "enterprise": {
+        "name": "Empresa",
+        "description": "Aplicaciones de producción a gran escala"
+      },
+      "autoscale": {
+        "name": "Escalado automático",
+        "description": "Escala según la demanda"
+      }
     },
     "dynamic": "Dinámico",
     "custom": {

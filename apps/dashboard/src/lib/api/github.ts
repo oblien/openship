@@ -43,6 +43,13 @@ export const githubApi = {
   getUserRepos: (owner: string) =>
     api.get<any>(endpoints.github.userRepos, { params: { owner } }),
 
+  /** List a repo's branches (used before a project exists — e.g. the migration
+   *  wizard's link-repo step, which can't use projectsApi.getBranches). */
+  listBranches: (owner: string, repo: string) =>
+    api.get<{ data: Array<{ name: string }> }>(
+      endpoints.github.repoBranches(owner, repo),
+    ),
+
   /**
    * Mint a short-lived GitHub App installation token for cloning a repo and
    * return a ready-to-run `git clone` command. Cloud / GitHub-App mode only —

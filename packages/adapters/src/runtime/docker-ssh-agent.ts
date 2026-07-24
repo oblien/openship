@@ -11,10 +11,16 @@ import {
 } from "../system/ssh-client";
 import type { SshConfig, CommandExecutor } from "../types";
 import type { DockerConnectionOptions } from "./docker-transport";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, withTimeout } from "@repo/core";
 
 const DEFAULT_REMOTE_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
 const resolvedDockerSocketPathCache = new WeakMap<DockerConnectionOptions, Promise<string>>();
+
+// Opening a streamlocal channel to the remote Docker socket can hang FOREVER when
+// the SSH server silently refuses forwarding (AllowStreamLocalForwarding no) — the
+// request is accepted but never answered. Bound it so reachability fails fast with
+// the diagnostic below instead of stalling behind dockerode's 10-minute API timeout.
+const DOCKER_STREAMLOCAL_TIMEOUT_MS = 15_000;
 
 function toSshConfig(opts: DockerConnectionOptions): SshConfig {
   return {
@@ -237,7 +243,12 @@ export async function verifyDockerSshBridge(opts: DockerConnectionOptions): Prom
   // Fast path: use pooled executor’s streamlocal to verify
   if (opts.executor?.forwardUnixSocket) {
     try {
-      const stream = await opts.executor.forwardUnixSocket(socketPath);
+      const stream = await withTimeout(
+        opts.executor.forwardUnixSocket(socketPath),
+        DOCKER_STREAMLOCAL_TIMEOUT_MS,
+        `Opening a streamlocal channel to ${socketPath} timed out after ${DOCKER_STREAMLOCAL_TIMEOUT_MS / 1000}s — ` +
+          "the SSH server likely disallows streamlocal forwarding (AllowStreamLocalForwarding).",
+      );
       stream.destroy();
       return;
     } catch (error) {

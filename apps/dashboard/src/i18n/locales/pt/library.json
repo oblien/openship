@@ -1,4 +1,13 @@
 {
+  "ghCliConsent": {
+    "title": "Ler seus repositórios?",
+    "body": "O OpenShip pode listar seus repositórios do GitHub usando a CLI gh na qual você já está conectado.",
+    "bodyWithLogin": "O OpenShip pode listar seus repositórios do GitHub usando a CLI gh conectada como @{login}.",
+    "pointNoCloud": "Nada é enviado para a nuvem — a lista nunca sai desta máquina.",
+    "pointDesktopOnly": "Funciona apenas no app de desktop, usando sua autenticação local do gh.",
+    "pointReadOnly": "Somente leitura: lista os repositórios para você escolher um para implantar.",
+    "allow": "Permitir"
+  },
   "page": {
     "title": "Novo Projeto",
     "subtitle": "Importe um repositório, cole uma URL ou comece a partir de um modelo",

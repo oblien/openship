@@ -156,15 +156,21 @@ export async function resolveBuildGitToken(opts: {
     return {};
   }
 
-  // No remote token. If the target server opted into credential forwarding,
-  // the operator's gh identity is forwarded on demand via the relay (never
-  // persisted on the remote) — signal that.
-  if (opts.allowRelayFallback) return { relay: true };
+  // No shippable server/App/PAT token. Prefer FORWARDING (the relay) over an
+  // api-host clone — it clones directly on the build host, atomically, with
+  // nothing persisted. But the relay vends the operator's LOCAL gh token
+  // specifically (its remote helper resolves via getLocalGhToken), so only
+  // forward when a gh identity actually exists — otherwise the relay would open
+  // and vend nothing. When it's absent, fall through to the api-host clone.
+  if (opts.allowRelayFallback) {
+    const { getLocalGhToken } = await import("./github.local-auth");
+    if (await getLocalGhToken()) return { relay: true };
+  }
 
-  // Docker clone-on-server with no shippable credential: degrade to an api-host
-  // clone rather than hard-failing after the server was already provisioned.
-  // The api-host clone runs on THIS host, so a LOCAL credential is valid (and is
-  // flagged apiHostFallback so callers never ship it off-host).
+  // Docker clone-on-server with no shippable credential and no forwardable gh:
+  // degrade to an api-host clone rather than hard-failing after the server was
+  // already provisioned. The api-host clone runs on THIS host, so a LOCAL
+  // credential is valid (flagged apiHostFallback so callers never ship it off-host).
   if (opts.allowApiHostFallback) {
     const local = await resolveLocalCredential(opts.ctx, tokenCtx);
     return { ...local, apiHostFallback: true };

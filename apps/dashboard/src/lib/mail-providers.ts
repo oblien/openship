@@ -21,6 +21,7 @@ export type MailProviderId =
   | "custom"
   | "resend"
   | "ses"
+  | "oracle"
   | "sendgrid"
   | "mailgun"
   | "postmark"
@@ -80,6 +81,18 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     smtpHost: "email-smtp.us-east-1.amazonaws.com",
     smtpPort: 587,
     hint: "Use the SMTP credentials from the SES console (an IAM SMTP user). Change the region in the host if yours differs.",
+  },
+  {
+    id: "oracle",
+    label: "Oracle Cloud",
+    logoSrc: brandLogo("oracle.com"),
+    backendProvider: "custom",
+    sendOnly: true,
+    imapHost: "",
+    imapPort: 993,
+    smtpHost: "smtp.email.us-ashburn-1.oci.oraclecloud.com",
+    smtpPort: 587,
+    hint: "OCI Email Delivery: generate SMTP credentials (Email Delivery → SMTP Credentials) and use them here. Change the region in the host if yours differs.",
   },
   {
     id: "resend",

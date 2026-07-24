@@ -50,7 +50,7 @@ config, and a batch of self-hosting and reliability fixes.
 - Bumped the Laravel deploy **test fixture** off a vulnerable `laravel/framework`
   (CRLF email advisory) — a fixture only, never a shipped dependency.
 
-> Highlights, not exhaustive — trim/adjust before tagging.
+<!-- editors: highlights only, trim/adjust before tagging — not rendered on the website -->
 
 ## 0.2.2
 
@@ -161,4 +161,4 @@ routing, servers, jobs, and the build toolchain.
   checks, Arabic (RTL) localization, marketing roadmap page, and desktop window
   polish (macOS traffic-light inset).
 
-> The list above is the highlights — trim/adjust before tagging.
+<!-- editors: highlights only, trim/adjust before tagging — not rendered on the website -->

@@ -43,6 +43,9 @@ export interface RoutingSettingsCardProps {
   /** Place the exposed-port field to the RIGHT of the domain input (label above)
    *  instead of on its own row below — saves height when there's horizontal room. */
   portInline?: boolean;
+  /** Hide the Free/Custom segmented — the caller drives `domainType` from its
+   *  own outer control (avoids a redundant nested toggle). */
+  hideTypeToggle?: boolean;
 }
 
 export function RoutingSettingsCard({
@@ -66,6 +69,7 @@ export function RoutingSettingsCard({
   saveMode = "change",
   actionSlot,
   portInline = false,
+  hideTypeToggle = false,
 }: RoutingSettingsCardProps) {
   const { baseDomain } = usePlatform();
   const { t } = useI18n();
@@ -218,38 +222,44 @@ export function RoutingSettingsCard({
             className={`relative rounded-full transition-colors duration-200 ${visible ? "bg-info-solid" : "bg-muted-foreground/20"}`}
             style={{ height: "22px", width: "40px" }}
           >
-            <span className={`absolute top-0.5 start-0.5 w-[18px] h-[18px] rounded-full bg-white shadow-sm transition-transform duration-200 ${visible ? "translate-x-[18px] rtl:-translate-x-[18px]" : "translate-x-0"}`} />
+            <span className={`absolute top-0.5 start-0.5 w-[18px] h-[18px] rounded-full bg-background shadow-sm transition-transform duration-200 ${visible ? "translate-x-[18px] rtl:-translate-x-[18px]" : "translate-x-0"}`} />
           </button>
         </div>
       )}
 
       {visible && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void onDomainTypeChange("free")}
-                disabled={disabled}
-                aria-label={w.freeSubdomain}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "free" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
-              >
-                {w.free}
-              </button>
-              <button
-                type="button"
-                onClick={() => void onDomainTypeChange("custom")}
-                disabled={disabled}
-                aria-label={w.customDomain}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "custom" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
-              >
-                {w.custom}
-              </button>
+          {(!hideTypeToggle || (!portInline && actionSlot)) && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {!hideTypeToggle && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void onDomainTypeChange("free")}
+                      disabled={disabled}
+                      aria-label={w.freeSubdomain}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "free" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
+                    >
+                      {w.free}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDomainTypeChange("custom")}
+                      disabled={disabled}
+                      aria-label={w.customDomain}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "custom" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
+                    >
+                      {w.custom}
+                    </button>
+                  </>
+                )}
+              </div>
+              {/* When the port is inline, the add-domain "+" moves to the end of
+                  the input row (after Exposed port); otherwise it sits here. */}
+              {!portInline && actionSlot}
             </div>
-            {/* When the port is inline, the add-domain "+" moves to the end of
-                the input row (after Exposed port); otherwise it sits here. */}
-            {!portInline && actionSlot}
-          </div>
+          )}
 
           {domainType === "free" ? (
             <div className="flex items-end gap-2">

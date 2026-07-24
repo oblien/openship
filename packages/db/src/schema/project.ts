@@ -163,8 +163,22 @@ export const project = pgTable(
     buildImage: text("build_image"),
     /** Production mode: host, static, standalone */
     productionMode: text("production_mode").default("host"),
-    /** Port the app listens on */
+    /** Port the app listens on (inside the container / the bare process). */
     port: integer("port").default(3000),
+    /**
+     * Pinned LOOPBACK host port the edge proxies to under the `loopback-port`
+     * route strategy (docker publishes `127.0.0.1:<hostPort>:<port>`). Stable
+     * across redeploys/restarts; null until first allocated. Mirrors
+     * `service.hostPort`. Unused by bare (the app owns 127.0.0.1:<port>) and by
+     * `container-ip` mode.
+     */
+    hostPort: integer("host_port"),
+    /**
+     * How the edge addresses this app's upstream: "auto" (default → loopback
+     * host port), "loopback-port", or "container-ip" (advanced, bridge IP).
+     * Snapshotted onto each deployment's config, like `runtimeMode`.
+     */
+    routeStrategy: text("route_strategy").default("auto"),
     /** Whether the project needs a running server (false = static site, deployed via Pages) */
     hasServer: boolean("has_server").notNull().default(true),
     /** Whether the project needs a build step (false = deploy source files directly) */

@@ -1,0 +1,45 @@
+{
+  "available": false,
+  "id": "code-server",
+  "name": "code-server",
+  "description": "Run VS Code in your browser, on your server. Login uses an auto-generated password.",
+  "kind": "template",
+  "logo": "code-server",
+  "category": "other",
+  "tags": [
+    "developer",
+    "ide",
+    "vscode"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "code-server",
+      "image": "codercom/code-server:latest",
+      "ports": [
+        "8080:8080"
+      ],
+      "exposedPort": 8080,
+      "exposed": true,
+      "secretEnv": [
+        "PASSWORD"
+      ],
+      "volumes": [
+        "code_server_config:/home/coder/.config",
+        "code_server_local:/home/coder/.local",
+        "code_server_project:/home/coder/project"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "PASSWORD",
+      "service": "code-server",
+      "label": "Login password",
+      "help": "Auto-generated. Required to sign in.",
+      "generate": "secret",
+      "secret": true
+    }
+  ]
+}

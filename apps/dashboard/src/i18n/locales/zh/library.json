@@ -1,4 +1,13 @@
 {
+  "ghCliConsent": {
+    "title": "读取你的仓库？",
+    "body": "OpenShip 可以使用你已登录的 gh CLI 列出你的 GitHub 仓库。",
+    "bodyWithLogin": "OpenShip 可以使用以 @{login} 登录的 gh CLI 列出你的 GitHub 仓库。",
+    "pointNoCloud": "不会向云端发送任何内容 — 列表绝不离开此机器。",
+    "pointDesktopOnly": "仅在桌面应用中运行，使用你本地的 gh 认证。",
+    "pointReadOnly": "只读：仅列出仓库以便你选择一个进行部署。",
+    "allow": "允许"
+  },
   "page": {
     "title": "新建项目",
     "subtitle": "导入仓库、粘贴 URL 或从模板开始",

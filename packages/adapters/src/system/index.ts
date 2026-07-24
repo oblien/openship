@@ -41,15 +41,17 @@ export {
   freeEdgeTargets,
   probeEdge,
   stopTargetsForStatus,
-} from "./edge-preflight";
+} from "./proxy/detect";
 export type { EdgeConflictDetails, ImportedSite, ProxyScanResult } from "./types";
-export { scanImportableSites, canImportProxy } from "./proxy-import";
+export { scanImportableSites, canImportProxy } from "./proxy/import";
 export {
   runEdgeTakeover,
   recoverInterruptedTakeover,
   type EdgeTakeoverOptions,
   type EdgeTakeoverResult,
-} from "./edge-takeover";
+} from "./proxy/takeover";
+// The consolidated reverse-proxy / edge facade (single point for the chain).
+export { detectEdge, importSites, takeoverOnMigrate, foreignProxyOnEdge, ensureEdge } from "./proxy";
 
 // ─── State ───────────────────────────────────────────────────────────────────
 export type { SetupState, SetupStateStore, ComponentState } from "./state";

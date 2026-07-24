@@ -172,6 +172,34 @@ export interface SelfEdgeStepProgress {
 }
 
 /**
+ * Are ports 80/443 ours (or free) to serve TLS on? A FOREIGN proxy still holding
+ * them means an ACME HTTP-01 fetch would hit IT, not us → the cert 404s with an
+ * opaque "challenge failed", and we must never blind-kill it. So both the initial
+ * provision AND the every-boot reconcile gate on this: if blocked, skip routing +
+ * cert and tell the operator to migrate via the wizard/dashboard. Read-only,
+ * best-effort (a probe failure does NOT block — never a false stop).
+ */
+async function foreignProxyBlocksEdge(
+  log?: (message: string, level?: "info" | "warn" | "error") => void,
+): Promise<{ blocked: boolean; owner?: string }> {
+  try {
+    const { createHostExecutor, foreignProxyOnEdge } = await import("@repo/adapters");
+    // Probe the HOST's :80/:443, not the api container's netns — createHostExecutor
+    // is LocalExecutor bare, SSH→host when containerized (OPENSHIP_HOST_SSH_*).
+    const { blocked, owner } = await foreignProxyOnEdge(createHostExecutor());
+    if (!blocked) return { blocked: false };
+    log?.(
+      `Not issuing TLS: ${owner} still owns ports 80/443, so Openship isn't the reverse proxy yet — ` +
+        `an ACME challenge would hit it, not us. Re-run setup (or Domains → migrate) to take over.`,
+      "error",
+    );
+    return { blocked: true, owner };
+  } catch {
+    return { blocked: false };
+  }
+}
+
+/**
  * Custom-domain edge for the self-app: install the toolchain + take over
  * 80/443, then hand routing + cert to the NORMAL pipeline (route via
  * `reapplyProjectLiveRoutes`, cert via `manageDomainSsl` — both resolve the
@@ -197,6 +225,13 @@ export async function provisionSelfAppEdge(
   }
   progress.onStep?.("openresty", "installed");
 
+  // Hard gate: never touch routing/cert unless OUR OpenResty owns 80/443 (takeover
+  // skipped / partial / respawned would otherwise 404 the ACME challenge opaquely).
+  if ((await foreignProxyBlocksEdge(log)).blocked) {
+    progress.onStep?.("route", "failed");
+    return { verified: false, reason: "edge_not_owned" };
+  }
+
   // 2. Route hostname → 127.0.0.1:dashPort via the pipeline (owns the vhost +
   //    the ACME-challenge location).
   progress.onStep?.("route", "installing");
@@ -220,6 +255,9 @@ export async function provisionSelfAppEdge(
   //    the HTTP vhost keeps answering ACME between tries.
   progress.onStep?.("ssl", "installing");
   const backoffs = progress.backoffs ?? BOOT_BACKOFFS;
+  // Remember the last real failure so the FINAL line reports WHY (not just
+  // "retry on next boot") — it's the line the CLI/dashboard surfaces.
+  let lastError: string | undefined;
   for (let attempt = 0; attempt <= backoffs.length; attempt++) {
     try {
       const res = await manageDomainSsl(hostname, { action: "provision", projectId });
@@ -228,17 +266,24 @@ export async function provisionSelfAppEdge(
         progress.onStep?.("ssl", "installed");
         return { verified: true, expiresAt: res.expiresAt };
       }
+      lastError = res.reason ?? lastError;
       log?.(
         `certificate not ready (${res.reason ?? "pending"})${attempt < backoffs.length ? " — retrying" : ""}`,
         "warn",
       );
     } catch (err) {
-      log?.(`cert error: ${safeErrorMessage(err)}`, "error");
+      lastError = safeErrorMessage(err);
+      log?.(`cert error: ${lastError}`, "error");
     }
     if (attempt < backoffs.length) await sleep(backoffs[attempt]);
   }
   progress.onStep?.("ssl", "failed");
-  log?.(`could not issue TLS for ${hostname} yet — will retry on next boot (site still serves over HTTP).`, "warn");
+  log?.(
+    lastError
+      ? `Couldn't issue TLS for ${hostname}: ${lastError} — it serves over HTTP and retries on next boot.`
+      : `could not issue TLS for ${hostname} yet — will retry on next boot (site still serves over HTTP).`,
+    "warn",
+  );
   return { verified: false, reason: "cert_pending" };
 }
 
@@ -280,8 +325,9 @@ export function registerSelfAdoptReconcile(): void {
       // left dark. Best-effort; root Linux only.
       if (isLinuxRoot()) {
         try {
-          const { createExecutor, recoverInterruptedTakeover } = await import("@repo/adapters");
-          await recoverInterruptedTakeover(createExecutor(), (e) => console.log(`[self-deploy] ${e.message}`));
+          const { createHostExecutor, recoverInterruptedTakeover } = await import("@repo/adapters");
+          // Recover takeover on the HOST (createHostExecutor: local bare, SSH→host containerized).
+          await recoverInterruptedTakeover(createHostExecutor(), (e) => console.log(`[self-deploy] ${e.message}`));
         } catch {}
       }
 
@@ -309,7 +355,10 @@ export function registerSelfAdoptReconcile(): void {
         isLinuxRoot()
       ) {
         const fresh = await repos.project.findById(project.id);
-        if (fresh) {
+        // Don't retry the route+cert against a foreign proxy on every boot — that's
+        // the loop that spun forever on a box where the takeover never completed.
+        const blocked = (await foreignProxyBlocksEdge((m) => console.warn(`[self-deploy] ${m}`))).blocked;
+        if (fresh && !blocked) {
           try {
             await reapplyProjectLiveRoutes(fresh, [], { isSelfApp: true });
           } catch (err) {

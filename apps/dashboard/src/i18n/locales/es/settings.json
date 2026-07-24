@@ -112,9 +112,18 @@
     "noServers": "Aún no hay servidores configurados - añade uno desde el selector de despliegue.",
     "clearDefault": "Borrar predeterminado (preguntar cada vez)",
     "targets": {
-      "local": { "label": "Esta máquina", "desc": "Docker / runtime local" },
-      "server": { "label": "Mi servidor", "desc": "Un servidor SSH configurado" },
-      "cloud": { "label": "OpenShip Cloud", "desc": "Infraestructura gestionada en la nube" }
+      "local": {
+        "label": "Esta máquina",
+        "desc": "Docker / runtime local"
+      },
+      "server": {
+        "label": "Mi servidor",
+        "desc": "Un servidor SSH configurado"
+      },
+      "cloud": {
+        "label": "OpenShip Cloud",
+        "desc": "Infraestructura gestionada en la nube"
+      }
     },
     "labelFor": {
       "yourServer": "tu servidor",
@@ -134,9 +143,18 @@
     "loading": "Cargando preferencias…",
     "intro": "Elige la estrategia de compilación predeterminada para los nuevos despliegues. Las anulaciones por proyecto están disponibles en los ajustes del proyecto.",
     "modes": {
-      "auto": { "label": "Auto", "desc": "Inteligente por framework" },
-      "server": { "label": "Servidor", "desc": "Compilar en remoto" },
-      "local": { "label": "Local", "desc": "Compilar en la máquina" }
+      "auto": {
+        "label": "Auto",
+        "desc": "Inteligente por framework"
+      },
+      "server": {
+        "label": "Servidor",
+        "desc": "Compilar en remoto"
+      },
+      "local": {
+        "label": "Local",
+        "desc": "Compilar en la máquina"
+      }
     },
     "toast": {
       "setTo": "Modo de compilación establecido en {mode}",
@@ -285,6 +303,14 @@
       "subtitle": "Las concesiones se aplican a los miembros restringidos. Propietario/administrador/miembro tienen acceso a toda la organización de forma predeterminada.",
       "saveLabel": "Guardar acceso"
     },
+    "serverAccessWarning": {
+      "title": "¿Conceder acceso completo al servidor?",
+      "body": "{member} obtendrá control total de {scope}: cada despliegue y sus datos, todas las apps que se ejecutan en él, los secretos y variables de entorno almacenados, acceso al terminal y cualquier integración conectada (p. ej. tokens de GitHub y claves de despliegue guardadas para él). Podrá gestionar o eliminar estos recursos.",
+      "scopeAllServers": "todos los servidores de esta organización",
+      "scopeThisServer": "este servidor",
+      "scopeCount": "{count} servidores",
+      "confirm": "Conceder acceso"
+    },
     "confirmRemove": "¿Eliminar a este miembro de la organización?",
     "workspace": {
       "deleteWorkspace": "Eliminar espacio de trabajo",
@@ -408,6 +434,8 @@
       "empty": "Aún no hay canales. Añade uno para empezar a recibir notificaciones.",
       "verified": "Verificado",
       "unverified": "Sin verificar",
+      "sendTest": "Enviar prueba",
+      "testSent": "Prueba enviada",
       "deleteChannel": "Eliminar canal",
       "addChannel": "Añadir canal",
       "confirmDelete": "¿Eliminar este canal? Las suscripciones que lo usan se detendrán.",
@@ -663,5 +691,29 @@
     "toastLoadStateFailed": "No se pudo cargar el estado",
     "toastRemoteUnreachable": "Remoto inaccesible. Marca \"no extraer datos remotos\" para revertir de todos modos.",
     "toastSwitchBackFailed": "La reversión falló"
+  },
+  "routePreferences": {
+    "title": "Enrutamiento",
+    "description": "Cómo el edge alcanza los upstreams de tus apps",
+    "loading": "Cargando preferencias…",
+    "intro": "Elige el direccionamiento de upstream predeterminado para los nuevos proyectos autoalojados. Las anulaciones por proyecto están en la configuración del proyecto.",
+    "modes": {
+      "auto": {
+        "label": "Automático",
+        "desc": "Recomendado (puerto loopback)"
+      },
+      "loopbackPort": {
+        "label": "Puerto loopback",
+        "desc": "Puerto de host privado 127.0.0.1"
+      },
+      "containerIp": {
+        "label": "IP del contenedor",
+        "desc": "Avanzado: IP del bridge"
+      }
+    },
+    "toast": {
+      "setTo": "Estrategia de enrutamiento establecida en {mode}",
+      "failed": "No se pudo actualizar la estrategia de enrutamiento"
+    }
   }
 }

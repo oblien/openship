@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { getTableColumns } from "drizzle-orm";
 import * as schema from "./schema";
-import { filterRowToKnownColumns } from "./dump";
+import { filterRowToKnownColumns, assertDumpSelfContained } from "./dump";
 
 // Cross-version ingest tolerance for restoreSubgraph (cloud transfer / project
 // transfer). Drizzle builds the INSERT column list from the dumped row's keys =
@@ -48,5 +48,57 @@ describe("filterRowToKnownColumns (version-skew ingest tolerance)", () => {
     expect(dropped).toEqual(["unknownX"]);
     expect(row).toHaveProperty("autoDeploy", false);
     expect(row).toHaveProperty("activeDeploymentId", null);
+  });
+});
+
+// Cross-tenant ingest guard (SaaS audit, critical): on the remap path (cloud
+// ingest / project transfer) a child row's parent FK is NOT org-remapped, so a
+// crafted dump could attach e.g. a service to a VICTIM's project → cross-tenant
+// write / RCE. The dump must be self-contained: every projectId/deploymentId/
+// serviceId/groupId must reference a parent PRESENT IN THE DUMP.
+describe("assertDumpSelfContained (cross-tenant ingest guard)", () => {
+  const dump = (tables: Record<string, unknown[]>) =>
+    ({ formatVersion: 1, scope: { kind: "organization", organizationId: "o" }, tables }) as never;
+
+  it("rejects a child whose projectId is not in the dump (the exploit)", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({ service: [{ id: "svc_evil", projectId: "prj_VICTIM", image: "attacker/evil" }] }),
+      ),
+    ).toThrow(/references a project not present/);
+  });
+
+  it("rejects a project whose groupId points at a foreign project_app", () => {
+    expect(() =>
+      assertDumpSelfContained(dump({ project: [{ id: "prj_1", groupId: "app_VICTIM" }] })),
+    ).toThrow(/references a project_app not present/);
+  });
+
+  it("rejects a service_deployment referencing a foreign deploymentId/serviceId", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({ service_deployment: [{ id: "sd_1", deploymentId: "dep_VICTIM", serviceId: "svc_1" }] }),
+      ),
+    ).toThrow(/not present in the dump/);
+  });
+
+  it("accepts a self-contained dump (all parents present)", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({
+          project_app: [{ id: "app_1" }],
+          project: [{ id: "prj_1", groupId: "app_1", organizationId: "o" }],
+          service: [{ id: "svc_1", projectId: "prj_1" }],
+          deployment: [{ id: "dep_1", projectId: "prj_1" }],
+          service_deployment: [{ id: "sd_1", deploymentId: "dep_1", serviceId: "svc_1" }],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("ignores null FKs", () => {
+    expect(() =>
+      assertDumpSelfContained(dump({ project: [{ id: "prj_1", groupId: null, organizationId: "o" }] })),
+    ).not.toThrow();
   });
 });

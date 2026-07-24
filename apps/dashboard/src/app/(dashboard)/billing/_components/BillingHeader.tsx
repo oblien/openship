@@ -142,7 +142,7 @@ export function BillingHeader({ state }: { state?: BillingState | null }) {
             />
             <Stat
               label={h.build}
-              value={state.buildTimeMinutes.toLocaleString()}
+              value={fmtNum(state.buildTimeMinutes, 0)}
               suffix={h.min}
             />
           </div>

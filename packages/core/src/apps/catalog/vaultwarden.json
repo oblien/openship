@@ -1,0 +1,33 @@
+{
+  "available": false,
+  "id": "vaultwarden",
+  "name": "Vaultwarden",
+  "description": "Lightweight self-hosted password manager (Bitwarden-compatible).",
+  "kind": "template",
+  "logo": "vaultwarden",
+  "category": "other",
+  "tags": [
+    "passwords",
+    "security",
+    "bitwarden"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "vaultwarden",
+      "image": "vaultwarden/server:latest",
+      "ports": [
+        "80:80"
+      ],
+      "exposedPort": 80,
+      "exposed": true,
+      "environment": {
+        "DOMAIN": "{{publicUrl:vaultwarden}}"
+      },
+      "volumes": [
+        "vaultwarden_data:/data"
+      ],
+      "restart": "unless-stopped"
+    }
+  ]
+}

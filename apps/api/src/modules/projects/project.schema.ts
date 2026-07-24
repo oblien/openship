@@ -254,6 +254,21 @@ export const CreateProjectBody = Type.Object({
     Type.Union([Type.Literal("git"), Type.Literal("snapshot")]),
   ),
   /**
+   * Edge → app upstream addressing for this project (self-hosted).
+   *   - "auto"          → resolved to loopback-port (the safe default)
+   *   - "loopback-port" → route via a pinned `127.0.0.1:<hostPort>`
+   *   - "container-ip"  → advanced: route via the container bridge IP
+   *     (zero-downtime swaps; needs the edge on the docker bridge; not
+   *     supported on Docker Desktop). Ignored by bare + cloud runtimes.
+   */
+  routeStrategy: Type.Optional(
+    Type.Union([
+      Type.Literal("auto"),
+      Type.Literal("loopback-port"),
+      Type.Literal("container-ip"),
+    ]),
+  ),
+  /**
    * Apps-catalog marker. Set by the Create-App instantiator when a project is
    * installed from the Apps catalog (Convex, WordPress, webmail, …). Moves the
    * project to the Apps tab; `appTemplateId` records which catalog entry it came

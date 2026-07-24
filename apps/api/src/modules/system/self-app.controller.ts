@@ -52,7 +52,7 @@ const APP_TEMPLATE_ID = "openship";
  * email lookup misses it and provisions a PHANTOM user + org the admin can't see.
  * Query the admin row directly to avoid that. Returns null on a box with no admin.
  */
-async function foundingAdminId(): Promise<string | null> {
+export async function foundingAdminId(): Promise<string | null> {
   const [admin] = await db
     .select({ id: schema.user.id })
     .from(schema.user)
@@ -332,19 +332,14 @@ export async function selfEdgePreflight(c: Context) {
   }
 
   try {
-    const { createExecutor, probeEdge, scanImportableSites, canImportProxy } = await import("@repo/adapters");
-    const executor = createExecutor();
-    const status = await probeEdge(executor);
-
-    // For a known, importable proxy, scan its sites so the CLI can offer migration.
-    let sites: unknown[] = [];
-    let warnings: string[] = [];
-    const proxy = status.occupants.find((o) => o.proxy)?.proxy;
-    if (status.classification === "known" && canImportProxy(proxy)) {
-      const scan = await scanImportableSites(executor, proxy!);
-      sites = scan.sites;
-      warnings = scan.warnings;
-    }
+    const { createHostExecutor, detectEdge, importSites } = await import("@repo/adapters");
+    // Host-op executor: LocalExecutor bare, SSH→host.docker.internal when
+    // containerized (OPENSHIP_HOST_SSH_* set). Inspecting the api container's
+    // own netns would return a wrong migrate/takeover prompt in docker mode.
+    const executor = createHostExecutor();
+    const status = await detectEdge(executor);
+    // Scan the foreign proxy's sites (if importable) so the CLI can offer migration.
+    const { sites, warnings } = await importSites(executor, status);
     return c.json({ status, sites, warnings });
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 500);

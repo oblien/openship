@@ -108,6 +108,8 @@
     "local": "本地",
     "production": "生产环境",
     "lastDeploy": "上次部署",
+    "noDomain": "无域名",
+    "addDomain": "添加域名",
     "tabs": {
       "appSettings": "设置",
       "overview": "概览",

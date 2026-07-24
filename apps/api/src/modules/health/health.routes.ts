@@ -4,6 +4,7 @@
 import { Hono } from "hono";
 import { hostname, userInfo } from "node:os";
 import { cloudRuntimeTarget, env } from "../../config/env";
+import { rateLimiterFor } from "../../middleware/rate-limiter";
 import apiPackage from "../../../package.json";
 
 /** Running server version (from apps/api/package.json). Lets the dashboard tell
@@ -50,8 +51,10 @@ healthRoutes.get("/", (c) => {
   return c.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-/** GET /health/env - static deployment info (no auth, cached by callers). */
-healthRoutes.get("/env", async (c) => {
+/** GET /health/env - static deployment info (no auth, cached by callers). Rate-
+ *  limited per-IP because it reads the DB (instanceSettings) while unauthenticated;
+ *  the bare `/` liveness check stays unthrottled for load balancers. */
+healthRoutes.get("/env", rateLimiterFor("default-anon"), async (c) => {
   // authMode tells the dashboard which login flow to use:
   //   "none"   → zero-auth, auto-provisioned local user (desktop default)
   //   "cloud"  → external auth on Openship Cloud
@@ -100,6 +103,10 @@ healthRoutes.get("/env", async (c) => {
   return c.json({
     selfHosted: !env.CLOUD_MODE,
     deployMode: env.DEPLOY_MODE,
+    // Server-host ("VPS") mode: OpenShip is installed ON a server (docker/bare
+    // self-host, not the desktop app, not cloud SaaS). In this mode the host is
+    // itself a deployable target and is auto-registered as an isLocal server.
+    isServerHost: !env.CLOUD_MODE && env.DEPLOY_MODE !== "desktop",
     version: APP_VERSION,
     authMode,
     teamMode,

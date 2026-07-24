@@ -105,6 +105,29 @@
     "forceModalConfirm": "Delete from storage",
     "forceModalCancel": "Cancel"
   },
+  "connections": {
+    "useInProject": "Use in a project",
+    "title": "Use in a project",
+    "subtitle": "Wire this database into another project as a ready connection.",
+    "targetLabel": "Project",
+    "targetPlaceholder": "Select a project…",
+    "valueLabel": "Value to inject",
+    "modeInternal": "Internal (recommended)",
+    "modeInternalDesc": "Reach it privately over a shared network — no public port. Same self-hosted server.",
+    "modePublic": "Public",
+    "modePublicDesc": "Use the published host:port. Works anywhere; needs the database port open.",
+    "envKeyLabel": "Environment variable",
+    "redeployHint": "Applied on the target's next deploy.",
+    "cancel": "Cancel",
+    "connect": "Connect",
+    "connected": "Connected — redeploy the target to apply.",
+    "failed": "Couldn't connect the service.",
+    "cardTitle": "Connected services",
+    "removed": "Connection removed — redeploy to apply.",
+    "remove": "Remove",
+    "modeInternalShort": "Internal",
+    "modePublicShort": "Public"
+  },
   "sidebar": {
     "project": "Project",
     "untitledProject": "Untitled Project",
@@ -114,6 +137,8 @@
     "local": "Local",
     "production": "Production",
     "lastDeploy": "Last Deploy",
+    "noDomain": "No domain",
+    "addDomain": "Add domain",
     "tabs": {
       "appSettings": "Settings",
       "overview": "Overview",

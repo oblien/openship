@@ -701,10 +701,14 @@ export function useDeploymentBuild(
         // Folder-upload: adopt the uploaded source (workspace or staging dir).
         uploadSessionId: config.uploadSessionId || undefined,
         envVars: Object.keys(envVarsMap).length > 0 ? envVarsMap : undefined,
+        // "None" routing → explicit [] (no public URL). Must be [], not
+        // undefined: undefined makes the backend auto-derive a free subdomain.
         publicEndpoints: !isServiceDeployment
-          ? config.publicEndpoints.map((endpoint) => (
-              serializeBuildPublicEndpoint(endpoint, config.options.hasServer)
-            ))
+          ? config.noPublicRoute
+            ? []
+            : config.publicEndpoints.map((endpoint) => (
+                serializeBuildPublicEndpoint(endpoint, config.options.hasServer)
+              ))
           : undefined,
         buildStrategy:
           config.projectType === "docker" || isServiceDeployment

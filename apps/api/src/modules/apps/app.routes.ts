@@ -19,6 +19,11 @@ r.get(
   { tag: "project:list", mcp: { description: "List the one-click app catalog (Convex, WordPress, mail, …)." } },
   ctrl.catalog,
 );
+r.get(
+  "/catalog/:id",
+  { tag: "project:list", mcp: { description: "Get one app's full template (services, config, endpoints) by id." } },
+  ctrl.catalogEntry,
+);
 r.post(
   "/",
   {

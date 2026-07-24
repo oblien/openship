@@ -78,6 +78,30 @@
       "toggleFailed": "切换项目状态失败",
       "clearInstallFailed": "清除安装缓存失败",
       "clearBuildFailed": "清除构建缓存失败"
+    },
+    "routing": {
+      "title": "路由",
+      "description": "边缘如何访问此应用的上游",
+      "intro": "选择边缘如何寻址此项目的容器。",
+      "note": "推荐使用回环端口：私有的 127.0.0.1 主机端口，重启后保持稳定且从不暴露到网络。容器 IP 属于高级选项（零停机切换；需要边缘位于 Docker 网桥上；Docker Desktop 不支持）。",
+      "modes": {
+        "auto": {
+          "label": "自动",
+          "desc": "推荐（回环端口）"
+        },
+        "loopbackPort": {
+          "label": "回环端口",
+          "desc": "私有 127.0.0.1 主机端口"
+        },
+        "containerIp": {
+          "label": "容器 IP",
+          "desc": "高级 — 网桥 IP"
+        }
+      },
+      "toast": {
+        "saved": "路由已设为 {mode}",
+        "failed": "更新路由失败"
+      }
     }
   },
   "backup": {
@@ -357,11 +381,26 @@
     "title": "机器性能",
     "description": "为你的项目配置机器性能。",
     "tiers": {
-      "lightweight": { "name": "轻量", "description": "小型应用和静态站点" },
-      "standard": { "name": "标准", "description": "大多数 Web 应用" },
-      "performance": { "name": "高性能", "description": "高流量应用" },
-      "enterprise": { "name": "企业级", "description": "大规模生产应用" },
-      "autoscale": { "name": "自动扩缩", "description": "根据需求自动扩缩" }
+      "lightweight": {
+        "name": "轻量",
+        "description": "小型应用和静态站点"
+      },
+      "standard": {
+        "name": "标准",
+        "description": "大多数 Web 应用"
+      },
+      "performance": {
+        "name": "高性能",
+        "description": "高流量应用"
+      },
+      "enterprise": {
+        "name": "企业级",
+        "description": "大规模生产应用"
+      },
+      "autoscale": {
+        "name": "自动扩缩",
+        "description": "根据需求自动扩缩"
+      }
     },
     "dynamic": "动态",
     "custom": {

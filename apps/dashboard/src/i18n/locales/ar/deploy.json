@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "تعذّر حفظ النطاقات",
-    "toastTitle": "النطاقات"
+    "toastTitle": "النطاقات",
+    "routeFreeLabel": "نطاق فرعي مجاني",
+    "routeFreeDesc": "عنوان {domain} مجاني، جاهز فوراً.",
+    "routeCustomLabel": "نطاق مخصص",
+    "routeCustomDesc": "وجّه نطاقك الخاص إلى هذا النشر.",
+    "routeNoneLabel": "بدون",
+    "routeNoneDesc": "بدون عنوان عام — داخلي فقط. يمكن الوصول إليه عبر المنفذ على المضيف."
   },
   "dns": {
     "title": "إعداد DNS",
@@ -119,6 +125,8 @@
     "addServer": "أضف خادمك الخاص",
     "continue": "متابعة",
     "chooseServer": "اختر خادمًا",
+    "thisServerBadge": "هذا الخادم",
+    "thisServerHost": "المضيف الحالي — عمليات النشر تجري هنا",
     "searchPlaceholder": "ابحث عن الخوادم…",
     "noServersMatch": "لا توجد خوادم تطابق بحثك.",
     "requireCloudFeature": "النشر إلى Openship Cloud",

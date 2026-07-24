@@ -99,9 +99,12 @@ contextBridge.exposeInMainWorld("desktop", {
 
   /** In-app updater (drives the update window). */
   updates: {
-    /** Begin download + install of the pending update. */
+    /** Re-check GitHub on demand and stage the result. Returns the check result
+     *  ({ available, version, ... } | { available: false }). */
+    check: () => ipcRenderer.invoke("update:check"),
+    /** Begin download + install of the pending update (re-checks if none staged). */
     start: () => ipcRenderer.invoke("update:start"),
-    /** Open (or focus) the native update window for the pending update. */
+    /** Open the native update window (re-checks + stages if none pending). */
     open: () => ipcRenderer.invoke("update:open"),
     /** Dismiss / close the update window ("Later"). */
     dismiss: () => ipcRenderer.invoke("update:dismiss"),

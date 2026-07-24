@@ -78,6 +78,30 @@
       "toggleFailed": "プロジェクトの切り替えに失敗しました",
       "clearInstallFailed": "インストールキャッシュの消去に失敗しました",
       "clearBuildFailed": "ビルドキャッシュの消去に失敗しました"
+    },
+    "routing": {
+      "title": "ルーティング",
+      "description": "エッジがこのアプリのアップストリームに到達する方法",
+      "intro": "エッジがこのプロジェクトのコンテナをどう指定するかを選択します。",
+      "note": "ループバックポートを推奨します。プライベートな 127.0.0.1 ホストポートで、再起動をまたいで安定し、ネットワークに公開されません。コンテナ IP は上級者向けです（無停止切り替え。エッジが Docker ブリッジ上にある必要があり、Docker Desktop では未対応）。",
+      "modes": {
+        "auto": {
+          "label": "自動",
+          "desc": "推奨（ループバックポート）"
+        },
+        "loopbackPort": {
+          "label": "ループバックポート",
+          "desc": "プライベートな 127.0.0.1 ホストポート"
+        },
+        "containerIp": {
+          "label": "コンテナ IP",
+          "desc": "上級者向け — ブリッジ IP"
+        }
+      },
+      "toast": {
+        "saved": "ルーティングを {mode} に設定しました",
+        "failed": "ルーティングの更新に失敗しました"
+      }
     }
   },
   "backup": {
@@ -357,11 +381,26 @@
     "title": "マシンパワー",
     "description": "プロジェクトのマシンパワーを設定します。",
     "tiers": {
-      "lightweight": { "name": "ライトウェイト", "description": "小規模なアプリと静的サイト" },
-      "standard": { "name": "スタンダード", "description": "ほとんどのウェブアプリケーション" },
-      "performance": { "name": "パフォーマンス", "description": "高トラフィックのアプリケーション" },
-      "enterprise": { "name": "エンタープライズ", "description": "大規模な本番アプリ" },
-      "autoscale": { "name": "オートスケール", "description": "需要に応じてスケールします" }
+      "lightweight": {
+        "name": "ライトウェイト",
+        "description": "小規模なアプリと静的サイト"
+      },
+      "standard": {
+        "name": "スタンダード",
+        "description": "ほとんどのウェブアプリケーション"
+      },
+      "performance": {
+        "name": "パフォーマンス",
+        "description": "高トラフィックのアプリケーション"
+      },
+      "enterprise": {
+        "name": "エンタープライズ",
+        "description": "大規模な本番アプリ"
+      },
+      "autoscale": {
+        "name": "オートスケール",
+        "description": "需要に応じてスケールします"
+      }
     },
     "dynamic": "ダイナミック",
     "custom": {
