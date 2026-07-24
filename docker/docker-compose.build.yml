@@ -1,0 +1,29 @@
+# ──────────────────────────────────────────────────────────
+# From-source override for the SELF-HOSTED stack — BUILD the images locally
+# instead of pulling. Layer it over docker/docker-compose.yml.
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.build.yml \
+#     --env-file .env up -d --build
+#
+# For self-hosters who want to build the pull-based stack (api + dashboard +
+# edge) from source. `context: ..` points the build at the REPO ROOT since this
+# file lives in docker/. (The ROOT ../docker-compose.yml is the SaaS control
+# plane and already builds from source — this override is only for the
+# self-hosted edge/DooD stack.)
+# ──────────────────────────────────────────────────────────
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: apps/dashboard/Dockerfile
+
+  edge:
+    build:
+      context: ..
+      dockerfile: apps/edge/Dockerfile

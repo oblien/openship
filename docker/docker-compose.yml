@@ -1,0 +1,167 @@
+# ──────────────────────────────────────────────────────────
+# Openship — Docker Compose (SELF-HOSTED, pull-based)
+#
+# Run from the REPO ROOT (paths below are relative to docker/):
+#   cp .env.example .env          # then edit
+#   docker compose -f docker/docker-compose.yml --env-file .env up -d
+#
+# Upgrade:  docker compose -f docker/docker-compose.yml --env-file .env pull && \
+#           docker compose -f docker/docker-compose.yml --env-file .env up -d
+#
+# NOTE: `openship up` (the CLI) does NOT use this file — it generates its own
+# equivalent stack at ~/.openship/compose/. This file is the reference for
+# advanced git-clone self-hosters. Keep the two in sync (apps/cli/src/lib/compose.ts).
+#
+# PULL-BASED by default: `api` + `dashboard` + `edge` come from published images
+#   on GHCR (ghcr.io/oblien/*; OPENSHIP_IMAGE_REGISTRY overrides for a mirror).
+#   Pin OPENSHIP_VERSION in .env for reproducible upgrades. To BUILD from source
+#   instead, layer the override:
+#     docker compose -f docker/docker-compose.yml -f docker/docker-compose.build.yml \
+#       --env-file .env up -d --build
+#
+# The SaaS control plane is the ROOT ../docker-compose.yml, not this file.
+#
+# Services:
+#   • postgres → private :5432   (storage)
+#   • redis    → private :6379   (queue + cache + rate-limit)
+#   • api      → :4000   (override: API_PORT)
+#   • dashboard→ :3001   (override: DASHBOARD_PORT)
+#   • edge     → :80 / :443  (OpenResty routing + TLS, host networking; Linux)
+#
+# DOCKER ACCESS: `api` mounts the host Docker socket so the control plane can
+# build + run your deployed apps as host containers (Docker-out-of-Docker). The
+# api container is therefore host-privileged through the socket — run it only on
+# a trusted host and don't expose the API to untrusted networks.
+#
+# The API auto-migrates Postgres on boot. postgres/redis are internal-only; a
+# reverse proxy maps public domains to the api/dashboard ports.
+#
+# REMOTE ACCESS: reaching this from another machine (LAN IP or a reverse proxy)
+# requires OPENSHIP_PUBLIC_URL in .env — else the dashboard loads but login is
+# rejected (403 ORIGIN_REJECTED). Behind a proxy also set TRUST_PROXY=true. Set
+# OPENSHIP_BIND_ADDR to publish the ports on one interface instead of all. See
+# .env.example → "Remote access".
+# ──────────────────────────────────────────────────────────
+
+services:
+  # ─── Database (storage, private) ──────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openship}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openship}
+      POSTGRES_DB: ${POSTGRES_DB:-openship}
+    # PRIVATE: not published to the host. api reaches it at postgres:5432.
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openship} -d ${POSTGRES_DB:-openship}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # ─── Cache / Queue / Rate-limit (private) ─────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    # PRIVATE: not published to the host. api reaches it at redis:6379.
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # ─── API (control plane) ──────────────────────────────
+  api:
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-api:${OPENSHIP_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      # Publish on all interfaces by default; OPENSHIP_BIND_ADDR pins one.
+      # API_PORT overrides the port (host + container move together).
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${API_PORT:-4000}:${API_PORT:-4000}"
+    # Host Docker socket → the API (dockerode) builds + runs deployed apps on the
+    # host daemon. dockerode's local transport targets this exact path. The three
+    # openship_* volumes are SHARED with the `edge` service: the API writes vhosts
+    # + reads/writes certs here; the edge serves them (see OPENSHIP_EDGE_MODE).
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - openship_sites:/usr/local/openresty/nginx/conf/sites-enabled
+      - openship_certs:/etc/letsencrypt
+      - openship_acme:/var/www/acme
+    # Reach the HOST over the internal docker bridge (host.docker.internal →
+    # host-gateway) for host-OS ops when configured (OPENSHIP_HOST_SSH_*, set up
+    # by `openship up`). Harmless when unset. Linux needs the explicit mapping.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Mode + secrets (CLOUD_MODE, DEPLOY_MODE, OPENSHIP_TARGET, Oblien, GitHub
+    # App, auth secrets, …) all come from .env. The values below OVERRIDE it
+    # with the fixed internal port + in-cluster service DNS (compose
+    # `environment` wins over `env_file`).
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      PORT: "${API_PORT:-4000}"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-openship}:${POSTGRES_PASSWORD:-openship}@postgres:5432/${POSTGRES_DB:-openship}
+      REDIS_URL: redis://redis:6379
+      # Route via the containerized edge (below) instead of host OpenResty: the
+      # API writes vhosts to the shared volume + reloads/certbots via `docker exec`.
+      OPENSHIP_EDGE_MODE: docker
+      OPENSHIP_EDGE_CONTAINER: openship-edge
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bun -e \"fetch('http://127.0.0.1:${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  # ─── Dashboard (app UI) ───────────────────────────────
+  dashboard:
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-dashboard:${OPENSHIP_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      PORT: "${DASHBOARD_PORT:-3001}"
+      INTERNAL_API_URL: http://api:${API_PORT:-4000}
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ─── Edge (OpenResty on :80/:443) ─────────────────────
+  # The routing/TLS edge as a CONTAINER (not bare host OpenResty). Host
+  # networking so it binds host :80/:443 directly and reaches deployed app
+  # containers at 127.0.0.1:<hostPort> exactly like a bare edge — the API's
+  # vhost config is unchanged. The API drives it via `docker exec` + the shared
+  # volumes above. LINUX ONLY (host networking); on mac/win use the bare CLI.
+  edge:
+    image: ${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-edge:${OPENSHIP_VERSION:-latest}
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - openship_sites:/usr/local/openresty/nginx/conf/sites-enabled
+      - openship_certs:/etc/letsencrypt
+      - openship_acme:/var/www/acme
+
+volumes:
+  postgres_data:
+  redis_data:
+  openship_sites:
+  openship_certs:
+  openship_acme:
