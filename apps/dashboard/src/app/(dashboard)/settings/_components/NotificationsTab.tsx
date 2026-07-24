@@ -444,22 +444,33 @@ function NewChannelForm({
         />
       )}
       {kind === "telegram" && (
-        <input
-          type="password"
-          placeholder={t.settings.notifications.form.telegramTokenPlaceholder}
-          value={botToken}
-          onChange={(e) => setBotToken(e.target.value)}
-          className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
-        />
-      )}
-      {kind === "telegram" && (
-        <input
-          type="text"
-          placeholder={t.settings.notifications.form.telegramChatPlaceholder}
-          value={chatId}
-          onChange={(e) => setChatId(e.target.value)}
-          className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
-        />
+        <>
+          <input
+            type="password"
+            placeholder={t.settings.notifications.form.telegramTokenPlaceholder}
+            value={botToken}
+            onChange={(e) => setBotToken(e.target.value)}
+            className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Get a token from{" "}
+            <a href="https://t.me/botfather" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground transition-colors">
+              @BotFather
+            </a>
+          </p>
+          <input
+            type="text"
+            placeholder={t.settings.notifications.form.telegramChatPlaceholder}
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+            className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Send a message to your bot, then visit{" "}
+            <code className="text-[11px] bg-foreground/[0.06] px-1 rounded">https://api.telegram.org/bot&lt;token&gt;/getUpdates</code>
+            {" "}to find your chat ID.
+          </p>
+        </>
       )}
 
       <div className="flex items-center gap-2">
