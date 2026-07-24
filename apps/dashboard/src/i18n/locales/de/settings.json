@@ -418,6 +418,7 @@
       "slackWebhook": "Slack-Webhook",
       "discordWebhook": "Discord-Webhook",
       "msteamsWebhook": "Microsoft Teams-Webhook",
+      "telegramChat": "Telegram-Bot-Chat",
       "inApp": "Glockensymbol im Dashboard"
     },
     "kinds": {
@@ -426,6 +427,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "In-App"
     },
     "form": {
@@ -436,6 +438,8 @@
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
       "adding": "Wird hinzugefügt…",
+      "telegramTokenPlaceholder": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "telegramChatPlaceholder": "Chat-ID (z. B. -1001234567890)",
       "addChannel": "Kanal hinzufügen",
       "labelRequired": "Bezeichnung ist erforderlich"
     },

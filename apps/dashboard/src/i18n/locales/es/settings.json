@@ -418,6 +418,7 @@
       "slackWebhook": "Webhook de Slack",
       "discordWebhook": "Webhook de Discord",
       "msteamsWebhook": "Webhook de Microsoft Teams",
+      "telegramChat": "Chat del bot de Telegram",
       "inApp": "Icono de campana del panel"
     },
     "kinds": {
@@ -426,6 +427,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "En la app"
     },
     "form": {
@@ -435,6 +437,8 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "telegramChatPlaceholder": "ID de chat (ej. -1001234567890)",
       "adding": "Añadiendo…",
       "addChannel": "Añadir canal",
       "labelRequired": "La etiqueta es obligatoria"

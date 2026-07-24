@@ -418,6 +418,7 @@
       "slackWebhook": "Slack webhook",
       "discordWebhook": "Discord webhook",
       "msteamsWebhook": "Microsoft Teams webhook",
+      "telegramChat": "Telegram 机器人聊天",
       "inApp": "仪表盘铃铛图标"
     },
     "kinds": {
@@ -426,6 +427,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "应用内"
     },
     "form": {
@@ -435,6 +437,8 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "telegramChatPlaceholder": "聊天 ID（例如 -1001234567890）",
       "adding": "正在添加…",
       "addChannel": "添加渠道",
       "labelRequired": "标签为必填项"

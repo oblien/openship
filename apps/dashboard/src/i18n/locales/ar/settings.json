@@ -418,6 +418,7 @@
       "slackWebhook": "‏Webhook الخاص بـ Slack",
       "discordWebhook": "Discord webhook",
       "msteamsWebhook": "‏Webhook الخاص بـ Microsoft Teams",
+      "telegramChat": "محادثة بوت تيليجرام",
       "inApp": "أيقونة الجرس في لوحة التحكم"
     },
     "kinds": {
@@ -426,6 +427,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "داخل التطبيق"
     },
     "form": {
@@ -436,6 +438,8 @@
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
       "adding": "جارٍ الإضافة…",
+      "telegramTokenPlaceholder": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "telegramChatPlaceholder": "معرف الدردشة (مثل -1001234567890)",
       "addChannel": "إضافة قناة",
       "labelRequired": "التسمية مطلوبة"
     },

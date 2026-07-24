@@ -418,6 +418,7 @@
       "slackWebhook": "Slack Webhook",
       "discordWebhook": "Discord Webhook",
       "msteamsWebhook": "Microsoft Teams Webhook",
+      "telegramChat": "Telegram ボットチャット",
       "inApp": "ダッシュボードのベルアイコン"
     },
     "kinds": {
@@ -426,6 +427,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "アプリ内"
     },
     "form": {
@@ -435,6 +437,8 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "telegramChatPlaceholder": "チャットID（例 -1001234567890）",
       "adding": "追加中…",
       "addChannel": "チャンネルを追加",
       "labelRequired": "ラベルは必須です"

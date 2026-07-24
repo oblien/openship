@@ -345,6 +345,46 @@ async function sendMSTeams(
   }
 }
 
+async function sendTelegram(
+  delivery: NotificationDelivery,
+  channel: NotificationChannel,
+): Promise<void> {
+  const config = channel.config as { token?: string; chatId?: string };
+  if (!config?.token || !config?.chatId) {
+    throw new Error("Telegram channel has no token or chat ID configured");
+  }
+
+  // Bot token is encrypted at storage time.
+  const token = decrypt(config.token);
+
+  const { title, body: bodyText } = renderMessage(delivery);
+  const html = `<b>${title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</b>\n\n${bodyText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}`;
+
+  const telegramUrl = `https://api.telegram.org/bot${token}/sendMessage`;
+  const telegramPayload = {
+    chat_id: config.chatId,
+    text: html,
+    parse_mode: "HTML",
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(telegramUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(telegramPayload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Telegram API returned ${res.status}: ${text.slice(0, 200)}`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /* ─── Worker registry ─────────────────────────────────────────────────────── */
 
 const WORKERS: Record<
@@ -357,6 +397,7 @@ const WORKERS: Record<
   slack: sendSlack,
   discord: sendDiscord,
   msteams: sendMSTeams,
+  telegram: sendTelegram,
 };
 
 /* ─── Runner loop ─────────────────────────────────────────────────────────── */

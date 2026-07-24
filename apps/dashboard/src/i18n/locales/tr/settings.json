@@ -499,12 +499,18 @@
     },
     "describe": {
       "slackWebhook": "Slack webhook'u",
+      "discordWebhook": "Discord webhook'u",
+      "msteamsWebhook": "Microsoft Teams webhook'u",
+      "telegramChat": "Telegram bot sohbeti",
       "inApp": "Panel bildirim simgesi"
     },
     "kinds": {
       "email": "E-posta",
       "webhook": "Webhook",
       "slack": "Slack",
+      "discord": "Discord",
+      "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "Uygulama içi"
     },
     "form": {
@@ -512,12 +518,16 @@
       "emailPlaceholder": "kullanici@example.com",
       "webhookPlaceholder": "https://example.com/openship-hook",
       "slackPlaceholder": "https://hooks.slack.com/services/...",
+      "discordPlaceholder": "https://discord.com/api/webhooks/...",
+      "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "telegramChatPlaceholder": "Sohbet ID'si (örn. -1001234567890)",
       "adding": "Ekleniyor…",
       "addChannel": "Kanal ekle",
       "labelRequired": "Etiket gereklidir",
       "noEmailTransport": "Bu kurulumda e-posta sunucusu yapılandırılmamış; bu nedenle e-posta bildirimleri gönderilmeyecektir.",
-      "setUpSmtp": "SMTP'yi kur →",
-      "otherAddress": "Diğer adres…"
+      "setUpSmtp": "SMTP'yi kur \u2192",
+      "otherAddress": "Di\u011fer adres\u2026"
     },
     "subscriptions": {
       "title": "Neler hakkında bildirim alınacak",
