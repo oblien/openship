@@ -657,6 +657,13 @@
       "noServicePort": "Kein Dienst veröffentlicht Port {port}. Fügen Sie diesen Port zuerst einem Dienst hinzu.",
       "enterCustom": "Geben Sie eine benutzerdefinierte Domain ein.",
       "enterSubdomain": "Geben Sie eine Subdomain ein."
+    },
+    "edge": {
+      "setUp": "Edge einrichten",
+      "ready": "Edge bereit",
+      "checking": "Edge wird geprüft…",
+      "recheck": "Erneut prüfen",
+      "foreignProxyHint": "Ein anderer Proxy belegt 80/443"
     }
   }
 }

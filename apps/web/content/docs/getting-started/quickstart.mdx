@@ -12,7 +12,7 @@ cooks and serves the meal. No servers to rent, no config files to write.
 <Callout title="What you need">
 - A computer running macOS, Linux, or Windows.
 - Some code you want to put online — a GitHub repo, or a folder on your disk.
-- That's it. You do **not** need Docker or your own server for this.
+- No rented server and no config files — Openship runs on the machine you're on. (On Linux it uses Docker automatically when it's installed; otherwise it runs as a single lightweight process.)
 </Callout>
 
 <Steps>
@@ -38,10 +38,17 @@ Full options — desktop app, cloud, Docker Compose — are on the [Installation
 openship up
 ```
 
-This starts Openship on your machine and keeps it running in the background — it comes back on reboot and
-restarts itself if it ever crashes. The **API** listens on `:4000` and the **dashboard** on `:3001` (the
-dashboard downloads itself the first time). Everything is backed by a small built-in database, so there's
+This installs Openship as an always-on background service on your machine — it comes back on reboot and
+restarts itself if it ever crashes. The **API** listens on `:4000` and the **dashboard** on `:3001`. On
+Linux with Docker, `openship up` runs the full container stack (Postgres, Redis, and an OpenResty edge for
+domains + TLS); otherwise it runs a single lightweight process with a built-in database. Either way, there's
 nothing else to set up.
+
+<Callout title="Want the no-login, no-terminal version?" type="info">
+The [desktop app](/docs/getting-started/installation) runs Openship on your machine only while it's open,
+with no login. This quickstart uses the CLI, which installs an always-on service and asks you to create an
+admin account.
+</Callout>
 
 <Callout title="Just want to try it once?" type="info">
 Run `openship up --foreground` to run it attached to your terminal instead — stop it any time with
@@ -58,8 +65,9 @@ Run `openship up --foreground` to run it attached to your terminal instead — s
 openship open
 ```
 
-This opens the dashboard in your browser at `http://localhost:3001`. Because it's running on your own
-computer, you're let straight in — **no login needed**.
+This opens the dashboard in your browser at `http://localhost:3001`. The first time, you'll **create your
+admin account** (name, email, password); after that you sign in with it. A CLI-managed instance always
+requires a login — only the [desktop app](/docs/getting-started/installation) runs with no login.
 
 </Step>
 

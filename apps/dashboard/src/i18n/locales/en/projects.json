@@ -143,7 +143,7 @@
       "appSettings": "Settings",
       "overview": "Overview",
       "services": "Apps & Services",
-      "domains": "Domains",
+      "domains": "Domains & Routes",
       "deployments": "Deployments",
       "source": "Source",
       "runtime": "Configuration",

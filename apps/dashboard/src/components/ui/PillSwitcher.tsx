@@ -11,9 +11,14 @@ import { AppLogo } from "@/components/AppLogo";
  * overflow the width it stays on ONE line: each overflowing end gets a solid
  * surface-color → transparent gradient (so the pills fade cleanly into the
  * container behind the chevron, not into the page) with a left/right chevron to
- * scroll. Set `fadeClass` to match the surface (default `from-card`). Each
+ * scroll. Set `fadeColor` to match the surface (default = solid card bg). Each
  * option renders its real brand logo via `AppLogo` (`logo` = simpleicons slug,
  * `logoSrc` = explicit URL) and falls back to a lucide `icon`.
+ *
+ * The edge fade blends into `fadeColor` — a real CSS color, defaulting to the
+ * theme's SOLID card background (`--th-card-bg-solid`). It must be a solid color:
+ * a Tailwind `from-card` gradient is effectively invisible in the dark/dim themes
+ * (where `card` isn't opaque), so the pills never appear to fade under the arrow.
  */
 
 export interface PillOption<T extends string> {
@@ -33,16 +38,17 @@ export function PillSwitcher<T extends string>({
   onChange,
   size = "md",
   className = "",
-  fadeClass = "from-card",
+  fadeColor = "var(--th-card-bg-solid, var(--card))",
 }: {
   options: PillOption<T>[];
   value: T;
   onChange: (value: T) => void;
   size?: "sm" | "md";
   className?: string;
-  /** Tailwind `from-*` color for the edge fade — match the surface behind the
-   *  switcher (default `from-card`; use `from-background` on the bare page). */
-  fadeClass?: string;
+  /** CSS color the edge fade blends INTO — match the surface behind the switcher.
+   *  MUST be a solid color (default = the theme's solid card bg). Pass e.g.
+   *  `var(--th-bg-solid, var(--background))` on a bare page. */
+  fadeColor?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [edge, setEdge] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
@@ -116,17 +122,22 @@ export function PillSwitcher<T extends string>({
       </div>
 
       {/* Left edge: solid surface-color fade (hides the pills scrolling under
-          the chevron) + the scroll-left control on top. */}
+          the chevron) + the scroll-left control on top. Inline gradient into the
+          SOLID surface color so it stays visible in dark/dim (a `from-card`
+          Tailwind gradient fades to a non-opaque color there → no visible fade). */}
       {edge.left && (
         <>
           <div
-            className={`pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r to-transparent ${fadeClass}`}
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-0 w-20"
+            style={{ backgroundImage: `linear-gradient(to right, ${fadeColor}, transparent)` }}
           />
           <button
             type="button"
             onClick={() => scrollByDir(-1)}
             aria-label="Scroll left"
-            className="absolute left-0 top-1/2 z-10 grid size-7 -translate-y-1/2 place-items-center rounded-full border border-border/60 bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            style={{ backgroundColor: fadeColor }}
+            className="absolute left-0 top-1/2 z-10 grid size-7 -translate-y-1/2 place-items-center rounded-full border border-border/60 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
           >
             <ChevronLeft className="size-4" />
           </button>
@@ -136,13 +147,16 @@ export function PillSwitcher<T extends string>({
       {edge.right && (
         <>
           <div
-            className={`pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l to-transparent ${fadeClass}`}
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-20"
+            style={{ backgroundImage: `linear-gradient(to left, ${fadeColor}, transparent)` }}
           />
           <button
             type="button"
             onClick={() => scrollByDir(1)}
             aria-label="Scroll right"
-            className="absolute right-0 top-1/2 z-10 grid size-7 -translate-y-1/2 place-items-center rounded-full border border-border/60 bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+            style={{ backgroundColor: fadeColor }}
+            className="absolute right-0 top-1/2 z-10 grid size-7 -translate-y-1/2 place-items-center rounded-full border border-border/60 text-muted-foreground shadow-sm transition-colors hover:text-foreground"
           >
             <ChevronRight className="size-4" />
           </button>

@@ -649,6 +649,13 @@
       "noServicePort": "Nenhum serviço publica a porta {port}. Adicione primeiro essa porta a um serviço.",
       "enterCustom": "Introduza um domínio personalizado.",
       "enterSubdomain": "Introduza um subdomínio."
+    },
+    "edge": {
+      "setUp": "Configurar edge",
+      "ready": "Edge pronto",
+      "checking": "Verificando edge…",
+      "recheck": "Verificar novamente",
+      "foreignProxyHint": "Outro proxy ocupa 80/443"
     }
   }
 }

@@ -649,6 +649,13 @@
       "noServicePort": "没有服务发布端口 {port}。请先将该端口添加到某个服务。",
       "enterCustom": "请输入自定义域名。",
       "enterSubdomain": "请输入子域名。"
+    },
+    "edge": {
+      "setUp": "设置边缘",
+      "ready": "边缘就绪",
+      "checking": "正在检查边缘…",
+      "recheck": "重新检查",
+      "foreignProxyHint": "另一个代理占用了 80/443"
     }
   }
 }

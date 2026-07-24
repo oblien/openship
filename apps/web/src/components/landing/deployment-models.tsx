@@ -29,8 +29,8 @@ const MODELS = [
       "Multi-server fan-out across regions",
       "No agent or dashboard on your boxes",
     ],
-    price: "Unavailable for now",
-    priceNote: "Paused while we finish setting up payments",
+    price: "Free & open-source",
+    priceNote: "Apache-2.0 — self-host today, no billing",
     feature: true,
   },
   {

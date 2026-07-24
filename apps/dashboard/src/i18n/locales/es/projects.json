@@ -114,7 +114,7 @@
       "appSettings": "Ajustes",
       "overview": "Resumen",
       "services": "Servicios",
-      "domains": "Dominios",
+      "domains": "Dominios y rutas",
       "deployments": "Despliegues",
       "source": "Origen",
       "runtime": "Configuración",

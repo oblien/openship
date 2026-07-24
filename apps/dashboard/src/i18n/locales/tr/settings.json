@@ -152,9 +152,18 @@
     "noServers": "Henüz yapılandırılmış sunucu yok - dağıtım seçiciden bir tane ekleyin.",
     "clearDefault": "Varsayılanı temizle (her seferinde sor)",
     "targets": {
-      "local": { "label": "Bu Bilgisayar", "desc": "Yerel Docker / çalışma zamanı" },
-      "server": { "label": "Sunucum", "desc": "Yapılandırılmış bir SSH sunucusu" },
-      "cloud": { "label": "Openship Bulut", "desc": "Yönetilen bulut altyapısı" }
+      "local": {
+        "label": "Bu Bilgisayar",
+        "desc": "Yerel Docker / çalışma zamanı"
+      },
+      "server": {
+        "label": "Sunucum",
+        "desc": "Yapılandırılmış bir SSH sunucusu"
+      },
+      "cloud": {
+        "label": "Openship Bulut",
+        "desc": "Yönetilen bulut altyapısı"
+      }
     },
     "labelFor": {
       "yourServer": "sunucunuz",
@@ -174,9 +183,18 @@
     "loading": "Tercihler yükleniyor…",
     "intro": "Yeni dağıtımlar için varsayılan derleme stratejisini seçin. Proje bazlı değişiklikler proje ayarlarında mevcuttur.",
     "modes": {
-      "auto": { "label": "Otomatik", "desc": "Framework'e göre akıllı seçim" },
-      "server": { "label": "Sunucu", "desc": "Uzaktaki sunucuda derle" },
-      "local": { "label": "Yerel", "desc": "Bilgisayarda derle" }
+      "auto": {
+        "label": "Otomatik",
+        "desc": "Framework'e göre akıllı seçim"
+      },
+      "server": {
+        "label": "Sunucu",
+        "desc": "Uzaktaki sunucuda derle"
+      },
+      "local": {
+        "label": "Yerel",
+        "desc": "Bilgisayarda derle"
+      }
     },
     "toast": {
       "setTo": "Derleme modu {mode} olarak ayarlandı",
@@ -743,5 +761,29 @@
     "toastLoadStateFailed": "Durum yüklenemedi",
     "toastRemoteUnreachable": "Uzaktaki sunucuya ulaşılamıyor. Yine de geri dönmek için \"uzaktaki verileri çekme\" seçeneğini işaretleyin.",
     "toastSwitchBackFailed": "Geri alma başarısız oldu"
+  },
+  "routePreferences": {
+    "title": "Yönlendirme",
+    "description": "Kenarın uygulamalarınızın upstream'lerine nasıl ulaştığı",
+    "loading": "Tercihler yükleniyor…",
+    "intro": "Yeni kendi kendine barındırılan projeler için varsayılan upstream adreslemesini seçin. Proje bazlı geçersiz kılmalar proje ayarlarındadır.",
+    "modes": {
+      "auto": {
+        "label": "Otomatik",
+        "desc": "Önerilen (loopback bağlantı noktası)"
+      },
+      "loopbackPort": {
+        "label": "Loopback bağlantı noktası",
+        "desc": "Özel 127.0.0.1 ana bilgisayar bağlantı noktası"
+      },
+      "containerIp": {
+        "label": "Konteyner IP",
+        "desc": "Gelişmiş — köprü IP"
+      }
+    },
+    "toast": {
+      "setTo": "Yönlendirme stratejisi {mode} olarak ayarlandı",
+      "failed": "Yönlendirme stratejisi güncellenemedi"
+    }
   }
 }

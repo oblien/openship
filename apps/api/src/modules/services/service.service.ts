@@ -17,7 +17,7 @@ import { resolveDeploymentPlatform } from "../../lib/deployment-runtime";
 import { deployComposeServices } from "../deployments/compose/deploy.service";
 import type { DeploymentConfigSnapshot } from "../deployments/build.service";
 import { buildServiceRouteDomains, serviceCustomHostnames } from "../../lib/routing-domains";
-import { ensurePendingServiceDomain, removeServiceDomain } from "../domains/domain.service";
+import { ensurePendingServiceDomain, removeServiceDomain, reuseServerCertForDomain } from "../domains/domain.service";
 import { buildUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import {
   reconcileProjectRoutes,
@@ -385,17 +385,37 @@ export async function updateService(
         isCustomDomain: route.domainType === "custom",
       }));
 
+      // Authoritative port: the upstream above is rebuilt from the LIVE
+      // deployment's published port on every publish, so reconcileProjectRoutes
+      // OVERWRITES whatever the edge vhost currently forwards to — a manual (or
+      // migrated foreign-proxy) port edit can't survive. If a routable route
+      // still resolves NO upstream, the live port wasn't found — warn so the
+      // 502 cause is visible instead of a silently portless vhost.
+      for (const reg of registers) {
+        if (reg.port && !reg.targetUrl) {
+          console.warn(
+            `[SERVICE] ${svc.name}: no live upstream for ${reg.hostname} (port ${reg.port}) — ` +
+              `route may 502 until the deployment publishes that port.`,
+          );
+        }
+      }
+
       // Mint a verifiable PENDING domain row for each custom service route, so
       // it flows through the same DNS-preflight/verify/SSL pipe as a single-app
       // custom domain (rather than only appearing — force-verified — at deploy).
+      // Track the freshly-created ones so we can reuse an existing on-server cert
+      // for them below (migration / first publish) instead of forcing an ACME
+      // re-issue.
+      const freshlyPublishedDomainIds: string[] = [];
       for (const route of nextRoutes) {
         if (route.domainType === "custom") {
-          await ensurePendingServiceDomain({
+          const ensured = await ensurePendingServiceDomain({
             projectId: project.id,
             serviceId,
             hostname: route.hostname,
             targetPort: route.targetPort,
           });
+          if (ensured.created && ensured.domainId) freshlyPublishedDomainIds.push(ensured.domainId);
         }
       }
       // Drop the derived row for any custom hostname the service no longer
@@ -415,6 +435,16 @@ export async function updateService(
           ? await repos.deployment.findById(project.activeDeploymentId)
           : null;
       await reconcileProjectRoutes(project, { deployment: dep, registers, removes });
+
+      // Now that the HTTP route is live, adopt any cert the box ALREADY serves
+      // for a freshly-published custom domain (Openship re-migration on the same
+      // box, or a foreign proxy we're taking over) — so it comes up verified +
+      // SSL active without an ACME re-issue that would fail behind a CDN. Runs
+      // AFTER reconcile so installDomainCert re-registers the vhost with TLS on
+      // top of the base route. Best-effort — never blocks the route update.
+      for (const domainId of freshlyPublishedDomainIds) {
+        await reuseServerCertForDomain(ctx, domainId).catch(() => {});
+      }
     } catch (err) {
       console.error(`[SERVICE] Failed to update route for ${svc.name}:`, err);
     }

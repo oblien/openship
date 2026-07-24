@@ -114,7 +114,7 @@
       "appSettings": "设置",
       "overview": "概览",
       "services": "服务",
-      "domains": "域名",
+      "domains": "域名与路由",
       "deployments": "部署",
       "source": "源",
       "runtime": "配置",

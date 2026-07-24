@@ -13,6 +13,10 @@ interface DomainSslOptions {
    *  already verified access). */
   projectId?: string;
   includeWww?: boolean;
+  /** Skip the "must be verified first" guard. Only the ACME-as-verification
+   *  path (self-hosted verifyDomain) sets this — there, issuing the cert IS the
+   *  verification, so it necessarily runs before `verified` is set. */
+  allowUnverified?: boolean;
 }
 
 async function resolveAuthorizedDomain(hostname: string, opts: DomainSslOptions) {
@@ -29,7 +33,7 @@ async function resolveAuthorizedDomain(hostname: string, opts: DomainSslOptions)
     throw new NotFoundError("Domain", hostname);
   }
 
-  if (!domainRecord.verified) {
+  if (!opts.allowUnverified && !domainRecord.verified) {
     throw new ForbiddenError("Domain must be verified before SSL can be managed");
   }
 
@@ -155,6 +159,32 @@ export async function manageDomainSsl(
 }
 
 /**
+ * ACME-as-verification for a self-hosted custom domain: obtain the cert for a
+ * NOT-YET-VERIFIED domain. A successful issuance IS the proof that the hostname
+ * resolves to this box and :80 is reachable — and it holds behind a CDN:
+ * Cloudflare forwards the HTTP-01 challenge (served by OpenResty's default
+ * server from /var/www/acme) to origin. That's why self-hosted verify drives
+ * this instead of digging DNS, which a proxy in front would answer with the
+ * CDN's own IP. Returns the SslResult ({verified} on success); propagates the
+ * summarized certbot failure so the caller can surface an actionable "not yet"
+ * message. The cert result is persisted on the way out, same as manageDomainSsl.
+ */
+export async function provisionDomainCertForVerify(
+  hostname: string,
+  opts: { projectId?: string } = {},
+): Promise<SslResult> {
+  const { domainRecord, project } = await resolveAuthorizedDomain(hostname, {
+    action: "provision",
+    projectId: opts.projectId,
+    allowUnverified: true,
+  });
+  const ssl = await resolveSslProvider(project);
+  const result = await ssl.provisionCert(domainRecord.hostname);
+  await persistSslResult(domainRecord.id, domainRecord.sslStatus, result);
+  return result;
+}
+
+/**
  * Install an operator-supplied certificate on the host that serves the domain
  * (resolved the same way as manageDomainSsl). Infra-only — the caller owns the
  * domain-row update (manualSsl flag + ssl status). Enforces the same ownership
@@ -163,12 +193,36 @@ export async function manageDomainSsl(
 export async function installDomainCert(
   hostname: string,
   cert: ManualCert,
-  opts: { projectId?: string } = {},
+  opts: { projectId?: string; allowUnverified?: boolean } = {},
 ): Promise<SslResult> {
   const { domainRecord, project } = await resolveAuthorizedDomain(hostname, {
     action: "provision",
     projectId: opts.projectId,
+    allowUnverified: opts.allowUnverified,
   });
   const ssl = await resolveSslProvider(project);
   return ssl.installCert(domainRecord.hostname, cert);
+}
+
+/**
+ * Read-only check: is a usable cert for this hostname ALREADY present on the
+ * host that serves it (e.g. left by a prior deploy of the same box)? No
+ * issuance, no ACME rate-limit cost. Allows a not-yet-verified row — the
+ * migration/first-publish reuse path (domain.service → reuseServerCertForDomain)
+ * runs before the domain is verified, so it can't use manageDomainSsl (which
+ * gates on `verified`). Persists an "active" result via resolveSslPatch.
+ */
+export async function verifyExistingCert(
+  hostname: string,
+  opts: { projectId?: string } = {},
+): Promise<SslResult> {
+  const { domainRecord, project } = await resolveAuthorizedDomain(hostname, {
+    action: "verify",
+    projectId: opts.projectId,
+    allowUnverified: true,
+  });
+  const ssl = await resolveSslProvider(project);
+  const result = await ssl.verifyCert(domainRecord.hostname);
+  await persistSslResult(domainRecord.id, domainRecord.sslStatus, result);
+  return result;
 }

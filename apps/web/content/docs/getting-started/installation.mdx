@@ -105,27 +105,41 @@ Most Linux distros ship it already. If the AppImage won't start, either install 
 
 <Tab value="Docker Compose">
 
-Prefer containers on a server? Clone the repo and bring up the bundled stack. It runs five services:
-**Postgres**, **Redis**, the **API** (`:4000`), the **dashboard** (`:3001`), and the marketing/docs
-**site** (`:3000`).
+Prefer to run the containers on a server yourself? The self-hosted stack lives in
+**`docker/docker-compose.yml`** and **pulls** published images from GitHub Container Registry — no build
+tooling required. Run it from the repo root:
 
 ```bash
 git clone https://github.com/oblien/openship.git
 cd openship
 cp .env.example .env          # then edit the secrets inside
-docker compose up -d
+docker compose --env-file .env -f docker/docker-compose.yml up -d
 ```
 
-When it's up, open the dashboard at `http://localhost:3001` and the API at `http://localhost:4000/api`.
+It runs five services: **Postgres**, **Redis**, the **API** (`:4000`), the **dashboard** (`:3001`), and an
+**OpenResty edge** on **:80/:443** — a container (host networking) that handles routing and Let's Encrypt TLS.
+The API mounts the host Docker socket so it can build and run your deployed apps as host containers.
+**Linux only** (the edge needs host networking); on macOS/Windows use the CLI (`openship up`) instead.
 
-<Callout title="The first start builds from source" type="info">
-The first `docker compose up` builds the API, dashboard, and site images from the repo, so it can take a
-few minutes. Later starts reuse the built images and come up quickly.
+When it's up, open the dashboard at `http://localhost:3001`.
+
+<Callout title="Pull-based — pin a version" type="info">
+The stack pulls published images (`ghcr.io/oblien/*`), so it comes up without a build. Pin `OPENSHIP_VERSION`
+in `.env` (e.g. `0.2.3`) for reproducible upgrades, then
+`docker compose --env-file .env -f docker/docker-compose.yml pull` and `… up -d`. To build from source
+instead, add `-f docker/docker-compose.build.yml … up -d --build`.
 </Callout>
 
 <Callout title="Edit .env first" type="warn">
-Copy `.env.example` to `.env` and fill in the secrets **before** you start the stack — the containers read
-their configuration from that file at boot.
+Copy `.env.example` to `.env` and fill in the secrets **before** you start the stack. To reach it from another
+machine, also set `OPENSHIP_PUBLIC_URL` (and `TRUST_PROXY=true` behind a reverse proxy) — otherwise the
+dashboard loads but login is rejected.
+</Callout>
+
+<Callout title="The root docker-compose.yml is a different file" type="info">
+The compose file at the repo **root** is the SaaS / from-source **control plane** — it builds from source and
+ships the marketing site, with no edge and no Docker socket. It does **not** self-host your apps. For
+self-hosting, use `docker/docker-compose.yml` above (or just `openship up`).
 </Callout>
 
 </Tab>
@@ -150,11 +164,19 @@ Prefer to skip the prompts? `openship up` starts the same background service dir
 openship up
 ```
 
+<Callout title="Compose vs bare — `openship up` picks for you" type="info">
+On **Linux with Docker**, `openship up` installs the container stack (Postgres, Redis, API, dashboard, and the
+OpenResty edge on :80/:443 — the same stack as the Docker Compose tab above), which can **host your deployed
+apps on this box** with domains and TLS. Everywhere else (macOS, Windows, or Linux without Docker) it installs
+a single lightweight process with a built-in database — an always-on control plane that deploys apps out to a
+server or the cloud. Force either with `openship up --compose` or `openship up --bare`.
+</Callout>
+
 Either way, Openship runs as a **background service that starts on boot and restarts itself if it crashes** —
 like a delivery truck that always comes back to the depot. It runs the API on `:4000` and the dashboard on
-`:3001` (the dashboard is downloaded automatically the first time), backed by a small embedded database with
-no external services to set up. A CLI instance always requires a login — the admin you create during
-`openship` setup.
+`:3001`, backed by a built-in database in bare mode (or Postgres + Redis in Compose mode). A CLI instance
+always requires a login — the admin you create during `openship` setup, or the first account you register in
+the dashboard when you run `openship up` directly.
 
 ```bash
 openship stop              # stop the service — it won't restart or come back on reboot

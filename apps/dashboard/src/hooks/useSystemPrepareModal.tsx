@@ -153,7 +153,13 @@ function PrepareStreamContent({
   }, [opts.streamUrl]);
 
   const l = opts.labels ?? {};
-  const tail = logs.slice(-6);
+  const tail = logs.slice(-12);
+  const logBoxRef = useRef<HTMLDivElement>(null);
+  // Keep the newest line in view as the stream flows.
+  useEffect(() => {
+    const el = logBoxRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logs]);
 
   return (
     <div className="space-y-4 p-6">
@@ -218,15 +224,22 @@ function PrepareStreamContent({
             <Loader2 className="size-4 animate-spin" />
             <span>{l.working ?? "Working…"}</span>
           </div>
-          {tail.length > 0 && (
-            <div className="space-y-0.5 rounded-xl border border-border/50 bg-muted/20 p-3 font-mono text-[11px] text-muted-foreground">
-              {tail.map((entry, i) => (
+          {/* Always render the console so the flow never looks dead — a muted
+              "Connecting…" placeholder covers the pre-first-line gap. */}
+          <div
+            ref={logBoxRef}
+            className="max-h-56 space-y-0.5 overflow-y-auto rounded-xl border border-border/50 bg-muted/20 p-3 font-mono text-[11px] text-muted-foreground"
+          >
+            {tail.length > 0 ? (
+              tail.map((entry, i) => (
                 <div key={i} className={entry.level === "error" ? "text-danger" : entry.level === "warn" ? "text-warning" : ""}>
                   {entry.message}
                 </div>
-              ))}
-            </div>
-          )}
+              ))
+            ) : (
+              <div className="italic opacity-70">Connecting…</div>
+            )}
+          </div>
         </div>
       )}
     </div>

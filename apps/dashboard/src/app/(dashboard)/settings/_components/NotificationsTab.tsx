@@ -47,9 +47,12 @@ const CHANNEL_ICONS: Record<ChannelKind, LucideIcon> = {
   in_app: Smartphone,
 };
 
-/** Brand slug per kind (real logo via AppLogo) — only where a brand mark exists. */
+/** Real brand mark per kind (simpleicons slug, brand-colored via AppLogo's CDN)
+ *  — only the branded channels; generic kinds fall back to a lucide glyph. */
 const CHANNEL_LOGOS: Partial<Record<ChannelKind, string>> = {
   slack: "slack",
+  discord: "discord",
+  msteams: "microsoftteams",
 };
 
 const CHANNEL_LABELS: Record<ChannelKind, string> = {
@@ -61,10 +64,12 @@ const CHANNEL_LABELS: Record<ChannelKind, string> = {
   in_app: "In-app",
 };
 
-/** Clean per-kind logo: the Slack brand mark (simpleicons via AppLogo), lucide
- *  glyphs for the generic kinds (webhook/email/in-app have no brand). */
+/** Real brand logo where the channel has one (Slack/Discord/Teams via
+ *  simpleicons through AppLogo), lucide glyphs for the generic kinds
+ *  (email/webhook/in-app have no brand mark). */
 function ChannelLogo({ kind, className = "size-4" }: { kind: ChannelKind; className?: string }) {
-  if (kind === "slack") return <AppLogo slug="slack" icon={MessageSquare} className={className} />;
+  const slug = CHANNEL_LOGOS[kind];
+  if (slug) return <AppLogo slug={slug} icon={CHANNEL_ICONS[kind]} className={className} />;
   const Icon = CHANNEL_ICONS[kind];
   return <Icon className={`${className} text-foreground`} strokeWidth={1.7} />;
 }
@@ -383,7 +388,7 @@ function NewChannelForm({
       {/* Kind picker — one reusable switcher (real brand logos; scrolls with
           edge-fade + chevrons once the kinds outgrow the width). */}
       <PillSwitcher
-        options={(["email", "webhook", "slack", "in_app"] as ChannelKind[]).map((k) => ({
+        options={(["email", "webhook", "slack", "discord", "msteams", "in_app"] as ChannelKind[]).map((k) => ({
           value: k,
           label: t.settings.notifications.kinds[k],
           logo: CHANNEL_LOGOS[k],

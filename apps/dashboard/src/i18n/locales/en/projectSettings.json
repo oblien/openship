@@ -828,6 +828,13 @@
       "noServicePort": "No service publishes port {port}. Add that port to a service first.",
       "enterCustom": "Enter a custom domain.",
       "enterSubdomain": "Enter a subdomain."
+    },
+    "edge": {
+      "setUp": "Set up edge",
+      "ready": "Edge ready",
+      "checking": "Checking edge…",
+      "recheck": "Re-check",
+      "foreignProxyHint": "Another proxy holds 80/443"
     }
   }
 }

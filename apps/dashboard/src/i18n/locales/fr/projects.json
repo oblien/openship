@@ -116,7 +116,7 @@
       "appSettings": "Paramètres",
       "overview": "Vue d'ensemble",
       "services": "Services",
-      "domains": "Domaines",
+      "domains": "Domaines et routes",
       "deployments": "Déploiements",
       "source": "Source",
       "runtime": "Configuration",

@@ -149,6 +149,30 @@
       "toggleFailed": "Proje durumu değiştirilemedi",
       "clearInstallFailed": "Kurulum önbelleği temizlenemedi",
       "clearBuildFailed": "Derleme önbelleği temizlenemedi"
+    },
+    "routing": {
+      "title": "Yönlendirme",
+      "description": "Kenarın bu uygulamanın upstream'ine nasıl ulaştığı",
+      "intro": "Kenarın bu projenin konteynerini nasıl adresleyeceğini seçin.",
+      "note": "Loopback bağlantı noktası önerilir: özel bir 127.0.0.1 ana bilgisayar bağlantı noktası; yeniden başlatmalar arasında kararlı ve ağa hiçbir zaman açık değildir. Konteyner IP gelişmiştir (kesintisiz geçişler; kenarın Docker köprüsünde olmasını gerektirir; Docker Desktop'ta desteklenmez).",
+      "modes": {
+        "auto": {
+          "label": "Otomatik",
+          "desc": "Önerilen (loopback bağlantı noktası)"
+        },
+        "loopbackPort": {
+          "label": "Loopback bağlantı noktası",
+          "desc": "Özel 127.0.0.1 ana bilgisayar bağlantı noktası"
+        },
+        "containerIp": {
+          "label": "Konteyner IP",
+          "desc": "Gelişmiş — köprü IP"
+        }
+      },
+      "toast": {
+        "saved": "Yönlendirme {mode} olarak ayarlandı",
+        "failed": "Yönlendirme güncellenemedi"
+      }
     }
   },
   "routeRules": {
@@ -775,6 +799,13 @@
       "noServicePort": "Hiçbir servis {port} portunu dışa açmıyor. Önce bu portu bir servise ekleyin.",
       "enterCustom": "Özel bir alan adı girin.",
       "enterSubdomain": "Bir alt alan adı girin."
+    },
+    "edge": {
+      "setUp": "Kenarı kur",
+      "ready": "Kenar hazır",
+      "checking": "Kenar denetleniyor…",
+      "recheck": "Yeniden denetle",
+      "foreignProxyHint": "Başka bir proxy 80/443'ü kullanıyor"
     }
   }
 }

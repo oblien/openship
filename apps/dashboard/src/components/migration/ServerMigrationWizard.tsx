@@ -24,6 +24,7 @@ import {
   Link2,
   Globe,
   ChevronRight,
+  KeyRound,
 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import ServerSelector, { type ServerOption } from "@/components/shared/ServerSelector";
@@ -666,6 +667,15 @@ export function ServerMigrationWizard({
 
   const allDone = Boolean(queue) && completed.length >= (queue?.length ?? 0);
 
+  // Domains land automatically when a migrated service carried a route (a kept
+  // foreign-proxy domain or a free/custom one added in step 3) — those get
+  // applied on verify (see applyRoutes above). Only nag "Add domains" when
+  // NOTHING got a domain; otherwise the stack is already public, so the done
+  // screen leads with "Open project" instead.
+  const anyDomainAssigned = Boolean(
+    queue?.some((it) => it.routesByServiceName && Object.keys(it.routesByServiceName).length > 0),
+  );
+
   const lastProjectId = () => completed[completed.length - 1]?.projectId ?? run?.projectId;
 
   // Navigate-away actions reset (not close()) so the page variant doesn't fire
@@ -871,6 +881,7 @@ export function ServerMigrationWizard({
                 queueTotal={queue?.length ?? 1}
                 completed={completed}
                 deployServices={deploy?.services}
+                hasDomains={anyDomainAssigned}
               />
             </div>
             <div className="shrink-0 flex items-center justify-between gap-4 px-6 py-4 border-t border-border/60">
@@ -911,18 +922,25 @@ export function ServerMigrationWizard({
                     <button
                       type="button"
                       onClick={openProject}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                      className={
+                        anyDomainAssigned
+                          ? "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
+                          : "px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                      }
                     >
+                      {anyDomainAssigned && <ArrowRight className="size-4" />}
                       {m.run.openProject}
                     </button>
-                    <button
-                      type="button"
-                      onClick={openDomains}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0"
-                    >
-                      <ArrowRight className="size-4" />
-                      {m.run.addDomains}
-                    </button>
+                    {!anyDomainAssigned && (
+                      <button
+                        type="button"
+                        onClick={openDomains}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:hover:shadow-none disabled:hover:translate-y-0"
+                      >
+                        <ArrowRight className="size-4" />
+                        {m.run.addDomains}
+                      </button>
+                    )}
                   </div>
                 </>
               ) : (
@@ -1337,6 +1355,7 @@ export function ServerMigrationWizard({
               queueTotal={queueTotal}
               completed={completed}
               deployServices={deploy?.services}
+              hasDomains={anyDomainAssigned}
             />
           </div>
 
@@ -1390,8 +1409,10 @@ export function ServerMigrationWizard({
                 </>
               ) : allDone ? (
                 <>
-                  <button type="button" onClick={openDomains} className="inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"><ArrowRight className="size-4" />{m.run.addDomains}</button>
-                  <button type="button" onClick={openProject} className="w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">{m.run.openProject}</button>
+                  {!anyDomainAssigned && (
+                    <button type="button" onClick={openDomains} className="inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"><ArrowRight className="size-4" />{m.run.addDomains}</button>
+                  )}
+                  <button type="button" onClick={openProject} className={anyDomainAssigned ? "inline-flex w-full items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors" : "w-full px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"}>{anyDomainAssigned && <ArrowRight className="size-4" />}{m.run.openProject}</button>
                   <button type="button" onClick={close} className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">{m.wizard.close}</button>
                 </>
               ) : (
@@ -1638,6 +1659,7 @@ export function ServerMigrationWizard({
                 queueTotal={queue?.length ?? 1}
                 completed={completed}
                 deployServices={deploy?.services}
+                hasDomains={anyDomainAssigned}
               />
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {run?.status === "awaiting_cutover" ? (
@@ -1659,14 +1681,19 @@ export function ServerMigrationWizard({
                       {m.wizard.close}
                     </button>
                     <button type="button" onClick={openProject}
-                      className="px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors">
+                      className={anyDomainAssigned
+                        ? "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+                        : "px-4 py-2.5 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted transition-colors"}>
+                      {anyDomainAssigned && <ArrowRight className="size-4" />}
                       {m.run.openProject}
                     </button>
-                    <button type="button" onClick={openDomains}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
-                      <ArrowRight className="size-4" />
-                      {m.run.addDomains}
-                    </button>
+                    {!anyDomainAssigned && (
+                      <button type="button" onClick={openDomains}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors">
+                        <ArrowRight className="size-4" />
+                        {m.run.addDomains}
+                      </button>
+                    )}
                   </>
                 ) : (
                   <>
@@ -2550,9 +2577,18 @@ function ServiceMapPanel({
                     )}
                   </div>
                   <div className="space-y-1.5">
-                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-                      {s.mapField}
-                    </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                        {s.mapField}
+                      </label>
+                      {Object.keys(sv.env).length > 0 && (
+                        <span className="shrink-0 text-[11px] text-muted-foreground/70">
+                          {interpolate(t.migration.discover.nEnv, {
+                            n: String(Object.keys(sv.env).length),
+                          })}
+                        </span>
+                      )}
+                    </div>
                     <CustomSelect
                       value={mapped}
                       onChange={(val) => onSetMap(uid, val || null)}
@@ -2604,7 +2640,7 @@ function ServiceConfigCard({
   const s = t.migration.wizard.steps;
   const d = t.migration.discover;
   const port = routes?.[0]?.port ?? firstContainerPort(service);
-  const [showEnv, setShowEnv] = useState(false);
+  const [envModalOpen, setEnvModalOpen] = useState(false);
   const existing = service.existingRoute;
   const volumeNames = service.volumes
     .filter((v) => v.type === "volume" && v.source)
@@ -2691,40 +2727,44 @@ function ServiceConfigCard({
           ))}
         </div>
 
-        {/* Reserve a stable height so switching Keep/Custom/None doesn't jump the
-            card (None's short note used to collapse it). */}
-        <div className="flex min-h-[3rem] flex-col justify-center">
-          {routeMode === "keep" && existing && (
-            <div className="rounded-lg border border-border/50 bg-card/40 px-3 py-2">
-              <a
-                href={`https://${existing.domains[0]}`}
-                target="_blank"
-                rel="noreferrer"
-                className="block truncate text-sm text-foreground hover:text-primary transition-colors"
-              >
-                {existing.domains[0]}
-              </a>
-              {existing.domains.length > 1 && (
-                <p className="mt-0.5 text-[11px] text-muted-foreground">+{existing.domains.length - 1}</p>
-              )}
-            </div>
-          )}
+        {/* Route detail — only for modes that HAVE content. "None" renders
+            nothing (an empty reserved box just left a big whitespace gap on
+            no-domain services like a DB). A small min-height keeps the domain
+            box + slug editor from jumping when switching Keep/Free/Custom. */}
+        {routeMode !== "none" && (
+          <div className="flex min-h-[3rem] flex-col justify-center">
+            {routeMode === "keep" && existing && (
+              <div className="rounded-lg border border-border/50 bg-card/40 px-3 py-2">
+                <a
+                  href={`https://${existing.domains[0]}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block truncate text-sm text-foreground hover:text-primary transition-colors"
+                >
+                  {existing.domains[0]}
+                </a>
+                {existing.domains.length > 1 && (
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">+{existing.domains.length - 1}</p>
+                )}
+              </div>
+            )}
 
-          {(routeMode === "free" || routeMode === "custom") && (
-            <PublicEndpointsCard
-              projectName={service.name}
-              endpoints={shownEndpoints}
-              hasServer
-              runtimePort={port}
-              allowPortEdit
-              saveMode="change"
-              hideHeader
-              hideTypeToggle
-              portInline
-              onChange={(next) => applyEndpoints(next)}
-            />
-          )}
-        </div>
+            {(routeMode === "free" || routeMode === "custom") && (
+              <PublicEndpointsCard
+                projectName={service.name}
+                endpoints={shownEndpoints}
+                hasServer
+                runtimePort={port}
+                allowPortEdit
+                saveMode="change"
+                hideHeader
+                hideTypeToggle
+                portInline
+                onChange={(next) => applyEndpoints(next)}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {volumeNames.length > 0 && (
@@ -2756,27 +2796,63 @@ function ServiceConfigCard({
         </div>
       )}
 
-      <div>
-        <button
-          type="button"
-          onClick={() => setShowEnv((v) => !v)}
-          className="flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronRight className={`size-3.5 transition-transform ${showEnv ? "rotate-90" : ""}`} />
-          {s.envTitle}
-          <span className="text-muted-foreground/60">· {Object.keys(envRecord).length}</span>
-        </button>
-        {showEnv && (
-          <div className="mt-2">
-            <EnvironmentVariables
-              mode="settings"
-              borderless
-              envVars={envRows}
-              onEnvVarsChange={(rows) => onSetEnv(rowsToEnv(rows))}
-            />
+      {/* Env vars open in the SAME modal the deploy wizard uses (ComposeServices)
+          instead of an inline expander. */}
+      <button
+        type="button"
+        onClick={() => setEnvModalOpen(true)}
+        className="flex w-full items-center justify-between gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5 text-start transition-colors hover:bg-muted/30"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <KeyRound className="size-4 shrink-0 text-muted-foreground" />
+          <span className="text-[13px] font-medium text-foreground">{s.envTitle}</span>
+          <span className="text-[12px] text-muted-foreground/70">
+            · {interpolate(d.nEnv, { n: String(Object.keys(envRecord).length) })}
+          </span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+      </button>
+
+      <Modal
+        isOpen={envModalOpen}
+        onClose={() => setEnvModalOpen(false)}
+        maxWidth="760px"
+        maxHeight="86vh"
+        overflow="hidden"
+        showCloseButton={false}
+      >
+        <div className="border-b border-border/50 px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                <KeyRound className="size-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{service.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {s.envTitle} · {interpolate(d.nEnv, { n: String(Object.keys(envRecord).length) })}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEnvModalOpen(false)}
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              aria-label={s.envTitle}
+            >
+              <X className="size-4" />
+            </button>
           </div>
-        )}
-      </div>
+        </div>
+        <div className="max-h-[calc(86vh-92px)] overflow-y-auto">
+          <EnvironmentVariables
+            mode="settings"
+            borderless
+            envVars={envRows}
+            onEnvVarsChange={(rows) => onSetEnv(rowsToEnv(rows))}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -2789,6 +2865,7 @@ function MigrationProgress({
   queueTotal,
   completed,
   deployServices,
+  hasDomains,
 }: {
   run: MigrationRun | null;
   error: string | null;
@@ -2797,6 +2874,9 @@ function MigrationProgress({
   queueTotal: number;
   completed: Array<{ name: string; projectId?: string | null }>;
   deployServices?: Array<{ name: string; status: string; error?: string }>;
+  /** True when at least one migrated service got a domain — suppresses the
+   *  "not public yet, add a domain" hint (the stack is already reachable). */
+  hasDomains?: boolean;
 }) {
   const { t } = useI18n();
   const m = t.migration;
@@ -2864,7 +2944,9 @@ function MigrationProgress({
                 : m.run.succeeded}
             </span>
           </div>
-          <p className="px-1 text-xs leading-relaxed text-muted-foreground/80">{m.run.routeHint}</p>
+          {!hasDomains && (
+            <p className="px-1 text-xs leading-relaxed text-muted-foreground/80">{m.run.routeHint}</p>
+          )}
         </div>
       ) : failed ? (
         <div className="flex items-start gap-2 text-sm text-destructive rounded-xl bg-destructive/10 px-4 py-3">

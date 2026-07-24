@@ -183,6 +183,7 @@ r.post("/:id/routing/retry", { tag: "project:write", mcp: { description: "Retry 
 /* ─── Set up / take over the self-hosted edge (OpenResty on 80/443) + apply
       the project's routes, WITHOUT a container redeploy. SSE so the port-80/443
       takeover consent can be prompted mid-flight (answered via .../respond). ── */
+r.get("/:id/routing/edge-status", { tag: "project:read", mcp: { description: "Check whether the project's server edge (OpenResty on 80/443) is already set up." } }, ensureEdgeCtrl.edgeStatus);
 r.post("/:id/routing/ensure-edge/stream", { tag: "project:write" }, ensureEdgeCtrl.ensureEdgeStream);
 r.post("/:id/routing/ensure-edge/respond", { tag: "project:write" }, ensureEdgeCtrl.ensureEdgeRespond);
 

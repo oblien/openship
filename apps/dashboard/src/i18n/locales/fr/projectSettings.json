@@ -697,6 +697,13 @@
       "submit": "Installer le certificat",
       "submitting": "Installation...",
       "close": "Annuler"
+    },
+    "edge": {
+      "setUp": "Configurer l'edge",
+      "ready": "Edge prêt",
+      "checking": "Vérification de l'edge…",
+      "recheck": "Revérifier",
+      "foreignProxyHint": "Un autre proxy occupe 80/443"
     }
   },
   "routeRules": {

@@ -234,12 +234,45 @@ export const DomainSettings = () => {
   const router = useRouter();
   const { baseDomain, selfHosted } = usePlatform();
   const openEdgeModal = useEdgeModal();
+
+  // Live edge health for the server (read-only probe). Drives the button state:
+  // "Edge ready" when OpenResty already owns 80/443, else "Set up edge".
+  const [edge, setEdge] = useState<{
+    loading: boolean;
+    ready: boolean;
+    classification?: "free" | "ours" | "known" | "unknown";
+    reachable?: boolean | null;
+  }>({ loading: false, ready: false });
+  const checkEdge = useCallback(async () => {
+    if (!selfHosted) return;
+    setEdge((e) => ({ ...e, loading: true }));
+    try {
+      const res = await projectsApi.getEdgeStatus(id);
+      setEdge({
+        loading: false,
+        ready: !!res.ready,
+        classification: res.classification,
+        reachable: res.reachable ?? null,
+      });
+    } catch {
+      setEdge({ loading: false, ready: false });
+    }
+  }, [id, selfHosted]);
+
   // Install/own OpenResty + apply routes reload-free (no redeploy), surfacing the
   // 80/443 takeover consent if a foreign proxy holds them. Reused by the first
-  // route publish + the "Set up edge" action.
+  // route publish + the "Set up edge" action. Re-checks edge health on completion
+  // so the button flips to "Edge ready".
   const openEdge = useCallback(
-    () => openEdgeModal(id, { onDone: () => { invalidateProjectCaches(id); router.refresh(); } }),
-    [openEdgeModal, id, router],
+    () =>
+      openEdgeModal(id, {
+        onDone: () => {
+          invalidateProjectCaches(id);
+          router.refresh();
+          void checkEdge();
+        },
+      }),
+    [openEdgeModal, id, router, checkEdge],
   );
 
   const [newDomain, setNewDomain] = useState("");
@@ -316,7 +349,10 @@ export const DomainSettings = () => {
   // After a failed verify, remember which record(s) still aren't resolving so
   // the pending card can name them and auto-open its DNS records. Keyed by row.
   const [verifyFailure, setVerifyFailure] = useState<
-    { domainId: string; cnameVerified: boolean; txtVerified: boolean } | null
+    // `message` is the server's actionable reason — for self-hosted that's the
+    // summarized certbot failure (DNS/firewall/proxy), which supersedes the
+    // legacy cname/txt "not resolving" copy (self-hosted no longer digs DNS).
+    { domainId: string; cnameVerified: boolean; txtVerified: boolean; message?: string } | null
   >(null);
   // Live port reachability of the active deployment (advisory) — drives the
   // per-card "nothing responded on port X" hint. [] = no signal → no hint.
@@ -326,6 +362,16 @@ export const DomainSettings = () => {
   const services = servicesData.services;
   const servicesLoading = servicesData.isLoading;
   const hasProjectServer = projectData.options?.hasServer ?? buildData.hasServer ?? true;
+
+  // A deployed self-hosted stack with an exposed service is the only case that
+  // needs an edge — probe its health once so the button can show "Edge ready"
+  // vs "Set up edge" without the user having to click.
+  const edgeRelevant =
+    selfHosted && !!projectData.activeDeploymentId && services.some((s) => s.enabled && s.exposed);
+  useEffect(() => {
+    if (edgeRelevant) void checkEdge();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edgeRelevant]);
   const projectRuntimePort = String(
     projectData.options?.productionPort ||
     buildData.productionPort ||
@@ -668,6 +714,7 @@ export const DomainSettings = () => {
           domainId,
           cnameVerified: !!result.cnameVerified,
           txtVerified: !!result.txtVerified,
+          message: result.message,
         });
         showToast(
           result.message || interpolate(t.projectSettings.domains.toast.verifyNotYet, { hostname }),
@@ -687,10 +734,13 @@ export const DomainSettings = () => {
     }
   };
 
-  // Human hint naming which DNS record still isn't resolving after a failed
-  // verify — powers the pending card's inline message + auto-opens its records.
+  // Inline hint under the pending card after a failed verify. Self-hosted sends
+  // an actionable ACME reason (certbot: DNS/firewall/proxy) — show it verbatim.
+  // Only cloud, which still digs CNAME/TXT, falls back to the "not resolving"
+  // copy naming the specific record.
   const verifyHintFor = (domainId?: string): string | null => {
     if (!domainId || verifyFailure?.domainId !== domainId) return null;
+    if (verifyFailure.message) return verifyFailure.message;
     const vm = t.projectSettings.domains.verifyMissing;
     if (!verifyFailure.cnameVerified && !verifyFailure.txtVerified) return vm.both;
     if (!verifyFailure.cnameVerified) return vm.cname;
@@ -1657,17 +1707,46 @@ export const DomainSettings = () => {
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-end gap-2">
             {/* Migrated/edgeless stacks: routes may be recorded but the server's
-                edge (OpenResty on 80/443) isn't set up yet. This installs/owns it
-                + applies routes reload-free (no redeploy), surfacing the takeover
-                consent if a foreign proxy holds 80/443. Idempotent when the edge
-                is already ours. */}
-            {selfHosted && !!projectData.activeDeploymentId && services.some((s) => s.enabled && s.exposed) && (
-              <ActionButton
-                label="Set up edge"
-                icon={ShieldCheck}
-                onClick={openEdge}
-              />
-            )}
+                edge (OpenResty on 80/443) isn't set up yet. We probe edge health
+                first — show "Edge ready" when OpenResty already owns it, else the
+                "Set up edge" action (installs/owns it + applies routes reload-free,
+                surfacing the takeover consent if a foreign proxy holds 80/443). */}
+            {edgeRelevant &&
+              (edge.loading ? (
+                <ActionButton
+                  label={t.projectSettings.domains.edge.checking}
+                  icon={Loader2}
+                  spinning
+                  disabled
+                />
+              ) : edge.ready ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-success-bg px-3 py-2 text-[13px] font-medium text-success">
+                    <ShieldCheck className="size-3.5" />
+                    {t.projectSettings.domains.edge.ready}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void checkEdge()}
+                    className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    {t.projectSettings.domains.edge.recheck}
+                  </button>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <ActionButton
+                    label={t.projectSettings.domains.edge.setUp}
+                    icon={ShieldCheck}
+                    onClick={openEdge}
+                  />
+                  {(edge.classification === "known" || edge.classification === "unknown") && (
+                    <span className="text-[12px] text-warning">
+                      {t.projectSettings.domains.edge.foreignProxyHint}
+                    </span>
+                  )}
+                </span>
+              ))}
             <ActionButton
               label={showAddRoute ? t.projectSettings.domains.addRoute.cancel : t.projectSettings.domains.addRoute.add}
               icon={Plus}

@@ -649,6 +649,13 @@
       "noServicePort": "ポート {port} を公開しているサービスがありません。先にそのポートをサービスに追加してください。",
       "enterCustom": "カスタムドメインを入力してください。",
       "enterSubdomain": "サブドメインを入力してください。"
+    },
+    "edge": {
+      "setUp": "エッジを設定",
+      "ready": "エッジ準備完了",
+      "checking": "エッジを確認中…",
+      "recheck": "再確認",
+      "foreignProxyHint": "別のプロキシが 80/443 を使用中"
     }
   }
 }

@@ -242,6 +242,22 @@ export const projectsApi = {
     api.patch<any>(endpoints.projects.item(id), fields),
 
   /**
+   * Read-only edge health for the project's server: is OpenResty already the
+   * edge on 80/443 (`ready`/`classification === "ours"`), or does it need setup?
+   * `reachable:false` = the box didn't answer a fast connect probe (offline).
+   */
+  getEdgeStatus: (id: string | number) =>
+    api.get<{
+      ready: boolean;
+      reachable?: boolean | null;
+      classification?: "free" | "ours" | "known" | "unknown";
+      canProceedClean?: boolean;
+      managed?: "cloud";
+      reason?: string;
+      occupants?: Array<{ port: number; proxy: string | null; label: string | null }>;
+    }>(endpoints.projects.edgeStatus(id)),
+
+  /**
    * Get the per-project clone-token state. Returns only `{ hasToken, setAt }`
    * - never the token itself.
    */

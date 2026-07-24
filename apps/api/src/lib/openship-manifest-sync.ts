@@ -18,6 +18,8 @@ import { repos, dumpSubgraph, type Project, type Deployment } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
 import { resolveDeploymentPlatform, type DeploymentMeta } from "./deployment-runtime";
 import {
+  readManifest,
+  writeManifest,
   upsertProjectIntoManifest,
   removeProjectFromManifest,
   writeProjectSnapshot,
@@ -106,6 +108,40 @@ export async function syncProjectToServerManifest(input: {
  * deploys carry no meta.serverId → skipped). Best-effort — the reconcile's
  * running-container cross-check is the real guard.
  */
+/**
+ * Self-heal the server's recovery state on scan: drop manifest entries (and their
+ * snapshot files) for THIS org's projects that no longer exist in the DB. Without
+ * this, every re-migration — which mints a NEW project id — leaves the old id's
+ * entry + `snapshot-<oldid>.json` behind forever, so the file grows unbounded.
+ *
+ * Org-scoped on purpose: a shared self-hosted box can carry multiple orgs'
+ * entries, so we ONLY ever drop entries whose `organizationId` matches the org
+ * running the scan AND whose id isn't in its live set. Best-effort — a scan must
+ * never fail because pruning couldn't run.
+ */
+export async function pruneOrphanManifestArtifacts(
+  exec: CommandExecutor,
+  opts: { organizationId: string; liveProjectIds: Set<string> },
+): Promise<void> {
+  try {
+    const manifest = await readManifest(exec);
+    if (!manifest) return;
+    const isOrphan = (p: ManifestProjectEntry) =>
+      p.organizationId === opts.organizationId && !opts.liveProjectIds.has(p.id);
+    const dropped = manifest.projects.filter(isOrphan);
+    if (dropped.length === 0) return;
+    await writeManifest(exec, {
+      ...manifest,
+      projects: manifest.projects.filter((p) => !isOrphan(p)),
+    });
+    for (const p of dropped) {
+      await removeProjectSnapshot(exec, p.id).catch(() => {});
+    }
+  } catch {
+    // best-effort — never fail the scan on a pruning hiccup.
+  }
+}
+
 export async function removeProjectFromServerManifests(project: Project): Promise<void> {
   let deps: Deployment[] = [];
   try {

@@ -32,8 +32,19 @@ vi.mock("@repo/db", () => ({
 }));
 
 async function getEnv() {
+  const { Hono } = await import("hono");
   const { healthRoutes } = await import("../../src/modules/health/health.routes");
-  const res = await healthRoutes.request("/env");
+  // /health/env is rate-limited per client IP; in the real app clientIpMiddleware
+  // (app.ts) sets c.var.clientIp before this route runs. Requesting healthRoutes
+  // in isolation skips that, so the limiter can't resolve a subject and 400s
+  // "Missing client IP". Mirror the middleware so we exercise the handler itself.
+  const app = new Hono<{ Variables: { clientIp: string } }>();
+  app.use("*", async (c, next) => {
+    c.set("clientIp", "127.0.0.1");
+    await next();
+  });
+  app.route("/", healthRoutes);
+  const res = await app.request("/env");
   return { res, body: (await res.json()) as Record<string, unknown> };
 }
 

@@ -13,6 +13,7 @@ import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
 import { createServerDockerRuntime } from "../../lib/deployment-runtime";
 import { sshManager } from "../../lib/ssh-manager";
+import { pruneOrphanManifestArtifacts } from "../../lib/openship-manifest-sync";
 import { parseComposeFile, type ComposeService } from "../../lib/compose-parser";
 import { readManifest, projectSnapshotExists, type ManifestProjectEntry } from "../../lib/openship-manifest";
 import {
@@ -220,6 +221,23 @@ export async function discoverServerStack(
     const projectIds = [
       ...new Set(managedApp.map((c) => c.labels["openship.project"]!).filter((id) => id && OPENSHIP_PROJECT_ID_RE.test(id))),
     ];
+
+    // Self-heal the on-server recovery state before recovering from it: every
+    // re-migration mints a NEW project id, so dead entries + snapshots pile up
+    // in .openship/manifest.json (the file we're about to read) and it grows
+    // unbounded. Drop THIS org's entries that are neither a live DB project nor
+    // backed by a running container — i.e. true orphans. A running container's
+    // id is kept so a soft-deleted (record-only) workload stays re-importable.
+    try {
+      const liveDb = await repos.project.listByOrganization(organizationId, { page: 1, perPage: 1000 });
+      const liveProjectIds = new Set<string>([...liveDb.rows.map((p) => p.id), ...projectIds]);
+      await sshManager
+        .withExecutor(serverId, (exec) => pruneOrphanManifestArtifacts(exec, { organizationId, liveProjectIds }))
+        .catch(() => {});
+    } catch {
+      /* best-effort — never fail discovery on a prune hiccup */
+    }
+
     if (projectIds.length > 0) {
       step("Recovering Openship projects…");
       // One SSH session: read the manifest AND check which projects have a full
