@@ -44,6 +44,7 @@ export {
   notificationDefault,
   notificationDelivery,
 } from "./notification";
+export { monitor, monitorCheck, monitorIncident } from "./monitor";
 export {
   billingCustomer,
   billingSubscription,

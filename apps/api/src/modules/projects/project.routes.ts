@@ -14,12 +14,15 @@
 
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { tbValidator } from "@hono/typebox-validator";
 import { secureRouter } from "../../lib/secure-router";
 import { cloudProjectProxy } from "../../lib/cloud/project-router";
 import * as ctrl from "./project.controller";
 import * as folder from "./folder/folder.controller";
 import * as transfer from "./transfer.controller";
 import * as routeRules from "../route-rules/route-rule.controller";
+import * as monitors from "../monitors/monitor.controller";
+import { CreateMonitorBody, UpdateMonitorBody } from "../monitors/monitor.schema";
 import {
   CreateProjectBody,
   EnsureProjectBody,
@@ -54,6 +57,14 @@ r.get("/:id/route-rules", { tag: "project:read", localOnly: true }, routeRules.l
 r.post("/:id/route-rules", { tag: "project:write", localOnly: true }, routeRules.createRouteRule);
 r.patch("/:id/route-rules/:ruleId", { tag: "project:write", localOnly: true }, routeRules.updateRouteRule);
 r.delete("/:id/route-rules/:ruleId", { tag: "project:write", localOnly: true }, routeRules.deleteRouteRule);
+
+/* ─── Uptime monitors (HTTP probes run by lib/monitor-runner; alerts via notifications) ── */
+r.get("/:id/monitors", { tag: "project:read", localOnly: true }, monitors.listMonitors);
+r.post("/:id/monitors", { tag: "project:write", localOnly: true }, tbValidator("json", CreateMonitorBody), monitors.createMonitor);
+r.patch("/:id/monitors/:monitorId", { tag: "project:write", localOnly: true }, tbValidator("json", UpdateMonitorBody), monitors.updateMonitor);
+r.delete("/:id/monitors/:monitorId", { tag: "project:write", localOnly: true }, monitors.deleteMonitor);
+r.get("/:id/monitors/:monitorId/checks", { tag: "project:read", localOnly: true }, monitors.listMonitorChecks);
+r.get("/:id/monitors/:monitorId/incidents", { tag: "project:read", localOnly: true }, monitors.listMonitorIncidents);
 
 /* ─── Folder upload → deploy ─────────────────────────────────────────────
  * Browser-based folder deploy for clients with no filesystem-shared API.

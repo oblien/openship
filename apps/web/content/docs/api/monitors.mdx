@@ -1,0 +1,158 @@
+---
+title: Monitors API
+description: Per-project HTTP uptime monitors — probe a URL on an interval, track incidents, and alert through your notification channels when it goes down or recovers.
+---
+
+import { TypeTable } from "fumadocs-ui/components/type-table";
+
+A **monitor** probes one URL on a fixed interval and tracks whether it answers. When a monitor fails
+enough checks in a row it flips to **down**, opens an **incident**, and fires a `monitor.down` alert
+through your [notification channels](/docs/api/notifications); on the first successful check afterwards it
+resolves the incident and fires `monitor.recovered` with the downtime duration. In the dashboard this is
+the **Monitoring** tab of a project — uptime %, response-time chart, and incident history.
+
+<Callout title="Self-hosted only">
+  Every route here is gated by `localOnly` and is **never mounted in Openship Cloud** — a probe
+  target is an arbitrary URL, so monitors run only on your own instance. On a cloud instance these
+  paths return `404`.
+</Callout>
+
+<Callout title="Base path & auth">
+Monitors are nested under their project: **`/api/projects/:id/monitors`** — e.g.
+`https://your-host/api/projects/proj_123/monitors`. Send a personal access token as a bearer header
+(`Authorization: Bearer <token>`), created with [`openship token create`](/docs/cli/access). The dashboard
+uses your session cookie instead. See the [API overview](/docs/api) and [auth model](/docs/security/auth)
+for details.
+</Callout>
+
+## Endpoints
+
+| Method & path                                         | Permission      | What it does                                                       |
+| ----------------------------------------------------- | --------------- | ------------------------------------------------------------------ |
+| `GET /api/projects/:id/monitors`                      | `project:read`  | List the project's monitors with current status and 24 h uptime %. |
+| `POST /api/projects/:id/monitors`                     | `project:write` | Create a monitor.                                                  |
+| `PATCH /api/projects/:id/monitors/:monitorId`         | `project:write` | Update a monitor's config, or enable / disable it.                 |
+| `DELETE /api/projects/:id/monitors/:monitorId`        | `project:write` | Delete a monitor (and its checks and incidents).                   |
+| `GET /api/projects/:id/monitors/:monitorId/checks`    | `project:read`  | Recent check results (chart data).                                 |
+| `GET /api/projects/:id/monitors/:monitorId/incidents` | `project:read`  | Incident history — when it went down, for how long, and why.       |
+
+## How checks work
+
+A background runner wakes every 15 seconds and probes each enabled monitor whose `intervalSeconds` has
+elapsed: a `GET` to the URL (following redirects, `User-Agent: Openship-Monitor/1.0`), aborted after
+`timeoutMs`. The check **succeeds** when the response matches `expectedStatus` — or, if that's unset, when
+the status is below `400`. Every probe is recorded as a check row; rows older than **7 days** are pruned,
+so uptime % and the response-time chart cover a rolling week at most.
+
+<Callout title="Private URLs are allowed" type="info">
+  There is no restriction to public addresses — monitoring `http://10.0.0.5:3000/healthz` on your
+  own network is a supported use, same as webhook channels.
+</Callout>
+
+## Create a monitor
+
+```
+POST /api/projects/:id/monitors
+```
+
+<TypeTable
+  type={{
+    name: { type: "string", description: "Display name for the monitor.", required: true },
+    url: { type: "string", description: "The http(s) URL to probe.", required: true },
+    intervalSeconds: {
+      type: "integer",
+      description: "Seconds between checks. Minimum 30.",
+      default: "60",
+    },
+    timeoutMs: {
+      type: "integer",
+      description: "Per-check timeout in ms. Between 1000 and 30000.",
+      default: "10000",
+    },
+    expectedStatus: {
+      type: "integer",
+      description: "Exact status code that counts as up. Omit to accept any status below 400.",
+    },
+    failureThreshold: {
+      type: "integer",
+      description: "Consecutive failed checks before the monitor is down. Between 1 and 10.",
+      default: "3",
+    },
+    enabled: {
+      type: "boolean",
+      description: "Whether the monitor is checked at all.",
+      default: "true",
+    },
+  }}
+/>
+
+```bash
+curl -X POST https://your-host/api/projects/proj_123/monitors \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Marketing site","url":"https://example.com/healthz","intervalSeconds":60}'
+```
+
+New monitors start with status `unknown` until the first check runs. The list route returns each monitor
+with its runner state — `status` (`unknown` / `up` / `down`), `lastCheckedAt`, `lastStatusCode`,
+`lastResponseMs` — plus an uptime % computed from the last 24 hours of checks.
+
+## Update a monitor
+
+Send only the fields you want to change — same fields and limits as create. Disabling a monitor stops its
+checks without losing its history; it keeps whatever status it had until re-enabled.
+
+```
+PATCH /api/projects/:id/monitors/:monitorId
+```
+
+```bash
+curl -X PATCH https://your-host/api/projects/proj_123/monitors/mon_abc \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":false}'
+```
+
+## Read checks
+
+`GET /:monitorId/checks` returns recent check results, oldest first — each with `checkedAt`, `ok`,
+`statusCode`, `responseMs`, and the `error` message for failures. This is the data behind the dashboard's
+response-time chart.
+
+<TypeTable
+  type={{
+    hours: {
+      type: "integer",
+      description: "How far back to look. Checks older than 7 days are pruned regardless.",
+      default: "24",
+    },
+  }}
+/>
+
+## Incidents and alerts
+
+A monitor doesn't alert on the first failed check. Each failure increments a consecutive-failure counter;
+when it reaches `failureThreshold`, the monitor flips to **down**, an incident opens, and one
+`monitor.down` notification fires — with the project, monitor name, URL, and the last error / status code.
+It will **not** re-alert while it stays down. The first successful check afterwards resolves the incident
+and fires `monitor.recovered` with the total downtime.
+
+`GET /:monitorId/incidents` returns the incident history — `startedAt`, `resolvedAt` (`null` while
+ongoing), the last failure `error`, and how many checks failed during the outage.
+
+Both alert categories (`monitor.down`, `monitor.recovered`) are **on by default** and route through the
+same channels and subscriptions as every other event — see the
+[Notifications API](/docs/api/notifications) to point them at email, Slack, a webhook, or the in-app bell.
+
+## Errors you might see
+
+<Callout title="400 — validation failed" type="warn">
+  `name` is missing, `url` isn't an http(s) URL, `intervalSeconds` is under 30, `timeoutMs` is
+  outside 1000–30000, or `failureThreshold` is outside 1–10.
+</Callout>
+
+<Callout title="404 on a per-monitor route" type="error">
+  The project `:id` isn't in your organization, or the `:monitorId` doesn't belong to that project
+  (or was deleted). List with `GET /api/projects/:id/monitors` to get valid ids. On Openship Cloud
+  all monitor routes return `404` — the module is self-hosted only.
+</Callout>

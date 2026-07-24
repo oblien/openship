@@ -131,6 +131,7 @@ route set by mode.
 | `/api/images` | Container image helpers | Both |
 | `/api/services/terminal` | Interactive service terminal (WebSocket) | Both |
 | `/api/cloud` | Cloud account link / gateway | Both (SaaS vs local route set) |
+| `/api/projects/:id/monitors` | Uptime monitors, checks, incidents | Self-hosted only |
 | `/api/jobs` | Scheduled jobs, runs, triggers | Self-hosted only |
 | `/api/system` | Filesystem browse, instance setup, provisioning | Self-hosted only |
 | `/api/mail` | Self-hosted mail server wizard | Self-hosted only |
@@ -149,6 +150,7 @@ route set by mode.
   <Card title="GitHub" href="/docs/api/github" description="Connect accounts, browse repos, and wire push auto-deploy." />
   <Card title="Webhooks" href="/docs/api/webhooks" description="Inbound provider webhooks that turn a push into a deploy." />
   <Card title="Analytics" href="/docs/api/analytics" description="Traffic, usage, container, and deployment metrics." />
+  <Card title="Monitors" href="/docs/api/monitors" description="Per-project uptime monitors with incident alerts (self-hosted only)." />
   <Card title="Backups" href="/docs/api/backups" description="Backup runs, restores, and their status." />
   <Card title="Backup destinations" href="/docs/api/backup-destinations" description="Backup targets, policies, and schedules." />
   <Card title="Notifications" href="/docs/api/notifications" description="Channels, subscriptions, and the alert feed." />

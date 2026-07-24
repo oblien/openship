@@ -106,6 +106,22 @@ export const CATEGORIES: readonly NotificationCategory[] = [
     defaultEnabled: true,
   },
 
+  // ── Monitoring ─────────────────────────────────────────────────────────────
+  {
+    id: "monitor.down",
+    label: "Monitor down",
+    description:
+      "An uptime monitor crossed its failure threshold — the probed URL is unreachable or returning errors.",
+    defaultEnabled: true,
+  },
+  {
+    id: "monitor.recovered",
+    label: "Monitor recovered",
+    description:
+      "A down monitor's URL is responding again. Includes the total downtime.",
+    defaultEnabled: true,
+  },
+
   // ── Org membership ─────────────────────────────────────────────────────────
   {
     id: "member.added",
@@ -179,6 +195,10 @@ const EVENT_TYPE_TO_CATEGORY: Record<string, string> = {
   "domain.expiring": "domain.expiring",
   "ssl.renewal_failed": "domain.expiring",
   "domain.verification_failed": "domain.verification_failed",
+
+  // Monitoring
+  "monitor.down": "monitor.down",
+  "monitor.recovered": "monitor.recovered",
 
   // Membership
   "member.added": "member.added",

@@ -175,6 +175,18 @@ export {
   type DeliveryStatus,
 } from "./notification.repo";
 export {
+  createMonitorRepo,
+  createMonitorCheckRepo,
+  createMonitorIncidentRepo,
+  type Monitor,
+  type NewMonitor,
+  type MonitorCheck,
+  type NewMonitorCheck,
+  type MonitorIncident,
+  type NewMonitorIncident,
+  type MonitorStatus,
+} from "./monitor.repo";
+export {
   createStripeTopupGrantRepo,
   type ClaimTopupGrantInput,
   type ClaimTopupGrantResult,
@@ -246,6 +258,11 @@ import {
   createNotificationDefaultRepo,
   createNotificationDeliveryRepo,
 } from "./notification.repo";
+import {
+  createMonitorRepo,
+  createMonitorCheckRepo,
+  createMonitorIncidentRepo,
+} from "./monitor.repo";
 import { createStripeTopupGrantRepo } from "./stripe-topup-grant.repo";
 import { createBillingAnniversaryGrantRepo } from "./billing-anniversary-grant.repo";
 import { createBillingUsageSnapshotRepo } from "./billing-usage-snapshot.repo";
@@ -309,6 +326,9 @@ export const repos = {
   notificationSubscription: createNotificationSubscriptionRepo(db),
   notificationDefault: createNotificationDefaultRepo(db),
   notificationDelivery: createNotificationDeliveryRepo(db),
+  monitor: createMonitorRepo(db),
+  monitorCheck: createMonitorCheckRepo(db),
+  monitorIncident: createMonitorIncidentRepo(db),
   stripeTopupGrant: createStripeTopupGrantRepo(db),
   billingAnniversaryGrant: createBillingAnniversaryGrantRepo(db),
   billingUsageSnapshot: createBillingUsageSnapshotRepo(db),
