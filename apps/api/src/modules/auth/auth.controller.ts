@@ -153,6 +153,16 @@ export async function desktopLogin(c: Context) {
   });
   await setSessionCookie(c, session.token, session.expiresAt);
 
+  // Return through the dashboard's login layout when an OAuth flow is pending.
+  // That layout owns the returnTo allowlist, so this endpoint only relays the
+  // value as an encoded query parameter and never redirects to it directly.
+  const returnTo = c.req.query("returnTo");
+  if (returnTo) {
+    const loginUrl = new URL("/login", `${dashboardUrl}/`);
+    loginUrl.searchParams.set("returnTo", returnTo);
+    return c.redirect(loginUrl.toString());
+  }
+
   return c.redirect(dashboardUrl);
 }
 

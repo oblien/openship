@@ -122,9 +122,12 @@ function LoginPageInner() {
   if (authMode === "none") {
     const apiUrl = getApiOrigin(typeof window !== "undefined" ? window.location.origin : undefined);
     // Redirect to the desktop-login endpoint which creates a real
-    // session cookie and redirects back to the dashboard.
+    // session cookie and redirects back to the dashboard. Preserve a
+    // validated OAuth consent return path through that API round-trip.
     if (typeof window !== "undefined") {
-      window.location.href = `${apiUrl}/api/auth/desktop-login`;
+      const desktopLoginUrl = new URL("/api/auth/desktop-login", apiUrl);
+      if (postLoginUrl) desktopLoginUrl.searchParams.set("returnTo", postLoginUrl);
+      window.location.href = desktopLoginUrl.toString();
     }
     return (
       <AuthShell>

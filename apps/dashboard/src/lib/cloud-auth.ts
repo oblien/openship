@@ -167,9 +167,8 @@ export function getPostAuthRedirect(searchParams: SearchParamsLike) {
  *   - Must be a relative path starting with a single `/`.
  *   - Must NOT start with `//` (protocol-relative URLs).
  *   - Path must match an allowlisted prefix. Currently only
- *     `/cloud-authorize` (the consent page that minted the link) and
- *     `/` (root) are accepted; widen this list intentionally as new
- *     pages need it.
+ *     `/cloud-authorize`, `/mcp/authorize`, and `/` (root) are accepted;
+ *     widen this list intentionally as new pages need it.
  *
  * Returns the validated path, or `null` when the input is unsafe or
  * missing. Callers should treat `null` as "no returnTo" and fall back
@@ -191,7 +190,7 @@ export function validateReturnTo(input: string | null): string | null {
   // Split off any query/fragment for the prefix check, but keep them on
   // the returned value so the consent page reloads with its params.
   const pathOnly = input.split(/[?#]/)[0];
-  const ALLOWED_PREFIXES = ["/cloud-authorize", "/"];
+  const ALLOWED_PREFIXES = ["/cloud-authorize", "/mcp/authorize", "/"];
   const isAllowed = ALLOWED_PREFIXES.some((prefix) => {
     if (prefix === "/") return pathOnly === "/";
     return pathOnly === prefix || pathOnly.startsWith(prefix + "/");
