@@ -226,13 +226,16 @@ authRoutes.post('/sign-in', async (c) => {
   let liveIds: string[];
 
   if (existing) {
+    if (parsed.data.name !== undefined) {
+      await db.update(schema.session).set({ name: parsed.data.name }).where(eq(schema.session.id, existing.id));
+    }
     activeId = existing.id;
     activeExpiresAt = existing.expiresAt;
     liveIds = [existing.id, ...existingIds.filter((id) => id !== existing.id)];
   } else {
     const created = await createSession({
       email: parsed.data.email,
-      name: null,
+      name: parsed.data.name ?? null,
       password: parsed.data.password,
       imapHost,
       imapPort,

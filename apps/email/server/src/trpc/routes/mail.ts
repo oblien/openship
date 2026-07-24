@@ -44,6 +44,17 @@ function senderToAddress(s: SenderInput): string {
   return s.name ? `${s.name.replace(/[<>]/g, '')} <${s.email}>` : s.email;
 }
 
+export function formatFromAddress(
+  fromEmail: string | undefined,
+  sessionEmail: string,
+  sessionName: string | null | undefined,
+): string {
+  const raw = fromEmail || sessionEmail;
+  if (raw.includes('<')) return raw;
+  const name = sessionName?.replace(/[<>"]/g, '').trim();
+  return name ? `"${name}" <${raw.trim()}>` : raw;
+}
+
 // Folder comes in as a loose string (client uses `bin`/`draft`/`snoozed`
 // while the canonical enum is `trash`/`drafts`). Normalize on the way in
 // instead of rejecting; see normalizeFolderSlug.
@@ -154,7 +165,8 @@ export const mailRouter = router({
     .mutation(({ ctx, input }) => {
       const refsHeader = input.headers?.References;
       const inReplyToHeader = input.headers?.['In-Reply-To'];
-      return driverSend(ctx.smtp, ctx.imap, input.fromEmail || ctx.session.email, {
+      const fromAddress = formatFromAddress(input.fromEmail, ctx.session.email, ctx.session.name);
+      return driverSend(ctx.smtp, ctx.imap, fromAddress, {
         to: input.to.map(senderToAddress),
         cc: input.cc?.map(senderToAddress),
         bcc: input.bcc?.map(senderToAddress),
