@@ -17,6 +17,7 @@
     "start": "bun run server/src/main.ts",
     "start:dist": "cd dist && bun start",
     "lint": "(cd server && bun run lint) && (cd client && bun run lint)",
+    "test": "cd server && bun test",
     "db:generate": "cd server && bun run db:generate",
     "db:migrate": "cd server && bun run db:migrate",
     "db:studio": "cd server && bun run db:studio"
