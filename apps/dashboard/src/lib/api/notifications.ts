@@ -10,7 +10,7 @@ export interface NotificationCategory {
   defaultEnabled: boolean;
 }
 
-export type ChannelKind = "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams";
+export type ChannelKind = "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams" | "telegram";
 export type DeliveryStatus = "queued" | "sending" | "sent" | "failed" | "seen";
 
 /* ── Channel ─────────────────────────────────────────────────────── */
@@ -26,7 +26,8 @@ export interface NotificationChannel {
    *    in_app  → {}
    *    slack   → { webhookUrlConfigured, channelName | null }
    *    discord → { webhookUrlConfigured }
-   *    msteams → { webhookUrlConfigured } */
+   *    msteams → { webhookUrlConfigured }
+   *    telegram → { tokenConfigured, chatId } */
   config: Record<string, unknown>;
   verified: boolean;
   enabled: boolean;

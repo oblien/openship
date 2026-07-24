@@ -23,7 +23,7 @@ import { encrypt } from "../../lib/encryption";
 import { CATEGORIES } from "../../lib/notification-categories";
 import { randomBytes } from "node:crypto";
 
-const VALID_CHANNEL_KINDS = new Set(["email", "webhook", "in_app", "slack", "discord", "msteams"]);
+const VALID_CHANNEL_KINDS = new Set(["email", "webhook", "in_app", "slack", "discord", "msteams", "telegram"]);
 
 /* ─── Categories (static, no DB) ─────────────────────────────────────── */
 
@@ -303,8 +303,8 @@ interface ConfigErr {
 
 /**
  * Sanitize + normalize the inbound config per kind. Secrets (webhook
- * URLs, Slack/Discord/Teams URLs, HMAC keys) are stored encrypted — the
- * dispatcher decrypts at delivery time.
+ * URLs, Slack/Discord/Teams URLs, Telegram bot tokens, HMAC keys) are
+ * stored encrypted — the dispatcher decrypts at delivery time.
  *
  * Returns either { ok: true, value } or { ok: false, error }.
  */
@@ -373,6 +373,17 @@ function sanitizeChannelConfig(kind: string, raw: unknown): ConfigOk | ConfigErr
       }
       return { ok: true, value: { webhookUrl: encrypt(webhookUrl) } };
     }
+    case "telegram": {
+      const token = String(cfg.token ?? "").trim();
+      const chatId = String(cfg.chatId ?? "").trim();
+      if (!/^\d+:[a-zA-Z0-9_-]+$/.test(token)) {
+        return { ok: false, error: "Invalid Telegram bot token" };
+      }
+      if (!/^-?\d+$/.test(chatId)) {
+        return { ok: false, error: "Invalid Telegram chat ID" };
+      }
+      return { ok: true, value: { token: encrypt(token), chatId } };
+    }
     default:
       return { ok: false, error: `Unsupported channel kind: ${kind}` };
   }
@@ -381,8 +392,9 @@ function sanitizeChannelConfig(kind: string, raw: unknown): ConfigOk | ConfigErr
 /**
  * Strip secrets from the channel config before returning to the client.
  * Email address is non-secret; webhook URL is shown but HMAC secret is
- * masked; Slack/Discord/Teams URLs are masked entirely (showing them
- * would let anyone with dashboard access post to the channel).
+ * masked; Slack/Discord/Teams URLs and Telegram bot tokens are masked
+ * entirely (showing them would let anyone with dashboard access post
+ * to the channel).
  */
 function redactChannelConfig(
   kind: string,
@@ -411,6 +423,11 @@ function redactChannelConfig(
     case "msteams":
       return {
         webhookUrlConfigured: !!cfg.webhookUrl,
+      };
+    case "telegram":
+      return {
+        tokenConfigured: !!cfg.token,
+        chatId: cfg.chatId ?? null,
       };
     default:
       return {};

@@ -30,6 +30,7 @@ import {
   Plus,
   Trash2,
   Loader2,
+  Send,
   AlertTriangle,
 } from "lucide-react";
 import { systemApi } from "@/lib/api/system";
@@ -54,6 +55,7 @@ const CHANNEL_ICONS: Record<ChannelKind, React.ElementType> = {
   slack: MessageSquare,
   discord: MessageCircle,
   msteams: MessagesSquare,
+  telegram: Send,
   in_app: Smartphone,
 };
 
@@ -62,6 +64,7 @@ const CHANNEL_LABELS: Record<ChannelKind, string> = {
   webhook: "Webhook",
   slack: "Slack",
   discord: "Discord",
+  telegram: "Telegram",
   msteams: "Microsoft Teams",
   in_app: "In-app",
 };
@@ -262,7 +265,7 @@ function ChannelsCard({
 
 function describeChannel(
   ch: NotificationChannel,
-  labels: { slackWebhook: string; discordWebhook: string; msteamsWebhook: string; inApp: string },
+  labels: { slackWebhook: string; discordWebhook: string; msteamsWebhook: string; telegramChat: string; inApp: string },
 ): string {
   switch (ch.kind) {
     case "email":
@@ -277,6 +280,8 @@ function describeChannel(
       return labels.discordWebhook;
     case "msteams":
       return labels.msteamsWebhook;
+    case "telegram":
+      return labels.telegramChat;
     case "in_app":
       return labels.inApp;
     default:
@@ -298,6 +303,8 @@ function NewChannelForm({
   const [address, setAddress] = useState("");
   const [url, setUrl] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [botToken, setBotToken] = useState("");
+  const [chatId, setChatId] = useState("");
   const [busy, setBusy] = useState(false);
   // Whether the instance can send email at all (instance SMTP / mail server /
   // env). null = unknown (not yet loaded, or no permission to read). When false
@@ -333,6 +340,8 @@ function NewChannelForm({
     else if (kind === "webhook") config = { url: url.trim() };
     else if (kind === "slack" || kind === "discord" || kind === "msteams")
       config = { webhookUrl: webhookUrl.trim() };
+    else if (kind === "telegram")
+      config = { token: botToken.trim(), chatId: chatId.trim() };
 
     setBusy(true);
     try {
@@ -363,6 +372,7 @@ function NewChannelForm({
           <option value="slack">{t.settings.notifications.kinds.slack}</option>
           <option value="discord">{t.settings.notifications.kinds.discord}</option>
           <option value="msteams">{t.settings.notifications.kinds.msteams}</option>
+          <option value="telegram">{t.settings.notifications.kinds.telegram}</option>
           <option value="in_app">{t.settings.notifications.kinds.in_app}</option>
         </select>
         <input
@@ -432,6 +442,35 @@ function NewChannelForm({
           onChange={(e) => setWebhookUrl(e.target.value)}
           className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
         />
+      )}
+      {kind === "telegram" && (
+        <>
+          <input
+            type="password"
+            placeholder={t.settings.notifications.form.telegramTokenPlaceholder}
+            value={botToken}
+            onChange={(e) => setBotToken(e.target.value)}
+            className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Get a token from{" "}
+            <a href="https://t.me/botfather" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground transition-colors">
+              @BotFather
+            </a>
+          </p>
+          <input
+            type="text"
+            placeholder={t.settings.notifications.form.telegramChatPlaceholder}
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+            className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Send a message to your bot, then visit{" "}
+            <code className="text-[11px] bg-foreground/[0.06] px-1 rounded">https://api.telegram.org/bot&lt;token&gt;/getUpdates</code>
+            {" "}to find your chat ID.
+          </p>
+        </>
       )}
 
       <div className="flex items-center gap-2">
@@ -623,6 +662,7 @@ function OrgDefaultsCard({
                 <option value="slack">{t.settings.notifications.kinds.slack}</option>
                 <option value="discord">{t.settings.notifications.kinds.discord}</option>
                 <option value="msteams">{t.settings.notifications.kinds.msteams}</option>
+                <option value="telegram">{t.settings.notifications.kinds.telegram}</option>
                 <option value="in_app">{t.settings.notifications.kinds.in_app}</option>
               </select>
               <Toggle
