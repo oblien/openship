@@ -30,7 +30,7 @@ import {
 function withFolder<T extends { folder?: string }>(input: T) {
   return { ...input, folder: normalizeFolderSlug(input.folder) };
 }
-import { sanitizeMailHtml } from '../../lib/sanitize';
+import { blockRemoteContent, sanitizeMailHtml } from '../../lib/sanitize';
 
 // Recipients arrive from the client as `{email, name}` objects (Sender).
 // We accept either that or a bare email string for backward compat.
@@ -242,9 +242,14 @@ export const mailRouter = router({
       return thread?.latest.attachments ?? [];
     }),
 
-  // Server-side HTML sanitize used by the read-pane preview. Remote-image
-  // blocking is best-effort: when `shouldLoadImages` is false we rewrite
-  // <img src=> to a 1×1 transparent gif and flag the result.
+  // Server-side HTML sanitize used by the read-pane preview. When
+  // `shouldLoadImages` is false, every remote-fetching construct — <img>
+  // src/srcset and CSS url()/@import/image-set() — is blocked in one pass.
+  // Blocking only <img> used to leave CSS free to fetch, so a sender could
+  // take a read receipt off a reader who had remote content turned off.
+  //
+  // `hasBlockedImages` covers all of it: to the reader "remote content was
+  // blocked" is a single fact, and the existing banner already says that.
   processEmailContent: protectedProcedure
     .input(
       z.object({
@@ -258,12 +263,8 @@ export const mailRouter = router({
       if (input.shouldLoadImages) {
         return { processedHtml: clean, hasBlockedImages: false };
       }
-      let hasBlockedImages = false;
-      const blocked = clean.replace(/<img\b([^>]*?)\bsrc\s*=\s*("[^"]*"|'[^']*')/gi, (_m, pre) => {
-        hasBlockedImages = true;
-        return `<img${pre}src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="`;
-      });
-      return { processedHtml: blocked, hasBlockedImages };
+      const result = blockRemoteContent(clean);
+      return { processedHtml: result.html, hasBlockedImages: result.blocked };
     }),
 
   // Autocomplete recipients out of the Sent envelope cache. Stub
