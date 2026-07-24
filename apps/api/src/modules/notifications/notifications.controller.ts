@@ -21,6 +21,7 @@ import { getRequestContext } from "../../lib/request-context";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { encrypt } from "../../lib/encryption";
 import { CATEGORIES } from "../../lib/notification-categories";
+import { isBlockedHostLiteral } from "../../lib/ssrf-guard";
 import { randomBytes } from "node:crypto";
 
 const VALID_CHANNEL_KINDS = new Set(["email", "webhook", "in_app", "slack", "discord", "msteams"]);
@@ -320,7 +321,26 @@ function sanitizeChannelConfig(kind: string, raw: unknown): ConfigOk | ConfigErr
     }
     case "webhook": {
       const url = String(cfg.url ?? "").trim();
-      if (!/^https?:\/\//.test(url)) return { ok: false, error: "Invalid webhook URL" };
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        return { ok: false, error: "Invalid webhook URL" };
+      }
+      // HTTPS-only + reject obviously-local hosts up front (SSRF). The
+      // authoritative guard runs at delivery time (it also resolves DNS, which
+      // a registration-time check can't rely on — the name can be rebound
+      // later), but blocking here gives immediate feedback and keeps junk out
+      // of storage. See lib/ssrf-guard.
+      if (parsedUrl.protocol !== "https:") {
+        return { ok: false, error: "Webhook URL must use HTTPS" };
+      }
+      if (isBlockedHostLiteral(parsedUrl.hostname)) {
+        return {
+          ok: false,
+          error: "Webhook URL must not target a private, loopback, or link-local host",
+        };
+      }
       // Auto-generate a signing secret if the user didn't supply one —
       // we'll show it back via the verification flow so they can save it.
       const rawSecret =
