@@ -64,11 +64,24 @@ cp .env.example .env
 docker compose up -d
 ```
 
+**Create the first admin.** Docker has no interactive setup wizard, so declare the
+first administrator in `.env` before starting — the one-shot `init-admin` service
+creates it once the API is healthy (public sign-up stays disabled):
+
+```bash
+OPENSHIP_ADMIN_NAME=Admin
+OPENSHIP_ADMIN_EMAIL=admin@example.com
+OPENSHIP_ADMIN_PASSWORD=a-strong-password   # 8-128 chars
+```
+
+It's idempotent — re-running `docker compose up` never changes an existing admin.
+Leaving these unset skips the step; you can still create the admin another way.
+
 ---
 
 ## Users & access (self-hosted)
 
-- **Public signup is disabled.** The first admin is created by `openship up`'s setup wizard.
+- **Public signup is disabled.** On the CLI the first admin is created by `openship up`'s setup wizard; on Docker, set `OPENSHIP_ADMIN_*` in `.env` (see [Docker](#docker) above).
 - **Invite teammates** from **Settings → Team**. They get an accept link at your instance's URL (so the instance needs to be reachable — a public URL or your LAN).
 - **Lost the admin password?** Run `openship reset-admin-password` on the box (no sign-in needed; uses the local internal token).
 

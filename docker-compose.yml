@@ -123,6 +123,26 @@ services:
       api:
         condition: service_healthy
 
+  # ─── First-admin bootstrap (one-shot, optional) ───────
+  # Creates the first administrator declaratively so a fresh `docker compose up`
+  # is usable without the CLI wizard (issue #138). No-op unless OPENSHIP_ADMIN_*
+  # is set in .env; idempotent (bootstrap-admin is one-shot — 409 once an admin
+  # exists). Does NOT enable public sign-up — it calls the same internal-token-
+  # gated endpoint the CLI uses. Runs after the API is healthy, then exits.
+  init-admin:
+    image: curlimages/curl:8.11.1
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      OPENSHIP_API_URL: http://api:4000
+    volumes:
+      - ./scripts/docker-init-admin.sh:/docker-init-admin.sh:ro
+    entrypoint: ["sh", "/docker-init-admin.sh"]
+    depends_on:
+      api:
+        condition: service_healthy
+
   # ─── Web / Landing ────────────────────────────────────
   web:
     build:
