@@ -520,7 +520,7 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
-      "telegramTokenPlaceholder": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+      "telegramTokenPlaceholder": "Paste your Telegram bot token (e.g. 1234567890:ABCdef...)",
       "telegramChatPlaceholder": "Chat ID (e.g. -1001234567890)",
       "adding": "Adding…",
       "addChannel": "Add channel",
