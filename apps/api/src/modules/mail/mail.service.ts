@@ -387,7 +387,6 @@ export async function stepUpdateHosts(
     const correctStr = await exec.exec(
       `grep -c ${sq(pattern)} /etc/hosts || echo 0`,
     );
-    );
     if (parseInt(correctStr.trim(), 10) > 0) {
       log(stepId, "info", "/etc/hosts already configured correctly");
       return { stepId, success: true, message: "/etc/hosts already configured" };
