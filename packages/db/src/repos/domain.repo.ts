@@ -228,11 +228,20 @@ export function createDomainRepo(db: Database) {
       await db.delete(domain).where(eq(domain.serviceId, serviceId));
     },
 
-    /** Find all domains needing SSL renewal */
+    /**
+     * Find all domains needing SSL renewal.
+     *
+     * Includes `error` as well as `active`: a renew that throws flips the row to
+     * `sslStatus="error"` (see ssl-scheduler), and if this query only matched
+     * `active` that domain would never be selected again — its cert would expire
+     * silently. Retrying errored rows is what lets a transient failure recover.
+     * `external` (upstream-managed TLS) and `provisioning` (no cert issued yet)
+     * are intentionally excluded.
+     */
     async findExpiringSsl(beforeDate: Date) {
       return db.query.domain.findMany({
         where: and(
-          eq(domain.sslStatus, "active"),
+          inArray(domain.sslStatus, ["active", "error"]),
           lt(domain.sslExpiresAt, beforeDate),
         ),
       });

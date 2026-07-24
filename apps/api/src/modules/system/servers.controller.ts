@@ -213,6 +213,22 @@ export async function deleteServer(c: Context) {
     return c.json({ error: "This is the current host and can't be removed." }, 400);
   }
 
+  // Refuse to hard-delete a server still hosting active deployments — doing so
+  // orphans their running containers (server delete does NOT enqueue
+  // orphaned-resource GC; that path is project-teardown only). `?force=true`
+  // overrides for the deliberate "tear it all down" case.
+  if (c.req.query("force") !== "true") {
+    const active = await repos.deployment.countActiveOnServer(id);
+    if (active > 0) {
+      return c.json(
+        {
+          error: `Server has ${active} active deployment${active === 1 ? "" : "s"}. Move or remove ${active === 1 ? "it" : "them"} first, or retry with force to delete anyway (their containers will be orphaned).`,
+        },
+        409,
+      );
+    }
+  }
+
   await repos.server.delete(id);
   // Server is hard-deleted — purge any per-server resource grants so
   // they don't linger as orphan rows. Mail-server grants on the same

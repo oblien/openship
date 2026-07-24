@@ -87,7 +87,20 @@ export async function create(c: Context) {
     refresh: body.refresh,
     trigger: body.trigger === "webhook" ? "webhook" : undefined,
   });
-  return c.json({ data: result }, 202);
+  // Flatten `deployment` into the `{ deployment_id, project_id }` contract the
+  // CLI and dashboard read (see apps/cli deploy.ts, dashboard api/updates.ts).
+  // Additive: `deployment` (and `skipped`) stay so existing readers of those
+  // keep working.
+  return c.json(
+    {
+      data: {
+        ...result,
+        deployment_id: result.deployment.id,
+        project_id: result.deployment.projectId,
+      },
+    },
+    202,
+  );
 }
 
 export async function getById(c: Context) {
