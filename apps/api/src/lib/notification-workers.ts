@@ -14,7 +14,7 @@
  * The runner handles retry policy uniformly so each worker stays simple.
  */
 
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { repos, type NotificationChannel, type NotificationDelivery } from "@repo/db";
 import { sendMail } from "./mail";
 import { decrypt } from "./encryption";
@@ -30,6 +30,9 @@ interface RenderedMessage {
   body: string;
 }
 
+/** Internal category id used for the "Send test" channel verification flow. */
+const TEST_CATEGORY = "__test__";
+
 /**
  * Turn a delivery's payload into a human-readable message. We use the
  * category for the title (stable across event types) and pull relevant
@@ -37,6 +40,13 @@ interface RenderedMessage {
  * email, Slack blocks) wraps this primitive output.
  */
 function renderMessage(delivery: NotificationDelivery): RenderedMessage {
+  if (delivery.category === TEST_CATEGORY) {
+    return {
+      title: "Openship Test",
+      body: "This is a test notification from Openship.",
+    };
+  }
+
   const cat = findCategory(delivery.category);
   const payload = (delivery.payload ?? {}) as Record<string, unknown>;
 
@@ -444,6 +454,44 @@ export function stopNotificationRunner(): void {
     clearInterval(runnerInterval);
     runnerInterval = null;
   }
+}
+
+/**
+ * Send a one-off test message to a notification channel without creating
+ * a persistent notification_delivery row. Used by the "Send test" flow in
+ * Settings → Notifications to prove a channel is reachable before marking
+ * it as verified.
+ *
+ * Throws with the provider error on failure; returns normally on success.
+ */
+export async function sendChannelTestMessage(
+  channel: NotificationChannel,
+  organizationId: string,
+): Promise<void> {
+  const worker = WORKERS[channel.kind];
+  if (!worker) {
+    throw new Error(`No worker for channel kind "${channel.kind}"`);
+  }
+
+  const now = new Date();
+  const delivery = {
+    id: `nde_test_${randomUUID()}`,
+    userId: channel.userId,
+    organizationId,
+    auditEventId: null,
+    category: TEST_CATEGORY,
+    channelId: channel.id,
+    channelKind: channel.kind,
+    status: "sending" as const,
+    attempts: 0,
+    payload: {},
+    lastError: null,
+    createdAt: now,
+    sentAt: null,
+    seenAt: null,
+  } satisfies NotificationDelivery;
+
+  await worker(delivery, channel);
 }
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */

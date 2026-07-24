@@ -21,6 +21,8 @@ import { getRequestContext } from "../../lib/request-context";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { encrypt } from "../../lib/encryption";
 import { CATEGORIES } from "../../lib/notification-categories";
+import { sendChannelTestMessage } from "../../lib/notification-workers";
+import { safeErrorMessage } from "@repo/core";
 import { randomBytes } from "node:crypto";
 
 const VALID_CHANNEL_KINDS = new Set(["email", "webhook", "in_app", "slack", "discord", "msteams"]);
@@ -153,6 +155,40 @@ export async function deleteChannel(c: Context) {
     resourceType: "notifications",
     resourceId: id,
     before: { kind: existing.kind, label: existing.label },
+  });
+
+  return c.json({ ok: true });
+}
+
+/** POST /channels/:id/test — prove a channel is reachable and mark it verified. */
+export async function testChannel(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = c.req.param("id");
+  if (!id) return c.json({ error: "id is required" }, 400);
+
+  const existing = await repos.notificationChannel.findById(id);
+  if (!existing || existing.userId !== ctx.userId) {
+    return c.json({ error: "Channel not found" }, 404);
+  }
+
+  if (existing.kind === "in_app") {
+    return c.json({ error: "In-app channels do not need verification" }, 400);
+  }
+
+  try {
+    await sendChannelTestMessage(existing, ctx.organizationId);
+  } catch (err) {
+    return c.json({ ok: false, error: safeErrorMessage(err) }, 200);
+  }
+
+  await repos.notificationChannel.update(id, { verified: true });
+  await repos.notificationChannel.touchLastDelivered(id);
+
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "notification_channel.verified",
+    resourceType: "notifications",
+    resourceId: id,
+    after: { kind: existing.kind, label: existing.label },
   });
 
   return c.json({ ok: true });
