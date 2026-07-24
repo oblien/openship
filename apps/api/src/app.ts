@@ -349,6 +349,18 @@ if (env.CLOUD_MODE) {
   console.log("[boot] notification runner started");
 }
 
+// ─── Uptime monitor runner ──────────────────────────────────────────
+//
+// Probes due monitors on a fixed tick, records checks, and drives the
+// down/recovered state machine (incidents + monitor.* notifications).
+// Monitors are self-hosted only (localOnly routes) — under CLOUD_MODE
+// no rows exist, so the tick is a cheap no-op.
+{
+  const { startMonitorRunner } = await import("./lib/monitor-runner");
+  startMonitorRunner();
+  console.log("[boot] monitor runner started");
+}
+
 // ─── Feature startup hooks (self-hosted only) ───────────────────────
 //
 // Registry-based home for boot behavior that individual features opt

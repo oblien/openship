@@ -26,6 +26,7 @@ import { BackupSettings } from "../components/BackupSettings";
 import { Deployments } from "../components/Deployments";
 import { AdvancedSettings } from "../components/AdvancedSettings";
 import { OverviewTab } from "../components/OverviewTab";
+import { MonitoringTab } from "../components/MonitoringTab";
 import { AppConfiguration } from "../components/AppConfiguration";
 import { isSchemaAppTemplate } from "@/components/app-settings/AppSettingsForm";
 import { ServicesTab } from "../components/ServicesTab";
@@ -740,6 +741,8 @@ const ProjectSettingsContent = () => {
     switch (activeTab) {
       case "overview":
         return <OverviewTab />;
+      case "monitoring":
+        return <MonitoringTab />;
       case "services":
         return <ServicesTab />;
       case "domains":

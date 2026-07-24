@@ -1,11 +1,11 @@
 ---
 title: Projects
-description: The Projects list and the nine-tab project detail screen — where you find every app you've deployed and manage its domains, deploys, config, logs, and backups.
+description: The Projects list and the ten-tab project detail screen — where you find every app you've deployed and manage its domains, deploys, config, logs, and backups.
 ---
 
 A **project** is one app Openship knows how to build and run. This is where you find every app
 you've deployed and go into any one of them to change how it runs. There are two screens: the
-**Projects list** (everything at a glance) and the **project detail** screen (one project, nine
+**Projects list** (everything at a glance) and the **project detail** screen (one project, ten
 tabs).
 
 ## The Projects list
@@ -69,7 +69,7 @@ Send Feedback, Documentation, Join Community. The actions that change a project 
 delete it) live on the **Advanced** tab, described below.
 </Callout>
 
-## The nine tabs
+## The ten tabs
 
 Each tab has its own URL under `/projects/{id}/…`, so you can link straight to one. A
 **services-only** project (multiple compose services, no single app) hides the **Configuration**
@@ -81,6 +81,16 @@ tab, since each service carries its own build config under **Services**.
 cards: **Infrastructure** (where and how it runs) and **Source & CI/CD** (the connected repo and
 deploy settings). A project that has never deployed successfully shows a focused "ready to
 deploy" screen here instead. See [Logs & monitoring](/docs/guides/logs-monitoring).
+
+### Monitoring
+
+`…/monitoring` — **uptime monitors** plus the project's traffic stats. Add a monitor (a name, a
+URL, and a check interval) and Openship probes it in the background: each row shows a status dot,
+uptime % over the last 24 hours, and the latest response time, with a toggle to pause checking.
+Expanding a monitor reveals its response-time chart and incident history. When a monitor goes
+down — and again when it recovers — you're alerted through your [notification
+channels](/docs/dashboard/settings). Self-hosted instances only. See the
+[Monitors API](/docs/api/monitors).
 
 ### Services
 

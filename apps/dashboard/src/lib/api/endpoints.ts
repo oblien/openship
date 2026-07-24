@@ -38,6 +38,12 @@ export const endpoints = {
     resources: (id: string | number) => `projects/${id}/resources`,
     cloneToken: (id: string | number) => `projects/${id}/clone-token`,
     sleepMode: (id: string | number) => `projects/${id}/sleep-mode`,
+    monitors: (id: string | number) => `projects/${id}/monitors`,
+    monitor: (id: string | number, monitorId: string) => `projects/${id}/monitors/${monitorId}`,
+    monitorChecks: (id: string | number, monitorId: string) =>
+      `projects/${id}/monitors/${monitorId}/checks`,
+    monitorIncidents: (id: string | number, monitorId: string) =>
+      `projects/${id}/monitors/${monitorId}/incidents`,
     deployments: (id: string | number) => `projects/${id}/deployments`,
     logs: (id: string | number) => `projects/${id}/logs`,
     logsStream: (id: string | number) => `projects/${id}/logs/stream`,

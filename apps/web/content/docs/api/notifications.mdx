@@ -50,9 +50,10 @@ Send a personal access token as a bearer header (`Authorization: Bearer <token>`
 ## Categories
 
 Categories are the stable, user-facing event groups (e.g. `deploy.failed`, `backup.failed`,
-`domain.expiring`) that subscriptions and defaults key off. They live in code, not the database, so `GET
-/api/notifications/categories` is a static registry — each entry has an `id`, `label`, `description`, and
-`defaultEnabled`.
+`domain.expiring`, `monitor.down`, `monitor.recovered`) that subscriptions and defaults key off. They live
+in code, not the database, so `GET /api/notifications/categories` is a static registry — each entry has an
+`id`, `label`, `description`, and `defaultEnabled`. The `monitor.*` pair comes from
+[uptime monitors](/docs/api/monitors) and is on by default.
 
 ```bash
 curl https://your-host/api/notifications/categories \

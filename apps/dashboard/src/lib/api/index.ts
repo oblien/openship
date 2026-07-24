@@ -176,6 +176,10 @@ export type {
   DeliveryStatus,
 } from "./notifications";
 
+/* --- Uptime monitors ----------------------------------------------- */
+export { monitorsApi } from "./monitors";
+export type { Monitor, MonitorCheck, MonitorIncident, MonitorStatus } from "./monitors";
+
 /* --- Billing ------------------------------------------------------- */
 export { billingApi } from "./billing";
 export type {
