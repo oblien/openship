@@ -93,11 +93,24 @@ export class GitHubAppSource implements GitHubSource {
       () => null,
     );
     if (!token) return [];
-    const data = await ghFetch<{ repositories: GitHubRepository[] }>(token, {
-      url: "https://api.github.com/installation/repositories",
-      params: { per_page: 100 },
-    });
-    return mapRepositories(data.repositories ?? []).map((r) => ({
+    const perPage = 100;
+    const repositories: GitHubRepository[] = [];
+    for (let page = 1; page <= 100; page++) {
+      const data = await ghFetch<{ total_count?: number; repositories?: GitHubRepository[] }>(
+        token,
+        {
+          url: "https://api.github.com/installation/repositories",
+          params: { per_page: perPage, page },
+        },
+      );
+      const batch = data.repositories ?? [];
+      repositories.push(...batch);
+      const total = data.total_count ?? repositories.length;
+      if (batch.length < perPage || repositories.length >= total) {
+        break;
+      }
+    }
+    return mapRepositories(repositories).map((r) => ({
       ...r,
       source: "app" as const,
     }));
