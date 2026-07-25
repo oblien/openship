@@ -494,3 +494,76 @@ services:
     expect(parsed.services).toEqual([]);
   });
 });
+
+describe("parseComposeFile - :? and ? mandatory variable operators", () => {
+  it("throws for :? when env var is unset", () => {
+    expect(() =>
+      parseComposeFile(`
+services:
+  app:
+    image: node:\${NODE_VERSION:?NODE_VERSION is required}
+`),
+    ).toThrow("NODE_VERSION is required");
+  });
+
+  it("throws for :? when env var is empty", () => {
+    expect(() =>
+      parseComposeFile(
+        `
+services:
+  app:
+    image: node:\${NODE_VERSION:?NODE_VERSION is required}
+`,
+        { envFileContent: "NODE_VERSION=\n" },
+      ),
+    ).toThrow("NODE_VERSION is required");
+  });
+
+  it("does not throw for :? when env var has a value", () => {
+    const parsed = parseComposeFile(
+      `
+services:
+  app:
+    image: node:\${NODE_VERSION:?NODE_VERSION is required}
+`,
+      { envFileContent: "NODE_VERSION=22\n" },
+    );
+    expect(parsed.services[0]?.image).toBe("node:22");
+  });
+
+  it("throws for ? when env var is unset", () => {
+    expect(() =>
+      parseComposeFile(`
+services:
+  app:
+    image: node:\${NODE_VERSION?NODE_VERSION is required}
+`),
+    ).toThrow("NODE_VERSION is required");
+  });
+
+  it("does not throw for ? when env var is empty (non-empty only)", () => {
+    const parsed = parseComposeFile(
+      `
+services:
+  app:
+    image: node:\${NODE_VERSION?NODE_VERSION is required}
+`,
+      { envFileContent: "NODE_VERSION=\n" },
+    );
+    // `?` allows empty values — only unset is an error
+    expect(parsed.services[0]?.image).toBe("node:");
+  });
+
+  it("interpolates sub-expressions in the error message", () => {
+    expect(() =>
+      parseComposeFile(
+        `
+services:
+  app:
+    image: node:\${NODE_VERSION:?Required: \${SERVICE} needs NODE_VERSION}
+`,
+        { envFileContent: "SERVICE=myapp\n" },
+      ),
+    ).toThrow("Required: myapp needs NODE_VERSION");
+  });
+});
