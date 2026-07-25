@@ -22,6 +22,7 @@ const MINUTE_MS = 60_000;
 
 /** All policy ids — keep in sync with `POLICIES` below. */
 export type PolicyId =
+  | "flood-ip"
   | "default-anon"
   | "default-authed"
   | "auth-tight"
@@ -33,6 +34,22 @@ export type PolicyId =
   | "billing-portal";
 
 export const POLICIES: Record<PolicyId, RateLimitPolicy> = {
+  /** Pre-auth flood ceiling on the whole `/api` tree (see middleware/
+   *  rate-limiter.ts `floodGuard`). Its ONLY job is bounding abusive per-IP
+   *  volume before authMiddleware runs its session DB lookup — a distinct
+   *  bucket from the per-route policies, so it never double-charges them.
+   *  Set well above the most generous per-user policy (`default-authed`, 3000)
+   *  so a single legitimate authed client is always governed by its own
+   *  per-route limit, never clipped by this guard. Coarse and generous on
+   *  purpose; operators behind large shared NATs can raise it. */
+  "flood-ip": {
+    id: "flood-ip",
+    limit: 6000,
+    windowMs: MINUTE_MS,
+    subject: "ip",
+    description: "Pre-auth per-IP flood ceiling on /api — abuse bound, not shaping.",
+  },
+
   /** Conservative default for unauthed routes. Per-IP. */
   "default-anon": {
     id: "default-anon",

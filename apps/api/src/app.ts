@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env, trustedOrigins } from "./config/env";
 import { handleApiError } from "./middleware/error-handler";
-import { rateLimiterFor } from "./middleware/rate-limiter";
+import { rateLimiterFor, floodGuard } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
 import { betterAuthShield } from "./middleware/better-auth-shield";
 import { forceMcpConsent } from "./middleware/mcp-consent";
@@ -98,6 +98,14 @@ app.onError(handleApiError);
 // Better Auth is a RAW catch-all (not secureRouter), so it carries its own:
 // POST → `auth-tight` (credential-stuffing), GET (get-session, OAuth
 // callbacks) → `default-anon` (hot). See lib/rate-limit/policies.ts.
+//
+// Pre-auth flood guard: a coarse per-IP ceiling on the whole /api tree, ahead
+// of every route chain (and of authMiddleware, injected downstream by
+// secureRouter). Bounds abusive volume so an unauthenticated flood can't drive
+// the session lookup unthrottled. A separate bucket from the per-route policies,
+// so it doesn't double-charge them. See middleware/rate-limiter.ts + #123.
+app.use("/api/*", floodGuard);
+
 app.on("POST", "/api/auth/*", rateLimiterFor("auth-tight"));
 app.on("GET", "/api/auth/*", rateLimiterFor("default-anon"));
 
