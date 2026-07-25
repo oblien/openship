@@ -109,7 +109,7 @@ export function AddCustomAppModal({
             <span>{error}</span>
           </div>
         )}
-        {template && !error && (
+        {template != null && !error && (
           <div className="mt-4 space-y-2">
             <div className="flex items-center gap-2 rounded-xl border border-success/40 bg-success/[0.05] px-3 py-2.5 text-sm text-success">
               <CheckCircle2 className="size-4 shrink-0" />
