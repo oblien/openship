@@ -161,7 +161,7 @@ async function sendEmail(
 }
 
 /** Validate a webhook URL to prevent SSRF. */
-function assertPublicWebhookUrl(url: string): void {
+export function assertPublicWebhookUrl(url: string): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
