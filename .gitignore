@@ -18,6 +18,13 @@ apps/desktop/resources/
 apps/cli/README.md
 # bun build --compile scratch/leftover binaries
 *.bun-build
+# Build artifacts left behind by running the deploy fixtures locally.
+# Scoped to fixtures/deploy/ on purpose: a bare `build/` or `bin/` rule would
+# also swallow the tracked apps/desktop/build/ and apps/cli/build/ sources.
+fixtures/deploy/*/obj/
+fixtures/deploy/*/bin/
+fixtures/deploy/*/.gradle/
+fixtures/deploy/*/build/
 
 # Environment
 .env
