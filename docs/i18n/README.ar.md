@@ -18,6 +18,7 @@
   <a href="README.pt.md"><img src="https://img.shields.io/badge/lang-Português-555" alt="Português" /></a>
   <a href="README.de.md"><img src="https://img.shields.io/badge/lang-Deutsch-555" alt="Deutsch" /></a>
   <a href="README.tr.md"><img src="https://img.shields.io/badge/lang-Türkçe-555" alt="Türkçe" /></a>
+  <a href="README.id.md"><img src="https://img.shields.io/badge/lang-Bahasa%20Indonesia-555" alt="Bahasa Indonesia" /></a>
 </p>
 
 <p align="center">

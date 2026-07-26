@@ -1,0 +1,50 @@
+{
+  "accountSwitcher": {
+    "workspacesCount": "{count} ruang kerja",
+    "newWorkspace": "Ruang kerja baru",
+    "createTitle": "Buat ruang kerja",
+    "createDescription": "Organisasi terpisah untuk proyek, deployment, server, dan anggota.",
+    "nameLabel": "Nama",
+    "namePlaceholder": "Acme Corp",
+    "cancel": "Batal",
+    "create": "Buat",
+    "toastTitle": "Organisasi",
+    "switchFailed": "Gagal beralih",
+    "createFailed": "Gagal membuat"
+  },
+  "sidebar": {
+    "workspaceFallback": "Workspace",
+    "workspacesCount": "{count} ruang kerja",
+    "switchOrganization": "Beralih organisasi",
+    "current": "Saat ini",
+    "cloudLabel": "Cloud: {email}",
+    "linkedToCloud": "Terhubung ke Openship Cloud sebagai {email}",
+    "backToSetup": "Kembali ke penyiapan",
+    "personal": "Pribadi"
+  },
+  "migration": {
+    "inProgressTitle": "Migrasi sedang berlangsung",
+    "inProgressBody": "Data Anda sedang dipindahkan. Halaman ini akan dimuat ulang saat peralihan selesai — biasanya 30-90 detik.",
+    "inProgressHint": "Jangan tutup tab ini. Kami memeriksa status migrasi setiap beberapa detik dan akan memuat ulang secara otomatis.",
+    "newLocation": "Lokasi baru",
+    "switchBackPrompt": "Perlu mode pengguna tunggal kembali di mesin ini?",
+    "switchBackAction": "Kembali ke pengguna tunggal",
+    "cloudTitle": "Instance ini telah dipindahkan ke Openship Cloud",
+    "cloudBody": "Tim Anda kini berkolaborasi di URL di bawah. Instance lokal ini tidak lagi menyimpan proyek, pengaturan, atau deployment Anda — buka dashboard cloud untuk melanjutkan.",
+    "cloudCta": "Buka dashboard cloud",
+    "tunneledTitle": "Openship Anda kini dapat dijangkau melalui tunnel",
+    "tunneledBody": "Rekan tim dapat masuk di URL di bawah saat mesin Anda online. Data tetap berada di perangkat ini — tunnel hanya mengeksposnya melalui edge Oblien.",
+    "tunneledCta": "Buka URL tunnel",
+    "serverTitle": "Instance ini telah dipindahkan ke server Anda",
+    "serverBody": "Tim Anda kini berkolaborasi di URL di bawah. Instance lokal ini tidak lagi menyimpan proyek, pengaturan, atau deployment Anda — buka dashboard tim untuk melanjutkan.",
+    "serverCta": "Buka dashboard tim"
+  },
+  "notFound": {
+    "title": "Halaman tidak ditemukan",
+    "descGlobal": "Halaman yang Anda cari tidak ada atau telah dipindahkan.",
+    "descDashboard": "Halaman ini tidak ada atau mungkin telah dipindahkan. Periksa URL, atau kembali ke dashboard Anda.",
+    "backToDashboard": "Kembali ke dashboard",
+    "viewDeployments": "Lihat deployment",
+    "copyId": "Salin ID"
+  }
+}
