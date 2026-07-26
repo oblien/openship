@@ -166,8 +166,13 @@ Schema lives in `packages/db/src/schema/`.
 
 ## Testing
 
-Tests are colocated with the code they cover: `foo.test.ts` sits next to `foo.ts`. Every
-workspace uses [Vitest](https://vitest.dev/).
+Most workspaces run [Vitest](https://vitest.dev/), and most colocate tests with the code they
+cover, so `foo.test.ts` sits next to `foo.ts`. Some group them under a `test/` directory
+instead (`packages/adapters/test/`, `apps/cli/test/`), and `apps/email/server` uses Bun's
+built-in test runner rather than Vitest. Follow whichever convention the workspace you are
+editing already uses.
+
+The rest of this section covers `apps/dashboard`, which is Vitest with colocated tests.
 
 ### Dashboard test environments
 

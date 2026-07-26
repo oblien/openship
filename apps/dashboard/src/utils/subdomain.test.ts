@@ -28,7 +28,7 @@ describe("normalizeSubdomain", () => {
     expect(normalizeSubdomain("café")).toBe("caf");
   });
 
-  it("strips leading and trailing hyphens, unlike normalizeSubdomandInput", () => {
+  it("strips leading and trailing hyphens, unlike normalizeSubdomainInput", () => {
     expect(normalizeSubdomain("abc-")).toBe("abc");
   });
 });

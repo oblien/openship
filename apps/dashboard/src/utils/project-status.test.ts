@@ -138,20 +138,28 @@ describe("projectStatusLabel", () => {
 });
 
 describe("PROJECT_STATUS_META", () => {
-  // Exhaustiveness guard: every ProjectStatus value must have non-empty
-  // styling, so adding a new status without wiring up its badge/dot fails
-  // this test loudly instead of silently rendering blank CSS classes.
-  const allStatuses: ProjectStatus[] = [
-    "live",
-    "attention",
-    "queued",
-    "building",
-    "deploying",
-    "failed",
-    "cancelled",
-    "deleting",
-    "draft",
-  ];
+  // Exhaustiveness guard: every ProjectStatus value must have non-empty styling,
+  // so adding a new status without wiring up its badge/dot fails loudly instead
+  // of silently rendering blank CSS classes.
+  //
+  // Keyed as a Record<ProjectStatus, true> rather than a plain array on purpose.
+  // An array would silently drift: adding a member to the ProjectStatus union
+  // would leave this list stale and the test would keep passing. The Record
+  // makes TypeScript itself reject an incomplete list, so `tsc --noEmit` fails
+  // the moment a new status is added without being covered here.
+  const STATUS_COVERAGE: Record<ProjectStatus, true> = {
+    live: true,
+    attention: true,
+    queued: true,
+    building: true,
+    deploying: true,
+    failed: true,
+    cancelled: true,
+    deleting: true,
+    draft: true,
+  };
+
+  const allStatuses = Object.keys(STATUS_COVERAGE) as ProjectStatus[];
 
   it.each(allStatuses)("has non-empty badge and dot classes for %s", (status) => {
     const meta = PROJECT_STATUS_META[status];
