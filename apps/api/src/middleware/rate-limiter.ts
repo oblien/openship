@@ -126,8 +126,17 @@ export function rateLimiterFor(policyId: PolicyId): MiddlewareHandler {
  * `enforce`): under a same-host proxy misconfig where all traffic looks
  * loopback, per-IP limiting is meaningless anyway, and dev/on-host traffic
  * shouldn't 429.
+ *
+ * Skipped entirely when an upstream edge already rate-limits — CLOUD_MODE
+ * (behind the Oblien Edge, which has default limits) or OPENSHIP_TRUST_EDGE.
+ * It's the first line only for a standalone self-hosted API with nothing
+ * rate-limiting in front of it.
  */
 export async function floodGuard(c: Context, next: Next): Promise<void | Response> {
+  if (env.CLOUD_MODE || env.OPENSHIP_TRUST_EDGE) {
+    await next();
+    return;
+  }
   if (c.req.path.startsWith("/api/health")) {
     await next();
     return;

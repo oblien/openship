@@ -3,6 +3,7 @@ import { Hono } from "hono";
 
 import { floodGuard, rateLimiterFor } from "../../src/middleware/rate-limiter";
 import { POLICIES } from "../../src/lib/rate-limit/policies";
+import { env } from "../../src/config";
 
 // The pre-auth flood guard (#123 follow-up): with the global /api limiter gone,
 // nothing throttled requests before authMiddleware's session lookup. floodGuard
@@ -73,6 +74,37 @@ describe("floodGuard middleware", () => {
     ip = "203.0.113.21";
     const other = await remaining();
     expect(other).toBe(first); // a fresh IP starts full
+  });
+
+  it("is a no-op when an upstream edge is trusted to rate-limit", async () => {
+    // Behind the Edge (CLOUD_MODE) or with OPENSHIP_TRUST_EDGE set, the guard
+    // steps aside — the edge already rate-limits, so re-doing it here is
+    // redundant. Requested by the maintainer on #123.
+    const cloud = env.CLOUD_MODE;
+    const trust = env.OPENSHIP_TRUST_EDGE;
+    try {
+      for (const [k, v] of [
+        ["OPENSHIP_TRUST_EDGE", true],
+        ["CLOUD_MODE", true],
+      ] as const) {
+        env.CLOUD_MODE = false;
+        env.OPENSHIP_TRUST_EDGE = false;
+        (env as Record<string, unknown>)[k] = v;
+
+        const app = new Hono();
+        app.use("*", withIp("203.0.113.40"));
+        app.use("/api/*", floodGuard);
+        app.get("/api/projects", (c) => c.json({ ok: true }));
+
+        const res = await app.request("/api/projects");
+        expect(res.status).toBe(200);
+        // Guard didn't run → it set no rate-limit headers of its own.
+        expect(res.headers.get("X-RateLimit-Limit")).toBeNull();
+      }
+    } finally {
+      env.CLOUD_MODE = cloud;
+      env.OPENSHIP_TRUST_EDGE = trust;
+    }
   });
 
   it("does not suppress a downstream per-route limiter and uses a separate bucket", async () => {

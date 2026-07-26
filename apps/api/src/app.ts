@@ -103,7 +103,8 @@ app.onError(handleApiError);
 // of every route chain (and of authMiddleware, injected downstream by
 // secureRouter). Bounds abusive volume so an unauthenticated flood can't drive
 // the session lookup unthrottled. A separate bucket from the per-route policies,
-// so it doesn't double-charge them. See middleware/rate-limiter.ts + #123.
+// so it doesn't double-charge them. No-op behind an edge that already rate-limits
+// (CLOUD_MODE / OPENSHIP_TRUST_EDGE). See middleware/rate-limiter.ts + #123.
 app.use("/api/*", floodGuard);
 
 app.on("POST", "/api/auth/*", rateLimiterFor("auth-tight"));
