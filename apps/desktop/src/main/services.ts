@@ -96,6 +96,7 @@ function resourcePaths() {
     apiBin: join(root, "bin", API_BIN),
     migrationsDir: join(root, "migrations"),
     pgliteDir: join(root, "pglite"),
+    mailEngineDir: join(root, "mail-engine"),
     dashboardDir: join(root, "dashboard", "apps", "dashboard"),
     // ssh2 + dockerode live here (externalized from the compiled API binary);
     // the binary resolves them via NODE_PATH — see the spawn below.
@@ -216,7 +217,8 @@ export async function startLocalServices(internalToken: string): Promise<void> {
   if (started) return;
   started = true;
 
-  const { apiBin, migrationsDir, pgliteDir, dashboardDir, nodeModulesDir } = resourcePaths();
+  const { apiBin, migrationsDir, pgliteDir, mailEngineDir, dashboardDir, nodeModulesDir } =
+    resourcePaths();
   const userData = app.getPath("userData");
   const dataDir = join(userData, "data");
   mkdirSync(dataDir, { recursive: true });
@@ -285,6 +287,12 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       PGLITE_DATA_DIR: dataDir,
       OPENSHIP_MIGRATIONS_DIR: migrationsDir,
       OPENSHIP_PGLITE_ASSETS_DIR: pgliteDir,
+      // The mail setup's engine-transfer step tars this tree onto the target
+      // box. Without it the API falls back to a cwd-relative monorepo path
+      // (`../../apps/email/engine`), which in the packaged app resolves two
+      // levels above userData — a directory that does not exist — and setup
+      // dies at step 7 with "tar: could not chdir".
+      MAIL_SERVER_ENGINE_DIR: mailEngineDir,
       // The dashboard + API run on dynamic ports not in the API's static origin
       // table — trust both loopback spellings of each explicitly so CORS /
       // origin-guard / auth accept them regardless of which a client resolves.

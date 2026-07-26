@@ -13,6 +13,7 @@
  */
 
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import type { CommandExecutor, LogEntry, SystemLogCallback, SystemLog } from "@repo/adapters";
 import { updatePostmasterPassword } from "./mail-credentials.service";
@@ -44,8 +45,9 @@ const REMOTE_ENGINE_DIR = "/root/iRedMail-engine";
  * Absolute path to `apps/email/engine/` on the openship API host.
  *
  * `MAIL_SERVER_ENGINE_DIR` overrides for ops who pin a packaged build to a
- * fixed location; otherwise resolved relative to apps/api's cwd so the
- * monorepo dev layout works without configuration.
+ * fixed location - the desktop app sets it to its bundled copy of the tree,
+ * which has no monorepo to resolve against. Otherwise resolved relative to
+ * apps/api's cwd so the monorepo dev layout works without configuration.
  */
 function resolveLocalEngineDir(): string {
   if (process.env.MAIL_SERVER_ENGINE_DIR) {
@@ -425,6 +427,19 @@ export async function stepTransferEngine(
   const stepId = 7;
   const localEngine = resolveLocalEngineDir();
   log(stepId, "info", `Transferring engine ${localEngine} → ${REMOTE_ENGINE_DIR}...`);
+
+  // Fail with the actual cause. transferIn shells out to tar, so a missing
+  // engine dir surfaces as "tar: could not chdir to ..." (exit 1), which reads
+  // like a transport problem rather than a build/config one.
+  if (!existsSync(localEngine)) {
+    return {
+      stepId,
+      success: false,
+      message:
+        `Mail engine not found at ${localEngine}. Set MAIL_SERVER_ENGINE_DIR to the ` +
+        `apps/email/engine tree on this host.`,
+    };
+  }
 
   try {
     await exec.transferIn(localEngine, REMOTE_ENGINE_DIR, (entry) => {

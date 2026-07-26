@@ -7,6 +7,7 @@
  *   resources/dashboard/              the dashboard's own Next standalone output
  *   resources/migrations/             drizzle .sql  → OPENSHIP_MIGRATIONS_DIR
  *   resources/pglite/                 pglite.wasm + pglite.data → OPENSHIP_PGLITE_ASSETS_DIR
+ *   resources/mail-engine/            apps/email/engine tree → MAIL_SERVER_ENGINE_DIR
  *
  * Invoked by electron-forge's `generateAssets` hook (forge.config.js) and also
  * runnable standalone with `bun run build/stage.ts`. Must run under bun — it
@@ -26,6 +27,7 @@ const RESOURCES = join(DESKTOP_DIR, "resources");
 const API_DIR = join(REPO_ROOT, "apps/api");
 const DASHBOARD_DIR = join(REPO_ROOT, "apps/dashboard");
 const DB_DRIZZLE_DIR = join(REPO_ROOT, "packages/db/drizzle");
+const MAIL_ENGINE_DIR = join(REPO_ROOT, "apps/email/engine");
 
 const isWin = process.platform === "win32";
 const API_BIN = isWin ? "openship-api.exe" : "openship-api";
@@ -256,6 +258,21 @@ function main(): void {
       }
       cpSync(src, join(dest, file));
     }
+  });
+
+  // 5. iRedMail engine tree — the mail setup's step 7 tars this directory onto
+  //    the target box. It is plain shell/config data the compiled binary can't
+  //    embed, and unlike the dev checkout the packaged app has no monorepo to
+  //    resolve it from, so it must ship as a resource and be handed to the API
+  //    via MAIL_SERVER_ENGINE_DIR (set at spawn in services.ts).
+  step("copying mail engine → resources/mail-engine/", () => {
+    if (!existsSync(join(MAIL_ENGINE_DIR, "iRedMail.sh"))) {
+      throw new Error(
+        `mail engine missing — expected ${join(MAIL_ENGINE_DIR, "iRedMail.sh")}. ` +
+          `Mail server setup cannot run without it.`,
+      );
+    }
+    cpSync(MAIL_ENGINE_DIR, join(RESOURCES, "mail-engine"), { recursive: true });
   });
 
   // NB: OpenResty Lua is NOT staged here. Unlike migrations/pglite (plain data
