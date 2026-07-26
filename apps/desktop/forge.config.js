@@ -60,6 +60,9 @@ module.exports = {
       path.join(RESOURCES, "dashboard"),
       path.join(RESOURCES, "migrations"),
       path.join(RESOURCES, "pglite"),
+      // iRedMail engine tree — staged to the target box by the mail setup flow,
+      // located at runtime via MAIL_SERVER_ENGINE_DIR (services.ts).
+      path.join(RESOURCES, "mail-engine"),
       // ssh2 + dockerode (externalized from the --compile binary) — resolved at
       // runtime via NODE_PATH=<Resources>/node_modules in services.ts.
       path.join(RESOURCES, "node_modules"),
