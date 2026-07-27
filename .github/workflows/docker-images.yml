@@ -14,7 +14,7 @@ name: Docker images
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
@@ -148,7 +148,11 @@ jobs:
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA_JSON") \
             $(printf "${SRC}@sha256:%s " *)
 
-      - name: Inspect
+      - name: Verify public manifest
         run: |
+          # Compose installs pull these images without registry credentials.
+          # Remove the workflow login so private or otherwise inaccessible
+          # packages fail the release instead of appearing to publish cleanly.
+          docker logout ghcr.io
           docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}:${{ steps.meta.outputs.version }}" || true
+            "ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}:${{ steps.meta.outputs.version }}"
