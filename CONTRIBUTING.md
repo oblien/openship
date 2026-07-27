@@ -164,6 +164,75 @@ bun run --cwd packages/db db:studio  # Open Drizzle Studio (database browser)
 
 Schema lives in `packages/db/src/schema/`.
 
+## Testing
+
+Most workspaces run [Vitest](https://vitest.dev/), and most colocate tests with the code they
+cover, so `foo.test.ts` sits next to `foo.ts`. Some group them under a `test/` directory
+instead (`packages/adapters/test/`, `apps/cli/test/`), and `apps/email/server` uses Bun's
+built-in test runner rather than Vitest. Follow whichever convention the workspace you are
+editing already uses.
+
+The rest of this section covers `apps/dashboard`, which is Vitest with colocated tests.
+
+### Dashboard test environments
+
+`apps/dashboard` splits its suite into two Vitest projects, selected by file extension:
+
+| File         | Project | Environment | Use for                                        |
+| ------------ | ------- | ----------- | ---------------------------------------------- |
+| `*.test.ts`  | `unit`  | Node        | Pure logic: parsers, state derivation, helpers |
+| `*.test.tsx` | `dom`   | jsdom       | React components, via Testing Library          |
+
+```mermaid
+graph TD
+    A["bun run test"] --> B["turbo run test"]
+    B --> C["apps/dashboard: vitest run"]
+    C --> D{"file extension"}
+    D -->|"*.test.ts"| E["unit project<br/>environment: node"]
+    D -->|"*.test.tsx"| F["dom project<br/>environment: jsdom"]
+    E --> G["pure logic, no DOM startup cost"]
+    F --> H["vitest.setup.ts:<br/>jest-dom matchers + cleanup()"]
+    H --> I["React Testing Library"]
+```
+
+The split is deliberate, not cosmetic. Running the whole suite under jsdom breaks
+`src/i18n/i18n-parity.test.ts`: jsdom patches the global `URL` so `import.meta.url` resolves
+against the document location instead of a `file:` base, and `scripts/check-i18n.mjs` then
+throws `TypeError: The URL must be of scheme file`. Keeping pure-logic tests on Node also
+avoids paying jsdom's startup cost for suites that never touch the DOM.
+
+Name a test `.test.ts` unless it renders a component. If a `.test.ts` fails with a
+DOM-related error, it belongs in a `.test.tsx`.
+
+### Writing a component test
+
+Global test APIs are disabled, so import them explicitly:
+
+```tsx
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
+
+import { MyComponent } from "./my-component";
+
+describe("MyComponent", () => {
+  it("renders its title", () => {
+    render(<MyComponent title="Projects" />);
+    expect(screen.getByText("Projects")).toBeInTheDocument();
+  });
+});
+```
+
+`apps/dashboard/vitest.setup.ts` registers the `@testing-library/jest-dom` matchers and calls
+`cleanup()` after each test, so a tree rendered in one test never leaks into the next.
+
+The `@/*` alias resolves in tests as it does in the app, for real value imports and not just
+types.
+
+### Prove the test can fail
+
+A test that cannot fail proves nothing. Before opening a PR, deliberately break the code
+under test, confirm the test fails, then restore it. Say so in the PR description.
+
 ## Verification
 
 The root test and build scripts run the corresponding tasks across the workspaces that
