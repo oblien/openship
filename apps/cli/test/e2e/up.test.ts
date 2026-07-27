@@ -98,6 +98,13 @@ afterEach(() => {
 });
 
 describe("openship up --compose (edge chain)", () => {
+  it("uses Compose by default when Docker is available", async () => {
+    const r = await runCommand(upCommand, []);
+    expect(r.code).toBe(0);
+    expect(e.calls).toBe(1);
+    expect(h.composeUpCalls).toBe(1);
+  });
+
   it("exits before the edge preflight when docker/compose is missing", async () => {
     h.hasDocker = false;
     const r = await runCommand(upCommand, ["--compose"]);
@@ -128,12 +135,19 @@ describe("openship up --compose (edge chain)", () => {
     e.plan = {
       proceed: true,
       action: "migrate",
-      sites: [{ serverNames: ["a.com"], ssl: true, target: { kind: "proxy", url: "http://127.0.0.1:3000" } }],
+      sites: [
+        {
+          serverNames: ["a.com"],
+          ssl: true,
+          target: { kind: "proxy", url: "http://127.0.0.1:3000" },
+        },
+      ],
       certPems: { "/etc/ssl/a.crt": { certPem: "CERT", keyPem: "KEY" } },
     };
     fetchStub = stubFetch((req) => {
       if (req.url.endsWith("/api/health")) return { status: 200, json: { ok: true } };
-      if (req.url.endsWith("/api/system/edge/import-sites")) return { status: 200, json: { registered: ["a.com"], warnings: [] } };
+      if (req.url.endsWith("/api/system/edge/import-sites"))
+        return { status: 200, json: { registered: ["a.com"], warnings: [] } };
       return { status: 404, json: {} };
     });
 
@@ -146,7 +160,9 @@ describe("openship up --compose (edge chain)", () => {
     expect(importCall!.method).toBe("POST");
     expect(importCall!.headers["x-internal-token"]).toBe("tok");
     expect((importCall!.body as any).sites).toHaveLength(1);
-    expect((importCall!.body as any).certPems).toEqual({ "/etc/ssl/a.crt": { certPem: "CERT", keyPem: "KEY" } });
+    expect((importCall!.body as any).certPems).toEqual({
+      "/etc/ssl/a.crt": { certPem: "CERT", keyPem: "KEY" },
+    });
     // Edge is serving → the takeover journal is closed, so the NEXT run doesn't
     // read it as interrupted and restart the proxy we just replaced.
     expect(e.completes).toBe(1);

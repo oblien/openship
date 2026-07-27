@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
   # Manual run publishes ONLY the CLI to npm (current version, no tag / installers).
   workflow_dispatch: {}
 
@@ -238,7 +238,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: "24"
 
       - name: Restore bun cache
         uses: actions/cache@v6
@@ -258,7 +258,7 @@ jobs:
       - name: Build installer
         shell: bash
         env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: bun run --cwd apps/desktop make
 
       - name: Collect + rename installer
@@ -358,7 +358,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: "24"
 
       - name: Restore bun cache
         uses: actions/cache@v6
@@ -484,7 +484,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: "24"
           registry-url: https://registry.npmjs.org
 
       - name: Ensure npm supports trusted publishing (OIDC)
@@ -503,6 +503,11 @@ jobs:
 
       - name: Build CLI
         run: bun run --cwd apps/cli build
+
+      - name: Verify Compose install support
+        run: |
+          bun run --cwd apps/cli test
+          bun apps/cli/dist/index.js up --help | grep -F -- "--compose"
 
       - name: Publish to npm (OIDC trusted publishing — no token)
         working-directory: apps/cli
