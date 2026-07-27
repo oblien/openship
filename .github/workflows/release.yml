@@ -555,7 +555,7 @@ jobs:
           # tsup bundles the @repo/* deps into dist/, so strip them from the
           # published manifest — otherwise npm emits uninstallable workspace:*
           # specifiers for packages that aren't on the registry.
-          npm pkg delete dependencies.@repo/core dependencies.@repo/onboarding
+          npm pkg delete dependencies.@repo/core dependencies.@repo/onboarding dependencies.@repo/adapters
           # Prereleases (v1.2.3-rc.1) publish to the `next` dist-tag, not `latest`.
           if [[ "${TAG}" == *-* ]]; then
             npm publish --access public --tag next
