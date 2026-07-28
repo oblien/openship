@@ -16,6 +16,7 @@ import {
 } from "../../runtime/port-conflict";
 import { OPENRESTY_LUA_DIR } from "../../infra/openresty-lua";
 import type {
+  SystemLog,
   EdgeOccupant,
   EdgePolicy,
   EdgeStatus,
@@ -92,6 +93,64 @@ export function sq(value: string): string {
  */
 export function isOurEdgeContainer(name?: string, image?: string): boolean {
   return /openship-edge/i.test(`${name ?? ""} ${image ?? ""}`);
+}
+
+/**
+ * Make carried vhosts safe to `include` inside the edge image.
+ *
+ * The image's own nginx.conf includes `sites-enabled/*.conf` and THEN declares the
+ * catch-all (`listen 80 default_server; server_name _;`) that proxies ACME
+ * http-01 to certbot and 404s unmanaged hosts. A bare host edge has its own
+ * equivalent, so a blind `cp -a` hands the container two default servers for
+ * 0.0.0.0:80 — `[emerg] a duplicate default server`, which crash-loops the
+ * container. The operator then sees only Docker's "container is restarting"
+ * message, and the box gets rolled back to the bare edge it was trying to leave.
+ *
+ * Two rules, both because the IMAGE owns the catch-all role:
+ *   - a conf with no real `server_name` (catch-all only) is dropped — keeping it
+ *     would also shadow the image's ACME location, breaking issuance;
+ *   - `default_server` is stripped from every remaining `listen`, so a real vhost
+ *     that happened to carry the flag stops claiming a role it doesn't need.
+ *
+ * Runs before EVERY edge start, not only after a carry. A conf left by an older or
+ * failed attempt lives in the HOST bind mount, so it poisons every later start —
+ * including compose, which never carried anything. That is how one bad conversion
+ * became `[emerg] duplicate default server` on every subsequent `openship up`.
+ *
+ * Best-effort: a box where this can't run is no worse off than before, and
+ * `openresty -t` is still the gate that catches a bad tree.
+ */
+function vhostLog(message: string, level: SystemLog["level"] = "info"): SystemLog {
+  return { timestamp: new Date().toISOString(), message, level };
+}
+
+export async function sanitizeEdgeVhosts(
+  executor: CommandExecutor,
+  sitesDir: string,
+  onLog: (l: SystemLog) => void,
+): Promise<void> {
+  // POSIX sh, one pass, no per-file round trips (this runs over SSH).
+  const script = [
+    `for f in ${sq(sitesDir)}/*.conf; do`,
+    `  [ -f "$f" ] || continue;`,
+    // A real server_name is anything that isn't the `_` wildcard.
+    `  if ! grep -qE '^[[:space:]]*server_name[[:space:]]+[^_;[:space:]]' "$f"; then`,
+    `    echo "dropped-catchall $f"; rm -f "$f"; continue;`,
+    `  fi;`,
+    `  if grep -qE '[[:space:]]default_server' "$f"; then`,
+    `    sed -i -E 's/([[:space:]]listen[^;]*)[[:space:]]+default_server/\\1/g' "$f" && echo "unset-default $f";`,
+    `  fi;`,
+    `done`,
+  ].join(" ");
+  const out = await executor.exec(script).catch(() => "");
+  for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const [action, file] = [line.slice(0, line.indexOf(" ")), line.slice(line.indexOf(" ") + 1)];
+    if (action === "dropped-catchall") {
+      onLog(vhostLog(`Dropped catch-all vhost ${file} — the edge image provides it.`, "warn"));
+    } else if (action === "unset-default") {
+      onLog(vhostLog(`Removed default_server from ${file} — the edge image owns it.`, "warn"));
+    }
+  }
 }
 
 /**

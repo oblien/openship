@@ -155,7 +155,7 @@ export const updateCommand = new Command("update")
     // it re-rendered .env from flags it wasn't given. Bare install → restart the
     // process service so it picks up the new bundle.
     if (readInstallMethod() === "compose") {
-      const applied = composeUpdate(latest);
+      const applied = await composeUpdate(latest);
       if (isJsonMode()) {
         printJson({ updated: true, from: current, to: latest, via: pm, method: "compose", applied });
       } else if (applied) {

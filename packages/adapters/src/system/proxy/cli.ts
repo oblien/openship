@@ -31,6 +31,7 @@ export {
   edgeFailureReason,
   edgeIsServing,
   edgeCrashReason,
+  sanitizeEdgeVhosts,
 } from "./detect";
 // Recover the sites of a proxy we already STOPPED: probeEdge can't see it (it
 // holds no ports), but its vhosts are still on disk and the parsers are read-only.

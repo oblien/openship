@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import type { CommandExecutor, SshConfig } from "../types";
 import { LocalExecutor } from "./local-executor";
@@ -48,6 +48,34 @@ export function hostControlDisabled(): boolean {
   return process.env.OPENSHIP_HOST_CONTROL?.trim().toLowerCase() === "false";
 }
 
+/**
+ * Are WE running inside a container?
+ *
+ * The distinction that matters for {@link createHostExecutor}: `LocalExecutor`
+ * targets the host on a bare install and the CONTAINER's own namespace in a
+ * containerized one. Those are completely different machines, and the difference is
+ * invisible in the command output — `docker volume inspect` happily returns a host
+ * path that does not exist where the command ran.
+ *
+ * `/.dockerenv` is Docker's own marker (the same probe domain.service.ts:368 uses);
+ * the cgroup scan covers podman and Docker configurations that omit it. Sync reads
+ * because callers are synchronous, and both are single small local files.
+ */
+function runningInContainer(): boolean {
+  if (process.env.OPENSHIP_IN_CONTAINER?.trim().toLowerCase() === "true") return true;
+  try {
+    if (existsSync("/.dockerenv")) return true;
+  } catch {
+    /* fall through to the cgroup probe */
+  }
+  try {
+    return /\b(docker|containerd|podman|kubepods)\b/.test(readFileSync("/proc/1/cgroup", "utf8"));
+  } catch {
+    // No procfs (macOS/Windows dev) — those are never the containerized API.
+    return false;
+  }
+}
+
 export function createHostExecutor(): CommandExecutor {
   // Explicit opt-out: FAIL rather than degrade. The `!host → LocalExecutor`
   // fallback below is correct for a bare install (LocalExecutor IS the host) but
@@ -60,7 +88,32 @@ export function createHostExecutor(): CommandExecutor {
     );
   }
   const host = process.env.OPENSHIP_HOST_SSH_HOST?.trim();
-  if (!host) return localExecutor;
+  if (!host) {
+    // The hazard the comment above names, for the UNCONFIGURED case rather than the
+    // disabled one — and it used to fall through here silently.
+    //
+    // Containerized with no host channel meant every "this machine" operation ran
+    // INSIDE the api container: `docker …` → `docker: not found` (only the socket is
+    // mounted, not the CLI), and any host path the daemon reports — a volume's
+    // `/var/lib/docker/volumes/<v>/_data` — simply doesn't exist here, so rsync dies
+    // with `mkdir … No such file or directory`. Both surface far from the cause,
+    // during a migration's data move, looking like Docker or rsync bugs.
+    //
+    // Fail with the actual remedy instead. Do NOT "fix" this by adding a docker CLI
+    // and bind-mounting the host's Docker data-root into the container: that makes
+    // the container write daemon-private state directly (unsupported, breaks on
+    // non-local volume drivers and rootless installs) to paper over a host channel
+    // that simply wasn't provisioned.
+    if (runningInContainer()) {
+      throw new Error(
+        "This operation targets the HOST machine, but no host channel is configured " +
+          "(OPENSHIP_HOST_SSH_HOST is unset) and Openship is running in a container — " +
+          "so it would have run inside the container instead, against the wrong " +
+          "filesystem. Re-run `openship up` to provision the host channel.",
+      );
+    }
+    return localExecutor;
+  }
   const keyPath = process.env.OPENSHIP_HOST_SSH_KEY?.trim();
   const portRaw = Number(process.env.OPENSHIP_HOST_SSH_PORT || "22");
   const port = Number.isInteger(portRaw) && portRaw > 0 && portRaw < 65536 ? portRaw : 22;

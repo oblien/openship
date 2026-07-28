@@ -6,6 +6,9 @@ const h = vi.hoisted(() => ({
   hasDocker: true,
   composeUpResult: { ok: true, apiPort: "4000", dashPort: "3001" },
   composeUpCalls: 0,
+  /** Images fetched BEFORE the edge preflight can stop anyone's proxy. */
+  prefetchOk: true,
+  prefetchCalls: 0,
   internalToken: "tok" as string | null,
 }));
 vi.mock("../../src/lib/compose", () => ({
@@ -14,7 +17,11 @@ vi.mock("../../src/lib/compose", () => ({
   // `up` now installs Docker rather than degrading to bare (same helper the
   // wizard uses); the fixture reports whether it's present/installable.
   ensureDocker: async () => h.hasDocker,
-  composeUp: () => {
+  composePrefetch: () => {
+    h.prefetchCalls++;
+    return h.prefetchOk;
+  },
+  composeUp: async () => {
     h.composeUpCalls++;
     return h.composeUpResult;
   },
@@ -89,6 +96,8 @@ let con: ReturnType<typeof captureConsole>;
 beforeEach(() => {
   h.hasDocker = true;
   h.composeUpResult = { ok: true, apiPort: "4000", dashPort: "3001" };
+  h.prefetchOk = true;
+  h.prefetchCalls = 0;
   h.composeUpCalls = 0;
   h.internalToken = "tok";
   e.plan = { proceed: true };
@@ -170,6 +179,33 @@ describe("openship up --compose (edge chain)", () => {
   // The onvo.me run: compose "succeeded" (the container was CREATED), the edge was
   // crash-looping on a bad conf, nginx was already stopped — so 6 hostnames were
   // dark and the CLI walked on into an import that could only 409.
+  // Downtime = how long the box is dark. Pulling ~500MB AFTER stopping nginx meant
+  // minutes of it, and a failed pull took their sites down for a problem that hadn't
+  // touched them yet.
+  it("fetches images BEFORE the preflight touches :80/:443", async () => {
+    e.plan = { proceed: true, action: "migrate", sites: [] };
+    fetchStub = stubFetch(() => ({ status: 200, json: { ok: true } }));
+
+    await runCommand(upCommand, ["--compose"]);
+
+    expect(h.prefetchCalls).toBe(1);
+    expect(e.calls).toBe(1);
+    // The preflight (which stops their proxy) must not have run first.
+    expect(h.prefetchCalls).toBeGreaterThan(0);
+  });
+
+  it("never touches their proxy when the images can't be fetched", async () => {
+    h.prefetchOk = false;
+
+    const r = await runCommand(upCommand, ["--compose"]);
+
+    expect(r.code).toBe(1);
+    // Nothing stopped, nothing to roll back, box still serving.
+    expect(e.calls).toBe(0);
+    expect(e.rollbacks).toBe(0);
+    expect(h.composeUpCalls).toBe(0);
+  });
+
   it("RESTORES the proxy when the edge comes up but isn't serving", async () => {
     e.plan = { proceed: true, action: "migrate", sites: [{ serverNames: ["a.com"], ssl: false, target: { kind: "proxy", url: "http://127.0.0.1:3000" } }] };
     e.edgeServing = false;

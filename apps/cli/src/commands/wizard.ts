@@ -53,6 +53,7 @@ import {
   hasDockerCompose,
   composeUp,
   composeInternalToken,
+  composePrefetch,
   sourceBuildDir,
   readInstallMethod,
   composeDown,
@@ -701,6 +702,26 @@ export async function runWizard(): Promise<void> {
     }
   }
   if (method === "compose") {
+    // Fetch FIRST, cut over second — same rule as `openship up`. Pulling after the
+    // preflight stops a foreign proxy keeps the box dark for the whole download, and
+    // a failed pull takes their sites down for a problem that never reached them.
+    log.step(
+      sourceBuildDir()
+        ? "Building the Openship images before touching :80/:443 (first run takes a few minutes)…"
+        : "Pulling images before touching :80/:443…",
+    );
+    if (
+      !composePrefetch({
+        publicUrl,
+        trustProxy: behindProxy,
+        version: __CLI_VERSION__,
+        noHostControl: !allowHostControl,
+      })
+    ) {
+      cancel("Couldn't fetch the Openship images — nothing on this box was changed.");
+      process.exit(1);
+    }
+
     // A foreign proxy already on 80/443? Migrate/take it over first (interactive)
     // so the container edge can bind — the same host-edge pipe `openship up` uses.
     const edgePlan = await planAndApplyHostEdge({});
@@ -713,12 +734,8 @@ export async function runWizard(): Promise<void> {
     edgeAction = edgePlan.action;
     migratedSites = edgePlan.sites;
     migratedCertPems = edgePlan.certPems;
-    log.step(
-      sourceBuildDir()
-        ? "Building the Openship images from your source checkout (first run takes a few minutes)…"
-        : "Pulling images and starting the Docker Compose stack…",
-    );
-    const up = composeUp({
+    log.step("Starting the Docker Compose stack…");
+    const up = await composeUp({
       publicUrl,
       trustProxy: behindProxy,
       version: __CLI_VERSION__,

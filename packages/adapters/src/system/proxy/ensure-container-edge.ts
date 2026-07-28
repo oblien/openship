@@ -32,6 +32,7 @@ import { waitForPortListening } from "../port-listen";
 import {
   EDGE_CONTAINER_NAME,
   edgeFailureReason,
+  sanitizeEdgeVhosts,
   invalidateEdgeContainer,
   ourLuaOnHost,
   resolveOurEdgeContainer,
@@ -182,6 +183,36 @@ export interface ContainerEdgeOptions {
   verifyTimeoutMs?: number;
 }
 
+/**
+ * The ONLY way this module starts the edge container.
+ *
+ * Every start sanitizes the vhost dir it is about to mount first — not because the
+ * caller might have carried something bad, but because the dir is HOST state that
+ * outlives every container. One conf left there by an older version (or a hand
+ * edit) crash-loops the edge with `[emerg] a duplicate default server`, forever,
+ * on every start by anyone. Guarding the callers instead of the start is how the
+ * image-swap path and the compose path each shipped without it.
+ *
+ * `docker rm -f` first: a stopped/renamed leftover holds the name and `docker run`
+ * would fail on it.
+ */
+async function startEdgeContainer(
+  executor: CommandExecutor,
+  container: string,
+  image: string,
+  onLog: SystemLogCallback,
+): Promise<boolean> {
+  await sanitizeEdgeVhosts(executor, EDGE_HOST_PATHS.sitesDir, onLog).catch(() => {});
+  await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch(() => {});
+  const run = await executor.streamExec(
+    buildEdgeRunCommand(container, image),
+    onLog as (l: LogEntry) => void,
+  );
+  // Identity just changed; nobody may keep answering from a pre-start memo.
+  invalidateEdgeContainer(executor);
+  return run.code === 0;
+}
+
 /** `docker run` argv for the edge: host networking (it owns 80/443) + the mounts. */
 export function buildEdgeRunCommand(container: string, image: string): string {
   const mounts = EDGE_CONTAINER_MOUNTS.map(
@@ -223,15 +254,7 @@ async function swapEdgeImage(
   }
 
   const start = async (image: string) => {
-    await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch(() => {});
-    const run = await executor.streamExec(
-      buildEdgeRunCommand(container, image),
-      onLog as (l: LogEntry) => void,
-    );
-    // The container this box has just changed identity twice; nobody may keep
-    // answering from a memo taken before the swap.
-    invalidateEdgeContainer(executor);
-    if (run.code !== 0) return false;
+    if (!(await startEdgeContainer(executor, container, image, onLog))) return false;
     const listening = await waitForPortListening(executor, 80, {
       timeoutMs: opts.verifyTimeoutMs ?? 30_000,
     });
@@ -266,55 +289,6 @@ async function listDir(
       .map((l) => l.trim())
       .filter(Boolean),
   );
-}
-
-/**
- * Make carried vhosts safe to `include` inside the edge image.
- *
- * The image's own nginx.conf includes `sites-enabled/*.conf` and THEN declares the
- * catch-all (`listen 80 default_server; server_name _;`) that proxies ACME
- * http-01 to certbot and 404s unmanaged hosts. A bare host edge has its own
- * equivalent, so a blind `cp -a` hands the container two default servers for
- * 0.0.0.0:80 — `[emerg] a duplicate default server`, which crash-loops the
- * container. The operator then sees only Docker's "container is restarting"
- * message, and the box gets rolled back to the bare edge it was trying to leave.
- *
- * Two rules, both because the IMAGE owns the catch-all role:
- *   - a conf with no real `server_name` (catch-all only) is dropped — keeping it
- *     would also shadow the image's ACME location, breaking issuance;
- *   - `default_server` is stripped from every remaining `listen`, so a real vhost
- *     that happened to carry the flag stops claiming a role it doesn't need.
- *
- * Best-effort: a box where this can't run is no worse off than before, and
- * `openresty -t` (step 5) is still the gate that catches a bad tree.
- */
-async function sanitizeCarriedVhosts(
-  executor: CommandExecutor,
-  sitesDir: string,
-  onLog: (l: SystemLog) => void,
-): Promise<void> {
-  // POSIX sh, one pass, no per-file round trips (this runs over SSH).
-  const script = [
-    `for f in ${sq(sitesDir)}/*.conf; do`,
-    `  [ -f "$f" ] || continue;`,
-    // A real server_name is anything that isn't the `_` wildcard.
-    `  if ! grep -qE '^[[:space:]]*server_name[[:space:]]+[^_;[:space:]]' "$f"; then`,
-    `    echo "dropped-catchall $f"; rm -f "$f"; continue;`,
-    `  fi;`,
-    `  if grep -qE '[[:space:]]default_server' "$f"; then`,
-    `    sed -i -E 's/([[:space:]]listen[^;]*)[[:space:]]+default_server/\\1/g' "$f" && echo "unset-default $f";`,
-    `  fi;`,
-    `done`,
-  ].join(" ");
-  const out = await executor.exec(script).catch(() => "");
-  for (const line of out.split("\n").map((l) => l.trim()).filter(Boolean)) {
-    const [action, file] = [line.slice(0, line.indexOf(" ")), line.slice(line.indexOf(" ") + 1)];
-    if (action === "dropped-catchall") {
-      onLog(log(`Dropped the bare edge's catch-all ${file} — the edge image provides it.`, "warn"));
-    } else if (action === "unset-default") {
-      onLog(log(`Removed default_server from ${file} — the edge image owns it.`, "warn"));
-    }
-  }
 }
 
 /**
@@ -402,7 +376,6 @@ export async function ensureContainerEdge(
       await executor
         .exec(`cp -a ${sq(`${barePaths.sitesDir}/.`)} ${sq(`${sitesTarget}/`)} 2>/dev/null || true`)
         .catch(() => {});
-      await sanitizeCarriedVhosts(executor, sitesTarget, onLog);
     }
   }
 
@@ -437,18 +410,10 @@ export async function ensureContainerEdge(
       // container's master process too. The unit stop above is the durable one.
       await executor.exec("systemctl reset-failed openresty 2>/dev/null || true").catch(() => {});
     }
-    // A stopped/renamed leftover holds the name; `docker run` would fail on it.
-    await executor.exec(`docker rm -f ${sq(container)} 2>/dev/null || true`).catch(() => {});
-
     onLog(log("Starting the edge container..."));
-    const run = await executor.streamExec(
-      buildEdgeRunCommand(container, image),
-      onLog as (l: LogEntry) => void,
-    );
-    // Before the code check: on failure the catch below removes it again, and both
-    // outcomes must land on readers as a fresh probe rather than a pre-run memo.
-    invalidateEdgeContainer(executor);
-    if (run.code !== 0) throw new Error("the edge container failed to start");
+    if (!(await startEdgeContainer(executor, container, image, onLog))) {
+      throw new Error("the edge container failed to start");
+    }
 
     // 5. Prove it: config valid, then actually answering on :80. A container that
     //    starts and immediately exits passes neither.

@@ -165,7 +165,16 @@ describe("ensureContainerEdge", () => {
   // Our own bare catch-all declares `listen 80 default_server`, and the image's
   // nginx.conf declares one too — so the container died with `[emerg] a duplicate
   // default server` and the box was rolled back to the edge it was leaving.
-  it("sanitizes carried vhosts after the copy, and says what it changed", async () => {
+  it("sanitizes the mounted vhost dir on EVERY start, not just after a carry", async () => {
+    // No carry at all (no bare edge): the dir is still host state that can hold a
+    // conf from an older version, so a plain install must clean it too.
+    const { executor, commands, onLog } = box({ sanitizeOutput: "" });
+    await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
+    expect(idx(commands, "dropped-catchall")).toBeGreaterThanOrEqual(0);
+    expect(idx(commands, "dropped-catchall")).toBeLessThan(idx(commands, "docker run"));
+  });
+
+  it("sanitizes carried vhosts before the container starts, and says what it changed", async () => {
     const { executor, commands, onLog } = box({
       bareIsOurs: true,
       sanitizeOutput: "dropped-catchall /var/lib/openship/edge/sites-enabled/default.conf",
@@ -173,12 +182,12 @@ describe("ensureContainerEdge", () => {
 
     await ensureContainerEdge(executor, { onLog, image: IMAGE, verifyTimeoutMs: 50 });
 
-    // Runs AFTER the carry and BEFORE the container starts — a sanitize that lands
-    // after `docker run` is a sanitize that never prevented the crash.
+    // After the carry, before `docker run` — a sanitize that lands after the start
+    // is a sanitize that never prevented the crash.
     expect(idx(commands, "cp -a")).toBeLessThan(idx(commands, "dropped-catchall"));
     expect(idx(commands, "dropped-catchall")).toBeLessThan(idx(commands, "docker run"));
     const said = onLog.mock.calls.map(([l]) => l.message).join("\n");
-    expect(said).toMatch(/Dropped the bare edge's catch-all .*default\.conf/);
+    expect(said).toMatch(/Dropped catch-all vhost .*default\.conf/);
   });
 
   // A failed conversion used to leave the carried confs in the host bind mount, so

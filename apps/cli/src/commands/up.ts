@@ -393,7 +393,7 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
       ? `Building Openship from ${fromSource} and starting the stack…`
       : "Starting Openship via Docker Compose…",
   ).start();
-  const res = composeUp({
+  const res = await composeUp({
     apiPort: opts.port,
     dashboardPort: opts.dashboardPort,
     publicUrl,

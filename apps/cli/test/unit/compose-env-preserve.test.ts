@@ -22,6 +22,9 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", () => ({
+  // LocalExecutor (pulled in by compose.ts for the vhost sanitize) uses execFile.
+  execFile: (_c: unknown, _a: unknown, cb: (e: null, o: { stdout: string }) => void) =>
+    cb(null, { stdout: "" }),
   spawnSync: (cmd: string, args: string[] = []) => {
     if (cmd === "docker" && args[0] === "compose") h.composeCalls.push(args);
     // No pre-existing db volume → the password-reconcile path stays out of the
@@ -49,6 +52,11 @@ vi.mock("../../src/lib/source-install", () => ({
   readSourceInstall: () => h.sourceInstall,
 }));
 
+vi.mock("@repo/adapters/proxy", () => ({
+  // compose.ts sanitizes the mounted vhost dir before `up`; no-op under test.
+  sanitizeEdgeVhosts: async () => {},
+}));
+
 vi.mock("@repo/adapters", async () => {
   const lua = await import("../../../../packages/adapters/src/infra/openresty-lua");
   return {
@@ -56,6 +64,7 @@ vi.mock("@repo/adapters", async () => {
     EDGE_HOST_STATE_DIR: lua.EDGE_HOST_STATE_DIR,
     EDGE_CONTAINER_MOUNTS: lua.EDGE_CONTAINER_MOUNTS,
     invalidateEdgeContainer: () => {},
+    LocalExecutor: class {},
   };
 });
 
@@ -121,7 +130,7 @@ beforeEach(() => {
 });
 
 describe("resolveEnvConfig", () => {
-  it("carries every operator setting forward when the run passes no flags", () => {
+  it("carries every operator setting forward when the run passes no flags", async () => {
     const cfg = resolveEnvConfig(CONFIGURED, {});
     expect(cfg.publicUrl).toBe("https://test.com");
     expect(cfg.extraTrustedOrigins).toBe("http://192.168.1.50:3100");
@@ -132,7 +141,7 @@ describe("resolveEnvConfig", () => {
     expect(cfg.hostControl).toBe(false);
   });
 
-  it("lets an explicit flag override the carried value", () => {
+  it("lets an explicit flag override the carried value", async () => {
     const cfg = resolveEnvConfig(CONFIGURED, {
       publicUrl: "https://new.example.com",
       apiPort: "4200",
@@ -142,7 +151,7 @@ describe("resolveEnvConfig", () => {
     expect(cfg.dashPort).toBe("3100"); // untouched flags still carry
   });
 
-  it("falls back to defaults on a first install", () => {
+  it("falls back to defaults on a first install", async () => {
     const cfg = resolveEnvConfig({}, {});
     expect(cfg.publicUrl).toBeUndefined();
     expect(cfg.apiPort).toBe("4000");
@@ -151,11 +160,11 @@ describe("resolveEnvConfig", () => {
     expect(cfg.hostControl).toBe(true);
   });
 
-  it("a public URL implies TRUST_PROXY (something terminates TLS in front)", () => {
+  it("a public URL implies TRUST_PROXY (something terminates TLS in front)", async () => {
     expect(resolveEnvConfig({}, { publicUrl: "https://x.example.com" }).trustProxy).toBe(true);
   });
 
-  it("keeps host control OFF unless the flag says otherwise", () => {
+  it("keeps host control OFF unless the flag says otherwise", async () => {
     // `--no-host-control` is absent on a re-run, so the install's choice stands.
     expect(resolveEnvConfig({ OPENSHIP_HOST_CONTROL: "false" }, {}).hostControl).toBe(false);
     expect(
@@ -165,9 +174,9 @@ describe("resolveEnvConfig", () => {
 });
 
 describe("composeUp — re-run on a configured install", () => {
-  it("does not drop the public URL (the ORIGIN_REJECTED regression)", () => {
+  it("does not drop the public URL (the ORIGIN_REJECTED regression)", async () => {
     seedEnv(CONFIGURED);
-    const res = composeUp({});
+    const res = await composeUp({});
     expect(res.ok).toBe(true);
 
     const env = writtenEnv();
@@ -179,30 +188,30 @@ describe("composeUp — re-run on a configured install", () => {
     expect(env.POSTGRES_PASSWORD).toBe("pg-secret");
   });
 
-  it("reports the EFFECTIVE ports, not the defaults", () => {
+  it("reports the EFFECTIVE ports, not the defaults", async () => {
     seedEnv(CONFIGURED);
-    const res = composeUp({});
+    const res = await composeUp({});
     expect(res.apiPort).toBe("4100");
     expect(res.dashPort).toBe("3100");
   });
 
-  it("leaves the containers alone when nothing changed", () => {
+  it("leaves the containers alone when nothing changed", async () => {
     // Seeded from a real render, not a hand-written fixture: the detector compares
     // the rendered file byte-for-byte, so "unchanged" has to mean what `up` itself
     // would have written last time.
-    composeUp({ publicUrl: "https://test.com", version: "0.4.6" });
+    await composeUp({ publicUrl: "https://test.com", version: "0.4.6" });
     h.composeCalls = [];
 
-    composeUp({ version: "0.4.6" });
+    await composeUp({ version: "0.4.6" });
     expect(verbs()).toContainEqual(["up", "-d"]);
     expect(verbs().some((v) => v.includes("--force-recreate"))).toBe(false);
     // ...and the URL is still there, which is the whole point.
     expect(writtenEnv().OPENSHIP_PUBLIC_URL).toBe("https://test.com");
   });
 
-  it("force-recreates the env-consuming services when the env changed", () => {
+  it("force-recreates the env-consuming services when the env changed", async () => {
     seedEnv(CONFIGURED);
-    composeUp({ publicUrl: "https://moved.example.com" });
+    await composeUp({ publicUrl: "https://moved.example.com" });
     // env_file contents are baked in at create time — without this the fix is a no-op.
     expect(verbs()).toContainEqual([
       "up",
@@ -214,8 +223,8 @@ describe("composeUp — re-run on a configured install", () => {
     ]);
   });
 
-  it("does not force-recreate on a first install (nothing exists yet)", () => {
-    const res = composeUp({ publicUrl: "https://fresh.example.com" });
+  it("does not force-recreate on a first install (nothing exists yet)", async () => {
+    const res = await composeUp({ publicUrl: "https://fresh.example.com" });
     expect(res.ok).toBe(true);
     expect(verbs()).toContainEqual(["up", "-d"]);
     expect(verbs().some((v) => v.includes("--force-recreate"))).toBe(false);
@@ -223,9 +232,9 @@ describe("composeUp — re-run on a configured install", () => {
 });
 
 describe("composeUpdate", () => {
-  it("repins the version, regenerates both files, and keeps the config", () => {
+  it("repins the version, regenerates both files, and keeps the config", async () => {
     seedEnv(CONFIGURED);
-    expect(composeUpdate("0.4.6")).toBe(true);
+    expect(await composeUpdate("0.4.6")).toBe(true);
 
     const env = writtenEnv();
     expect(env.OPENSHIP_VERSION).toBe("0.4.6");
@@ -239,8 +248,8 @@ describe("composeUpdate", () => {
     expect(verbs().at(-1)?.slice(0, 3)).toEqual(["up", "-d", "--force-recreate"]);
   });
 
-  it("is a no-op when there's no compose install", () => {
-    expect(composeUpdate("0.4.6")).toBe(false);
+  it("is a no-op when there's no compose install", async () => {
+    expect(await composeUpdate("0.4.6")).toBe(false);
     expect(h.composeCalls).toHaveLength(0);
   });
 });

@@ -18,12 +18,14 @@ import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 
 import {
+  LocalExecutor,
   EDGE_CONTAINER_MOUNTS,
   EDGE_HOST_STATE_DIR,
   invalidateEdgeContainer,
   systemCatalog,
   type EnvironmentProfile,
 } from "@repo/adapters";
+import { sanitizeEdgeVhosts } from "@repo/adapters/proxy";
 import { DEFAULT_IMAGE_REGISTRY } from "@repo/core";
 
 import { OS_DIR } from "./paths";
@@ -871,7 +873,9 @@ export function composePrefetch(opts: ComposeUpOpts): boolean {
  * (normal install) or BUILD api/dashboard/edge from the source checkout (dev
  * install). Postgres/redis are upstream images and are pulled either way.
  */
-export function composeUp(opts: ComposeUpOpts): { ok: boolean; apiPort: string; dashPort: string } {
+export async function composeUp(
+  opts: ComposeUpOpts,
+): Promise<{ ok: boolean; apiPort: string; dashPort: string }> {
   const { buildDir, cfg, envChanged } = materialize(opts);
   // The EFFECTIVE ports, not the flags: a re-run with no flags keeps the ports the
   // install was configured with, so the summary must report those.
@@ -880,6 +884,12 @@ export function composeUp(opts: ComposeUpOpts): { ok: boolean; apiPort: string; 
   // `env_file:` contents are read when a container is CREATED, so a changed .env
   // reaches the api/dashboard/edge only if they're recreated. Without this, an
   // env fix "succeeds" and changes nothing.
+  // The edge container mounts EDGE_SITES_HOST_DIR. A conf left there by an older or
+  // failed attempt (a carried catch-all claiming `default_server`) crash-loops it with
+  // `[emerg] a duplicate default server` — every time, forever, because the file is on
+  // the host and outlives the container. Compose never carried anything, so it never
+  // ran this; the file was created by some earlier path and then poisoned every
+  // `openship up` after it. Sanitize what we're about to mount, every start.
   const up = (extra: { withBuildOverride?: boolean } = {}) =>
     compose(
       envChanged
@@ -912,6 +922,10 @@ export function composeUp(opts: ComposeUpOpts): { ok: boolean; apiPort: string; 
   if (dbVolumeExists(project)) {
     reconcileDbPassword(env.POSTGRES_USER || "openship", env.POSTGRES_PASSWORD ?? "");
   }
+
+  await sanitizeEdgeVhosts(new LocalExecutor(), EDGE_SITES_HOST_DIR, (l) =>
+    console.log(`  ${l.message}`),
+  ).catch(() => {});
 
   if (buildDir) {
     // Only the upstream images can be pulled; ours don't exist in a registry for
@@ -1010,9 +1024,9 @@ export function composeUninstall(opts: { removeImages?: boolean } = {}): {
  * Covers both install shapes: a from-source install rebuilds from its checkout
  * (no published image for the branch it tracks), a normal one pulls.
  */
-export function composeUpdate(version?: string): boolean {
+export async function composeUpdate(version?: string): Promise<boolean> {
   if (!existsSync(COMPOSE_FILE)) return false;
-  return composeUp(version ? { version } : {}).ok;
+  return (await composeUp(version ? { version } : {})).ok;
 }
 
 export function composePs(): number {
