@@ -255,6 +255,8 @@ export const endpoints = {
     installSession: "system/install/session",
     monitorStream: "system/monitor/stream",
     servers: "system/servers",
+    /** Register this box itself as a deploy target ("This Server"). */
+    serversLocal: "system/servers/local",
     server: (id: string) => `system/servers/${id}`,
     serverReachability: (id: string) => `system/servers/${id}/reachability`,
     serverRateLimit: (id: string) => `system/servers/${id}/rate-limit`,

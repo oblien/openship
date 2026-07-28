@@ -100,6 +100,9 @@ r.get("/servers/:id/reachability", { tag: "server:read" }, serversCtrl.probeReac
 // row is created in the active org. collection:true keeps the permission
 // middleware from demanding a (nonexistent) :id param.
 r.post("/servers", { tag: "server:write", collection: true }, serversCtrl.createServer);
+// Register THIS box as a deploy target. Also id-less (the row is the local one in
+// the active org), so it takes the same collection:true permission shape.
+r.post("/servers/local", { tag: "server:write", collection: true }, serversCtrl.registerLocalServer);
 r.patch("/servers/:id", { tag: "server:write" }, serversCtrl.updateServer);
 r.delete("/servers/:id", { tag: "server:admin" }, serversCtrl.deleteServer);
 

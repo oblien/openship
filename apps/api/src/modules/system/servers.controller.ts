@@ -175,6 +175,72 @@ export async function createServer(c: Context) {
   return c.json(serializeServer(server), 201);
 }
 
+/**
+ * POST /servers/local - register THIS box as a deploy target ("This Server").
+ *
+ * Same row the boot reconcile creates (lib/startup/self-server.ts), exposed as a
+ * one-click action for the instances where that hook never landed one: the box
+ * had no founding admin the last time it booted, host control was off then, or
+ * the row predates the reconcile. Idempotent — an existing local row is returned
+ * as-is (200) instead of duplicated.
+ *
+ * No SSH credentials are involved: deploys to this row run through the local
+ * host executor, exactly like the auto-registered one.
+ */
+export async function registerLocalServer(c: Context) {
+  const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
+
+  // Desktop targets its own machine through a different ("This Machine") flow —
+  // this endpoint is the server-host ("VPS") one.
+  if (env.DEPLOY_MODE !== "docker" && env.DEPLOY_MODE !== "bare") {
+    return c.json({ error: "This instance does not run on a server it can deploy to." }, 400);
+  }
+
+  // Host control off (`openship up --no-host-control`): the box is deliberately
+  // not a deploy target and every host operation refuses, so registering it
+  // would only add a row whose every action throws.
+  if (hostControlDisabled()) {
+    return c.json(
+      { error: "Host control is disabled on this instance, so it can't be added as a server." },
+      400,
+    );
+  }
+
+  const ctx = getRequestContext(c);
+  // Same gate as the loopback branch of createServer: running on this box is code
+  // execution on the control plane (host executor + mounted docker socket, DooD ≈
+  // root), so only the box-owning org may register it.
+  if (ctx.organizationId !== (await boxOwningOrgId())) {
+    return c.json({ error: "The local host can't be added as a server in this workspace." }, 400);
+  }
+
+  const existing = await repos.server.findLocal(ctx.organizationId);
+  if (existing) {
+    await primeGeo();
+    return c.json(serializeServer(existing));
+  }
+
+  // ssh* fields are display-only for an isLocal row (never dialed). Prefer a real
+  // address so the servers list reads truthfully — mirrors self-server.ts.
+  const displayHost = env.SERVER_IP || env.HOST_DOMAIN || "127.0.0.1";
+  const server = await repos.server.create({
+    organizationId: ctx.organizationId,
+    name: "This Server",
+    sshHost: displayHost,
+    isLocal: true,
+  });
+
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "server.added",
+    resourceType: "server",
+    resourceId: server.id,
+    after: { name: server.name, sshHost: server.sshHost, isLocal: true },
+  });
+
+  await primeGeo();
+  return c.json(serializeServer(server), 201);
+}
+
 /** PATCH /servers/:id - update a server */
 export async function updateServer(c: Context) {
   const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;

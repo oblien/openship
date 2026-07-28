@@ -379,6 +379,11 @@ export const systemApi = {
   createServerEntry: (data: Record<string, unknown>) =>
     api.post<ServerInfo>(endpoints.system.servers, data),
 
+  /** Register the machine OpenShip runs on as a deploy target. Idempotent —
+   *  returns the existing "This Server" row when one is already registered. */
+  registerLocalServer: () =>
+    api.post<ServerInfo>(endpoints.system.serversLocal, {}),
+
   /** Update a server */
   updateServerEntry: (id: string, data: Record<string, unknown>) =>
     api.patch<ServerInfo>(endpoints.system.server(id), data),

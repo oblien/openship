@@ -21,11 +21,13 @@ import {
   ExternalLink,
   Layers,
   MapPin,
+  HardDrive,
 } from "lucide-react";
-import { systemApi } from "@/lib/api";
+import { getApiErrorMessage, systemApi } from "@/lib/api";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { usePlatform } from "@/context/PlatformContext";
+import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { ComingSoonPanel } from "./_components/coming-soon-panel";
 import * as CountryFlags from "country-flag-icons/react/3x2";
@@ -64,12 +66,15 @@ const STATUS: Record<Reachability, { dot: string; text: string }> = {
 export default function ServersPage() {
   const { t } = useI18n();
   const router = useRouter();
-  const { deployMode } = usePlatform();
+  const { showToast } = useToast();
+  const { deployMode, isServerHost } = usePlatform();
   const isDesktop = deployMode === "desktop";
 
   const [activeTab, setActiveTab] = useState<ServersTab>("servers");
   const [servers, setServers] = useState<ServerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  /** In-flight one-click "add the box we're running on" registration. */
+  const [addingLocal, setAddingLocal] = useState(false);
   /** Live reachability per server (see probeReachability). */
   const [reach, setReach] = useState<Record<string, Reachability>>({});
   /** Active (running) port-forward count per server — desktop-only. */
@@ -102,6 +107,32 @@ export default function ServersPage() {
   useEffect(() => {
     fetchServers();
   }, [fetchServers]);
+
+  // Self-hosted on a VPS, but the host itself isn't in the list — the boot
+  // reconcile (self-server.ts) only lands the "This Server" row on a box that
+  // already had an admin when it started, so an instance set up in the other
+  // order never gets one. Offer it as a one-click add rather than making the
+  // operator hand-type their own IP into the SSH form (which would be the wrong
+  // transport anyway — deploys to this row run locally, no SSH).
+  const hasLocal = servers.some((s) => s.isLocal);
+  const canAddLocal = isServerHost && !loading && !hasLocal;
+
+  const handleAddLocal = useCallback(async () => {
+    setAddingLocal(true);
+    try {
+      await systemApi.registerLocalServer();
+      showToast(t.servers.list.thisServerAdded, "success", t.servers.toastTitles.server);
+      await fetchServers();
+    } catch (err) {
+      showToast(
+        getApiErrorMessage(err, t.servers.list.thisServerAddFailed),
+        "error",
+        t.servers.toastTitles.server,
+      );
+    } finally {
+      setAddingLocal(false);
+    }
+  }, [fetchServers, showToast, t]);
 
   // Real reachability: seed every server to "checking", then probe each in
   // parallel and flip its dot as the probe resolves (mirrors the tunnel fan-out).
@@ -177,13 +208,33 @@ export default function ServersPage() {
           <p className="text-sm text-muted-foreground/70 mt-1">{t.servers.list.subtitle}</p>
         </div>
         {activeTab === "servers" && (
-          <button
-            onClick={() => router.push("/servers/new")}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
-          >
-            <Plus className="size-4" />
-            {t.servers.list.addServer}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Secondary to "Add Server": this one takes no input at all, so it
+                sits beside the SSH flow rather than replacing it. Hidden once
+                the host is registered — there is only ever one local row. */}
+            {canAddLocal && servers.length > 0 && (
+              <button
+                onClick={handleAddLocal}
+                disabled={addingLocal}
+                title={t.servers.list.addThisServerHint}
+                className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {addingLocal ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <HardDrive className="size-4" />
+                )}
+                {t.servers.list.addThisServer}
+              </button>
+            )}
+            <button
+              onClick={() => router.push("/servers/new")}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25"
+            >
+              <Plus className="size-4" />
+              {t.servers.list.addServer}
+            </button>
+          </div>
         )}
       </div>
 
@@ -214,7 +265,11 @@ export default function ServersPage() {
           </div>
         ) : servers.length === 0 ? (
           // Empty state stands alone (no Quick Info card) and centers.
-          <EmptyState onAdd={() => router.push("/servers/new")} />
+          <EmptyState
+            onAdd={() => router.push("/servers/new")}
+            onAddLocal={canAddLocal ? handleAddLocal : undefined}
+            addingLocal={addingLocal}
+          />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
             {/* ── LEFT COLUMN ── */}
@@ -382,7 +437,16 @@ export default function ServersPage() {
 
 /** No-servers illustration + primer. Unchanged from the original list view,
  *  now scoped to the Servers tab. */
-function EmptyState({ onAdd }: { onAdd: () => void }) {
+function EmptyState({
+  onAdd,
+  onAddLocal,
+  addingLocal,
+}: {
+  onAdd: () => void;
+  /** Present only on a self-hosted server-host whose own row isn't registered. */
+  onAddLocal?: () => void;
+  addingLocal?: boolean;
+}) {
   const { t } = useI18n();
   return (
     <div className="py-16 text-center">
@@ -425,7 +489,24 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
         {t.servers.list.emptyDescription}
       </p>
 
-      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-10">
+      {/* The hint below carries the bottom margin when it renders. */}
+      <div className={`flex flex-col sm:flex-row items-center justify-center gap-3 ${onAddLocal ? "" : "mb-10"}`}>
+        {/* One-click, no credentials: the box this dashboard runs on. Offered
+            only when it isn't already registered (see canAddLocal). */}
+        {onAddLocal && (
+          <button
+            onClick={onAddLocal}
+            disabled={addingLocal}
+            className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-muted/30 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {addingLocal ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <HardDrive className="size-4" />
+            )}
+            {t.servers.list.addThisServer}
+          </button>
+        )}
         <button
           onClick={onAdd}
           className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
@@ -444,6 +525,12 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
           <ExternalLink className="size-3.5 opacity-60" />
         </a>
       </div>
+
+      {/* The button alone doesn't say what "this server" means; the hint does.
+          Sits under the row so it reads for the whole choice, not one option. */}
+      {onAddLocal && (
+        <p className="mt-3 mb-10 text-xs text-muted-foreground/60">{t.servers.list.addThisServerHint}</p>
+      )}
 
       <div className="max-w-2xl mx-auto">
         <p className="text-xs text-muted-foreground/60 uppercase tracking-wider mb-4">
