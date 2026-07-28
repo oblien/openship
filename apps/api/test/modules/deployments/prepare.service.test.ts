@@ -46,4 +46,34 @@ describe("resolveProjectInfo", () => {
     expect(result.services?.map((service) => service.name)).toEqual(["web"]);
     expect(result.rootEnv).toEqual({ PORT: "9090" });
   });
+
+  it("honors an explicitly configured Compose root", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-root-"));
+    tempDirs.push(tempDir);
+
+    await writeFile(
+      join(tempDir, "docker-compose.yml"),
+      ["services:", "  unrelated:", "    image: nginx:alpine"].join("\n"),
+    );
+    await mkdir(join(tempDir, "stacks", "leverageai"), { recursive: true });
+    await writeFile(
+      join(tempDir, "stacks", "leverageai", "compose.yml"),
+      [
+        "services:",
+        "  backend:",
+        "    image: ghcr.io/example/backend:v1.2.3",
+        "  frontend:",
+        "    image: ghcr.io/example/web:v1.2.3",
+      ].join("\n"),
+    );
+
+    const result = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      rootDirectory: "stacks/leverageai",
+    });
+
+    expect(result.rootDirectory).toBe("stacks/leverageai");
+    expect(result.services?.map((service) => service.name)).toEqual(["backend", "frontend"]);
+  });
 });

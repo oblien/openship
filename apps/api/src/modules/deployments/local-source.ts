@@ -71,7 +71,10 @@ function createLocalReader(dirPath: string): ProjectReader {
   };
 }
 
-export async function resolveFromLocal(dirPath: string): Promise<ProjectInfo> {
+export async function resolveFromLocal(
+  dirPath: string,
+  rootDirectory?: string,
+): Promise<ProjectInfo> {
   const st = await stat(dirPath);
   if (!st.isDirectory()) {
     throw new Error("Path is not a directory");
@@ -91,5 +94,6 @@ export async function resolveFromLocal(dirPath: string): Promise<ProjectInfo> {
       default_branch: "main",
     },
     "main",
+    rootDirectory,
   );
 }
