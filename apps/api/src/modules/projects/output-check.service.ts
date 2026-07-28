@@ -10,6 +10,14 @@ import { auditStaticOutput } from "../deployments/output-audit.service";
 
 const silentLogger = { log() {} } as unknown as BuildLogger;
 
+/** Overall budget for the advisory probe. resolveDeploymentRuntime + the
+ *  in-container exec each round-trip over SSH to the deployment's box; on a
+ *  slow/unreachable/asleep REMOTE server those can HANG with no timeout of their
+ *  own, which would otherwise hang the Domains tab request. ADVISORY only —
+ *  past the budget, degrade to [] (no hint), never hang. Mirrors the port-check
+ *  twin's PORT_CHECK_BUDGET_MS. */
+const OUTPUT_CHECK_BUDGET_MS = 5000;
+
 /**
  * On-demand static-output audit for a project's LIVE deployment — the file-side
  * twin of checkProjectPorts. Confirms each routed path actually serves output
@@ -18,9 +26,11 @@ const silentLogger = { log() {} } as unknown as BuildLogger;
  * nothing to probe.
  *
  * Scope: STATIC apps only (`!hasServer`) — server apps have a listening port,
- * which the port check covers. Live signal is bare self-hosted only; cloud
- * Pages deletes its build workspace post-deploy (no exec surface), so it
- * returns [] and relies on the deploy-time output validation instead.
+ * which the port check covers. Live signal is BARE-built self-hosted only.
+ * A Docker-sandbox-built static (the default now) serves from a host dir too,
+ * but its live runtime is DockerRuntime (no file surface), so — like cloud Pages
+ * (workspace deleted post-deploy) — it returns [] and relies on the deploy-time
+ * output validation instead (deployStatic throws if the doc-root is missing).
  */
 export async function checkProjectOutput(
   ctx: RequestContext,
@@ -34,17 +44,33 @@ export async function checkProjectOutput(
   const deployment = await repos.deployment.findById(project.activeDeploymentId);
   if (!deployment || !deployment.containerId) return [];
 
+  // Bound the whole probe: a slow/unreachable/asleep remote box must degrade to
+  // "no hint", never a timed-out tab. The probe keeps running in the background
+  // after the cap (harmless) — the point is the request returns fast.
+  return Promise.race([
+    runOutputProbe(project, deployment),
+    new Promise<OutputCheckResult[]>((resolve) => setTimeout(() => resolve([]), OUTPUT_CHECK_BUDGET_MS)),
+  ]);
+}
+
+async function runOutputProbe(
+  project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
+  deployment: NonNullable<Awaited<ReturnType<typeof repos.deployment.findById>>>,
+): Promise<OutputCheckResult[]> {
+  const containerId = deployment.containerId;
+  if (!containerId) return [];
   try {
     const { runtime } = await resolveDeploymentRuntime(deployment);
-    // Only bare self-hosted static exposes a post-deploy file surface. Cloud
-    // Pages' workspace is gone (containerId = page:<slug>), so there's nothing
-    // to probe — deploy-time validation already guarantees the Page root.
+    // Only a bare-built static exposes a post-deploy file surface. A
+    // Docker-sandbox-built static (DockerRuntime) and cloud Pages (workspace
+    // gone, containerId = page:<slug>) have no exec/file surface here —
+    // deploy-time validation already guarantees their doc-root.
     if (!(runtime instanceof BareRuntime)) return [];
 
     // Served root mirrors bare.ts deployStatic + route-registration exactly:
     //   staticRoot = resolveStaticRoot(workDir, outputDirectory)
     //   servedPath = targetPath === "/" ? staticRoot : join(staticRoot, targetPath.slice(1))
-    const staticRoot = runtime.resolveStaticRoot(deployment.containerId, project.outputDirectory ?? "");
+    const staticRoot = runtime.resolveStaticRoot(containerId, project.outputDirectory ?? "");
     const routeState = await resolveProjectRouteState(project);
     const seen = new Set<string>();
     const targets: Array<{ path: string; servedPath: string }> = [];
@@ -57,7 +83,7 @@ export async function checkProjectOutput(
     }
     if (targets.length === 0) targets.push({ path: "/", servedPath: staticRoot });
 
-    return await auditStaticOutput(runtime, deployment.containerId, targets, silentLogger);
+    return await auditStaticOutput(runtime, containerId, targets, silentLogger);
   } catch {
     return [];
   }

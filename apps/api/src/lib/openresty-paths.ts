@@ -39,6 +39,17 @@ export async function withOpenRestyRouting<T>(
   serverId: string,
   fn: (routing: NginxProvider) => Promise<T>,
 ): Promise<T> {
+  // Fast-fail an unreachable/offline box in ~2.5s instead of paying the full
+  // 15-20s SSH-connect timeout (doubled by withExecutor's reconnect retry). This
+  // is the single reason the server "Security" tab appeared to hang forever: a
+  // GET routing read that blocked on a dead SSH connect with no liveness gate,
+  // unlike delete/reconcile which already probe first. probeReachable is instant
+  // when a live connection is cached, so the happy path pays nothing.
+  const reachable = await sshManager.probeReachable(serverId).catch(() => false);
+  if (!reachable) {
+    throw new Error("Server is not reachable over SSH right now.");
+  }
+
   return sshManager.withExecutor(serverId, async (executor) => {
     const run = async (forceRefresh = false) => {
       const paths = await getOpenRestyPaths(serverId, executor, forceRefresh);

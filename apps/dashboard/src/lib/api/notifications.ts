@@ -51,7 +51,9 @@ export interface NotificationDefault {
   organizationId: string;
   category: string;
   defaultEnabled: boolean;
-  defaultChannelKind: ChannelKind;
+  /** Channel kinds a new member is auto-subscribed on — one event can fan out to
+   *  several (e.g. ["email","slack"]). */
+  defaultChannelKinds: ChannelKind[];
   createdAt: string;
   updatedAt: string;
 }
@@ -98,6 +100,12 @@ export const notificationsApi = {
 
   deleteChannel: (id: string) => api.delete<{ ok: true }>(endpoints.notifications.channel(id)),
 
+  // Sends a real test message through the channel's worker; on success the
+  // server flips `verified: true` (the only way to prove reachability). Throws
+  // with the provider's error message on failure.
+  testChannel: (id: string) =>
+    api.post<{ ok: boolean; verified: boolean }>(endpoints.notifications.channelTest(id), {}),
+
   // ── Subscriptions
   listSubscriptions: () =>
     api.get<{ subscriptions: NotificationSubscription[] }>(endpoints.notifications.subscriptions),
@@ -118,7 +126,7 @@ export const notificationsApi = {
   upsertDefault: (data: {
     category: string;
     defaultEnabled: boolean;
-    defaultChannelKind: ChannelKind;
+    defaultChannelKinds: ChannelKind[];
   }) => api.put<{ default: NotificationDefault }>(endpoints.notifications.defaults, data),
 
   // ── Deliveries (in-app inbox)

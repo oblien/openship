@@ -315,31 +315,36 @@ export function ResourcePicker({
 }
 
 // ── Permission chips ────────────────────────────────────────────────────────
+/**
+ * read/write/admin toggles for one row. Rendered INLINE at the row's trailing
+ * edge, not wrapped onto a second indented line: one line per resource keeps the
+ * list scannable like a table and roughly halves its height, which is what made
+ * the picker feel cramped when it lived in a 640px modal.
+ */
 function PermissionChips({
   perms,
   onToggle,
   disabled,
-  indent = "ms-8",
 }: {
   perms: Permission[];
   onToggle: (p: Permission) => void;
   disabled?: boolean;
-  indent?: string;
 }) {
   return (
-    <div className={`mt-2 ${indent} flex flex-wrap items-center gap-1.5`}>
+    <div className="flex shrink-0 items-center gap-1">
       {PERMISSIONS.map((p) => {
         const active = perms.includes(p);
         return (
           <button
             key={p}
             type="button"
-            onClick={() => onToggle(p)}
+            onClick={onToggle.bind(null, p)}
             disabled={disabled}
-            className={`px-2 py-0.5 rounded-md text-[10px] font-medium uppercase tracking-wider transition-colors ${
+            title={p}
+            className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider transition-colors ${
               active
-                ? "bg-primary/20 text-foreground border border-primary/40"
-                : "bg-muted/40 text-muted-foreground border border-transparent hover:text-foreground"
+                ? "bg-primary/20 text-foreground ring-1 ring-inset ring-primary/40"
+                : "bg-muted/40 text-muted-foreground/70 hover:text-foreground"
             }`}
           >
             {p}
@@ -381,7 +386,7 @@ function ResourceRow({
 
   return (
     <div
-      className={`px-4 py-3 transition-colors ${
+      className={`px-4 py-2.5 transition-colors ${
         checked ? "bg-primary/5" : covered ? "opacity-50" : "hover:bg-muted/20"
       }`}
     >
@@ -410,14 +415,14 @@ function ResourceRow({
             </p>
           )}
         </div>
+        {checked && !covered && (
+          <PermissionChips
+            perms={grant?.permissions ?? []}
+            onToggle={(p) => onTogglePermission(resourceType, resourceId, p)}
+            disabled={disabled}
+          />
+        )}
       </div>
-      {checked && !covered && (
-        <PermissionChips
-          perms={grant?.permissions ?? []}
-          onToggle={(p) => onTogglePermission(resourceType, resourceId, p)}
-          disabled={disabled}
-        />
-      )}
     </div>
   );
 }
@@ -578,7 +583,7 @@ function GitHubTree({
         return (
           <div key={login}>
             {/* Org row */}
-            <div className={`px-3 py-3 ${wholeOrg ? "bg-primary/5" : "hover:bg-muted/20"} transition-colors`}>
+            <div className={`px-3 py-2.5 ${wholeOrg ? "bg-primary/5" : "hover:bg-muted/20"} transition-colors`}>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -602,25 +607,24 @@ function GitHubTree({
                     </span>
                   </p>
                 </div>
+                {wholeOrg && (
+                  <PermissionChips
+                    perms={grant?.permissions ?? []}
+                    onToggle={(p) => {
+                      const cur = grant?.permissions ?? [];
+                      onChange(
+                        writeGrant(
+                          value,
+                          "github_installation",
+                          login,
+                          cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p],
+                        ),
+                      );
+                    }}
+                    disabled={disabled}
+                  />
+                )}
               </div>
-              {wholeOrg && (
-                <PermissionChips
-                  perms={grant?.permissions ?? []}
-                  onToggle={(p) => {
-                    const cur = grant?.permissions ?? [];
-                    onChange(
-                      writeGrant(
-                        value,
-                        "github_installation",
-                        login,
-                        cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p],
-                      ),
-                    );
-                  }}
-                  disabled={disabled}
-                  indent="ms-14"
-                />
-              )}
             </div>
 
             {/* Repos under this org */}
@@ -678,25 +682,24 @@ function GitHubTree({
                                 {repo.label.split("/")[1] ?? repo.label}
                               </p>
                             </div>
+                            {checked && (
+                              <PermissionChips
+                                perms={rg?.permissions ?? []}
+                                onToggle={(p) => {
+                                  const cur = rg?.permissions ?? [];
+                                  onChange(
+                                    writeGrant(
+                                      value,
+                                      "github_repository",
+                                      repo.id,
+                                      cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p],
+                                    ),
+                                  );
+                                }}
+                                disabled={disabled}
+                              />
+                            )}
                           </div>
-                          {checked && (
-                            <PermissionChips
-                              perms={rg?.permissions ?? []}
-                              onToggle={(p) => {
-                                const cur = rg?.permissions ?? [];
-                                onChange(
-                                  writeGrant(
-                                    value,
-                                    "github_repository",
-                                    repo.id,
-                                    cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p],
-                                  ),
-                                );
-                              }}
-                              disabled={disabled}
-                              indent="ms-8"
-                            />
-                          )}
                         </div>
                       );
                     })}

@@ -11,6 +11,7 @@ export type {
   DeploymentRedirect,
   DeploymentHeaderRule,
   RoutingConfig,
+  ProjectCompositeRoute,
   MetadataParser,
 } from "./types";
 export { openshipMetadataParser } from "./openship";

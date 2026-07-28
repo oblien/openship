@@ -163,7 +163,7 @@ export function JobForm({
       {/* ── Left: form ── */}
       <div className="min-w-0 space-y-5">
         {/* Basics */}
-        <Section title={c.sections.basics} icon={Terminal}>
+        <Section title={c.sections.basics} icon={Terminal} tone={SECTION_TONES.basics}>
           <Field label={c.name}>
             <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={c.namePlaceholder} className={inputCls} autoFocus />
           </Field>
@@ -175,7 +175,7 @@ export function JobForm({
         </Section>
 
         {/* Schedule */}
-        <Section title={c.sections.schedule} icon={CalendarClock}>
+        <Section title={c.sections.schedule} icon={CalendarClock} tone={SECTION_TONES.schedule}>
           <div className="grid grid-cols-3 gap-2">
             {(["recurring", "once", "manual"] as const).map((st) => (
               <button key={st} type="button" onClick={() => setScheduleType(st)}
@@ -197,7 +197,7 @@ export function JobForm({
         </Section>
 
         {/* Environment + secrets (right after Schedule) */}
-        <Section title={c.sections.environment} icon={KeyRound}>
+        <Section title={c.sections.environment} icon={KeyRound} tone={SECTION_TONES.environment}>
           <div>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-sm font-medium text-muted-foreground">{c.env}</span>
@@ -230,7 +230,7 @@ export function JobForm({
         </Section>
 
         {/* Servers */}
-        <Section title={c.sections.servers} icon={ServerIcon}>
+        <Section title={c.sections.servers} icon={ServerIcon} tone={SECTION_TONES.servers}>
           {servers.length === 0 ? (
             <p className="text-sm text-muted-foreground/60">{c.noServers}</p>
           ) : (
@@ -243,7 +243,7 @@ export function JobForm({
         </Section>
 
         {/* Reliability */}
-        <Section title={c.sections.reliability} icon={ShieldCheck}>
+        <Section title={c.sections.reliability} icon={ShieldCheck} tone={SECTION_TONES.reliability}>
           <div className="grid grid-cols-3 gap-3">
             <Field label={c.timeout}><input value={timeoutSec} onChange={(e) => setTimeoutSec(e.target.value)} inputMode="numeric" placeholder="300" className={inputCls} /></Field>
             <Field label={c.retryAttempts}><input value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} inputMode="numeric" className={inputCls} /></Field>
@@ -252,7 +252,7 @@ export function JobForm({
         </Section>
 
         {/* Dependencies + triggers */}
-        <Section title={c.sections.triggers} icon={GitBranch}>
+        <Section title={c.sections.triggers} icon={GitBranch} tone={SECTION_TONES.triggers}>
           {otherJobs.length > 0 && (
             <Field label={c.dependencies}>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -286,7 +286,7 @@ export function JobForm({
         </Section>
 
         {/* Notifications */}
-        <Section title={c.sections.notifications} icon={Bell}>
+        <Section title={c.sections.notifications} icon={Bell} tone={SECTION_TONES.notifications}>
           {channels.length === 0 ? (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground/60">{c.noChannels}</p>
@@ -371,13 +371,36 @@ function SummaryRow({ label, value, mono }: { label: string; value: string; mono
   );
 }
 
-function Section({ title, icon: Icon, children }: { title: string; icon?: React.ElementType; children: React.ReactNode }) {
+/** Distinct colored tone per section — so the icons read like the app catalog /
+ *  server pages (colorful) instead of one flat monochrome primary tint. */
+const SECTION_TONES: Record<string, { bg: string; text: string }> = {
+  basics: { bg: "bg-sky-500/10", text: "text-sky-500" },
+  schedule: { bg: "bg-violet-500/10", text: "text-violet-500" },
+  environment: { bg: "bg-amber-500/10", text: "text-amber-500" },
+  servers: { bg: "bg-emerald-500/10", text: "text-emerald-500" },
+  reliability: { bg: "bg-blue-500/10", text: "text-blue-500" },
+  triggers: { bg: "bg-fuchsia-500/10", text: "text-fuchsia-500" },
+  notifications: { bg: "bg-rose-500/10", text: "text-rose-500" },
+};
+
+function Section({
+  title,
+  icon: Icon,
+  tone,
+  children,
+}: {
+  title: string;
+  icon?: React.ElementType;
+  tone?: { bg: string; text: string };
+  children: React.ReactNode;
+}) {
+  const t = tone ?? { bg: "bg-primary/10", text: "text-primary" };
   return (
     <section className="rounded-2xl border border-border/50 bg-card">
       <div className="flex items-center gap-3 border-b border-border/50 px-5 py-4">
         {Icon && (
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-            <Icon className="size-[18px] text-primary" />
+          <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${t.bg}`}>
+            <Icon className={`size-[18px] ${t.text}`} />
           </div>
         )}
         <h2 className="text-[15px] font-semibold text-foreground">{title}</h2>

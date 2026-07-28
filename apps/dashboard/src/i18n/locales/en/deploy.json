@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "Failed to save domains",
-    "toastTitle": "Domains"
+    "toastTitle": "Domains",
+    "routeFreeLabel": "Free subdomain",
+    "routeFreeDesc": "A free {domain} URL, ready instantly.",
+    "routeCustomLabel": "Custom domain",
+    "routeCustomDesc": "Point your own domain at this deployment.",
+    "routeNoneLabel": "None",
+    "routeNoneDesc": "No public URL — internal only. Reach it by port on the host."
   },
   "dns": {
     "title": "DNS Configuration",
@@ -119,6 +125,8 @@
     "addServer": "Add your own server",
     "continue": "Continue",
     "chooseServer": "Choose a server",
+    "thisServerBadge": "This Server",
+    "thisServerHost": "Current host — deploys run here",
     "searchPlaceholder": "Search servers…",
     "noServersMatch": "No servers match your search.",
     "requireCloudFeature": "Deploying to Openship Cloud",
@@ -184,6 +192,10 @@
     "build": "Build:",
     "deploy": "Deploy:",
     "static": "Static",
+    "runtimeStatic": "Static · edge-served",
+    "runtimeSandboxed": "Sandboxed",
+    "runtimeDirectWarning": "Not sandboxed",
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed.",
     "targetLocal": "This Machine",
     "targetServer": "My Server",
     "targetCloud": "Openship Cloud",
@@ -225,6 +237,21 @@
     "directDesc": "Runs on the host. Lowest overhead.",
     "caveatLowRam": "Limited RAM here — Sandboxed adds ~50–80 MB. Direct is lighter, Sandboxed is safer.",
     "caveat": "Direct means full host access if compromised. Sandboxed adds ~1–2% CPU for real isolation."
+  },
+  "serveMode": {
+    "heading": "How it's served",
+    "subtitle": "Serve the built files, or run it as a live server process.",
+    "staticLabel": "Serve as static files",
+    "staticDesc": "The build output is served directly by the edge. Nothing runs as a process.",
+    "serverLabel": "Run as a server process",
+    "serverDesc": "Start a long-running process (needs a start command and port).",
+    "staticNote": "Built in an isolated Docker sandbox, then served as static files by the edge.",
+    "startCommandLabel": "Start command",
+    "startCommandPlaceholder": "npm start",
+    "startCommandHint": "Leave empty to serve the build output as static files from the edge (nothing runs). Enter a command to run it as a live server process.",
+    "modeStatic": "Static",
+    "modeProcess": "Server process",
+    "portLabel": "Port"
   },
   "addServer": {
     "title": "Add your server",

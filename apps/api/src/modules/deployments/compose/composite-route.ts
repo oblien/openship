@@ -14,7 +14,7 @@
 import { compileVercelRouting, type RouteProxyLocation } from "@repo/adapters";
 import { isStaticService, serviceKind } from "../../../lib/deployable-service";
 import type { RouteRegister } from "../../../lib/route-apply.service";
-import type { DeploymentRewrite, RoutingConfig } from "@repo/core";
+import type { DeploymentRewrite, RoutingConfig, ProjectCompositeRoute } from "@repo/core";
 
 interface CompositeCandidate {
   id: string;
@@ -141,4 +141,37 @@ export function buildCompositeRegistration(input: {
       ...(compiled?.headerRules.length ? { headerRules: compiled.headerRules } : {}),
     },
   };
+}
+
+/**
+ * Migration path-fan-out equivalent of {@link buildCompositeRegistration}: given
+ * the project's persisted `compositeRoutes` + a live-upstream resolver, produce
+ * one `RouteRegister` per domain (root service at `/`, each extra path prefix
+ * proxied to its service). PURE — callers supply the resolver (deploy loop from
+ * `results[].ip`, routing API from `service_deployment.ip`). A route whose ROOT
+ * upstream can't resolve is skipped; individual unresolvable path locations are
+ * dropped (best-effort, never throws). Unlike `buildCompositeRegistration` this
+ * expresses ARBITRARY multi-service fan-out, not the 1-static + 1-server shape.
+ */
+export function buildDomainFanoutRegistrations(input: {
+  routes: ProjectCompositeRoute[] | null | undefined;
+  resolveTargetUrl: (serviceId: string) => string | null | undefined;
+}): RouteRegister[] {
+  const out: RouteRegister[] = [];
+  for (const route of input.routes ?? []) {
+    const rootUrl = input.resolveTargetUrl(route.rootServiceId);
+    if (!rootUrl) continue; // can't serve the domain at all without the root
+    const proxyLocations: RouteProxyLocation[] = [];
+    for (const loc of route.locations) {
+      const url = input.resolveTargetUrl(loc.serviceId);
+      if (url) proxyLocations.push({ pathPrefix: loc.pathPrefix, targetUrl: url });
+    }
+    out.push({
+      hostname: route.hostname,
+      isCustomDomain: route.isCustomDomain,
+      targetUrl: rootUrl,
+      ...(proxyLocations.length ? { proxyLocations } : {}),
+    });
+  }
+  return out;
 }

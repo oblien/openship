@@ -131,6 +131,17 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     setError(null);
     setIsLoading(true);
 
+    // HTTP request logs come from the edge analytics, which exist only for a
+    // routed domain. With no domain there's nothing to stream — surface the
+    // "add a domain" hint (renderEmpty) instead of a misleading connection
+    // error. Wait while the domain list is still loading; this effect re-runs
+    // when it resolves (domains is in the deps).
+    if (domainsData?.isLoading) return;
+    if (domains.length === 0) {
+      setIsLoading(false);
+      return;
+    }
+
     let cancelled = false;
     let es: EventSource | null = null;
 
@@ -248,7 +259,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
       cancelled = true;
       es?.close();
     };
-  }, [projectId, selectedDomain, setServerLogs, addServerLog, mergeServerLogs, normalizeLogEntry]);
+  }, [projectId, selectedDomain, domains, domainsData?.isLoading, setServerLogs, addServerLog, mergeServerLogs, normalizeLogEntry]);
 
   const logsStrings = useMemo(() => {
     return serverLogsData.logs.map((log: any) =>
@@ -290,6 +301,16 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
               <div className="w-10 h-4 rounded-md bg-muted" />
             </div>
           ))}
+        </div>
+      );
+    }
+
+    if (!domainsData?.isLoading && domains.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <Server className="w-10 h-10 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">{t.projectDetail.logs.server.noDomain}</p>
+          <p className="text-xs text-muted-foreground/70">{t.projectDetail.logs.server.noDomainHint}</p>
         </div>
       );
     }

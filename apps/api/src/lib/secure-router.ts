@@ -151,10 +151,16 @@ export function secureRouter<T extends Hono>(
     if (!isPublicSpec(mergedSpec) && !(mergedSpec as PermissionSpec).skipAuth) {
       chain.push(authMiddleware);
     }
-    const rateLimitPolicy = mergedSpec.rateLimit;
-    if (rateLimitPolicy) {
-      chain.push(rateLimiterFor(rateLimitPolicy));
-    }
+    // Every route is rate-limited (fixes #123): the explicit spec policy if set,
+    // else per-user `default-authed` for permission-tagged routes (authMiddleware
+    // ran just above → ctx is set, so the limiter keys per user), else per-IP
+    // `default-anon` for public / self-auth routes (no ctx). Placed AFTER auth and
+    // BEFORE the permission check. There is NO global `/api/*` limiter anymore — it
+    // ran upstream of auth, so it always fell back to default-anon AND double-
+    // charged routes that set their own policy.
+    const authed = !isPublicSpec(mergedSpec) && !(mergedSpec as PermissionSpec).skipAuth;
+    const rateLimitPolicy = mergedSpec.rateLimit ?? (authed ? "default-authed" : "default-anon");
+    chain.push(rateLimiterFor(rateLimitPolicy));
     chain.push(
       isPublicSpec(mergedSpec)
         ? publicRoute({ reason: mergedSpec.reason })

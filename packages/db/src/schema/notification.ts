@@ -158,11 +158,11 @@ export const notificationDefault = pgTable(
      *  via the org settings page. */
     defaultEnabled: boolean("default_enabled").notNull().default(true),
 
-    /** Default channel kind for the auto-subscription. "email" by default.
-     *  The dispatcher matches this to the user's first verified channel
-     *  of that kind; if they have none, the subscription is created with
-     *  channelId=null and surfaces in the dashboard as "needs channel". */
-    defaultChannelKind: text("default_channel_kind").notNull().default("email"),
+    /** Default channel KINDS a new member is auto-subscribed on — an array so
+     *  one event can fan out to several destinations (e.g. ["email","slack"]).
+     *  Each kind matches the member's first verified channel of that kind at
+     *  seed time. `["email"]` by default. */
+    defaultChannelKinds: jsonb("default_channel_kinds").$type<string[]>().notNull().default(["email"]),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

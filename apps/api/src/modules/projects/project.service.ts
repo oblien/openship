@@ -18,6 +18,7 @@ export {
   getProject,
   createProject,
   updateProject,
+  linkProjectRepo,
   getGitInfo,
   getProjectCommitStatus,
   setBranch,

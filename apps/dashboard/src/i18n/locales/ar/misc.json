@@ -158,7 +158,9 @@
     "close": "إغلاق {label}",
     "serverLimit": "حد الخادم: {max} جلسات متزامنة.",
     "newShell": "جلسة جديدة",
-    "noTerminals": "لا توجد جلسات مفتوحة."
+    "noTerminals": "لا توجد جلسات مفتوحة.",
+    "expand": "توسيع",
+    "collapse": "طي"
   },
   "buildPage": {
     "thisRepo": "هذا المستودع",

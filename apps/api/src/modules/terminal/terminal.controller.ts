@@ -51,6 +51,12 @@ import {
 import { getRequestContext } from "../../lib/request-context";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
 import { permission, checkPermission } from "../../lib/permission";
+import {
+  safeWsSend,
+  safeWsClose,
+  safeShellWrite,
+  safeShellClose,
+} from "../../lib/terminal-helpers";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -336,7 +342,7 @@ function buildHandlers(ctx: HandshakeCtx) {
       // resume branch can hand the same handler to attachWs().
       const dataPump = (chunk: Buffer) => {
         if (state.closed) return;
-        try { ws.send(chunk); } catch { /* peer gone */ }
+        safeWsSend(ws, chunk);
       };
 
       // ── RESUME path ──────────────────────────────────────────────
@@ -352,7 +358,7 @@ function buildHandlers(ctx: HandshakeCtx) {
             code: "resume_failed",
             message: "Session is no longer available",
           });
-          try { ws.close(1011, "resume_failed"); } catch { /* already closing */ }
+          safeWsClose(ws, 1011, "resume_failed");
           return;
         }
 
@@ -368,7 +374,7 @@ function buildHandlers(ctx: HandshakeCtx) {
         // no-ops. The new onClose subscriber below is the live one.)
         existing.shell.onClose((code: number | null, signal?: string) => {
           sendControl(ws, { type: "exit", code, signal });
-          try { ws.close(1000, "remote_exit"); } catch { /* already closing */ }
+          safeWsClose(ws, 1000, "remote_exit");
           void teardown(state, "remote_exit", code);
         });
 
@@ -403,7 +409,7 @@ function buildHandlers(ctx: HandshakeCtx) {
         sshManager.release(ctx.serverId);
         const code: ErrorCode = classifySshError(err);
         sendControl(ws, { type: "error", code, message: err?.message || "SSH failure" });
-        try { ws.close(1011, code); } catch { /* already closing */ }
+        safeWsClose(ws, 1011, code);
         return;
       }
 
@@ -436,7 +442,7 @@ function buildHandlers(ctx: HandshakeCtx) {
         shell,
         onTimeout: (_sid, reason) => {
           sendControl(ws, { type: "error", code: reason as ErrorCode, message: reason });
-          try { ws.close(1011, reason); } catch { /* already closing */ }
+          safeWsClose(ws, 1011, reason);
           // Timeout truly terminates — not parked.
           void teardown(state, reason, null, /* alreadyUnregistered */ true, /* forceClose */ true);
         },
@@ -453,7 +459,7 @@ function buildHandlers(ctx: HandshakeCtx) {
 
       shell.onClose((code: number | null, signal?: string) => {
         sendControl(ws, { type: "exit", code, signal });
-        try { ws.close(1000, "remote_exit"); } catch { /* already closing */ }
+        safeWsClose(ws, 1000, "remote_exit");
         void teardown(state, "remote_exit", code, false, /* forceClose */ true);
       });
 
@@ -510,7 +516,7 @@ function buildHandlers(ctx: HandshakeCtx) {
           // userTerminated to choose forceClose over park. We also
           // close immediately so the teardown is prompt.
           state.userTerminated = true;
-          try { ws.close(1000, "client_terminate"); } catch { /* already closing */ }
+          safeWsClose(ws, 1000, "client_terminate");
           return;
         }
       }
@@ -549,7 +555,7 @@ function buildHandlers(ctx: HandshakeCtx) {
 function writeStdin(state: ConnState, buf: Buffer): void {
   if (!state.shell) return;
   if (state.sessionId) touchSession(state.sessionId);
-  try { state.shell.stdin.write(buf); } catch { /* shell gone */ }
+  safeShellWrite(state.shell, buf);
 }
 
 // ─── Teardown ───────────────────────────────────────────────────────────────
@@ -592,7 +598,7 @@ async function teardown(
   }
 
   if (state.shell) {
-    try { state.shell.close(); } catch { /* best-effort */ }
+    safeShellClose(state.shell);
     state.shell = null;
   }
 
@@ -623,7 +629,7 @@ async function teardown(
 // ─── Wire helpers ───────────────────────────────────────────────────────────
 
 function sendControl(ws: WSLike, msg: ControlOut): void {
-  try { ws.send(JSON.stringify(msg)); } catch { /* peer gone */ }
+  safeWsSend(ws, JSON.stringify(msg));
 }
 
 /**
@@ -636,7 +642,7 @@ function openInitFailure(code: ErrorCode, message: string, closeCode: number) {
   return {
     onOpen(_evt: unknown, ws: WSLike) {
       sendControl(ws, { type: "error", code, message });
-      try { ws.close(closeCode, code); } catch { /* already closing */ }
+      safeWsClose(ws, closeCode, code);
     },
     onMessage() { /* drop */ },
     onClose() { /* nothing to clean */ },

@@ -73,6 +73,7 @@
     "serverOnPort": "Serveur sur le port {port}",
     "serverPortNotSet": "Port du serveur non défini",
     "staticFromEdge": "Statique depuis l'edge",
+    "staticPathHint": "Servi en tant que fichiers statiques depuis l'edge — aucun processus ne s'exécute.",
     "buildSettingsTitle": "Paramètres de compilation"
   },
   "projectSettings": {

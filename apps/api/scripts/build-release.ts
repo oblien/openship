@@ -336,11 +336,14 @@ start("api", "bun", ["run", "src/index.ts"], join(ROOT, "api"), {
 
 // Dashboard: Next standalone. The monorepo-rooted standalone lands at
 // dashboard/apps/dashboard/server.js and expects to run from that dir so its
-// relative .next/ + public/ + node_modules resolve.
+// relative .next/ + public/ + node_modules resolve. We launch the WS-capable
+// wrapper (standalone-server.mjs) instead of server.js so the server terminal's
+// /api/proxy/* WebSocket upgrades reach the API; it delegates everything else to
+// Next unchanged (a no-op when not in proxy mode).
 start(
   "dashboard",
   "node",
-  ["server.js"],
+  ["standalone-server.mjs"],
   join(ROOT, "dashboard", "apps", "dashboard"),
   {
     PORT: dashboardPort,
@@ -476,6 +479,13 @@ async function main(): Promise<void> {
     if (existsSync(dashboardPublic)) {
       await cp(dashboardPublic, innerPublic, { recursive: true });
     }
+    // WS-capable entry (server terminal): the supervisor runs this instead of
+    // server.js so `/api/proxy/*` WebSocket upgrades reach the internal API. A
+    // no-op when the browser talks to the API directly. See standalone-server.mjs.
+    await cp(
+      join(DASHBOARD_DIR, "standalone-server.mjs"),
+      join(target, "apps/dashboard/standalone-server.mjs"),
+    );
   });
 
   // 3. Copy api source + drizzle migrations. Drizzle migrations

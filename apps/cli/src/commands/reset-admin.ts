@@ -12,8 +12,9 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { intro, outro, password as passwordPrompt, isCancel, cancel, log } from "@clack/prompts";
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { OS_DIR } from "../lib/paths";
 
 import { ensureInternalToken } from "./up";
 
@@ -21,7 +22,7 @@ import { ensureInternalToken } from "./up";
  *  a preference). Read the remembered port so the reset targets the right one. */
 function resolvedApiPort(): number | undefined {
   try {
-    return JSON.parse(readFileSync(join(homedir(), ".openship", "ports.json"), "utf8")).api;
+    return JSON.parse(readFileSync(join(OS_DIR, "ports.json"), "utf8")).api;
   } catch {
     return undefined;
   }

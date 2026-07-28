@@ -8,6 +8,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { TerminalLogs } from "./logs/TerminalLogs";
 import { ServerLogs } from "./logs/ServerLogs";
 import { LogsActions } from "./logs/LogsActions";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { endpoints } from "@/lib/api/endpoints";
 import { sortServicesByPublicFirst } from "@/lib/api/services";
 
@@ -54,6 +55,12 @@ export const LogsSettings = () => {
   const servicesLoading = servicesData.isLoading;
   const servicesLoaded = !servicesData.isLoading;
   const hasServices = services.length > 0;
+  // A project has a standalone "project runtime" log source ONLY when it has no
+  // services. A services/compose project's runtime IS its services — there's no
+  // project-level container, so `projects/:id/logs` 404s for it. Treating
+  // `effectiveHasServer` as a project-runtime log target was the bug: it offered
+  // + defaulted "Project runtime" for services projects, which 404'd.
+  const hasProjectRuntime = effectiveHasServer && !hasServices;
   // Cloud deploys (including static apps) always have edge-access
   // logs available via the same /server-logs/* endpoints — those
   // endpoints route by `resolveProjectTrafficSource` server-side and
@@ -78,7 +85,7 @@ export const LogsSettings = () => {
   // Previously this was `hasMultipleServices` (services count > 1) which
   // missed the common case of "single app + 1 service" where the user
   // still needs to pick which one to look at.
-  const logTargetCount = (effectiveHasServer ? 1 : 0) + services.length;
+  const logTargetCount = (hasProjectRuntime ? 1 : 0) + services.length;
   const hasMultipleLogTargets = logTargetCount > 1;
 
   useEffect(() => {
@@ -145,16 +152,16 @@ export const LogsSettings = () => {
       if (hasMultipleLogTargets) {
         // Multi-target: default to the project runtime if it exists,
         // otherwise the first service.
-        return effectiveHasServer ? null : (services[0]?.id ?? null);
+        return hasProjectRuntime ? null : (services[0]?.id ?? null);
       }
 
-      return !effectiveHasServer && services.length === 1 ? services[0].id : null;
+      return !hasProjectRuntime && services.length === 1 ? services[0].id : null;
     });
-  }, [effectiveHasServer, hasMultipleLogTargets, hasProjectId, services, servicesLoading]);
+  }, [hasProjectRuntime, hasMultipleLogTargets, hasProjectId, services, servicesLoading]);
 
   const selectedService = services.find((service) => service.id === selectedServiceId) ?? null;
   const implicitSingleService =
-    !hasMultipleLogTargets && !effectiveHasServer ? (services[0] ?? null) : null;
+    !hasMultipleLogTargets && !hasProjectRuntime ? (services[0] ?? null) : null;
   const terminalService = hasMultipleLogTargets ? selectedService : implicitSingleService;
   const isServiceLogTarget = Boolean(terminalService);
   const terminalStreamTarget = !hasProjectId
@@ -309,31 +316,33 @@ export const LogsSettings = () => {
                   <div>
                     <p className="text-sm font-medium text-foreground">{t.projectSettings.logs.target}</p>
                     <p className="text-sm text-muted-foreground">
-                      {effectiveHasServer
+                      {hasProjectRuntime
                         ? t.projectSettings.logs.targetDescProject
                         : t.projectSettings.logs.targetDescService}
                     </p>
                   </div>
                   <div className="min-w-[220px]">
-                    <select
+                    <CustomSelect
                       value={selectedServiceId ?? ""}
-                      onChange={(event) => setSelectedServiceId(event.target.value || null)}
-                      disabled={servicesLoading}
-                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground outline-none"
-                    >
-                      {effectiveHasServer && <option value="">{t.projectSettings.logs.projectRuntime}</option>}
-                      {services.map((service) => (
-                        <option key={service.id} value={service.id}>
-                          {service.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(value) => setSelectedServiceId(value || null)}
+                      options={[
+                        ...(hasProjectRuntime
+                          ? [{ value: "", label: t.projectSettings.logs.projectRuntime, icon: <Server className="size-4" /> }]
+                          : []),
+                        ...services.map((service) => ({
+                          value: service.id,
+                          label: service.name,
+                          icon: <Server className="size-4" />,
+                        })),
+                      ]}
+                      placeholder={t.projectSettings.logs.selectService}
+                    />
                   </div>
                 </div>
               </div>
             )}
 
-            {hasMultipleLogTargets && !effectiveHasServer && !selectedService ? (
+            {hasMultipleLogTargets && !hasProjectRuntime && !selectedService ? (
               <div className="flex min-h-[420px] items-center justify-center rounded-3xl border border-border/50 bg-card text-sm text-muted-foreground">
                 {t.projectSettings.logs.selectService}
               </div>

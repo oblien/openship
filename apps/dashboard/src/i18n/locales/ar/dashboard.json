@@ -25,6 +25,7 @@
     "projectCountOne": "{count} مشروع",
     "projectCountOther": "{count} مشاريع",
     "viewAllProjects": "عرض كل المشاريع ({count}) ←",
+    "viewAllApps": "عرض كل التطبيقات ({count}) ←",
     "greetingName": "{greeting}، {name}",
     "importGit": "استيراد Git",
     "importGitDesc": "من مستودع",
@@ -46,7 +47,9 @@
       "hours": "منذ {n} ساعة",
       "days": "منذ {n} يوم",
       "months": "منذ {n} شهر"
-    }
+    },
+    "appsEmptyTitle": "لا توجد تطبيقات بعد",
+    "appsEmptyDesc": "بنقرة واحدة وباستضافة ذاتية كاملة — قواعد بيانات وأتمتة وتحليلات وخزائن كلمات مرور وغيرها، تعمل على سيرفراتك."
   },
   "nav": {
     "home": "الرئيسية",
@@ -59,13 +62,15 @@
     "servers": "الخوادم",
     "emails": "البريد الإلكتروني",
     "settings": "الإعدادات",
-    "billing": "الفوترة",
+    "billing": "الفوترة والاستخدام",
     "sections": {
       "main": "الرئيسية",
       "settings": "الإعدادات",
       "infrastructure": "البنية التحتية",
       "account": "الحساب"
-    }
+    },
+    "apps": "التطبيقات",
+    "jobs": "المهام"
   },
   "sidebar": {
     "expand": "توسيع الشريط الجانبي",
@@ -78,6 +83,40 @@
     "preferences": "التفضيلات"
   },
   "pages": {
+    "apps": {
+      "moreApps": "‏+{count} المزيد",
+      "title": "التطبيقات",
+      "description": "خدمات مُدارة بنقرة واحدة — ثبّت وشغّل Convex وWordPress والبريد وغيرها.",
+      "createButton": "تثبيت تطبيق",
+      "loading": "جارٍ تحميل التطبيقات…",
+      "countOne": "تم تثبيت تطبيق واحد ({count})",
+      "countOther": "تم تثبيت {count} تطبيقات",
+      "emptyTitle": "ثبّت أول تطبيق لك",
+      "emptyDescription": "شغّل Convex وn8n وGhost وغيرها — بنقرة واحدة وباستضافة ذاتية كاملة. اختر واحدًا للبدء.",
+      "popular": "التطبيقات الشائعة",
+      "alsoDeploy": "يمكنك أيضًا نشر",
+      "browseAll": "استعراض كل التطبيقات",
+      "catalogTitle": "تثبيت تطبيق",
+      "catalogDescription": "خدمات مُدارة بنقرة واحدة. اختر واحدة لتثبيتها كتطبيق.",
+      "catalogSearchPlaceholder": "ابحث في التطبيقات…",
+      "catalogNoResults": "لا توجد تطبيقات تطابق بحثك.",
+      "cancel": "إلغاء",
+      "install": "تثبيت",
+      "installing": "جارٍ التثبيت…",
+      "comingSoon": "قريبًا",
+      "configTitle": "تكوين {app}",
+      "nameLabel": "الاسم",
+      "categories": {
+        "all": "الكل",
+        "backend": "الخدمات الخلفية",
+        "database": "قواعد البيانات",
+        "cms": "أنظمة إدارة المحتوى",
+        "analytics": "التحليلات",
+        "automation": "الأتمتة",
+        "mail": "البريد",
+        "other": "أدوات"
+      }
+    },
     "projects": {
       "title": "المشاريع",
       "description": "انشر وأدر تطبيقاتك بسهولة",
@@ -107,6 +146,11 @@
         "rollbacks": "التراجع",
         "rollbacksDesc": "استرجاع بنقرة واحدة",
         "commandPalette": "أو اضغط {key} لفتح لوحة الأوامر"
+      },
+      "view": {
+        "label": "العرض",
+        "list": "قائمة",
+        "grid": "شبكة"
       }
     },
     "deployments": {
@@ -130,7 +174,7 @@
       "description": "إعدادات الحساب والفريق والمنصة."
     },
     "billing": {
-      "title": "الفوترة",
+      "title": "الفوترة والاستخدام",
       "description": "إدارة اشتراكك واستخدامك وطرق الدفع."
     }
   },
@@ -158,7 +202,7 @@
       "description": "النطاقات المخصصة"
     },
     "billing": {
-      "title": "الفوترة",
+      "title": "الفوترة والاستخدام",
       "description": "الاستخدام والخطط"
     }
   }

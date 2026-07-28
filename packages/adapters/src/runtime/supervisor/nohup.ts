@@ -240,8 +240,29 @@ export class NohupSupervisor implements ProcessSupervisor {
     const tailN = opts?.tail ?? 100;
 
     let stopped = false;
+    // An adopted deployment has no supervisor log at all, and an empty viewer
+    // gives the operator nothing to act on — say so once, up front.
+    if (!(await this.executor.exists(logPath).catch(() => true))) {
+      onLog({
+        timestamp: new Date().toISOString(),
+        message:
+          "No supervisor log for this deployment — the process is supervised elsewhere " +
+          "(container logs, or `openship logs` on the host). Streaming anyway in case it starts writing.\r\n",
+        level: "info",
+      });
+    }
+    // `--retry` + a pre-created file instead of a bare `tail -f`: a deployment
+    // this supervisor never started (an ADOPT deployment — the process is
+    // supervised by something else, e.g. `openship up`) has no log file here, and
+    // `tail` wrote its own diagnostic to the stream, so the log viewer showed
+    // "tail: cannot open '…/.logs/dep_x.log' for reading: No such file or
+    // directory / tail: no files remaining" instead of anything about the app.
+    // Touching the file makes the stream simply idle until something writes, and
+    // 2>/dev/null keeps tail's chatter out of the user-visible log either way.
     const promise = this.executor.streamExec(
-      `tail -n ${tailN} -f ${sq(logPath)}`,
+      `mkdir -p ${sq(`${this.workDir}/.logs`)} 2>/dev/null; ` +
+        `touch ${sq(logPath)} 2>/dev/null; ` +
+        `tail -n ${tailN} -F ${sq(logPath)} 2>/dev/null`,
       (entry) => {
         if (!stopped) onLog({ ...entry, message: entry.message + "\r\n" });
       },

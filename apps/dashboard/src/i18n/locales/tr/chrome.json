@@ -46,5 +46,36 @@
     "backToDashboard": "Panele geri dön",
     "viewDeployments": "Dağıtımları görüntüle",
     "copyId": "Kimliği kopyala"
+  },
+  "window": {
+    "back": "Geri",
+    "forward": "İleri",
+    "reload": "Yenile",
+    "minimize": "Küçült",
+    "maximize": "Büyült",
+    "restore": "Geri yükle",
+    "close": "Kapat",
+    "devTools": "Geliştirici araçları",
+    "navigation": "Gezinme"
+  },
+  "apiDown": {
+    "title": "API'ye ulaşılamıyor",
+    "description": "Panel çalışıyor ancak Openship API'sine ulaşamıyor — bu yüzden henüz gösterilecek bir şey yok. Dağıtımlarınız yine de çalışmaya devam eder.",
+    "hintStatus": "API'nin çalıştığını doğrulayın: ana makinede `openship status` komutunu çalıştırın.",
+    "hintStart": "Çalışmıyor mu? `openship up` ile başlatın.",
+    "hintRemote": "Uzak bir sunucu mu yönetiyorsunuz? URL'sini ve API portunun buradan erişilebilir olduğunu doğrulayın.",
+    "docs": "Kendi sunucunuzda barındırma dokümanları",
+    "retry": "Yeniden dene"
+  },
+  "error": {
+    "title": "Bu sayfada bir hata oluştu",
+    "description": "Bu ekrandaki bir şey görüntülenemedi. Yeniden denemek genellikle sorunu çözer — dağıttığınız hiçbir şey etkilenmedi.",
+    "tryAgain": "Yeniden dene",
+    "goToProjects": "Projelere git",
+    "refCode": "Ref"
+  },
+  "errorLinks": {
+    "docs": "Dokümantasyon",
+    "github": "Sorun bildir"
   }
 }

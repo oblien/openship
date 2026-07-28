@@ -1,6 +1,6 @@
 import { safeErrorMessage } from "@repo/core";
 import { cloudClient } from "./cloud/client";
-import { resolveServerHost } from "./server-target";
+import { resolveEdgeTargetHost } from "./edge-target";
 
 const NO_CLOUD_MEMBER =
   "Cannot sync edge proxy: no member of this organization has linked Openship Cloud";
@@ -20,11 +20,16 @@ export async function ensureManagedEdgeProxy(
 ): Promise<void> {
   if (!slug.trim()) return;
 
-  const target = await resolveServerHost(organizationId, opts?.serverId);
-  if (!target) {
-    throw new Error("Cannot configure edge proxy: target host could not be resolved");
+  // The edge target MUST be a public host Oblien can reach on :80 — NOT the deploy
+  // server's display `sshHost` (which is `127.0.0.1` for an isLocal box with no
+  // public URL, making Oblien proxy to its own loopback → 404). resolveEdgeTargetHost
+  // returns null (with a reason) rather than a dead loopback so we surface an
+  // actionable warning instead of silently wiring a broken route.
+  const { host, reason } = await resolveEdgeTargetHost(organizationId, opts?.serverId);
+  if (!host) {
+    throw new Error(`Cannot configure edge proxy: ${reason ?? "target host could not be resolved"}`);
   }
-  const result = await cloudClient({ organizationId }).edgeProxy.sync({ slug, target });
+  const result = await cloudClient({ organizationId }).edgeProxy.sync({ slug, target: host });
   if (!result) throw new Error(NO_CLOUD_MEMBER);
 }
 
@@ -59,6 +64,30 @@ export async function syncManagedEdgeRoutes(
           `The deployment is live; this only affects the free ${tgt.hostname} URL.\n`,
         "warn",
       );
+    }
+  }
+  return { failures };
+}
+
+/**
+ * Tear down every managed (*.opsh.io) edge route for a set of freed slugs,
+ * best-effort. The delete-side counterpart to `syncManagedEdgeRoutes`: dropping
+ * a free domain must release its slug→target route on Openship Cloud's edge, or
+ * the old URL keeps resolving and the slug stays taken. Never throws — a stale
+ * edge route is cosmetic and must never fail a domain edit; returns per-slug
+ * failures for the caller to log.
+ */
+export async function deregisterManagedEdgeRoutes(
+  slugs: string[],
+  opts: { organizationId: string },
+): Promise<{ failures: string[] }> {
+  const failures: string[] = [];
+  for (const slug of slugs) {
+    if (!slug.trim()) continue;
+    try {
+      await cloudClient({ organizationId: opts.organizationId }).edgeProxy.deregister(slug);
+    } catch (err) {
+      failures.push(`${slug} (${safeErrorMessage(err)})`);
     }
   }
   return { failures };

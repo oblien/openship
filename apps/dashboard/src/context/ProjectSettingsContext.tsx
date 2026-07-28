@@ -214,6 +214,10 @@ interface ProjectSettingsContextType {
   slug?: string[]; // Optional array for catch-all routes
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  /** One-shot intent from the sidebar's "Add domain" affordance: the Domains
+   *  tab opens its add-domain form on arrival, then clears it back to null. */
+  pendingDomainAction: "add" | null;
+  setPendingDomainAction: (action: "add" | null) => void;
   tabs: { id: string; label: string; icon: string }[];
 }
 
@@ -455,11 +459,21 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
 
   // Fetch git
   const isLoadingGitRef = useRef(false);
+  // True once git info has loaded for the CURRENT project. Re-opening the Source
+  // tab remounts GitSettings and re-calls refreshGit; without this that flashed
+  // the skeleton on every visit even though the context already had the data.
+  // Now a re-open refreshes in the BACKGROUND (data stays visible). Reset on id
+  // change so a different project still shows the skeleton once.
+  const gitLoadedRef = useRef(false);
+  useEffect(() => {
+    gitLoadedRef.current = false;
+  }, [id]);
   const refreshGit = useCallback(async () => {
     try {
       if (isLoadingGitRef.current) return;
       isLoadingGitRef.current = true;
-      setGitData((prev) => ({ ...prev, isLoading: true, error: null }));
+      // Only the first load shows the skeleton; later refreshes update in place.
+      setGitData((prev) => ({ ...prev, isLoading: !gitLoadedRef.current, error: null }));
 
       if (!id) {
         setGitData((prev) => ({ ...prev, isLoading: false }));
@@ -482,6 +496,10 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         setGitData({
           repository: {
             name: `${response.owner}/${response.repo}`,
+            // `full_name` is the GitHub-canonical field the Source tab's
+            // auto-deploy switch gates on; without it that control was hidden
+            // for every git project.
+            full_name: `${response.owner}/${response.repo}`,
             provider: "GitHub",
             url: `https://github.com/${response.owner}/${response.repo}`,
           },
@@ -538,6 +556,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       }));
     } finally {
       isLoadingGitRef.current = false;
+      // Fetch attempt completed for this project → subsequent refreshGit calls
+      // (tab re-open, post-action refresh) update in the background, no skeleton.
+      gitLoadedRef.current = true;
     }
   }, [id]);
 
@@ -830,22 +851,29 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       { id: "domains", label: tl.domains, icon: "server-59-1658435258.png" },
       { id: "deployments", label: tl.deployments, icon: "heart%20rate-118-1658433496.png" },
       { id: "source", label: tl.source, icon: "git%20branch-159-1658431404.png" },
+      { id: "webhooks", label: tl.webhooks, icon: "git%20branch-159-1658431404.png" },
       { id: "runtime", label: tl.runtime, icon: "setting-40-1662364403.png" },
       { id: "logs", label: tl.logs, icon: "terminal-184-1658431404.png" },
       { id: "backup", label: tl.backup, icon: "database.png" },
       { id: "advanced", label: tl.advanced, icon: "error%20triangle-81-1658234612.png" },
     ];
+    const isCloud = projectData.deployTarget === "cloud";
     return all.filter((tab) => {
       // A service-first project has no single-app runtime — config lives per
       // service under Services — so hide the Configuration (runtime) tab there.
       // A schema app keeps it, though: it's the home of the 2-mode config.
       if (isServicesProject && !isSchemaApp && tab.id === "runtime") return false;
+      // The Webhooks tab is shown on cloud too: the managed GitHub push→deploy
+      // entry, custom deploy hooks, and the delivery feed all apply on SaaS. Only
+      // the `job` action + the self-hosted webhook-domain picker are gated by mode
+      // inside the tab (job is refused server-side in CLOUD_MODE).
       return true;
     });
-  }, [t, isServicesProject, isSchemaApp]);
+  }, [t, isServicesProject, isSchemaApp, projectData.deployTarget]);
 
   const defaultTab = tabs[0].id;
   const [activeTab, setActiveTab] = useState(resolveTab(slug?.[0]) || defaultTab);
+  const [pendingDomainAction, setPendingDomainAction] = useState<"add" | null>(null);
 
   useEffect(() => {
     void refreshServices();
@@ -909,6 +937,8 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       slug,
       activeTab,
       setActiveTab,
+      pendingDomainAction,
+      setPendingDomainAction,
       tabs,
     }),
     [
@@ -944,6 +974,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       selectedDomain,
       slug,
       activeTab,
+      pendingDomainAction,
       tabs,
     ],
   );

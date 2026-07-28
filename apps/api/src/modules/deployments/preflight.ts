@@ -17,13 +17,21 @@ import {
   resolveEffectiveTarget,
   usesManagedRouting as usesManagedRoutingFor,
 } from "../../lib/deployment-runtime";
-import { resolveServiceHostnameLabel, normalizeCustomHostname } from "@repo/core";
+import {
+  resolveServiceHostnameLabel,
+  normalizeCustomHostname,
+  endpointsNeedCloud,
+  servicesNeedCloud,
+  cloudRequiredCode,
+  CLOUD_UNREACHABLE_CODE,
+} from "@repo/core";
 import { cloudClient } from "../../lib/cloud/client";
 import { isCloudConnectedForOrg } from "../../lib/cloud/session";
 import { runCloudPreflight, type CloudPreflightData } from "../../lib/cloud-preflight";
 import { isStaticService, type DeployableService } from "../../lib/deployable-service";
 import { serviceKind } from "./compose/project-services";
-import { resolveClonePlan } from "./clone-plan";
+import { relayConfigEligible, resolveClonePlan } from "./clone-plan";
+import { hasLocalGitIdentity } from "../github/github.local-auth";
 import { isPublicRepo } from "../github/github.http";
 import { getRoutingBaseDomain } from "../../lib/routing-domains";
 import { resolveServerHost } from "../../lib/server-target";
@@ -74,14 +82,16 @@ export interface PreflightCheck {
 }
 
 export const PREFLIGHT_ERROR_CODES = {
-  CLOUD_REQUIRED_TARGET: "CLOUD_REQUIRED_TARGET",
+  // Cloud-requirement codes are sourced from the shared @repo/core registry (the
+  // single source of truth) — identical strings, no wire-format change.
+  CLOUD_REQUIRED_TARGET: cloudRequiredCode("cloud-deploy-target"),
   /** Org IS cloud-connected (owner's session validates) but the SaaS
    *  preflight call returned nothing — transient (5xx / network). Distinct
    *  from CLOUD_REQUIRED_TARGET so we never tell a connected user to
    *  "connect your account" over a momentary blip. */
-  CLOUD_UNREACHABLE: "CLOUD_UNREACHABLE",
-  CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN: "CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN",
-  CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS: "CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS",
+  CLOUD_UNREACHABLE: CLOUD_UNREACHABLE_CODE,
+  CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN: cloudRequiredCode("managed-project-domain"),
+  CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS: cloudRequiredCode("managed-compose-domains"),
   GITHUB_APP_INSTALLATION_REQUIRED: "GITHUB_APP_INSTALLATION_REQUIRED",
   REMOTE_BUILD_TOKEN_LEAK_RISK: "REMOTE_BUILD_TOKEN_LEAK_RISK",
   /** gh CLI auth + remote-server build target. clone-auth.ts will throw
@@ -219,11 +229,30 @@ async function checkGitHubAppInstallation(
  * Until then, this preflight check surfaces the trade-off and recommends
  * switching to `buildStrategy=local` (which is already safe).
  */
+/**
+ * True when the desktop git-credential relay will clone this remote build: the
+ * operator hasn't opted out of forwarding (the default), it's a desktop host,
+ * and a local gh token exists for the relay's remote helper to vend. Mirrors
+ * clone-auth's `{ relay: true }` path + clone-plan's `relayEligible`, so
+ * preflight is never stricter than the pipeline. The gh token is fetched on
+ * demand over the reverse tunnel and NEVER shipped to the build host — so this
+ * does not relax the "don't ship the gh token off-host" rule.
+ */
+async function relayWillClone(
+  isDesktop: boolean,
+  forwardGitCredentials: boolean | undefined,
+): Promise<boolean> {
+  if (!relayConfigEligible({ isDesktop, forwardGitCredentials })) return false;
+  return hasLocalGitIdentity();
+}
+
 async function checkRemoteBuildTokenLeak(
   ctx: RequestContext | null,
   effectiveTarget: string,
   buildStrategy: "local" | "server" | undefined,
   serverId: string | undefined,
+  isDesktop: boolean,
+  forwardGitCredentials: boolean | undefined,
 ): Promise<PreflightCheck> {
   const baseCheck = {
     id: "remote-build-token",
@@ -245,9 +274,21 @@ async function checkRemoteBuildTokenLeak(
     return { ...baseCheck, status: "pass" };
   }
 
-  // gh CLI tokens are the user's personal long-lived PAT. clone-auth.ts
-  // hard-refuses these on remote builds (GITHUB_CLI_REMOTE_BUILD_REJECTED).
-  // Surface that here so the user fixes it BEFORE provisioning starts.
+  // The desktop credential-forward relay clones on the build host over a reverse
+  // SSH tunnel — the gh token is vended on demand and never shipped there, so
+  // when it's the active clone path there's no leak to gate. Same path the
+  // build pipeline takes (`clone-auth.ts` → `{ relay: true }`).
+  if (await relayWillClone(isDesktop, forwardGitCredentials)) {
+    return { ...baseCheck, status: "pass" };
+  }
+
+  // gh CLI tokens are the user's personal long-lived PAT. At deploy time the
+  // resolver simply REFUSES gh for "remote" and throws the generic
+  // GITHUB_REMOTE_TOKEN_REQUIRED (github.token.ts). This advisory check surfaces
+  // the specific gh-cli reason earlier — GITHUB_CLI_REMOTE_BUILD_REJECTED is
+  // emitted ONLY here, not by the resolver; the dashboard maps both to the
+  // credential modal. (Only reached when the relay isn't the clone path — see
+  // relayWillClone above.)
   if (mode === "cli") {
     return {
       ...baseCheck,
@@ -297,6 +338,8 @@ async function checkRemoteCloneToken(
   effectiveTarget: string,
   buildStrategy: "local" | "server" | undefined,
   serverId: string | undefined,
+  isDesktop: boolean,
+  forwardGitCredentials: boolean | undefined,
 ): Promise<PreflightCheck> {
   const baseCheck = {
     id: "remote-clone-token",
@@ -319,6 +362,12 @@ async function checkRemoteCloneToken(
     owner,
   }).catch(() => null);
   if (source) return { ...baseCheck, status: "pass" };
+
+  // Desktop relay: clones on the build host via the reverse tunnel (nothing
+  // shipped) — a valid remote-clone path canResolveTokenFor doesn't surface.
+  if (await relayWillClone(isDesktop, forwardGitCredentials)) {
+    return { ...baseCheck, status: "pass" };
+  }
 
   return {
     ...baseCheck,
@@ -356,7 +405,17 @@ async function checkCloneOnServerCredential(
     id: "clone-on-server",
     label: "Clone-on-server credential",
   };
-  if (platformTarget === "desktop") return { ...baseCheck, status: "pass" };
+  if (platformTarget === "desktop") {
+    // Desktop default: clone on the server via the forwarded git identity (used
+    // for the build only, never stored). Opting out clones here + transfers —
+    // either way this never blocks, so it's an informational pass.
+    return {
+      ...baseCheck,
+      status: "pass",
+      message:
+        "Will clone on the server using your forwarded git identity (used for this build only, never stored), or clone here and transfer if you opt out.",
+    };
+  }
   if (!ctx || !owner) return { ...baseCheck, status: "pass" };
 
   // A per-server GitHub credential clones directly on the server — satisfies
@@ -375,9 +434,12 @@ async function checkCloneOnServerCredential(
     ...baseCheck,
     status: "warn",
     message:
-      `"Clone on the server" is selected, but no GitHub credential is available to ship to the build host. ` +
-      `The deploy will fall back to cloning on the API host and transferring the context. ` +
-      `Install the Openship App on "${owner}" or add a per-project clone token to clone directly on the server.`,
+      `"Clone on the server" is selected, but Openship holds no GitHub credential for the build host. ` +
+      `The deploy will check whether the server already reaches this repo with its own git credentials ` +
+      `(a \`gh\` login, a credential helper, or its ssh key) and clone there if it does — otherwise it ` +
+      `falls back to cloning on the API host and transferring the context. To make the on-server clone ` +
+      `deterministic, connect the server under Servers → GitHub (a read-only per-repo deploy key is the ` +
+      `narrowest option), install the Openship App on "${owner}", or add a per-project clone token.`,
   };
 }
 
@@ -704,7 +766,7 @@ async function resolveCloudPreflight(
   // too (cloud IS doing the deploy). Single authority shared with the pipeline.
   const usesManagedRouting = usesManagedRoutingFor(plat.target, effectiveTarget);
   const hasManagedPublicEndpoints =
-    opts?.publicEndpoints?.some((endpoint) => endpoint.domainType !== "custom") ?? false;
+    endpointsNeedCloud(opts?.publicEndpoints);
   // The project-level free-domain slug is a routable web hostname only for a
   // single-app project. In services mode there is no project domain — each
   // service routes via its own endpoint (needsManagedComposeDomains), so an
@@ -715,8 +777,7 @@ async function resolveCloudPreflight(
     (!opts?.multiService && !!opts?.slug && !opts?.customDomain && usesManagedRouting) ||
     (usesManagedRouting && hasManagedPublicEndpoints);
   const needsManagedComposeDomains =
-    opts?.composeServices?.some((service) => service.exposed && service.domainType !== "custom") ??
-    false;
+    servicesNeedCloud(opts?.composeServices);
   const needsCloudPreflight =
     effectiveTarget === "cloud" || needsManagedProjectDomain || needsManagedComposeDomains;
   const requestInput = opts?.publicEndpoints?.length
@@ -1195,10 +1256,9 @@ export async function runPreflightChecks(
     !opts?.multiService &&
     !hasEndpointRouting && !!opts?.slug && !opts?.customDomain && usesManagedRouting;
   const hasManagedPublicEndpoints =
-    opts?.publicEndpoints?.some((endpoint) => endpoint.domainType !== "custom") ?? false;
+    endpointsNeedCloud(opts?.publicEndpoints);
   const hasManagedComposeDomains =
-    opts?.composeServices?.some((service) => service.exposed && service.domainType !== "custom") ??
-    false;
+    servicesNeedCloud(opts?.composeServices);
   const cloudRequirement =
     effectiveTarget === "cloud"
       ? "cloud-runtime"
@@ -1277,6 +1337,10 @@ export async function runPreflightChecks(
   const clonesOnRemote =
     !repoIsPublic &&
     runtimeMode === "bare" &&
+    // Static apps now BUILD in a Docker sandbox (see build-pipeline's static
+    // flip) which clones on the orchestrator — never a remote bare clone — so
+    // they never need a remote clone credential even if runtimeMode is "bare".
+    snapshot.hasServer &&
     effectiveTarget === "server" &&
     effectiveBuildStrategy !== "local";
 
@@ -1285,7 +1349,14 @@ export async function runPreflightChecks(
     // pass. For cli mode: hard FAIL (matches clone-auth's refusal to ship a gh
     // CLI token to a remote worker). For oauth/token: warn only.
     checks.push(
-      await checkRemoteBuildTokenLeak(githubCtx, effectiveTarget, effectiveBuildStrategy, snapshot.serverId),
+      await checkRemoteBuildTokenLeak(
+        githubCtx,
+        effectiveTarget,
+        effectiveBuildStrategy,
+        snapshot.serverId,
+        plat.target === "desktop",
+        snapshot.forwardGitCredentials,
+      ),
     );
 
     // Atomic remote-clone-token check — mirrors clone-auth.ts at deploy time so
@@ -1298,6 +1369,8 @@ export async function runPreflightChecks(
         effectiveTarget,
         effectiveBuildStrategy,
         snapshot.serverId,
+        plat.target === "desktop",
+        snapshot.forwardGitCredentials,
       ),
     );
   }

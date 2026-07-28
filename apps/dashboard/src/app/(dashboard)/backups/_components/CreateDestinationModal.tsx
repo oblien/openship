@@ -15,29 +15,27 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/button";
+import { ServerSelector } from "@/components/shared";
 import {
   backupDestinationsApi,
-  systemApi,
   type BackupDestinationSummary,
   type CreateDestinationInput,
   getApiErrorMessage,
 } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
-type Kind = Exclude<BackupDestinationSummary["kind"], "http_upload">;
+type Kind = Exclude<BackupDestinationSummary["kind"], "http_upload" | "local">;
 
 interface KindOption {
   kind: Kind;
   icon: LucideIcon;
-  /** Accent used to tint the icon tile — decorative, per destination family. */
-  color: string;
 }
 
 const KIND_OPTIONS: KindOption[] = [
-  { kind: "s3_compatible", icon: Cloud, color: "#f38020" },
-  { kind: "sftp", icon: Server, color: "#6366f1" },
-  { kind: "openship_server", icon: ServerCog, color: "#10b981" },
-  { kind: "local", icon: HardDrive, color: "#f59e0b" },
+  { kind: "s3_compatible", icon: Cloud },
+  { kind: "sftp", icon: Server },
+  { kind: "openship_server", icon: ServerCog },
 ];
 
 // ─── S3 providers ────────────────────────────────────────────────────────────
@@ -176,8 +174,6 @@ function kindTitle(kind: Kind, m: Record<string, string>): string {
       return m.kindSftp;
     case "openship_server":
       return m.kindServer;
-    case "local":
-      return m.kindLocal;
   }
 }
 
@@ -190,8 +186,6 @@ function kindMeta(kind: Kind, m: Record<string, string>): { description: string;
       return { description: m.sftpDesc, examples: m.sftpExamples };
     case "openship_server":
       return { description: m.serverDesc, examples: m.serverExamples };
-    case "local":
-      return { description: m.localDesc, examples: m.localExamples };
   }
 }
 
@@ -218,7 +212,11 @@ export function CreateDestinationModal({ isOpen, onClose, onSaved, destination }
   // configure step with the destination's (fixed) kind.
   useEffect(() => {
     if (!isOpen) return;
-    if (destination && destination.kind !== "http_upload") {
+    if (
+      destination &&
+      destination.kind !== "http_upload" &&
+      destination.kind !== "local"
+    ) {
       setSelectedKind(destination.kind);
       setStep("configure");
     } else {
@@ -313,14 +311,7 @@ function KindPicker({ onPick }: { onPick: (kind: Kind) => void }) {
             onClick={() => onPick(opt.kind)}
             className="group flex items-start gap-4 rounded-2xl border border-border/60 bg-card p-5 text-start transition-all hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5"
           >
-            <div
-              className="flex size-12 shrink-0 items-center justify-center rounded-xl border transition-transform group-hover:scale-105"
-              style={{
-                background: `${opt.color}14`,
-                borderColor: `${opt.color}33`,
-                color: opt.color,
-              }}
-            >
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground transition-transform group-hover:scale-105">
               <Icon className="size-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -400,10 +391,6 @@ function ConfigureForm({
   const [sftpPassword, setSftpPassword] = useState("");
   const [sftpPrivateKey, setSftpPrivateKey] = useState("");
   const [serverId, setServerId] = useState(destination?.serverId ?? "");
-  const [servers, setServers] = useState<
-    Array<{ id: string; name?: string | null; sshHost: string }>
-  >([]);
-  const [serversLoaded, setServersLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [test, setTest] = useState<{ status: "idle" | "testing" | "ok" | "fail"; reason?: string }>({
@@ -411,23 +398,6 @@ function ConfigureForm({
   });
 
   const activeProvider = providerById(provider);
-
-  useEffect(() => {
-    if (kind !== "openship_server") return;
-    void systemApi
-      .listServers()
-      .then((rows) => {
-        setServers(
-          rows as unknown as Array<{
-            id: string;
-            name?: string | null;
-            sshHost: string;
-          }>,
-        );
-      })
-      .catch(() => setServers([]))
-      .finally(() => setServersLoaded(true));
-  }, [kind]);
 
   // A changed field invalidates a prior test result.
   useEffect(() => {
@@ -468,8 +438,6 @@ function ConfigureForm({
     } else if (kind === "openship_server") {
       input.serverId = serverId;
       input.pathPrefix = pathPrefix.trim() || null;
-    } else if (kind === "local") {
-      input.endpoint = endpoint.trim();
     }
     return input;
   };
@@ -694,27 +662,11 @@ function ConfigureForm({
       {kind === "openship_server" && (
         <div className="grid grid-cols-1 gap-4">
           <Field label={m.fieldServer} hint={m.hintServer}>
-            <select
-              value={serverId}
-              onChange={(e) => setServerId(e.target.value)}
-              className={inputClass}
-            >
-              <option value="">{m.selectServer}</option>
-              {servers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name ?? s.sshHost} ({s.sshHost})
-                </option>
-              ))}
-            </select>
-            {serversLoaded && servers.length === 0 && (
-              <span className="block text-sm text-muted-foreground">
-                {m.noServersPre}
-                <a href="/servers" className="text-primary hover:underline">
-                  {m.noServersLink}
-                </a>
-                {m.noServersPost}
-              </span>
-            )}
+            <ServerSelector
+              value={serverId || null}
+              onSelect={(s) => setServerId(s?.id ?? "")}
+              compact
+            />
           </Field>
           <Field label={m.fieldRemotePath} hint={m.hintRemotePath}>
             <input
@@ -725,17 +677,6 @@ function ConfigureForm({
             />
           </Field>
         </div>
-      )}
-
-      {kind === "local" && (
-        <Field label={m.fieldAbsolutePath} hint={m.hintAbsolutePath}>
-          <input
-            value={endpoint}
-            onChange={(e) => setEndpoint(e.target.value)}
-            placeholder="/var/backups/openship"
-            className={`${inputClass} font-mono`}
-          />
-        </Field>
       )}
 
       {/* Test-connection result — the end-to-end probe (writes + deletes a
@@ -764,34 +705,26 @@ function ConfigureForm({
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-6 border-t border-border/40 -mx-6 px-6 -mb-6 pb-6 sm:-mx-8 sm:px-8 sm:-mb-8 sm:pb-8 mt-2">
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={runTest}
           disabled={busy || test.status === "testing" || !name.trim()}
-          className="h-11 inline-flex items-center gap-2 rounded-xl border border-border/60 px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {test.status === "testing" ? (
-            <Loader2 className="size-4 animate-spin" />
+            <Loader2 className="animate-spin" />
           ) : (
-            <CheckCircle2 className="size-4" />
+            <CheckCircle2 />
           )}
           {m.testConnection}
-        </button>
+        </Button>
         <div className="flex items-center gap-3 ms-auto">
-          <button
-            onClick={onCancel}
-            disabled={busy}
-            className="h-11 inline-flex items-center justify-center rounded-xl px-5 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-50"
-          >
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>
             {m.cancel}
-          </button>
-          <button
-            onClick={submit}
-            disabled={busy || !name.trim()}
-            className="h-11 inline-flex items-center gap-2 px-6 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none"
-          >
+          </Button>
+          <Button onClick={submit} disabled={busy || !name.trim()}>
             {busy ? m.saving : editing ? m.saveChanges : m.saveDestination}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

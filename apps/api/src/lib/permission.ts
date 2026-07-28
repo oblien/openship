@@ -399,6 +399,56 @@ export async function checkPermission(
 }
 
 /**
+ * Resolve the org an authz check for `input` runs against: the request-scope org
+ * for list scope / org-singletons (resourceId "*"), else the resource's OWN org
+ * (with the cloud-project fallback — a project with no local row may be a CLOUD
+ * project canonical on the SaaS). Shared by `assert` + `checkPermissionOnResource`
+ * so use-time and mint-time org resolution can never drift.
+ */
+async function resolveInputOrg(
+  ctx: RequestContext,
+  input: PermissionInput,
+): Promise<string | null> {
+  if (input.scope === "list" || input.resourceId === "*") {
+    return resolveRequestScopeOrg(ctx.hono);
+  }
+  const resource = await resolveResourceOrg(input.resourceType, input.resourceId);
+  return resource?.orgId ?? (await resolveCloudFallbackOrg(ctx.hono, input.resourceType));
+}
+
+/**
+ * A scoped PAT is evaluated as a `restricted` principal whose grants come from
+ * the token, so even an owner's scoped token can't exceed the token's grants.
+ * Shared by `assert` + `checkPermissionOnResource`.
+ */
+function permissionOpts(ctx: RequestContext) {
+  return ctx.tokenScope
+    ? { roleOverride: "restricted" as const, grants: grantSourceFor(ctx) }
+    : undefined;
+}
+
+/**
+ * Like `assert` but returns a boolean and has NO request-scope side effects —
+ * it resolves the resource's OWN org (as `assert` does) and checks the caller's
+ * access against THAT org, rather than trusting the caller's active org.
+ *
+ * Token-mint validation MUST use this, not `checkPermission(userId,
+ * ctx.organizationId, …)`: the latter resolves the minter's role in their OWN
+ * org and (for a non-restricted role) returns `roleAllowsResourceType` WITHOUT
+ * verifying the granted resource belongs to that org — so a grant naming another
+ * org's resource id would be accepted at mint (privilege escalation, SaaS audit).
+ * This makes mint-time acceptance consistent with `assert`'s use-time check.
+ */
+export async function checkPermissionOnResource(
+  ctx: RequestContext,
+  input: PermissionInput,
+): Promise<boolean> {
+  const organizationId = await resolveInputOrg(ctx, input);
+  if (!organizationId) return false;
+  return checkPermission(ctx.userId, organizationId, input, permissionOpts(ctx));
+}
+
+/**
  * Assert version — throws 404 on deny so out-of-permission resources
  * don't leak existence via 403s. The IDOR-safe pattern.
  *
@@ -422,33 +472,18 @@ export async function checkPermission(
  * `getRequestContext(c)`.
  */
 export async function assert(ctx: RequestContext, input: PermissionInput): Promise<void> {
-  const userId = ctx.userId;
   const c = ctx.hono;
 
-  let organizationId: string | null;
-
-  if (input.scope === "list" || input.resourceId === "*") {
-    // List scope, or org-singleton (billing/audit) — org from request scope.
-    organizationId = resolveRequestScopeOrg(c);
-  } else {
-    const resource = await resolveResourceOrg(input.resourceType, input.resourceId);
-    // No local row for a project-rooted resource may mean it's a CLOUD project
-    // (canonical on the SaaS, no local row). Fall back to the request-scope org
-    // when it has a cloud link, then gate by role below; the proxy and the SaaS
-    // enforce actual existence/ownership (a bogus id still 404s — no leak).
-    organizationId = resource?.orgId ?? (await resolveCloudFallbackOrg(c, input.resourceType));
-  }
-
+  // Resolve the resource's OWN org (list/singleton → request scope) + gate on
+  // role. Shared with checkPermissionOnResource so mint-time acceptance and
+  // use-time enforcement can't drift. On deny we throw NotFoundError (not 403)
+  // so out-of-permission resources don't leak existence — the IDOR-safe pattern.
+  const organizationId = await resolveInputOrg(ctx, input);
   if (!organizationId) {
     throw new NotFoundError(input.resourceType, input.resourceId);
   }
 
-  // A scoped PAT is evaluated as a restricted principal whose grants come from
-  // the token — so even an owner's scoped token can't exceed the token's grants.
-  const opts = ctx.tokenScope
-    ? { roleOverride: "restricted" as const, grants: grantSourceFor(ctx) }
-    : undefined;
-  const allowed = await checkPermission(userId, organizationId, input, opts);
+  const allowed = await checkPermission(ctx.userId, organizationId, input, permissionOpts(ctx));
   if (!allowed) {
     throw new NotFoundError(input.resourceType, input.resourceId);
   }

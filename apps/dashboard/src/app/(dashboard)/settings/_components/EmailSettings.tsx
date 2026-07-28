@@ -8,7 +8,7 @@ import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n } from "@/components/i18n-provider";
 import { MAIL_PROVIDERS, mailProvider, matchSmtpProvider, type MailProviderId } from "@/lib/mail-providers";
-import { AppLogo } from "@/components/AppLogo";
+import { PillSwitcher } from "@/components/ui/PillSwitcher";
 
 /**
  * Instance SMTP transport — the operator's own mail server, used for ALL
@@ -192,28 +192,16 @@ export function EmailSettings() {
 
           <div className="mb-4">
             <label className={LABEL}>{e.providerLabel}</label>
-            <div className="flex flex-wrap gap-1.5">
-              {MAIL_PROVIDERS.map((p) => {
-                const on = provider === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => applyProvider(p.id)}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors ${
-                      on
-                        ? "border-primary/40 bg-primary/[0.06] text-foreground"
-                        : "border-border/60 text-muted-foreground hover:bg-muted/40"
-                    }`}
-                  >
-                    {(p.logo || p.logoSrc) && (
-                      <AppLogo slug={p.logo} src={p.logoSrc} className="size-4" />
-                    )}
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
+            <PillSwitcher
+              options={MAIL_PROVIDERS.map((p) => ({
+                value: p.id,
+                label: p.label,
+                logo: p.logo,
+                logoSrc: p.logoSrc,
+              }))}
+              value={provider}
+              onChange={applyProvider}
+            />
             {mailProvider(provider).hint && (
               <p className="mt-2 text-xs text-muted-foreground/80">{mailProvider(provider).hint}</p>
             )}

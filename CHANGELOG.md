@@ -3,6 +3,54 @@
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 
+## 0.4.0
+
+A security fix for the edge, migrations that behave like a native repo project,
+and a batch of routing/reliability fixes.
+
+### Security
+- **Unrouted HTTPS hosts are rejected, not cross-served** — the edge now owns a
+  `443` default server that refuses any hostname it doesn't route (one you
+  removed, never added, or merely pointed at the box's IP). Before this, such a
+  request fell through to the first-loaded vhost and was served **another app's
+  certificate and backend**. Applies automatically on the next deploy, on both the
+  bare and containerized edge. Critical — see the in-app advisory.
+
+### Migrations
+- **A migrated project is now a native repo project** — a migrated compose stack
+  redeploys like any repo project: it reclones and **rebuilds `build:` services**
+  and pulls `image:` ones, instead of failing on a frozen build tag (`404 no such
+  image`). The running image is reused only **once**, at cutover.
+- **The whole compose is the deployment plan** — the migrate screen lists every
+  repo compose service, not just running containers, so a service with no
+  container (e.g. `redis`, or an app that wasn't up) is built/pulled and routed
+  like the rest, with its env and route editable on the card.
+- **Reused databases stay reachable** — a reused container is joined to the new
+  project's network under its service-name alias, so a freshly-built app resolves
+  `postgres:5432` by name, exactly like a native deploy.
+- **A migrated service reports the container it really runs as** — service state
+  is read live from the host and matched by identity (label → `openship-<slug>-<svc>`
+  name → tracked id → compose labels), so a container Openship adopted **in place**
+  (its docker labels still name the previous project) no longer shows "Stopped"
+  while it serves traffic. Each run's log now ends with the container, state and
+  match for every service.
+
+### Fixes
+- **Service state is never guessed from the database** — Start/Stop/Restart, logs,
+  terminal, backup/restore and volume sizes resolve the container against the host
+  first, so a redeploy that replaced it no longer leaves them failing with
+  `no such container` — or, on Start, launching a **duplicate** container beside
+  the running one. A crash-looping container now reads **Restarting** instead of a
+  green "Running", and an unreachable host reads **Unknown** instead of echoing the
+  last deploy status.
+- **Removing a route never wrongly demands Openship Cloud** — the free-domain gate
+  classifies by hostname, so removing a custom-domain route (or any route) is no
+  longer blocked by an unrelated free subdomain still in the set.
+- **Deleting a service can't hang** — runtime teardown is time-bounded, so a slow
+  or unreachable server no longer strands the delete before the record is removed.
+
+<!-- editors: highlights only, trim/adjust before tagging — not rendered on the website -->
+
 ## 0.2.4
 
 Native Apple Silicon builds, drop-in compatibility with other platforms' deploy
@@ -50,7 +98,7 @@ config, and a batch of self-hosting and reliability fixes.
 - Bumped the Laravel deploy **test fixture** off a vulnerable `laravel/framework`
   (CRLF email advisory) — a fixture only, never a shipped dependency.
 
-> Highlights, not exhaustive — trim/adjust before tagging.
+<!-- editors: highlights only, trim/adjust before tagging — not rendered on the website -->
 
 ## 0.2.2
 
@@ -161,4 +209,4 @@ routing, servers, jobs, and the build toolchain.
   checks, Arabic (RTL) localization, marketing roadmap page, and desktop window
   polish (macOS traffic-light inset).
 
-> The list above is the highlights — trim/adjust before tagging.
+<!-- editors: highlights only, trim/adjust before tagging — not rendered on the website -->

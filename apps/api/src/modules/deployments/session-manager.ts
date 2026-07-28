@@ -10,7 +10,8 @@
 
 import { SYSTEM } from "@repo/core";
 import { TtlCache } from "../../lib/cache";
-import type { LogEntry } from "@repo/adapters";
+import type { LogEntry, PromptPayload } from "@repo/adapters";
+import { PromptRegistry } from "../../lib/prompt-gateway";
 import type { PortCheckResult } from "../../lib/deployment-runtime";
 import { STEP_INDEX, STEP_PROGRESS, progressForStep } from "./build-steps";
 
@@ -47,15 +48,10 @@ export interface BuildSessionState {
 
 export type SseWriter = (event: string, data: string) => boolean;
 
-/** A user-decision prompt (edge takeover, port conflict, …). Mirrors the SSE
- *  "prompt" payload the dashboard renders as a modal. */
-export interface PromptPayload {
-  promptId: string;
-  title: string;
-  message: string;
-  actions: Array<{ id: string; label: string; variant?: string }>;
-  details?: Record<string, unknown>;
-}
+// The prompt shape is the ONE shared PromptPayload from @repo/adapters (used by
+// the deploy pipeline, server-setup, CLI, and dashboard modal). Re-exported here
+// so existing importers of session-manager keep working.
+export type { PromptPayload };
 
 
 /** Convert a LogEntry into the JSON payload the frontend expects. The event id
@@ -372,20 +368,10 @@ export function removeSession(sessionId: string): void {
   rejectPendingPrompt(sessionId, "Session removed");
 }
 
-/**
- * Pending prompt - the pipeline blocks on `promise` while the user
- * sees the prompt in the dashboard. Resolved/rejected via respondToPrompt.
- */
-interface PendingPrompt {
-  resolve: (action: string) => void;
-  reject: (reason: Error) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-}
-
-const pendingPrompts = new Map<string, PendingPrompt>();
-
-/** Default timeout for prompts - if the user doesn't respond, the pipeline aborts. */
-const PROMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+// The block-on-a-promise + timeout mechanic lives once in PromptRegistry; this
+// manager keeps only the session-object hold (currentPrompt, for replay) + the
+// SSE broadcast.
+const promptRegistry = new PromptRegistry();
 
 /**
  * Broadcast a prompt SSE event and block until the user responds.
@@ -408,15 +394,8 @@ export async function promptUser(
     writer("prompt", payload);
   }
 
-  // Create a promise the pipeline will await
-  return new Promise<string>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      pendingPrompts.delete(sessionId);
-      if (session.currentPrompt?.promptId === prompt.promptId) session.currentPrompt = undefined;
-      reject(new Error("Prompt timed out - no response from user"));
-    }, PROMPT_TIMEOUT_MS);
-
-    pendingPrompts.set(sessionId, { resolve, reject, timeoutId });
+  return promptRegistry.wait(sessionId, () => {
+    if (session.currentPrompt?.promptId === prompt.promptId) session.currentPrompt = undefined;
   });
 }
 
@@ -425,25 +404,18 @@ export async function promptUser(
  * Called from the API route handler.
  */
 export function respondToPrompt(sessionId: string, action: string): boolean {
-  const pending = pendingPrompts.get(sessionId);
-  if (!pending) return false;
-
-  clearTimeout(pending.timeoutId);
-  pendingPrompts.delete(sessionId);
-  const session = sessions.get(sessionId);
-  if (session) session.currentPrompt = undefined;
-  pending.resolve(action);
-  return true;
+  const ok = promptRegistry.respond(sessionId, action);
+  if (ok) {
+    const session = sessions.get(sessionId);
+    if (session) session.currentPrompt = undefined;
+  }
+  return ok;
 }
 
 /** Reject a pending prompt (cleanup helper). */
 function rejectPendingPrompt(sessionId: string, reason: string): void {
-  const pending = pendingPrompts.get(sessionId);
-  if (!pending) return;
-
-  clearTimeout(pending.timeoutId);
-  pendingPrompts.delete(sessionId);
+  if (!promptRegistry.has(sessionId)) return;
   const session = sessions.get(sessionId);
   if (session) session.currentPrompt = undefined;
-  pending.reject(new Error(reason));
+  promptRegistry.reject(sessionId, reason);
 }

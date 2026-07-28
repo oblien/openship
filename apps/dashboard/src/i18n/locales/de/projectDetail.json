@@ -59,7 +59,9 @@
       "waiting": "Warten auf eingehende Anfragen…",
       "streamError": "Stream-Fehler",
       "connectionLost": "Verbindung zum Log-Stream verloren",
-      "connectFailed": "Verbindung zum Log-Stream fehlgeschlagen"
+      "connectFailed": "Verbindung zum Log-Stream fehlgeschlagen",
+      "noDomain": "Füge eine Domain hinzu, um Request-Logs zu sehen",
+      "noDomainHint": "HTTP-Request-Logs werden pro Domain erfasst – füge diesem Projekt zuerst eine Domain hinzu."
     },
     "terminal": {
       "fallbackName": "Terminal",
@@ -146,7 +148,9 @@
         "stopped": "Gestoppt",
         "disabled": "Deaktiviert",
         "failed": "Fehlgeschlagen",
-        "starting": "Wird gestartet"
+        "starting": "Wird gestartet",
+        "restarting": "Startet neu",
+        "unknown": "Unbekannt"
       },
       "network": "Netzwerk",
       "configuration": "Konfiguration",
@@ -203,7 +207,8 @@
         "serviceDeleted": "Dienst gelöscht",
         "deleteFailed": "Dienst konnte nicht gelöscht werden",
         "backupRunFailed": "Backup-Ausführung fehlgeschlagen"
-      }
+      },
+      "duplicateContainers": "Ein weiterer Container passt ebenfalls zu diesem Service: {names}"
     },
     "settingsForm": {
       "name": "Name",

@@ -499,17 +499,27 @@ dataTransferCommand
           rowsRestored: number;
           secretsRehydrated: number;
           secretsSkipped: boolean;
+          localPathProjects?: Array<{ slug: string; localPath: string }>;
         }>("/system/data-transfer/import", {
           method: "POST",
           body: JSON.stringify({ file, passphrase: opts.passphrase, mode }),
         });
         spin?.succeed("Import complete.");
-        report(res, () =>
+        report(res, () => {
           ok(
             `\n  Imported ${res.rowsRestored} rows (${res.mode}). ` +
               `${res.secretsRehydrated} secrets rehydrated${res.secretsSkipped ? ", secrets skipped" : ""}.\n`,
-          ),
-        );
+          );
+          const lp = res.localPathProjects ?? [];
+          if (lp.length > 0) {
+            err(
+              `\n  ⚠  ${lp.length} project(s) deploy from a local folder on the SOURCE machine — that path\n` +
+                `     won't exist here. Re-point localPath (or re-deploy from a folder on this machine):\n` +
+                lp.map((p) => `       • ${p.slug}  (${p.localPath})`).join("\n") +
+                "\n",
+            );
+          }
+        });
       } catch (e) {
         spin?.fail("Import failed.");
         throw e;

@@ -7,10 +7,11 @@
  */
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const CACHE_DIR = join(homedir(), ".openship", "cache");
+import { OS_DIR } from "./paths";
+
+export const CACHE_DIR = join(OS_DIR, "cache");
 export const RELEASES_DIR = join(CACHE_DIR, "releases");
 
 export function releaseDir(tag: string): string {

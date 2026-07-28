@@ -59,7 +59,9 @@
       "waiting": "Esperando solicitudes entrantes…",
       "streamError": "Error de transmisión",
       "connectionLost": "Se perdió la conexión con el flujo de registros",
-      "connectFailed": "No se pudo conectar con el flujo de registros"
+      "connectFailed": "No se pudo conectar con el flujo de registros",
+      "noDomain": "Añade un dominio para ver los registros de solicitudes",
+      "noDomainHint": "Los registros de solicitudes HTTP se recopilan por dominio: añade primero un dominio a este proyecto."
     },
     "terminal": {
       "fallbackName": "Terminal",
@@ -146,7 +148,9 @@
         "stopped": "Detenido",
         "disabled": "Deshabilitado",
         "failed": "Fallido",
-        "starting": "Iniciando"
+        "starting": "Iniciando",
+        "restarting": "Reiniciando",
+        "unknown": "Desconocido"
       },
       "network": "Red",
       "configuration": "Configuración",
@@ -203,7 +207,8 @@
         "serviceDeleted": "Servicio eliminado",
         "deleteFailed": "No se pudo eliminar el servicio",
         "backupRunFailed": "La ejecución de la copia de seguridad falló"
-      }
+      },
+      "duplicateContainers": "Otro contenedor también coincide con este servicio: {names}"
     },
     "settingsForm": {
       "name": "Nombre",

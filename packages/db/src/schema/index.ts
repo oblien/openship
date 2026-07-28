@@ -12,11 +12,19 @@ export { projectGroup, project, envVar } from "./project";
 export { deployment, buildSession } from "./deployment";
 export { domain } from "./domain";
 export { routeRule } from "./route-rule";
+export { webhookSource } from "./webhook-source";
+export {
+  incomingWebhook,
+  type IncomingWebhookActionType,
+  type IncomingWebhookActionConfig,
+  type IncomingWebhookAuthMode,
+} from "./incoming-webhook";
 export { systemNotice } from "./system-notice";
 export { updateStatus } from "./update-status";
 export { serverModuleStatus } from "./server-module-status";
 export { cloudWebhookBinding } from "./cloud-webhook-binding";
-export { githubWebhookEvent } from "./github-webhook-event";
+export { projectConnection } from "./project-connection";
+export { webhookDelivery } from "./webhook-delivery";
 export { service, serviceDeployment } from "./service";
 export { deploymentCheckRun } from "./deployment-check-run";
 export { userSettings, instanceSettings } from "./settings";
@@ -54,3 +62,4 @@ export {
   billingAnniversaryGrant,
   billingUsageSnapshot,
 } from "./billing";
+export { customAppTemplate } from "./custom-app-template";

@@ -10,6 +10,7 @@
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./settings.controller";
+import { orgDeliveries } from "../incoming-webhooks/incoming.controller";
 
 const r = secureRouter(new Hono(), {
   module: "settings",
@@ -31,6 +32,9 @@ r.put("/", { tag: "settings:write" }, ctrl.upsert);
 /** PATCH /build-mode - update only build mode preference */
 r.patch("/build-mode", { tag: "settings:write", mcp: { description: "Set the default build mode (server / local)." } }, ctrl.updateBuildMode);
 
+/** PATCH /route-strategy - update only the edge→app route strategy default */
+r.patch("/route-strategy", { tag: "settings:write", mcp: { description: "Set the default edge→app route strategy (auto / loopback-port / container-ip)." } }, ctrl.updateRouteStrategy);
+
 /** PATCH /deploy-defaults - set/clear the default deploy target + server */
 r.patch("/deploy-defaults", { tag: "settings:write", mcp: { description: "Set/clear the default deploy target (local/server/cloud) and server." } }, ctrl.updateDeployDefaults);
 
@@ -40,6 +44,12 @@ r.patch("/clone-credentials", { tag: "settings:write" }, ctrl.updateCloneCredent
 /** PATCH /clone-strategy-preference - save the first-time deploy nudge choice */
 r.patch("/clone-strategy-preference", { tag: "settings:write", mcp: { description: "Set the default clone strategy (api-host / server)." } }, ctrl.updateCloneStrategyPreference);
 r.patch("/transfer", { tag: "settings:write", mcp: { description: "Set the default volume-transfer mode (auto/stream/direct/rsync) and compression (auto/zstd/gzip/none) for migrations." } }, ctrl.updateTransferPrefs);
+
+/** PATCH /forward-git - flip the generic forward-git-identity-to-remote-server preference */
+r.patch("/forward-git", { tag: "settings:write", mcp: { description: "Enable/disable forwarding your local git identity (gh CLI) to remote build servers during a server clone." } }, ctrl.updateForwardGitToServer);
+
+/** GET /webhook-deliveries - org-wide webhook delivery feed (incl forwarded/unmatched GitHub pushes) */
+r.get("/webhook-deliveries", { tag: "settings:read", mcp: { description: "List the org's webhook delivery feed, including pushes forwarded to Cloud or from unmanaged repos (paginated)." } }, orgDeliveries);
 
 export const settingsRoutes = r.hono;
 

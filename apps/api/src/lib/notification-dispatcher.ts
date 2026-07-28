@@ -30,7 +30,8 @@
  */
 
 import { repos } from "@repo/db";
-import { categoryForEventType } from "./notification-categories";
+import type { ChannelKind } from "@repo/db";
+import { categoryForEventType, findCategory } from "./notification-categories";
 import { fireJobTriggers } from "../modules/jobs/job-events";
 
 export interface NotificationEmitInput {
@@ -52,39 +53,90 @@ async function dispatch(input: NotificationEmitInput): Promise<void> {
   const category = categoryForEventType(input.eventType);
   if (!category) return; // not a notifiable event — drop silently
 
+  const org = input.organizationId;
+  // Dedupe across both delivery tiers, keyed by (user, channel).
+  const delivered = new Set<string>();
+
+  const enqueue = async (
+    userId: string,
+    channel: { id: string; kind: string },
+  ): Promise<void> => {
+    const key = `${userId}:${channel.id}`;
+    if (delivered.has(key)) return;
+    delivered.add(key);
+    await repos.notificationDelivery.create({
+      userId,
+      organizationId: org,
+      auditEventId: input.auditEventId ?? null,
+      category,
+      channelId: channel.id,
+      channelKind: channel.kind,
+      status: "queued",
+      attempts: 0,
+      payload: {
+        eventType: input.eventType,
+        resourceType: input.resourceType ?? null,
+        resourceId: input.resourceId ?? null,
+        ...input.payload,
+      },
+    });
+  };
+
+  // ── Tier 1: explicit per-user subscriptions (enabled) → their exact channels.
   const subs = await repos.notificationSubscription
-    .listEnabledForDispatch(input.organizationId, category)
+    .listEnabledForDispatch(org, category)
     .catch(() => []);
-
-  if (subs.length === 0) return;
-
   for (const sub of subs) {
     try {
       const channel = await repos.notificationChannel.findById(sub.channelId);
       if (!channel || !channel.enabled || !channel.verified) continue;
-
-      await repos.notificationDelivery.create({
-        userId: sub.userId,
-        organizationId: input.organizationId,
-        auditEventId: input.auditEventId ?? null,
-        category,
-        channelId: channel.id,
-        channelKind: channel.kind,
-        status: "queued",
-        attempts: 0,
-        payload: {
-          eventType: input.eventType,
-          resourceType: input.resourceType ?? null,
-          resourceId: input.resourceId ?? null,
-          ...input.payload,
-        },
-      });
+      await enqueue(sub.userId, channel);
     } catch (err) {
       console.error(
         `[notification] failed to enqueue for sub=${sub.id} category=${category}:`,
         err,
       );
     }
+  }
+
+  // ── Tier 2: org-default fallback. For members who have made NO explicit
+  // choice for this category, deliver when the category is default-enabled
+  // (org override else the built-in default) on their verified channels of the
+  // default kinds. This is what makes "important" events (deploy.failed,
+  // backup.failed, job.run.failed, …) notify everyone by default without a
+  // per-user opt-in — the previously-missing consumer of notification_default.
+  try {
+    const def = (await repos.notificationDefault.listByOrganization(org).catch(() => [])).find(
+      (d) => d.category === category,
+    );
+    const defaultEnabled = def?.defaultEnabled ?? findCategory(category)?.defaultEnabled ?? false;
+    if (defaultEnabled) {
+      const kinds = (
+        def?.defaultChannelKinds?.length ? def.defaultChannelKinds : ["email"]
+      ) as ChannelKind[];
+      const touched = new Set(
+        await repos.notificationSubscription
+          .listUserIdsWithSubscription(org, category)
+          .catch(() => []),
+      );
+      const members = await repos.member.listByOrganization(org).catch(() => []);
+      const untouched = members.map((m) => m.userId).filter((id) => !touched.has(id));
+      const channels = await repos.notificationChannel
+        .listVerifiedForUsersByKinds(untouched, kinds)
+        .catch(() => []);
+      for (const channel of channels) {
+        try {
+          await enqueue(channel.userId, channel);
+        } catch (err) {
+          console.error(
+            `[notification] default-fallback enqueue failed for user=${channel.userId} category=${category}:`,
+            err,
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`[notification] default-fallback failed for category=${category}:`, err);
   }
 }
 

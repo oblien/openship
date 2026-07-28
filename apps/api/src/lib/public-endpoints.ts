@@ -1,6 +1,8 @@
-import type { Domain, Service } from "@repo/db";
+import type { Domain, Project, Service } from "@repo/db";
+import { SYSTEM, resolveServiceHostnameLabel } from "@repo/core";
 import { getRoutingBaseDomain } from "./routing-domains";
-import { resolveServicePort } from "./deployable-service";
+import { resolveServicePort, serviceKind } from "./deployable-service";
+import { env } from "../config/env";
 
 // OpenResty management port (packages/adapters openresty-lua.ts OPENRESTY_MGMT_PORT).
 // Hardcoded here so this leaf module doesn't pull the adapters barrel or the
@@ -18,8 +20,8 @@ const OPENRESTY_MGMT_PORT = 9145;
  * process.env directly (raw, no validated `env` import) to keep this leaf light.
  */
 export function isReservedLoopbackPort(port: number): boolean {
-  const apiPort = Number(process.env.PORT) || 4000;
-  const dashboardPort = Number(process.env.OPENSHIP_DASHBOARD_PORT) || 3001;
+  const apiPort = env.PORT;
+  const dashboardPort = env.OPENSHIP_DASHBOARD_PORT;
   return port === apiPort || port === dashboardPort || port === OPENRESTY_MGMT_PORT;
 }
 
@@ -372,9 +374,26 @@ export function syncStoredPublicEndpoints(opts: {
 }
 
 export function storedPublicEndpointsNeedCloud(
-  endpoints?: Array<Pick<StoredPublicEndpoint, "domainType">> | null,
+  endpoints?:
+    | Array<Pick<StoredPublicEndpoint, "domainType" | "domain" | "customDomain">>
+    | null,
 ): boolean {
-  return (endpoints ?? []).some((endpoint) => endpoint.domainType !== "custom");
+  if (!endpoints?.length) return false;
+  // Classify by the HOSTNAME's physical truth, never a bare `domainType` string.
+  // Only a managed *.<baseDomain> subdomain can resolve behind the Cloud edge, so
+  // only that actually needs Cloud. A real custom host routes on our OWN edge and
+  // never does — even when a migrated/stale row left its domainType unset or wrong
+  // (which is exactly what made removing a custom-domain route demand Cloud).
+  return endpoints.some((endpoint) => {
+    const custom = normalizeCustomDomain(endpoint.customDomain);
+    if (custom) return !!managedHostnameToSlug(custom);
+    const slug = normalizeSlug(endpoint.domain);
+    if (!slug) return false; // nothing routable → nothing to gate
+    // A bare slug is a managed free subdomain; a dotted value here is a misfiled
+    // custom host (e.g. a migrated api.example.com) that routes on our edge.
+    const hostname = slug.includes(".") ? slug : `${slug}${managedHostnameSuffix()}`;
+    return !!managedHostnameToSlug(hostname);
+  });
 }
 
 /**
@@ -415,6 +434,37 @@ export function resolveServicePublicEndpoints(
       domainType: service.domainType === "custom" ? "custom" : "free",
     },
   ]);
+}
+
+/**
+ * Every public endpoint's assigned domain URL for a service, keyed by container
+ * port. Free → https://<slug>.<cloud>, custom → https://<customDomain>. The
+ * SINGLE source for a service's public URLs, so the deploy that creates a route
+ * and any surface that displays it (the app-settings connection card) resolve
+ * the SAME URL and can't drift apart.
+ */
+export function resolveServiceEndpointUrls(
+  project: Project,
+  service: Service,
+): Array<{ port: number; url: string }> {
+  const urls: Array<{ port: number; url: string }> = [];
+  for (const endpoint of resolveServicePublicEndpoints(service)) {
+    if (endpoint.port === undefined) continue;
+    if (endpoint.domainType === "custom") {
+      if (endpoint.customDomain)
+        urls.push({ port: endpoint.port, url: `https://${endpoint.customDomain}` });
+      continue;
+    }
+    const slug = resolveServiceHostnameLabel(
+      project.slug ?? project.name,
+      service.name,
+      endpoint.domain ?? undefined,
+      serviceKind(service),
+    );
+    if (slug)
+      urls.push({ port: endpoint.port, url: `https://${slug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}` });
+  }
+  return urls;
 }
 
 /**

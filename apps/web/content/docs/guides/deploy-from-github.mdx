@@ -30,6 +30,24 @@ this?" — say yes. When it closes, you're connected.
 
 <Callout title="Screenshot">Settings → General tab, the "GitHub" card with a **Connect GitHub** button. *(screenshot pending)*</Callout>
 
+<Callout title="Self-hosted: two ways to connect (no Openship account required)" type="info">
+On a self-hosted instance you're never forced through Openship Cloud. The **GitHub** card in
+**Settings → General** offers:
+
+- **Openship Cloud GitHub App** — the managed App (short-lived tokens, great for remote-server deploys).
+  Optional; it needs an Openship Cloud connection.
+- **Manual** — connect with your **own** GitHub identity, no Openship in the middle:
+  - **`gh` CLI on the instance** — press **Log in with GitHub**; if the instance has `gh` authenticated
+    it's picked up immediately, otherwise run the shown `gh auth login` on the box and the page detects it
+    automatically.
+  - **Your own GitHub OAuth/App (device login)** — set **`GITHUB_CLIENT_ID`** (a public client id from a
+    GitHub App/OAuth app *you* register, with device flow enabled) and **Log in with GitHub** shows a
+    one-time code + `github.com/login/device` link right in the UI — no terminal, no Openship client id.
+  - **A clone token** — or just add a personal access token under **Clone credentials**.
+
+Pick whichever fits; Openship never substitutes its own GitHub identity for yours on a self-hosted box.
+</Callout>
+
 </Step>
 
 <Step>

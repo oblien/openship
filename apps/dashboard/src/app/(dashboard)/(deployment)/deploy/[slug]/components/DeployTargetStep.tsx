@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Server, Cloud, Cpu, ArrowRight, Pencil, ChevronDown, ChevronUp, CheckCircle2, Loader2, Plus, Settings2, Zap, Globe, GitBranch, Search } from "lucide-react";
+import { Server, Cloud, Cpu, ArrowRight, Pencil, ChevronDown, ChevronUp, CheckCircle2, Loader2, Plus, Settings2, Zap, Globe, GitBranch, Search, ShieldAlert, ShieldCheck } from "lucide-react";
+import { BlurIp } from "@/components/BlurIp";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment } from "@/context/deployment/types";
 import type { DeploymentConfig } from "@/context/deployment/types";
@@ -12,8 +13,8 @@ import { settingsApi } from "@/lib/api/settings";
 import type { ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
-import type { DeployTarget, BuildStrategy, CloneStrategy } from "@/context/deployment/types";
-import { createPersistedValue, createPersistedFlag } from "@/lib/persisted-value";
+import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode } from "@/context/deployment/types";
+import { createPersistedValue } from "@/lib/persisted-value";
 import { AddServerModal } from "./AddServerModal";
 import ServerRuntimePicker from "./ServerRuntimePicker";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -94,21 +95,37 @@ interface ServerPickerProps {
 
 /** Server-glyph avatar + name + host line — shared by the collapsed trigger and
  *  each list row. */
-const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ server, active }) => (
-  <>
-    <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
-      active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
-    }`}>
-      <Server className="size-3.5" />
-    </div>
-    <div className="flex-1 min-w-0">
-      <p className="text-sm font-medium text-foreground truncate">{server.name || server.sshHost}</p>
-      <p className="text-[11px] text-muted-foreground truncate">
-        {server.sshUser || "root"}@{server.sshHost}:{server.sshPort || 22}
-      </p>
-    </div>
-  </>
-);
+const ServerRowContent: React.FC<{ server: ServerInfo; active: boolean }> = ({ server, active }) => {
+  const { t } = useI18n();
+  return (
+    <>
+      <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
+        active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground"
+      }`}>
+        <Server className="size-3.5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">
+          {server.name || server.sshHost}
+          {server.isLocal && (
+            <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
+              {t.deploy.targetStep.thisServerBadge}
+            </span>
+          )}
+        </p>
+        <p className="text-[11px] text-muted-foreground truncate">
+          {server.isLocal ? (
+            t.deploy.targetStep.thisServerHost
+          ) : (
+            <>
+              {server.sshUser || "root"}@<BlurIp>{server.sshHost}</BlurIp>:{server.sshPort || 22}
+            </>
+          )}
+        </p>
+      </div>
+    </>
+  );
+};
 
 const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSelect, onAddServer }) => {
   const { t } = useI18n();
@@ -118,6 +135,25 @@ const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSele
   // (so a fresh "Your servers" pick lands straight on the searchable list).
   const [open, setOpen] = useState(!selected);
   const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  // The list is a FLOATING menu (absolute), so it must dismiss itself on an
+  // outside click / Escape instead of reflowing the card. Only listen while open.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   const q = query.trim().toLowerCase();
   const filtered = q
@@ -132,77 +168,82 @@ const ServerPicker: React.FC<ServerPickerProps> = ({ servers, selectedId, onSele
     <div className="space-y-1.5">
       <p className="text-xs font-medium text-muted-foreground mb-2">{ts.chooseServer}</p>
 
-      {/* Collapsed trigger — the selected server, or a placeholder. */}
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-start transition-all border ${
-          open
-            ? "border-primary/30 bg-muted/20"
-            : "bg-card/60 border-border/30 hover:border-primary/20 hover:bg-muted/30"
-        }`}
-      >
-        {selected ? (
-          <ServerRowContent server={selected} active />
-        ) : (
-          <>
-            <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-muted/50 text-muted-foreground">
-              <Server className="size-3.5" />
-            </div>
-            <span className="flex-1 text-sm text-muted-foreground">{ts.chooseServer}</span>
-          </>
-        )}
-        <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
+      {/* Anchor for the floating menu. */}
+      <div className="relative" ref={ref}>
+        {/* Collapsed trigger — the selected server, or a placeholder. */}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-start transition-all border ${
+            open
+              ? "border-primary/30 bg-muted/20"
+              : "bg-card/60 border-border/30 hover:border-primary/20 hover:bg-muted/30"
+          }`}
+        >
+          {selected ? (
+            <ServerRowContent server={selected} active />
+          ) : (
+            <>
+              <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-muted/50 text-muted-foreground">
+                <Server className="size-3.5" />
+              </div>
+              <span className="flex-1 text-sm text-muted-foreground">{ts.chooseServer}</span>
+            </>
+          )}
+          <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
 
-      {/* Expanded — search box + filtered, scrollable list. */}
-      {open && (
-        <div className="rounded-lg border border-border/40 bg-card/40 p-1.5 space-y-1.5">
-          <div className="relative">
-            <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={ts.searchPlaceholder}
-              className="w-full ps-9 pe-3 py-2 bg-card border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-            />
-          </div>
-          <div className="max-h-64 overflow-y-auto space-y-1 pe-0.5">
-            {filtered.map((s) => {
-              const isSelected = selectedId === s.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => { onSelect(s); setQuery(""); setOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-start transition-all ${
-                    isSelected
-                      ? "bg-primary/10 border border-primary/30"
-                      : "bg-card/60 border border-transparent hover:border-primary/20 hover:bg-muted/30"
-                  }`}
-                >
-                  <ServerRowContent server={s} active={isSelected} />
-                  {isSelected && <CheckCircle2 className="size-4 text-primary shrink-0" />}
-                </button>
-              );
-            })}
-            {filtered.length === 0 && (
-              <p className="px-3 py-6 text-center text-xs text-muted-foreground">{ts.noServersMatch}</p>
+        {/* Floating menu — absolute + elevated so it OVERLAYS the cards below
+            instead of growing the container. Search box + filtered list. */}
+        {open && (
+          <div className="absolute inset-x-0 top-full z-50 mt-1.5 rounded-lg border border-border/60 bg-popover p-1.5 space-y-1.5 shadow-xl shadow-black/30">
+            <div className="relative">
+              <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={ts.searchPlaceholder}
+                autoFocus
+                className="w-full ps-9 pe-3 py-2 bg-background border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              />
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-1 pe-0.5">
+              {filtered.map((s) => {
+                const isSelected = selectedId === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => { onSelect(s); setQuery(""); setOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-start transition-all ${
+                      isSelected
+                        ? "bg-primary/10 border border-primary/30"
+                        : "bg-card/60 border border-transparent hover:border-primary/20 hover:bg-muted/30"
+                    }`}
+                  >
+                    <ServerRowContent server={s} active={isSelected} />
+                    {isSelected && <CheckCircle2 className="size-4 text-primary shrink-0" />}
+                  </button>
+                );
+              })}
+              {filtered.length === 0 && (
+                <p className="px-3 py-6 text-center text-xs text-muted-foreground">{ts.noServersMatch}</p>
+              )}
+            </div>
+            {onAddServer && (
+              <button
+                type="button"
+                onClick={onAddServer}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/50 px-3 py-2.5 text-[13px] text-muted-foreground transition-all hover:border-primary/40 hover:bg-muted/30 hover:text-foreground"
+              >
+                <Plus className="size-3.5" />
+                {ts.addServer}
+              </button>
             )}
           </div>
-          {onAddServer && (
-            <button
-              type="button"
-              onClick={onAddServer}
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/50 px-3 py-2.5 text-[13px] text-muted-foreground transition-all hover:border-primary/40 hover:bg-muted/30 hover:text-foreground"
-            >
-              <Plus className="size-3.5" />
-              {ts.addServer}
-            </button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
@@ -223,6 +264,16 @@ interface CompactSummaryProps {
    *  tier chip for a "Static" chip — there's no machine to size when
    *  the workload is just files served from the edge. */
   hasServer?: boolean;
+  /** Resolved runtime for a self-hosted SERVER deploy — drives a persistent
+   *  chip so a user who never opens Advanced still sees whether the app runs
+   *  sandboxed (Docker) or directly on the host ("bare"), the latter carrying a
+   *  warning. Ignored for cloud (tier chip) and static (edge-served chip). */
+  runtimeMode?: RuntimeMode;
+  /** True when the project deploys as a multi-service stack (compose). A stack
+   *  runs sandboxed containers — never static edge-served files — so it must
+   *  never show the Static chip even when the project-level hasServer/framework
+   *  is unset (those live per-service). */
+  isServices?: boolean;
   onEdit: () => void;
 }
 
@@ -233,6 +284,8 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   showBuildStrategy = true,
   cloudResourceTier,
   hasServer = true,
+  runtimeMode,
+  isServices = false,
   onEdit,
 }) => {
   const { t } = useI18n();
@@ -278,30 +331,54 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   const buildDest = buildStrategy === "local" ? "local" : deployTarget;
   const sameDestination = showBuildStrategy && buildDest === deployTarget;
 
-  // Cloud-only chip on the right of the summary. Two shapes:
-  //   - Static workloads (no Start command, files served from the edge)
-  //     have no machine to size — show a neutral "Static" chip instead
-  //     of a power tier. Otherwise "Low" / "Medium" / etc. would imply
-  //     a runtime that doesn't exist.
-  //   - Otherwise the picked resource tier with a Zap (power) icon.
-  const tierChip =
-    deployTarget === "cloud"
-      ? !hasServer
-        ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-info-bg text-[11px] font-medium text-info shrink-0">
-            <Globe className="size-3" />
-            {t.deploy.summary.static}
-          </span>
-        )
-        : cloudResourceTier
-          ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0">
-              <Zap className="size-3" />
-              <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
-            </span>
-          )
-          : null
-      : null;
+  // Right-hand chip on the summary — one at a time, by workload shape:
+  //   - Static (files served from the edge, any target): neutral info chip.
+  //     No machine to size, no process to sandbox.
+  //   - Cloud + server: the picked resource tier (Zap).
+  //   - Self-hosted server: the runtime — "bare" carries a persistent WARNING
+  //     (runs directly on the host, unsandboxed) so it's visible even when the
+  //     user never opens Advanced; "docker" a neutral Sandboxed chip.
+  const runtimeChip = isServices ? (
+    // A service stack (compose) always runs sandboxed containers — never static
+    // edge-served files — regardless of the project-level hasServer/framework
+    // (which are unset for compose). Show the tier on cloud, else Sandboxed.
+    deployTarget === "cloud" && cloudResourceTier ? (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0">
+        <Zap className="size-3" />
+        <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-success-bg text-[11px] font-medium text-success shrink-0">
+        <ShieldCheck className="size-3" />
+        {t.deploy.summary.runtimeSandboxed}
+      </span>
+    )
+  ) : !hasServer ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-info-bg text-[11px] font-medium text-info shrink-0">
+      <Globe className="size-3" />
+      {t.deploy.summary.runtimeStatic}
+    </span>
+  ) : deployTarget === "cloud" ? (
+    cloudResourceTier ? (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0">
+        <Zap className="size-3" />
+        <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
+      </span>
+    ) : null
+  ) : deployTarget === "server" && runtimeMode === "bare" ? (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0"
+      title={t.deploy.summary.runtimeDirectHint}
+    >
+      <ShieldAlert className="size-3" />
+      {t.deploy.summary.runtimeDirectWarning}
+    </span>
+  ) : deployTarget === "server" && runtimeMode === "docker" ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-success-bg text-[11px] font-medium text-success shrink-0">
+      <ShieldCheck className="size-3" />
+      {t.deploy.summary.runtimeSandboxed}
+    </span>
+  ) : null;
 
   return (
     <button
@@ -343,7 +420,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
           </>
         )}
       </div>
-      {tierChip}
+      {runtimeChip}
       <Pencil className="size-3.5 text-muted-foreground transition-opacity" />
     </button>
   );
@@ -437,10 +514,6 @@ export const lastPickStore = createPersistedValue<LastPick>(
     return true;
   },
 );
-
-// "Have we shown the first-deploy build hint yet?" - set on the first
-// Continue. Once set, subsequent deploys get the full Build picker.
-const buildHintFlag = createPersistedFlag("openship.build-hint-seen");
 
 // ─── Main step ───────────────────────────────────────────────────────────────
 
@@ -789,11 +862,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // Track when the defaults fetch is done so we can suppress the picker
   // for a brief moment instead of flashing the full picker before collapsing.
   const [defaultsLoaded, setDefaultsLoaded] = useState(false);
-  // First-deploy-ever flag - read from localStorage on mount. When true,
-  // we hide the Build picker, auto-match build to deploy, and show a small
-  // hint card instead. Flipped off on the first successful Continue so the
-  // full picker re-appears on subsequent deploys.
-  const [isFirstBuildHint, setIsFirstBuildHint] = useState(false);
   // Build picker lives under an "Advanced" disclosure
   // so the screen leads with the deploy-target decision. Folded by default
   // because the build strategy is correctly seeded from the user's saved
@@ -834,26 +902,22 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   const showBuildStrategy =
     config.projectType === "app" || (config.projectType === "services" && !isServiceDeployment);
 
-  // On mount: read first-deploy flag from localStorage. We treat the very
-  // first deploy as "build hint shown" - once the user clicks Continue we
-  // mark it seen, and from then on the full Build picker is back. Skipping
-  // the picker on first run keeps the UI focused; the option remains
-  // available in the post-continue summary and in Settings.
+  // UNIFIED BUILD — build where you deploy, as the PERSISTENT default (every
+  // untouched deploy, not just the first). A SERVER target builds on that server
+  // (desktop → remote build + clone-on-server via git-credential forwarding;
+  // VPS → the isLocal "This Server", i.e. build on this machine), and cloud
+  // builds in the cloud runtime. Only the bare "local" target builds locally (it
+  // IS the host, so buildStrategy is inert there). A server deploy that lacks a
+  // clone credential still auto-downgrades to a local build at deploy time
+  // (Sidebar.handleDeploy), so this never hard-fails a credential-less box. An
+  // explicit pick in the Advanced disclosure (buildStrategyTouchedRef) wins.
   useEffect(() => {
-    setIsFirstBuildHint(!buildHintFlag.isSet());
-  }, []);
-
-  // First-deploy-only: auto-match build to deploy target until the user makes
-  // an explicit pick in the Advanced disclosure (buildStrategyTouchedRef).
-  useEffect(() => {
-    // Never override an explicit user pick — only auto-match on the untouched
-    // first-deploy default.
-    if (!isFirstBuildHint || buildStrategyTouchedRef.current) return;
+    if (buildStrategyTouchedRef.current) return;
     const want: BuildStrategy = config.deployTarget === "local" ? "local" : "server";
     if (config.buildStrategy !== want) {
       updateConfig({ buildStrategy: want });
     }
-  }, [isFirstBuildHint, config.deployTarget, config.buildStrategy, updateConfig]);
+  }, [config.deployTarget, config.buildStrategy, updateConfig]);
 
   // Sandbox (docker) is the default for a fresh self-hosted server APP. Seeded
   // once, and only when the runtime choice actually applies (server app, not
@@ -926,6 +990,17 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
               applied = true;
             }
           }
+        }
+
+        // No saved default and no usable last-pick? Default to a SERVER when one
+        // exists (including the auto-added "This Server" in server-host mode),
+        // with a unified build — matches "deploy to your server by default".
+        // Prefer the local host server. Cloud stays the fallback only when no
+        // server exists at all (handled by the single-option auto-select below).
+        if (!applied && servers.length > 0) {
+          const preferred = servers.find((s) => s.isLocal) ?? servers[0];
+          updateConfig({ deployTarget: "server", serverId: preferred.id });
+          applied = true;
         }
 
         // Collapse to compact summary only when defaults applied cleanly
@@ -1128,8 +1203,12 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // Services always deploy as docker (build on the server), so the clone picker
   // applies to them regardless of the config.runtimeMode field (which may not be
   // hydrated to "docker" on a config-edit).
+  // Clone location only exists for a REMOTE build (the clone runs on the target).
+  // "This Machine" (local build) clones + builds here and ships the output, so
+  // there's no on-server-vs-here choice to make — hide it entirely.
   const showCloneStrategy =
     config.deployTarget === "server" &&
+    config.buildStrategy === "server" &&
     (config.runtimeMode === "docker" || isServiceDeployment);
   // Clone-on-server is the default (primary card); cloning on the api host and
   // uploading is the advanced/manual alternative.
@@ -1159,40 +1238,15 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     },
   ];
 
-  // Whether the selected server's SSH auth can host the credential-forwarding
-  // relay. The relay is desktop-only and can't run over agent auth, so we only
-  // default forwarding on for key/password servers — an agent server falls back
-  // to a stored credential (per-server GitHub / App / PAT) or the backend's
-  // graceful degrade to an api-host clone, never the relay hard-fail.
-  const selectedServerAuth = servers.find((s) => s.id === config.serverId)?.sshAuthMethod ?? null;
-  const relayCapable = selectedServerAuth === "key" || selectedServerAuth === "password";
-  // Single source of truth for "forward the git credential for a server clone":
-  // relay is desktop-only and can't run over agent auth. Both the default effect
-  // and the manual clone-card pick read this, so they can never drift.
-  const canForwardServerClone = isDesktop && relayCapable;
-
-  // Default the clone location to "on the server" and keep the forward flag in
-  // sync with the server's relay capability. Only for a brand-new deploy — a
-  // saved project keeps its stored choice.
+  // Default the clone location to "on the server" for a brand-new deploy when
+  // the choice is UNSET. Git-identity forwarding is no longer a per-deploy
+  // choice — it's the operator-wide "Forward my git identity to build servers"
+  // setting (Settings → Clone credentials), resolved server-side at build time.
   useEffect(() => {
     if (config.projectId) return;
     if (!showCloneStrategy) return;
-    const clone: CloneStrategy = config.cloneStrategy ?? "server";
-    const wantForward = clone === "server" && canForwardServerClone;
-    const patch: { cloneStrategy?: CloneStrategy; forwardGitCredentials?: boolean } = {};
-    if (config.cloneStrategy == null) patch.cloneStrategy = clone;
-    if ((config.forwardGitCredentials === true) !== wantForward) {
-      patch.forwardGitCredentials = wantForward ? true : undefined;
-    }
-    if (Object.keys(patch).length > 0) updateConfig(patch);
-  }, [
-    config.projectId,
-    showCloneStrategy,
-    config.cloneStrategy,
-    config.forwardGitCredentials,
-    canForwardServerClone,
-    updateConfig,
-  ]);
+    if (config.cloneStrategy == null) updateConfig({ cloneStrategy: "server" });
+  }, [config.projectId, showCloneStrategy, config.cloneStrategy, updateConfig]);
 
   // Advanced-panel summary line (build location). Clone location has its own
   // right-panel picker, so it isn't summarized here.
@@ -1232,9 +1286,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     if (!wouldAutoSkip) return;
     if (autoSkippedRef.current) return;
     autoSkippedRef.current = true;
-    // Persist the "build hint seen" flag too - auto-skipping past the
-    // picker also means the user has effectively been through it once.
-    buildHintFlag.set();
     onContinue();
   }, [wouldAutoSkip, onContinue]);
 
@@ -1265,7 +1316,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     // The only hard gate at this step: deploying TO Openship Cloud needs an
     // Openship Cloud connection. Anything else (free .${baseDomain} domains
     // on own-server / local, free domains in compose services, etc.) is a
@@ -1274,13 +1325,10 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     // is paternalistic and breaks the "I picked my own server, leave me
     // alone" signal the user just gave us.
     if (config.deployTarget === "cloud" && !hasCloudConnected) {
-      if (!requireCloud(ts.requireCloudFeature)) {
+      if (!(await requireCloud("cloud-deploy-target"))) {
         return;
       }
     }
-
-    // Mark the build hint as seen - future deploys get the full Build picker.
-    buildHintFlag.set();
 
     // Persist the soft "remember this target for next time" memory now — on
     // commit, not on every tentative click. This is what lets a returning user
@@ -1309,11 +1357,23 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // (its resource/power picker).
   const showServerAdvanced =
     showFullPicker && config.deployTarget === "server" && !!config.serverId;
-  // Runtime-isolation (Sandbox/Direct) applies only to a self-hosted server APP —
-  // docker/compose always run sandboxed, static has no long-running process.
+  // Runtime-isolation (Sandbox/Direct) applies only to a self-hosted server APP
+  // that runs a process: docker/compose always run sandboxed, and a static app
+  // (files served by the edge, hasServer=false) has nothing to isolate. Shown in
+  // the Advanced panel (right column).
   const showRuntimeIsolation =
-    config.options.hasServer && config.projectType !== "docker" && !isServiceDeployment;
+    config.options.hasServer &&
+    config.projectType !== "docker" &&
+    !isServiceDeployment;
   const showRightPanel = showCloudPicker || showServerAdvanced;
+  // Self-hosted server layout: the server/cloud choice is the MAIN wide column on
+  // the LEFT; Advanced is a collapsed RAIL on the right. Opening Advanced EXCHANGES
+  // the column widths — the server column shrinks to the rail width and Advanced
+  // grows to fill (positions stay fixed; only the grid track widths trade, with a
+  // transition). So the screen leads with "where to deploy" and the build/clone/
+  // runtime detail expands into the space only when asked for. Cloud keeps its own
+  // right-hand power panel; single-column onboarding is untouched.
+  const serverLayout = showServerAdvanced;
 
   // Action controls (extracted so they can live in the left column on a single-
   // column layout, or move into the right column — above the Advanced/Cloud
@@ -1369,9 +1429,11 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       {headerSubtitle && <p className="text-sm text-muted-foreground/70 mt-1">{headerSubtitle}</p>}
     </div>
   );
-  const header = showRightPanel ? (
-    // Same track as the body grid (gap-0 on lg) so the third cell lines up
-    // pixel-for-pixel with the advanced panel underneath it.
+  const header = showRightPanel && !serverLayout ? (
+    // Cloud: mirror the body grid track (gap-0 on lg) so Continue lines up
+    // pixel-for-pixel with the power panel underneath it. The swapped server
+    // layout uses the plain flex header below instead (Continue top-right, above
+    // the server rail), since its columns are reordered.
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_1px_320px] lg:gap-0 lg:items-start">
       <div className="lg:pe-6">{headerTitleBlock}</div>
       <div className="hidden lg:block" aria-hidden />
@@ -1395,12 +1457,28 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       {header}
       <div
         className={
-          showRightPanel
-            ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_1px_320px] gap-0 items-start"
-            : ""
+          !showRightPanel
+            ? ""
+            : serverLayout
+              ? // Server layout: flex row so the two columns can TRADE widths with a
+                // real width transition (grid-template-columns won't interpolate
+                // fr↔px, so it snapped). Stacks on mobile.
+                "space-y-8 lg:space-y-0 lg:flex lg:items-start"
+              : "grid grid-cols-1 gap-0 items-start lg:grid-cols-[minmax(0,1fr)_1px_320px]"
         }
       >
-    <div className={`space-y-8 ${showRightPanel ? "lg:pe-6" : ""}`}>
+    {/* "Where" cell — deploy target + server picker. Always the LEFT column; the
+        wide main until Advanced opens, then it shrinks to the rail width (the
+        Advanced column grows to fill — an animated width exchange). */}
+    <div
+      className={
+        serverLayout
+          ? `space-y-8 min-w-0 lg:pe-6 lg:shrink-0 lg:transition-[width] lg:duration-300 lg:ease-out ${
+              advancedOpen ? "lg:w-[360px]" : "lg:w-[calc(100%-361px)]"
+            }`
+          : `space-y-8 min-w-0 ${showRightPanel ? "lg:pe-6" : ""}`
+      }
+    >
       {showLoading && (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-border/50 bg-card px-4 py-8 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
@@ -1417,6 +1495,9 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
           buildStrategy={config.buildStrategy}
           serverName={summaryServerName}
           showBuildStrategy={showBuildStrategy}
+          hasServer={config.options.hasServer}
+          runtimeMode={config.runtimeMode}
+          isServices={config.projectType === "services" || config.serviceDeploymentMode === "services"}
           onEdit={() => setExpanded(true)}
         />
       )}
@@ -1482,25 +1563,38 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         </div>
       )}
 
+      {/* "How it's served" (static vs server process + start command) is NOT here —
+          it lives with the app's build settings (the "Start" toggle), so the deploy
+          step stays about WHERE to deploy, not how the app is built/served. */}
+
       {/* Advanced (Sandbox/Direct, build location, clone, git-forward) renders
           as a compact panel in the RIGHT column for server deploys — see the
           right-panel block below. Continue lives in the unified header. */}
 
-      {/* Single-column layout: save-default sits under the options (Continue is
-          in the header). With a right panel, save-default moves into it. */}
-      {!showRightPanel && saveDefaultCheckbox}
+      {/* save-default sits with the target picker: single-column, or the swap's
+          server rail. For cloud it lives in the right power column instead. */}
+      {(!showRightPanel || serverLayout) && saveDefaultCheckbox}
     </div>
     {showRightPanel && (
       <>
-        {/* Vertical divider between the two columns. Right column = cloud
-            power/resource picker OR the server "Advanced" disclosure — a
-            compact panel beside the target choice instead of a wide expander
-            under it. */}
-        <div className="hidden lg:block w-px bg-border self-stretch" />
-        <div key={config.deployTarget} className="lg:ps-6 animate-slide-in-right space-y-6">
-          {/* Continue is in the unified header; the right column carries the
-              save-default toggle then the Cloud/Advanced panel. */}
-          {saveDefaultCheckbox}
+        {/* Vertical divider between the two columns. */}
+        <div className="hidden lg:block w-px bg-border self-stretch lg:shrink-0" />
+        {/* "How" column (right) — the Advanced disclosure (server) or the cloud
+            power picker. For a server it's a rail (360px) that grows to fill when
+            opened, trading widths with the server column via a width transition. */}
+        <div
+          key={config.deployTarget}
+          className={
+            serverLayout
+              ? `min-w-0 space-y-6 animate-slide-in-right lg:ps-6 lg:shrink-0 lg:transition-[width] lg:duration-300 lg:ease-out ${
+                  advancedOpen ? "lg:w-[calc(100%-361px)]" : "lg:w-[360px]"
+                }`
+              : "min-w-0 space-y-6 animate-slide-in-right lg:ps-6"
+          }
+        >
+          {/* Cloud carries the save-default toggle here; the swap moved it into
+              the server rail (left cell above). */}
+          {!serverLayout && saveDefaultCheckbox}
           {showCloudPicker && <CloudPowerPicker />}
           {showServerAdvanced && (
             <div className="rounded-2xl border border-border/50 bg-card">
@@ -1525,10 +1619,22 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                 )}
               </button>
 
-              {advancedOpen && (
-                <div className="border-t border-border/50 px-4 py-4 space-y-5">
+              {/* Accordion: animate the content's HEIGHT (grid-rows 0fr→1fr) so it
+                  doesn't pop in. Always mounted so the transition has something to
+                  reveal; the inner content fades in as it grows. */}
+              <div
+                className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+                  advancedOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                }`}
+              >
+                <div
+                  className={`overflow-hidden transition-opacity duration-200 ${
+                    advancedOpen ? "opacity-100 delay-100" : "opacity-0"
+                  }`}
+                >
+                  <div className="border-t border-border/50 px-4 py-4 space-y-5">
                   {/* Runtime isolation — Sandbox (default) vs Direct. Server app only. */}
-                  {showRuntimeIsolation && <ServerRuntimePicker />}
+                  {showRuntimeIsolation && <ServerRuntimePicker enabled={advancedOpen} />}
 
                   {/* Build location — where the clone + build run. */}
                   {showBuildStrategy && (
@@ -1541,7 +1647,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                           {config.options.hasBuild ? ts.build.subtitle : ts.build.prepareSubtitle}
                         </p>
                       </div>
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 items-stretch">
                         {visibleBuildOptions.map((opt) => (
                           <OptionCard
                             key={opt.value}
@@ -1554,6 +1660,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                             icon={opt.icon}
                             label={opt.label}
                             description={opt.description}
+                            className="h-full"
                           />
                         ))}
                       </div>
@@ -1572,56 +1679,25 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                           {isDesktop ? ts.clone.descDesktop : ts.clone.descServer}
                         </p>
                       </div>
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 items-stretch">
                         {cloneOptions.map((opt) => (
                           <OptionCard
                             key={opt.value}
                             value={opt.value}
                             selected={cloneStrategy === opt.value}
-                            onSelect={() =>
-                              updateConfig({
-                                cloneStrategy: opt.value,
-                                // Only forward when the relay can actually run
-                                // (desktop + key/password auth); otherwise leave
-                                // it off so an agent server degrades instead of
-                                // hitting the relay hard-fail.
-                                forwardGitCredentials:
-                                  opt.value === "server" && canForwardServerClone,
-                              })
-                            }
+                            onSelect={() => updateConfig({ cloneStrategy: opt.value })}
                             icon={opt.icon}
                             label={opt.label}
                             description={opt.description}
+                            className="h-full"
                           />
                         ))}
                       </div>
                     </div>
                   )}
-
-                  {/* Git credential forwarding — Direct (bare) app, desktop-only. */}
-                  {isDesktop && config.runtimeMode === "bare" && !isServiceDeployment && (
-                    <label className="flex items-start gap-2.5 cursor-pointer select-none rounded-xl border border-border/50 bg-card/40 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={config.forwardGitCredentials === true}
-                        onChange={(e) => updateConfig({ forwardGitCredentials: e.target.checked })}
-                        className="mt-0.5 size-4 shrink-0 rounded border-border/60 bg-card text-primary focus:ring-2 focus:ring-primary/30 focus:ring-offset-0 cursor-pointer"
-                      />
-                      <span className="min-w-0">
-                        <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                          <GitBranch className="size-3.5 text-muted-foreground" />
-                          {ts.gitForwardLabel}
-                        </span>
-                        <span className="mt-0.5 block text-xs text-muted-foreground leading-snug">
-                          {ts.gitForwardDescPre}
-                          <span className="font-mono text-foreground/80">gh</span>
-                          {ts.gitForwardDescPost}
-                        </span>
-                      </span>
-                    </label>
-                  )}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>

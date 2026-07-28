@@ -1,4 +1,15 @@
 {
+  "capacity": {
+    "title": "Capacity & usage",
+    "subtitle": "Included capacity on your plan and how much you've used. Live figures sync from Openship Cloud.",
+    "routes": "Free routes",
+    "workspaces": "Workspaces",
+    "unlimited": "Unlimited",
+    "used": "used",
+    "of": "of {max}",
+    "syncing": "Syncing from cloud"
+  },
+  "topupsComingSoon": "One-time credit top-ups are coming soon — you'll be able to add credits on top of your monthly allowance here.",
   "header": {
     "credits": "Credits",
     "creditsSuffix": "of {limit}",
@@ -157,7 +168,7 @@
     "weekTick": "Wk {n}"
   },
   "layout": {
-    "title": "Billing",
+    "title": "Billing & Usage",
     "subtitle": "Manage your subscription, usage, and payment methods."
   },
   "sidebar": {

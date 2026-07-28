@@ -73,6 +73,7 @@
     "serverOnPort": "{port} portundaki sunucu",
     "serverPortNotSet": "Sunucu portu ayarlanmadı",
     "staticFromEdge": "Edge üzerinden sunulan statik içerik",
+    "staticPathHint": "Edge üzerinden statik dosyalar olarak sunulur — hiçbir işlem çalışmaz.",
     "buildSettingsTitle": "Derleme Ayarları"
   },
   "projectSettings": {

@@ -2,11 +2,11 @@
   "$comment": "THIS FILE IS THE UPGRADE-PROMPT GATE. A newer release does NOT raise the in-app banner by itself — most releases ship silently as 'latest' (still discoverable in Settings → Updates and the home Updates block, with an Update action). To actively PROMPT users to upgrade for a specific release, add an advisory entry here: severity 'recommended' or 'critical' raises the top banner; 'info' is a quiet mention only. Keep it minimal — add an entry ONLY for releases worth interrupting people for (security, data-loss, migration, major features). Version-targeted, shown in the desktop app + dashboard, PULLED by clients from this file PINNED TO THE LATEST RELEASE TAG (raw.githubusercontent.com/oblien/openship/<tag>/release-advisories.json) — commits to main are invisible until a version ships. Each entry: { id, severity: critical|recommended|info, affects: semver range e.g. \"<=0.1.8\", title, message, action?: { label, kind: update|open-url, url? } }. Critical advisories always surface once even if notifications are muted.",
   "advisories": [
     {
-      "id": "update-0.3.0",
-      "severity": "recommended",
-      "affects": "<0.3.0",
-      "title": "Update to Openship 0.3.0",
-      "message": "Openship 0.3.0 is available. See the release notes for what's new — updating is recommended.",
+      "id": "update-0.4.0",
+      "severity": "critical",
+      "affects": "<0.4.0",
+      "title": "Update to Openship 0.4.0",
+      "message": "Openship 0.4.0 is available with important security and reliability fixes. Update now to stay current.",
       "action": {
         "label": "Update now",
         "kind": "update"

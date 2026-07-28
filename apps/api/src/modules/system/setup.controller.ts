@@ -19,7 +19,12 @@ import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
 import { env } from "../../config";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
-import { clearAuthModeCache } from "../../lib/auth-mode";
+import {
+  AUTH_MODES,
+  clearAuthModeCache,
+  pinnedAuthMode,
+  type AuthMode as AuthModeType,
+} from "../../lib/auth-mode";
 import { assertNotCloud } from "../../lib/controller-helpers";
 import { encrypt } from "../../lib/encryption";
 import {
@@ -38,8 +43,10 @@ import { COOKIE_PREFIX } from "../../lib/auth";
 import { mintSession } from "../../lib/cloud-auth-proxy";
 import { invalidatePlatformTransportCache } from "../../lib/mail";
 
-const VALID_AUTH_MODES = ["none", "local", "cloud"] as const;
-type AuthMode = (typeof VALID_AUTH_MODES)[number];
+/** The canonical mode set lives with the resolver, so the env parser, this
+ *  validator and getAuthMode() can't disagree about what a valid mode is. */
+const VALID_AUTH_MODES = AUTH_MODES;
+type AuthMode = AuthModeType;
 
 /**
  * Result of validating an incoming authMode change. `error` is set when
@@ -48,7 +55,7 @@ type AuthMode = (typeof VALID_AUTH_MODES)[number];
  */
 type AuthModeValidation =
   | { ok: true; value: AuthMode }
-  | { ok: false; status: 400 | 403; body: { error: string } };
+  | { ok: false; status: 400 | 403 | 409; body: { error: string } };
 
 /**
  * Validate an authMode write against the canonical mode set + the
@@ -71,6 +78,24 @@ function validateAuthModeChange(body: Record<string, unknown>): AuthModeValidati
     };
   }
   const value = raw as AuthMode;
+
+  // A declared mode (OPENSHIP_AUTH_MODE) outranks the DB, so a write that
+  // disagrees with it would persist a value the API will never honour — silent,
+  // confusing, and exactly how the desktop ended up with a stored "cloud" it
+  // couldn't act on. Refuse instead of writing a lie. Writing the SAME value is
+  // allowed so idempotent callers don't break.
+  const pinned = pinnedAuthMode();
+  if (pinned && value !== pinned) {
+    return {
+      ok: false,
+      status: 409,
+      body: {
+        error:
+          `authMode is pinned to "${pinned}" by OPENSHIP_AUTH_MODE and cannot be changed ` +
+          `at runtime. Change that environment variable and restart the API.`,
+      },
+    };
+  }
 
   if (value === "none" && env.DEPLOY_MODE !== "desktop") {
     if (!env.OPENSHIP_ALLOW_ZERO_AUTH) {
@@ -403,13 +428,17 @@ export async function sendTestEmail(c: Context) {
 /** DELETE /system/settings - remove server configuration */
 export async function deleteSettings(c: Context) {
   const cloudGuard = assertNotCloud(c); if (cloudGuard) return cloudGuard;
+  const ctx = getRequestContext(c);
 
   await repos.instanceSettings.delete();
 
-  // Also clear all servers since SSH config lives in the servers table.
-  // Purge per-server grants alongside each server so we don't leave
-  // orphan resource_grant rows pointing at deleted resources.
-  const serverList = await repos.server.list();
+  // Clear the CALLER'S-ORG servers only (SSH config lives in the servers table).
+  // MUST be org-scoped: `repos.server.list()` returns every org's servers, so a
+  // global delete here let an org owner wipe OTHER organizations' servers
+  // (broken access control). Scope to ctx.organizationId — same scope as the
+  // Servers list / `server:admin` delete. Purge per-server grants alongside each
+  // so no orphan resource_grant rows point at deleted resources.
+  const serverList = await repos.server.listByOrganization(ctx.organizationId);
   for (const s of serverList) {
     if (s.organizationId) {
       await repos.resourceGrant
@@ -487,6 +516,21 @@ export async function bootstrapAdmin(c: Context) {
   }
   if (password.length < 8 || password.length > 128) {
     return c.json({ error: "password must be 8-128 characters" }, 400);
+  }
+
+  // This route's whole point is flipping the instance to "local" as it creates the
+  // first admin. If the mode is pinned to something else, that flip can't happen —
+  // so refuse up front rather than create an admin the API will never ask for.
+  const pinned = pinnedAuthMode();
+  if (pinned && pinned !== "local") {
+    return c.json(
+      {
+        error:
+          `authMode is pinned to "${pinned}" by OPENSHIP_AUTH_MODE, so creating a ` +
+          `password admin would have no effect. Set OPENSHIP_AUTH_MODE=local and restart first.`,
+      },
+      409,
+    );
   }
 
   const localUser = await ensureLocalUser();

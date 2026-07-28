@@ -6,12 +6,17 @@
 
 import { dumpSubgraph, stripEncryptedInPlace } from "@repo/db";
 
+import { env } from "../../../config/env";
+import { CloudInstanceNotTransferableError } from "./errors";
 import { sealSecretBundle } from "./passphrase-crypto";
 import { extractPlaintext } from "./secret-codec";
 import { SECRET_COLUMNS } from "./secret-registry";
 import type { DataTransferFile, SecretBundle, SecretEntry } from "./types";
 
 export async function exportInstance(opts: { passphrase?: string }): Promise<DataTransferFile> {
+  // GATE 1: never export a multi-tenant SaaS instance (would leak all tenants).
+  if (env.CLOUD_MODE) throw new CloudInstanceNotTransferableError();
+
   const dump = await dumpSubgraph({ kind: "instance" });
 
   // Decrypt each secret cell (source instance can read its own data) into the

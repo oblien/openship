@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { NginxProvider, renderProxyOptions } from "./nginx";
 import { PROXY_GZIP_TYPES } from "@repo/core";
-import { OPENRESTY_DEFAULT_PATHS, luaSourceAvailable, RULES_GUARD_PATH } from "./openresty-lua";
+import { OPENRESTY_DEFAULT_PATHS, luaSourceAvailable, RULES_GUARD_PATH, ACME_HTTP01_PORT, ensureOpenRestyConfig } from "./openresty-lua";
 import type { CommandExecutor, RouteConfig } from "../types";
 
 // L1 — config GENERATION. Proves NginxProvider emits the right nginx directives
@@ -74,6 +74,9 @@ describe("NginxProvider config generation", () => {
     expect(c).not.toContain("listen 443 ssl;"); // no cert → no TLS server
     expect(c).toContain("proxy_pass http://127.0.0.1:3009;");
     expect(c).toContain("location /.well-known/acme-challenge/");
+    // ACME challenge is proxied to certbot's standalone server (not a webroot).
+    expect(c).toContain(`proxy_pass http://127.0.0.1:${ACME_HTTP01_PORT};`);
+    expect(c).not.toContain("root /var/www/acme;");
     // Lua rules-guard hook is emitted only when the Lua source ships (fail-safe).
     if (luaSourceAvailable()) {
       expect(c).toContain(`access_by_lua_file ${RULES_GUARD_PATH};`);
@@ -97,13 +100,32 @@ describe("NginxProvider config generation", () => {
     expect(c).toContain("proxy_pass http://127.0.0.1:3009;");
   });
 
-  test("static route → root + try_files, no proxy_pass", async () => {
+  test("static route → root + try_files, app is not proxied", async () => {
     const { nginx, conf } = setup();
     await nginx.registerRoute({ domain: "site.example.com", tls: false, staticRoot: "/var/www/site" });
     const c = conf("site-example-com")!;
     expect(c).toContain("root /var/www/site;");
     expect(c).toContain("try_files $uri $uri/ /index.html;");
-    expect(c).not.toContain("proxy_pass");
+    // The ONLY proxy_pass allowed on a static vhost is the ACME-challenge
+    // location (→ certbot's standalone server); the app itself is served, not
+    // proxied. Assert no UPSTREAM/app proxy, rather than a blanket absence.
+    expect(c).not.toContain("proxy_pass http://upstream");
+    expect(c.match(/proxy_pass/g)?.length ?? 0).toBe(1);
+  });
+
+  test("provisionCert issues via certbot --standalone on the ACME alt-port", async () => {
+    const { nginx, calls } = setup(); // domain NOT in certDomains → certbot runs
+    await nginx.registerRoute(PROXY);
+    // The fake certbot produces no cert, so ensureIssued throws — we only care
+    // that certbot was invoked with the standalone/alt-port/cert-name args.
+    await expect(nginx.provisionCert("app.example.com")).rejects.toThrow();
+    const certbot = calls.find((c) => c.startsWith("certbot 'certonly'") || c.startsWith("certbot certonly"));
+    expect(certbot).toBeDefined();
+    expect(certbot).toContain("--standalone");
+    expect(certbot).toContain("--http-01-port");
+    expect(certbot).toContain(String(ACME_HTTP01_PORT));
+    expect(certbot).toContain("--cert-name");
+    expect(certbot).not.toContain("--webroot");
   });
 
   test("webhook proxy adds the /_openship/hooks/ location", async () => {
@@ -194,5 +216,33 @@ describe("registerRoute renders proxy directives at server scope", () => {
     const { nginx, conf } = setup({ certDomains: ["app.example.com"] });
     await nginx.registerRoute(PROXY);
     expect(conf("app-example-com")!).not.toContain("client_max_body_size");
+  });
+});
+
+// Security: an HTTPS request whose SNI matches no vhost must NOT fall through to
+// the first-loaded 443 server block (cross-serving another app's cert+backend).
+// The default catch-all owns `443 ssl default_server` and rejects unknown SNI.
+describe("default catch-all rejects unmatched HTTPS hosts", () => {
+  test("ensureOpenRestyConfig writes a 443 default_server that rejects unknown SNI", async () => {
+    const files = new Map<string, string>();
+    const calls: string[] = [];
+    // nginx.conf already present → exercises the steady-state path (not bootstrap).
+    files.set(PATHS.confPath, `http {\n    include ${SITES}/*.conf;\n}\n`);
+    await ensureOpenRestyConfig(makeExecutor(files, {}, calls), PATHS);
+    const def = files.get(`${SITES}/_default.conf`);
+    expect(def).toBeDefined();
+    expect(def).toContain("listen 443 ssl default_server;");
+    expect(def).toContain("ssl_reject_handshake on;");
+    // and the HTTP catch-all stays a default_server too (no fallthrough on :80).
+    expect(def).toContain("listen 80 default_server;");
+  });
+
+  test("catch-all is re-written on every ensure (self-heals a stale 80-only copy)", async () => {
+    const files = new Map<string, string>();
+    files.set(PATHS.confPath, `http {\n    include ${SITES}/*.conf;\n}\n`);
+    // Simulate an already-deployed box whose _default.conf predates the 443 reject.
+    files.set(`${SITES}/_default.conf`, "server {\n    listen 80 default_server;\n}\n");
+    await ensureOpenRestyConfig(makeExecutor(files, {}, []), PATHS);
+    expect(files.get(`${SITES}/_default.conf`)).toContain("ssl_reject_handshake on;");
   });
 });

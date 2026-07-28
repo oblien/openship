@@ -73,6 +73,7 @@
     "serverOnPort": "الخادم على المنفذ {port}",
     "serverPortNotSet": "لم يتم تعيين منفذ الخادم",
     "staticFromEdge": "ثابت من الحافة",
+    "staticPathHint": "يُقدَّم كملفات ثابتة من الحافة — لا تعمل أي عملية.",
     "buildSettingsTitle": "إعدادات البناء"
   },
   "projectSettings": {

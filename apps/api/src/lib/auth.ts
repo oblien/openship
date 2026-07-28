@@ -746,6 +746,35 @@ export const auth = betterAuth({
             );
           }
 
+          // Delete this member's notification_subscription rows for the org.
+          // Unlike resource_grants (inert once membership is gone), subscriptions
+          // are read by the background dispatcher purely on (org, category,
+          // enabled) with NO membership check, and the member's channel is
+          // per-user so it survives removal — so a leftover subscription keeps
+          // streaming this org's events to a removed member indefinitely. Best-
+          // effort + audited, same as the grant cleanup above.
+          try {
+            await repos.notificationSubscription.deleteAllForMember(
+              member.userId,
+              organization.id,
+            );
+          } catch (err) {
+            const message = safeErrorMessage(err);
+            console.error(
+              "[organizationHooks.afterRemoveMember] subscription cleanup failed:",
+              err,
+            );
+            await memberAudit.emit(
+              { organizationId: organization.id, actorUserId: user.id },
+              {
+                eventType: "member.removal.subscription_cleanup_failed",
+                resourceType: "member",
+                resourceId: member.id,
+                after: { userId: member.userId, errorMessage: message.slice(0, 500) },
+              },
+            );
+          }
+
           await memberAudit.emit(
             { organizationId: organization.id, actorUserId: user.id },
             {

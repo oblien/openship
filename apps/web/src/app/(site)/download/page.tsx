@@ -49,7 +49,7 @@ const DOWNLOAD_BASE = "https://github.com/oblien/openship/releases/latest/downlo
 
 const CLI_OPTIONS = [
   { manager: "macOS / Linux", cmd: "curl -fsSL https://get.openship.io | sh" },
-  { manager: "Windows",       cmd: "irm https://raw.githubusercontent.com/oblien/openship/main/scripts/install.ps1 | iex" },
+  { manager: "Windows",       cmd: "irm https://git.openship.io/windows | iex" },
   { manager: "npm",  cmd: "npm i -g openship" },
   { manager: "pnpm", cmd: "pnpm add -g openship" },
   { manager: "yarn", cmd: "yarn global add openship" },

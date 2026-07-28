@@ -55,13 +55,13 @@ function formatCredits(milliCredits: number): string {
 /*  Component                                                         */
 /* ------------------------------------------------------------------ */
 
-export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) => {
-  // Marker prop — currently unused beyond context typing, but kept on the
-  // signature so the parent route can pass the same snapshot it already
-  // fetches for the overview card.
-  void _state;
-
+export const BillingTopups: React.FC<BillingTopupsProps> = ({ state }) => {
   const { t } = useI18n();
+  // Availability is decided by Openship Cloud (billing state), NOT hardcoded —
+  // so top-ups can launch by flipping the cloud flag with no dashboard release.
+  // Absent flag → treated as not-available (coming soon).
+  const topupsAvailable = state.topups?.available === true;
+
   const [packs, setPacks] = useState<TopupPack[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -118,9 +118,16 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
       {/* ── Catalog ───────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border/50 bg-card p-6">
         <div className="mb-5">
-          <h2 className="text-base font-semibold text-foreground">{t.billing.topups.title}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-foreground">{t.billing.topups.title}</h2>
+            {!topupsAvailable && (
+              <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {t.billing.pricing.comingSoon}
+              </span>
+            )}
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {t.billing.topups.description}
+            {topupsAvailable ? t.billing.topups.description : t.billing.topupsComingSoon}
           </p>
         </div>
 
@@ -145,7 +152,9 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
               return (
                 <div
                   key={pack.id}
-                  className="flex flex-col rounded-xl border border-border/50 bg-background p-5 transition-colors hover:border-border"
+                  className={`flex flex-col rounded-xl border border-border/50 bg-background p-5 transition-colors ${
+                    topupsAvailable ? "hover:border-border" : "opacity-70"
+                  }`}
                 >
                   <p className="text-sm font-medium text-muted-foreground">{pack.name}</p>
 
@@ -161,20 +170,29 @@ export const BillingTopups: React.FC<BillingTopupsProps> = ({ state: _state }) =
                     {formatPrice(pack.price_cents)}
                   </p>
 
-                  <button
-                    onClick={() => handleBuy(pack.id)}
-                    disabled={isBuying || buyingPackId !== null}
-                    className="mt-5 inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isBuying ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" />
-                        {t.billing.topups.redirecting}
-                      </>
-                    ) : (
-                      <>{t.billing.topups.buy}</>
-                    )}
-                  </button>
+                  {topupsAvailable ? (
+                    <button
+                      onClick={() => handleBuy(pack.id)}
+                      disabled={isBuying || buyingPackId !== null}
+                      className="mt-5 inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isBuying ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          {t.billing.topups.redirecting}
+                        </>
+                      ) : (
+                        <>{t.billing.topups.buy}</>
+                      )}
+                    </button>
+                  ) : (
+                    <span
+                      className="mt-5 inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-xl border border-border bg-muted px-4 py-2 text-sm font-medium text-muted-foreground"
+                      aria-disabled
+                    >
+                      {t.billing.pricing.comingSoon}
+                    </span>
+                  )}
                 </div>
               );
             })}

@@ -107,6 +107,14 @@ export async function onDeploymentReady(opts: {
       err,
     );
   }
+
+  // Reclaim this project's superseded BUILT IMAGES now (the immediate "remove the
+  // old image on redeploy" cleanup), keeping the rollback-window keep-set so
+  // rollback still works. prune() above handles single-app rollback ARTIFACTS;
+  // this covers the per-service image tags (compose) + any dangling layers.
+  // reapProjectImagesSafe never throws — the daily images:gc job is the backstop.
+  const { reapProjectImagesSafe } = await import("../image-gc");
+  await reapProjectImagesSafe(newDeployment.projectId);
 }
 
 /**

@@ -1,6 +1,6 @@
 # Openship installer (Windows) — https://get.openship.io
 #
-#   irm https://raw.githubusercontent.com/oblien/openship/main/scripts/install.ps1 | iex
+#   irm https://git.openship.io/windows | iex
 #
 # Installs the Openship CLI. Then `openship up` runs Openship locally (API +
 # dashboard), or `openship install` fetches the desktop app. Bun is the runtime;

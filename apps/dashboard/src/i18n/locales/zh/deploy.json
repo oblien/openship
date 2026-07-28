@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "保存域名失败",
-    "toastTitle": "域名"
+    "toastTitle": "域名",
+    "routeFreeLabel": "免费子域名",
+    "routeFreeDesc": "免费的 {domain} 网址，即刻可用。",
+    "routeCustomLabel": "自定义域名",
+    "routeCustomDesc": "将您自己的域名指向此部署。",
+    "routeNoneLabel": "无",
+    "routeNoneDesc": "无公开网址 — 仅内部访问。通过主机端口访问。"
   },
   "dns": {
     "title": "DNS 配置",
@@ -119,6 +125,8 @@
     "addServer": "添加你自己的服务器",
     "continue": "继续",
     "chooseServer": "选择一台服务器",
+    "thisServerBadge": "此服务器",
+    "thisServerHost": "当前主机 — 部署在此运行",
     "searchPlaceholder": "搜索服务器…",
     "noServersMatch": "没有与搜索匹配的服务器。",
     "requireCloudFeature": "部署到 Openship Cloud",
@@ -188,7 +196,11 @@
     "targetServer": "我的服务器",
     "targetCloud": "Openship Cloud",
     "buildLocal": "此机器",
-    "buildRemote": "远程"
+    "buildRemote": "远程",
+    "runtimeStatic": "Static · edge-served",
+    "runtimeSandboxed": "Sandboxed",
+    "runtimeDirectWarning": "Not sandboxed",
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed."
   },
   "power": {
     "heading": "性能",
@@ -288,5 +300,18 @@
     "deployButton": "部署 Webmail",
     "deployFailedTitle": "部署失败",
     "deployFailed": "启动部署失败"
+  },
+  "serveMode": {
+    "heading": "How it's served",
+    "subtitle": "Serve the built files, or run it as a live server process.",
+    "staticLabel": "Serve as static files",
+    "staticDesc": "The build output is served directly by the edge. Nothing runs as a process.",
+    "serverLabel": "Run as a server process",
+    "serverDesc": "Start a long-running process (needs a start command and port).",
+    "staticNote": "Built in an isolated Docker sandbox, then served as static files by the edge.",
+    "startCommandLabel": "Start command",
+    "startCommandPlaceholder": "npx serve -s dist -l $PORT",
+    "startCommandHint": "The command that starts your server. For a static bundle, use a static file server (e.g. npx serve).",
+    "portLabel": "Port"
   }
 }

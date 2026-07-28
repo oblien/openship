@@ -35,6 +35,10 @@
         "backToDashboard": "返回仪表板",
         "createNewProject": "创建新项目"
       },
+      "loadFailed": {
+        "title": "无法加载此项目",
+        "subtitle": "访问此项目时出现问题。请检查网络连接后重试。"
+      },
       "accessDenied": {
         "title": "拒绝访问",
         "subtitle": "你没有访问此资源的权限。",

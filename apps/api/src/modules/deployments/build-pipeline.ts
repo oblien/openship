@@ -11,24 +11,41 @@ import type {
   CommandExecutor,
   DeployConfig,
   DeployEnvironment,
+  DeploymentResult,
+  LogCallback,
   LogEntry,
+  PromptUserFn,
   ResourceConfig,
 } from "@repo/adapters";
 import {
   BareRuntime,
   BuildLogger,
   CloudRuntime,
+  DockerRuntime,
+  STATIC_RELEASE_BASE,
   DEFAULT_BUILD_RESOURCE_CONFIG,
   ensurePortAvailable,
+  allocateHostPort,
+  createHostExecutor,
   runDeployPipeline,
   isMultiServiceRuntime,
   waitForReady,
-  EdgeMigrateRequested,
-  runEdgeTakeover,
+  ensureEdge,
 } from "@repo/adapters";
 import { platform } from "../../lib/controller-helpers";
+import { resolveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import { webhookProxyTarget } from "../../config";
-import { resolveDeploymentRuntime, resolveDeploymentPlatform } from "../../lib/deployment-runtime";
+import {
+  resolveDeploymentRuntime,
+  resolveDeploymentPlatform,
+  resolveEffectiveTarget,
+} from "../../lib/deployment-runtime";
+import {
+  resolveBuildRuntimeModes,
+  resolveDeployRouting,
+  type DeployRouting,
+} from "./build-execution-plan";
+import { attachLinkedNetworks } from "./attach-linked-networks";
 import { syncProjectToServerManifest } from "../../lib/openship-manifest-sync";
 import { syncManagedEdgeRoutes, edgeUnsyncedWarning } from "../../lib/managed-edge-proxy";
 import { decryptEnvMap } from "../../lib/encryption";
@@ -241,6 +258,11 @@ async function archivePreviousDeployment(
     logger.log(
       "Skipping snapshot/artifact archive — rollback strategy is 'git' (rollback re-clones at commit_sha_before).",
     );
+    // Archive is skipped, but old BUILT IMAGES must still be reclaimed — this is
+    // the one path that never reached onDeploymentReady's image reap, so
+    // git-strategy projects leaked every prior build. Best-effort; images:gc backstops.
+    const { reapProjectImagesSafe } = await import("./image-gc");
+    await reapProjectImagesSafe(project, (m) => logger.log(`${m}\n`, "warn"));
     return;
   }
   try {
@@ -384,37 +406,56 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
   };
 
   try {
-    // Services are containers → they need the Docker runtime. If this deploy
-    // will run the service pipeline (targeted serviceIds, or the project has
-    // service rows) but the app is configured "bare", force Docker for it — the
-    // bare runtime literally can't run a service container (it would fail with
-    // "services not supported on the bare runtime"). Only the targeted
-    // service(s) deploy here; the app's own bare deploy is untouched. Compose
-    // projects are already Docker, so the `=== "bare"` guard skips them; a plain
-    // bare app deploy with no services never flips (useServicePipeline=false).
-    // Guard on `!== "docker"` (not `=== "bare"`) so an UNSET runtime (null/
-    // undefined — e.g. a template/app project created without a runtime_mode)
-    // also flips; otherwise it resolves to bare and the service deploy dies with
-    // "services are not supported on the bare runtime". Already-Docker projects
-    // skip the check.
-    if (snapshot.runtimeMode !== "docker") {
-      const willRunServices = (await resolveServicePipelineMode(project, snapshot)).useServicePipeline;
-      if (willRunServices) {
-        logger.log("→ Services require the Docker runtime — running this service deploy on Docker.\n");
-        snapshot.runtimeMode = "docker";
-      }
+    // Decide the runtime modes as DATA (no mutate-then-undo). Two historical
+    // flips, encoded in resolveBuildRuntimeModes: services → Docker (containers
+    // can't run bare); a server/self-hosted STATIC app → BUILD in a Docker sandbox
+    // but keep a BARE serve/lifecycle identity (files served by the edge — a
+    // persisted "docker" would make rollback/purge 404-no-op on the release dir and
+    // leak it). Cloud static + Docker-less desktop-local static keep their own mode.
+    const willRunServices = (await resolveServicePipelineMode(project, snapshot)).useServicePipeline;
+    const runtimeModes = resolveBuildRuntimeModes({
+      hasServer: !!snapshot.hasServer,
+      serverId: snapshot.serverId,
+      baseTarget: plat.target,
+      effectiveTarget: resolveEffectiveTarget(plat.target, snapshot),
+      willRunServices,
+    });
+    if (runtimeModes.buildRuntimeMode === "docker") {
+      logger.log(
+        willRunServices
+          ? "→ Services require the Docker runtime — running this service deploy on Docker.\n"
+          : "→ Static build runs in a Docker sandbox; files are served by the edge.\n",
+      );
     }
 
-    const resolved = await resolveDeploymentPlatform(snapshot, {
-      organizationId: dep.organizationId,
-      basePlatform: plat,
-    });
+    // Resolve the platform for the BUILD with buildRuntimeMode as an OVERRIDE on a
+    // shallow snapshot copy (resolveDeploymentPlatform is read-only) — never mutate
+    // the real snapshot for a transient build need.
+    const resolved = await resolveDeploymentPlatform(
+      runtimeModes.buildRuntimeMode && runtimeModes.buildRuntimeMode !== snapshot.runtimeMode
+        ? { ...snapshot, runtimeMode: runtimeModes.buildRuntimeMode }
+        : snapshot,
+      { organizationId: dep.organizationId, basePlatform: plat },
+    );
 
     runtime = resolved.platform.runtime;
     routing = resolved.platform.routing;
     ssl = resolved.platform.ssl;
     system = resolved.platform.system;
     ctx.runtime = runtime;
+    // Persist the serve/lifecycle identity ONCE (no undo): bare for static
+    // file-serve, docker for services, unchanged otherwise.
+    if (runtimeModes.serveRuntimeMode !== undefined) {
+      snapshot.runtimeMode = runtimeModes.serveRuntimeMode;
+    }
+
+    // Build + deploy routing, keyed off the RESOLVED runtime (ground truth) — this
+    // is the one place the old scattered `instanceof` checks now live.
+    const deployRouting = resolveDeployRouting({
+      hasServer: !!snapshot.hasServer,
+      runtimeName: runtime.name,
+      outputDirectory: snapshot.outputDirectory,
+    });
 
     const usesManagedRouting = resolved.usesManagedRouting;
     const targetExecutor: CommandExecutor | null = resolved.platform.executor;
@@ -426,9 +467,11 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       `→ Deploy target: ${resolved.effectiveTarget}` +
         (resolved.serverId ? ` (server ${resolved.serverId.slice(0, 8)})` : "") +
         ` · runtime: ${
-          resolved.runtimeMode === "docker"
-            ? "sandboxed (Docker container)"
-            : "direct (host process)"
+          !snapshot.hasServer
+            ? "static (built in a Docker sandbox, served as files by the edge)"
+            : resolved.runtimeMode === "docker"
+              ? "sandboxed (Docker container)"
+              : "direct (host process)"
         }\n`,
     );
 
@@ -542,7 +585,13 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       repoIsGithub: !!project.gitOwner,
     });
     const cloneOnServer = clonePlan.runsOnServer;
-    const allowRelayFallback = clonePlan.relayEligible;
+    // The relay needs a real SSH reverse tunnel — `reverseForward` exists on every
+    // SSH executor and is absent only on a LocalExecutor (relay.ts). This is the
+    // TRUE capability gate (not the server's SSH auth method); combined with the
+    // config-level relayEligible + a local gh (probed in resolveBuildGitToken),
+    // it makes forwarding the automatic clone path ahead of the api-host fallback.
+    const allowRelayFallback =
+      clonePlan.relayEligible && typeof targetExecutor?.reverseForward === "function";
 
     // Only resolve a git clone token when the deploy actually needs a SOURCE.
     // A services deploy where every enabled service runs a registry IMAGE (no
@@ -577,27 +626,43 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           // gracefully (a LOCAL fallback credential, flagged apiHostFallback) instead
           // of hard-failing at token resolution after the server is provisioned.
           allowApiHostFallback: clonePlan.dockerClonesOnServer,
+          // Lets the chain ask the target server whether it already reaches this
+          // repo on its own — only consulted for a clone that runs THERE.
+          serverExecutor: clonePlan.runsOnServer ? targetExecutor : null,
+          repoUrl: snapshot.repoUrl,
+          onLog: (message) => logger.log(message),
         })
       : {};
 
-    // Clone-on-server needs a SHIPPABLE credential that can travel to the build
-    // host: the desktop relay (gitCred.relay) or an App/PAT token (gitCred.token
-    // WITHOUT apiHostFallback). An apiHostFallback token is a LOCAL credential for
-    // cloning on the orchestrator — NOT shippable — so it does not qualify. When
-    // no shippable credential exists, fall back to cloning on the API host and
-    // transferring the context — warn, never hard-fail. (The BARE runtime always
-    // clones on the target and is gated by preflight separately, so this fallback
-    // only changes DOCKER behavior.)
+    // Clone-on-server needs a credential the build host can actually AUTHENTICATE
+    // WITH. Four qualify: the server's own ambient git access (nothing moves), an
+    // ssh key or App/PAT token we ship it, the desktop relay, or a public repo
+    // (nothing needed). An apiHostFallback token is a LOCAL credential for cloning
+    // on the orchestrator — NOT usable there — so it does not qualify. When
+    // nothing qualifies, fall back to cloning on the API host and transferring the
+    // context — warn, never hard-fail. (The BARE runtime always clones on the
+    // target and is gated by preflight separately, so this only changes DOCKER.)
     const cloneCredentialAvailable =
+      !!gitCred.ambient ||
       gitCred.relay === true ||
       !!gitCred.ssh ||
+      gitCred.anonymous === true ||
       (!!gitCred.token && !gitCred.apiHostFallback);
     const effectiveCloneOnServer =
       cloneOnServer && (runtime.name === "bare" || cloneCredentialAvailable);
     if (cloneOnServer && runtime.name !== "bare" && !cloneCredentialAvailable) {
       logger.log(
-        "Clone-on-server was requested, but no git credential can reach the build host (no relay, no token). Falling back to cloning on the API host and transferring the build context.",
+        "Clone-on-server was requested, but nothing can authenticate the clone on the build host — " +
+          "the server has no GitHub identity of its own, no App/PAT token is available, and no git " +
+          "identity could be forwarded. Falling back to cloning on the API host and transferring the " +
+          "build context. To clone directly on the server, connect it under Servers → GitHub " +
+          "(a read-only per-repo deploy key is the narrowest option), or install the Openship App / " +
+          "add a per-project clone token.",
         "warn",
+      );
+    } else if (effectiveCloneOnServer && gitCred.relay) {
+      logger.log(
+        "Cloning on the build host via your forwarded git identity — the credential is used for this build only and never persisted on the server.",
       );
     }
 
@@ -615,6 +680,9 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       resources: buildResources,
       gitToken: gitCred.token,
     });
+    // A static app builds via the minimal nginx image (generateStaticDockerfile);
+    // only this flag selects it. Bare builds ignore it.
+    buildConfig.isStatic = !snapshot.hasServer;
     // Folder-upload cloud deploy: the browser uploaded the source straight into
     // a pre-provisioned workspace — adopt it and skip clone + transfer. (The
     // self-hosted upload path instead rides snapshot.localPath, handled above.)
@@ -630,6 +698,10 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // Per-server SSH clone credential (ssh-server-key / ssh-deploy-key mode).
     // Consumed by the adapter clone step (git@github.com + GIT_SSH_COMMAND).
     if (gitCred.ssh) buildConfig.gitSsh = gitCred.ssh;
+    // The server authenticates with its own credentials. Gated on the clone
+    // actually running there: on the api-host path this names an identity that
+    // isn't ours to use, and the adapter would find no credential at all.
+    if (gitCred.ambient && effectiveCloneOnServer) buildConfig.gitAmbient = gitCred.ambient;
 
     // Desktop git-credential relay opener, shared by the single-app and compose
     // paths. Opens the reverse tunnel + remote helper (nothing persisted on the
@@ -709,6 +781,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           routing,
           ssl,
           system,
+          executor: targetExecutor,
           usesManagedRouting,
           logger,
           ctx,
@@ -720,6 +793,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           gitToken: gitCred.token,
           gitCredentialHelperPath: composeRelay?.scriptPath,
           gitSsh: gitCred.ssh,
+          gitAmbient: effectiveCloneOnServer ? gitCred.ambient : undefined,
           cloneOnServer: effectiveCloneOnServer,
         });
       } finally {
@@ -759,7 +833,19 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
 
     let buildResult: Awaited<ReturnType<typeof runtime.build>>;
     try {
-      buildResult = await runtime.build(buildConfig, logger);
+      // static-sandbox: build in a Docker sandbox, then extract the doc-root to a
+      // host dir the edge serves. Everything else (server apps, bare-built static
+      // on a Docker-less local box, cloud) builds normally.
+      if (deployRouting.buildMode === "static-sandbox") {
+        // buildMode is derived from runtime.name === "docker", so the cast is sound.
+        buildResult = await (runtime as DockerRuntime).buildStaticToHost(
+          buildConfig,
+          `${STATIC_RELEASE_BASE}/.builds/${buildSessionId}`,
+          logger,
+        );
+      } else {
+        buildResult = await runtime.build(buildConfig, logger);
+      }
     } finally {
       // Reverse tunnel + remote helper script torn down regardless of outcome —
       // the credential is reachable only for the build's duration.
@@ -809,10 +895,12 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       envMap,
       prodResources,
       logger,
+      deployRouting,
     };
 
-    if (!snapshot.hasServer && runtime instanceof CloudRuntime) {
-      await executeStaticEdgeDeploy(phase, runtime);
+    // deployMode is derived from runtime.name === "cloud", so the cast is sound.
+    if (deployRouting.deployMode === "static-edge") {
+      await executeStaticEdgeDeploy(phase, runtime as CloudRuntime);
     } else {
       await executeServerDeploy(phase);
     }
@@ -846,6 +934,9 @@ interface DeployPhaseInputs {
   envMap: Record<string, string>;
   prodResources: ResourceConfig;
   logger: BuildLogger;
+  /** Build/deploy routing decided once from the resolved runtime (static-sandbox /
+   *  static-file-serve / server / static-edge) — replaces scattered `instanceof`. */
+  deployRouting: DeployRouting;
 }
 
 /** Static edge deploy via CloudRuntime (Oblien Pages). */
@@ -900,63 +991,54 @@ async function executeStaticEdgeDeploy(
 }
 
 /**
+ * How a deploy SERVES its workload — the one place the static-file-serve vs
+ * running-process divergence lives. `buildDeployEnvironment` composes the
+ * DeployEnvironment from a `ServeStrategy` (the divergent bits) + shared
+ * orchestration (edge/routing/SSL setup, previous-deployment teardown, upstream
+ * URL) — so no closure re-branches `isStaticFileServe`/`runtime.name`.
+ */
+interface ServeStrategy {
+  readonly restartPolicy: "no" | "always";
+  readonly canOverlap: boolean;
+  /** Preflight: ensure the runtime/toolchain is ready. Noop for static file-serve
+   *  (nothing runs). */
+  ensureRuntimeReady(): Promise<void>;
+  /** Preflight: ensure the workload's host ports are free. Noop for file-serve
+   *  (no listening port). */
+  ensurePorts(config: DeployConfig, promptUser: PromptUserFn): Promise<void>;
+  /** Deploy the workload; the caller checks containerId + shapes the result. */
+  activate(config: DeployConfig, onLog: LogCallback): Promise<DeploymentResult>;
+  /** File-serve → a filesystem `root`; running processes route via resolveTargetUrl. */
+  resolveRoute?: (containerId: string, config: DeployConfig) => Promise<{ staticRoot: string }>;
+  /** Post-activate readiness gate; undefined when nothing listens. The caller
+   *  additionally only wires this for LOCAL targets (remote/cloud unreachable). */
+  healthCheck?: (containerId: string, config: DeployConfig) => Promise<void>;
+}
+
+/**
  * Build the runtime DeployEnvironment (preflight + activate + deactivate +
- * route/url resolvers) for a server deploy. Static-self-hosted (bare,
- * file-backed) and containerized server deploys share one shape but differ
- * in a handful of closures — kept together here so executeServerDeploy
- * reads as a straight sequence.
+ * route/url resolvers) for a server deploy. The static-vs-process divergence is
+ * encapsulated in `serve`; this composes it with the shared orchestration.
  */
 function buildDeployEnvironment(
   phase: DeployPhaseInputs,
   deps: {
-    staticBareRuntime: BareRuntime | null;
-    isStaticSelfHosted: boolean;
+    serve: ServeStrategy;
     previousRuntime: DeployPhaseInputs["runtime"];
     plannedDomains: ReturnType<typeof buildProjectRouteDomains>;
-    canOverlap: boolean;
   },
 ): DeployEnvironment {
-  const { runtime, system, targetExecutor, routeState, snapshot, logger, effectiveTarget } = phase;
-  const { staticBareRuntime, isStaticSelfHosted, previousRuntime, plannedDomains, canOverlap } = deps;
+  const { runtime, system, targetExecutor, routeState, logger, effectiveTarget } = phase;
+  const { serve, previousRuntime, plannedDomains } = deps;
 
   return {
-    canOverlap,
-    // Post-activate readiness gate. Only wired for LOCAL targets: the app runs
-    // on this host, so a refused/timed-out probe genuinely means it failed to
-    // come up (throwing here auto-reverts to the previous deployment). Remote
-    // (SSH server) and cloud targets aren't reachable from the API process, so
-    // we leave them unprobed rather than risk failing a healthy deploy. Static
-    // self-hosted has no listening port. See deploy-pipeline.ts for the seam.
-    healthCheck:
-      isStaticSelfHosted || effectiveTarget !== "local"
-        ? undefined
-        : async (containerId: string, cfg) => {
-            let host = "127.0.0.1";
-            let port = cfg.port;
-            if (runtime.name !== "bare") {
-              // Container runtime: prefer the published host port; fall back to
-              // the container's bridge IP:port (reachable on the local daemon).
-              try {
-                const info = await runtime.getContainerInfo(containerId);
-                if (info?.hostPort) {
-                  port = info.hostPort;
-                } else if (runtime.supports("containerIp")) {
-                  const ip = await runtime.getContainerIp(containerId);
-                  if (ip) host = ip;
-                }
-              } catch {
-                /* fall back to 127.0.0.1:cfg.port */
-              }
-            }
-            logger.log(`Health check: waiting for the app to accept connections on port ${cfg.port}…\n`);
-            const ready = await waitForReady(host, port, { timeoutMs: 45_000, intervalMs: 1_000 });
-            if (!ready) {
-              throw new Error(
-                `Health check failed: the app never accepted a connection on port ${cfg.port} within 45s — it likely crashed on startup (check the runtime logs).`,
-              );
-            }
-            logger.log(`Health check passed: the app is accepting connections.\n`);
-          },
+    canOverlap: serve.canOverlap,
+    // Post-activate readiness gate. Only wired for LOCAL targets: the app runs on
+    // this host, so a refused/timed-out probe genuinely means it failed to come up
+    // (throwing here auto-reverts to the previous deployment). Remote (SSH) and
+    // cloud targets aren't reachable from the API process. The strategy supplies
+    // the probe for a running process; a static file-serve has none.
+    healthCheck: effectiveTarget === "local" ? serve.healthCheck : undefined,
     reactivatePrevious:
       previousRuntime.name === "bare"
         ? (id: string) => (id.includes("/") ? Promise.resolve() : previousRuntime.start(id))
@@ -968,88 +1050,76 @@ function buildDeployEnvironment(
               logger.log(`${entry.message}\n`, entry.level);
             };
 
-            if (!isStaticSelfHosted) {
-              await system.ensureFeature("deploy", systemLog);
-            }
-            if (plannedDomains.length > 0) {
-              // Routing needs OpenResty on 80/443. If a foreign proxy already
-              // holds them, HOLD the deploy and prompt (migrate / take over /
-              // cancel) — the same session prompt flow used for port conflicts —
-              // instead of hard-failing with EDGE_CONFLICT.
-              try {
-                await system.ensureFeature("routing", systemLog, { promptUser });
-              } catch (err) {
-                if (err instanceof EdgeMigrateRequested) {
-                  systemLog({
-                    message: `Migrating ${err.sites.length} site(s) from the existing proxy, then taking over 80/443...`,
-                    level: "warn",
-                  });
-                  const takeover = await runEdgeTakeover(
-                    targetExecutor,
-                    { status: err.status, sites: err.sites },
-                    systemLog,
+            await serve.ensureRuntimeReady();
+            // Domains are OPTIONAL — edge/routing/SSL toolchain setup is
+            // best-effort and must NEVER fail the deploy. If OpenResty/certbot
+            // can't be installed, or 80/443 takeover is declined, the app still
+            // deploys and runs on its port; routing is flagged action-required
+            // and retried later (route registration below is also best-effort).
+            try {
+              if (plannedDomains.length > 0) {
+                // Routing needs OpenResty on 80/443. If a foreign proxy already
+                // holds them, HOLD the deploy and prompt (migrate / take over /
+                // cancel) — the same session prompt flow used for port conflicts.
+                const edge = await ensureEdge(
+                  targetExecutor,
+                  (p) => system.ensureFeature("routing", systemLog, { promptUser: p }),
+                  { promptUser, onLog: systemLog },
+                );
+                if (edge.migrated && !edge.ok) {
+                  // ensureEdge already rolled back to the previous proxy — we
+                  // just don't fail the deploy over it.
+                  logger.log(
+                    "Edge migration failed — rolled back to the previous proxy; the app will deploy unrouted (Retry routing from the Domains tab).\n",
+                    "warn",
                   );
-                  for (const w of [...err.warnings, ...takeover.warnings]) {
-                    systemLog({ message: w, level: "warn" });
-                  }
-                  if (!takeover.ok) {
-                    throw new Error("Edge migration failed — rolled back to the previous proxy.");
-                  }
-                } else {
-                  throw err;
                 }
               }
-            }
-            if (plannedDomains.some((d) => d.provisionSsl)) {
-              await system.ensureFeature("ssl", systemLog);
+              if (plannedDomains.some((d) => d.provisionSsl)) {
+                await system.ensureFeature("ssl", systemLog);
+              }
+            } catch (err) {
+              logger.log(
+                `Edge/routing setup failed — deploy continues; the app runs on its port and routing is retried later: ${safeErrorMessage(err)}\n`,
+                "warn",
+              );
             }
           }
 
-          if (!isStaticSelfHosted) {
-            const ports = Array.from(
-              new Set(
-                (routeState.publicEndpoints.length > 0
-                  ? routeState.publicEndpoints
-                  : [{ port: cfg.port }])
-                  .map((endpoint) => endpoint.port ?? cfg.port)
-                  .filter((port): port is number => Number.isFinite(port)),
-              ),
-            );
-
-            for (const port of ports) {
-              await ensurePortAvailable(targetExecutor, port, logger, promptUser);
-            }
-          }
+          await serve.ensurePorts(cfg, promptUser);
         }
       : undefined,
     activate: async (cfg, onLog) => {
-      const r = isStaticSelfHosted
-        ? await staticBareRuntime!.deployStatic({
-            ...cfg,
-            outputDirectory: cfg.outputDirectory ?? snapshot.outputDirectory,
-          })
-        : await runtime.deploy(cfg, onLog);
+      const r = await serve.activate(cfg, onLog);
       if (!r.containerId) throw new Error("Deploy produced no container");
       return { containerId: r.containerId, url: r.url };
     },
-    deactivate: (id) =>
-      previousRuntime.name === "bare" && !id.includes("/")
-        ? previousRuntime.stop(id)
-        : previousRuntime.destroy(id),
-    resolveRoute: isStaticSelfHosted
-      ? async (id, cfg) => ({
-          staticRoot: staticBareRuntime!.resolveStaticRoot(
-            id,
-            cfg.outputDirectory ?? snapshot.outputDirectory,
-          ),
-        })
-      : undefined,
-    resolveTargetUrl: runtime.supports("containerIp")
-      ? async (id, port) => {
-          const ip = await runtime.getContainerIp(id);
-          return ip ? `http://${ip}:${port}` : null;
-        }
-      : undefined,
+    deactivate: (id) => {
+      // A path-shaped id is a static release DIR — remove the files. A bare
+      // previousRuntime's destroy already rm's it; but a post-change static's
+      // previousRuntime resolves to Docker, whose destroy(dir) is a 404 no-op
+      // that would LEAK the dir, so rm it ourselves via the target FS.
+      if (id.includes("/")) {
+        if (previousRuntime.name === "bare") return previousRuntime.destroy(id);
+        if (targetExecutor) return targetExecutor.rm(id);
+        return previousRuntime.destroy(id);
+      }
+      return previousRuntime.name === "bare" ? previousRuntime.stop(id) : previousRuntime.destroy(id);
+    },
+    resolveRoute: serve.resolveRoute,
+    resolveTargetUrl: async (id, port) => {
+      const strategy = resolveRouteStrategy(phase.project.routeStrategy);
+      // loopback-port: dial the container's published LOOPBACK host port (read
+      // live — works with a pinned or random publish). Bare has none → the
+      // helper falls back to 127.0.0.1:<appPort>. A container with no host port
+      // falls back to the bridge IP. The post-activate health check gates all
+      // of this, so a bad target fails the deploy, not the live route.
+      let hostPort: number | undefined;
+      if (strategy === "loopback-port" && runtime.name !== "bare") {
+        hostPort = (await runtime.getContainerInfo(id).catch(() => null))?.hostPort ?? undefined;
+      }
+      return resolveUpstreamUrl({ strategy, runtime, containerId: id, containerPort: port, hostPort });
+    },
   };
 }
 
@@ -1061,11 +1131,145 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     routeState, buildResult, envMap, prodResources, logger,
   } = phase;
 
-  // Static sites are always served directly from the web server (OpenResty)
-  // via file-backed routes - Docker is only for server apps.
-  const staticBareRuntime =
-    !snapshot.hasServer && runtime instanceof BareRuntime ? runtime : null;
-  const isStaticSelfHosted = staticBareRuntime !== null;
+  // Static sites are served as files by the edge (OpenResty `root`), regardless
+  // of how they were BUILT — a Docker sandbox (server/self-hosted, the common
+  // case) or bare (Docker-less desktop "This Machine"). A dedicated bare
+  // file-serve runtime rooted at the edge-shared STATIC_RELEASE_BASE promotes
+  // the built dir into a release and hands the edge a `root`. Its executor is
+  // the platform executor, which is exactly the FS the build wrote to (SSH for a
+  // remote server; local for a local / docker-edge host where the extract landed
+  // on the shared openship_static volume).
+  const isStaticFileServe = phase.deployRouting.deployMode === "static-file-serve";
+  const staticServeRuntime = isStaticFileServe
+    ? new BareRuntime({
+        workDir: STATIC_RELEASE_BASE,
+        executor: phase.targetExecutor ?? undefined,
+      })
+    : null;
+  // Where the static doc-root lives: "" when a Docker sandbox build already
+  // extracted it (release root), else the configured output dir (bare build).
+  const staticServeOutputDir = phase.deployRouting.staticServeOutputDir;
+
+  // loopback-port routing pins a stable LOOPBACK host port for docker so the
+  // edge target is predictable and survives container restarts. Reused across
+  // redeploys (persisted on the project); allocated once on first deploy from a
+  // live-probed free port. Bare owns 127.0.0.1:<port> and needs none. The
+  // `effectiveTarget !== "cloud"` guard makes explicit that a cloud deploy never
+  // allocates a host port on the orchestrator (cloud routes via Oblien, not a
+  // loopback port) — defense-in-depth against a cloud→host-exec slip.
+  const routeStrategy = resolveRouteStrategy(project.routeStrategy);
+
+  // How this deploy SERVES — the single object holding the static-file-serve vs
+  // running-process divergence (restart/overlap, preflight, activate, route,
+  // health). buildDeployEnvironment composes the pipeline env from it; the shared
+  // edge/routing orchestration stays there (not duplicated per strategy).
+  const serve: ServeStrategy = isStaticFileServe
+    ? {
+        restartPolicy: "no",
+        canOverlap: false,
+        ensureRuntimeReady: async () => {},
+        ensurePorts: async () => {},
+        activate: (cfg) =>
+          staticServeRuntime!.deployStatic({ ...cfg, outputDirectory: staticServeOutputDir }),
+        resolveRoute: async (id) => ({
+          staticRoot: staticServeRuntime!.resolveStaticRoot(id, staticServeOutputDir),
+        }),
+        healthCheck: undefined,
+      }
+    : {
+        restartPolicy: "always",
+        // Overlap (run-new-then-swap, zero-downtime) needs a unique container +
+        // its own host port; a pinned loopback port can't be double-bound and bare
+        // binds a fixed port → stop-first.
+        canOverlap: runtime.name !== "bare" && routeStrategy !== "loopback-port",
+        ensureRuntimeReady: async () => {
+          const system = phase.system;
+          if (!system) return;
+          await system.ensureFeature("deploy", (entry) => logger.log(`${entry.message}\n`, entry.level));
+        },
+        ensurePorts: async (cfg, promptUser) => {
+          const executor = phase.targetExecutor;
+          if (!executor) return;
+          const ports = Array.from(
+            new Set(
+              (routeState.publicEndpoints.length > 0
+                ? routeState.publicEndpoints
+                : [{ port: cfg.port }])
+                .map((endpoint) => endpoint.port ?? cfg.port)
+                .filter((port): port is number => Number.isFinite(port)),
+            ),
+          );
+          for (const port of ports) {
+            await ensurePortAvailable(executor, port, logger, promptUser);
+          }
+        },
+        activate: async (cfg, onLog) => {
+          const deployed = await runtime.deploy(cfg, onLog);
+          // Single-app consumer: join the networks of any internally-linked
+          // source apps so injected internal hosts (e.g. db:5432) resolve. The
+          // compose path does this in compose/deploy.service.ts; this closes the
+          // single-container gap. Advisory — never fails the deploy.
+          await attachLinkedNetworks(project.id, runtime, (m, level) => logger.log(`${m}\n`, level));
+          return deployed;
+        },
+        resolveRoute: undefined,
+        healthCheck: async (containerId, cfg) => {
+          let host = "127.0.0.1";
+          let port = cfg.port;
+          if (runtime.name !== "bare") {
+            // Container runtime: prefer the published host port; fall back to the
+            // container's bridge IP:port (reachable on the local daemon).
+            try {
+              const info = await runtime.getContainerInfo(containerId);
+              if (info?.hostPort) {
+                port = info.hostPort;
+              } else if (runtime.supports("containerIp")) {
+                const ip = await runtime.getContainerIp(containerId);
+                if (ip) host = ip;
+              }
+            } catch {
+              /* fall back to 127.0.0.1:cfg.port */
+            }
+          }
+          logger.log(`Health check: waiting for the app to accept connections on port ${cfg.port}…\n`);
+          const ready = await waitForReady(host, port, { timeoutMs: 45_000, intervalMs: 1_000 });
+          if (!ready) {
+            throw new Error(
+              `Health check failed: the app never accepted a connection on port ${cfg.port} within 45s — it likely crashed on startup (check the runtime logs).`,
+            );
+          }
+          logger.log(`Health check passed: the app is accepting connections.\n`);
+        },
+      };
+
+  let pinnedHostPort: number | undefined = project.hostPort ?? undefined;
+  if (
+    routeStrategy === "loopback-port" &&
+    !isStaticFileServe &&
+    runtime.name !== "bare" &&
+    phase.effectiveTarget !== "cloud"
+  ) {
+    if (!pinnedHostPort) {
+      // Avoid host ports already pinned to OTHER projects in this org — their
+      // containers may not be listening right now, so the live scan alone
+      // wouldn't see them and two projects could collide on the same loopback
+      // port (ensurePortAvailable is only the deploy-time backstop).
+      const avoid = (
+        await repos.project
+          .listByOrganization(project.organizationId, { perPage: 1000 })
+          .then((r) => r.rows)
+          .catch(() => [] as { id: string; hostPort: number | null }[])
+      )
+        .filter((p) => p.id !== project.id && typeof p.hostPort === "number")
+        .map((p) => p.hostPort as number);
+      pinnedHostPort = await allocateHostPort(phase.targetExecutor ?? createHostExecutor(), { avoid });
+      await repos.project
+        .update(project.id, { hostPort: pinnedHostPort })
+        .catch((err) => logger.log(`Couldn't persist host port ${pinnedHostPort}: ${safeErrorMessage(err)}\n`, "warn"));
+    }
+  } else {
+    pinnedHostPort = undefined; // don't publish a pinned port under container-ip / bare / static
+  }
 
   const deployConfig: DeployConfig = {
     deploymentId: dep.id,
@@ -1074,13 +1278,14 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     imageRef: buildResult.imageRef!,
     environment: dep.environment,
     port: snapshot.port,
+    hostPort: pinnedHostPort,
     // The build may override the start command once it knows the output shape
     // (e.g. Next.js standalone → `node server.js` instead of `next start`).
     startCommand: buildResult.startCommand ?? snapshot.startCommand,
     stack: snapshot.framework,
     envVars: envMap,
     resources: prodResources,
-    restartPolicy: isStaticSelfHosted ? "no" : "always",
+    restartPolicy: serve.restartPolicy,
     runtimeName: project.slug ?? project.id,
     publicEndpoints: routeState.publicEndpoints,
     outputDirectory: snapshot.outputDirectory,
@@ -1145,15 +1350,28 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // deploy fails — otherwise a failed deploy leaves orphan domain rows
   // that resurface as routes on the next deploy.
   const createdDomainIds: string[] = [];
+  const domainClaimWarnings: string[] = [];
+  // Only domains we could CLAIM get routed. A hostname owned by another project
+  // (ConflictError) is skipped entirely — not just un-claimed but NOT routed in
+  // nginx either, or we'd hijack the other project's route. Domains are optional,
+  // so a conflict never fails the deploy; it's flagged action-required instead.
+  const routableDomains: typeof plannedDomains = [];
   for (const route of plannedDomains) {
-    const created = await ensureRouteDomainRecord({
-      projectId: project.id,
-      route,
-      domainByHostname,
-    });
-    if (created && !projectDomains.some((d) => d.id === created.id)) {
-      createdDomainIds.push(created.id);
-      logger.log(`Created domain record for "${route.hostname}".\n`);
+    try {
+      const created = await ensureRouteDomainRecord({
+        projectId: project.id,
+        route,
+        domainByHostname,
+      });
+      if (created && !projectDomains.some((d) => d.id === created.id)) {
+        createdDomainIds.push(created.id);
+        logger.log(`Created domain record for "${route.hostname}".\n`);
+      }
+      routableDomains.push(route);
+    } catch (err) {
+      const message = safeErrorMessage(err);
+      logger.log(`Skipping domain "${route.hostname}" (not routed — ${message}).\n`, "warn");
+      domainClaimWarnings.push(`${route.hostname}: ${message}`);
     }
   }
 
@@ -1161,15 +1379,17 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
   // unique-name + random host port; cloud isolated workspace). Bare binds a
   // fixed port and static is file-backed → stop-first. Drives the cutover order
   // AND the snapshot-artifact gate below.
-  const canOverlap = !isStaticSelfHosted && runtime.name !== "bare";
+  // Zero-downtime overlap (run new + old together, then swap) needs each to bind
+  // its own host port. A PINNED loopback port can't be double-bound, so
+  // loopback-port docker deploys stop-then-start (brief blip, like bare).
+  // container-ip keeps overlap.
+  const canOverlap = serve.canOverlap;
 
   // Runtime deploy environment (preflight + activate + deactivate + resolvers).
   const deployEnv = buildDeployEnvironment(phase, {
-    staticBareRuntime,
-    isStaticSelfHosted,
+    serve,
     previousRuntime,
     plannedDomains,
-    canOverlap,
   });
 
   const deploySsl = plannedDomains.some((domain) => domain.provisionSsl)
@@ -1221,7 +1441,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
       config: deployConfig,
       previousContainerId: prevDep?.containerId ?? undefined,
       deactivatePrevious: deactivateOldInPipeline,
-      domains: toRoutedDomainInputs(plannedDomains),
+      domains: toRoutedDomainInputs(routableDomains),
       routing,
       ssl: deploySsl,
       routeOptions: project.webhookDomain
@@ -1242,7 +1462,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     // prev-deactivation can never reach it — that's exactly how containers
     // piled up (3 for one project). Destroy it via the current runtime now.
     // Static deploys have no container. Best-effort + idempotent.
-    if (deployResult.containerId && !isStaticSelfHosted) {
+    if (deployResult.containerId && !isStaticFileServe) {
       await runtime.destroy(deployResult.containerId).catch((err) =>
         logger.log(
           `Warning: failed to clean up container after deploy failure: ${safeErrorMessage(err)}\n`,
@@ -1295,7 +1515,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     ),
   );
   const portCheck =
-    isStaticSelfHosted || !deployResult.containerId
+    isStaticFileServe || !deployResult.containerId
       ? []
       : await auditPorts(runtime, deployResult.containerId, auditedPorts, logger);
 
@@ -1311,12 +1531,25 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
     metaPatch.deployWarning = postSync.warningMessage;
     metaPatch.edgeUnsynced = true;
   }
+  // Per-domain route-registration failures are best-effort in the pipeline
+  // (domains are optional; the container is up + healthy). Fold them into the
+  // SAME "Action Required" signal so an unrouted domain shows a routing warning
+  // + the Domains-tab dot instead of failing an otherwise-good deploy. Cleared
+  // by Retry routing / the next clean deploy.
+  const routeIssues = [...domainClaimWarnings, ...(deployResult.routeWarnings ?? [])];
+  if (routeIssues.length) {
+    const msg =
+      `Some domains aren't routed yet — the app is deployed and running; fix DNS/routing and ` +
+      `Retry from the Domains tab: ${routeIssues.join("; ")}`;
+    metaPatch.deployWarning = metaPatch.deployWarning ? `${metaPatch.deployWarning} · ${msg}` : msg;
+    metaPatch.edgeUnsynced = true;
+  }
 
   await onSuccess(ctx, {
     containerId: deployResult.containerId!,
     url: deployResult.url,
     durationMs: buildResult.durationMs ?? 0,
-    ...(postSync.warningMessage ? { warningMessage: postSync.warningMessage } : {}),
+    ...(typeof metaPatch.deployWarning === "string" ? { warningMessage: metaPatch.deployWarning } : {}),
     ...(Object.keys(metaPatch).length > 0 ? { metaPatch } : {}),
   });
 

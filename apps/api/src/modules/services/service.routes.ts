@@ -76,6 +76,15 @@ r.get(
   ctrl.getById,
 );
 r.get(
+  "/:serviceId/volume-sizes",
+  {
+    tag: "project:service:read",
+    mcp: { description: "Measure the on-disk size (du) of each of a service's volumes." },
+  },
+  cloudProjectProxy,
+  ctrl.volumeSizes,
+);
+r.get(
   "/:serviceId/logs",
   { tag: "project:service:read", mcp: { description: "Fetch a service's runtime logs (non-streaming)." } },
   cloudProjectProxy,

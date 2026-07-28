@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "Échec de l'enregistrement des domaines",
-    "toastTitle": "Domaines"
+    "toastTitle": "Domaines",
+    "routeFreeLabel": "Sous-domaine gratuit",
+    "routeFreeDesc": "Une URL {domain} gratuite, prête immédiatement.",
+    "routeCustomLabel": "Domaine personnalisé",
+    "routeCustomDesc": "Pointez votre propre domaine vers ce déploiement.",
+    "routeNoneLabel": "Aucun",
+    "routeNoneDesc": "Pas d'URL publique — interne uniquement. Accès par port sur l'hôte."
   },
   "dns": {
     "title": "Configuration DNS",
@@ -119,6 +125,8 @@
     "addServer": "Ajouter votre propre serveur",
     "continue": "Continuer",
     "chooseServer": "Choisir un serveur",
+    "thisServerBadge": "Ce serveur",
+    "thisServerHost": "Hôte actuel — les déploiements s'exécutent ici",
     "searchPlaceholder": "Rechercher des serveurs…",
     "noServersMatch": "Aucun serveur ne correspond à votre recherche.",
     "requireCloudFeature": "Déploiement vers Openship Cloud",
@@ -188,7 +196,11 @@
     "targetServer": "Mon serveur",
     "targetCloud": "Openship Cloud",
     "buildLocal": "Cette machine",
-    "buildRemote": "Distant"
+    "buildRemote": "Distant",
+    "runtimeStatic": "Static · edge-served",
+    "runtimeSandboxed": "Sandboxed",
+    "runtimeDirectWarning": "Not sandboxed",
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed."
   },
   "power": {
     "heading": "Puissance",
@@ -288,5 +300,20 @@
     "deployButton": "Déployer le webmail",
     "deployFailedTitle": "Échec du déploiement",
     "deployFailed": "Échec du démarrage du déploiement"
+  },
+  "serveMode": {
+    "heading": "How it's served",
+    "subtitle": "Serve the built files, or run it as a live server process.",
+    "staticLabel": "Serve as static files",
+    "staticDesc": "The build output is served directly by the edge. Nothing runs as a process.",
+    "serverLabel": "Run as a server process",
+    "serverDesc": "Start a long-running process (needs a start command and port).",
+    "staticNote": "Built in an isolated Docker sandbox, then served as static files by the edge.",
+    "startCommandLabel": "Start command",
+    "startCommandPlaceholder": "npm start",
+    "startCommandHint": "Leave empty to serve the build output as static files from the edge (nothing runs). Enter a command to run it as a live server process.",
+    "modeStatic": "Static",
+    "modeProcess": "Server process",
+    "portLabel": "Port"
   }
 }

@@ -123,11 +123,15 @@ export function createDeploymentRepo(db: Database) {
      * `undefined`. The DB decides the race — the caller surfaces "already in
      * progress" without inspecting error codes/messages.
      */
-    async create(data: Omit<NewDeployment, "id">): Promise<Deployment | undefined> {
-      const id = generateId("dep");
+    async create(data: Omit<NewDeployment, "id"> & { id?: string }): Promise<Deployment | undefined> {
+      // `id` is normally generated; re-import (live re-attach) passes the ORIGINAL
+      // deployment id so the still-running containers (labelled `openship.deployment=<id>`)
+      // stay attached and the Services-tab live query matches them.
+      const { id: providedId, ...rest } = data;
+      const id = providedId ?? generateId("dep");
       const [inserted] = await db
         .insert(deployment)
-        .values({ id, ...data })
+        .values({ id, ...rest })
         .onConflictDoNothing()
         .returning();
       return inserted as Deployment | undefined;

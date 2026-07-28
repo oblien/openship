@@ -1,4 +1,13 @@
 {
+  "ghCliConsent": {
+    "title": "Read your repositories?",
+    "body": "OpenShip can list your GitHub repositories using the gh CLI you're already logged into.",
+    "bodyWithLogin": "OpenShip can list your GitHub repositories using the gh CLI you're logged into as @{login}.",
+    "pointNoCloud": "Nothing is sent to the cloud — the list never leaves this machine.",
+    "pointDesktopOnly": "Runs only in the desktop app, using your local gh auth.",
+    "pointReadOnly": "Read-only: it lists repos so you can pick one to deploy.",
+    "allow": "Allow"
+  },
   "page": {
     "title": "New Project",
     "subtitle": "Import a repository, paste a URL, or start from a template",
@@ -28,9 +37,12 @@
       "descSelfHosted": "Pick how Openship reaches your repositories.",
       "descSaas": "Link your GitHub account to browse repos and deploy on every push.",
       "recommended": "Recommended",
-      "cloudApp": "Openship Cloud App",
-      "cloudAppDesc": "Deploy to remote servers with short-lived tokens.",
+      "cloudApp": "Openship Cloud GitHub App",
+      "cloudAppDesc": "Managed GitHub App — deploy to remote servers with short-lived tokens.",
       "connectCloud": "Connect Openship Cloud",
+      "manual": "Manual GitHub connection",
+      "manualDesc": "Set up in Settings — your own GitHub App/OAuth, or this instance's gh CLI. No Openship account.",
+      "manualCta": "Set up in Settings",
       "localBuilds": "Local builds",
       "ghCli": "Log in with gh CLI",
       "ghCliDesc": "Use your machine's GitHub login. No cloud needed.",
@@ -120,6 +132,11 @@
     "repoCountSingular": "{count} repository",
     "repoCountPlural": "{count} repositories",
     "matching": "matching \"{query}\"",
+    "pagination": {
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}"
+    },
     "time": {
       "justNow": "just now",
       "minutesAgo": "{n}m ago",

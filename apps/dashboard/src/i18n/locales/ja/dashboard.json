@@ -25,6 +25,7 @@
     "projectCountOne": "{count}件のプロジェクト",
     "projectCountOther": "{count}件のプロジェクト",
     "viewAllProjects": "{count}件のプロジェクトをすべて表示 →",
+    "viewAllApps": "{count}件のアプリをすべて表示 →",
     "greetingName": "{greeting}、{name}さん",
     "importGit": "Gitからインポート",
     "importGitDesc": "リポジトリから",
@@ -46,7 +47,9 @@
       "hours": "{n}時間前",
       "days": "{n}日前",
       "months": "{n}か月前"
-    }
+    },
+    "appsEmptyTitle": "アプリはまだありません",
+    "appsEmptyDesc": "ワンクリックで完全セルフホスト — データベース、自動化、アナリティクス、パスワード管理などを自分のサーバーで実行できます。"
   },
   "nav": {
     "home": "ホーム",
@@ -59,13 +62,15 @@
     "servers": "サーバー",
     "emails": "メール",
     "settings": "設定",
-    "billing": "請求",
+    "billing": "請求と使用状況",
     "sections": {
       "main": "メイン",
       "settings": "設定",
       "infrastructure": "インフラストラクチャ",
       "account": "アカウント"
-    }
+    },
+    "apps": "アプリ",
+    "jobs": "ジョブ"
   },
   "sidebar": {
     "expand": "サイドバーを展開",
@@ -78,6 +83,40 @@
     "preferences": "環境設定"
   },
   "pages": {
+    "apps": {
+      "moreApps": "他 {count} 件",
+      "title": "アプリ",
+      "description": "ワンクリックのマネージドサービス — Convex、WordPress、メールなどをインストールして実行できます。",
+      "createButton": "アプリをインストール",
+      "loading": "アプリを読み込み中…",
+      "countOne": "{count} 件のアプリをインストール済み",
+      "countOther": "{count} 件のアプリをインストール済み",
+      "emptyTitle": "最初のアプリをインストール",
+      "emptyDescription": "Convex、n8n、Ghost などをワンクリックで、完全セルフホストで起動できます。1 つ選んで始めましょう。",
+      "popular": "人気のアプリ",
+      "alsoDeploy": "こちらもデプロイできます",
+      "browseAll": "すべてのアプリを見る",
+      "catalogTitle": "アプリをインストール",
+      "catalogDescription": "ワンクリックのマネージドサービス。1 つ選ぶとアプリとしてインストールされます。",
+      "catalogSearchPlaceholder": "アプリを検索…",
+      "catalogNoResults": "検索条件に一致するアプリはありません。",
+      "cancel": "キャンセル",
+      "install": "インストール",
+      "installing": "インストール中…",
+      "comingSoon": "近日公開",
+      "configTitle": "{app} を設定",
+      "nameLabel": "名前",
+      "categories": {
+        "all": "すべて",
+        "backend": "バックエンド",
+        "database": "データベース",
+        "cms": "CMS",
+        "analytics": "アナリティクス",
+        "automation": "自動化",
+        "mail": "メール",
+        "other": "ツール"
+      }
+    },
     "projects": {
       "title": "プロジェクト",
       "description": "アプリケーションを簡単にデプロイして管理できます",
@@ -107,6 +146,11 @@
         "rollbacks": "ロールバック",
         "rollbacksDesc": "ワンクリックで復元",
         "commandPalette": "または {key} を押してコマンドパレットを開く"
+      },
+      "view": {
+        "label": "表示",
+        "list": "リスト",
+        "grid": "グリッド"
       }
     },
     "deployments": {
@@ -130,7 +174,7 @@
       "description": "アカウント、チーム、プラットフォームの設定。"
     },
     "billing": {
-      "title": "請求",
+      "title": "請求と使用状況",
       "description": "サブスクリプション、使用量、支払い方法を管理します。"
     }
   },
@@ -158,7 +202,7 @@
       "description": "カスタムドメイン"
     },
     "billing": {
-      "title": "請求",
+      "title": "請求と使用状況",
       "description": "使用量とプラン"
     }
   }

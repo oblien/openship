@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useMemo } from "react";
 import { ShieldCheck, Terminal, ShieldAlert, Server } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
 import { useMonitorStream } from "@/hooks/useMonitorStream";
@@ -25,10 +25,13 @@ import type { RuntimeMode } from "@/context/deployment/types";
 // single-digit-% CPU + ~30-80MB RAM, negligible vs. the isolation upside.
 const TWO_GB = 2 * 1024 * 1024 * 1024;
 
-const ServerRuntimePicker: React.FC = () => {
+const ServerRuntimePicker: React.FC<{ enabled?: boolean }> = ({ enabled = true }) => {
   const { config, updateConfig } = useDeployment();
   const { t } = useI18n();
-  const { stats } = useMonitorStream(config.serverId ?? null, true);
+  // Only stream the server's live stats while actually visible — the picker is
+  // now always mounted (inside the accordion) so the panel can animate its
+  // height, but we don't want a background stats stream when it's collapsed.
+  const { stats } = useMonitorStream(config.serverId ?? null, enabled);
 
   const runtimeOptions: Array<{
     value: RuntimeMode;
@@ -50,9 +53,6 @@ const ServerRuntimePicker: React.FC = () => {
     },
   ];
 
-  const hasAutoDefaultedRef = useRef(false);
-  const hasUserSelectedRef = useRef(false);
-
   const lowRam = useMemo(() => (stats ? stats.memTotal < TWO_GB : false), [stats]);
   // Sandbox is the default everywhere — the safe, isolated norm. On a very small
   // box Direct uses less RAM, but that's surfaced as a caveat when the user
@@ -62,17 +62,17 @@ const ServerRuntimePicker: React.FC = () => {
   const ramGB = stats ? (stats.memTotal / (1024 * 1024 * 1024)).toFixed(1) : null;
   const selected = config.runtimeMode;
 
-  // Auto-apply the recommendation ONLY for a fresh deploy (no project yet). For
-  // an existing project the value was hydrated from project.runtimeMode — respect
-  // the saved choice. Manual selection always wins.
-  useEffect(() => {
-    if (!stats || hasAutoDefaultedRef.current || hasUserSelectedRef.current) return;
-    if (config.projectId) return; // existing project → keep the hydrated/saved value
-    hasAutoDefaultedRef.current = true;
-    if (config.runtimeMode !== recommendedMode) {
-      updateConfig({ runtimeMode: recommendedMode });
-    }
-  }, [stats, recommendedMode, config.projectId, config.runtimeMode, updateConfig]);
+  // NO auto-default effect here, deliberately.
+  //
+  // This used to apply `recommendedMode` from an effect gated on `if (!stats) return`
+  // — and `stats` only streams while this panel is `enabled` (expanded). So the
+  // "recommended" default landed only if the user opened Advanced: anyone who
+  // didn't got DEFAULT_CONFIG's value and a summary badge reading
+  // Direct/unsandboxed. The default now lives in DEFAULT_CONFIG.runtimeMode
+  // ("docker"), where it applies whether or not this component ever renders.
+  //
+  // The gate was also pointless: `recommendedMode` is a constant, so there was
+  // nothing to wait on. RAM only picks the caveat wording below.
 
   return (
     // Header outside the cards to match CloudPowerPicker / the left column's
@@ -90,7 +90,7 @@ const ServerRuntimePicker: React.FC = () => {
         </p>
       </div>
 
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 items-stretch">
         {runtimeOptions.map((option) => {
           const isSelected = selected === option.value;
           const isRecommended = option.value === recommendedMode;
@@ -98,11 +98,8 @@ const ServerRuntimePicker: React.FC = () => {
             <button
               key={option.value}
               type="button"
-              onClick={() => {
-                hasUserSelectedRef.current = true;
-                updateConfig({ runtimeMode: option.value });
-              }}
-              className={`w-full rounded-xl border p-4 text-start transition-all ${
+              onClick={() => updateConfig({ runtimeMode: option.value })}
+              className={`h-full w-full rounded-xl border p-4 text-start transition-all ${
                 isSelected
                   ? "border-primary bg-primary/5 ring-1 ring-primary/20"
                   : "border-border/50 bg-card hover:border-primary/30 hover:bg-primary/[0.02]"

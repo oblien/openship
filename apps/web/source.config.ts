@@ -14,15 +14,4 @@ export const resources = defineDocs({
   },
 });
 
-export const changelog = defineDocs({
-  dir: "content/changelog",
-  docs: {
-    schema: frontmatterSchema.extend({
-      version: z.string(),
-      date: z.string(),
-      tags: z.array(z.string()).optional(),
-    }),
-  },
-});
-
 export default defineConfig();

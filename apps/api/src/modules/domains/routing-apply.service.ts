@@ -27,7 +27,12 @@ import { resolveDeploymentRuntime, usesManagedRouting } from "../../lib/deployme
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { resolveServicePort } from "../../lib/deployable-service";
 import { buildServiceRouteDomain } from "../../lib/routing-domains";
-import { buildCompositeRegistration, planCompositeRoute } from "../deployments/compose/composite-route";
+import {
+  buildCompositeRegistration,
+  buildDomainFanoutRegistrations,
+  planCompositeRoute,
+} from "../deployments/compose/composite-route";
+import { buildUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 
 export async function applyProjectRouting(projectId: string): Promise<void> {
   const project = await repos.project.findById(projectId);
@@ -53,17 +58,23 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
 
     // Self-hosted: compile to OpenResty locations and reconcile the domain.
     if (!routing) return;
-    const ipByService = new Map(liveRows.map((row) => [row.serviceId, row.ip]));
+    const rowByService = new Map(liveRows.map((row) => [row.serviceId, row]));
+    const routeStrategy = resolveRouteStrategy(project.routeStrategy);
+
+    // One live-upstream resolver, shared by the vercel composite AND the migration
+    // path-fan-out — each service's URL from its service_deployment row.
+    const resolveTargetUrl = (serviceId: string) => {
+      const def = defs.find((s) => s.id === serviceId);
+      const row = rowByService.get(serviceId);
+      const port = def ? resolveServicePort(def, project.port) : null;
+      if (!port) return null;
+      return buildUpstreamUrl({ strategy: routeStrategy, ip: row?.ip, hostPort: row?.hostPort, containerPort: port });
+    };
 
     const composite = buildCompositeRegistration({
       services: defs,
       routingConfig: project.routingConfig,
-      resolveTargetUrl: (serviceId) => {
-        const def = defs.find((s) => s.id === serviceId);
-        const ip = ipByService.get(serviceId);
-        const port = def ? resolveServicePort(def, project.port) : null;
-        return ip && port ? `http://${ip}:${port}` : null;
-      },
+      resolveTargetUrl,
       resolveDomain: (serviceId) => {
         const def = defs.find((s) => s.id === serviceId);
         const domain = def
@@ -80,12 +91,13 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
       },
     });
 
-    if (composite) {
-      await reconcileProjectRoutes(project, {
-        deployment,
-        routing,
-        registers: [composite.register],
-      });
+    // Re-emit any migration path-fan-out domains from live upstreams (a domain
+    // whose paths route to different services) — persisted so it survives here.
+    const fanout = buildDomainFanoutRegistrations({ routes: project.compositeRoutes, resolveTargetUrl });
+
+    const registers = [...(composite ? [composite.register] : []), ...fanout];
+    if (registers.length > 0) {
+      await reconcileProjectRoutes(project, { deployment, routing, registers });
     }
   } catch (err) {
     console.warn(

@@ -15,7 +15,7 @@ import { useI18n } from "@/components/i18n-provider";
 
 /* ── Error type configs ─────────────────────────────────────────────── */
 
-type ErrorType = "repo-not-found" | "project-not-found" | "access-denied";
+type ErrorType = "repo-not-found" | "project-not-found" | "access-denied" | "load-failed";
 
 interface ErrorStateProps {
   type?: ErrorType;
@@ -66,6 +66,20 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
       hints: w.accessDenied.hints,
       actions: [
         { label: w.accessDenied.backToDashboard, icon: ArrowLeft, variant: "secondary" as const, path: "/" },
+      ],
+    },
+    // A non-404 fetch failure (cloud unreachable, network, 5xx). The caller
+    // passes the real reason via `error.details` so the actual message (e.g. a
+    // cloud-connection error) shows instead of a misleading "draft" screen.
+    "load-failed": {
+      icon: AlertTriangle,
+      iconColor: "text-destructive",
+      iconBg: "bg-destructive/10",
+      title: w.loadFailed.title,
+      subtitle: w.loadFailed.subtitle,
+      hints: [] as string[],
+      actions: [
+        { label: w.projectNotFound.backToDashboard, icon: ArrowLeft, variant: "secondary" as const, path: "/" },
       ],
     },
   };

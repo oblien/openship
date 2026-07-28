@@ -59,7 +59,9 @@
       "waiting": "受信リクエストを待機中…",
       "streamError": "ストリームエラー",
       "connectionLost": "ログストリームへの接続が失われました",
-      "connectFailed": "ログストリームへの接続に失敗しました"
+      "connectFailed": "ログストリームへの接続に失敗しました",
+      "noDomain": "リクエストログを表示するにはドメインを追加してください",
+      "noDomainHint": "HTTP リクエストログはドメインごとに収集されます。まずこのプロジェクトにドメインを追加してください。"
     },
     "terminal": {
       "fallbackName": "ターミナル",
@@ -146,7 +148,9 @@
         "stopped": "停止済み",
         "disabled": "無効",
         "failed": "失敗",
-        "starting": "起動中"
+        "starting": "起動中",
+        "restarting": "再起動中",
+        "unknown": "不明"
       },
       "network": "ネットワーク",
       "configuration": "構成",
@@ -203,7 +207,8 @@
         "serviceDeleted": "サービスを削除しました",
         "deleteFailed": "サービスの削除に失敗しました",
         "backupRunFailed": "バックアップの実行に失敗しました"
-      }
+      },
+      "duplicateContainers": "このサービスに一致する別のコンテナがあります: {names}"
     },
     "settingsForm": {
       "name": "名前",

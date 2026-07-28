@@ -133,6 +133,14 @@ export interface GitHubPushPayload {
   };
   sender: { id: number; login: string };
   hook_id?: number;
+  /**
+   * Present ONLY on GitHub App deliveries — absent on legacy per-repo webhook
+   * deliveries. Identifies the App installation that delivered this push (i.e.
+   * the org that installed the App on the repo). Used to bind the auto-deploy
+   * fan-out to the owning tenant so a repo-string collision across tenants
+   * can't cross-trigger (webhook-push.ts triggerBranchDeployments).
+   */
+  installation?: { id: number };
 }
 
 // ─── Check run webhook payload ───────────────────────────────────────────────

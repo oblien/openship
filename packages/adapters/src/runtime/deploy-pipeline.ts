@@ -36,13 +36,18 @@ import {
  * Callback that pauses the pipeline and asks the user for a decision.
  * Returns the action string chosen by the user.
  */
-export type PromptUserFn = (prompt: {
+/** A user-decision prompt (edge takeover, port conflict, …) — the ONE shape
+ *  shared by the deploy pipeline, server-setup, the CLI, and the dashboard modal
+ *  that renders it. Resolves to the chosen action id. */
+export interface PromptPayload {
   promptId: string;
   title: string;
   message: string;
   actions: Array<{ id: string; label: string; variant?: string }>;
   details?: Record<string, unknown>;
-}) => Promise<string>;
+}
+
+export type PromptUserFn = (prompt: PromptPayload) => Promise<string>;
 
 // ─── Deploy environment abstraction ─────────────────────────────────────────
 
@@ -157,6 +162,15 @@ export interface DeployPipelineResult {
   errorCode?: string;
   /** Structured details about the error (e.g. { port, pid, command }). */
   errorDetails?: Record<string, unknown>;
+  /**
+   * Per-domain routing failures on an OTHERWISE-SUCCESSFUL deploy (status
+   * "ready"). Domains are optional and routes register after the container is
+   * up + healthy, so a routing failure never flips status to "failed" — it's
+   * collected here. Callers surface it as a project "routing action required"
+   * warning (and clear it on a retry / next clean deploy). Empty/undefined = all
+   * routes registered.
+   */
+  routeWarnings?: string[];
 }
 
 // ─── Pipeline ────────────────────────────────────────────────────────────────
@@ -261,7 +275,9 @@ export async function runDeployPipeline(
       }
     }
 
-    await registerResolvedRoutes(
+    // Best-effort: returns per-domain warnings instead of throwing. A routing
+    // failure here must NOT fail the deploy — the container is already up + healthy.
+    const routeWarnings = await registerResolvedRoutes(
       logger,
       routing,
       ssl,
@@ -280,7 +296,12 @@ export async function runDeployPipeline(
 
     logger.step("deploy", "completed", "Deployed successfully");
 
-    return { status: "ready", containerId, url };
+    return {
+      status: "ready",
+      containerId,
+      url,
+      ...(routeWarnings.length ? { routeWarnings } : {}),
+    };
   } catch (err) {
     const msg = safeErrorMessage(err);
     const errorCode = err instanceof DeployError ? err.code : undefined;

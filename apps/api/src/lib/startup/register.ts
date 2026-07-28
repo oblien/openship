@@ -8,6 +8,7 @@
  */
 import { registerTunnelAutostart } from "../ssh-tunnel-manager";
 import { registerSelfAdoptReconcile } from "./self-deploy";
+import { registerSelfServerReconcile } from "./self-server";
 
 export function registerStartupHooks(): void {
   // Desktop: re-open saved port-forward tunnels marked auto-start.
@@ -15,4 +16,6 @@ export function registerStartupHooks(): void {
   // Self-app: reconcile the control-plane adopt deployment + route/port/cert +
   // public URL on every boot (backfills existing installs; heals port drift).
   registerSelfAdoptReconcile();
+  // Server-host: register this host as an isLocal "This Server" deploy target.
+  registerSelfServerReconcile();
 }

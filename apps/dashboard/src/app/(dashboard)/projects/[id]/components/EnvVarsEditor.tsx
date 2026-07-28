@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { KeyRound, Plus, Trash2, Loader2, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { KeyRound, Plus, Trash2, Loader2, Eye, EyeOff, RefreshCw, Link2, Network, Globe, ChevronRight } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { AppLogo } from "@/components/AppLogo";
 import { projectsApi, deployApi } from "@/lib/api";
+import { connectionsApi, type ProjectConnection } from "@/lib/api/connections";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { computeEnvDiff } from "./env-diff";
 
@@ -59,6 +61,11 @@ export function EnvVarsEditor({
   // service without a full clone+build.
   const [pendingApply, setPendingApply] = useState(false);
   const [applying, setApplying] = useState(false);
+  // Env keys wired IN by a service connection (keyed by envKey). These render as
+  // read-only "linked integration" rows — click opens the integration detail.
+  const [linked, setLinked] = useState<Record<string, ProjectConnection>>({});
+  const [linkDetail, setLinkDetail] = useState<ProjectConnection | null>(null);
+  const [unlinking, setUnlinking] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,6 +83,11 @@ export function EnvVarsEditor({
         }));
       setRows(loaded);
       setOriginalKeys(loaded.map((r) => r.key));
+      // Best-effort: which of these keys are managed by a service connection?
+      const conns = await connectionsApi.list(projectId).catch(() => ({ data: [] }));
+      const map: Record<string, ProjectConnection> = {};
+      for (const cn of conns?.data ?? []) map[cn.envKey] = cn;
+      setLinked(map);
     } catch (err) {
       showToast(getApiErrorMessage(err, t.projectSettings.envVars.toast.loadFailed), "error", t.projectSettings.envVars.toast.loadFailedTitle);
     } finally {
@@ -151,7 +163,26 @@ export function EnvVarsEditor({
     }
   };
 
+  // Remove a linked connection: drops the injected env var + the link, then
+  // re-syncs. On a live deployment, offer the no-rebuild apply.
+  const handleUnlink = async () => {
+    if (!linkDetail) return;
+    setUnlinking(true);
+    try {
+      await connectionsApi.remove(projectId, linkDetail.id);
+      showToast(t.projects.connections.removed, "success");
+      setLinkDetail(null);
+      await load();
+      if (hasActiveDeployment) setPendingApply(true);
+    } catch (err) {
+      showToast(getApiErrorMessage(err, t.projects.connections.failed), "error");
+    } finally {
+      setUnlinking(false);
+    }
+  };
+
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -227,6 +258,32 @@ export function EnvVarsEditor({
               </p>
             ) : (
               rows.map((r) => {
+                // A connection-managed key renders as a read-only integration
+                // chip — not editable here; click opens the integration detail.
+                const conn = r.originalKey ? linked[r.originalKey] : undefined;
+                if (conn) {
+                  return (
+                    <button
+                      key={r.uid}
+                      type="button"
+                      onClick={() => setLinkDetail(conn)}
+                      className="flex w-full items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/[0.04] px-3 py-2 text-left transition-colors hover:bg-primary/[0.07]"
+                    >
+                      <AppLogo appId={conn.sourceAppTemplateId ?? undefined} className="size-4 shrink-0" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-mono text-[13px] text-foreground">{r.key}</span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {interpolate(t.projectSettings.envVars.linkedManaged, { app: conn.sourceName })}
+                        </span>
+                      </span>
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                        <Link2 className="size-3" />
+                        {t.projectSettings.envVars.linkedBadge}
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  );
+                }
                 const showValue = reveal[r.uid] || (!r.isSecret && !r.loadedSecret);
                 return (
                   <div key={r.uid} className="flex items-center gap-2">
@@ -292,5 +349,66 @@ export function EnvVarsEditor({
         )}
       </div>
     </Modal>
+
+    {/* Linked-integration detail — opens above the env editor when a linked row
+        is clicked. Shows the source app + reach mode; the value lives in the
+        connection, so the only action here is removing the link. */}
+    {linkDetail && (
+      <Modal isOpen onClose={() => setLinkDetail(null)} maxWidth="460px" width="92vw" zIndex={10010} showCloseButton>
+        <div className="p-6">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/60">
+              <AppLogo appId={linkDetail.sourceAppTemplateId ?? undefined} className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-[15px] font-semibold text-foreground">
+                {t.projectSettings.envVars.linkedTitle}
+              </h3>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">{linkDetail.sourceName}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2 rounded-xl border border-border/50 bg-muted/15 px-4 py-3 text-[13px]">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">{t.projectSettings.envVars.title}</span>
+              <code className="truncate font-mono text-foreground">{linkDetail.envKey}</code>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">{t.projects.connections.modeInternalShort}/{t.projects.connections.modePublicShort}</span>
+              <span className="inline-flex items-center gap-1.5 text-foreground">
+                {linkDetail.mode === "internal" ? <Network className="size-3.5" /> : <Globe className="size-3.5" />}
+                {linkDetail.mode === "internal"
+                  ? t.projects.connections.modeInternalShort
+                  : t.projects.connections.modePublicShort}
+              </span>
+            </div>
+          </div>
+
+          <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
+            {interpolate(t.projectSettings.envVars.linkedBody, { app: linkDetail.sourceName })}
+          </p>
+
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setLinkDetail(null)}
+              className="rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              {t.projectSettings.envVars.close}
+            </button>
+            <button
+              type="button"
+              onClick={handleUnlink}
+              disabled={unlinking}
+              className="inline-flex items-center gap-2 rounded-xl border border-danger-border bg-danger-bg px-4 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger-solid/15 disabled:opacity-50"
+            >
+              {unlinking ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-3.5" />}
+              {t.projectSettings.envVars.unlink}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }

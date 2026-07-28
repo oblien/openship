@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "ドメインの保存に失敗しました",
-    "toastTitle": "ドメイン"
+    "toastTitle": "ドメイン",
+    "routeFreeLabel": "無料サブドメイン",
+    "routeFreeDesc": "無料の {domain} URL。すぐに使えます。",
+    "routeCustomLabel": "カスタムドメイン",
+    "routeCustomDesc": "独自のドメインをこのデプロイに向けます。",
+    "routeNoneLabel": "なし",
+    "routeNoneDesc": "公開 URL なし — 内部のみ。ホストのポートでアクセスします。"
   },
   "dns": {
     "title": "DNS設定",
@@ -119,6 +125,8 @@
     "addServer": "独自のサーバーを追加",
     "continue": "続行",
     "chooseServer": "サーバーを選択",
+    "thisServerBadge": "このサーバー",
+    "thisServerHost": "現在のホスト — デプロイはここで実行されます",
     "searchPlaceholder": "サーバーを検索…",
     "noServersMatch": "検索に一致するサーバーはありません。",
     "requireCloudFeature": "Openship Cloudへのデプロイ",
@@ -188,7 +196,11 @@
     "targetServer": "自分のサーバー",
     "targetCloud": "Openship Cloud",
     "buildLocal": "このマシン",
-    "buildRemote": "リモート"
+    "buildRemote": "リモート",
+    "runtimeStatic": "Static · edge-served",
+    "runtimeSandboxed": "Sandboxed",
+    "runtimeDirectWarning": "Not sandboxed",
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed."
   },
   "power": {
     "heading": "パワー",
@@ -288,5 +300,18 @@
     "deployButton": "ウェブメールをデプロイ",
     "deployFailedTitle": "デプロイに失敗しました",
     "deployFailed": "デプロイの開始に失敗しました"
+  },
+  "serveMode": {
+    "heading": "How it's served",
+    "subtitle": "Serve the built files, or run it as a live server process.",
+    "staticLabel": "Serve as static files",
+    "staticDesc": "The build output is served directly by the edge. Nothing runs as a process.",
+    "serverLabel": "Run as a server process",
+    "serverDesc": "Start a long-running process (needs a start command and port).",
+    "staticNote": "Built in an isolated Docker sandbox, then served as static files by the edge.",
+    "startCommandLabel": "Start command",
+    "startCommandPlaceholder": "npx serve -s dist -l $PORT",
+    "startCommandHint": "The command that starts your server. For a static bundle, use a static file server (e.g. npx serve).",
+    "portLabel": "Port"
   }
 }

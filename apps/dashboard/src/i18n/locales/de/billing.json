@@ -1,4 +1,15 @@
 {
+  "capacity": {
+    "title": "Kapazität & Nutzung",
+    "subtitle": "In Ihrem Tarif enthaltene Kapazität und wie viel Sie genutzt haben. Live-Werte werden aus Openship Cloud synchronisiert.",
+    "routes": "Kostenlose Routen",
+    "workspaces": "Workspaces",
+    "unlimited": "Unbegrenzt",
+    "used": "genutzt",
+    "of": "von {max}",
+    "syncing": "Wird aus der Cloud synchronisiert"
+  },
+  "topupsComingSoon": "Einmalige Guthaben-Aufladungen kommen bald – hier können Sie zusätzlich zu Ihrem monatlichen Kontingent Guthaben hinzufügen.",
   "header": {
     "credits": "Credits",
     "creditsSuffix": "of {limit}",
@@ -156,7 +167,7 @@
     "weekTick": "KW {n}"
   },
   "layout": {
-    "title": "Abrechnung",
+    "title": "Abrechnung & Nutzung",
     "subtitle": "Verwalte dein Abonnement, deine Nutzung und deine Zahlungsmethoden."
   },
   "sidebar": {

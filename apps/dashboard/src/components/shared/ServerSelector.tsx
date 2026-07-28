@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { BlurIp } from "@/components/BlurIp";
 import {
   Server,
   CheckCircle2,
@@ -36,6 +37,13 @@ export interface ServerSelectorProps {
   compact?: boolean;
   /** Open the dropdown upward (for selectors pinned near the bottom of a modal). */
   dropUp?: boolean;
+  /**
+   * Pre-select the first server on load even when there are several (nothing
+   * chosen yet). A lone server always auto-selects; this extends that to the
+   * "many servers" case so an install wizard opens with a destination already
+   * picked. Off by default — flows that must not guess (adopt / migrate) skip it.
+   */
+  autoSelectFirst?: boolean;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -60,6 +68,7 @@ export default function ServerSelector({
   disabled = false,
   compact = false,
   dropUp = false,
+  autoSelectFirst = false,
 }: ServerSelectorProps) {
   const router = useRouter();
   const { t } = useI18n();
@@ -76,8 +85,9 @@ export default function ServerSelector({
       if (list.length > 0) {
         const opts = list.map(serverInfoToOption);
         setServers(opts);
-        // Auto-select if only one
-        if (opts.length === 1) onSelect(opts[0]);
+        // Auto-select the lone server, or the first one when the caller asked
+        // for a default and nothing's chosen yet (captured initial `value`).
+        if (opts.length === 1 || (autoSelectFirst && !value)) onSelect(opts[0]);
       } else {
         setServers([]);
         onSelect(null);
@@ -160,7 +170,7 @@ export default function ServerSelector({
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
             <p className="text-xs text-muted-foreground">
-              {s.user}@{s.host}:{s.port}
+              {s.user}@<BlurIp>{s.host}</BlurIp>:{s.port}
             </p>
           </div>
           <CheckCircle2 className="size-4 text-success shrink-0" />
@@ -195,7 +205,7 @@ export default function ServerSelector({
                   {selected.name}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {selected.user}@{selected.host}:{selected.port}
+                  {selected.user}@<BlurIp>{selected.host}</BlurIp>:{selected.port}
                 </p>
               </div>
             </>
@@ -236,7 +246,7 @@ export default function ServerSelector({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {s.user}@{s.host}:{s.port}
+                    {s.user}@<BlurIp>{s.host}</BlurIp>:{s.port}
                   </p>
                 </div>
                 {value === s.id && (

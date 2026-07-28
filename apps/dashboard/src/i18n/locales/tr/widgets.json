@@ -31,6 +31,10 @@
         "backToDashboard": "Kontrol Paneline Dön",
         "createNewProject": "Yeni Proje Oluştur"
       },
+      "loadFailed": {
+        "title": "Bu proje yüklenemedi",
+        "subtitle": "Bu projeye erişilirken bir sorun oluştu. Bağlantınızı kontrol edip tekrar deneyin."
+      },
       "accessDenied": {
         "title": "Erişim Reddedildi",
         "subtitle": "Bu kaynağa erişim izniniz yok.",

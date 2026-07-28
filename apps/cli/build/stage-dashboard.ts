@@ -48,4 +48,9 @@ if (existsSync(join(DASHBOARD_DIR, "public"))) {
   cpSync(join(DASHBOARD_DIR, "public"), join(INNER, "public"), { recursive: true });
 }
 
+// WS-capable entry (server terminal). This build is proxy mode
+// (NEXT_PUBLIC_API_PROXY), so ship the wrapper next to server.js — ensureDashboard
+// prefers it. See apps/dashboard/standalone-server.mjs.
+cpSync(join(DASHBOARD_DIR, "standalone-server.mjs"), join(INNER, "standalone-server.mjs"));
+
 console.log(`[stage-dashboard] staged complete standalone at ${STANDALONE}`);

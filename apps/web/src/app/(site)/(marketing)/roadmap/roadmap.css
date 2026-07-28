@@ -56,6 +56,33 @@
   color: #c4b5fd;
   border-color: rgba(167, 139, 250, .28);
 }
+/* Shipped — already live in the product (green so "done" reads instantly). */
+.rm-status--shipped {
+  background: rgba(52, 211, 153, .12);
+  color: #6ee7b7;
+  border-color: rgba(52, 211, 153, .28);
+}
+
+/* ── Contribution CTA on a phase (e.g. "add your stack") ───── */
+.rm-contribute {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--th-bd-subtle);
+  background: var(--th-sf-04);
+  padding: 0.5rem 0.95rem;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--th-text-heading);
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
+}
+.rm-contribute:hover {
+  border-color: var(--th-bd-strong);
+  background: var(--th-sf-06);
+  transform: translateY(-1px);
+}
 
 /* ── Milestone card ────────────────────────────────────────── */
 .rm-card {
@@ -112,4 +139,86 @@
   height: 40px;
   margin: 0 auto;
   background: linear-gradient(to bottom, transparent, var(--th-bd-subtle));
+}
+
+/* ── Hero journey vector (rm-art) ──────────────────────────────── */
+.rm-art {
+  width: 100%;
+  max-width: 640px;
+  margin: 2.25rem auto 0;
+}
+.rm-art-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Routes */
+.rm-art-route {
+  fill: none;
+  stroke: var(--th-on-12);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.rm-art-done {
+  fill: none;
+  stroke: #a78bfa;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 44 100; /* first ~44% "completed" */
+  filter: drop-shadow(0 0 4px rgba(167, 139, 250, .35));
+}
+.rm-art-travel {
+  fill: none;
+  stroke: #c4b5fd;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 5 95;
+  filter: drop-shadow(0 0 6px rgba(167, 139, 250, .7));
+  animation: rm-art-travel 3.4s linear infinite;
+}
+@keyframes rm-art-travel {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Waypoints */
+.rm-wp-core {
+  fill: var(--th-bg-page, #fff);
+  stroke: var(--th-on-30);
+  stroke-width: 2;
+}
+.rm-wp-halo {
+  fill: var(--th-on-12);
+  opacity: 0;
+  transform-origin: center;
+  animation: rm-art-pulse 3s ease-out infinite;
+}
+.rm-wp--done .rm-wp-core { fill: #6ee7b7; stroke: #6ee7b7; }
+.rm-wp--done .rm-wp-halo { fill: #6ee7b7; }
+.rm-wp--active .rm-wp-core { fill: #a78bfa; stroke: #a78bfa; }
+.rm-wp--active .rm-wp-halo { fill: #a78bfa; }
+.rm-wp--todo .rm-wp-core { fill: var(--th-card-bg); stroke: var(--th-on-30); stroke-dasharray: 3 3; }
+@keyframes rm-art-pulse {
+  0% { opacity: .5; transform: scale(.5); }
+  70%, 100% { opacity: 0; transform: scale(1.8); }
+}
+
+/* Destination flag */
+.rm-art-flag path { stroke: #a78bfa; stroke-width: 2; stroke-linecap: round; fill: none; }
+.rm-art-flag-fill { fill: rgba(167, 139, 250, .25); }
+
+/* Floating sparks */
+.rm-art-spark {
+  fill: var(--th-on-16);
+  animation: rm-art-float 4s ease-in-out infinite;
+}
+@keyframes rm-art-float {
+  0%, 100% { transform: translateY(0); opacity: .4; }
+  50% { transform: translateY(-6px); opacity: .9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rm-art-travel, .rm-wp-halo, .rm-art-spark { animation: none; }
+  .rm-wp-halo { opacity: 0; }
 }

@@ -7,9 +7,8 @@ import { CustomSelect } from "@/components/ui/CustomSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
+import { CloudWaitlistModal } from "./CloudWaitlistModal";
 import { useCloneStrategyGate } from "./CloneStrategyNudge";
-import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
-import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
 import { useDeployment } from "@/context/DeploymentContext";
 import {
   publicEndpointsNeedCloud,
@@ -19,11 +18,10 @@ import {
 } from "@/context/deployment/types";
 import { useCloud } from "@/context/CloudContext";
 import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
-import { useGitHub } from "@/context/GitHubContext";
 import { useModal } from "@/context/ModalContext";
 import { useRouter, useSearchParams } from "next/navigation";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
-import { projectsApi, githubApi, serverGithubApi, getApiErrorMessage } from "@/lib/api";
+import { projectsApi, githubApi, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 
 // ─── Deploy checklist for compose ────────────────────────────────────────────
@@ -150,7 +148,6 @@ const Sidebar: React.FC = () => {
   const { t } = useI18n();
   const { requireCloud } = useCloud();
   const { baseDomain, selfHosted, deployMode } = usePlatform();
-  const { installUrl, state: githubState } = useGitHub();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
   const router = useRouter();
@@ -182,7 +179,6 @@ const Sidebar: React.FC = () => {
   // build vs PAT vs existing GitHub credential). Opshcloud has its own
   // connect-account flow, local builds don't need a remote credential.
   const cloneGate = useCloneStrategyGate();
-  const openGithubConnect = useServerGitHubConnectModal();
 
   // Lazy branch list. In config-edit mode the wizard hydrates from saved data
   // with only the current branch seeded (no repo round-trip on load). The full
@@ -232,8 +228,22 @@ const Sidebar: React.FC = () => {
   }, [startDeployment, router]);
 
   const handleDeploy = useCallback(async () => {
+    // TODO: removed — temporary SaaS gate. The managed cloud isn't open yet, so
+    // pressing Deploy on the hosted control plane shows the "Cloud is almost
+    // here" waitlist instead of running a deploy. Self-hosted / desktop deploys
+    // are unaffected. Delete this block (+ CloudWaitlistModal + the
+    // /api/cloud-waitlist route) when Cloud launches.
+    if (!selfHosted) {
+      let modalId = "";
+      modalId = showModal({
+        customContent: <CloudWaitlistModal onClose={() => hideModal(modalId)} />,
+        maxWidth: "460px",
+      });
+      return;
+    }
+
     if (config.deployTarget === "cloud") {
-      if (!requireCloud(t.deploy.targetStep.requireCloudFeature)) return;
+      if (!(await requireCloud("cloud-deploy-target"))) return;
     }
 
     // ── Clone-strategy resolution (self-hosted server deploys) ──────────
@@ -247,114 +257,36 @@ const Sidebar: React.FC = () => {
     // modal (and even that degrades to an api-host clone server-side).
     // buildStrategy="local" already clones on the API host; cloud targets go
     // through requireCloud; local targets don't clone.
+    // Server-side clone is the default. We do NOT guess client-side whether a
+    // GitHub credential exists — that duplicated the server's tokenFor("remote")
+    // priority and drifted from it (the "client says OK, server rejects at
+    // preflight" dead-end). The server preflight is the single authority now: a
+    // genuinely-missing credential fails preflight and the deploy catch opens
+    // the DeployCredentialModal (useDeploymentBuild.maybeOpenCredentialModal),
+    // identical for the wizard and redeploy. The only client decision kept here
+    // is the explicit "build on this machine" preference.
     let buildStrategyOverride: BuildStrategy | undefined;
-    if (config.deployTarget === "server" && config.buildStrategy === "server") {
-      const ghAvailable = !!githubState?.sources.ghCli.available;
-      const appAvailable =
-        !!githubState?.sources.openshipApp.connected &&
-        !!githubState?.sources.openshipApp.hasInstallations;
-      // gh counts as a remote credential now — forwarded over the relay on
-      // desktop, or (self-hosted) it just lets the backend gracefully degrade
-      // to an api-host clone rather than dead-end.
-      let remoteCredential = appAvailable || cloneGate.hasGlobalToken || ghAvailable;
-      const willBuildLocal = cloneGate.preference === "local";
-
-      // The target server may hold its OWN GitHub credential (device-login
-      // token / PAT / SSH key or per-repo deploy key). That's a valid remote
-      // clone path the App/PAT signals above don't see, so it must suppress the
-      // dead-end modal. Only worth a round-trip in the would-be dead-end — check
-      // it solely when we're otherwise about to surface the modal.
-      if (!willBuildLocal && !remoteCredential && config.serverId) {
-        try {
-          const st = await serverGithubApi.get(config.serverId);
-          if (st.connected) remoteCredential = true;
-        } catch {
-          // Unreadable status → treat as absent and fall through to the modal.
-        }
-      }
-
-      if (willBuildLocal) {
-        buildStrategyOverride = "local";
-      } else if (!remoteCredential && config.owner) {
-        // No gh, no App, no PAT, no per-server credential — genuinely nothing to
-        // clone with. This is the only case worth a modal. The deploy waits
-        // until the user picks or skips.
-        let goConnectServer = false;
-        await new Promise<void>((resolve) => {
-          let modalId = "";
-          modalId = showModal({
-            customContent: (
-              <DeployCredentialModal
-                trigger="preflight-gate"
-                owner={config.owner!}
-                installUrl={installUrl ?? null}
-                projectId={config.projectId ?? null}
-                serverId={config.serverId ?? null}
-                deployTarget={config.deployTarget}
-                buildStrategy={config.buildStrategy}
-                selfHosted={selfHosted}
-                ghCliAvailable={ghAvailable}
-                hasGlobalToken={cloneGate.hasGlobalToken}
-                onChoice={(choice) => {
-                  if (choice.kind === "build-local") {
-                    buildStrategyOverride = "local";
-                    updateConfig({ buildStrategy: "local" });
-                  } else if (choice.kind === "connect-server-github") {
-                    goConnectServer = true;
-                  }
-                  hideModal(modalId);
-                  resolve();
-                }}
-                onDismiss={() => {
-                  hideModal(modalId);
-                  resolve();
-                }}
-              />
-            ),
-            maxWidth: "640px",
-          });
-        });
-        // Chose to connect the server itself → abandon this attempt and open the
-        // shared connect model; deploying again once connected clones via the
-        // per-server credential.
-        if (goConnectServer) {
-          if (config.serverId) {
-            openGithubConnect(config.serverId, {
-              onConnected: () =>
-                showToast(
-                  "GitHub connected — deploy again to continue.",
-                  "success",
-                  "GitHub",
-                ),
-            });
-          }
-          return;
-        }
-      }
-      // else: a remote credential (App/PAT) is available → proceed with the
-      // server-side clone; the backend resolves the token via tokenFor("remote").
+    if (
+      config.deployTarget === "server" &&
+      config.buildStrategy === "server" &&
+      cloneGate.preference === "local"
+    ) {
+      buildStrategyOverride = "local";
     }
 
     if (
       !isServices &&
+      !config.noPublicRoute &&
       canConnectCloud &&
       config.deployTarget !== "cloud" &&
       publicEndpointsNeedCloud(config.publicEndpoints)
     ) {
-      if (!requireCloud({
-        feature: interpolate(t.deploy.sidebar.freeDomainFeature, { domain: baseDomain }),
-        description: interpolate(t.deploy.sidebar.freeDomainDesc, { domain: baseDomain }),
-        secondaryHint: t.deploy.sidebar.freeDomainHint,
-      })) return;
+      if (!(await requireCloud("managed-project-domain", { domain: baseDomain }))) return;
     }
 
     // Compose services with free managed domains require cloud
     if (isServices && servicesNeedCloud(config.services)) {
-      if (!requireCloud({
-        feature: interpolate(t.deploy.sidebar.servicesFreeDomainFeature, { domain: baseDomain }),
-        description: interpolate(t.deploy.sidebar.servicesFreeDomainDesc, { domain: baseDomain }),
-        secondaryHint: t.deploy.sidebar.servicesFreeDomainHint,
-      })) return;
+      if (!(await requireCloud("managed-compose-domains", { domain: baseDomain }))) return;
     }
 
     if (isServices && shouldWarnAboutUnreachableServices(config.services)) {
@@ -405,7 +337,7 @@ const Sidebar: React.FC = () => {
     }
 
     await continueDeploy(buildStrategyOverride ? { buildStrategy: buildStrategyOverride } : undefined);
-  }, [baseDomain, canConnectCloud, cloneGate.hasGlobalToken, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, githubState, hideModal, installUrl, isServices, openGithubConnect, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
+  }, [baseDomain, canConnectCloud, cloneGate.preference, config.buildStrategy, config.deployTarget, config.owner, config.projectId, config.serverId, config.publicEndpoints, config.services, continueDeploy, hideModal, isServices, requireCloud, selfHosted, showModal, showToast, updateConfig, t]);
 
   // Edit mode (opened from the project Runtime page with ?mode=config): the
   // finish button SAVES the config to the project and returns — no deploy, no
@@ -534,6 +466,8 @@ const Sidebar: React.FC = () => {
                 }
               : {}),
           })}
+          noPublicRoute={config.noPublicRoute ?? false}
+          setNoPublicRoute={(noPublicRoute) => updateConfig({ noPublicRoute })}
         />
       )}
 

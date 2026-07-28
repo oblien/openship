@@ -1,6 +1,6 @@
 {
   "name": "openship",
-  "version": "0.3.0",
+  "version": "0.4.5",
   "description": "Openship CLI - deploy, manage, and open your Openship platform from the terminal",
   "license": "Apache-2.0",
   "repository": {
@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
+    "@repo/adapters": "workspace:*",
     "@repo/core": "workspace:*",
     "@repo/onboarding": "workspace:*",
     "commander": "^14.0.3",

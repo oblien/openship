@@ -2,85 +2,163 @@
 
 import React from "react";
 import Link from "next/link";
-import { Plus, Github, GitBranch, Zap, ShieldCheck } from "lucide-react";
+import { Plus, Github } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
-
-const FEATURES = [
-  { icon: Zap, label: "Zero config", sub: "Push to deploy" },
-  { icon: GitBranch, label: "Any Git repo", sub: "GitHub & more" },
-  { icon: ShieldCheck, label: "Auto HTTPS", sub: "SSL out of the box" },
-] as const;
 
 /**
  * First-run welcome shown on the home page when the user has no projects.
- * Same visual family as the projects EmptyState (themed SVG, dual CTAs,
- * feature row) but a distinct "launch" motif so the two pages don't feel
- * identical. Neutral --th-* vars only; the primary accent lives on the CTA.
+ *
+ * The motif is what Openship IS: the brand mark at the centre, wired to the four
+ * things it handles — repo in, build/deploy, data, public domain.
+ *
+ * TOKENS: only steps that EXIST in styles/theme.css. The --th-on-* scale is
+ * 05/08/10/12/16/20/30/40/50+ — an in-between step like --th-on-35 resolves to
+ * nothing, the stroke never paints, and the tile renders EMPTY. That is exactly
+ * what happened to the first version of this illustration.
+ *
+ * Kept compact: this renders INSIDE the home page's Projects card, directly above
+ * the 4 shortcut cards — every extra 40px pushes those below the fold.
  */
+
+/** Rounded tile + its glyph, centred on (x, y). Glyphs are hand-drawn: an icon
+ *  font/component can't be embedded in the same SVG coordinate space. */
+function Node({
+  x,
+  y,
+  children,
+}: {
+  x: number;
+  y: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <rect
+        x="-19"
+        y="-17"
+        width="38"
+        height="34"
+        rx="10"
+        fill="var(--th-card-bg)"
+        stroke="var(--th-bd-default)"
+        strokeWidth="1.5"
+      />
+      <g
+        fill="none"
+        stroke="var(--th-on-40)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {children}
+      </g>
+    </g>
+  );
+}
+
+/** Label under each tile — names what the node is, so the graph reads without a key. */
+function NodeLabel({ x, y, children }: { x: number; y: number; children: string }) {
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor="middle"
+      fill="var(--th-on-30)"
+      fontSize="7"
+      fontWeight="500"
+      style={{ fontFamily: "inherit", letterSpacing: "0.02em" }}
+    >
+      {children}
+    </text>
+  );
+}
 const HomeWelcome: React.FC = () => {
   const { t } = useI18n();
   return (
-    <div className="px-6 py-6 sm:py-10 sm:pb-12">
-      {/* Illustration */}
-      <div className="relative mx-auto w-60 h-40 mb-2">
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 240 170" fill="none">
-          {/* dashed orbit */}
-          <circle cx="120" cy="86" r="64" stroke="var(--th-bd-subtle)" strokeWidth="1.5" strokeDasharray="4 7" />
-          {/* base shadow */}
-          <ellipse cx="116" cy="150" rx="56" ry="7" fill="var(--th-on-04)" />
+    <div className="px-6 pt-5 pb-7 sm:pt-7 sm:pb-8">
+      {/* Illustration — the graph: hub ↔ repo / services / data / domain */}
+      <div className="relative mx-auto mb-3 h-36 w-72">
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 288 132" fill="none" aria-hidden="true">
+          {/* Links, behind everything. Dashed = wiring; --th-on-20 is a real step. */}
+          <g stroke="var(--th-on-20)" strokeWidth="1.5" strokeDasharray="4 4" fill="none">
+            <path d="M71 32 Q 100 42 123 58" />
+            <path d="M71 96 Q 100 90 123 74" />
+            <path d="M165 58 Q 188 42 217 32" />
+            <path d="M165 74 Q 188 90 217 96" />
+          </g>
+          {/* Packets sit ON their curve: a quadratic's t=0.5 point is
+              0.25*P0 + 0.5*C + 0.25*P1, NOT the midpoint of the endpoints —
+              eyeballing it is what left them floating beside the line. */}
+          <circle cx="98.5" cy="43.5" r="2.4" fill="var(--th-on-30)" />
+          <circle cx="98.5" cy="87.5" r="2" fill="var(--th-on-20)" />
+          <circle cx="189.5" cy="43.5" r="2.4" fill="var(--th-on-30)" />
+          <circle cx="189.5" cy="87.5" r="2" fill="var(--th-on-20)" />
 
-          {/* project card stack */}
-          <rect x="74" y="64" width="98" height="68" rx="13" fill="var(--th-sf-03)" />
-          <rect x="66" y="56" width="98" height="68" rx="13" fill="var(--th-card-bg)" stroke="var(--th-bd-default)" strokeWidth="1" />
-          {/* header bar + traffic lights */}
-          <rect x="66" y="56" width="98" height="22" rx="13" fill="var(--th-sf-05)" />
-          <circle cx="80" cy="67" r="3.5" fill="#ef4444" fillOpacity="0.6" />
-          <circle cx="91" cy="67" r="3.5" fill="#eab308" fillOpacity="0.6" />
-          <circle cx="102" cy="67" r="3.5" fill="#22c55e" fillOpacity="0.6" />
-          {/* content lines */}
-          <rect x="80" y="90" width="42" height="5" rx="2.5" fill="var(--th-on-12)" />
-          <rect x="80" y="101" width="64" height="4" rx="2" fill="var(--th-on-08)" />
-          <rect x="80" y="110" width="48" height="4" rx="2" fill="var(--th-on-08)" />
+          {/* Repo */}
+          <Node x={52} y={32}>
+            <circle cx="-6" cy="5" r="3.2" />
+            <circle cx="6" cy="-6" r="3.2" />
+            <path d="M-6 1.8v-3.8a4 4 0 0 1 4-4h4.8" />
+          </Node>
+          <NodeLabel x={52} y={60}>Repo</NodeLabel>
 
-          {/* dashed launch trail from card corner up to the badge */}
-          <path d="M158 64 Q 172 54 174 48" stroke="var(--th-on-12)" strokeWidth="1.5" strokeDasharray="3 3" />
+          {/* Deploy — the build shipping upward. */}
+          <Node x={52} y={96}>
+            <path d="M0 7V-6" />
+            <path d="M-5 -1l5 -5.5 5 5.5" />
+            <path d="M-7 9.5h14" />
+          </Node>
+          <NodeLabel x={52} y={124}>Deploy</NodeLabel>
 
-          {/* launch badge — upward "ship it" arrow */}
-          <circle cx="176" cy="44" r="21" fill="var(--th-card-bg)" />
-          <circle cx="176" cy="44" r="17" fill="var(--th-on-05)" stroke="var(--th-on-20)" strokeWidth="2" strokeDasharray="4 3" />
-          <path d="M176 53V35M169 42l7-8 7 8" stroke="var(--th-on-40)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Domain */}
+          <Node x={236} y={32}>
+            <circle cx="0" cy="0" r="8" />
+            <path d="M-8 0h16" />
+            <path d="M0 -8c4 3.6 4 12.4 0 16" />
+            <path d="M0 -8c-4 3.6-4 12.4 0 16" />
+          </Node>
+          <NodeLabel x={236} y={60}>Domain</NodeLabel>
 
-          {/* sparkles + decorative dots */}
-          <path d="M40 64l2-4 2 4-4-2 4 0-4 2z" fill="var(--th-on-16)" />
-          <path d="M214 118l1.6-3.2 1.6 3.2-3.2-1.6 3.2 0-3.2 1.6z" fill="var(--th-on-12)" />
-          <circle cx="34" cy="108" r="5" fill="var(--th-on-06)" />
-          <circle cx="206" cy="58" r="3" fill="var(--th-on-12)" />
-          <circle cx="46" cy="38" r="3" fill="var(--th-on-10)" />
-          <circle cx="200" cy="150" r="4" fill="var(--th-on-08)" />
+          {/* Data */}
+          <Node x={236} y={96}>
+            <ellipse cx="0" cy="-5" rx="8" ry="3" />
+            <path d="M-8 -5v9.5c0 1.7 3.6 3 8 3s8-1.3 8-3V-5" />
+            <path d="M-8 -0.5c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+          </Node>
+          <NodeLabel x={236} y={124}>Data</NodeLabel>
+
+          {/* Hub = the Openship mark: the ring (components/logo.tsx,
+              public/apple-touch-icon.png). Soft halo for presence, no plate —
+              a ring inside a filled circle reads as a target. */}
+          <circle cx="144" cy="66" r="27" fill="var(--th-on-04)" />
+          <circle cx="144" cy="66" r="18" fill="none" stroke="var(--th-on-80)" strokeWidth="3.5" />
+          {/* Live dot on the ring's edge — the one spot of colour. */}
+          <circle cx="158" cy="52" r="4.2" fill="var(--th-card-bg)" />
+          <circle cx="158" cy="52" r="2.8" fill="#22c55e" fillOpacity="0.85" />
         </svg>
       </div>
 
       {/* Copy */}
       <div className="text-center">
-        <h3 className="text-xl font-medium text-foreground/85 mb-1.5" style={{ letterSpacing: "-0.2px" }}>
+        <h3 className="mb-1.5 text-xl font-medium text-foreground/85" style={{ letterSpacing: "-0.2px" }}>
           {t.overview.welcome.title}
         </h3>
-        <p className="text-sm text-muted-foreground/80 max-w-sm mx-auto mb-6 leading-relaxed">
+        <p className="mx-auto mb-5 max-w-sm text-sm leading-relaxed text-muted-foreground/80">
           {t.overview.welcome.subtitle}
         </p>
 
         {/* CTAs */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
             href="/library"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5"
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:-translate-y-0.5 hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25"
           >
             <Plus className="size-4" />
             {t.overview.welcome.createProject}
           </Link>
           <Link
             href="/library"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-muted/50 px-6 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
             <Github className="size-4" />
             {t.overview.welcome.importGithub}
@@ -88,22 +166,9 @@ const HomeWelcome: React.FC = () => {
         </div>
       </div>
 
-      {/* Feature row */}
-      {/* <div className="grid grid-cols-3 gap-3 max-w-md mx-auto mt-9">
-        {FEATURES.map(({ icon: Icon, label, sub }) => (
-          <div key={label} className="bg-card border border-border/50 rounded-xl p-3.5 text-left">
-            <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center mb-2.5">
-              <Icon className="size-4 text-muted-foreground" />
-            </div>
-            <p className="text-[13px] font-medium text-foreground leading-tight">{label}</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>
-          </div>
-        ))}
-      </div> */}
-
-      <p className="text-center text-xs text-muted-foreground/60 mt-7">
+      <p className="mt-5 text-center text-xs text-muted-foreground/60">
         {t.overview.welcome.tipPrefix}{" "}
-        <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px] font-mono">⌘ K</kbd>{" "}
+        <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘ K</kbd>{" "}
         {t.overview.welcome.tipSuffix}
       </p>
     </div>

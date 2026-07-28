@@ -76,26 +76,27 @@ export function Modal({
       style={{ zIndex }}
       onClick={handleBackdropClick}
     >
-      {/* Backdrop. Light mode = white frost (`bg-background/80` over the white
-          page). In dark mode `--background` is pure black, so `/80` over the
-          also-black page collapses to a dead void with nothing for the blur to
-          show — override to the theme's own scrim value (`--th-overlay` = 60%
-          black) + a stronger blur so the page frosts through instead. */}
+      {/* Backdrop = the theme's OWN scrim token, which is already tuned per
+          theme (light 45% black, dark 60%, dim 55%). It used to be
+          `bg-background/70`, i.e. 70% WHITE in light mode — a white veil over a
+          white page, so nothing dimmed and a white panel had nothing to separate
+          from. The blur stays. */}
       <div
-        className="absolute inset-0 bg-background/70 dark:bg-black/55 dim:bg-black/55 backdrop-blur-lg dark:backdrop-blur-xl dim:backdrop-blur-xl transition-opacity duration-300"
-        style={{ opacity: isVisible ? 1 : 0 }}
+        className="absolute inset-0 backdrop-blur-lg dark:backdrop-blur-xl dim:backdrop-blur-xl transition-opacity duration-300"
+        style={{ background: "var(--th-overlay)", opacity: isVisible ? 1 : 0 }}
         onClick={handleBackdropDivClick}
       />
 
-      {/* Modal surface: a lightly-translucent frosted panel (card color at ~93%
-          + its own backdrop-blur) so it reads as elevated glass over the blurred
-          page — not a flat clone of the page cards. The inset ring adds a subtle
-          top-edge highlight; border + shadow give it definition. Still ~opaque
-          enough to keep dense content perfectly readable. */}
+      {/* Modal surface: the SOLID card token at 96% + its own blur, so it reads
+          as elevated glass but never shows the page through it. It was 50%, which
+          in dark (#060606 over a black scrim) looked fine and in LIGHT (#ffffff
+          over a white veil) let the whole page ghost through the panel — the
+          "transparent modal" bug. Keep this high; the blur + ring + shadow are
+          what sell the glass, not the transparency. */}
       <div
         className="relative w-full border border-border/60 ring-1 ring-inset ring-foreground/[0.06] rounded-2xl shadow-2xl backdrop-blur-2xl flex flex-col transition-all duration-300 !overflow-x-hidden"
         style={{
-          background: 'color-mix(in oklab, var(--th-card-bg-solid) 93%, transparent)',
+          background: 'color-mix(in oklab, var(--th-card-bg-solid) 96%, transparent)',
           width,
           overflow,
           maxWidth,

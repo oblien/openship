@@ -2,7 +2,8 @@
 
 import React from "react";
 import Link from "next/link";
-import { Github, Loader2, Terminal, Settings, ArrowRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Github, Loader2, Settings, ArrowRight } from "lucide-react";
 import type { CliAction } from "@/context/GitHubContext";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -78,6 +79,7 @@ export function ConnectPrompt({
   onConnectCloud: () => void;
 }) {
   const { t } = useI18n();
+  const router = useRouter();
   // Terminal instruction (e.g. `gh auth login` or env var)
   if (cliAction?.type === "terminal") {
     return (
@@ -164,22 +166,19 @@ export function ConnectPrompt({
         </p>
 
         {selfHosted ? (
-          // Self-hosted: two real paths — the Cloud App (remote deploys, needs a
-          // cloud connection first) and the local gh CLI (local builds only).
+          // Self-hosted: two paths — the Openship Cloud GitHub App (managed), and a
+          // manual connection you set up in Settings (bring your own client id for
+          // an in-UI device login, or the instance's own gh CLI). Neither is pushed
+          // over the other — self-hosted is never locked into the Cloud App.
           <div className="grid sm:grid-cols-2 gap-3 max-w-xl mx-auto text-start">
             <button
               onClick={() => (cloudConnected ? onConnect("oauth") : onConnectCloud())}
               disabled={connecting}
               className="group rounded-xl border border-border/60 bg-card p-4 transition-all hover:border-primary/40 hover:bg-primary/[0.02] disabled:opacity-50"
             >
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-                  <Github className="size-[18px] text-foreground/70" />
-                </span>
-                <span className="inline-flex items-center rounded-full bg-success-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-success">
-                  {t.library.connect.default.recommended}
-                </span>
-              </div>
+              <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
+                <Github className="size-[18px] text-foreground/70" />
+              </span>
               <p className="text-sm font-medium text-foreground">{t.library.connect.default.cloudApp}</p>
               <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
                 {t.library.connect.default.cloudAppDesc}
@@ -191,24 +190,18 @@ export function ConnectPrompt({
             </button>
 
             <button
-              onClick={() => onConnect("cli")}
-              disabled={connecting}
-              className="group rounded-xl border border-border/60 bg-card p-4 transition-all hover:border-primary/40 hover:bg-primary/[0.02] disabled:opacity-50"
+              onClick={() => router.push("/settings")}
+              className="group rounded-xl border border-border/60 bg-card p-4 transition-all hover:border-primary/40 hover:bg-primary/[0.02]"
             >
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-                  <Terminal className="size-[18px] text-foreground/70" />
-                </span>
-                <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {t.library.connect.default.localBuilds}
-                </span>
-              </div>
-              <p className="text-sm font-medium text-foreground">{t.library.connect.default.ghCli}</p>
+              <span className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center mb-2.5">
+                <Settings className="size-[18px] text-foreground/70" />
+              </span>
+              <p className="text-sm font-medium text-foreground">{t.library.connect.default.manual}</p>
               <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                {t.library.connect.default.ghCliDesc}
+                {t.library.connect.default.manualDesc}
               </p>
               <span className="inline-flex items-center gap-1 text-xs font-medium text-primary mt-3">
-                {t.library.connect.default.useGhCli}
+                {t.library.connect.default.manualCta}
                 <ArrowRight className="size-3.5 rtl:rotate-180" />
               </span>
             </button>

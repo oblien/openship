@@ -1,70 +1,71 @@
 "use client";
 
+import { RefreshCw } from "lucide-react";
+import { ErrorView } from "@/components/error-view";
+import { useI18n } from "@/components/i18n-provider";
+
 /**
  * Full-page fallback shown when the API can't be reached during SSR bootstrap
  * (see getDeploymentInfoOrNull). The deploy/auth mode is known only to the API,
  * so rather than guess it (and render the wrong login flow) or crash into the
- * error boundary, we render this explicit screen. Self-contained inline styles:
- * it renders around/instead of the app providers when the platform is only
- * half-up, so it can't rely on theme/i18n context. Retry re-runs the render,
- * which re-fetches /health/env — if the API is back, the app loads normally.
+ * error boundary, we render this explicit screen.
+ *
+ * The SEGMENT layouts return this ((dashboard)/(auth)/(onboarding)), so the ROOT
+ * layout — globals.css, ThemeScript, ThemeProvider, I18nProvider — is still
+ * mounted around it: theme tokens and translations both work here, which is why
+ * this is a normal themed component and not the inline-styled white page it used
+ * to be. Retry reloads, which re-fetches /health/env; if the API is back, the app
+ * loads normally.
  */
 export function ApiUnavailable() {
+  const { t } = useI18n();
+  const c = t.chrome;
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        background: "#ffffff",
-        color: "#0f0f0f",
-        padding: 24,
-      }}
-    >
-      <div style={{ maxWidth: 440, textAlign: "center" }}>
-        <div
-          aria-hidden="true"
-          style={{
-            width: 44,
-            height: 44,
-            margin: "0 auto 16px",
-            borderRadius: 12,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0,0,0,0.05)",
-            border: "1px solid rgba(0,0,0,0.10)",
-          }}
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
-            <path d="M12 3v6m0 6v6M5.6 5.6l4.2 4.2m4.4 4.4 4.2 4.2M3 12h6m6 0h6" />
-          </svg>
-        </div>
-        <h1 style={{ fontSize: 20, fontWeight: 600, margin: "0 0 8px" }}>
-          Can&rsquo;t reach the API
-        </h1>
-        <p style={{ fontSize: 14, lineHeight: 1.6, opacity: 0.7, margin: "0 0 20px" }}>
-          The dashboard can&rsquo;t load until the Openship API is running. Make
-          sure it&rsquo;s up, then retry.
-        </p>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          style={{
-            border: "1px solid rgba(0,0,0,0.16)",
-            background: "rgba(0,0,0,0.05)",
-            color: "#0f0f0f",
-            borderRadius: 999,
-            padding: "8px 20px",
-            fontSize: 14,
-            cursor: "pointer",
-          }}
-        >
-          Retry
-        </button>
-      </div>
+    <div className="flex min-h-dvh items-center justify-center px-6 py-12">
+      <ErrorView
+        variant="offline"
+        brand={t.brand}
+        title={c.apiDown.title}
+        description={c.apiDown.description}
+        hints={[
+          <Hint key="status" text={c.apiDown.hintStatus} />,
+          <Hint key="start" text={c.apiDown.hintStart} />,
+          <Hint key="remote" text={c.apiDown.hintRemote} />,
+        ]}
+        actions={[
+          {
+            label: c.apiDown.retry,
+            onClick: () => window.location.reload(),
+            icon: <RefreshCw className="size-4" />,
+          },
+        ]}
+        docsHref="https://openship.io/docs/self-hosting"
+        docsLabel={c.apiDown.docs}
+        githubLabel={c.errorLinks.github}
+      />
     </div>
+  );
+}
+
+/** Renders `\`backticked\`` spans in a hint as inline code, so the commands the
+ *  operator has to run actually look runnable. */
+function Hint({ text }: { text: string }) {
+  const parts = text.split(/`([^`]+)`/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          <code
+            key={i}
+            className="rounded-md bg-foreground/[0.07] px-1.5 py-0.5 font-mono text-[12px] text-foreground/80"
+          >
+            {part}
+          </code>
+        ) : (
+          part
+        ),
+      )}
+    </>
   );
 }

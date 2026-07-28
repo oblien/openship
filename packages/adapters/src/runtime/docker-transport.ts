@@ -1,7 +1,7 @@
 import Dockerode from "dockerode";
 import type { CommandExecutor } from "../types";
 
-import { createDockerSshBridge, verifyDockerSshBridge, type DockerSshBridge } from "./docker-ssh-agent";
+import { createDockerSshBridge, type DockerSshBridge } from "./docker-ssh-agent";
 
 export interface DockerConnectionOptions {
   /** Transport type */
@@ -81,7 +81,7 @@ export function resolveDockerTransport(opts?: DockerConnectionOptions): DockerTr
       kind: "ssh",
       description: `remote Docker daemon via SSH (${opts.host ?? "unknown-host"})`,
       unreachableHint:
-        "Check that SSH credentials are correct, the remote Docker socket exists, the SSH server supports streamlocal forwarding, and the SSH user has permission to access the Docker socket.",
+        "Check that SSH credentials are correct, Docker is running on the server, and the SSH user can access the Docker daemon (in the `docker` group or root). The transport uses SSH socket forwarding where available and falls back to `docker system dial-stdio` over an exec channel otherwise.",
       establish: async () => {
         bridge = createDockerSshBridge(opts);
         const { host, port } = await bridge.start();
@@ -96,7 +96,12 @@ export function resolveDockerTransport(opts?: DockerConnectionOptions): DockerTr
         bridge?.close();
         bridge = null;
       },
-      preflight: async () => verifyDockerSshBridge(opts),
+      // Decide the upstream transport (streamlocal vs dial-stdio) up front so
+      // the daemon `ping()` in assertReachable runs over the working one. The
+      // ping itself is the real reachability check.
+      preflight: async () => {
+        await bridge?.probe();
+      },
     };
   }
 

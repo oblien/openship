@@ -117,6 +117,23 @@ export const BuildAccessBody = Type.Object({
   services: Type.Optional(
     Type.Array(BuildServiceInput, { description: "Compose / multi-service definitions (services mode)." }),
   ),
+  serviceIds: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Subset of service ids to (re)build; every other service carries forward on its existing container, untouched. Omit to build the whole stack (first deploy). Use this on a scoped redeploy so stateful services (MySQL/Redis/Qdrant) are NOT recreated for an unrelated code change.",
+    }),
+  ),
+  refreshServiceIds: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Subset of serviceIds to recreate WITHOUT rebuilding (env-only refresh).",
+    }),
+  ),
+  handoverImages: Type.Optional(
+    Type.Record(Type.String(), Type.String(), {
+      description:
+        "ONE-TIME migration image handover: serviceName → an already-present image ref. Those services deploy from that image with no build/pull; used only on a migration's first deploy.",
+    }),
+  ),
   cloudResourceTier: Type.Optional(
     Type.Union([
       Type.Literal("micro"),
@@ -132,7 +149,6 @@ export const BuildAccessBody = Type.Object({
       { description: "CPU/RAM/disk when cloudResourceTier='custom'." },
     ),
   ),
-  forwardGitCredentials: Type.Optional(Type.Boolean()),
   cloneStrategy: Type.Optional(Type.Union([Type.Literal("api-host"), Type.Literal("server")])),
 });
 

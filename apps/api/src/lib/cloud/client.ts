@@ -236,6 +236,18 @@ export function cloudClient(scope: CloudClientScope): CloudClient {
         const body = await readCloudJson<{ ok: true; hostname: string }>(res);
         return body ?? null;
       },
+      async deregister(slug) {
+        const res = await fetchScoped("/api/cloud/edge-proxy/delete", {
+          method: "POST",
+          body: JSON.stringify({ slug }),
+        });
+        if (!res) return null; // not connected — best-effort no-op
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`Edge proxy deregister failed (${res.status}): ${text}`);
+        }
+        return readCloudJson<{ ok: true; removed: boolean }>(res) ?? null;
+      },
     },
 
     analytics: {

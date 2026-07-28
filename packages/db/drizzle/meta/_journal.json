@@ -400,6 +400,104 @@
       "when": 1784734564556,
       "tag": "0056_moaning_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1784843431114,
+      "tag": "0057_complete_prism",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1784864568657,
+      "tag": "0058_add_server_is_local",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1784880817859,
+      "tag": "0059_legal_fixer",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784881697507,
+      "tag": "0060_add_route_strategy_host_port",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1784881797507,
+      "tag": "0061_notification_default_multi_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1784926098651,
+      "tag": "0062_add_incoming_webhook",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1785012498651,
+      "tag": "0063_add_migration_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1785098898651,
+      "tag": "0064_add_migration_partial",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1785185298651,
+      "tag": "0065_custom_app_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1785271698651,
+      "tag": "0066_ensure_migration_partial_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1785358098651,
+      "tag": "0067_webhook_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1785358198651,
+      "tag": "0068_add_migration_target_volumes",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1785358298651,
+      "tag": "0069_add_project_composite_routes",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1785358398651,
+      "tag": "0070_forward_git_to_server",
+      "breakpoints": true
     }
   ]
 }

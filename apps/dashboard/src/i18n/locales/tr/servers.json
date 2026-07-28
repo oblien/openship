@@ -60,7 +60,9 @@
     "errors": "Hatalar",
     "seeDocs": "Dokümanlara bak",
     "projects": "Projeler",
-    "regions": "Bölgeler"
+    "regions": "Bölgeler",
+    "projectCountOne": "{n} proje",
+    "projectCountMany": "{n} proje"
   },
   "tabsNav": {
     "servers": "Sunucular",
@@ -120,10 +122,11 @@
   "detail": {
     "tabs": {
       "overview": "Genel Bakış",
+      "migrations": "Geçişler",
       "components": "Bileşenler",
       "github": "Git Doğrulama",
       "security": "Güvenlik",
-      "ports": "Portlar",
+      "ports": "Port yönlendirme",
       "terminal": "Terminal"
     },
     "healthy": "Sağlıklı",

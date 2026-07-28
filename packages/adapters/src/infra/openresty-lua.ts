@@ -181,6 +181,14 @@ export async function ensureOpenRestyConfig(
   const pidDir = paths.pidPath.replace(/\/[^/]+$/, "");
   await executor.mkdir(pidDir);
 
+  // Base server blocks: the loopback management API and the default catch-all
+  // (incl. the 443 unknown-SNI reject). Written here - not just at install - so
+  // an already-deployed box self-heals the catch-all on its next deploy and no
+  // longer cross-serves an unrouted HTTPS host. Idempotent overwrite of static
+  // content; a stale copy is replaced. The deploy's route reload applies it.
+  await executor.writeFile(`${paths.sitesDir}/_management.conf`, MANAGEMENT_BLOCK);
+  await executor.writeFile(`${paths.sitesDir}/_default.conf`, DEFAULT_BLOCK);
+
   // Bootstrap: if nginx.conf doesn't exist (e.g. after a reinstall that
   // removed the old config), write a minimal working config.
   if (!(await executor.exists(paths.confPath))) {
@@ -313,20 +321,53 @@ server {
 }
 `;
 
+/**
+ * Loopback port certbot's `--standalone` authenticator listens on during
+ * issuance. The edge proxies `/.well-known/acme-challenge/` to it, so HTTP-01
+ * works with ZERO downtime — no port-80 fight with the edge, no webroot
+ * dependency, no DNS-01. Fixed high port, outside the usual app/user range.
+ * Certbot binds it only transiently; it just needs to be reachable from the
+ * edge on loopback. Identical for bare (host netns) and docker-edge (container
+ * netns), since certbot runs on the same executor/netns as the edge.
+ */
+export const ACME_HTTP01_PORT = 49180;
+
+/**
+ * The `/.well-known/acme-challenge/` location block — proxies the HTTP-01
+ * challenge to certbot's transient standalone server. SHARED by the default
+ * catch-all here and the per-vhost templates in nginx.ts so all three agree.
+ */
+export const ACME_CHALLENGE_LOCATION = `\
+    location /.well-known/acme-challenge/ {
+        proxy_pass http://127.0.0.1:${ACME_HTTP01_PORT};
+        proxy_set_header Host $host;
+    }`;
+
 const DEFAULT_BLOCK = `\
-# Openship default catch-all - prevents the stock OpenResty welcome page
+# Openship default catch-all - prevents the stock OpenResty welcome page AND
+# stops an unmatched Host/SNI from being served the first real vhost by default.
 # Auto-generated - do not edit manually
 server {
     listen 80 default_server;
     server_name _;
 
-    location /.well-known/acme-challenge/ {
-        root /var/www/acme;
-    }
+${ACME_CHALLENGE_LOCATION}
 
     location / {
         return 404;
     }
+}
+
+# HTTPS catch-all. WITHOUT a 443 default_server, nginx serves the first-loaded
+# 443 vhost to any request whose SNI matches no server_name - so a domain we do
+# NOT route (removed / never-added / just pointed at this IP) silently gets some
+# other app's cert + backend. That is cross-serving, a security hole. Owning the
+# 443 default and rejecting unknown SNI closes it: an unrouted host gets a TLS
+# handshake failure, never a fallthrough. ssl_reject_handshake (OpenResty/nginx
+# >= 1.19.4; our installer pulls the newest LTS) needs no certificate.
+server {
+    listen 443 ssl default_server;
+    ssl_reject_handshake on;
 }
 `;
 
@@ -567,9 +608,8 @@ export async function deployLuaScripts(
       `sed -i '/http *{/a \\    lua_package_path "/usr/local/openresty/site/lualib/?.lua;;";' ${paths.confPath}`,
   );
 
-  // ── Management server block ──────────────────────────────────────────
-  await executor.writeFile(`${paths.sitesDir}/_management.conf`, MANAGEMENT_BLOCK);
-  await executor.writeFile(`${paths.sitesDir}/_default.conf`, DEFAULT_BLOCK);
+  // Base server blocks (_management.conf + _default.conf) are written by
+  // ensureOpenRestyConfig above - single writer, so they self-heal every deploy.
 
   // ── Validate + reload ────────────────────────────────────────────────
   await executor.exec(buildReloadCommand(paths));

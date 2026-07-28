@@ -76,4 +76,58 @@ describe("DockerRuntime container status normalization", () => {
     expect(results[1]).toEqual({ containerId: "c2", status: "running", serviceName: "db" });
     expect(results[2]).toEqual({ containerId: "c3", status: "stopped", serviceName: "cache" });
   });
+
+  it("listAllContainers carries the RAW state, status line and network ip", async () => {
+    // The live service-state read matches on these fields: the raw state (so
+    // `restarting` isn't collapsed into running), the human status line (health
+    // suffix) and the ip from the list view (no extra inspect round-trip).
+    const runtime = await DockerRuntime.create();
+
+    runtime.docker.listContainers = (async () => [
+      {
+        Id: "c_api",
+        Names: ["/openship-openship-api"],
+        Image: "openship/openship-api:bld_x",
+        ImageID: "sha256:1",
+        State: "Restarting",
+        Status: "Restarting (1) 44 seconds ago",
+        Labels: { "openship.project": "proj_1", "openship.service": "api" },
+        Ports: [{ PrivatePort: 4000, PublicPort: 4000, Type: "tcp" }],
+        Mounts: [],
+        NetworkSettings: { Networks: { "openship-openship": { IPAddress: "172.18.0.7" } } },
+      },
+    ]) as any;
+
+    const [c] = await runtime.listAllContainers();
+    expect(c).toMatchObject({
+      id: "c_api",
+      names: ["openship-openship-api"],
+      state: "restarting",
+      status: "Restarting (1) 44 seconds ago",
+      ip: "172.18.0.7",
+    });
+    expect(c.ports[0]).toMatchObject({ privatePort: 4000, publicPort: 4000 });
+  });
+
+  it("listAllContainers omits ip when no network reports one", async () => {
+    const runtime = await DockerRuntime.create();
+    runtime.docker.listContainers = (async () => [
+      {
+        Id: "c_stopped",
+        Names: ["/openship-openship-web"],
+        Image: "img",
+        ImageID: "sha256:2",
+        State: "exited",
+        Status: "Exited (0) 5 minutes ago",
+        Labels: {},
+        Ports: [],
+        Mounts: [],
+        NetworkSettings: { Networks: { bridge: { IPAddress: "" } } },
+      },
+    ]) as any;
+
+    const [c] = await runtime.listAllContainers();
+    expect(c.ip).toBeUndefined();
+    expect(c.state).toBe("exited");
+  });
 });

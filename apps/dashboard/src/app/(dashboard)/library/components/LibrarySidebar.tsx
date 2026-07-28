@@ -27,6 +27,10 @@ interface LibrarySidebarProps {
   /** Whether the local instance is connected to Openship Cloud. Drives
    *  the "safer remote cloning" CTA card. */
   cloudConnected: boolean;
+  /** Authoritative owner-wide counts from the server (GitHub's real totals).
+   *  Preferred over counting the `repos` array, which is only the current page
+   *  under server-side pagination. Falls back to `repos` when omitted. */
+  counts?: { total: number; publicCount: number; privateCount: number };
 }
 
 export function LibrarySidebar({
@@ -35,11 +39,13 @@ export function LibrarySidebar({
   selfHosted,
   state,
   cloudConnected,
+  counts,
 }: LibrarySidebarProps) {
   const { t } = useI18n();
   const connected = state.primary !== null;
-  const publicCount = repos.filter((r) => !r.private).length;
-  const privateCount = repos.filter((r) => r.private).length;
+  const total = counts?.total ?? repos.length;
+  const publicCount = counts?.publicCount ?? repos.filter((r) => !r.private).length;
+  const privateCount = counts?.privateCount ?? repos.filter((r) => r.private).length;
 
   // NOTE: the library never probes the App. The state here is gh-FIRST (from
   // GET /github/home, which is zero-cloud when gh is logged in), so the App
@@ -62,7 +68,7 @@ export function LibrarySidebar({
       )}
 
       {/* Stats (when connected) */}
-      {connected && repos.length > 0 && (
+      {connected && total > 0 && (
         <div className="bg-card rounded-2xl border border-border/50 p-5">
           <div className="flex items-center gap-2 mb-4">
             <BookOpen className="size-4 text-muted-foreground" />
@@ -76,7 +82,7 @@ export function LibrarySidebar({
                 </div>
                 <span className="text-sm text-muted-foreground">{t.library.sidebar.total}</span>
               </div>
-              <span className="text-lg font-semibold text-foreground">{repos.length}</span>
+              <span className="text-lg font-semibold text-foreground">{total}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">

@@ -17,11 +17,22 @@ import type { CommandExecutor } from "@repo/adapters";
 export const OPENSHIP_DIR = "/root/.openship";
 
 /**
+ * Single-quote wrap for safe interpolation into a remote LOGIN SHELL. The file
+ * `name` reaches these helpers from semi-trusted sources — e.g. a `snapshot-<id>`
+ * name where `<id>` is a container label read during a migration scan — so every
+ * interpolated path MUST be quoted or a crafted name (`x$(cmd)`, `x;cmd`) is root
+ * RCE on the target. `writeFile` uses SFTP (no shell) and needs no quoting.
+ */
+function sq(v: string): string {
+  return `'${v.replace(/'/g, "'\\''")}'`;
+}
+
+/**
  * Ensure the `.openship` dir exists, root-only (0700). Idempotent. THE single
  * place the folder is created — callers never `mkdir` it themselves.
  */
 export async function ensureOpenshipDir(exec: CommandExecutor): Promise<void> {
-  await exec.exec(`mkdir -p ${OPENSHIP_DIR} && chmod 0700 ${OPENSHIP_DIR}`);
+  await exec.exec(`mkdir -p ${sq(OPENSHIP_DIR)} && chmod 0700 ${sq(OPENSHIP_DIR)}`);
 }
 
 /**
@@ -31,7 +42,7 @@ export async function ensureOpenshipDir(exec: CommandExecutor): Promise<void> {
 export async function readOpenshipFile(exec: CommandExecutor, name: string): Promise<string> {
   const path = `${OPENSHIP_DIR}/${name}`;
   try {
-    return (await exec.exec(`cat ${path} 2>/dev/null || echo ""`)).trim();
+    return (await exec.exec(`cat ${sq(path)} 2>/dev/null || echo ""`)).trim();
   } catch {
     return "";
   }
@@ -50,11 +61,21 @@ export async function writeOpenshipFile(
   const tmp = `${path}.tmp`;
   await ensureOpenshipDir(exec);
   await exec.writeFile(tmp, content);
-  await exec.exec(`mv -f ${tmp} ${path} && chmod 0600 ${path}`);
+  await exec.exec(`mv -f ${sq(tmp)} ${sq(path)} && chmod 0600 ${sq(path)}`);
 }
 
 /** Remove a file (and any stale temp) from `.openship`. Idempotent. */
 export async function removeOpenshipFile(exec: CommandExecutor, name: string): Promise<void> {
   const path = `${OPENSHIP_DIR}/${name}`;
-  await exec.exec(`rm -f ${path} ${path}.tmp`);
+  await exec.exec(`rm -f ${sq(path)} ${sq(`${path}.tmp`)}`);
+}
+
+/** Cheap existence check (no read) — `true` iff `.openship/<name>` is a file. */
+export async function openshipFileExists(exec: CommandExecutor, name: string): Promise<boolean> {
+  const path = `${OPENSHIP_DIR}/${name}`;
+  try {
+    return (await exec.exec(`test -f ${sq(path)} && echo yes || echo no`)).trim() === "yes";
+  } catch {
+    return false;
+  }
 }

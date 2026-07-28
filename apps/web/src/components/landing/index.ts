@@ -1,6 +1,6 @@
 export { Navbar } from "./navbar";
 export { Hero } from "./hero";
-export { Features } from "./features";
+export { SystemMap } from "./system-map";
 export { HowItWorks } from "./how-it-works";
 export { Dashboard } from "./dashboard";
 export { DeploymentModels } from "./deployment-models";

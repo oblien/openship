@@ -12,6 +12,14 @@
  *   bun scripts/release.ts <explicit>     # set to literal "0.2.0-beta.3"
  *   bun scripts/release.ts --dry-run patch
  *
+ *   bun scripts/release.ts docker [tag]   # publish Docker images ONLY (GHCR),
+ *                                         # via the docker-images workflow. A
+ *                                         # test/prerelease image build: NO version
+ *                                         # bump, NO git tag, NO GitHub release, NO
+ *                                         # npm/desktop, and it never moves :latest.
+ *                                         # Omit [tag] → images tagged with the short
+ *                                         # SHA. `--ref=<branch>` builds that branch.
+ *
  * What it does:
  *   1. Refuse if working tree is dirty
  *   2. Refuse if not on main (override with --force-branch)
@@ -73,6 +81,14 @@ const critical = args.includes("--critical");
 const message = args.find((a) => a.startsWith("--message="))?.slice("--message=".length);
 // The bump is the first positional that ISN'T the `publish` switch.
 const cmd = args.find((a) => !a.startsWith("--") && a !== "publish");
+
+// `docker` is a SEPARATE path: publish container images ONLY (via the
+// docker-images workflow) — no version bump, no git tag, no GitHub release.
+// Branch out here, before any version/semver handling treats "docker" as a bump.
+if (cmd === "docker") {
+  releaseDocker();
+  process.exit(0);
+}
 
 type BumpKind = "patch" | "minor" | "major" | "rc" | "current" | "literal";
 // No arg (or "current") → release the version already in package.json as-is,
@@ -238,6 +254,12 @@ function usageAndExit(code = 1): never {
       "                 0.1.1-rc.2 → 0.1.1   (rc → stable promotion)",
       "  <literal>      explicit semver string",
       "",
+      "  docker [tag]   publish Docker images ONLY (GHCR) via the docker-images",
+      "                 workflow — no version bump / git tag / GitHub release, and",
+      "                 never moves :latest. Omit [tag] → images tagged short SHA.",
+      "                 `--ref=<branch>` builds that branch (default: current).",
+      "                 e.g.  bun run release docker 0.0.0-rc.1",
+      "",
       "  publish        ANNOUNCE this release: write a release advisory so the in-app",
       "                 update banner prompts users below this version. WITHOUT it the",
       "                 release ships SILENTLY (still shown quietly in Settings → Updates",
@@ -320,6 +342,104 @@ function watchCi(t: string, fallbackUrl: string): void {
   spawnSync("gh", ["run", "watch", runId, "--interval", "6"], { cwd: ROOT, stdio: "inherit" });
   log(``);
   spawnSync("gh", ["run", "view", runId], { cwd: ROOT, stdio: "inherit" });
+}
+
+/* ─── Docker image release (GHCR-only, via workflow_dispatch) ────────── */
+
+/** owner/repo parsed from origin, or null when origin isn't a GitHub remote. */
+function ghOwnerRepo(): { owner: string; repo: string } | null {
+  const url = git("remote", "get-url", "origin", { capture: true }).trim();
+  const m = url.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+
+/**
+ * `bun release docker [tag]` — trigger the docker-images workflow to publish the
+ * openship-api/dashboard/edge images to GHCR. This is the DOCKER-ONLY path: it
+ * dispatches the workflow (no version bump, no git tag, no GitHub release, no
+ * npm/desktop) and the dispatch run never moves `:latest`. Untracked/dirty tree
+ * is fine — it builds whatever is on the pushed `--ref` branch, not your working
+ * copy. Requires the `gh` CLI (or use the Actions UI → "Docker images").
+ */
+function releaseDocker(): void {
+  const positionals = args.filter((a) => !a.startsWith("--") && a !== "publish");
+  const dockerTag = positionals[1]; // `release docker [tag]`
+  const ref = args.find((a) => a.startsWith("--ref="))?.slice("--ref=".length) || currentBranch();
+
+  const runArgs = ["workflow", "run", "docker-images.yml", "--ref", ref];
+  if (dockerTag) runArgs.push("-f", `tag=${dockerTag}`);
+
+  log(`Docker image publish (GHCR-only)`);
+  log(`  workflow: docker-images.yml`);
+  log(`  ref:      ${ref}`);
+  log(`  tag:      ${dockerTag ?? "(short SHA)"}`);
+  log(`  scope:    images ONLY — no git tag / GitHub release / npm / desktop; :latest untouched`);
+  log(``);
+
+  if (dryRun) {
+    log(`[dry-run] gh ${runArgs.join(" ")}`);
+    log(`[dry-run] nothing dispatched.`);
+    return;
+  }
+
+  if (spawnSync("gh", ["--version"], { encoding: "utf8" }).status !== 0) {
+    console.error(
+      `Refusing: the \`gh\` CLI is required for \`release docker\`. Install it + \`gh auth login\`,\n` +
+        `or trigger it in the UI: Actions → "Docker images" → Run workflow.`,
+    );
+    process.exit(1);
+  }
+
+  const res = spawnSync("gh", runArgs, { cwd: ROOT, stdio: "inherit" });
+  if (res.status !== 0) {
+    console.error(
+      `\ngh workflow run failed. Most common cause: docker-images.yml isn't on the repo's\n` +
+        `DEFAULT branch yet — workflow_dispatch only works once the workflow file is on it.\n` +
+        `Push the workflow to the default branch, then retry.`,
+    );
+    process.exit(res.status ?? 1);
+  }
+  log(`✓ dispatched docker-images.yml (${ref})`);
+
+  watchDispatch();
+
+  const or = ghOwnerRepo();
+  const shown = dockerTag ?? "<short-sha>";
+  log(``);
+  log(`Verify when green:`);
+  if (or) {
+    log(`  docker manifest inspect ghcr.io/${or.owner}/openship-edge:${shown}   # amd64 + arm64`);
+    log(`  docker pull ghcr.io/${or.owner}/openship-api:${shown}`);
+    log(`  Packages: https://github.com/orgs/${or.owner}/packages?repo_name=${or.repo}`);
+  }
+}
+
+/** Poll for + stream the just-dispatched docker-images run (newest dispatch run). */
+function watchDispatch(): void {
+  if (spawnSync("gh", ["--version"], { encoding: "utf8" }).status !== 0) return;
+  log(`Waiting for the run to register on GitHub…`);
+  let runId = "";
+  for (let i = 0; i < 15 && !runId; i++) {
+    Bun.sleepSync(4000);
+    const out = spawnSync(
+      "gh",
+      ["run", "list", "--workflow", "docker-images.yml", "--event", "workflow_dispatch",
+        "--limit", "1", "--json", "databaseId", "--jq", ".[0].databaseId"],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    if (out.status === 0) {
+      const id = (out.stdout ?? "").trim();
+      if (id && id !== "null") runId = id;
+    }
+  }
+  if (!runId) {
+    log(`Couldn't locate the run automatically — check: gh run list --workflow docker-images.yml`);
+    return;
+  }
+  log(``);
+  log(`▼ live build status (Ctrl-C to stop watching — the build keeps running):`);
+  log(``);
+  spawnSync("gh", ["run", "watch", runId, "--interval", "6"], { cwd: ROOT, stdio: "inherit" });
 }
 
 function preflight(): void {

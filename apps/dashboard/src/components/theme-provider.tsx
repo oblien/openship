@@ -37,8 +37,22 @@ function resolveTheme(t: Theme): ResolvedTheme {
   return isDesktopApp() ? "dim" : "dark";
 }
 
+/**
+ * Canvas colour per theme — mirrors `--th-bg-page` in styles/theme.css (which
+ * stays the source of truth for everything else). Needed as a literal because
+ * ThemeScript runs BEFORE any stylesheet, and because an inline background on
+ * `<html>` stops body→canvas propagation: once ThemeScript sets one, a runtime
+ * theme switch has to update it or the old colour keeps painting the canvas.
+ */
+const PAGE_BG: Record<ResolvedTheme, string> = {
+  light: "#f9f9f9",
+  dim: "#141414",
+  dark: "#000000",
+};
+
 function applyTheme(resolved: ResolvedTheme) {
   document.documentElement.setAttribute("data-theme", resolved);
+  document.documentElement.style.backgroundColor = PAGE_BG[resolved];
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -118,8 +132,18 @@ export function ThemeScript() {
         // No stored pref: desktop follows the OS (dark → dim), web stays light-first.
         else resolved = (isDesktop && sysDark) ? 'dim' : 'light';
         document.documentElement.setAttribute('data-theme', resolved);
+        // Paint the canvas NOW, as an inline style, before any stylesheet has to
+        // arrive. Without this the browser paints its default WHITE for the gap
+        // between navigation and CSS being applied — which on desktop shows as a
+        // white flash right as the splash hands over to the dashboard, and in a
+        // browser shows on every hard reload of a dark theme.
+        // Values mirror --th-bg-page in styles/theme.css; theme.css remains the
+        // source of truth once it loads and immediately overrides these.
+        var page = resolved === 'dark' ? '#000000' : resolved === 'dim' ? '#141414' : '#f9f9f9';
+        document.documentElement.style.backgroundColor = page;
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'light');
+        document.documentElement.style.backgroundColor = '#f9f9f9';
       }
     })();
   `;

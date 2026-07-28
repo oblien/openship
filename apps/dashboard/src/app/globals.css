@@ -8,44 +8,157 @@
 @custom-variant dim (&:where([data-theme="dim"], [data-theme="dim"] *));
 
 /*
- * Desktop (Electron) frameless title bar. `DesktopChrome` adds `.is-desktop`
- * to <html> (only inside the app) and renders `.app-titlebar` — a full-width
- * strip across the very top that IS the draggable title bar (like VS Code).
- * All app content is pushed below it so nothing sits under the strip or the
- * inlaid macOS traffic lights. `data-app-topinset` handles fixed top bars
- * (e.g. the auth shell) that ignore the body padding. No effect on the web.
+ * The desktop app's own header row (DesktopChrome). A REAL row, not an overlay:
+ * it used to be an invisible fixed strip with no layout height, which forced every
+ * surface near the top to be padded out of its way by hand (the sidebar header and
+ * the auth shell each had their own dodge rule). The app read as inflated at the
+ * top, and each new top-anchored surface needed another hack.
+ *
+ * It stays `fixed` so it never scrolls away, and `body` carries a matching inset
+ * so content genuinely starts below it instead of underneath it.
+ *
+ * NO bottom border by design. A hairline there cut the window in two; the bar and
+ * the page share one background and the sidebar/cards provide all the structure
+ * the eye needs — same reasoning as the borderless cards.
  */
 .is-desktop {
-  /* Covers the inset traffic lights (trafficLightPosition y:22 + ~14px button)
-   * so they sit fully within this reserved strip, never over page content. */
-  --titlebar-h: 2.25rem;
+  --titlebar-h: 2.75rem;
 }
-/*
- * The title bar is a fixed OVERLAY across the very top — it adds no layout
- * gap. It sits over the naturally-empty top edge (the sidebar's margin, page
- * top padding), so nothing important is under it, and macOS draws the traffic
- * lights on top regardless. Interactive elements that already clear this strip
- * stay clickable.
- */
-.is-desktop .app-titlebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--titlebar-h);
-  z-index: 30;
-  -webkit-app-region: drag;
-}
-/* The auth shell's top bar is fixed at top:0, so its logo would sit under the
- * strip — nudge just that bar's content down to clear the traffic lights. */
-.is-desktop [data-app-topinset] {
+.is-desktop body {
   padding-top: var(--titlebar-h);
 }
-/* The dashboard sidebar's logo sits at the top-left — exactly where macOS
- * inlays the traffic lights. Pad the header down in the desktop app so the
- * logo clears them (the extra 0.75rem gives breathing room below the strip). */
-.is-desktop .app-sidebar-header {
-  padding-top: calc(var(--titlebar-h) + 0.75rem);
+
+/* Inside the desktop app, "full height" means the viewport MINUS the header row.
+ *
+ * Anything sized to 100dvh/100vh sits below the body inset, so its last
+ * --titlebar-h pixels fall off the bottom of the window. That is not cosmetic:
+ * the dashboard shell is `h-dvh` (app/(dashboard)/layout.tsx) and the sidebar is
+ * its child, so the account switcher at the sidebar's foot was clipped out of
+ * reach. Redefining the full-height utilities in one place beats hunting every
+ * shell — and beats a per-surface padding hack, which is what the old overlay
+ * titlebar forced and what this whole change removed.
+ *
+ * Unlayered on purpose: these must outrank Tailwind's `utilities` layer. */
+.is-desktop .th-page,
+.is-desktop .min-h-dvh {
+  min-height: calc(100dvh - var(--titlebar-h));
+}
+.is-desktop .h-dvh {
+  height: calc(100dvh - var(--titlebar-h));
+}
+.is-desktop .min-h-screen {
+  min-height: calc(100vh - var(--titlebar-h));
+}
+.is-desktop .h-screen {
+  height: calc(100vh - var(--titlebar-h));
+}
+
+.is-desktop .app-titlebar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--titlebar-h);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  padding-inline: 0.5rem;
+  background: var(--th-bg-page);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+/* macOS draws its native traffic lights over the start of the bar
+ * (trafficLightPosition x:18 y:16), so reserve room before the nav chevrons.
+ * Windows/Linux have no inlaid controls, so nav starts at the normal padding. */
+.is-desktop-mac .app-titlebar {
+  /* Clear the native traffic lights (they end around x:70) and leave a modest
+   * gap, so the chevrons read as ours rather than a fourth light crowded up
+   * against the green one. 6.75rem overshot and stranded them mid-bar. */
+  padding-inline-start: 5.75rem;
+}
+
+/* Navigation — Spotify-style: chevrons at the start, quiet until hovered. Bigger
+ * than the trailing icons on purpose; these are the only controls in the bar
+ * anyone clicks repeatedly, and a chevron needs more room than a 15px logo to not
+ * look cramped. */
+.app-titlebar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  -webkit-app-region: no-drag;
+}
+.app-titlebar-nav .app-titlebar-btn {
+  width: 2rem;
+  height: 2rem;
+}
+
+/* Everything between nav and the end zone is pure drag surface. */
+.app-titlebar-drag {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.app-titlebar-end {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  -webkit-app-region: no-drag;
+}
+
+/* One button style for nav, socials, the ⋯ menu and the window controls.
+ * Deliberately quiet at rest — this is chrome, and at full strength it competed
+ * with the page's own controls. Opacity carries the state so the icon colour stays
+ * a single token. */
+.app-titlebar-btn,
+.app-titlebar-menu > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--th-text-title);
+  opacity: 0.45;
+  transition: background-color 0.15s, opacity 0.15s;
+}
+.app-titlebar-btn:hover,
+.app-titlebar-menu > button:hover {
+  background: var(--th-sf-06);
+  opacity: 1;
+}
+/* Nothing to go back/forward to — visibly inert and not hoverable, so the bar
+ * never offers a control that would do nothing. */
+.app-titlebar-btn:disabled {
+  opacity: 0.15;
+  pointer-events: none;
+}
+/* Window-control glyphs are hand-drawn 12x12 strokes, unlike the lucide icons. */
+.app-titlebar-wc {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* The ⋯ dropdown lives in a 44px bar, so its popup has to escape downward. */
+.app-titlebar-menu {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+/* Close goes red on hover, like every other desktop app. */
+.app-titlebar-btn--close:hover {
+  background: var(--st-danger-solid);
+  color: #fff;
+  opacity: 1;
+}
+
+/* An in-page navigation control the desktop titlebar supersedes. Hidden only in
+ * the app — the web/SaaS build has no titlebar, so it is the ONLY way back there
+ * and must keep rendering. */
+.is-desktop .app-nav-fallback {
+  display: none;
 }
 
 /*
@@ -139,4 +252,53 @@ button {
 }
 .animate-slide-in-right {
   animation: slideInRight 0.25s ease-out;
+}
+/* ── Card surfaces: lifted fills, never bordered boxes ─────────────────────
+ * All three themes agree, so this is unscoped. A card separates from the page by
+ * its own fill: white on light's grey page, a white overlay on dark's black and
+ * dim's #141414. The hairline only ever made containers read as boxed-in, and on
+ * dark it computed BRIGHTER than the fill it enclosed — an outline around a
+ * hollow middle.
+ *
+ * This depends entirely on page-vs-card contrast (see --th-bg-page and
+ * --th-card-bg). Move a page background toward its card fill and these cards go
+ * invisible, because there is no border left to save them.
+ *
+ * Retired here rather than at the --th-card-bd token because most cards draw
+ * their edge with the generic Tailwind `border-border/50` utility, not the token.
+ * Unlayered on purpose: unlayered rules outrank Tailwind's `utilities` layer,
+ * which is what lets this reach ~330 call sites across 175 files from one place.
+ * Narrow by design — only the two NEUTRAL border utilities match, so colored and
+ * stateful borders (border-primary when selected, border-destructive, hover tints
+ * applied by swapping the class) are never touched.
+ */
+.bg-card.border-border\/50,
+.bg-card.border-border\/60 {
+  border-color: transparent;
+}
+
+/* Exceptions: things that carry the card fill but are not card containers.
+ * Matched by EXACT class names — never [class*="border-b"], which would also
+ * match `border-border` and silently re-border every card. */
+input.bg-card,
+select.bg-card,
+textarea.bg-card,
+.bg-card.border-b,
+.bg-card.border-t,
+.bg-card.border-s,
+.bg-card.border-e,
+.bg-card.border-2 {
+  border-color: var(--th-bd-default);
+}
+
+/* A card nested inside a card, light only. Dark and dim need nothing here: their
+ * fills are translucent white overlays, so a nested one composites lighter than
+ * its parent and separates for free. Light's fill is opaque #ffffff, so an inner
+ * card on an outer card is the same colour and vanishes entirely once the border
+ * is gone. Recess it to page level instead of handing the border back, so the
+ * borderless language still holds. Form controls opt out — they keep the white
+ * field background that --th-input-bg specifies. */
+html:not([data-theme="dark"]):not([data-theme="dim"])
+  .bg-card .bg-card:not(input):not(select):not(textarea) {
+  background-color: var(--th-sf-03);
 }

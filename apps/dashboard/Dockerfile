@@ -1,5 +1,6 @@
 # ─── Build stage ────────────────────────────────────────
-FROM oven/bun:latest AS builder
+# Pinned to .bun-version (1.3.3) — reproducible official images.
+FROM oven/bun:1.3.3 AS builder
 WORKDIR /app
 
 COPY package.json bun.lock pnpm-workspace.yaml ./
@@ -21,7 +22,10 @@ WORKDIR /app
 COPY --from=builder /app/apps/dashboard/.next/standalone ./
 COPY --from=builder /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
 COPY --from=builder /app/apps/dashboard/public ./apps/dashboard/public
+# WebSocket-capable entry (server terminal): wraps the standalone server to
+# proxy `/api/proxy/*` upgrades to the internal API. See standalone-server.mjs.
+COPY --from=builder /app/apps/dashboard/standalone-server.mjs ./apps/dashboard/standalone-server.mjs
 
 ENV NODE_ENV=production
 EXPOSE 3001
-CMD ["node", "apps/dashboard/server.js"]
+CMD ["node", "apps/dashboard/standalone-server.mjs"]

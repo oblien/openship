@@ -136,6 +136,11 @@ resource types it was granted. And if a `tools/call` touches something outside t
 `404` — the scope doing its job. For the full protocol details (JSON-RPC methods, negotiation, error codes),
 see the [MCP API reference](/docs/api/mcp).
 
+The **organization boundary** applies to MCP exactly as it does to a browser session: because every call
+runs through the same per-resource permission check, an MCP client acts only within organizations you
+belong to and can never reach another org's projects, servers, or secrets — a resource outside your
+membership comes back `404`, just as it would in the dashboard. See [Isolation](/docs/security/isolation).
+
 ## Which tools map to which API
 
 Tools aren't a separate feature set — each one **maps onto a permission-tagged REST route**, and the tool name

@@ -26,12 +26,15 @@ export function CloneCredentials() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [togglingDefault, setTogglingDefault] = useState(false);
+  const [forwardGit, setForwardGit] = useState(false);
+  const [togglingForward, setTogglingForward] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       const res = await settingsApi.get();
       setState(res.cloneToken);
+      setForwardGit(res.forwardGitToServer);
     } catch {
       // Silent - section just shows empty.
     } finally {
@@ -104,6 +107,20 @@ export function CloneCredentials() {
       showToast(getApiErrorMessage(err, t.settings.cloneCredentials.toast.updateDefaultFailed), "error", t.settings.common.toast.cloneCredentials);
     } finally {
       setTogglingDefault(false);
+    }
+  };
+
+  const handleToggleForward = async (next: boolean) => {
+    setForwardGit(next); // optimistic
+    setTogglingForward(true);
+    try {
+      const res = await settingsApi.updateForwardGitToServer(next);
+      setForwardGit(res.forwardGitToServer);
+    } catch (err) {
+      setForwardGit(!next); // revert
+      showToast(getApiErrorMessage(err, t.settings.cloneCredentials.forwardGitFailed), "error", t.settings.common.toast.cloneCredentials);
+    } finally {
+      setTogglingForward(false);
     }
   };
 
@@ -225,6 +242,24 @@ export function CloneCredentials() {
               </label>
             </div>
           )}
+
+          <label className="flex items-start gap-3 cursor-pointer rounded-xl border border-border/50 bg-muted/15 p-3.5">
+            <input
+              type="checkbox"
+              checked={forwardGit}
+              onChange={(e) => handleToggleForward(e.target.checked)}
+              disabled={togglingForward}
+              className="mt-0.5 size-4 rounded border-border/60 accent-primary"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">
+                {t.settings.cloneCredentials.forwardGitLabel}
+              </span>
+              <span className="block text-[12px] text-muted-foreground/80 mt-0.5 leading-relaxed">
+                {t.settings.cloneCredentials.forwardGitDesc}
+              </span>
+            </span>
+          </label>
         </div>
       )}
     </SettingsSection>

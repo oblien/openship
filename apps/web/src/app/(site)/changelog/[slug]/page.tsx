@@ -1,33 +1,29 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { changelogSource } from "@/lib/source";
+import { getChangelog } from "@/lib/changelog";
 import { Navbar } from "@/components/landing/navbar";
 import { Footer } from "@/components/landing/footer";
-import { ChangelogEntries, slugOf, type Entry } from "../_components/changelog-entries";
+import { ChangelogEntries, type Entry } from "../_components/changelog-entries";
 import "../changelog.css";
 
 type Params = Promise<{ slug: string }>;
 
-function findEntry(slug: string): Entry | undefined {
-  return (changelogSource.getPages() as unknown as Entry[]).find(
-    (e) => slugOf(e.url) === slug,
-  );
-}
+// Driven by the repo CHANGELOG.md + GitHub releases; refresh on a short cache.
+export const revalidate = 600;
 
-export function generateStaticParams() {
-  return (changelogSource.getPages() as unknown as Entry[]).map((e) => ({
-    slug: slugOf(e.url),
-  }));
+export async function generateStaticParams() {
+  const entries = await getChangelog();
+  return entries.map((e) => ({ slug: e.slug }));
 }
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
-  const entry = findEntry(slug);
+  const entry = (await getChangelog()).find((e) => e.slug === slug);
   if (!entry) return { title: "Changelog" };
 
-  const title = `${entry.data.version} · ${entry.data.title}`;
-  const description = entry.data.description ?? entry.data.title;
+  const title = entry.displayVersion;
+  const description = entry.summary || "Features, fixes, and improvements shipping in Openship.";
   const url = `/changelog/${slug}`;
 
   return {
@@ -41,7 +37,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
       type: "article",
       siteName: "Openship",
       locale: "en_US",
-      publishedTime: entry.data.date,
+      publishedTime: entry.date,
     },
     twitter: {
       card: "summary_large_image",
@@ -53,14 +49,12 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
 export default async function ChangelogEntryPage({ params }: { params: Params }) {
   const { slug } = await params;
-  const target = findEntry(slug);
+  const entries = await getChangelog();
+  const target = entries.find((e) => e.slug === slug);
   if (!target) notFound();
 
-  // Pin the shared entry to the top (#1); the rest follow newest-first.
-  const rest = (changelogSource.getPages() as unknown as Entry[])
-    .filter((e) => e.url !== target.url)
-    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
-  const ordered: Entry[] = [target, ...rest];
+  // Pin the shared entry to the top (#1); the rest follow (already newest-first).
+  const ordered: Entry[] = [target, ...entries.filter((e) => e.slug !== slug)];
 
   return (
     <>
@@ -74,10 +68,10 @@ export default async function ChangelogEntryPage({ params }: { params: Params })
             ← Changelog
           </Link>
           <h1 className="th-text-heading mt-4 text-4xl font-semibold tracking-[-0.03em] sm:text-5xl">
-            {target.data.title}
+            {target.displayVersion}
           </h1>
           <p className="th-text-body mt-5 text-lg leading-relaxed">
-            {target.data.description ?? "Features, fixes, and improvements shipping in Openship."}
+            {target.summary || "Features, fixes, and improvements shipping in Openship."}
           </p>
         </header>
 

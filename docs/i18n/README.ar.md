@@ -1,9 +1,6 @@
 <h1 align="center">Openship</h1>
 
-<p align="center">
-  منصّة نشر مفتوحة المصدر وقابلة للاستضافة الذاتية مع CI/CD مدمج.<br>
-  ادفع الكود، اشحن الحاويات، وأدر البنية التحتية — من تطبيق سطح المكتب أو لوحة التحكم على الويب أو سطر الأوامر.
-</p>
+<p align="center" dir="rtl">منصة <strong><bdi dir="ltr">Open Source</bdi></strong> للنشر والاستضافة الذاتية مع <strong><bdi dir="ltr">CI/CD</bdi></strong> مدمج.<br>ادفع الـ <bdi dir="ltr">Code</bdi>، ابنِ الحاويات، وأدر بنيتك التحتية من تطبيق سطح المكتب أو لوحة التحكم عبر <bdi dir="ltr">Web</bdi> أو <strong><bdi dir="ltr">CLI</bdi></strong>.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/openship"><img src="https://img.shields.io/npm/v/openship?color=0b7285&label=npm" alt="npm version" /></a>
@@ -38,7 +35,9 @@ npm i -g openship
 openship init
 ```
 
-هذا كل شيء. أو، إن كنت تفضّل Docker:
+وهذا كل ما تحتاجه للبدء.
+
+أو، إذا كنت تفضل استخدام <strong><bdi dir="ltr">Docker</bdi></strong>:
 
 ```bash
 git clone https://github.com/oblien/openship.git && cd openship
@@ -46,79 +45,81 @@ cp .env.example .env
 docker compose up -d
 ```
 
-أو نزّل تطبيق سطح المكتب من [openship.io](https://openship.io).
+كما يمكنك تنزيل تطبيق سطح المكتب من <a href="https://openship.io"><bdi dir="ltr">openship.io</bdi></a>.
 
 ---
 
-## ماذا يفعل
+## ما الذي يقدمه <bdi dir="ltr">Openship</bdi>؟
 
-وجّهه إلى مستودع. يكتشف Openship تقنياتك، ويبنيها، ويضبط كل شيء، ويشحنها — بدون ملفات إعداد، بدون خطوط أنابيب، بدون YAML.
+وجّه <bdi dir="ltr">Openship</bdi> إلى مستودعك، وسيكتشف التقنية المستخدمة، ويبني المشروع، ويهيئه للنشر تلقائيًا — دون الحاجة إلى ملفات إعداد، أو <strong><bdi dir="ltr">CI/CD pipelines</bdi></strong>، أو ملفات <strong><bdi dir="ltr">YAML</bdi></strong>.
 
-قواعد البيانات، النطاقات، SSL، CDN، البريد، النسخ الاحتياطية — كلها تُدار من مكان واحد.
+كما يتيح لك إدارة قواعد البيانات، و<strong><bdi dir="ltr">Domains</bdi></strong>، وشهادات <strong><bdi dir="ltr">SSL</bdi></strong>، و<strong><bdi dir="ltr">CDN</bdi></strong>، والبريد الإلكتروني، والنسخ الاحتياطية من مكان واحد.
 
-يعمل مع **Openship Cloud** (مُدارة) أو **أي خادم Linux** تملكه. المطورون الأفراد الذين يشحنون مشاريع جانبية والفرق التي تُشغّل الإنتاج يستخدمون الأداة نفسها.
+يعمل <bdi dir="ltr">Openship</bdi> مع <strong><bdi dir="ltr">Openship Cloud</bdi></strong> (خدمة مُدارة) أو على أي خادم <strong><bdi dir="ltr">Linux</bdi></strong> تملكه. سواء كنت مطورًا فرديًا تنشر مشاريعك، أو فريقًا يدير تطبيقات في بيئة الإنتاج، فستستخدم الأداة نفسها.
 
 ---
 
 ## الميزات
 
-| | |
-|---|---|
-| **CI/CD مدمج** | نشر بالدفع، بيئات معاينة، تدفقات staging/prod، التراجعات |
-| **أي تقنية** | Node، Python، Go، Rust، PHP، Ruby، Java، ‎.NET‎، Docker، المستودعات الأحادية |
-| **خلفية كاملة** | Postgres، MySQL، MongoDB، Redis، العمال، WebSockets، التخزين |
-| **النطاقات وSSL** | Let's Encrypt تلقائي، أحرف البدل، نطاقات غير محدودة، تجديد تلقائي |
-| **CDN** | تخزين مؤقت طرفي، HTTP/3، ضغط Brotli، مسح فوري |
-| **خادم بريد** | SMTP مدمج مع DKIM/SPF/DMARC — دون الحاجة إلى Mailgun أو SES |
-| **النسخ الاحتياطية** | مجدولة، قواعد بيانات + وحدات تخزين، استعادة بنقرة واحدة، تصدير في أي وقت |
-| **مراقبة فورية** | سجلات بناء حيّة، مقاييس الحاويات، واستخدام الموارد يُبثّ إلى شاشتك |
-| **التوسّع** | توسّع تلقائي على السحابة، جاهز لتعدد العقد على الاستضافة الذاتية |
-| **قابلية النقل** | حاويات Docker قياسية — انتقل بين المزودين بحرية |
-| **Docker Compose** | انشر ملفات compose الحالية كما هي |
+|                      |                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| <strong><bdi dir="ltr">CI/CD</bdi> مدمج</strong> | <strong><bdi dir="ltr">Push-to-deploy</bdi></strong>، و<strong><bdi dir="ltr">Preview Environments</bdi></strong>، وبيئات <strong><bdi dir="ltr">staging</bdi></strong> و<strong><bdi dir="ltr">production</bdi></strong>، مع <strong><bdi dir="ltr">Rollbacks</bdi></strong> |
+| **أي تقنية**         | <bdi dir="ltr">Node.js، Python، Go، Rust، PHP، Ruby، Java، .NET، Docker</bdi>، و<strong><bdi dir="ltr">Monorepos</bdi></strong> |
+| **الخدمات الخلفية**  | <bdi dir="ltr">Postgres، MySQL، MongoDB، Redis</bdi>، و<strong><bdi dir="ltr">Workers</bdi></strong>، و<bdi dir="ltr">WebSockets</bdi>، والتخزين |
+| <strong><bdi dir="ltr">Domains</bdi> و<bdi dir="ltr">SSL</bdi></strong> | شهادات <bdi dir="ltr">Let's Encrypt</bdi> تلقائيًا، و<bdi dir="ltr">Wildcard Certificates</bdi>، وعدد غير محدود من النطاقات، مع تجديد تلقائي |
+| <strong><bdi dir="ltr">CDN</bdi></strong> | <bdi dir="ltr">Edge Caching</bdi>، ودعم <bdi dir="ltr">HTTP/3</bdi>، وضغط <bdi dir="ltr">Brotli</bdi>، ومسح فوري للـ <bdi dir="ltr">Cache</bdi> |
+| **خادم بريد**        | <bdi dir="ltr">SMTP</bdi> مدمج مع <bdi dir="ltr">DKIM وSPF وDMARC</bdi>، دون الحاجة إلى <bdi dir="ltr">Mailgun</bdi> أو <bdi dir="ltr">Amazon SES</bdi> |
+| **النسخ الاحتياطية** | نسخ مجدولة تشمل قواعد البيانات ووحدات التخزين، مع استعادة بنقرة واحدة وإمكانية التصدير في أي وقت    |
+| **المراقبة**         | سجلات البناء، ومقاييس الحاويات، واستهلاك الموارد تُعرض مباشرة                                       |
+| **التوسع**           | <strong><bdi dir="ltr">Auto Scaling</bdi></strong> على <bdi dir="ltr">Openship Cloud</bdi>، مع جاهزية لدعم <strong><bdi dir="ltr">Multi-node</bdi></strong> في الاستضافة الذاتية |
+| **قابلية النقل**     | يعتمد على حاويات <bdi dir="ltr">Docker</bdi> القياسية، مما يسهّل الانتقال بين مزودي الاستضافة |
+| <strong><bdi dir="ltr">Docker Compose</bdi></strong> | انشر ملفات <bdi dir="ltr">Docker Compose</bdi> الحالية كما هي |
 
 ---
 
 ## انشر في أي مكان
 
-- **Openship Cloud** — مُدارة، توسّع تلقائي، بدون إعداد
-- **أي VPS** — Hetzner، DigitalOcean، Linode، OVH، وغيرها
-- **خوادم مخصّصة** — معدن خام، colocation، مختبر منزلي
-- **متعدد الخوادم** — وزّع الأحمال عبر الأجهزة
+* <strong><bdi dir="ltr">Openship Cloud</bdi></strong> — خدمة مُدارة بالكامل مع <strong><bdi dir="ltr">Auto Scaling</bdi></strong> ودون أي إعدادات معقدة.
+* <strong>أي <bdi dir="ltr">VPS</bdi></strong> — مثل <bdi dir="ltr">Hetzner وDigitalOcean وLinode وOVH</bdi> وغيرها.
+* **الخوادم المخصصة** — <bdi dir="ltr">Bare Metal</bdi> أو <bdi dir="ltr">Colocation</bdi> أو حتى <bdi dir="ltr">Homelab</bdi>.
+* **عدة خوادم** — وزّع أحمال العمل بين أكثر من خادم بسهولة.
 
-الواجهة نفسها بغضّ النظر عن مكان النشر.
+نفس الواجهة، بغض النظر عن مكان النشر.
 
 ---
 
-## ثلاث واجهات
+## ثلاث طرق للاستخدام
 
-- **تطبيق سطح المكتب** — واجهة رسومية كاملة، سجلات فورية، كل شيء بنقرة واحدة.
-- **لوحة التحكم على الويب** — الواجهة نفسها في المتصفح، مبنية للفرق.
-- **سطر الأوامر (CLI)** — قابل للبرمجة وملائم لـ CI.
+* **تطبيق سطح المكتب** — واجهة رسومية متكاملة مع سجلات مباشرة وإدارة كاملة.
+* <strong>لوحة التحكم عبر <bdi dir="ltr">Web</bdi></strong> — نفس التجربة من المتصفح، ومصممة للعمل الجماعي.
+* <strong><bdi dir="ltr">CLI</bdi></strong> — مناسب للأتمتة وبيئات <bdi dir="ltr">CI</bdi>.
 
-تُكمل **واجهة REST API** و**MCP** (بروتوكول وكلاء الذكاء الاصطناعي) المنظومة للأتمتة وتكامل الأدوات. مرجع الأوامر وواجهة البرمجة الكامل على [openship.io/docs](https://openship.io/docs).
+كما يوفر <bdi dir="ltr">Openship</bdi> واجهتي <strong><bdi dir="ltr">REST API</bdi></strong> و<strong><bdi dir="ltr">MCP (Model Context Protocol)</bdi></strong> لدعم الأتمتة والتكامل مع الأدوات الأخرى.
 
-> **ملاحظة:** لا تزال الوثائق قيد التطوير — نعمل بنشاط على استكمالها. إن وجدت شيئًا ناقصًا أو غير واضح، فإن [المساهمات](../../CONTRIBUTING.md) مُرحّب بها جدًا وتساعدنا على الوصول أسرع.
+للاطلاع على جميع الأوامر ومرجع <bdi dir="ltr">API</bdi>، راجع <a href="https://openship.io/docs"><bdi dir="ltr">openship.io/docs</bdi></a>.
+
+> **ملاحظة:** لا تزال الوثائق قيد التطوير. إذا وجدت أي جزء غير مكتمل أو غير واضح، فإن [مساهماتك](../../CONTRIBUTING.md) مرحب بها وستساعد في تحسين المشروع.
 
 ---
 
 ## الحالة
 
-نواة جاهزة للإنتاج، قيد التطوير النشط.
+النواة الأساسية جاهزة للإنتاج، والمشروع يشهد تطويرًا نشطًا.
 
-**قادم قريبًا:** عناقيد متعددة العقد، واجهة موازنة الأحمال، الشبكات الخاصة، المراقبة المتقدمة، وخطوط أنابيب CI/CD مرئية.
+**قريبًا:** دعم <strong><bdi dir="ltr">Multi-node Clusters</bdi></strong>، وواجهة لإدارة <strong><bdi dir="ltr">Load Balancers</bdi></strong>، والشبكات الخاصة، والمراقبة المتقدمة، وواجهة مرئية لإدارة <strong><bdi dir="ltr">CI/CD Pipelines</bdi></strong>.
 
 ---
 
 ## المساهمة
 
-راجع [CONTRIBUTING.md](../../CONTRIBUTING.md).
+راجع <a href="../../CONTRIBUTING.md"><bdi dir="ltr">CONTRIBUTING.md</bdi></a> لمعرفة كيفية المساهمة في المشروع.
 
 ---
 
 ## الترخيص
 
-Openship برنامج **مفتوح المصدر**، مُرخّص بموجب [رخصة Apache 2.0](../../LICENSE).
+<bdi dir="ltr">Openship</bdi> مشروع **مفتوح المصدر** مرخص بموجب <a href="../../LICENSE"><bdi dir="ltr">Apache License 2.0</bdi></a>.
 
-يمكنك استخدامه وتشغيله وتعديله واستضافته وتوزيعه — بما في ذلك في المنتجات التجارية ومغلقة المصدر — بموجب شروط رخصة Apache 2.0. راجع [LICENSE](../../LICENSE) للنص الكامل.
+يمكنك استخدامه، وتشغيله، وتعديله، واستضافته، وإعادة توزيعه، بما في ذلك ضمن مشاريع تجارية أو مغلقة المصدر، وفقًا لشروط <strong><bdi dir="ltr">Apache License 2.0</bdi></strong>. راجع <a href="../../LICENSE"><bdi dir="ltr">LICENSE</bdi></a> للاطلاع على النص الكامل.
 
 </div>

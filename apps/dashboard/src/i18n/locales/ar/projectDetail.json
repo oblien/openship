@@ -59,7 +59,9 @@
       "waiting": "في انتظار الطلبات الواردة…",
       "streamError": "خطأ في البث",
       "connectionLost": "فُقد الاتصال ببث السجلات",
-      "connectFailed": "تعذّر الاتصال ببث السجلات"
+      "connectFailed": "تعذّر الاتصال ببث السجلات",
+      "noDomain": "أضف نطاقًا لعرض سجلات الطلبات",
+      "noDomainHint": "تُجمَع سجلات طلبات HTTP لكل نطاق — أضِف نطاقًا لهذا المشروع أولًا."
     },
     "terminal": {
       "fallbackName": "الطرفية",
@@ -146,7 +148,9 @@
         "stopped": "متوقّف",
         "disabled": "معطّل",
         "failed": "فشل",
-        "starting": "قيد البدء"
+        "starting": "قيد البدء",
+        "restarting": "قيد إعادة التشغيل",
+        "unknown": "غير معروف"
       },
       "network": "الشبكة",
       "configuration": "الإعداد",
@@ -203,7 +207,8 @@
         "serviceDeleted": "تم حذف الخدمة",
         "deleteFailed": "تعذّر حذف الخدمة",
         "backupRunFailed": "فشلت عملية النسخ الاحتياطي"
-      }
+      },
+      "duplicateContainers": "توجد حاوية أخرى مطابقة لهذه الخدمة: {names}"
     },
     "settingsForm": {
       "name": "الاسم",

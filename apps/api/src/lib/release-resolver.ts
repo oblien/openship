@@ -15,12 +15,13 @@
  * reusing the same GitHub Releases shape the CLI/desktop self-update use.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GithubReleasePayload, ReleaseSource } from "@repo/core";
 import { renderAssetName } from "@repo/core";
+import { APP_VERSION } from "./app-version";
 import { assertPublicHttps, fetchAndExtractRelease } from "./release-download";
 
 const __dirname = (() => {
@@ -44,18 +45,21 @@ export function apiRootPath(...segments: string[]): string {
   return resolve(API_ROOT, ...segments);
 }
 
-let cachedVersion: string | undefined;
-/** The API's own version (mono-version default for openship/webmail dists). */
+/**
+ * The API's own version (mono-version default for openship/webmail dists).
+ *
+ * Returns the version EMBEDDED at build time — never package.json off disk. The
+ * desktop ships the API as a `bun build --compile` binary where
+ * `import.meta.url` is `/$bunfs/root`, so `API_ROOT` resolves to `/` and the
+ * old `readFileSync(join(API_ROOT, "package.json"))` threw
+ * `ENOENT: /package.json`. That took down webmail deploys and
+ * migrate-to-server before they ever reached the release download, and forced
+ * catalog-source.ts to wrap this in a try/catch (which silently disabled the
+ * `minEngine` gate). `APP_VERSION` comes from a JSON *import*, which bun inlines
+ * into the binary, so it works from source, from Docker, and compiled.
+ */
 export function readApiVersion(): string {
-  if (cachedVersion) return cachedVersion;
-  const pkgPath = join(API_ROOT, "package.json");
-  const raw = readFileSync(pkgPath, "utf-8");
-  const parsed = JSON.parse(raw) as { version?: unknown };
-  if (typeof parsed.version !== "string" || !parsed.version) {
-    throw new Error(`package.json at ${pkgPath} has no version`);
-  }
-  cachedVersion = parsed.version;
-  return cachedVersion;
+  return APP_VERSION;
 }
 
 function computeDataDir(): string {

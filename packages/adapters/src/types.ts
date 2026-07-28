@@ -10,6 +10,20 @@ import type { BuildStrategy, ProxySettings } from "@repo/core";
 import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
 
+/**
+ * How a host authenticates to git using its OWN pre-existing credentials —
+ * nothing is shipped to it and nothing is read back off it.
+ *
+ *   "gh"     → the `gh` CLI is installed and logged in; git authenticates via
+ *              `gh auth git-credential` (injected per-invocation, so it works
+ *              even if `gh auth setup-git` was never run).
+ *   "helper" → a git credential helper is already configured on the host (or
+ *              `~/.git-credentials` exists); let git consult it.
+ *   "ssh"    → the host's own ssh keys/agent can reach the remote; clone over
+ *              `git@`.
+ */
+export type AmbientGitVia = "gh" | "helper" | "ssh";
+
 // ─── Resource configuration ──────────────────────────────────────────────────
 
 export interface ResourceConfig {
@@ -170,6 +184,18 @@ export interface BuildConfig {
     knownHosts: string;
   };
   /**
+   * The BUILD HOST authenticates the clone with its OWN pre-existing git
+   * credentials (`gh` login, a configured credential helper, or its ssh keys) —
+   * verified against this exact repo before the build starts. Nothing is shipped
+   * to the host and nothing is read back off it, so this is the narrowest of the
+   * clone-on-server credentials.
+   *
+   * Valid ONLY for a clone that runs on that host: the orchestrator's api-host
+   * clone must ignore it (see docker-build-context.ts). Mutually exclusive with
+   * `gitToken` / `gitCredentialHelperPath` / `gitSsh`.
+   */
+  gitAmbient?: { via: AmbientGitVia };
+  /**
    * Clone the repo ON the remote build host instead of cloning on the
    * orchestrator and transferring the context. The Docker runtime honors this
    * for SSH (server) builds: it runs `git clone` in a remote host shell (using
@@ -201,6 +227,12 @@ export interface DeployConfig {
   environment: string;
   /** Port the application listens on */
   port: number;
+  /**
+   * Pinned LOOPBACK host port to publish (docker: `127.0.0.1:<hostPort>:<port>`)
+   * under the loopback-port route strategy. When unset, docker falls back to a
+   * random loopback host port. Ignored by bare (the app owns 127.0.0.1:<port>).
+   */
+  hostPort?: number;
   /** Shell command to start the application (e.g. "npm start", "node server.js") */
   startCommand?: string;
   /** Detected framework / stack (e.g. "nextjs", "express") */
@@ -561,12 +593,37 @@ export interface CommandExecutor {
   }>;
 
   /**
+   * Run a command with `body` piped to its stdin, half-closing stdin at EOF so
+   * a stdin-draining command (`docker load`, `tar -x`) exits cleanly. Resolves
+   * with the remote exit code + captured stderr. The streaming counterpart to
+   * rawExec (stdout) — lets a Readable move INTO a remote command byte-for-byte
+   * without staging to a temp file first.
+   *
+   * Only available on SshExecutor — local executors do not implement this.
+   */
+  execWithInput?(
+    command: string,
+    body: Readable,
+  ): Promise<{ code: number; stderr: string; stdout: string }>;
+
+  /**
    * Open a Unix domain socket tunnel to the target machine.
    *
    * SshExecutor: opens an SSH streamlocal channel on the persistent connection.
    * Not available on LocalExecutor (local Docker uses socket transport directly).
    */
   forwardUnixSocket?(socketPath: string): Promise<Duplex>;
+
+  /**
+   * Open a `docker system dial-stdio` exec channel to the target's Docker
+   * daemon and return it as a duplex (writes → daemon socket, reads ← daemon
+   * socket). This carries the Docker Engine API over a plain SSH *exec*
+   * channel — no streamlocal forwarding — so it works on every sshd and under
+   * the Bun-compiled desktop runtime where streamlocal hangs. Runs with the
+   * same env/PATH as `streamExec`, so it matches the (working) remote build.
+   * Not available on LocalExecutor (local Docker uses socket transport).
+   */
+  openDockerDialStdio?(): Promise<Duplex>;
 
   /**
    * Open a TCP tunnel to a port on the remote machine (SSH direct-tcpip).

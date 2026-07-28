@@ -78,6 +78,30 @@
       "toggleFailed": "切换项目状态失败",
       "clearInstallFailed": "清除安装缓存失败",
       "clearBuildFailed": "清除构建缓存失败"
+    },
+    "routing": {
+      "title": "路由",
+      "description": "边缘如何访问此应用的上游",
+      "intro": "选择边缘如何寻址此项目的容器。",
+      "note": "推荐使用回环端口：私有的 127.0.0.1 主机端口，重启后保持稳定且从不暴露到网络。容器 IP 属于高级选项（零停机切换；需要边缘位于 Docker 网桥上；Docker Desktop 不支持）。",
+      "modes": {
+        "auto": {
+          "label": "自动",
+          "desc": "推荐（回环端口）"
+        },
+        "loopbackPort": {
+          "label": "回环端口",
+          "desc": "私有 127.0.0.1 主机端口"
+        },
+        "containerIp": {
+          "label": "容器 IP",
+          "desc": "高级 — 网桥 IP"
+        }
+      },
+      "toast": {
+        "saved": "路由已设为 {mode}",
+        "failed": "更新路由失败"
+      }
     }
   },
   "backup": {
@@ -194,7 +218,13 @@
       "savedTitle": "已保存",
       "saveFailed": "保存环境变量失败",
       "saveFailedTitle": "保存失败"
-    }
+    },
+    "linkedBadge": "已链接",
+    "linkedManaged": "通过 {app}",
+    "linkedTitle": "已链接的集成",
+    "linkedBody": "此值来自 {app} 连接。请在该应用中管理 — 这里的更改不会保留。",
+    "unlink": "移除连接",
+    "close": "关闭"
   },
   "gitInfo": {
     "repository": "仓库",
@@ -357,11 +387,26 @@
     "title": "机器性能",
     "description": "为你的项目配置机器性能。",
     "tiers": {
-      "lightweight": { "name": "轻量", "description": "小型应用和静态站点" },
-      "standard": { "name": "标准", "description": "大多数 Web 应用" },
-      "performance": { "name": "高性能", "description": "高流量应用" },
-      "enterprise": { "name": "企业级", "description": "大规模生产应用" },
-      "autoscale": { "name": "自动扩缩", "description": "根据需求自动扩缩" }
+      "lightweight": {
+        "name": "轻量",
+        "description": "小型应用和静态站点"
+      },
+      "standard": {
+        "name": "标准",
+        "description": "大多数 Web 应用"
+      },
+      "performance": {
+        "name": "高性能",
+        "description": "高流量应用"
+      },
+      "enterprise": {
+        "name": "企业级",
+        "description": "大规模生产应用"
+      },
+      "autoscale": {
+        "name": "自动扩缩",
+        "description": "根据需求自动扩缩"
+      }
     },
     "dynamic": "动态",
     "custom": {
@@ -610,6 +655,13 @@
       "noServicePort": "没有服务发布端口 {port}。请先将该端口添加到某个服务。",
       "enterCustom": "请输入自定义域名。",
       "enterSubdomain": "请输入子域名。"
+    },
+    "edge": {
+      "setUp": "设置边缘",
+      "ready": "边缘就绪",
+      "checking": "正在检查边缘…",
+      "recheck": "重新检查",
+      "foreignProxyHint": "另一个代理占用了 80/443"
     }
   }
 }

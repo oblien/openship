@@ -252,6 +252,13 @@ export interface DeploymentConfig {
   deployTarget: DeployTarget;
   /** Which server to deploy to when deployTarget === "server" */
   serverId?: string;
+  /**
+   * "None" routing: deploy with NO public URL (internal / port-only). When true
+   * the deploy sends `publicEndpoints: []` regardless of what's staged, and the
+   * domain picker collapses. Backend treats [] as no route (preflight warns, no
+   * Cloud gate). Free/Custom are expressed via each endpoint's domainType.
+   */
+  noPublicRoute?: boolean;
   /** Display name of the target server (resolved by the API for the detail UI). */
   serverName?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
@@ -302,16 +309,6 @@ export interface DeploymentConfig {
   /** Custom CPU/RAM/disk values, used only when cloudResourceTier === "custom". */
   cloudResourceCustom?: CloudResourceCustom;
   /**
-   * Per-deploy opt-in (desktop-only; default off) to forward the operator's
-   * LOCAL `gh` identity to a remote server so it can clone on-server using the
-   * relay — instead of building locally + uploading. Only meaningful for a
-   * server-target build; nothing is persisted on the remote.
-   *
-   * Internal now: derived from `cloneStrategy === "server"` on desktop. The
-   * user picks the clone location; this stays the backend relay switch.
-   */
-  forwardGitCredentials?: boolean;
-  /**
    * Where a server deploy clones the repo (default "api-host"). "server" makes
    * the build host clone directly — desktop via the credential relay, a
    * server-hosted instance via a short-lived token. The build always runs on
@@ -334,13 +331,14 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   uploadSessionId: undefined,
   buildStrategy: "server",
   deployTarget: "cloud",
-  runtimeMode: "bare",
+  runtimeMode: "docker",
   projectType: "app",
   framework: "nextjs",
   detectedFramework: null,
   packageManager: "npm",
   buildImage: "node:22",
   publicEndpoints: [],
+  noPublicRoute: false,
   branch: "main",
   branches: [],
   services: [],
@@ -427,20 +425,10 @@ export function resolveBuildImageForDeploymentMode(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Whether any compose service uses a managed (free) domain that requires
- * Openship Cloud. Checks by domain *type*, not by domain string -
- * works regardless of the configured cloud domain.
- */
-export function servicesNeedCloud(services?: ComposeServiceInfo[]): boolean {
-  if (!services?.length) return false;
-  return services.some((s) => s.exposed && s.domainType !== "custom");
-}
-
-export function publicEndpointsNeedCloud(endpoints?: PublicEndpoint[]): boolean {
-  if (!endpoints?.length) return false;
-  return endpoints.some((endpoint) => endpoint.domainType !== "custom");
-}
+// The needs-cloud predicate (managed/free domain ⇒ needs cloud) is defined ONCE
+// in @repo/core and re-exported here under the historical names, so existing
+// importers are unchanged and client + server share one definition.
+export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } from "@repo/core";
 
 export function createPublicEndpoint(
   overrides: Partial<PublicEndpoint> = {},
@@ -755,6 +743,13 @@ export interface DeploymentContextType {
   stopDeployment: () => Promise<void>;
   redeploy: (deploymentId: string) => Promise<string | null>;
   respondToPrompt: (action: string) => Promise<void>;
+  /** Open the shared clone-credential modal for a github-credential error code
+   *  (single handler for the deploy wizard, redeploy, and the build page).
+   *  Returns true when it opened; false when the code isn't credential-related. */
+  maybeOpenCredentialModal: (
+    errorCode: string | null | undefined,
+    opts?: { trigger?: "preflight-fail" | "build-fail"; onResolved?: () => void },
+  ) => boolean;
   reset: () => void;
 
   // Terminal

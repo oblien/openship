@@ -21,7 +21,15 @@ import {
   installRsync,
   installOpenResty,
   installCertbot,
+  foreignProxyOnEdge,
 } from "@repo/adapters";
+
+// ─── Shell quoting helper ─────────────────────────────────────────────────────
+
+/** Single-quote a value for safe shell interpolation. */
+function sq(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
 
 // ─── Engine source-of-truth ──────────────────────────────────────────────────
 
@@ -315,17 +323,16 @@ export async function stepEnsureReverseProxy(
     }
   }
 
-  // Confirm OpenResty is the listener on :80. Anything else means another
-  // service has the port - we surface it as an error rather than try to
-  // resolve in-band; the operator can stop it and rerun the step.
-  const port80 = (
-    await exec.exec("ss -ltnp 'sport = :80' 2>/dev/null | tail -n +2 || true")
-  ).trim();
-  if (port80 && !/openresty|nginx/i.test(port80)) {
+  // Confirm OUR OpenResty owns 80/443 — via the SHARED edge detector (same one
+  // the deploy pipeline / self-app use), not an ad-hoc ss/regex. A foreign proxy
+  // holding the ports is surfaced as an error; mail never blind-takes-over
+  // someone's proxy (the operator stops/migrates it via the dashboard and reruns).
+  const { blocked, owner } = await foreignProxyOnEdge(exec);
+  if (blocked) {
     return {
       stepId,
       success: false,
-      message: `Port 80 is held by an unexpected process: ${port80.slice(0, 200)}`,
+      message: `Ports 80/443 are held by another proxy (${owner}). Stop it, or migrate it from the dashboard, then rerun.`,
     };
   }
 
@@ -353,7 +360,7 @@ export async function stepSetHostname(
 
   log(stepId, "info", `Setting hostname to ${mailDomain}...`);
   try {
-    await exec.exec(`hostnamectl set-hostname ${mailDomain}`);
+    await exec.exec(`hostnamectl set-hostname ${sq(mailDomain)}`);
   } catch (err) {
     return { stepId, success: false, message: `Failed to set hostname: ${errMsg(err)}` };
   }
@@ -372,12 +379,13 @@ export async function stepUpdateHosts(
   const mailDomain = `mail.${domain}`;
   log(stepId, "info", "Checking /etc/hosts...");
 
-  const countStr = await exec.exec("grep -c '^127.0.1.1' /etc/hosts || echo 0");
+  const countStr = await exec.exec(`grep -c '^127.0.1.1' /etc/hosts || echo 0`);
   const hasEntry = parseInt(countStr.trim(), 10) > 0;
 
   if (hasEntry) {
+    const pattern = `^127\\.0\\.1\\.1.*${mailDomain}`;
     const correctStr = await exec.exec(
-      `grep -c '^127.0.1.1.*${mailDomain}' /etc/hosts || echo 0`,
+      `grep -c ${sq(pattern)} /etc/hosts || echo 0`,
     );
     if (parseInt(correctStr.trim(), 10) > 0) {
       log(stepId, "info", "/etc/hosts already configured correctly");
@@ -385,13 +393,15 @@ export async function stepUpdateHosts(
     }
 
     log(stepId, "info", "Updating existing 127.0.1.1 entry...");
+    const sedReplace = `s/^127\\.0\\.1\\.1.*/127.0.1.1 ${mailDomain} ${domain}/`;
     await exec.exec(
-      `sed -i 's/^127.0.1.1.*/127.0.1.1 ${mailDomain} ${domain}/' /etc/hosts`,
+      `sed -i ${sq(sedReplace)} /etc/hosts`,
     );
   } else {
     log(stepId, "info", "Adding 127.0.1.1 entry...");
+    const sedAppend = `/127.0.0.1/a 127.0.1.1 ${mailDomain} ${domain}`;
     await exec.exec(
-      `sed -i '/127.0.0.1/a 127.0.1.1 ${mailDomain} ${domain}' /etc/hosts`,
+      `sed -i ${sq(sedAppend)} /etc/hosts`,
     );
   }
 
@@ -1022,7 +1032,7 @@ export async function provisionDomainDkim(
   // amavisd genrsa exits non-zero if the file already exists; treat that
   // as success so re-runs are idempotent.
   await exec.exec(
-    `[ -s ${keyPath} ] || ${amavisBin} genrsa ${keyPath}`,
+    `[ -s ${sq(keyPath)} ] || ${amavisBin} genrsa ${sq(keyPath)}`,
   );
   await exec.exec(`chown -R amavis:amavis /var/lib/dkim 2>/dev/null || true`);
 
@@ -1043,7 +1053,7 @@ export async function provisionDomainDkim(
   );
 
   // ── Step 5: read the public key out ──────────────────────────────────
-  const showOutput = await exec.exec(`${amavisBin} showkeys ${newDomain} 2>&1`);
+  const showOutput = await exec.exec(`${amavisBin} showkeys ${sq(newDomain)} 2>&1`);
   const matches = showOutput.match(/"([^"]+)"/g);
   const dkimValue = matches
     ? matches.map((m: string) => m.replace(/"/g, "")).join("").replace(/\s+/g, "")
@@ -1131,11 +1141,11 @@ export function spliceAmavisConf(
 /**
  * Step 12: Request a Let's Encrypt cert for `mail.<domain>`.
  *
- * Uses certbot in standalone mode: we briefly stop OpenResty (which owns
- * :80 from step 2) so certbot can bind it for the HTTP-01 challenge, then
- * bring OpenResty back. (Future cleanup: switch to webroot mode and skip
- * the stop/start dance entirely by serving `.well-known/acme-challenge/`
- * through OpenResty.)
+ * Webroot mode through the RUNNING OpenResty: its default server already serves
+ * `/.well-known/acme-challenge/` from `/var/www/acme` (deployLuaScripts), so the
+ * HTTP-01 challenge is answered without ever stopping OpenResty. This is what
+ * keeps every app behind the shared edge UP during mail cert issuance — the old
+ * `systemctl stop openresty` + `--standalone` dance took the whole box dark.
  */
 export async function stepRequestSSL(
   exec: CommandExecutor,
@@ -1144,18 +1154,20 @@ export async function stepRequestSSL(
 ): Promise<StepResult> {
   const stepId = 12;
   const mailDomain = `mail.${domain}`;
+  // Guard before the value reaches a shell command (never interpolate an
+  // unvalidated hostname into `certbot -d …`).
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(mailDomain)) {
+    return { stepId, success: false, message: `Invalid mail domain: ${mailDomain}` };
+  }
   log(stepId, "info", `Requesting SSL certificate for ${mailDomain}...`);
 
-  log(stepId, "info", "Pausing OpenResty for standalone ACME challenge...");
-  await exec.exec("systemctl stop openresty 2>/dev/null || true");
-
+  // OpenResty's default server serves the challenge from here — no stop needed.
+  await exec.exec("mkdir -p /var/www/acme");
   const cert = await streamCmd(
     exec,
-    `certbot certonly --standalone --agree-tos --register-unsafely-without-email -d ${mailDomain} --non-interactive 2>&1`,
+    `certbot certonly --webroot -w /var/www/acme --agree-tos --register-unsafely-without-email -d ${sq(mailDomain)} --non-interactive 2>&1`,
     stepId, log,
   );
-
-  await exec.exec("systemctl start openresty 2>/dev/null || true");
 
   if (cert.code !== 0) {
     return {
@@ -1165,7 +1177,7 @@ export async function stepRequestSSL(
     };
   }
 
-  log(stepId, "info", "SSL certificate obtained");
+  log(stepId, "info", "SSL certificate obtained (OpenResty stayed up — apps unaffected)");
   return { stepId, success: true, message: `SSL certificate obtained for ${mailDomain}` };
 }
 

@@ -163,7 +163,9 @@
     "close": "{label} kapat",
     "serverLimit": "Sunucu limiti: {max} eşzamanlı kabuk.",
     "newShell": "Yeni kabuk",
-    "noTerminals": "Açık terminal yok."
+    "noTerminals": "Açık terminal yok.",
+    "expand": "Genişlet",
+    "collapse": "Daralt"
   },
   "buildPage": {
     "thisRepo": "bu depo",

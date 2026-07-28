@@ -1,0 +1,30 @@
+{
+  "available": false,
+  "id": "uptime-kuma",
+  "name": "Uptime Kuma",
+  "description": "Self-hosted uptime monitoring with status pages and alerts.",
+  "kind": "template",
+  "logo": "uptime-kuma",
+  "category": "other",
+  "tags": [
+    "monitoring",
+    "uptime",
+    "status"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "uptime-kuma",
+      "image": "louislam/uptime-kuma:1",
+      "ports": [
+        "3001:3001"
+      ],
+      "exposedPort": 3001,
+      "exposed": true,
+      "volumes": [
+        "uptime_kuma_data:/app/data"
+      ],
+      "restart": "unless-stopped"
+    }
+  ]
+}

@@ -551,7 +551,13 @@ export function useDeploymentConfig() {
     });
   }, [normalizeConfig]);
 
-  /** Resolve initial buildStrategy: user global pref > stack default > "server" */
+  /** Resolve the seed buildStrategy. An explicit global pref (Settings) wins;
+   *  otherwise default to "server" — UNIFIED BUILD, i.e. build where you deploy.
+   *  The wizard's target-aware preselect then confirms this per target (a bare
+   *  local target builds locally, a server/cloud target builds remotely with a
+   *  clone-on-server via git-credential forwarding). Matches the API default
+   *  (settings.service resolves the same "server" fallback). docker/services are
+   *  coerced to "server" in normalizeBuildStrategy; cloud is forced downstream. */
   const resolveInitialStrategy = useCallback((stackDef: StackDefinition | undefined): BuildStrategy => {
     const pref = userBuildPref.current;
     if (pref === "server" || pref === "local") return pref;

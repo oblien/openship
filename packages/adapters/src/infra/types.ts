@@ -28,8 +28,15 @@ export interface RoutingProvider {
 // ─── SSL ─────────────────────────────────────────────────────────────────────
 
 export interface SslProvider {
-  /** Provision a new TLS certificate for a domain */
-  provisionCert(domain: string): Promise<SslResult>;
+  /** Provision a new TLS certificate for a domain. `onLog`, when given, streams
+   *  certbot's output line-by-line (powers the live-log verify modal). `force`
+   *  bypasses the "cert already on disk" short-circuit and passes certbot
+   *  `--force-renewal`, so a present-but-stale/near-expiry cert is actually
+   *  reissued instead of returned as-is. */
+  provisionCert(
+    domain: string,
+    opts?: { onLog?: (line: string) => void; force?: boolean },
+  ): Promise<SslResult>;
 
   /** Renew an existing TLS certificate */
   renewCert(domain: string): Promise<SslResult>;

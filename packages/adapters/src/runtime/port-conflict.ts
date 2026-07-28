@@ -132,27 +132,39 @@ export async function probeListeningPort(
     const { pid, occupied } = await resolveListener(executor, port);
     if (!occupied) return null;
     if (pid === null) return { pid: null, command: "unknown listener" };
-
-    let command = `PID ${pid}`;
-    let rawCommand: string | undefined;
-    const args = await tryExec(executor, `ps -p ${pid} -o args= 2>/dev/null || true`);
-    if (args?.trim()) {
-      rawCommand = args.trim();
-      command = `${rawCommand} (PID ${pid})`;
-    } else {
-      const cmd = await tryExec(executor, `ps -p ${pid} -o comm= 2>/dev/null || true`);
-      if (cmd?.trim()) {
-        rawCommand = cmd.trim();
-        command = `${rawCommand} (PID ${pid})`;
-      }
-    }
-
-    const systemd = await resolveSystemdUnit(executor, pid);
-
-    return { pid, command, rawCommand, ...systemd };
+    return await describeProcess(executor, pid);
   } catch {
     return null;
   }
+}
+
+/**
+ * Identify one PID the same way `probeListeningPort` identifies a port's owner —
+ * args/comm label plus its systemd unit. Split out so a caller that resolved a
+ * different PID than the raw listener (e.g. the edge probe walking an nginx
+ * worker up to its master) describes it through the SAME path, rather than
+ * hand-rolling a second `ps` + cgroup read.
+ */
+export async function describeProcess(
+  executor: CommandExecutor,
+  pid: number,
+): Promise<PortOccupant> {
+  let command = `PID ${pid}`;
+  let rawCommand: string | undefined;
+  const args = await tryExec(executor, `ps -p ${pid} -o args= 2>/dev/null || true`);
+  if (args?.trim()) {
+    rawCommand = args.trim();
+    command = `${rawCommand} (PID ${pid})`;
+  } else {
+    const cmd = await tryExec(executor, `ps -p ${pid} -o comm= 2>/dev/null || true`);
+    if (cmd?.trim()) {
+      rawCommand = cmd.trim();
+      command = `${rawCommand} (PID ${pid})`;
+    }
+  }
+
+  const systemd = await resolveSystemdUnit(executor, pid);
+  return { pid, command, rawCommand, ...systemd };
 }
 
 /**

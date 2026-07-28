@@ -99,9 +99,12 @@ contextBridge.exposeInMainWorld("desktop", {
 
   /** In-app updater (drives the update window). */
   updates: {
-    /** Begin download + install of the pending update. */
+    /** Re-check GitHub on demand and stage the result. Returns the check result
+     *  ({ available, version, ... } | { available: false }). */
+    check: () => ipcRenderer.invoke("update:check"),
+    /** Begin download + install of the pending update (re-checks if none staged). */
     start: () => ipcRenderer.invoke("update:start"),
-    /** Open (or focus) the native update window for the pending update. */
+    /** Open the native update window (re-checks + stages if none pending). */
     open: () => ipcRenderer.invoke("update:open"),
     /** Dismiss / close the update window ("Later"). */
     dismiss: () => ipcRenderer.invoke("update:dismiss"),
@@ -122,6 +125,44 @@ contextBridge.exposeInMainWorld("desktop", {
       const h = (_e: unknown, msg: string) => cb(msg);
       ipcRenderer.on("update:error", h);
       return () => ipcRenderer.removeListener("update:error", h);
+    },
+  },
+
+  /**
+   * Window controls for the app's own header bar (see DesktopChrome in the
+   * dashboard). macOS keeps its native traffic lights, so only Windows/Linux
+   * actually render buttons — but the whole surface is exposed on every platform
+   * so the renderer never has to branch on process.platform.
+   */
+  window: {
+    minimize: () => ipcRenderer.invoke("window:minimize"),
+    /** Maximize, or restore if already maximized. */
+    toggleMaximize: () => ipcRenderer.invoke("window:toggle-maximize"),
+    close: () => ipcRenderer.invoke("window:close"),
+    isMaximized: (): Promise<boolean> => ipcRenderer.invoke("window:is-maximized"),
+
+    /** Titlebar navigation. canGoBack/canGoForward can only be answered by the
+     *  main process — see the note on the IPC handlers. */
+    back: () => ipcRenderer.invoke("window:nav-back"),
+    forward: () => ipcRenderer.invoke("window:nav-forward"),
+    reload: () => ipcRenderer.invoke("window:reload"),
+    navState: (): Promise<{ canGoBack: boolean; canGoForward: boolean }> =>
+      ipcRenderer.invoke("window:nav-state"),
+    /** Only route to DevTools on Windows/Linux — those are frameless and have no
+     *  menu bar. macOS also has Electron's default View menu. */
+    toggleDevTools: () => ipcRenderer.invoke("window:toggle-devtools"),
+    onNavStateChange: (cb: (s: { canGoBack: boolean; canGoForward: boolean }) => void) => {
+      const h = (_e: unknown, s: { canGoBack: boolean; canGoForward: boolean }) => cb(s);
+      ipcRenderer.on("window:nav-state-change", h);
+      return () => ipcRenderer.removeListener("window:nav-state-change", h);
+    },
+    /** Track real maximize state so the restore icon can't drift out of sync
+     *  (the window can also be maximized by the OS, a double-click, or a
+     *  keyboard shortcut — none of which go through toggleMaximize). */
+    onMaximizedChange: (cb: (maximized: boolean) => void) => {
+      const h = (_e: unknown, maximized: boolean) => cb(maximized);
+      ipcRenderer.on("window:maximized-change", h);
+      return () => ipcRenderer.removeListener("window:maximized-change", h);
     },
   },
 

@@ -197,12 +197,15 @@ export const projectsApi = {
       wipeVolumes?: boolean;
       force?: boolean;
       forceOrphan?: boolean;
+      /** Record-only: drop the Openship row, keep the server workload (self-hosted). */
+      recordOnly?: boolean;
     } = {},
   ) => {
-    const { force, forceOrphan, ...rest } = body;
+    const { force, forceOrphan, recordOnly, ...rest } = body;
     const query = new URLSearchParams();
     if (force) query.set("force", "true");
     if (forceOrphan) query.set("forceOrphan", "true");
+    if (recordOnly) query.set("recordOnly", "true");
     const qs = query.toString();
     const path = qs ? `${endpoints.projects.item(id)}?${qs}` : endpoints.projects.item(id);
     // Teardown destroys containers/images/volumes over SSH (round-trips + per-
@@ -237,6 +240,22 @@ export const projectsApi = {
   /** Update name or description — pass any subset of TUpdateProjectBody fields. */
   update: (id: string | number, fields: Record<string, unknown>) =>
     api.patch<any>(endpoints.projects.item(id), fields),
+
+  /**
+   * Read-only edge health for the project's server: is OpenResty already the
+   * edge on 80/443 (`ready`/`classification === "ours"`), or does it need setup?
+   * `reachable:false` = the box didn't answer a fast connect probe (offline).
+   */
+  getEdgeStatus: (id: string | number) =>
+    api.get<{
+      ready: boolean;
+      reachable?: boolean | null;
+      classification?: "free" | "ours" | "known" | "unknown";
+      canProceedClean?: boolean;
+      managed?: "cloud";
+      reason?: string;
+      occupants?: Array<{ port: number; proxy: string | null; label: string | null }>;
+    }>(endpoints.projects.edgeStatus(id)),
 
   /**
    * Get the per-project clone-token state. Returns only `{ hasToken, setAt }`

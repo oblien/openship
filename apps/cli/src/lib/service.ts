@@ -15,14 +15,18 @@ import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { IS_ALT_HOME, OS_DIR } from "./paths";
+
 const HOME = homedir();
-const OS_DIR = join(HOME, ".openship");
 const LOG_DIR = join(OS_DIR, "logs");
 
-const MAC_LABEL = "io.openship.up";
+// A from-source/dev install (OPENSHIP_HOME set → IS_ALT_HOME) gets its OWN boot
+// service, so `openship up` from source never clobbers or fights a production
+// install's service. Same derivation across install/stop/restart/status.
+const MAC_LABEL = IS_ALT_HOME ? "io.openship-dev.up" : "io.openship.up";
 const MAC_PLIST = join(HOME, "Library", "LaunchAgents", `${MAC_LABEL}.plist`);
-const SYSTEMD_NAME = "openship";
-const WIN_TASK = "Openship";
+const SYSTEMD_NAME = IS_ALT_HOME ? "openship-dev" : "openship";
+const WIN_TASK = IS_ALT_HOME ? "OpenshipDev" : "Openship";
 
 /** Flags the user gave to `openship up`, replayed into the service's run command. */
 export interface UpFlags {
@@ -36,6 +40,8 @@ export interface UpFlags {
   publicUrl?: string;
   /** Trust X-Forwarded-For from a front proxy. */
   trustProxy?: boolean;
+  /** Bind the dashboard to this interface (reverse-proxy / LAN access). */
+  host?: string;
   /** Managed edge: install OpenResty + Let's Encrypt on this box and route here. */
   managedEdge?: boolean;
   /** ACME contact email for the managed edge. */
@@ -58,6 +64,7 @@ function upArgs(flags: UpFlags): string[] {
   if (flags.uiVersion) a.push("--ui-version", flags.uiVersion);
   if (flags.publicUrl) a.push("--public-url", flags.publicUrl);
   if (flags.trustProxy) a.push("--trust-proxy");
+  if (flags.host) a.push("--host", flags.host);
   if (flags.managedEdge) a.push("--managed-edge");
   if (flags.acmeEmail) a.push("--acme-email", flags.acmeEmail);
   return a;
@@ -126,13 +133,17 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Extra env the service should carry. Only OPENSHIP_DASHBOARD_DIR today, and
- *  only when set — lets `openship`/wizard run a locally-built dashboard for
- *  pre-release testing; unset in production so nothing changes. */
+/** Extra env the service should carry, only when set (unset in production so
+ *  nothing changes). OPENSHIP_DASHBOARD_DIR lets a from-source install serve its
+ *  locally-built dashboard; OPENSHIP_HOME pins the supervised process to the
+ *  same alternate home (data dir / tokens / ports) the install runs under —
+ *  without it the boot service would fall back to the production ~/.openship. */
 function serviceEnv(): Record<string, string> {
   const extra: Record<string, string> = {};
   const dashDir = process.env.OPENSHIP_DASHBOARD_DIR?.trim();
   if (dashDir) extra.OPENSHIP_DASHBOARD_DIR = dashDir;
+  const home = process.env.OPENSHIP_HOME?.trim();
+  if (home) extra.OPENSHIP_HOME = home;
   return extra;
 }
 

@@ -222,7 +222,25 @@ async function createInfraProvider(
   _mode: "docker" | "bare",
   config: PlatformConfig,
   executor: CommandExecutor,
+  edgeContainer?: string,
 ): Promise<{ routing: RoutingProvider; ssl: SslProvider }> {
+  // Containerized edge (compose): route through the `openship-edge` container —
+  // the api writes vhosts to the shared sites-enabled volume and reloads /
+  // runs certbot via `docker exec` (DockerEdgeExecutor). nginx.conf + the Lua
+  // are BAKED into the image, so there's nothing to detect/install/patch here.
+  if (edgeContainer) {
+    const { OPENRESTY_DEFAULT_PATHS } = await import("./infra/openresty-lua");
+    const { DockerEdgeExecutor } = await import("./system/docker-edge-executor");
+    const { NginxProvider } = await import("./infra/nginx");
+    const edgeExec = new DockerEdgeExecutor({ containerName: edgeContainer });
+    const nginx = new NginxProvider({
+      paths: OPENRESTY_DEFAULT_PATHS,
+      ...config.nginx,
+      executor: edgeExec,
+    });
+    return { routing: nginx, ssl: nginx };
+  }
+
   const { detectOpenRestyPaths, ensureOpenRestyConfig, ensureLuaScripts } = await import(
     "./infra/openresty-lua"
   );
@@ -248,6 +266,14 @@ async function createInfraProvider(
 async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platform> {
   const runtimeMode = config.runtime ?? "docker";
 
+  // Containerized-edge (compose) mode applies ONLY to the local target — never a
+  // remote server (those carry an injected pooled executor / ssh config and
+  // manage their own host's bare OpenResty). Gated on the local case so remote
+  // routing is untouched.
+  const useDockerEdge =
+    !config.executor && !config.ssh && process.env.OPENSHIP_EDGE_MODE === "docker";
+  const edgeContainer = process.env.OPENSHIP_EDGE_CONTAINER?.trim() || "openship-edge";
+
   // Executor - use injected (managed/pooled) executor, or create a fresh one
   let executor: CommandExecutor;
   if (config.executor) {
@@ -257,13 +283,16 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     executor = createExecutor(config.ssh);
   }
 
-  // System - runtime mode determines all required components
+  // System - runtime mode determines all required components. In docker-edge
+  // mode the stack provides docker (socket) + OpenResty/certbot (edge image), so
+  // the api installs nothing on its container/host.
   const { SystemManager } = await import("./system/setup");
   const system = new SystemManager(runtimeMode, {
     executor,
     stateStore: config.stateStore,
     installerConfig: config.installerConfig,
     provisionLock: config.provisionLock,
+    assumeInstalled: useDockerEdge,
   });
 
   // Runtime
@@ -277,7 +306,12 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   }
 
   // Infrastructure - runtime implies the reverse proxy
-  const { routing, ssl } = await createInfraProvider(runtimeMode, config, executor);
+  const { routing, ssl } = await createInfraProvider(
+    runtimeMode,
+    config,
+    executor,
+    useDockerEdge ? edgeContainer : undefined,
+  );
 
   return {
     target: "selfhosted",

@@ -14,6 +14,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { repos } from "@repo/db";
 import { authMiddleware } from "../../middleware";
+import { rateLimiterFor } from "../../middleware/rate-limiter";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
 
@@ -24,6 +25,10 @@ export const auditRoutes = new Hono();
 // restricted users gated through explicit `audit:read` grants on the
 // org-level `audit` resource (resourceId "*").
 auditRoutes.use("*", authMiddleware);
+// RAW module (not secureRouter): rate-limit here, AFTER authMiddleware so the
+// per-user `default-authed` subject key is available (fixes #123 — there is no
+// global /api/* limiter anymore).
+auditRoutes.use("*", rateLimiterFor("default-authed"));
 
 auditRoutes.get("/", async (c: Context) => {
   await permission.assert(getRequestContext(c), { resourceType: "audit", resourceId: "*", action: "read" });

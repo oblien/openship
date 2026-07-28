@@ -130,6 +130,33 @@ describe("assembleGitClone — ssh (per-server key / deploy key) mode", () => {
   });
 });
 
+describe("assembleGitClone — option-injection guard", () => {
+  // sq() makes the URL one shell WORD; it does not stop git from parsing a
+  // leading dash as a flag. `--upload-pack=` would be RCE on the build host.
+  it("refuses a URL that git would read as an option", () => {
+    expect(() =>
+      assembleGitClone({ repoUrl: "--upload-pack=touch /tmp/pwned" }),
+    ).toThrow(/must not start with/);
+  });
+  it("refuses it regardless of leading whitespace", () => {
+    expect(() => assembleGitClone({ repoUrl: "  --config=core.sshCommand=id" })).toThrow(
+      /must not start with/,
+    );
+  });
+  it("refuses it in ssh mode too (the rewrite must not launder it)", () => {
+    expect(() =>
+      assembleGitClone({
+        repoUrl: "-oProxyCommand=id",
+        ssh: { keyFile: "/tmp/k/id", knownHostsFile: "/tmp/k/kh" },
+      }),
+    ).toThrow(/must not start with/);
+  });
+  it("allows ordinary https and scp-form remotes", () => {
+    expect(() => assembleGitClone({ repoUrl: "https://github.com/owner/repo.git" })).not.toThrow();
+    expect(() => assembleGitClone({ repoUrl: "git@github.com:owner/repo.git" })).not.toThrow();
+  });
+});
+
 describe("assembleGitClone — priority (ssh > relay > token)", () => {
   it("ssh wins even when a token and a helper are also present", () => {
     const inv = assembleGitClone({

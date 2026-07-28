@@ -6,9 +6,12 @@
 
 import type { Context } from "hono";
 import { repos } from "@repo/db";
+import { hostControlDisabled } from "@repo/adapters";
 import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
 import { env } from "../../config";
 import { sshManager } from "../../lib/ssh-manager";
+import { resolvesToLocalHost } from "@/lib/self-host";
+import { boxOwningOrgId } from "@/lib/box-org";
 import { encryptSecretField } from "@/lib/credential-encryption";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
@@ -22,6 +25,9 @@ function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
   return {
     id: s.id,
     name: s.name,
+    // The auto-registered host row (VPS / server-host mode). The dashboard
+    // badges it "This Server" and hides SSH-credential fields for it.
+    isLocal: s.isLocal,
     sshHost: s.sshHost,
     sshPort: s.sshPort,
     sshUser: s.sshUser,
@@ -42,7 +48,12 @@ export async function listServers(c: Context) {
 
   // Org-scoped: only the caller's org's servers.
   const ctx = getRequestContext(c);
-  const all = await repos.server.listByOrganization(ctx.organizationId);
+  const rows = await repos.server.listByOrganization(ctx.organizationId);
+  // Host control off (`openship up --no-host-control`): this box is not a deploy
+  // target and every host operation refuses, so the local row is hidden rather
+  // than listed-but-dead. Enforced by createHostExecutor throwing — this only
+  // stops the UI from offering something the API will reject.
+  const all = hostControlDisabled() ? rows.filter((s) => !s.isLocal) : rows;
   await primeGeo();
   // Projects currently deployed to each server (active deployment → meta.serverId).
   const projectCounts = await repos.project
@@ -96,6 +107,36 @@ export async function createServer(c: Context) {
   if (!host) return c.json({ error: "SSH host is required" }, 400);
 
   const ctx = getRequestContext(c);
+
+  // Adding THIS host as a server (loopback / the box's own SERVER_IP on a
+  // server-host) must NOT create a plain SSH row — deploys/probes would dial the
+  // API's own loopback (the container's, when compose-deployed) where there is no
+  // sshd → the "Can't reach 127.0.0.1" failure.
+  if (resolvesToLocalHost({ sshHost: host, sshPort: body.sshPort, sshJumpHost: body.sshJumpHost })) {
+    // Only the box-owning org may register the local host — running on it is
+    // code execution on the control plane (host executor + mounted docker socket,
+    // DooD ≈ root). A teammate's org (any member can POST /servers) is refused so
+    // it can't mint itself a host-root deploy target.
+    if (ctx.organizationId !== (await boxOwningOrgId())) {
+      return c.json(
+        { error: "The local host can't be added as a server in this workspace." },
+        400,
+      );
+    }
+    // Adopt the canonical isLocal "This Server" row (create it if the boot
+    // reconcile hasn't run yet) so the box is a first-class, working deploy
+    // target with the right transport — never a duplicate loopback SSH row.
+    const local =
+      (await repos.server.findLocal(ctx.organizationId)) ??
+      (await repos.server.create({
+        organizationId: ctx.organizationId,
+        name: body.name?.trim() || "This Server",
+        sshHost: host,
+        isLocal: true,
+      }));
+    return c.json(serializeServer(local), 201);
+  }
+
   const server = await repos.server.create({
     organizationId: ctx.organizationId,
     name: body.name?.trim() || null,
@@ -204,6 +245,11 @@ export async function deleteServer(c: Context) {
   const ctx = getRequestContext(c);
   const existing = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!existing) return c.json({ error: "Server not found" }, 404);
+  // The auto-registered host ("This Server") is not user-removable — it IS the
+  // machine OpenShip runs on, and the boot reconcile would just recreate it.
+  if (existing.isLocal) {
+    return c.json({ error: "This is the current host and can't be removed." }, 400);
+  }
 
   await repos.server.delete(id);
   // Server is hard-deleted — purge any per-server resource grants so

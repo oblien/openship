@@ -1,4 +1,15 @@
 {
+  "capacity": {
+    "title": "Capacité et utilisation",
+    "subtitle": "Capacité incluse dans votre forfait et ce que vous avez utilisé. Les chiffres en direct se synchronisent depuis Openship Cloud.",
+    "routes": "Routes gratuites",
+    "workspaces": "Espaces de travail",
+    "unlimited": "Illimité",
+    "used": "utilisé",
+    "of": "sur {max}",
+    "syncing": "Synchronisation depuis le cloud"
+  },
+  "topupsComingSoon": "Les recharges de crédits ponctuelles arrivent bientôt : vous pourrez ajouter des crédits en plus de votre allocation mensuelle ici.",
   "header": {
     "credits": "Credits",
     "creditsSuffix": "of {limit}",
@@ -169,7 +180,7 @@
     "weekTick": "Sem {n}"
   },
   "layout": {
-    "title": "Facturation",
+    "title": "Facturation et utilisation",
     "subtitle": "Gérez votre abonnement, votre utilisation et vos moyens de paiement."
   },
   "sidebar": {

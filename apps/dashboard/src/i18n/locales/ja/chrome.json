@@ -46,5 +46,36 @@
     "backToDashboard": "ダッシュボードに戻る",
     "viewDeployments": "デプロイを表示",
     "copyId": "IDをコピー"
+  },
+  "window": {
+    "back": "戻る",
+    "forward": "進む",
+    "reload": "再読み込み",
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "元のサイズに戻す",
+    "close": "閉じる",
+    "devTools": "開発者ツール",
+    "navigation": "ナビゲーション"
+  },
+  "apiDown": {
+    "title": "API に接続できません",
+    "description": "ダッシュボードは動作していますが、Openship API と通信できないため、まだ表示できるものがありません。デプロイはそのまま稼働し続けます。",
+    "hintStatus": "API が稼働しているか確認します: ホストで `openship status` を実行してください。",
+    "hintStart": "起動していませんか？`openship up` で起動してください。",
+    "hintRemote": "リモートサーバーを管理していますか？その URL と、API ポートにここから到達できるかを確認してください。",
+    "docs": "セルフホスティングのドキュメント",
+    "retry": "再試行"
+  },
+  "error": {
+    "title": "このページでエラーが発生しました",
+    "description": "この画面の一部を描画できませんでした。多くの場合、再試行すれば解消します。デプロイ済みのものには影響ありません。",
+    "tryAgain": "再試行",
+    "goToProjects": "プロジェクトへ移動",
+    "refCode": "参照 ID"
+  },
+  "errorLinks": {
+    "docs": "ドキュメント",
+    "github": "問題を報告"
   }
 }

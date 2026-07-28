@@ -1,6 +1,29 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 
+/** Query for the server-paginated repo list (all optional). */
+export interface RepoListQuery {
+  page?: number;
+  perPage?: number;
+  search?: string;
+  visibility?: "all" | "public" | "private";
+  sort?: "updated" | "name" | "stars";
+}
+
+/** Server response for a repo-list page. `count` is search/visibility-scoped
+ *  (the footer); `total`/`publicCount`/`privateCount` are the owner-wide
+ *  overview (the sidebar). Mirrors RepoListResult in the API's repo-list.ts. */
+export interface RepoPageResponse<TRepo = unknown> {
+  data: TRepo[];
+  page: number;
+  perPage: number;
+  count: number;
+  total: number;
+  publicCount: number;
+  privateCount: number;
+  totalPages: number;
+}
+
 /* ------------------------------------------------------------------ */
 /*  /github/status request dedup (in-flight only — NOT a cache)        */
 /* ------------------------------------------------------------------ */
@@ -39,9 +62,20 @@ export const githubApi = {
   getOrgRepos: (owner: string) =>
     api.get<any>(endpoints.github.orgRepos(owner)),
 
-  /** Repos for a specific GitHub user */
-  getUserRepos: (owner: string) =>
-    api.get<any>(endpoints.github.userRepos, { params: { owner } }),
+  /** Repos for a specific GitHub user. Server-paginated: pass page/perPage/
+   *  search/visibility/sort and read the authoritative `count`/`total` back
+   *  (omit the params to get the full set, as MCP + legacy callers do). */
+  getUserRepos: (owner: string, params?: RepoListQuery) =>
+    api.get<RepoPageResponse>(endpoints.github.userRepos, {
+      params: { owner, ...params },
+    }),
+
+  /** List a repo's branches (used before a project exists — e.g. the migration
+   *  wizard's link-repo step, which can't use projectsApi.getBranches). */
+  listBranches: (owner: string, repo: string) =>
+    api.get<{ data: Array<{ name: string }> }>(
+      endpoints.github.repoBranches(owner, repo),
+    ),
 
   /**
    * Mint a short-lived GitHub App installation token for cloning a repo and

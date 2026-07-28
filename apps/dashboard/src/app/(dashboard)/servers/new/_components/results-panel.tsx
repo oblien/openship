@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { ComponentRow } from "./component-row";
 import type { ComponentState, SetupMode } from "./types";
+import { BlurIp } from "@/components/BlurIp";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 export function ResultsPanel({
@@ -40,7 +41,7 @@ export function ResultsPanel({
             <Server className="size-[18px] text-info" />
           </div>
           <div>
-            <h2 className="font-semibold text-foreground text-[15px]">{serverHost}</h2>
+            <h2 className="font-semibold text-foreground text-[15px]"><BlurIp>{serverHost}</BlurIp></h2>
             <p className="text-xs text-muted-foreground">
               {overallReady
                 ? t.servers.setup.allRequirementsMet

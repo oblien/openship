@@ -30,8 +30,9 @@ import { dirname, join } from "node:path";
 
 import type { CommandExecutor, ManualCert, RouteConfig, SslResult } from "../types";
 import type { RoutingProvider, SslProvider } from "./types";
-import { LUA_LOGGER_PATH, RULES_GUARD_PATH, luaSourceAvailable, buildReloadCommand, detectOpenRestyPaths, type OpenRestyPaths } from "./openresty-lua";
+import { LUA_LOGGER_PATH, RULES_GUARD_PATH, luaSourceAvailable, buildReloadCommand, detectOpenRestyPaths, ACME_HTTP01_PORT, ACME_CHALLENGE_LOCATION, type OpenRestyPaths } from "./openresty-lua";
 import { safeErrorMessage, sanitizeProxySettings, PROXY_GZIP_TYPES, type ProxySettings } from "@repo/core";
+import { sq } from "../system/local-shell";
 
 /** Reverse-proxy headers shared by every proxy_pass location. */
 const PROXY_HEADERS = `proxy_set_header Host $host;
@@ -46,13 +47,14 @@ const PROXY_HEADERS = `proxy_set_header Host $host;
 function renderProxyLocations(route: RouteConfig): string {
   if (!route.proxyLocations || route.proxyLocations.length === 0) return "";
   return route.proxyLocations
-    .map(
-      (loc) => `
+    .map((loc) => {
+      assertValidUpstream(loc.targetUrl);
+      return `
     location ${loc.pathPrefix} {
         proxy_pass ${loc.targetUrl};
         ${PROXY_HEADERS}
-    }`,
-    )
+    }`;
+    })
     .join("");
 }
 
@@ -184,16 +186,83 @@ function assertValidDomain(domain: string): void {
   }
 }
 
+/**
+ * `proxy_pass`/`root` values are interpolated verbatim into the generated
+ * server{} block and — on proxy adopt/takeover — come from PARSING A FOREIGN
+ * proxy config (semi-trusted). Reject anything that could break out of the
+ * single-token directive and inject arbitrary nginx config. `openresty -t` only
+ * catches MALFORMED output, so a well-formed injection would otherwise slip in.
+ * Normal deploy targets (`http://127.0.0.1:3000`, `/var/www/app`) contain none
+ * of these chars, so this never rejects a legitimate route.
+ */
+function assertNoNginxInjection(value: string, what: string): void {
+  if (/[\s;{}#\\]/.test(value)) {
+    throw new Error(`Invalid ${what} (contains characters that could inject nginx config): ${value}`);
+  }
+}
+
+function assertValidUpstream(targetUrl: string): void {
+  assertNoNginxInjection(targetUrl, "proxy target");
+  if (!/^https?:\/\/.+/.test(targetUrl)) {
+    throw new Error(`Invalid proxy target (must be http/https URL): ${targetUrl}`);
+  }
+}
+
+function assertValidStaticRoot(root: string): void {
+  assertNoNginxInjection(root, "static root");
+  if (!root.startsWith("/") || root.includes("..")) {
+    throw new Error(`Invalid static root (must be an absolute path, no traversal): ${root}`);
+  }
+}
+
 const execFileAsync = promisify(cpExecFile);
+
+/**
+ * Turn certbot's verbose failure output into ONE actionable line.
+ *
+ * certbot buries the cause in a `Type:` / `Detail:` / `Hint:` block and opens with
+ * boilerplate ("Saving debug log to …") that tells the operator nothing. Pull the
+ * meaningful lines and map the common HTTP-01 failure shapes to a plain-English
+ * diagnosis so a failed cert says WHY — DNS, firewall/port-80, or a proxy still on
+ * :80 — instead of the opaque opener.
+ */
+export function summarizeCertbotFailure(output: string, domain: string): string {
+  const text = output || "";
+  const pick = (re: RegExp) => text.match(re)?.[0]?.replace(/\s+/g, " ").trim();
+  const detail = pick(/Detail:\s*[^\n]+/i);
+  const hint = pick(/Hint:\s*[^\n]+/i);
+
+  let diagnosis: string | undefined;
+  if (/timeout during connect|connection refused|failed to connect|Timeout/i.test(text)) {
+    diagnosis =
+      `Port 80 for ${domain} isn't reachable from the internet — a firewall / cloud security group ` +
+      `is blocking it, the domain doesn't point at this server, or another proxy is still bound to :80.`;
+  } else if (/NXDOMAIN|no\s+(A|AAAA)\s+record|DNS problem|could not be resolved|no records? found/i.test(text)) {
+    diagnosis =
+      `${domain} doesn't resolve to this server yet — the DNS A record is missing or hasn't propagated. ` +
+      `Wait for propagation, then retry from the Domains tab.`;
+  } else if (/404|invalid response|unauthorized|"?status"?:?\s*40\d/i.test(text)) {
+    diagnosis =
+      `Port 80 answered but not with our ACME challenge — another web server is still serving :80, so ` +
+      `the takeover didn't complete. Re-run and choose take-over / migrate.`;
+  } else if (/too many certificates|rateLimited|rate limit/i.test(text)) {
+    diagnosis = `Let's Encrypt rate limit reached for ${domain} — wait before retrying.`;
+  }
+
+  const parts = [diagnosis, detail, hint].filter(Boolean);
+  if (parts.length > 0) return parts.join(" — ");
+
+  // Nothing structured matched — surface the last non-empty lines (the tail holds
+  // the real error) rather than the "Saving debug log" opener.
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  return lines.slice(-3).join(" · ") || `certbot failed to issue a certificate for ${domain}`;
+}
 
 interface FileSnapshot {
   exists: boolean;
   content?: string;
 }
 
-function sq(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
 
 // ─── Implementation ──────────────────────────────────────────────────────────
 
@@ -288,8 +357,40 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       const full = args.length ? `${command} ${args.map(sq).join(" ")}` : command;
       return this.executor.exec(full);
     }
-    const { stdout } = await execFileAsync(command, args);
-    return stdout;
+    try {
+      const { stdout } = await execFileAsync(command, args);
+      return stdout;
+    } catch (err) {
+      // execFile's error carries stdout/stderr as props but NOT in .message
+      // ("Command failed: certbot …"). Fold them in so the caller (and the
+      // certbot summarizer) sees the real output, not just the exit boilerplate.
+      const e = err as { stdout?: string; stderr?: string; message?: string };
+      const detail = [e.stderr?.trim(), e.stdout?.trim()].filter(Boolean).join("\n");
+      throw new Error(detail || e.message || String(err));
+    }
+  }
+
+  /**
+   * Run certbot, optionally STREAMING its output line-by-line to `onLog` (the
+   * live verify modal). Falls back to buffered `_exec` when no callback / no
+   * executor. `streamExec` doesn't reject on a non-zero exit — it returns the
+   * code — so mirror `_exec`'s throw-with-output so `summarizeCertbotFailure`
+   * still sees the real cause.
+   */
+  private async _execCertbot(args: string[], onLog?: (line: string) => void): Promise<string> {
+    if (!onLog || !this.executor) {
+      const out = await this._exec("certbot", args);
+      if (out) onLog?.(out);
+      return out;
+    }
+    const full = `certbot ${args.map(sq).join(" ")}`;
+    let output = "";
+    const { code } = await this.executor.streamExec(full, (log) => {
+      output += log.message;
+      onLog(log.message);
+    });
+    if (code !== 0) throw new Error(output.trim() || `certbot exited ${code}`);
+    return output;
   }
 
   private async _captureFile(path: string): Promise<FileSnapshot> {
@@ -328,6 +429,11 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
     const slug = this.domainSlug(route.domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
+    if ("staticRoot" in route && route.staticRoot) {
+      assertValidStaticRoot(route.staticRoot);
+    } else {
+      assertValidUpstream((route as { targetUrl: string }).targetUrl);
+    }
     const locationBody = "staticRoot" in route && route.staticRoot
       ? `root ${route.staticRoot};
         index index.html;
@@ -383,9 +489,7 @@ server {
 
 ${luaLogOnly}
 
-    location /.well-known/acme-challenge/ {
-        root /var/www/acme;
-    }
+${ACME_CHALLENGE_LOCATION}
 
     location / {
         return 301 https://$server_name$request_uri;
@@ -416,9 +520,7 @@ server {
 
 ${luaProxy}
 ${serverHeaders}${proxyOpts}
-    location /.well-known/acme-challenge/ {
-        root /var/www/acme;
-    }
+${ACME_CHALLENGE_LOCATION}
 ${webhookLocation}${extraLocations}
     location / {
         ${locationBody}
@@ -452,15 +554,32 @@ ${webhookLocation}${extraLocations}
   }
 
   /**
-   * Remove a route by deleting its conf file, then reload.
+   * Remove a route by deleting its conf + route-state files, then reload.
+   *
+   * Self-rollback (same pattern as registerRoute): snapshot both files first, and
+   * if the post-removal `openresty -t`/reload fails — usually because an UNRELATED
+   * vhost is broken — restore them so the edge on disk == the running config.
+   * Without this, a failed reload left the route GONE from disk but still served
+   * from the old in-memory config (an inconsistent half-state that would silently
+   * vanish on the next unrelated reload). The error is re-thrown for retry.
    */
   async removeRoute(domain: string): Promise<void> {
     assertValidDomain(domain);
     const slug = this.domainSlug(domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
+    const statePath = this.routeStatePath(slug);
+    const confSnapshot = await this._captureFile(configPath);
+    const stateSnapshot = await this._captureFile(statePath);
     await this._rm(configPath);
-    await this._rm(this.routeStatePath(slug)).catch(() => undefined);
-    await this.reload();
+    await this._rm(statePath).catch(() => undefined);
+    try {
+      await this.reload();
+    } catch (err) {
+      await this._restoreFile(configPath, confSnapshot);
+      await this._restoreFile(statePath, stateSnapshot);
+      await this.reload().catch(() => undefined);
+      throw err;
+    }
   }
 
   // ── SSL ──────────────────────────────────────────────────────────────
@@ -481,11 +600,17 @@ ${webhookLocation}${extraLocations}
    * a webroot failure becomes a "deploy continues on HTTP, retry from
    * Domains tab" warning instead of a deploy abort.
    */
-  async provisionCert(domain: string): Promise<SslResult> {
+  async provisionCert(
+    domain: string,
+    opts?: { onLog?: (line: string) => void; force?: boolean },
+  ): Promise<SslResult> {
     assertValidDomain(domain);
 
-    // Check if cert already exists
-    if (await this.certsExist(domain)) {
+    // Reuse an existing cert unless the caller forces a reissue. `force` is set
+    // when the service layer has already decided the current cert is missing /
+    // near-expiry / a deliberate renew — without it this short-circuit would
+    // return a stale cert and a renewal would silently no-op.
+    if (!opts?.force && (await this.certsExist(domain))) {
       return this.readCertInfo(domain);
     }
 
@@ -497,10 +622,34 @@ ${webhookLocation}${extraLocations}
       ? ["--email", this.acmeEmail as string]
       : ["--register-unsafely-without-email"];
 
-    await this._exec("certbot", [
-      "certonly", "--webroot", "-w", "/var/www/acme", "-d", domain,
-      ...emailArgs, "--agree-tos", "--non-interactive",
-    ]);
+    let certonlyOut = "";
+    try {
+      // ACME via certbot's STANDALONE authenticator on a loopback alt-port; the
+      // edge proxies /.well-known/acme-challenge/ → 127.0.0.1:<port> (see
+      // ACME_CHALLENGE_LOCATION). Zero downtime — no port-80 fight with the edge,
+      // no webroot dependency, no DNS-01. Works bare (host netns) and docker-edge
+      // (container netns) alike, since certbot runs on the same executor as the
+      // edge it's proxied through.
+      //
+      // `--cert-name <domain>` PINS the lineage to the bare domain name. Without
+      // it, certbot appends `-0001`/`-0002` when a stale renewal config for the
+      // domain lingers (a prior teardown/migration removed the live symlink but
+      // left /etc/letsencrypt/renewal), so the cert lands at `<domain>-0001` while
+      // certsExist/readCertInfo only ever look at `<domain>` → an eternal
+      // "missing", and a re-run just prints "not due for renewal" (exit 0). Pinning
+      // the name makes the on-disk path deterministic and self-heals that state.
+      certonlyOut = await this._execCertbot([
+        "certonly", "--standalone", "--http-01-port", String(ACME_HTTP01_PORT),
+        "--cert-name", domain, "-d", domain,
+        ...emailArgs, "--agree-tos", "--non-interactive",
+        // Forced reissue: certbot would otherwise print "not due for renewal"
+        // (exit 0) when a lineage exists, leaving the stale cert in place.
+        ...(opts?.force ? ["--force-renewal"] : []),
+      ], opts?.onLog);
+    } catch (err) {
+      // Replace certbot's opaque opener with the real, actionable cause.
+      throw new Error(summarizeCertbotFailure(safeErrorMessage(err), domain));
+    }
 
     // Rewrite the config with SSL now that certs exist
     const slug = this.domainSlug(domain);
@@ -512,7 +661,7 @@ ${webhookLocation}${extraLocations}
       const state = await this._readFile(this.routeStatePath(slug));
       const saved = JSON.parse(state) as RouteConfig;
       await this.registerRoute({ ...saved, domain, tls: true });
-      return this.readCertInfo(domain);
+      return this.ensureIssued(domain, certonlyOut);
     } catch {
       // No sidecar (legacy route or unreadable) - fall back to scraping the conf.
     }
@@ -522,19 +671,37 @@ ${webhookLocation}${extraLocations}
       const targetMatch = existing.match(/proxy_pass\s+([^;]+);/);
       if (targetMatch) {
         await this.registerRoute({ domain, targetUrl: targetMatch[1], tls: true });
-        return this.readCertInfo(domain);
+        return this.ensureIssued(domain, certonlyOut);
       }
 
       const rootMatch = existing.match(/root\s+([^;]+);/);
       if (rootMatch) {
         await this.registerRoute({ domain, staticRoot: rootMatch[1], tls: true });
-        return this.readCertInfo(domain);
+        return this.ensureIssued(domain, certonlyOut);
       }
     } catch {
       // Config doesn't exist - cert provisioned but no route yet
     }
 
-    return this.readCertInfo(domain);
+    return this.ensureIssued(domain, certonlyOut);
+  }
+
+  /**
+   * After a certbot run that DIDN'T throw, confirm a usable cert actually landed
+   * at the expected path. certbot can exit 0 while producing nothing readable
+   * there (a lineage written elsewhere, "not due for renewal", 0 domains
+   * authenticated) — a silent `{missing}` hides why. Surface certbot's real
+   * output so the operator sees the actual reason instead of a generic message.
+   */
+  private async ensureIssued(domain: string, certbotOutput: string): Promise<SslResult> {
+    const result = await this.readCertInfo(domain);
+    if (result.verified) return result;
+    const tail = certbotOutput.trim().slice(-1200);
+    throw new Error(
+      summarizeCertbotFailure(certbotOutput, domain) +
+        (tail ? `\n\ncertbot exited without an error but no readable certificate is at ` +
+          `${join(this.certDir, domain)}. certbot said:\n${tail}` : ""),
+    );
   }
 
   /**

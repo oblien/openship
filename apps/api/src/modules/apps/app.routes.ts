@@ -19,6 +19,29 @@ r.get(
   { tag: "project:list", mcp: { description: "List the one-click app catalog (Convex, WordPress, mail, …)." } },
   ctrl.catalog,
 );
+r.get(
+  "/catalog/:id",
+  { tag: "project:list", mcp: { description: "Get one app's full template (services, config, endpoints) by id." } },
+  ctrl.catalogEntry,
+);
+r.get(
+  "/custom",
+  { tag: "project:list", mcp: { description: "List this org's custom (user-uploaded, unverified) apps." } },
+  ctrl.listCustom,
+);
+r.post(
+  "/custom",
+  {
+    tag: "project:write",
+    mcp: { description: "Add a custom app from an uploaded JSON definition (stored per-org, unverified)." },
+  },
+  ctrl.addCustom,
+);
+r.delete(
+  "/custom/:appId",
+  { tag: "project:write", mcp: { description: "Remove a custom app from this org's catalog." } },
+  ctrl.removeCustom,
+);
 r.post(
   "/",
   {

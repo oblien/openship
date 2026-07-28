@@ -4,6 +4,8 @@ import { endpoints } from "./endpoints";
 export type BuildMode = "auto" | "server" | "local";
 export type DefaultDeployTarget = "local" | "server" | "cloud";
 export type CloneStrategyPreference = "prompt" | "local" | "remote-with-token";
+/** How the edge reaches an app's upstream. See settings.service RouteStrategyPref. */
+export type RouteStrategy = "auto" | "loopback-port" | "container-ip";
 
 export interface CloneCredentialsState {
   /** True when the user has a global clone token saved. Token never echoed back. */
@@ -20,6 +22,13 @@ export interface UserSettingsResponse {
   defaultServerId: string | null;
   cloneToken: CloneCredentialsState;
   cloneStrategyPreference: CloneStrategyPreference;
+  routeStrategy: RouteStrategy;
+  /**
+   * Generic (per-operator) "forward my local git identity to remote build
+   * servers" preference. Replaces the old per-deploy forwardGitCredentials
+   * toggle. When on, a server clone may forward the local `gh` over SSH.
+   */
+  forwardGitToServer: boolean;
 }
 
 export interface DeployDefaultsResponse {
@@ -38,6 +47,10 @@ export const settingsApi = {
   /** Update only the build mode preference */
   updateBuildMode: (buildMode: BuildMode) =>
     api.patch<UserSettingsResponse>(endpoints.settings.buildMode, { buildMode }),
+
+  /** Update only the default edge→app route strategy */
+  updateRouteStrategy: (routeStrategy: RouteStrategy) =>
+    api.patch<{ routeStrategy: RouteStrategy }>(endpoints.settings.routeStrategy, { routeStrategy }),
 
   /**
    * Update (or clear) the default deploy target.
@@ -67,4 +80,8 @@ export const settingsApi = {
       endpoints.settings.cloneStrategyPreference,
       { preference },
     ),
+
+  /** Flip the generic "forward my git identity to remote build servers" preference. */
+  updateForwardGitToServer: (enabled: boolean) =>
+    api.patch<{ forwardGitToServer: boolean }>(endpoints.settings.forwardGit, { enabled }),
 };

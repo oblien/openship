@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "تعذّر حفظ النطاقات",
-    "toastTitle": "النطاقات"
+    "toastTitle": "النطاقات",
+    "routeFreeLabel": "نطاق فرعي مجاني",
+    "routeFreeDesc": "عنوان {domain} مجاني، جاهز فوراً.",
+    "routeCustomLabel": "نطاق مخصص",
+    "routeCustomDesc": "وجّه نطاقك الخاص إلى هذا النشر.",
+    "routeNoneLabel": "بدون",
+    "routeNoneDesc": "بدون عنوان عام — داخلي فقط. يمكن الوصول إليه عبر المنفذ على المضيف."
   },
   "dns": {
     "title": "إعداد DNS",
@@ -119,6 +125,8 @@
     "addServer": "أضف خادمك الخاص",
     "continue": "متابعة",
     "chooseServer": "اختر خادمًا",
+    "thisServerBadge": "هذا الخادم",
+    "thisServerHost": "المضيف الحالي — عمليات النشر تجري هنا",
     "searchPlaceholder": "ابحث عن الخوادم…",
     "noServersMatch": "لا توجد خوادم تطابق بحثك.",
     "requireCloudFeature": "النشر إلى Openship Cloud",
@@ -188,7 +196,11 @@
     "targetServer": "خادمي",
     "targetCloud": "Openship Cloud",
     "buildLocal": "هذا الجهاز",
-    "buildRemote": "بعيد"
+    "buildRemote": "بعيد",
+    "runtimeStatic": "Static · edge-served",
+    "runtimeSandboxed": "Sandboxed",
+    "runtimeDirectWarning": "Not sandboxed",
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed."
   },
   "power": {
     "heading": "الأداء",
@@ -288,5 +300,20 @@
     "deployButton": "نشر بريد الويب",
     "deployFailedTitle": "فشل النشر",
     "deployFailed": "تعذّر بدء النشر"
+  },
+  "serveMode": {
+    "heading": "How it's served",
+    "subtitle": "Serve the built files, or run it as a live server process.",
+    "staticLabel": "Serve as static files",
+    "staticDesc": "The build output is served directly by the edge. Nothing runs as a process.",
+    "serverLabel": "Run as a server process",
+    "serverDesc": "Start a long-running process (needs a start command and port).",
+    "staticNote": "Built in an isolated Docker sandbox, then served as static files by the edge.",
+    "startCommandLabel": "Start command",
+    "startCommandPlaceholder": "npm start",
+    "startCommandHint": "Leave empty to serve the build output as static files from the edge (nothing runs). Enter a command to run it as a live server process.",
+    "modeStatic": "Static",
+    "modeProcess": "Server process",
+    "portLabel": "Port"
   }
 }

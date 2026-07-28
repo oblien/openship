@@ -32,6 +32,7 @@ vi.mock("./psql-runner", () => ({
 import {
   configureOutboundRelay,
   disableOutboundRelay,
+  applyRelayToState,
   withSesInclude,
   withoutSesInclude,
 } from "./outbound-relay.service";
@@ -253,5 +254,84 @@ describe("per-domain routing (enterprise)", () => {
     };
     expect(s.additionalDomains["y.com"].records.spf.value).not.toContain("amazonses.com");
     expect(s.additionalDomains["y.com"].records.extraRecords).toBeUndefined();
+  });
+});
+
+// The core of the "SES DNS survives a DKIM re-run / re-install" fix: the DKIM
+// step rebuilds dnsRecords SELF-HOST-ONLY, and applyRelayToState must re-lay the
+// stored relay's SES send-hop records back on. Pure function → no exec/state I/O.
+describe("applyRelayToState (SES-DNS survival)", () => {
+  const relay = {
+    enabled: true,
+    provider: "ses" as const,
+    region: "us-east-1",
+    host: "email-smtp.us-east-1.amazonaws.com",
+    port: 587,
+    username: "u",
+    passwordEncrypted: "enc(p)",
+    scope: "all" as const,
+    mailFromDomain: "bounce.example.com",
+    sesDkim: [{ name: "abc._domainkey.example.com", value: "abc.dkim.amazonses.com" }],
+    updatedAt: "",
+  };
+
+  test("re-lays the SES include + extras onto a freshly-rebuilt (self-host-only) record set", () => {
+    // Exactly what stepDkimKeys writes: SPF without the include, no extraRecords.
+    const rebuilt = {
+      serverId: "srv1",
+      domain: "example.com",
+      dnsRecords: { spf: { type: "TXT", name: "example.com", value: "v=spf1 mx -all" } },
+    };
+    const { dnsRecords } = applyRelayToState(rebuilt as never, relay as never);
+    const dns = dnsRecords as unknown as { spf: { value: string }; extraRecords: { name: string }[] };
+    expect(dns.spf.value).toContain("include:amazonses.com");
+    expect(dns.extraRecords).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "abc._domainkey.example.com" })]),
+    );
+  });
+
+  test("is idempotent — re-applying does not double the include", () => {
+    const st = {
+      serverId: "srv1",
+      domain: "example.com",
+      dnsRecords: { spf: { type: "TXT", name: "example.com", value: "v=spf1 mx -all" } },
+    };
+    const once = applyRelayToState(st as never, relay as never);
+    const twice = applyRelayToState({ ...st, ...once } as never, relay as never);
+    const v = (twice.dnsRecords as unknown as { spf: { value: string } }).spf.value;
+    expect(v.match(/include:amazonses\.com/g)?.length).toBe(1);
+  });
+
+  test("scope=all fans the include across additional domains", () => {
+    const st = {
+      serverId: "srv1",
+      domain: "x.com",
+      dnsRecords: { spf: { type: "TXT", name: "x.com", value: "v=spf1 mx -all" } },
+      additionalDomains: {
+        "y.com": { records: { spf: { type: "TXT", name: "y.com", value: "v=spf1 mx -all" } }, acknowledgedAt: null, createdAt: "" },
+      },
+    };
+    const out = applyRelayToState(st as never, { ...relay, sesDkim: undefined, mailFromDomain: undefined } as never);
+    const add = out.additionalDomains as unknown as Record<string, { records: { spf: { value: string } } }>;
+    expect(add["y.com"].records.spf.value).toContain("include:amazonses.com");
+  });
+
+  test("scope=selected touches only the selected domains", () => {
+    const st = {
+      serverId: "srv1",
+      domain: "x.com",
+      dnsRecords: { spf: { type: "TXT", name: "x.com", value: "v=spf1 mx -all" } },
+      additionalDomains: {
+        "y.com": { records: { spf: { type: "TXT", name: "y.com", value: "v=spf1 mx -all" } }, acknowledgedAt: null, createdAt: "" },
+      },
+    };
+    const out = applyRelayToState(
+      st as never,
+      { ...relay, scope: "selected", domains: ["x.com"], sesDkim: undefined, mailFromDomain: undefined } as never,
+    );
+    const dns = out.dnsRecords as unknown as { spf: { value: string } };
+    const add = out.additionalDomains as unknown as Record<string, { records: { spf: { value: string } } }>;
+    expect(dns.spf.value).toContain("include:amazonses.com");
+    expect(add["y.com"].records.spf.value).not.toContain("amazonses.com");
   });
 });

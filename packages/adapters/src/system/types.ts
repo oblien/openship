@@ -193,10 +193,17 @@ export interface ImportedSite {
   serverNames: string[];
   /** Whether the source served this site over TLS. */
   ssl: boolean;
-  /** Where requests go: a reverse-proxy upstream, or a static docroot. */
+  /** Where requests go: a reverse-proxy upstream, or a static docroot. `target`
+   *  is the PRIMARY summary (the `/` location, or the first) kept single for
+   *  back-compat; `routes` below carries the full per-path set. */
   target:
     | { kind: "proxy"; url: string }
     | { kind: "static"; root: string };
+  /** Every reverse-proxy upstream this vhost serves, in source order, one per
+   *  location path (e.g. `/ → :1010`, `/v3 → :1020`). Absent for a static site.
+   *  Lets an importer keep a path-fan-out domain instead of collapsing to the
+   *  primary. `routes[].url` is the resolved `http://host:port` upstream. */
+  routes?: { path: string; url: string }[];
   /** Existing certificate paths, if the source terminated TLS itself (reusable). */
   tls?: { certPath: string; keyPath: string };
   /** Source config file, for traceability. */

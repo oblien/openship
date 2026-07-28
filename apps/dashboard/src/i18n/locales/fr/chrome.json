@@ -46,5 +46,36 @@
     "backToDashboard": "Retour au tableau de bord",
     "viewDeployments": "Voir les déploiements",
     "copyId": "Copier l'ID"
+  },
+  "window": {
+    "back": "Retour",
+    "forward": "Suivant",
+    "reload": "Recharger",
+    "minimize": "Réduire",
+    "maximize": "Agrandir",
+    "restore": "Restaurer",
+    "close": "Fermer",
+    "devTools": "Outils de développement",
+    "navigation": "Navigation"
+  },
+  "apiDown": {
+    "title": "Impossible de joindre l'API",
+    "description": "Le tableau de bord fonctionne, mais il ne parvient pas à joindre l'API Openship — il n'y a donc rien à afficher pour l'instant. Vos déploiements continuent de tourner malgré tout.",
+    "hintStatus": "Vérifiez que l'API est active : exécutez `openship status` sur l'hôte.",
+    "hintStart": "Il ne tourne pas ? Démarrez-le avec `openship up`.",
+    "hintRemote": "Vous gérez une machine distante ? Vérifiez son URL et que le port de l'API est joignable depuis ici.",
+    "docs": "Documentation d'auto-hébergement",
+    "retry": "Réessayer"
+  },
+  "error": {
+    "title": "Cette page a rencontré une erreur",
+    "description": "Un élément de cet écran n'a pas pu s'afficher. Réessayer suffit généralement — aucun de vos déploiements n'est affecté.",
+    "tryAgain": "Réessayer",
+    "goToProjects": "Aller aux projets",
+    "refCode": "Réf."
+  },
+  "errorLinks": {
+    "docs": "Documentation",
+    "github": "Signaler un problème"
   }
 }

@@ -120,6 +120,11 @@
     "repoCountSingular": "{count} depo",
     "repoCountPlural": "{count} depo",
     "matching": "\"{query}\" ile eşleşen",
+    "pagination": {
+      "previous": "Önceki",
+      "next": "Sonraki",
+      "pageOf": "Sayfa {page} / {total}"
+    },
     "time": {
       "justNow": "az önce",
       "minutesAgo": "{n}dk önce",

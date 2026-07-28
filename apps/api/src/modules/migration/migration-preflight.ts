@@ -10,6 +10,9 @@
  */
 
 import { discoverServerStack } from "./docker-inspect.service";
+import { createServerCommandExecutor } from "../../lib/deployment-runtime";
+import { sizeOfMoveSet, type SizedItem } from "./migration-size";
+import { sq } from "./direct-transfer";
 
 /**
  * Which bind-mount host paths are worth (and safe to) copy across servers.
@@ -73,6 +76,24 @@ export interface MigrationPreview {
   droppedProxies: string[];
   /** Stack-level notes (custom networks flattened, etc.). */
   warnings: string[];
+  /** Cross-server transfer plan: the measured payload (per volume/bind/image)
+   *  and its total, for the wizard's "how many GB" step + the progress-bar
+   *  denominator. Absent for same-server (nothing moves). `partial` = at least
+   *  one item couldn't be sized, so `totalBytes` is a lower bound. */
+  plan?: {
+    totalBytes: number;
+    partial: boolean;
+    items: SizedItem[];
+  };
+  /** Per kept domain, whether the source proxy has a reusable on-disk cert that
+   *  will be CARRIED (reused, no ACME). `false` → the target issues via ACME on
+   *  publish (e.g. Traefik acme.json, or no cert). Cross-server only. */
+  sslByDomain?: Array<{ domain: string; hasCert: boolean }>;
+  /** Cross-server: each target VOLUME that already holds data (keyed by the
+   *  unique volume name — two services can share a display name, so per-volume
+   *  is the isolation unit). The user resolves each (override/clone/keep) at the
+   *  plan step before the migrate can run. */
+  conflicts?: Array<{ serviceName: string; volume: string }>;
 }
 
 export async function buildMigrationPreview(opts: {
@@ -80,8 +101,11 @@ export async function buildMigrationPreview(opts: {
   targetServerId: string;
   serviceNames: string[];
   organizationId: string;
+  /** User-selected extra paths to move (sized in the plan). */
+  customPaths?: Array<{ source: string; dest: string }>;
 }): Promise<MigrationPreview> {
   const { sourceServerId, targetServerId, serviceNames, organizationId } = opts;
+  const customPaths = opts.customPaths ?? [];
 
   const stack = await discoverServerStack(sourceServerId, organizationId);
   const selected = new Set(serviceNames);
@@ -125,6 +149,89 @@ export async function buildMigrationPreview(opts: {
     ? []
     : Array.from(new Set(workloads.flatMap((s) => s.volumes.map((v) => v.name))));
 
+  // Per kept domain: does the source proxy expose a reusable on-disk cert
+  // (certPath+keyPath present)? Those get CARRIED (no ACME); the rest re-issue.
+  const sslByDomain = sameServer
+    ? undefined
+    : (() => {
+        const seen = new Map<string, boolean>();
+        for (const s of chosen) {
+          if (s.proxyKind) continue;
+          for (const r of s.existingRoute ?? []) {
+            const hasCert = Boolean(r.ssl?.certPath && r.ssl?.keyPath);
+            for (const d of r.domains) seen.set(d, (seen.get(d) ?? false) || hasCert);
+          }
+        }
+        return seen.size ? [...seen].map(([domain, hasCert]) => ({ domain, hasCert })) : undefined;
+      })();
+
+  // Cross-server: measure the payload on the source (volumes + movable binds +
+  // built images by ID + custom paths) so the wizard can show total GB and a
+  // real-% bar. Same-server moves nothing, so skip. Best-effort — a sizing
+  // failure just omits `plan`, never blocks the preview.
+  let plan: MigrationPreview["plan"];
+  if (!sameServer && (workloads.length > 0 || customPaths.length > 0)) {
+    const bindPaths = Array.from(new Set(workloads.flatMap((s) => s.bindMounts)));
+    const builtImages = [
+      ...new Map(
+        chosen
+          .filter((s) => !s.proxyKind && Boolean(s.build) && s.image)
+          .map((s) => {
+            const tag = s.image as string;
+            const id = s.imageId ?? tag;
+            return [id, { id, tag }] as const;
+          }),
+      ).values(),
+    ];
+    try {
+      const { executor } = await createServerCommandExecutor(sourceServerId, organizationId);
+      const sized = await sizeOfMoveSet(executor, {
+        volumeNames: volumesToMove,
+        bindPaths,
+        images: builtImages,
+        customPaths: customPaths.map((c) => c.source),
+      });
+      plan = { totalBytes: sized.totalBytes, partial: sized.partial, items: sized.perItem };
+    } catch {
+      /* sizing is best-effort — leave `plan` undefined */
+    }
+  }
+
+  // Cross-server: which target volumes already hold data? Surfaced up front so
+  // the user resolves each (override / clone / keep) at the plan step instead of
+  // hitting the run-time "refusing to overwrite" hard-fail. Best-effort — a
+  // probe hiccup just omits the conflict (the run-time guard is the backstop).
+  let conflicts: MigrationPreview["conflicts"];
+  if (!sameServer && volumesToMove.length > 0) {
+    try {
+      const { executor } = await createServerCommandExecutor(targetServerId, organizationId);
+      const hasData = new Set<string>();
+      for (const name of volumesToMove) {
+        const out = await executor
+          .exec(
+            `if docker volume inspect ${sq(name)} >/dev/null 2>&1; then ` +
+              `mp=$(docker volume inspect ${sq(name)} -f '{{.Mountpoint}}'); ` +
+              `[ -n "$(ls -A "$mp" 2>/dev/null)" ] && echo CONFLICT || true; fi`,
+          )
+          .catch(() => "");
+        if (out.includes("CONFLICT")) hasData.add(name);
+      }
+      if (hasData.size > 0) {
+        // Flatten to one entry PER VOLUME — the unique isolation unit (two
+        // services can share a display name; volume names can't collide).
+        const flat: Array<{ serviceName: string; volume: string }> = [];
+        for (const s of workloads) {
+          for (const v of s.volumes) {
+            if (hasData.has(v.name)) flat.push({ serviceName: s.name, volume: v.name });
+          }
+        }
+        if (flat.length > 0) conflicts = flat;
+      }
+    } catch {
+      /* best-effort — leave `conflicts` undefined */
+    }
+  }
+
   return {
     sameServer,
     services,
@@ -133,5 +240,8 @@ export async function buildMigrationPreview(opts: {
     downtimeWarning: workloads.length > 0,
     droppedProxies,
     warnings: stack.warnings,
+    ...(plan ? { plan } : {}),
+    ...(sslByDomain ? { sslByDomain } : {}),
+    ...(conflicts ? { conflicts } : {}),
   };
 }

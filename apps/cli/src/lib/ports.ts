@@ -15,10 +15,10 @@
  */
 import { createServer } from "node:net";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
-const OS_DIR = join(homedir(), ".openship");
+import { OS_DIR } from "./paths";
+
 const PORTS_FILE = join(OS_DIR, "ports.json");
 const INSTANCE_FILE = join(OS_DIR, "instance.json");
 

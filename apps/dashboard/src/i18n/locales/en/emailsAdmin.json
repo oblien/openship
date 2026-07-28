@@ -49,6 +49,7 @@
     "guidanceSandbox": "Request production access — SES starts in a sandbox that only sends to verified addresses.",
     "guidanceCreds": "Use SES SMTP credentials (an IAM SMTP user) — not your AWS access keys.",
     "guidanceDns": "Publish the DNS records on the DNS tab, then re-scan to confirm.",
+    "guidanceSystem": "System mail (password resets, invites, notifications) also sends via this relay — unless you've set a separate sender in Settings → Email.",
     "save": "Enable relay",
     "update": "Save changes",
     "disable": "Disable relay",

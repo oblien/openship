@@ -17,7 +17,7 @@ export async function getStatus(hostname: string, organizationId: string) {
 
   // Verify ownership through project's organization
   const project = await repos.project.findById(domainRecord.projectId);
-  assertResourceInOrg(project, "Project", organizationId, domainRecord.projectId);
+  assertResourceInOrg(project, "Project", organizationId, domainRecord.projectId ?? undefined);
 
   return {
     domain: domainRecord.hostname,
@@ -46,7 +46,7 @@ export async function renew(
   if (!domainRecord) throw new NotFoundError("Domain", hostname);
 
   const project = await repos.project.findById(domainRecord.projectId);
-  assertResourceInOrg(project, "Project", organizationId, domainRecord.projectId);
+  assertResourceInOrg(project, "Project", organizationId, domainRecord.projectId ?? undefined);
 
   const result = await manageDomainSsl(hostname, {
     action: "renew",

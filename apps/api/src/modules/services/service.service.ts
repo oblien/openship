@@ -3,21 +3,38 @@
  */
 
 import { normalizeRoutingFields, repos, composeSpecDiff, type Service, type ServicePublicEndpoint } from "@repo/db";
-import { serviceStatusToContainerState, isValidCustomHostname, ValidationError, type ServiceContainerState } from "@repo/core";
+import { ForbiddenError, isValidCustomHostname, ValidationError, withTimeout, type ServiceContainerState } from "@repo/core";
 import {
   BuildLogger,
+  DockerRuntime,
   isMultiServiceRuntime,
   type LogEntry,
   type ContainerStatus,
 } from "@repo/adapters";
+import { scopedVolumeName, type CommandExecutor } from "@repo/adapters";
 import { encrypt, decrypt } from "../../lib/encryption";
 import { assertResourceInOrg, platform } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
-import { resolveDeploymentPlatform } from "../../lib/deployment-runtime";
+import {
+  resolveServerExecutor,
+  resolveDeploymentRuntimeForRead,
+} from "../../lib/deployment-runtime";
+import {
+  containerIdForService,
+  liveContainerIdWithRuntime,
+  resolveServicePlatform,
+  resolveServiceRuntimeForRead,
+} from "./service-container";
+import { resolveLiveServiceState, type LiveMatchKind } from "./live-state";
+import { parseVolumeSpec, type VolumeKind } from "./volume-spec";
+import { sq } from "../migration/direct-transfer";
+import { bounded, duBytes, volumeBytes } from "../migration/migration-size";
 import { deployComposeServices } from "../deployments/compose/deploy.service";
-import type { DeploymentConfigSnapshot } from "../deployments/build.service";
 import { buildServiceRouteDomains, serviceCustomHostnames } from "../../lib/routing-domains";
-import { ensurePendingServiceDomain, removeServiceDomain } from "../domains/domain.service";
+import { resolveServicePublicEndpoints } from "../../lib/public-endpoints";
+import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
+import { ensurePendingServiceDomain, removeServiceDomain, reuseServerCertForDomain } from "../domains/domain.service";
+import { buildUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import {
   reconcileProjectRoutes,
   type RouteRegister,
@@ -28,6 +45,13 @@ import type {
   TUpdateServiceBody,
   TSetServiceEnvVarsBody,
 } from "./service.schema";
+
+/** Cap how long a route update AWAITS the (SSH) edge re-register before
+ *  returning. Past this, the DB change is already saved and the edge apply
+ *  finishes in the background — so a slow REMOTE edge never hangs the modal on a
+ *  change that already took effect. Routing is best-effort; routingUnsynced
+ *  surfaces if the background apply lags. */
+const ROUTE_EDGE_APPLY_TIMEOUT_MS = 6000;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -335,6 +359,24 @@ export async function updateService(
     patch.customDomain = normalized.customDomain ?? undefined;
     patch.domainType = normalized.domainType;
     patch.publicEndpoints = normalized.publicEndpoints;
+
+    // Atomic gate: a free (*.opsh.io) route only resolves behind the Openship
+    // Cloud edge. Refuse before the DB write so a disconnected instance can't
+    // persist a dead "Pending" route. resolveServicePublicEndpoints is the same
+    // resolver the deploy loop uses, so the gate sees the exact routes to apply.
+    await assertFreeEndpointsAllowed(
+      ctx.organizationId,
+      resolveServicePublicEndpoints({
+        exposed: patch.exposed,
+        exposedPort: patch.exposedPort,
+        ports: svc.ports,
+        domain: patch.domain,
+        customDomain: patch.customDomain,
+        domainType: patch.domainType,
+        publicEndpoints: patch.publicEndpoints,
+      }),
+      "managed-compose-domains",
+    );
   }
 
   await repos.service.update(serviceId, patch);
@@ -364,31 +406,57 @@ export async function updateService(
         .filter((route) => !nextByHost.has(route.hostname.toLowerCase()))
         .map((route) => ({ hostname: route.hostname, isCustomDomain: route.domainType === "custom" }));
 
-      // Self-hosted upstream = the active deployment's service-row IP; cloud
-      // ignores targetUrl and routes by port. Resolve the IP once, reuse per port.
+      // Self-hosted upstream = loopback host port (published) or the active
+      // deployment's service-row IP; cloud ignores targetUrl. Resolve once.
       let ip: string | undefined;
+      let hostPort: number | undefined;
       if (isRoutable && nextRoutes.length > 0 && !project.cloudWorkspaceId && project.activeDeploymentId) {
         const rows = await repos.service.listByDeployment(project.activeDeploymentId);
-        ip = rows.find((r) => r.serviceId === serviceId)?.ip ?? undefined;
+        const row = rows.find((r) => r.serviceId === serviceId);
+        ip = row?.ip ?? undefined;
+        hostPort = row?.hostPort ?? undefined;
       }
+      const strategy = resolveRouteStrategy(project.routeStrategy);
       const registers: RouteRegister[] = nextRoutes.map((route) => ({
         hostname: route.hostname,
-        targetUrl: ip && route.targetPort ? `http://${ip}:${route.targetPort}` : undefined,
+        targetUrl: route.targetPort
+          ? (buildUpstreamUrl({ strategy, ip, hostPort, containerPort: route.targetPort }) ?? undefined)
+          : undefined,
         port: route.targetPort,
         isCustomDomain: route.domainType === "custom",
       }));
 
+      // Authoritative port: the upstream above is rebuilt from the LIVE
+      // deployment's published port on every publish, so reconcileProjectRoutes
+      // OVERWRITES whatever the edge vhost currently forwards to — a manual (or
+      // migrated foreign-proxy) port edit can't survive. If a routable route
+      // still resolves NO upstream, the live port wasn't found — warn so the
+      // 502 cause is visible instead of a silently portless vhost.
+      for (const reg of registers) {
+        if (reg.port && !reg.targetUrl) {
+          console.warn(
+            `[SERVICE] ${svc.name}: no live upstream for ${reg.hostname} (port ${reg.port}) — ` +
+              `route may 502 until the deployment publishes that port.`,
+          );
+        }
+      }
+
       // Mint a verifiable PENDING domain row for each custom service route, so
       // it flows through the same DNS-preflight/verify/SSL pipe as a single-app
       // custom domain (rather than only appearing — force-verified — at deploy).
+      // Track the freshly-created ones so we can reuse an existing on-server cert
+      // for them below (migration / first publish) instead of forcing an ACME
+      // re-issue.
+      const freshlyPublishedDomainIds: string[] = [];
       for (const route of nextRoutes) {
         if (route.domainType === "custom") {
-          await ensurePendingServiceDomain({
+          const ensured = await ensurePendingServiceDomain({
             projectId: project.id,
             serviceId,
             hostname: route.hostname,
             targetPort: route.targetPort,
           });
+          if (ensured.created && ensured.domainId) freshlyPublishedDomainIds.push(ensured.domainId);
         }
       }
       // Drop the derived row for any custom hostname the service no longer
@@ -407,7 +475,28 @@ export async function updateService(
         !project.cloudWorkspaceId && project.activeDeploymentId
           ? await repos.deployment.findById(project.activeDeploymentId)
           : null;
-      await reconcileProjectRoutes(project, { deployment: dep, registers, removes });
+
+      // The edge re-register (+ cert reuse) runs over SSH to the serving box.
+      // When that box is REMOTE (desktop mode) the write+reload can be slow — and
+      // the service row is ALREADY saved above, with routing being best-effort
+      // ([[domains-never-fail-deploy]]). So DON'T let the SSH edge apply hang the
+      // request: bound the await and, past the cap, RETURN while it finishes in
+      // the background. Otherwise the modal spins and times out on a change that
+      // already applied (the reported "keeps loading, but it took effect").
+      const applyEdge = (async () => {
+        await reconcileProjectRoutes(project, { deployment: dep, registers, removes });
+        // AFTER reconcile so installDomainCert re-registers the vhost with TLS on
+        // top of the live HTTP route — adopt an existing cert for a freshly
+        // published custom domain (migration / takeover) instead of ACME.
+        for (const domainId of freshlyPublishedDomainIds) {
+          await reuseServerCertForDomain(ctx, domainId).catch(() => {});
+        }
+      })();
+      applyEdge.catch((err) => console.error(`[SERVICE] edge apply for ${svc.name}:`, err));
+      await Promise.race([
+        applyEdge,
+        new Promise<void>((resolve) => setTimeout(resolve, ROUTE_EDGE_APPLY_TIMEOUT_MS)),
+      ]);
     } catch (err) {
       console.error(`[SERVICE] Failed to update route for ${svc.name}:`, err);
     }
@@ -416,12 +505,40 @@ export async function updateService(
   return updated;
 }
 
+/** Best-effort runtime/route teardown is bounded so a slow or unreachable box
+ *  can't hang the delete request past the DB-row removal (the authoritative op). */
+const SERVICE_TEARDOWN_TIMEOUT_MS = 20_000;
+
+/**
+ * Refuse lifecycle/teardown actions on the CONTROL PLANE's own services.
+ *
+ * The self-app project's services are the Openship stack itself (api, dashboard,
+ * edge, postgres, redis), linked so the dashboard can SHOW their state, logs and
+ * shell. Acting on them from here is a foot-gun with no upside: stopping `api` is
+ * the request killing the process serving it, and deleting `postgres` would tear
+ * down the control plane's own database. Same policy — and same wording — as the
+ * existing deploy/redeploy/delete guards (build.service, deployment.service,
+ * project.controller): the CLI owns this runtime.
+ *
+ * Read paths (status/logs/terminal) are deliberately NOT gated — they're the
+ * reason the services are linked at all.
+ */
+function assertNotControlPlaneService(project: { appTemplateId?: string | null } | undefined): void {
+  if (project?.appTemplateId === "openship") {
+    throw new ForbiddenError(
+      "These are the Openship control plane's own services — manage them with the CLI " +
+        "(`openship restart`, `openship up`), not from the dashboard.",
+    );
+  }
+}
+
 export async function deleteService(
   ctx: RequestContext,
   projectId: string,
   serviceId: string,
 ) {
   const { project, svc } = await assertServiceAccess(ctx, projectId, serviceId);
+  assertNotControlPlaneService(project);
 
   if (project.activeDeploymentId) {
     const dep = await repos.deployment.findById(project.activeDeploymentId);
@@ -429,14 +546,41 @@ export async function deleteService(
     const serviceDeployment = serviceDeployments.find((row) => row.serviceId === serviceId);
 
     if (dep && serviceDeployment?.containerId) {
-      const { platform } = await resolveServicePlatform(project, dep);
-      await platform.runtime.destroy(serviceDeployment.containerId).catch((err: unknown) => {
-        console.error(
-          `[SERVICE] Failed to destroy service container ${serviceDeployment.containerId}:`,
-          err,
-        );
+      // Runtime teardown is best-effort AND time-bounded: reaching the box is an
+      // SSH round-trip, so a slow/unreachable server or a stale container (e.g. a
+      // legacy row whose container is already gone) must never HANG the request.
+      // The `.catch()`es only cover rejection — a hang would block until the HTTP
+      // request aborts and the DB removal below (the authoritative, atomic op)
+      // would never run, so the row could never be deleted. withTimeout converts a
+      // hang into a caught failure; a lingering container is reaped by images:gc /
+      // manual cleanup. Keyed on serviceId throughout — never by name.
+      const containerId = serviceDeployment.containerId;
+      await withTimeout(
+        (async () => {
+          const { platform } = await resolveServicePlatform(project, dep);
+          await platform.runtime.destroy(containerId).catch((err: unknown) => {
+            console.error(`[SERVICE] Failed to destroy service container ${containerId}:`, err);
+          });
+          // Reclaim this service's built image NOW — the FK cascade in
+          // repos.service.remove() below erases the imageRef record, so a later
+          // teardown could never enumerate it. Guarded to `openship/…` build tags:
+          // a base/third-party image (postgres:16-alpine, redis:7-alpine) is PULLED,
+          // shared, and must never be removed. Best-effort; images:gc is the backstop.
+          if (
+            serviceDeployment.imageRef?.startsWith("openship/") &&
+            platform.runtime instanceof DockerRuntime
+          ) {
+            await platform.runtime.removeImage(serviceDeployment.imageRef).catch((err: unknown) => {
+              console.error(`[SERVICE] Failed to remove image for ${svc.name}:`, err);
+            });
+          }
+          await platform.runtime.dispose?.();
+        })(),
+        SERVICE_TEARDOWN_TIMEOUT_MS,
+        `runtime teardown timed out for ${svc.name}`,
+      ).catch((err: unknown) => {
+        console.error(`[SERVICE] Runtime teardown skipped for ${svc.name} (best-effort):`, err);
       });
-      await platform.runtime.dispose?.();
     }
   }
 
@@ -458,13 +602,17 @@ export async function deleteService(
           !project.cloudWorkspaceId && project.activeDeploymentId
             ? await repos.deployment.findById(project.activeDeploymentId)
             : null;
-        await reconcileProjectRoutes(project, {
-          deployment: dep,
-          removes: routes.map((route) => ({
-            hostname: route.hostname,
-            isCustomDomain: route.domainType === "custom",
-          })),
-        });
+        await withTimeout(
+          reconcileProjectRoutes(project, {
+            deployment: dep,
+            removes: routes.map((route) => ({
+              hostname: route.hostname,
+              isCustomDomain: route.domainType === "custom",
+            })),
+          }),
+          SERVICE_TEARDOWN_TIMEOUT_MS,
+          `route teardown timed out for ${svc.name}`,
+        );
       }
     } catch (err) {
       console.error(`[SERVICE] Failed to remove route for ${svc.name}:`, err);
@@ -549,93 +697,396 @@ export async function listServiceDeployments(deploymentId: string) {
   return repos.service.listByDeployment(deploymentId);
 }
 
-export async function getActiveServiceContainers(ctx: RequestContext, projectId: string) {
-  const project = await repos.project.findById(projectId);
-  assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
-  if (!project.activeDeploymentId) return [];
-  const rows = await repos.service.listByDeployment(project.activeDeploymentId);
-  if (rows.length === 0) return [];
-
-  // Reflect the REAL runtime state, not the deploy-time status column (written
-  // "success" once at deploy and never touched by stop/crash). The persisted
-  // status is the fallback for every row.
-  const persisted = () =>
-    rows.map((row) => ({ ...row, status: serviceStatusToContainerState(row.status) }));
-
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
-  const runtime = dep
-    ? await resolveServicePlatform(project, dep)
-        .then((r) => r.platform.runtime)
-        .catch(() => null)
-    : null;
-  if (!runtime) return persisted();
-
-  try {
-    // FAST path: ONE label-filtered `docker ps` for the whole deployment
-    // instead of N per-service `docker inspect` round-trips over SSH (the
-    // latter made this endpoint take ~17s and time out the Services tab). The
-    // dashboard polls this, so it MUST be one call.
-    const live = await withLiveQueryTimeout(
-      (async () => {
-        if (runtime.supports("deploymentContainerQuery") && runtime.listDeploymentContainers) {
-          const containers = await runtime.listDeploymentContainers(dep!.id);
-          const byId = new Map(containers.map((c) => [c.containerId, c]));
-          return rows.map((row) => {
-            if (!row.containerId) return { ...row, status: serviceStatusToContainerState(row.status) };
-            const c = byId.get(row.containerId);
-            // A tracked container missing from `docker ps` is gone → stopped.
-            return { ...row, status: c ? containerStatusToServiceState(c.status) : "stopped" };
-          });
-        }
-        // Cloud (no batch query): per-workload lookup — bounded set, Oblien API
-        // (not SSH), and it also refreshes the live private IP.
-        if (runtime.supports("containerInfo")) {
-          return Promise.all(
-            rows.map(async (row) => {
-              const fb = serviceStatusToContainerState(row.status);
-              if (!row.containerId) return { ...row, status: fb };
-              const info = await runtime.getContainerInfo(row.containerId).catch(() => null);
-              return info
-                ? { ...row, status: containerStatusToServiceState(info.status), ip: info.ip ?? row.ip }
-                : { ...row, status: fb };
-            }),
-          );
-        }
-        return null; // runtime can't report → use persisted
-      })(),
-    );
-    return live ?? persisted();
-  } catch {
-    return persisted();
-  } finally {
-    await runtime.dispose?.();
-  }
+/** One row of the Services panel's live view. Config (id/name) is DB-owned;
+ *  everything else is read off the host on every request. */
+export interface LiveServiceContainer {
+  serviceId: string;
+  serviceName: string;
+  /** The container the service ACTUALLY runs as — resolved live, so logs /
+   *  terminal / start act on the real thing even after an adopt or an
+   *  out-of-band recreate. */
+  containerId: string | null;
+  status: ServiceContainerState;
+  ip: string | null;
+  hostPort: number | null;
+  imageRef: string | null;
+  /** Which identity key resolved the container (label / name / trackedId /
+   *  compose), or null when nothing matched. Diagnostic. */
+  matchedBy: LiveMatchKind | null;
+  /** Other containers on the host that also answer to this service — a leftover
+   *  duplicate the operator should know about. */
+  duplicates: string[];
 }
 
-/** Bound the live status query so a slow/hung runtime degrades to the persisted
- *  status instead of hanging the (polled) containers endpoint. */
+/**
+ * The Services panel's state, read LIVE from the host every time.
+ *
+ * The service ROWS are the config (DB); their state never is. Earlier this asked
+ * docker for `label=openship.deployment=<active dep>` and intersected with each
+ * row's stored container id, which made every ADOPTED container invisible — a
+ * migration attaches running containers in place and docker labels can't be
+ * changed in place, so an attached container keeps the OLD deployment label and
+ * reported "stopped" while serving traffic. Identity is now resolved by
+ * label → canonical name → tracked id → compose label (see live-state.ts) and
+ * the status comes off whatever that resolves to.
+ */
+export async function getActiveServiceContainers(
+  ctx: RequestContext,
+  projectId: string,
+): Promise<LiveServiceContainer[]> {
+  const project = await repos.project.findById(projectId);
+  assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
+
+  // Every CONFIGURED service, not just those with a row in the active deployment
+  // — a service the deployment never recorded (attached by a migration, added
+  // afterwards) must still report its real state instead of vanishing.
+  const services = await repos.service.listByProject(projectId);
+  if (services.length === 0) return [];
+
+  const dep = project.activeDeploymentId
+    ? await repos.deployment.findById(project.activeDeploymentId)
+    : null;
+  // service_deployment rows are IDENTITY HINTS ONLY (container id, image). Their
+  // `status` column is a deploy-time artifact and is never read for liveness.
+  const hints = new Map(
+    (dep ? await repos.service.listByDeployment(dep.id) : []).map((r) => [r.serviceId, r]),
+  );
+  const trackedIds = Object.fromEntries(
+    [...hints.entries()].map(([serviceId, r]) => [serviceId, r.containerId]),
+  );
+
+  /** Shape one row without a live match — used when there is nothing to query
+   *  (never deployed) or when the host could not be reached ("unknown"). */
+  const flat = (status: ServiceContainerState): LiveServiceContainer[] =>
+    services
+      .filter((svc) => svc.enabled !== false)
+      .map((svc) => {
+        const hint = hints.get(svc.id);
+        return {
+          serviceId: svc.id,
+          serviceName: svc.name,
+          containerId: hint?.containerId ?? null,
+          status,
+          ip: hint?.ip ?? null,
+          hostPort: hint?.hostPort ?? null,
+          imageRef: hint?.imageRef ?? null,
+          matchedBy: null,
+          duplicates: [],
+        };
+      });
+
+  if (!dep) return flat("stopped"); // nothing deployed yet → nothing can be live
+
+  // ONE budget for the WHOLE live path — platform resolution included. That
+  // resolution opens the pooled SSH connection (resolveServerExecutor →
+  // sshManager.acquire), and it used to sit OUTSIDE the timeout: an unreachable
+  // or saturated box (e.g. one busy receiving a build-context transfer) stalled
+  // this *polled* endpoint past the dashboard's 15s request timeout, so the tab
+  // aborted instead of reporting a state.
+  const live = await withLiveQueryTimeout(
+    (async (): Promise<LiveServiceContainer[] | null> => {
+      // RUNTIME ONLY — see resolveServiceRuntimeForRead. Resolving the full
+      // platform here dragged the OpenResty detect + Lua self-heal (and the
+      // provision lock they run under) into every poll of this read endpoint,
+      // which is what made status hang and then report "unknown".
+      const runtime = await resolveServiceRuntimeForRead(project, dep);
+      if (!runtime) return null;
+
+      try {
+        // Docker: ONE label-agnostic `docker ps -a` for the whole host, matched
+        // by identity. One call — the dashboard polls this endpoint, and N
+        // per-service `docker inspect` round-trips over SSH took ~17s.
+        if (runtime.supports("hostContainerQuery") && runtime.listAllContainers) {
+          const containers = await runtime.listAllContainers();
+          const matches = resolveLiveServiceState({
+            services: services.map((s) => ({ id: s.id, name: s.name })),
+            live: containers,
+            projectId,
+            slug: project.slug,
+            trackedIds,
+          });
+          return (
+            services
+              // A DISABLED service with no container is left OUT so the panel can
+              // render "Disabled"; one that is somehow still running is reported
+              // truthfully (a disabled-but-running service is worth seeing).
+              .filter((svc) => svc.enabled !== false || matches.get(svc.id)?.containerId)
+              .map((svc) => {
+                const m = matches.get(svc.id);
+                const hint = hints.get(svc.id);
+                return {
+                  serviceId: svc.id,
+                  serviceName: svc.name,
+                  containerId: m?.containerId ?? null,
+                  status: m?.status ?? "stopped",
+                  ip: m?.ip ?? null,
+                  hostPort: m?.hostPort ?? hint?.hostPort ?? null,
+                  imageRef: m?.image ?? hint?.imageRef ?? null,
+                  matchedBy: m?.matchedBy ?? null,
+                  duplicates: m?.duplicates ?? [],
+                } satisfies LiveServiceContainer;
+              })
+          );
+        }
+        // Cloud (no host container list): per-workload lookup — bounded set,
+        // Oblien API (not SSH), and it also refreshes the live private IP.
+        if (runtime.supports("containerInfo")) {
+          return Promise.all(
+            services
+              .filter((svc) => svc.enabled !== false)
+              .map(async (svc) => {
+                const hint = hints.get(svc.id);
+                const base = {
+                  serviceId: svc.id,
+                  serviceName: svc.name,
+                  containerId: hint?.containerId ?? null,
+                  ip: hint?.ip ?? null,
+                  hostPort: hint?.hostPort ?? null,
+                  imageRef: hint?.imageRef ?? null,
+                  matchedBy: null,
+                  duplicates: [],
+                };
+                if (!hint?.containerId) return { ...base, status: "stopped" as ServiceContainerState };
+                const info = await runtime.getContainerInfo(hint.containerId).catch(() => null);
+                return {
+                  ...base,
+                  status: info ? containerStatusToServiceState(info.status) : "unknown",
+                  ip: info?.ip ?? base.ip,
+                  matchedBy: info ? ("trackedId" as LiveMatchKind) : null,
+                } satisfies LiveServiceContainer;
+              }),
+          );
+        }
+        return null; // runtime can't report → unknown, never a stale DB status
+      } finally {
+        // Teardown must never extend the response: releasing the pooled SSH hold
+        // is fire-and-forget (it still runs, we just don't wait on it).
+        void Promise.resolve(runtime.dispose?.()).catch(() => {});
+      }
+    })().catch(() => null),
+  );
+  // Unreachable host / timeout / runtime without a query: say UNKNOWN. The old
+  // fallback echoed the deploy-time status column, which is how a long-dead
+  // service kept rendering "Running".
+  return live ?? flat("unknown");
+}
+
+/**
+ * Bound the live-status path so a slow/hung/unreachable runtime degrades to the
+ * persisted status instead of hanging the (polled) containers endpoint.
+ *
+ * The budget covers SSH connect + the query together, so it has to be roomier
+ * than the old query-only 6s while staying well under the dashboard's 15s
+ * request timeout — a request that exceeds THAT is what turns a degradable read
+ * into an aborted one.
+ */
+const LIVE_QUERY_BUDGET_MS = 10_000;
+
 function withLiveQueryTimeout<T>(p: Promise<T>): Promise<T | null> {
   return Promise.race([
     p,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000)),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), LIVE_QUERY_BUDGET_MS)),
   ]);
+}
+
+// ─── Volume disk usage ───────────────────────────────────────────────────────
+
+export interface ServiceVolumeSize {
+  /** The compose volume string, verbatim — aligned by index to service.volumes. */
+  raw: string;
+  source: string;
+  target: string | null;
+  kind: VolumeKind;
+  readOnly: boolean;
+  /** On-disk size in bytes (apparent, `du -sb`). null = couldn't be measured
+   *  (not mounted / permission / timeout / no running container for a stopped
+   *  named volume). */
+  bytes: number | null;
+}
+
+export interface ServiceVolumeSizes {
+  /** False when there is no host to run `du` on (cloud/Oblien workload, or the
+   *  service isn't deployed) — the UI then just shows the mounts without sizes. */
+  measurable: boolean;
+  volumes: ServiceVolumeSize[];
+  /** Sum of the measured volumes, or null if none could be measured. */
+  totalBytes: number | null;
+  /** True when at least one volume couldn't be measured → totalBytes is a lower
+   *  bound (render it with a "≥"). */
+  partial: boolean;
+}
+
+const VOL_SIZE_CONCURRENCY = 4;
+const VOL_SIZE_TTL_MS = 60_000;
+// `du` on a large data volume is genuinely slow, and this endpoint is opened
+// (not polled) from the Overview tab — cache the measurement briefly, keyed by
+// the exact container, so re-opening the tab doesn't re-`du` every time.
+const volSizeCache = new Map<string, { at: number; value: ServiceVolumeSizes }>();
+
+/** Resolve a named volume's real on-host name (it may be namespaced at deploy
+ *  time as `openship-<slug>-<name>`) and `du` its mountpoint. Only used as a
+ *  fallback when the container isn't running to report authoritative mounts. */
+async function namedVolumeBytesByName(
+  exec: CommandExecutor,
+  slug: string,
+  name: string,
+  namespaced: boolean,
+): Promise<number | null> {
+  const scoped = scopedVolumeName(slug, name);
+  const candidates = namespaced ? [scoped, name] : [name, scoped];
+  const seen = new Set<string>();
+  for (const c of candidates) {
+    if (!c || seen.has(c)) continue;
+    seen.add(c);
+    const b = await volumeBytes(exec, c);
+    if (b != null) return b;
+  }
+  return null;
+}
+
+/**
+ * Measure the on-disk size of each of a service's volumes.
+ *
+ * There is no cheap size in Docker's API, so we measure on the host that owns
+ * the container: `docker inspect .Mounts` gives the authoritative host Source
+ * for every mount (handling volume namespacing + anonymous volumes), then
+ * `du -sb` sizes each path. When the container isn't running we fall back to
+ * resolving a named volume by name. Every probe is bounded (see du/volumeBytes)
+ * so a giant volume yields `bytes: null` (→ partial total) rather than hanging.
+ *
+ * Cloud workloads and not-yet-deployed services return `measurable: false`.
+ */
+export async function getServiceVolumeSizes(
+  ctx: RequestContext,
+  projectId: string,
+  serviceId: string,
+): Promise<ServiceVolumeSizes> {
+  const { project, svc } = await assertServiceAccess(ctx, projectId, serviceId);
+  const parsed = (svc.volumes ?? []).map((v) => parseVolumeSpec(v));
+
+  const unmeasured = (measurable: boolean): ServiceVolumeSizes => ({
+    measurable,
+    volumes: parsed.map((p) => ({
+      raw: p.raw,
+      source: p.source,
+      target: p.target,
+      kind: p.kind,
+      readOnly: p.readOnly,
+      bytes: null,
+    })),
+    totalBytes: null,
+    partial: parsed.length > 0,
+  });
+
+  if (parsed.length === 0) return { measurable: true, volumes: [], totalBytes: null, partial: false };
+  if (!project.activeDeploymentId) return unmeasured(false);
+
+  const dep = await repos.deployment.findById(project.activeDeploymentId);
+  if (!dep) return unmeasured(false);
+
+  // Resolve the host that runs this service's container → its shell executor.
+  // The container id is resolved LIVE on the way past: a stale recorded id made
+  // `docker inspect .Mounts` 404, which dropped every volume onto the slow
+  // per-volume `du` fallback and timed this endpoint out.
+  let serverId: string | null = null;
+  let liveContainerId: string | null = null;
+  try {
+    const resolved = await resolveDeploymentRuntimeForRead({
+      meta: dep.meta,
+      organizationId: ctx.organizationId,
+    });
+    serverId = resolved.serverId;
+    liveContainerId = await liveContainerIdWithRuntime(resolved.runtime, {
+      service: { id: svc.id, name: svc.name },
+      projectId,
+      slug: project.slug,
+      tracked: await containerIdForService(dep, { id: svc.id, name: svc.name }),
+    });
+    await resolved.runtime?.dispose?.();
+  } catch {
+    // fall through — try the instance's local host below
+  }
+  let executor: CommandExecutor;
+  try {
+    if (!serverId) {
+      const local = await repos.server.findLocal(project.organizationId).catch(() => null);
+      if (!local) return unmeasured(false); // cloud / no host to du on
+      serverId = local.id;
+    }
+    ({ executor } = await resolveServerExecutor(serverId, project.organizationId));
+  } catch {
+    return unmeasured(false);
+  }
+
+  const containerId =
+    liveContainerId ?? (await containerIdForService(dep, { id: svc.id, name: svc.name }));
+  const cacheKey = `${projectId}:${serviceId}:${containerId ?? "none"}`;
+  const hit = volSizeCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < VOL_SIZE_TTL_MS) return hit.value;
+
+  // Authoritative host paths from the LIVE container mounts (Destination → Source).
+  const mountsByDest = new Map<string, string>();
+  if (containerId) {
+    const out = await executor
+      .exec(`docker inspect ${sq(containerId)} --format '{{json .Mounts}}' 2>/dev/null || echo`, {
+        timeout: 10_000,
+      })
+      .catch(() => "");
+    try {
+      const arr = JSON.parse(out.trim() || "[]");
+      if (Array.isArray(arr)) {
+        for (const m of arr) {
+          if (m && typeof m.Destination === "string" && typeof m.Source === "string") {
+            mountsByDest.set(m.Destination, m.Source);
+          }
+        }
+      }
+    } catch {
+      // non-JSON (container gone / docker error) → fall back per-volume below
+    }
+  }
+
+  const volumes = await bounded(parsed, VOL_SIZE_CONCURRENCY, async (p): Promise<ServiceVolumeSize> => {
+    const hostPath = p.target ? mountsByDest.get(p.target) : undefined;
+    let bytes: number | null;
+    if (hostPath) {
+      bytes = await duBytes(executor, hostPath);
+    } else if (p.kind === "bind" && p.source) {
+      bytes = await duBytes(executor, p.source);
+    } else if (p.kind === "named" && p.source) {
+      bytes = await namedVolumeBytesByName(executor, project.slug, p.source, !!svc.namespaceVolumes);
+    } else {
+      bytes = null; // anonymous volume with no running container → unknown
+    }
+    return { raw: p.raw, source: p.source, target: p.target, kind: p.kind, readOnly: p.readOnly, bytes };
+  });
+
+  let totalBytes: number | null = null;
+  let partial = false;
+  for (const v of volumes) {
+    if (v.bytes == null) partial = true;
+    else totalBytes = (totalBytes ?? 0) + v.bytes;
+  }
+
+  const value: ServiceVolumeSizes = { measurable: true, volumes, totalBytes, partial };
+  if (volSizeCache.size > 500) volSizeCache.clear();
+  volSizeCache.set(cacheKey, { at: Date.now(), value });
+  return value;
 }
 
 // ─── Per-service container actions ───────────────────────────────────────────
 
-/** A service is a CONTAINER (Docker, on a server/local target) or an Oblien
- *  WORKSPACE (cloud) — never the app's bare host process. Resolve the platform
- *  with the runtime pinned to Docker so service start/stop/logs target the real
- *  service runtime even when the project's app deploys "bare". Cloud stays on
- *  CloudRuntime (runtimeMode is irrelevant there). */
-async function resolveServicePlatform(
-  project: { organizationId: string },
-  dep: { meta: unknown },
-) {
-  const snapshot = { ...(dep.meta as DeploymentConfigSnapshot), runtimeMode: "docker" as const };
-  return resolveDeploymentPlatform(snapshot, { organizationId: project.organizationId });
-}
-
+/**
+ * The runtime + the container id for one service's actions (start/stop/restart/
+ * logs/exec).
+ *
+ * The container id is resolved LIVE against the host, not read off the
+ * `service_deployment` row: that row's id goes stale the moment a redeploy
+ * replaces the container, and every action then failed with docker's
+ * "(HTTP code 404) no such container". The row is still used as an identity hint
+ * (it's the only key an adopted container with a foreign name has) — see
+ * live-state.ts for the resolution order.
+ */
 async function resolveServiceContainer(
   ctx: RequestContext,
   projectId: string,
@@ -648,17 +1099,40 @@ async function resolveServiceContainer(
   const dep = await repos.deployment.findById(project.activeDeploymentId);
   if (!dep) throw new Error("Active deployment not found");
 
+  const svc = (await repos.service.listByProject(projectId)).find((s) => s.id === serviceId);
+  if (!svc) throw new Error("Service not found");
+
   const rows = await repos.service.listByDeployment(dep.id);
   const row = rows.find((r) => r.serviceId === serviceId);
-  if (!row?.containerId) throw new Error("Service has no running container");
 
-  const resolved = await resolveServicePlatform(project, dep);
-  return {
-    runtime: resolved.platform.runtime,
-    containerId: row.containerId,
-    serverId: resolved.serverId,
-    row,
-  };
+  // Runtime only: start/stop/restart/logs/terminal need `runtime` + the pooled
+  // connection, never routing or the system manager — resolving a full platform
+  // here charged every one of them the OpenResty detect + Lua self-heal (under the
+  // provision lock), which is the other half of "the action takes forever".
+  const { runtime, serverId } = await resolveDeploymentRuntimeForRead({
+    meta: dep.meta,
+    organizationId: ctx.organizationId,
+  });
+
+  // Live query answered → trust it. No match = the container is genuinely gone,
+  // and saying so beats handing docker a dead id.
+  const containerId = await liveContainerIdWithRuntime(runtime, {
+    service: { id: svc.id, name: svc.name },
+    projectId,
+    slug: project.slug,
+    tracked: row?.containerId ?? null,
+  });
+  // Heal the record so the DB-hint consumers (backups, restore) converge on the
+  // same container instead of each rediscovering the drift.
+  if (row && containerId && row.containerId !== containerId) {
+    await repos.service.updateServiceDeployment(row.id, { containerId }).catch(() => {});
+  }
+  if (!containerId) {
+    await runtime.dispose?.().catch(() => {});
+    throw new Error("Service has no running container");
+  }
+
+  return { runtime, containerId, serverId, row, service: svc };
 }
 
 /** Map a live runtime ContainerStatus onto the UI's service state vocabulary.
@@ -736,6 +1210,7 @@ async function provisionServiceContainer(
       routing: resolved.platform.routing,
       ssl: resolved.platform.ssl,
       system: resolved.platform.system,
+      executor: resolved.platform.executor,
       usesManagedRouting: resolved.usesManagedRouting,
       serverId: resolved.serverId ?? undefined,
     });
@@ -761,15 +1236,18 @@ export async function startServiceContainer(
   projectId: string,
   serviceId: string,
 ) {
+  assertNotControlPlaneService(await repos.project.findById(projectId));
   // Existing container → just start it. No container yet → provision it on its
   // own (image → container/workspace), decoupled from the project deploy.
   const existing = await resolveServiceContainer(ctx, projectId, serviceId).catch(() => null);
   if (existing?.containerId) {
     try {
       await existing.runtime.start(existing.containerId);
-      await repos.service
-        .updateServiceDeployment(existing.row.id, { status: "success" })
-        .catch(() => {});
+      if (existing.row) {
+        await repos.service
+          .updateServiceDeployment(existing.row.id, { status: "success" })
+          .catch(() => {});
+      }
       return { containerId: existing.containerId };
     } finally {
       await existing.runtime.dispose?.();
@@ -783,6 +1261,7 @@ export async function stopServiceContainer(
   projectId: string,
   serviceId: string,
 ) {
+  assertNotControlPlaneService(await repos.project.findById(projectId));
   const { runtime, containerId, row } = await resolveServiceContainer(
     ctx,
     projectId,
@@ -790,9 +1269,10 @@ export async function stopServiceContainer(
   );
   try {
     await runtime.stop(containerId);
-    // Persist the state change (partial update — preserves ip/imageRef) so
-    // every reader converges, not just the live-reconciled services panel.
-    await repos.service.updateServiceDeployment(row.id, { status: "stopped" }).catch(() => {});
+    // Deploy-history bookkeeping only — the panel reads state from the host.
+    if (row) {
+      await repos.service.updateServiceDeployment(row.id, { status: "stopped" }).catch(() => {});
+    }
     return { containerId };
   } finally {
     await runtime.dispose?.();
@@ -804,6 +1284,7 @@ export async function restartServiceContainer(
   projectId: string,
   serviceId: string,
 ) {
+  assertNotControlPlaneService(await repos.project.findById(projectId));
   const { runtime, containerId, row } = await resolveServiceContainer(
     ctx,
     projectId,
@@ -811,7 +1292,9 @@ export async function restartServiceContainer(
   );
   try {
     await runtime.restart(containerId);
-    await repos.service.updateServiceDeployment(row.id, { status: "success" }).catch(() => {});
+    if (row) {
+      await repos.service.updateServiceDeployment(row.id, { status: "success" }).catch(() => {});
+    }
     return { containerId };
   } finally {
     await runtime.dispose?.();

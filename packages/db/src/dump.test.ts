@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { getTableColumns } from "drizzle-orm";
 import * as schema from "./schema";
-import { filterRowToKnownColumns } from "./dump";
+import { filterRowToKnownColumns, assertDumpSelfContained } from "./dump";
 
 // Cross-version ingest tolerance for restoreSubgraph (cloud transfer / project
 // transfer). Drizzle builds the INSERT column list from the dumped row's keys =
@@ -48,5 +48,107 @@ describe("filterRowToKnownColumns (version-skew ingest tolerance)", () => {
     expect(dropped).toEqual(["unknownX"]);
     expect(row).toHaveProperty("autoDeploy", false);
     expect(row).toHaveProperty("activeDeploymentId", null);
+  });
+});
+
+// Cross-tenant ingest guard (SaaS audit, critical): on the remap path (cloud
+// ingest / project transfer) a child row's parent FK is NOT org-remapped, so a
+// crafted dump could attach e.g. a service to a VICTIM's project → cross-tenant
+// write / RCE. The dump must be self-contained: every projectId/deploymentId/
+// serviceId/groupId must reference a parent PRESENT IN THE DUMP.
+describe("assertDumpSelfContained (cross-tenant ingest guard)", () => {
+  const dump = (tables: Record<string, unknown[]>) =>
+    ({ formatVersion: 1, scope: { kind: "organization", organizationId: "o" }, tables }) as never;
+
+  it("rejects a child whose projectId is not in the dump (the exploit)", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({ service: [{ id: "svc_evil", projectId: "prj_VICTIM", image: "attacker/evil" }] }),
+      ),
+    ).toThrow(/references a project not present/);
+  });
+
+  it("rejects a project whose groupId points at a foreign project_app", () => {
+    expect(() =>
+      assertDumpSelfContained(dump({ project: [{ id: "prj_1", groupId: "app_VICTIM" }] })),
+    ).toThrow(/references a project_app not present/);
+  });
+
+  it("rejects a service_deployment referencing a foreign deploymentId/serviceId", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({ service_deployment: [{ id: "sd_1", deploymentId: "dep_VICTIM", serviceId: "svc_1" }] }),
+      ),
+    ).toThrow(/not present in the dump/);
+  });
+
+  it("accepts a self-contained dump (all parents present)", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({
+          project_app: [{ id: "app_1" }],
+          project: [{ id: "prj_1", groupId: "app_1", organizationId: "o" }],
+          service: [{ id: "svc_1", projectId: "prj_1" }],
+          deployment: [{ id: "dep_1", projectId: "prj_1" }],
+          service_deployment: [{ id: "sd_1", deploymentId: "dep_1", serviceId: "svc_1" }],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("ignores null FKs", () => {
+    expect(() =>
+      assertDumpSelfContained(dump({ project: [{ id: "prj_1", groupId: null, organizationId: "o" }] })),
+    ).not.toThrow();
+  });
+
+  it("rejects a backup_run whose destinationId points at a foreign backup_destination (credential-adoption exploit)", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({
+          backup_run: [
+            { id: "bkr_evil", destinationId: "bkd_VICTIM", projectId: "prj_1", organizationId: "o" },
+          ],
+          project: [{ id: "prj_1", organizationId: "o" }],
+        }),
+      ),
+    ).toThrow(/references a backup_destination not present/);
+  });
+
+  it("rejects a backup_restore whose runId points at a foreign backup_run", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({ backup_restore: [{ id: "bks_1", runId: "bkr_VICTIM", organizationId: "o" }] }),
+      ),
+    ).toThrow(/references a backup_run not present/);
+  });
+
+  it("rejects a notification_subscription whose channelId points at a foreign notification_channel (cross-tenant channel attach)", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({
+          notification_subscription: [
+            { id: "nsb_evil", channelId: "nch_VICTIM", organizationId: "o", userId: "u" },
+          ],
+        }),
+      ),
+    ).toThrow(/references a notification_channel not present/);
+  });
+
+  it("accepts a self-contained backup subgraph (destination + run present)", () => {
+    expect(() =>
+      assertDumpSelfContained(
+        dump({
+          backup_destination: [{ id: "bkd_1", organizationId: "o" }],
+          project: [{ id: "prj_1", organizationId: "o" }],
+          backup_run: [
+            { id: "bkr_1", destinationId: "bkd_1", projectId: "prj_1", organizationId: "o" },
+          ],
+          backup_restore: [
+            { id: "bks_1", runId: "bkr_1", destinationId: "bkd_1", organizationId: "o" },
+          ],
+        }),
+      ),
+    ).not.toThrow();
   });
 });

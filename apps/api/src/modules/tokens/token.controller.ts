@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { repos, type Permission, type PublicPersonalAccessToken } from "@repo/db";
 import { param } from "../../lib/controller-helpers";
 import { getRequestContext, type RequestContext } from "../../lib/request-context";
-import { checkPermission } from "../../lib/permission";
+import { checkPermissionOnResource } from "../../lib/permission";
 import { canUseGitHubRepo } from "../github/github-access";
 import { mintPatToken } from "../../lib/pat";
 import { wildcardProjectGrantRejected, type TCreateTokenBody } from "./token.schema";
@@ -57,7 +57,12 @@ async function minterHasAccess(
       g.resourceType === "github_repository" ? g.resourceId.split("/") : [g.resourceId, undefined];
     return canUseGitHubRepo(ctx, { owner: owner ?? "", repo: repo ?? null }, op);
   }
-  return checkPermission(ctx.userId, ctx.organizationId, {
+  // Resolve the grant's resource to its OWN org and check access there — NOT
+  // the minter's active org. Otherwise a non-restricted role passes for the
+  // resource TYPE without verifying the specific id belongs to their org, so a
+  // grant naming another org's resource id would mint a usable token (SaaS
+  // audit: cross-tenant privilege escalation). Mirrors permission.assert.
+  return checkPermissionOnResource(ctx, {
     resourceType: g.resourceType as never,
     resourceId: g.resourceId,
     action,

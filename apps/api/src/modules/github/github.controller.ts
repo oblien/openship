@@ -18,6 +18,7 @@ import * as githubAuth from "./github.auth";
 import * as githubService from "./github.service";
 import { createGitHubSource } from "./sources";
 import { filterAllowedRepos, filterAllowedAccounts } from "./github-access";
+import { paginateRepoList, type RepoListParams } from "./repo-list";
 import { getRequestContext } from "../../lib/request-context";
 
 /** Map a MappedRepository to the owner/repo key the access filter needs.
@@ -494,7 +495,12 @@ export async function pollConnect(c: Context) {
   if (!status) {
     return c.json({ status: "none" as const }, 404);
   }
-  return c.json(status);
+  // NEVER return the access token to the browser. On completion the device flow
+  // has already persisted it server-side (startDeviceFlow → gh-cli token store);
+  // the client only needs the status. Returning `status` verbatim here leaked the
+  // token onto the wire (and into any client logging). Strip it.
+  const { token: _token, ...safe } = status;
+  return c.json(safe);
 }
 
 /**
@@ -545,7 +551,8 @@ export async function listRepos(c: Context) {
   const owner = c.req.query("owner");
   const repos = await (await createGitHubSource(ctx)).listReposForOwner(owner || undefined);
   if (repos === null) return c.json({ error: "Not connected to GitHub" }, 400);
-  return c.json({ data: await filterAllowedRepos(ctx, repos, repoKey) });
+  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
+  return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
 }
 
 /** GET /github/orgs/:org/repos - List repos for an organisation.
@@ -555,7 +562,30 @@ export async function listOrgRepos(c: Context) {
   const org = param(c, "org");
   const repos = await (await createGitHubSource(ctx)).listReposForOwner(org);
   if (repos === null) return c.json({ error: "Not connected to GitHub" }, 400);
-  return c.json({ data: await filterAllowedRepos(ctx, repos, repoKey) });
+  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
+  return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
+}
+
+/** Parse the repo-list query (page/perPage/search/visibility/sort). All
+ *  optional: with no `perPage` the response is the full filtered set (+counts),
+ *  so the MCP `list repos` tool and legacy callers are unaffected. */
+function parseRepoListParams(c: Context): RepoListParams {
+  const num = (raw?: string) => {
+    const n = Number(raw);
+    return raw && Number.isFinite(n) ? n : undefined;
+  };
+  const visibility = c.req.query("visibility");
+  const sort = c.req.query("sort");
+  return {
+    page: num(c.req.query("page")),
+    perPage: num(c.req.query("perPage")),
+    search: c.req.query("search") || undefined,
+    visibility:
+      visibility === "public" || visibility === "private" || visibility === "all"
+        ? visibility
+        : undefined,
+    sort: sort === "name" || sort === "stars" || sort === "updated" ? sort : undefined,
+  };
 }
 
 /** GET /github/repos/:owner/:repo - Get a single repository */

@@ -9,15 +9,21 @@
 import { SYSTEM } from "@repo/core";
 import { getNamespaceClient } from "../../lib/openship-cloud";
 
-export async function syncCloudEdgeProxy(
-  organizationId: string,
-  input: { slug: string; target: string },
-): Promise<{ ok: true; hostname: string } | { ok: false; status: 400; error: string }> {
-  const slug = input.slug
+/** Canonicalize a slug the same way for sync and delete so both look up the
+ *  SAME Oblien proxy (a mismatch here would orphan the route on teardown). */
+function normalizeEdgeSlug(raw: string): string {
+  return raw
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+export async function syncCloudEdgeProxy(
+  organizationId: string,
+  input: { slug: string; target: string },
+): Promise<{ ok: true; hostname: string } | { ok: false; status: 400; error: string }> {
+  const slug = normalizeEdgeSlug(input.slug);
   if (!slug) {
     return { ok: false, status: 400, error: "Invalid slug" };
   }
@@ -42,6 +48,14 @@ export async function syncCloudEdgeProxy(
 
   if (!existing) {
     await client.edgeProxy.create({ name: hostname, slug, domain: baseDomain, target, namespace });
+    // A freshly created proxy is NOT assumed active. The update path below
+    // explicitly enables a `disabled` proxy, which means Oblien can hold one in
+    // that state — and a created-but-disabled proxy is indistinguishable from
+    // success here: we return ok, the slug reads as taken on the next attempt, and
+    // `<slug>.opsh.io` resolves to the zone wildcard with no origin (Cloudflare
+    // error 1000). Re-read and enable so "synced" means "serving".
+    const created = (await client.edgeProxy.list()).proxies.find((p) => p.slug === slug);
+    if (created?.status === "disabled") await client.edgeProxy.enable(created.id);
   } else {
     if (
       existing.name !== hostname ||
@@ -56,4 +70,32 @@ export async function syncCloudEdgeProxy(
   }
 
   return { ok: true, hostname };
+}
+
+/**
+ * Tear down a namespaced edge proxy on Oblien for a freed slug.
+ *
+ * Mirror of syncCloudEdgeProxy for the delete side (dropping a free *.opsh.io
+ * domain). Namespace-scoped `list` finds the proxy this org owns, then
+ * `delete(id)` removes it — same namespace-isolation guarantee as sync (the
+ * caller can only ever see/delete its own proxies). Idempotent: an absent slug
+ * returns `removed:false` with no error so a redundant teardown is a no-op.
+ */
+export async function deleteCloudEdgeProxy(
+  organizationId: string,
+  input: { slug: string },
+): Promise<{ ok: true; removed: boolean } | { ok: false; status: 400; error: string }> {
+  const slug = normalizeEdgeSlug(input.slug);
+  if (!slug) {
+    return { ok: false, status: 400, error: "Invalid slug" };
+  }
+
+  const { client } = await getNamespaceClient(organizationId);
+  const { proxies } = await client.edgeProxy.list();
+  const existing = proxies.find((p) => p.slug === slug);
+  if (!existing) {
+    return { ok: true, removed: false };
+  }
+  await client.edgeProxy.delete(existing.id);
+  return { ok: true, removed: true };
 }

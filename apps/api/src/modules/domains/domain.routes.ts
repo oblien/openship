@@ -33,6 +33,8 @@ r.post("/preview", { tag: "domain:read", readOnly: true, mcp: { description: "Pr
 // falls through to the local handler.
 r.delete("/:id", { tag: "domain:admin" }, cloudDomainProxy, ctrl.remove);
 r.post("/:id/verify", { tag: "domain:write", mcp: { description: "Verify a domain's ownership / DNS." } }, cloudDomainProxy, ctrl.verify);
+// Self-hosted live-log verify (SSE): streams certbot's standalone HTTP-01 run.
+r.post("/:id/verify/stream", { tag: "domain:write" }, ctrl.verifyStream);
 r.post("/:id/primary", { tag: "domain:write", mcp: { description: "Set this domain as the project's primary domain." } }, cloudDomainProxy, ctrl.setPrimary);
 r.get("/:id/records", { tag: "domain:read", mcp: { description: "Get the DNS records for a domain." } }, cloudDomainProxy, ctrl.records);
 r.post("/:id/renew", { tag: "domain:write", mcp: { description: "Renew the domain's SSL certificate." } }, cloudDomainProxy, ctrl.renewSsl);

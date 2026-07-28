@@ -64,11 +64,18 @@ const BuildSummary: React.FC = () => {
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string; icon: React.ReactNode }>;
 
-  // For app/docker: single domain display
-  const endpointHosts = !isServices
+  // For app/docker: single domain display. "None" routing wins over whatever is
+  // still in `publicEndpoints` — the summary used to keep advertising the free
+  // subdomain after the user picked None, which read as "it's still going to
+  // assign that domain". Report None explicitly rather than hiding the row, so
+  // the summary never goes quiet about the app's reachability.
+  const noPublicRoute = !isServices && !!config.noPublicRoute;
+  const endpointHosts = !isServices && !noPublicRoute
     ? getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName)
     : [];
-  const domainDisplay = endpointHosts[0] ?? null;
+  const domainDisplay = noPublicRoute
+    ? t.deploy.domainSettings.routeNoneLabel
+    : (endpointHosts[0] ?? null);
   const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
   return (
     <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 via-primary/3 to-transparent border border-primary/10 space-y-3">
@@ -163,7 +170,11 @@ const BuildSummary: React.FC = () => {
                   {isServices ? t.deploy.buildSummary.stack : t.deploy.buildSummary.runtime}
                 </p>
                 <p className="text-sm font-medium text-foreground truncate">
-                  {stackDef?.name || "Docker"}
+                  {/* A compose project has no single top-level stack (framework
+                      is "unknown" by design — the real stack is per-service), so
+                      don't surface STACKS['unknown'].name = "Unknown"; label it
+                      as the compose stack it is. */}
+                  {config.projectType === "services" ? "Docker Compose" : stackDef?.name || "Docker"}
                 </p>
               </div>
             </div>

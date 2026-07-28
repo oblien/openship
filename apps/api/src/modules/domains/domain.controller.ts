@@ -3,10 +3,13 @@
  */
 
 import type { Context } from "hono";
+import { safeErrorMessage } from "@repo/core";
 import { param, assertNotCloud } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
 import { audit, auditContextFrom } from "../../lib/audit";
+import { notification } from "../../lib/notification-dispatcher";
+import { streamSSE } from "../../lib/sse";
 import * as domainService from "./domain.service";
 import { maybeProxyCloudProject } from "../../lib/cloud/project-router";
 import type { TAddDomainBody, TUploadCertBody } from "./domain.schema";
@@ -68,7 +71,8 @@ export async function verify(c: Context) {
   const ctx = getRequestContext(c);
   const id = param(c, "id");
   await permission.assert(getRequestContext(c), { resourceType: "domain", resourceId: id, action: "write" });
-  const result = await domainService.verifyDomain(ctx, id);
+  const force = c.req.query("force") === "1" || c.req.query("force") === "true";
+  const result = await domainService.verifyDomain(ctx, id, { force });
 
   // Audit verify attempts (both success and failure) so DNS verification
   // is traceable in the audit log alongside domain.added / domain.removed.
@@ -86,10 +90,91 @@ export async function verify(c: Context) {
     },
   });
 
+  // Notify on failure. This is the non-streaming path used by the daily
+  // re-verify cron + programmatic callers — the async case where a failure is
+  // worth surfacing to the team. (The interactive `verifyStream` modal doesn't
+  // notify: the person clicking is already watching the live result.)
+  if (!result.verified) {
+    notification.emit({
+      organizationId: ctx.organizationId,
+      eventType: "domain.verification_failed",
+      resourceType: "domain",
+      resourceId: id,
+      payload: {
+        message: result.message ?? "Domain verification failed",
+        cnameVerified: result.cnameVerified,
+        txtVerified: result.txtVerified,
+      },
+    });
+  }
+
   // Failed verification returns 422 so the dashboard's React Query / fetch
   // wrapper can use the standard error path while still reading
   // message/cnameVerified/txtVerified from the body. 200 on success.
   return c.json(result, result.verified ? 200 : 422);
+}
+
+/**
+ * POST /domains/:id/verify/stream (SSE) — self-hosted live-log verify. Streams
+ * certbot's output line-by-line (`log`) as the standalone HTTP-01 challenge runs,
+ * then a terminal `complete`. Same generic event contract the edge-setup modal
+ * uses (`useSystemPrepareModal`), minus the consent prompt (verify never prompts).
+ * The plain `verify` above stays for programmatic callers + the cron.
+ */
+export async function verifyStream(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  await permission.assert(ctx, { resourceType: "domain", resourceId: id, action: "write" });
+
+  return streamSSE(c, async (sse) => {
+    let closed = false;
+    // AWAIT each write. The terminal `complete` is the last thing sent before
+    // this callback returns and Hono closes the SSE — a fire-and-forget
+    // (`void writeSSE`) races that close and gets dropped, leaving the modal
+    // spinning forever even though the backend already succeeded (the exact
+    // "stuck after 'Certificate issued'" bug). Awaiting flushes it first.
+    const emit = async (event: string, data: string) => {
+      if (closed) return;
+      try {
+        await sse.writeSSE({ event, data });
+      } catch {
+        /* client disconnected */
+      }
+    };
+    // The generic prepare modal expects a `session` event to start; verify has no
+    // prompt to answer, so it's just the stream opener.
+    await emit("session", JSON.stringify({ type: "session" }));
+    const force = c.req.query("force") === "1" || c.req.query("force") === "true";
+    try {
+      const result = await domainService.verifyDomain(ctx, id, {
+        force,
+        // Intermediate logs are fire-and-forget — they flush during the run.
+        onLog: (line) => {
+          void emit("log", JSON.stringify({ type: "log", message: line, level: "info" }));
+        },
+      });
+      await emit(
+        "log",
+        JSON.stringify({
+          type: "log",
+          message: result.message ?? (result.verified ? "Verified." : "Not verified."),
+          level: result.verified ? "info" : "error",
+        }),
+      );
+      audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+        eventType: result.verified ? "domain.verified" : "domain.verify_failed",
+        resourceType: "domain",
+        resourceId: id,
+        after: { verified: result.verified },
+      });
+      await emit("complete", JSON.stringify({ type: "complete", status: result.verified ? "completed" : "failed" }));
+    } catch (err) {
+      await emit("log", JSON.stringify({ type: "log", message: safeErrorMessage(err), level: "error" }));
+      await emit("complete", JSON.stringify({ type: "complete", status: "failed" }));
+    } finally {
+      closed = true;
+    }
+  });
 }
 
 export async function records(c: Context) {
@@ -185,15 +270,20 @@ export async function renewAllSsl(c: Context) {
  * Body: { minAgeMinutes?: number; limit?: number }
  */
 export async function verifyPending(c: Context) {
-  // Auth is the standard authMiddleware applied at the routes file —
-  // any logged-in user can trigger a run; the work itself runs against
-  // each domain's own project owner via verifyDomain, so the requester
-  // can only kick off the sweep, not cross-tenant verify.
+  // SCOPED to the caller's org: pass ctx.organizationId so the sweep only sees
+  // and re-verifies THIS org's pending domains. Without it the handler returned
+  // every tenant's pending hostnames and triggered their DNS/SSL — a member of
+  // one org has domain:write only in their OWN org, which must bound the WORK,
+  // not just admit the request. The instance-wide sweep is the trusted system
+  // `domains:verify-pending` cron (job.registry.ts), which calls the service
+  // with no organizationId.
+  const ctx = getRequestContext(c);
   type Body = { minAgeMinutes?: number; limit?: number };
   const body: Body = await c.req.json<Body>().catch(() => ({} as Body));
   const result = await domainService.verifyPendingDomains({
     minAgeMinutes: typeof body.minAgeMinutes === "number" ? body.minAgeMinutes : undefined,
     limit: typeof body.limit === "number" ? body.limit : undefined,
+    organizationId: ctx.organizationId,
   });
   return c.json({ data: result });
 }

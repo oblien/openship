@@ -73,6 +73,22 @@ export async function getLocalGhToken(): Promise<string | null> {
   return token;
 }
 
+/**
+ * Is there a local git identity this host could FORWARD (never ship) to a build
+ * host? The single definition of the relay's real precondition: the relay's
+ * remote helper vends `getLocalGhToken()`, so without one the tunnel would open
+ * and answer nothing. Shared by the deploy pipeline (clone-auth) and preflight so
+ * preflight can never predict a relay the pipeline won't take. Soft — any failure
+ * means "no".
+ */
+export async function hasLocalGitIdentity(): Promise<boolean> {
+  try {
+    return !!(await getLocalGhToken());
+  } catch {
+    return false;
+  }
+}
+
 /** Invalidate the cached gh CLI token (e.g. after the user re-authenticates). */
 export async function invalidateLocalGhToken(): Promise<void> {
   const store = await cacheStore<string>("gh-cli-token");

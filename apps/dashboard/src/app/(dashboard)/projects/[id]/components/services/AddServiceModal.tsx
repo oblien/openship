@@ -525,7 +525,7 @@ export function AddServiceModal({ open, projectName, isCloudProject, onClose, on
             loading={catalogLoading}
             source={catalogSource}
             cloudConnected={cloudConnected}
-            onConnectCloud={() => cloud.requireCloud(t.projectDetail.services.addModal.cloudConnectTitle)}
+            onConnectCloud={() => void cloud.requireCloud("cloud-services-catalog")}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             showCustomTile={showCustomTile}

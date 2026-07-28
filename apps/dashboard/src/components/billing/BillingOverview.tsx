@@ -340,7 +340,7 @@ function RecentActivityCard() {
 /*  Quick-buy credit packs                                            */
 /* ------------------------------------------------------------------ */
 
-function BuyCreditsCard() {
+function BuyCreditsCard({ available }: { available: boolean }) {
   const { t } = useI18n();
   const [packs, setPacks] = useState<TopupPack[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -378,11 +378,20 @@ function BuyCreditsCard() {
     }
   }
 
+  // Buy is enabled ONLY when Openship Cloud reports top-ups available; otherwise
+  // packs render as a dimmed "coming soon" preview.
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-foreground">{t.billing.overview.needMoreCredits}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">{t.billing.overview.needMoreCredits}</h3>
+            {!available && (
+              <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {t.billing.pricing.comingSoon}
+              </span>
+            )}
+          </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {t.billing.overview.oneTimeTopups}
           </p>
@@ -407,14 +416,8 @@ function BuyCreditsCard() {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {packs.map((pack) => {
-            const isBuying = buyingPackId === pack.id;
-            return (
-              <button
-                key={pack.id}
-                onClick={() => handleBuy(pack.id)}
-                disabled={buyingPackId !== null}
-                className="group flex items-center justify-between rounded-xl border border-border/60 bg-background/40 px-4 py-3 text-start transition-colors hover:border-primary/40 hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
-              >
+            const body = (
+              <>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-foreground">
                     {interpolate(t.billing.overview.creditsAmount, { n: formatCredits(pack.credits_milli) })}
@@ -423,17 +426,44 @@ function BuyCreditsCard() {
                     {interpolate(t.billing.overview.oneTime, { price: formatDollars(pack.price_cents) })}
                   </p>
                 </div>
-                <span className="ms-3 inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
-                  {isBuying ? (
-                    <Loader2 className="size-3.5 animate-spin" />
+                <span
+                  className={`ms-3 inline-flex shrink-0 items-center gap-1 ${
+                    available
+                      ? "text-xs font-medium text-primary"
+                      : "rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                  }`}
+                >
+                  {available ? (
+                    buyingPackId === pack.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <>
+                        {t.billing.overview.buy}
+                        <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      </>
+                    )
                   ) : (
-                    <>
-                      {t.billing.overview.buy}
-                      <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    </>
+                    t.billing.pricing.comingSoon
                   )}
                 </span>
+              </>
+            );
+            return available ? (
+              <button
+                key={pack.id}
+                onClick={() => handleBuy(pack.id)}
+                disabled={buyingPackId !== null}
+                className="group flex items-center justify-between rounded-xl border border-border/60 bg-background/40 px-4 py-3 text-start transition-colors hover:border-primary/40 hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {body}
               </button>
+            ) : (
+              <div
+                key={pack.id}
+                className="flex items-center justify-between rounded-xl border border-border/60 bg-background/40 px-4 py-3 opacity-70"
+              >
+                {body}
+              </div>
             );
           })}
         </div>
@@ -534,7 +564,7 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ state }) => {
       <PlanCard state={state} />
       <BalanceHero state={state} />
       <RecentActivityCard />
-      <BuyCreditsCard />
+      <BuyCreditsCard available={state.topups?.available === true} />
     </div>
   );
 };

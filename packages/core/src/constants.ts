@@ -4,6 +4,25 @@
 
 export const APP_NAME = "Openship";
 
+/**
+ * Outbound links to our own properties — docs, support, community, socials.
+ *
+ * Shared because they're needed from places that can't import each other: the
+ * dashboard's in-app help menu (React) and the desktop app's NATIVE application
+ * menu (Electron main). They were literally the same five URLs typed twice, which
+ * is how a docs link ends up dead in one menu and fine in the other.
+ */
+export const BRAND_LINKS = {
+  site: "https://openship.io",
+  docs: "https://openship.io/docs",
+  support: "https://openship.io/support",
+  contact: "https://openship.io/contact",
+  github: "https://github.com/oblien/openship",
+  issues: "https://github.com/oblien/openship/issues/new",
+  community: "https://discord.gg/Q9eWNCeXjg",
+  x: "https://x.com/openship",
+} as const;
+
 export const DEPLOYMENT_STATUSES = [
   "queued",
   "building",

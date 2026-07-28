@@ -19,6 +19,7 @@ export type DockerMigrationStatus =
   | "verifying"
   | "awaiting_cutover"
   | "cutover"
+  | "partial"
   | "succeeded"
   | "failed"
   | "rolled_back";
@@ -31,6 +32,9 @@ export const IN_FLIGHT_MIGRATION_STATUSES: DockerMigrationStatus[] = [
   "verifying",
   "awaiting_cutover",
   "cutover",
+  // Parked like awaiting_cutover: target UP, awaiting resolve+resume. Blocks a
+  // second migration on the server; boot recovery leaves it untouched.
+  "partial",
 ];
 
 const TERMINAL_MIGRATION_STATUSES: DockerMigrationStatus[] = [
@@ -79,6 +83,58 @@ export function createDockerMigrationRunRepo(db: Database) {
           ...(finishing ? { finishedAt: new Date() } : {}),
           ...(patch ?? {}),
         })
+        .where(eq(dockerMigrationRun.id, id));
+    },
+
+    /** Runs touching a server as source OR target, newest first — the server
+     *  detail "Migrations" tab lists these like a project's deployments. */
+    async listForServer(
+      organizationId: string,
+      serverId: string,
+      opts?: { limit?: number },
+    ): Promise<DockerMigrationRun[]> {
+      return db.query.dockerMigrationRun.findMany({
+        where: and(
+          eq(dockerMigrationRun.organizationId, organizationId),
+          or(
+            eq(dockerMigrationRun.sourceServerId, serverId),
+            eq(dockerMigrationRun.targetServerId, serverId),
+          ),
+        ),
+        orderBy: (t, { desc }) => [desc(t.startedAt)],
+        limit: opts?.limit ?? 50,
+      });
+    },
+
+    /** Delete a run row (history cleanup). Caller must ensure it's terminal —
+     *  deleting an in-flight run would orphan the running pipeline. */
+    async remove(id: string): Promise<void> {
+      await db.delete(dockerMigrationRun).where(eq(dockerMigrationRun.id, id));
+    },
+
+    /** Patch a partial run's pending-item list (no status change) — used as a
+     *  resume whittles it down. */
+    async updatePending(id: string, pendingItems: unknown[]): Promise<void> {
+      await db
+        .update(dockerMigrationRun)
+        .set({ pendingItems, lastEventAt: new Date() })
+        .where(eq(dockerMigrationRun.id, id));
+    },
+
+    /** Patch the recorded target-volume list (cleared after a post-failure wipe). */
+    async updateTargetVolumes(id: string, targetVolumes: string[]): Promise<void> {
+      await db
+        .update(dockerMigrationRun)
+        .set({ targetVolumes })
+        .where(eq(dockerMigrationRun.id, id));
+    },
+
+    /** Patch only the durable session log (no status change). Bumps lastEventAt
+     *  so an actively-logging long transfer isn't seen as stale. */
+    async updateLogs(id: string, logs: string): Promise<void> {
+      await db
+        .update(dockerMigrationRun)
+        .set({ logs, lastEventAt: new Date() })
         .where(eq(dockerMigrationRun.id, id));
     },
 

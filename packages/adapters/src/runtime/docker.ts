@@ -40,7 +40,7 @@ import type {
   ProvisionLock,
 } from "../types";
 import type { PortProbeExecutor } from "../system/port-listen";
-import { PassThrough, Writable } from "node:stream";
+import { PassThrough, Writable, type Readable } from "node:stream";
 
 /**
  * Detect "not found" errors from the Docker SDK (dockerode). The daemon
@@ -84,6 +84,7 @@ import type {
   DockerNetworkInfo,
 } from "./types";
 import { BuildLogger, parseLogLevel, sq, assembleGitClone } from "./build-pipeline";
+import { materializeGitSsh, shellGitSshWriter, type GitSshMaterial } from "./git-ssh-material";
 import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import { createDockerBuildContext, prepareSourceTree, resolveServiceDockerfile } from "./docker-build-context";
@@ -365,6 +366,15 @@ function parseTimestampedLine(line: string): { timestamp: string; message: strin
 }
 
 /** Extract first host port and first container IP from an inspected container */
+/** First non-empty IPAddress across a container's networks — the `docker ps`
+ *  list view carries the same network map as inspect, so both paths agree. */
+function firstNetworkIp(networks: unknown): string | undefined {
+  for (const net of Object.values((networks ?? {}) as Record<string, { IPAddress?: string }>)) {
+    if (net?.IPAddress) return net.IPAddress;
+  }
+  return undefined;
+}
+
 function extractNetworkInfo(data: { NetworkSettings: any }): {
   ip?: string;
   hostPort?: number;
@@ -381,6 +391,18 @@ function extractNetworkInfo(data: { NetworkSettings: any }): {
     }
   }
   return { ip, hostPort };
+}
+
+/**
+ * Parse the reference `docker load` printed. It emits either
+ * "Loaded image: <repo:tag>" (the tar carried RepoTags) or "Loaded image ID:
+ * sha256:<configId>" (a save-by-id tar is untagged). Returns the last such ref
+ * — that's the loadable handle on THIS daemon (the config id, not the source's
+ * possibly-a-RepoDigest id), which the caller retags.
+ */
+function parseLoadedImageRef(output: string): string | undefined {
+  const matches = [...(output || "").matchAll(/Loaded image(?: ID)?:\s*(\S+)/gi)];
+  return matches.length ? matches[matches.length - 1][1].trim() : undefined;
 }
 
 // ─── Docker runtime ──────────────────────────────────────────────────────────
@@ -404,6 +426,7 @@ export class DockerRuntime implements RuntimeAdapter {
     "serviceShell",
     "projectContainerSweep",
     "deploymentContainerQuery",
+    "hostContainerQuery",
   ]);
 
   /** Docker honors every extended compose key we currently support. */
@@ -461,13 +484,30 @@ export class DockerRuntime implements RuntimeAdapter {
   /** Ping the Docker daemon - useful for connection testing */
   async ping(): Promise<boolean> {
     try {
-      await this.ensureDockerFeature();
-      await this.transport.preflight();
-      await this.docker.ping();
+      await this.assertReachable();
       return true;
-    } catch {
+    } catch (err) {
+      // Collapsed to a boolean for liveness callers — but LOG the detailed
+      // reason so it isn't lost. Paths that must show the user WHY it failed
+      // should call assertReachable() and surface the thrown message instead.
+      console.warn(`[docker] daemon unreachable: ${safeErrorMessage(err)}`);
       return false;
     }
+  }
+
+  /**
+   * Assert the Docker daemon is reachable, RETHROWING the underlying error
+   * instead of collapsing it to false. For the SSH transport, `preflight()`
+   * decides the upstream transport (SSH socket forwarding where it works, else
+   * `docker system dial-stdio` over an exec channel — the streamlocal-free path
+   * the Bun-compiled desktop needs), then `ping()` is the real end-to-end check
+   * over that transport. Use on user-facing paths (e.g. the migration scan) so
+   * the real cause reaches the user instead of a generic "not reachable".
+   */
+  async assertReachable(): Promise<void> {
+    await this.ensureDockerFeature();
+    await this.transport.preflight();
+    await this.docker.ping();
   }
 
   private async ensureDockerFeature(logger?: BuildLogger): Promise<void> {
@@ -790,9 +830,11 @@ export class DockerRuntime implements RuntimeAdapter {
 
     // Prefer a direct GitHub tarball download on the server (no git, no history,
     // no context transfer) when we can authenticate without the relay. HTTPS-
-    // only — skipped for the relay AND for SSH key auth. Falls through to git
-    // clone on ANY failure.
-    if (!useHelper && !config.gitSsh) {
+    // only — skipped for the relay AND for SSH key auth. Ambient auth is also
+    // skipped: the credential lives in the host's git config, which curl can't
+    // consult, so a private repo would 404 (a public one succeeds via the clone
+    // path just as cheaply). Falls through to git clone on ANY failure.
+    if (!useHelper && !config.gitSsh && !config.gitAmbient) {
       const ref = config.commitSha || config.branch;
       const tarUrl = githubTarballUrl(config.repoUrl, ref);
       if (tarUrl) {
@@ -819,33 +861,36 @@ export class DockerRuntime implements RuntimeAdapter {
     // SSH mode (per-server key / deploy key): write the 0600 key + known_hosts
     // on the remote out of band (executor.writeFile — never echoed) and clone
     // over git@github.com. Cleaned up in the finally below.
-    let sshFiles: { keyFile: string; knownHostsFile: string } | undefined;
-    let sshCleanup: string | null = null;
+    let sshMaterial: GitSshMaterial | undefined;
     if (config.gitSsh) {
-      const sshDir = `${remoteContextDir}.gitssh`;
-      const keyFile = `${sshDir}/id`;
-      const knownHostsFile = `${sshDir}/known_hosts`;
-      await executor.exec(`mkdir -p ${sq(sshDir)} && chmod 700 ${sq(sshDir)}`);
-      await executor.writeFile(keyFile, config.gitSsh.privateKey);
-      await executor.writeFile(knownHostsFile, config.gitSsh.knownHosts);
-      await executor.exec(`chmod 600 ${sq(keyFile)}`);
-      sshFiles = { keyFile, knownHostsFile };
-      sshCleanup = `rm -rf ${sq(sshDir)}`;
+      sshMaterial = await materializeGitSsh(
+        shellGitSshWriter({
+          exec: (cmd) => executor.exec(cmd),
+          writeSecret: (path, content) => executor.writeFile(path, content),
+        }),
+        `${remoteContextDir}.gitssh`,
+        config.gitSsh,
+      );
     }
 
-    // Centralized clone assembly (token / relay / ssh) — see git-clone.ts.
+    // Centralized clone assembly (token / relay / ssh / ambient) — see git-clone.ts.
     const { cloneUrl, gitEnv: GIT_ENV, credFlag: CRED } = assembleGitClone({
       repoUrl: config.repoUrl,
       gitToken: config.gitToken,
       gitCredentialHelperPath: config.gitCredentialHelperPath,
-      ssh: sshFiles,
+      ssh: sshMaterial,
+      ambient: config.gitAmbient,
     });
     const dir = sq(remoteContextDir);
 
-    log.log(
-      `Cloning ${config.repoUrl} on the server → ${remoteContextDir} ` +
-        `(${config.gitSsh ? "ssh key" : useHelper ? "forwarded credentials" : "token"})...\n`,
-    );
+    const authLabel = config.gitSsh
+      ? "ssh key"
+      : useHelper
+        ? "forwarded credentials"
+        : config.gitAmbient
+          ? `the server's own git credentials (${config.gitAmbient.via})`
+          : "token";
+    log.log(`Cloning ${config.repoUrl} on the server → ${remoteContextDir} (${authLabel})...\n`);
     await executor.exec(`rm -rf ${dir} && mkdir -p ${dir}`);
 
     const run = async (cmd: string) => {
@@ -877,7 +922,7 @@ export class DockerRuntime implements RuntimeAdapter {
       // Never ship .git into the build image.
       await executor.exec(`rm -rf ${sq(`${remoteContextDir}/.git`)}`).catch(() => {});
     } finally {
-      if (sshCleanup) await executor.exec(sshCleanup).catch(() => {});
+      await sshMaterial?.cleanup();
     }
   }
 
@@ -1208,6 +1253,103 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   /**
+   * Build a STATIC app in a Docker sandbox, then extract its doc-root onto a
+   * host directory the edge serves via nginx `root`. Reuses `build()` — so
+   * Docker is auto-ensured (ensureDockerFeature) and the static nginx image is
+   * produced (`generateStaticDockerfile` COPYs the output to the fixed
+   * `/usr/share/nginx/html`) — then extracts those files and discards the image.
+   * Returns the host dir as `imageRef`, matching BareRuntime.build's host-dir
+   * contract so the existing file-backed serve path (deployStatic /
+   * resolveStaticRoot) consumes it unchanged. Never leaves a long-lived
+   * container: the extraction container is created (not started) and removed.
+   */
+  async buildStaticToHost(
+    config: BuildConfig,
+    hostOutDir: string,
+    logger?: BuildLogger,
+  ): Promise<BuildResult> {
+    const log = logger ?? new BuildLogger();
+    const buildResult = await this.build({ ...config, isStatic: true }, log);
+    // Failure / cancel bubbles up unchanged — the pipeline's existing status
+    // checks handle it.
+    if (buildResult.status !== "deploying" || !buildResult.imageRef) {
+      return buildResult;
+    }
+
+    const tag = buildResult.imageRef;
+    const extractStart = Date.now();
+    const DOC_ROOT = "/usr/share/nginx/html";
+    try {
+      const sshExecutor =
+        this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+      log.log("Extracting static files from the build sandbox...\n");
+
+      if (sshExecutor) {
+        // Disk-to-disk on the remote host via native docker — avoids streaming a
+        // large tar over the flaky SSH dockerode bridge (same rationale as
+        // saveImage/pullImage). The trailing `/.` copies CONTENTS into hostOutDir
+        // (no leading `html/` dir), so no strip step is needed here.
+        const cid = (await sshExecutor.exec(`docker create ${sq(tag)}`)).trim();
+        try {
+          await sshExecutor.exec(`mkdir -p ${sq(hostOutDir)}`);
+          await sshExecutor.exec(`docker cp ${sq(`${cid}:${DOC_ROOT}/.`)} ${sq(hostOutDir)}`);
+        } finally {
+          await sshExecutor.exec(`docker rm ${sq(cid)}`).catch(() => { /* best effort */ });
+        }
+      } else {
+        // Local socket / TCP: pull the tar via dockerode (portable across a
+        // remote TCP daemon where the local `docker` CLI wouldn't apply) and
+        // extract onto the API process's own FS — which in docker-edge mode is
+        // the shared openship_static volume mounted into this container. The
+        // archive is rooted at `html/`, so strip that one leading component.
+        const { mkdir } = await import("node:fs/promises");
+        const { spawn } = await import("node:child_process");
+        await mkdir(hostOutDir, { recursive: true });
+        const container = await this.docker.createContainer({ Image: tag });
+        try {
+          const tarStream = (await container.getArchive({ path: DOC_ROOT })) as unknown as Readable;
+          await new Promise<void>((resolve, reject) => {
+            const extract = spawn("tar", ["-x", "--strip-components=1", "-C", hostOutDir]);
+            let errBuf = "";
+            extract.stderr.on("data", (d) => (errBuf += d.toString()));
+            extract.on("error", reject);
+            tarStream.on("error", reject);
+            tarStream.pipe(extract.stdin);
+            extract.on("close", (code) =>
+              code === 0
+                ? resolve()
+                : reject(new Error(`static extract failed (tar ${code}): ${errBuf.trim().slice(-500)}`)),
+            );
+          });
+        } finally {
+          await container.remove({ force: true }).catch(() => { /* best effort */ });
+        }
+      }
+
+      log.log(`Static files ready at ${hostOutDir}\n`);
+      return {
+        sessionId: config.sessionId,
+        status: "deploying",
+        imageRef: hostOutDir,
+        durationMs: (buildResult.durationMs ?? 0) + (Date.now() - extractStart),
+      };
+    } catch (err) {
+      const msg = safeErrorMessage(err);
+      log.step("build", "failed", `Static extract failed: ${msg}`);
+      return {
+        sessionId: config.sessionId,
+        status: "failed",
+        durationMs: (buildResult.durationMs ?? 0) + (Date.now() - extractStart),
+        errorMessage: `Static extract failed: ${msg}`,
+      };
+    } finally {
+      // The files now live on the host dir; the transient nginx image is dead
+      // weight. Best-effort cleanup (a lingering image is harmless).
+      await this.removeImage(tag).catch(() => { /* best effort */ });
+    }
+  }
+
+  /**
    * Batch build: clone + prune the shared source ONCE, then build every image
    * from that single tree. For SSH the context is transferred ONCE and each
    * image builds on the remote against it. Eliminates the per-service re-clone
@@ -1468,9 +1610,16 @@ export class DockerRuntime implements RuntimeAdapter {
         RestartPolicy: restartPolicy,
         Memory: config.resources.memoryMb * 1024 * 1024,
         CpuShares: Math.round(config.resources.cpuCores * 1024),
-        // Expose port for Nginx upstream routing or direct access
+        // Publish on the LOOPBACK interface only — the edge (host process, or a
+        // host-net OpenResty container) reaches it at 127.0.0.1:<hostPort>, and
+        // it never faces the network. Binding 0.0.0.0 here would expose every
+        // app directly, bypassing the edge's SSL/rate-limit/rules (and Docker's
+        // iptables bypass ufw). A pinned `config.hostPort` (loopback-port route
+        // strategy) is stable across redeploys; otherwise a random loopback port.
         PortBindings: {
-          [`${config.port}/tcp`]: [{ HostPort: "" }], // random host port
+          [`${config.port}/tcp`]: [
+            { HostIp: "127.0.0.1", HostPort: config.hostPort ? String(config.hostPort) : "" },
+          ],
         },
       },
     });
@@ -1518,6 +1667,20 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   async destroy(containerId: string): Promise<void> {
+    // An absolute-path id is a static build/release DIRECTORY on the host that
+    // this runtime produced via buildStaticToHost — not a container.
+    // getContainer().remove() would 404-no-op and leak the dir, so rm it via the
+    // same transport buildStaticToHost used (SSH exec, else local fs).
+    if (containerId.startsWith("/")) {
+      const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+      if (executor) {
+        await executor.exec(`rm -rf ${sq(containerId)}`).catch(() => { /* best effort */ });
+      } else {
+        const { rm } = await import("node:fs/promises");
+        await rm(containerId, { recursive: true, force: true }).catch(() => { /* best effort */ });
+      }
+      return;
+    }
     const container = this.docker.getContainer(containerId);
     try {
       await container.remove({ force: true });
@@ -1542,6 +1705,46 @@ export class DockerRuntime implements RuntimeAdapter {
       filters: { label: [`openship.project=${projectId}`] },
     });
     return containers.map((c) => c.Id);
+  }
+
+  /**
+   * Built images that belong to this project — the label `openship.project=<id>`
+   * that `labels()` stamps on every FINAL build image. Base/third-party images
+   * (postgres, redis, …) are PULLED, never labeled, so they can never appear
+   * here — that label filter is the primary guardrail for the image GC, which
+   * reconciles this on-host set against the DB keep-set. Includes untagged
+   * (dangling) superseded finals: labels persist after the tag is removed.
+   */
+  async listProjectImages(
+    projectId: string,
+  ): Promise<Array<{ id: string; repoTags: string[]; buildId?: string; deploymentId?: string; size: number }>> {
+    const images = await this.docker.listImages({
+      filters: { label: [`openship.project=${projectId}`] },
+    });
+    return images.map((img) => ({
+      id: img.Id,
+      repoTags: (img.RepoTags ?? []).filter((t) => t && t !== "<none>:<none>"),
+      buildId: img.Labels?.["openship.build"],
+      deploymentId: img.Labels?.["openship.deployment"],
+      size: img.Size ?? 0,
+    }));
+  }
+
+  /**
+   * Reclaim dangling (untagged) images carrying THIS project's label — the
+   * superseded final-stage layers a rebuild leaves behind. NEVER a bare
+   * `docker image prune`: the label filter guarantees base/other-project/other-
+   * tool dangling layers are untouched. (Unlabeled multi-stage intermediate
+   * layers under the classic builder aren't caught — BuildKit avoids them.)
+   */
+  async pruneProjectDanglingImages(projectId: string): Promise<void> {
+    try {
+      await this.docker.pruneImages({
+        filters: { dangling: ["true"], label: [`openship.project=${projectId}`] },
+      });
+    } catch {
+      /* best-effort — a prune failure must never fail a build/deploy */
+    }
   }
 
   /**
@@ -1702,6 +1905,9 @@ export class DockerRuntime implements RuntimeAdapter {
     const containers = await this.docker.listContainers({ all: true });
     return containers.map((c) => {
       const labels = c.Labels ?? {};
+      // The list view already carries the network map, so the live-state read
+      // gets each container's internal IP without an inspect round-trip.
+      const ip = firstNetworkIp(c.NetworkSettings?.Networks);
       return {
         id: c.Id,
         names: (c.Names ?? []).map((n) => n.replace(/^\//, "")),
@@ -1717,6 +1923,7 @@ export class DockerRuntime implements RuntimeAdapter {
           ...(p.IP ? { ip: p.IP } : {}),
         })),
         mounts: (c.Mounts ?? []).map(normalizeDockerMount),
+        ...(ip ? { ip } : {}),
         composeProject: labels["com.docker.compose.project"] || undefined,
         composeService: labels["com.docker.compose.service"] || undefined,
       };
@@ -1827,6 +2034,105 @@ export class DockerRuntime implements RuntimeAdapter {
     await new Promise<void>((resolve, reject) => {
       this.docker.modem.followProgress(stream, (err) => (err ? reject(err) : resolve()));
     });
+  }
+
+  /** Is this image tag present on THIS daemon? Distinguishes a locally-built
+   *  image (must be transferred cross-server) from a registry tag (the target
+   *  just pulls it). */
+  async imageExistsLocally(ref: string): Promise<boolean> {
+    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    if (executor) {
+      const out = await executor
+        .exec(`docker image inspect ${sq(ref)} >/dev/null 2>&1 && echo yes || true`)
+        .catch(() => "");
+      return out.trim() === "yes";
+    }
+    try {
+      await this.docker.getImage(ref).inspect();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Stream `docker save <ref>` OUT of this daemon as a Readable — the source
+   * half of a cross-server image move. No extra compression: image layers are
+   * already gzip-compressed, so re-compressing burns CPU for ~nothing.
+   *
+   * Over SSH the save runs as a native `docker save` through the raw command
+   * channel (rawExec) — the same reason pullImage/build avoid dockerode over the
+   * tunnel: a streamed dockerode body over the streamlocal bridge is unreliable.
+   * Local socket / TCP use dockerode's image.get() directly.
+   */
+  async saveImage(
+    ref: string,
+  ): Promise<{ stdout: Readable; awaitExit: Promise<{ code: number; stderr: string }> }> {
+    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    if (executor?.rawExec) {
+      const { stdout, stderr, onClose } = await executor.rawExec(`docker save ${sq(ref)}`);
+      let stderrBuf = "";
+      stderr.on("data", (c: Buffer) => {
+        stderrBuf += c.toString();
+        if (stderrBuf.length > 16 * 1024) stderrBuf = stderrBuf.slice(-16 * 1024);
+      });
+      stderr.resume();
+      return { stdout, awaitExit: onClose.then((code) => ({ code, stderr: stderrBuf.trim() })) };
+    }
+    const stdout = (await this.docker.getImage(ref).get()) as unknown as Readable;
+    const awaitExit = new Promise<{ code: number; stderr: string }>((resolve, reject) => {
+      stdout.on("end", () => resolve({ code: 0, stderr: "" }));
+      stdout.on("error", reject);
+    });
+    return { stdout, awaitExit };
+  }
+
+  /**
+   * Load an image tar (a `docker save` stream) INTO this daemon — the target
+   * half of a cross-server image move. Over SSH the tar streams into a native
+   * `docker load` stdin (execWithInput); local socket / TCP use dockerode's
+   * loadImage. Throws on a non-zero load. Returns the reference `docker load`
+   * reported ("Loaded image( ID)?: <ref>") so the caller can retag: a
+   * save-by-id load is untagged AND restores under the CONFIG image id, which
+   * differs from the source ref — tagging by the source id would fail.
+   */
+  async loadImage(body: Readable): Promise<string | undefined> {
+    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    if (executor?.execWithInput) {
+      const { code, stderr, stdout } = await executor.execWithInput(`docker load`, body);
+      if (code !== 0) throw new Error(`docker load exited ${code}${stderr ? `: ${stderr.slice(0, 500)}` : ""}`);
+      return parseLoadedImageRef(stdout);
+    }
+    const stream = await this.docker.loadImage(body);
+    let loadOutput = "";
+    await new Promise<void>((resolve, reject) => {
+      this.docker.modem.followProgress(
+        stream as NodeJS.ReadableStream,
+        (err) => (err ? reject(err) : resolve()),
+        (ev: { stream?: string }) => {
+          if (ev?.stream) loadOutput += ev.stream;
+        },
+      );
+    });
+    return parseLoadedImageRef(loadOutput);
+  }
+
+  /**
+   * Apply a tag to an image (`docker tag <source> <target>`). Used after a
+   * save-by-ID / load: `docker save <id>` loads UNTAGGED, so the target daemon
+   * needs the original tag re-applied — the adopted service's deploy `imageRef`
+   * is that tag. `source` is typically the sha id, `target` the tag. Idempotent.
+   */
+  async tagImage(source: string, target: string): Promise<void> {
+    if (source === target) return;
+    const executor = this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
+    if (executor) {
+      await executor.exec(`docker tag ${sq(source)} ${sq(target)}`);
+      return;
+    }
+    // dockerode tag wants repo + optional tag split.
+    const [repo, tag] = target.includes(":") ? [target.slice(0, target.lastIndexOf(":")), target.slice(target.lastIndexOf(":") + 1)] : [target, undefined];
+    await this.docker.getImage(source).tag({ repo, ...(tag ? { tag } : {}) });
   }
 
   /** Every named volume on the host. */
@@ -2286,6 +2592,42 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   /**
+   * Join already-running containers (migration attach-live reuse) to a project's
+   * `openship-<slug>` network with a DNS alias each — so a natively-deployed
+   * service in the SAME project resolves them by name (e.g. a freshly-built `web`
+   * reaching the reused `postgres:5432`). These containers keep their ORIGINAL
+   * openship labels, so the label-scoped reconcileNetworkMembership never joins
+   * them; this is the explicit, additive join (a network connect does NOT restart
+   * the container or touch its volumes). Idempotent + best-effort per member.
+   */
+  async joinServiceGroupContainers(
+    slug: string,
+    members: Array<{ containerId: string; alias: string }>,
+  ): Promise<void> {
+    if (members.length === 0) return;
+    const networkId = await this.ensureNetwork(slug);
+    const network = this.docker.getNetwork(networkId);
+    for (const m of members) {
+      if (!m.containerId) continue;
+      try {
+        await network.connect({
+          Container: m.containerId,
+          EndpointConfig: m.alias ? { Aliases: [m.alias] } : {},
+        });
+      } catch (err) {
+        // Already-on-network races are fine; anything else is swallowed — this is
+        // best-effort and must never block the migration deploy.
+        const msg = (err as { message?: string })?.message ?? "";
+        if (!/already exists|already connected/i.test(msg)) {
+          console.warn(
+            `[docker] group join failed for ${m.containerId.slice(0, 12)} (${m.alias}): ${msg}`,
+          );
+        }
+      }
+    }
+  }
+
+  /**
    * Guard for GRANDFATHERED (non-namespaced) services: a bare named volume that
    * another project's container already mounts is a cross-project collision —
    * the exact bug (two projects sharing one postgres volume) this change
@@ -2386,6 +2728,53 @@ export class DockerRuntime implements RuntimeAdapter {
           console.warn(
             `[docker] reconcile connect failed for ${c.Id.slice(0, 12)} → ${networkId.slice(0, 12)}: ${msg}`,
           );
+        }
+      }
+    }
+  }
+
+  /**
+   * Attach every container of `projectId` to the given networks (by name) — for
+   * cross-project service links: a consumer joins a linked database app's
+   * `openship-<slug>` network so it resolves that app's service alias
+   * (`mongo:27017`) with no public port. Best-effort + idempotent; a network that
+   * doesn't exist (source not deployed) is skipped and nothing here ever throws —
+   * a link networking failure must never fail the consumer's deploy.
+   */
+  async attachToExternalNetworks(projectId: string, networkNames: string[]): Promise<void> {
+    if (networkNames.length === 0) return;
+    let containers: Awaited<ReturnType<typeof this.docker.listContainers>>;
+    try {
+      containers = await this.docker.listContainers({
+        all: true,
+        filters: { label: [`openship.project=${projectId}`] },
+      });
+    } catch {
+      return;
+    }
+    for (const name of networkNames) {
+      const network = this.docker.getNetwork(name);
+      let netId: string;
+      try {
+        const info = await network.inspect();
+        netId = info.Id;
+      } catch {
+        continue; // network absent (source app not deployed) — skip
+      }
+      for (const c of containers) {
+        const onNetwork = Object.values(c.NetworkSettings?.Networks ?? {}).some(
+          (n) => n?.NetworkID === netId,
+        );
+        if (onNetwork) continue;
+        try {
+          await network.connect({ Container: c.Id });
+        } catch (err) {
+          const msg = (err as { message?: string })?.message ?? "";
+          if (!/already exists|already connected/i.test(msg)) {
+            console.warn(
+              `[docker] link-connect failed for ${c.Id.slice(0, 12)} → ${name}: ${msg}`,
+            );
+          }
         }
       }
     }

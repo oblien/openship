@@ -23,6 +23,7 @@ r.get("/categories", { tag: "notifications:read", mcp: { description: "List noti
 r.get("/channels", { tag: "notifications:read", mcp: { description: "List the caller's notification channels (email, webhook, etc.)." } }, ctrl.listChannels);
 r.post("/channels", { tag: "notifications:write", mcp: { description: "Create a notification channel." } }, ctrl.createChannel);
 r.patch("/channels/:id", { tag: "notifications:write", mcp: { description: "Update a notification channel." } }, ctrl.updateChannel);
+r.post("/channels/:id/test", { tag: "notifications:write", mcp: { description: "Send a test delivery to a channel; marks it verified on success." } }, ctrl.testChannel);
 r.delete("/channels/:id", { tag: "notifications:write", mcp: { description: "Delete a notification channel." } }, ctrl.deleteChannel);
 
 // ── Subscriptions (per-user × org)

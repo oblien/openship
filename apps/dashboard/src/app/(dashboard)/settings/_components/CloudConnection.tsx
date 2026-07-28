@@ -2,22 +2,27 @@
 
 import { useState } from "react";
 import {
+  ArrowUpRight,
   Check,
+  Database,
+  Github,
+  Globe,
   LogOut,
   Loader2,
   ExternalLink,
-  Globe,
+  Rocket,
 } from "lucide-react";
 import { cloudApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
+import { CloudIllustration } from "./CloudIllustration";
 
 /* ── Component ──────────────────────────────────────────────────── */
 
 export function CloudConnection() {
-  const { authMode, deployMode } = usePlatform();
+  const { baseDomain } = usePlatform();
   const { t } = useI18n();
   const {
     connected: cloudConnected,
@@ -28,8 +33,18 @@ export function CloudConnection() {
     refresh,
   } = useCloud();
   const { showToast } = useToast();
-  const isDesktop = deployMode === "desktop";
   const [disconnecting, setDisconnecting] = useState(false);
+
+  const pitch = t.settings.cloud.pitch;
+  /* Lead with the free domain — it is the perk that lands without any commitment,
+     and the one people actually hit first (a project's free domain routes through
+     Cloud, see the `managed-project-domain` capability). */
+  const perks = [
+    { Icon: Globe, text: interpolate(pitch.perkDomain, { domain: baseDomain }) },
+    { Icon: Rocket, text: pitch.perkDeploy },
+    { Icon: Database, text: pitch.perkServices },
+    { Icon: Github, text: pitch.perkGithub },
+  ];
 
   async function handleDisconnect() {
     if (!confirm(t.settings.cloud.confirmDisconnect)) return;
@@ -107,36 +122,61 @@ export function CloudConnection() {
           </p>
         </div>
       ) : (
-        <div className="text-center">
-          {/* Cloud icon */}
-          <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-            <Globe className="size-6 text-primary" />
-          </div>
+        /* Disconnected — this is a sales surface, not an error state. Illustration,
+           what you actually get, then the two actions. Every perk below maps to a
+           real CloudCapability (packages/core/src/cloud-capability.ts), so nothing
+           here promises something `requireCloud` doesn't gate. */
+        <div className="flex flex-col items-center px-1 pb-1 pt-3 text-center">
+          <CloudIllustration className="relative mb-6 h-24 w-72 max-w-full" />
 
-          <h4 className="text-sm font-medium text-foreground mb-1">{t.settings.cloud.connectToCloud}</h4>
-          <p className="text-xs text-muted-foreground leading-relaxed mb-4">
-            {isDesktop
-              ? t.settings.cloud.unlockDesktop
-              : t.settings.cloud.deployLocal}
+          <h4 className="text-lg font-medium text-foreground" style={{ letterSpacing: "-0.2px" }}>
+            {pitch.title}
+          </h4>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            {interpolate(pitch.body, { domain: baseDomain })}
           </p>
 
-          <button
-            onClick={startConnect}
-            disabled={connecting}
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50"
-          >
-            {connecting ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                {t.settings.cloud.waitingSignIn}
-              </>
-            ) : (
-              <>
-                <ExternalLink className="size-3.5" />
-                {t.settings.cloud.connectButton}
-              </>
-            )}
-          </button>
+          <ul className="mx-auto mt-5 grid w-full max-w-lg gap-2.5 text-start sm:grid-cols-2">
+            {perks.map(({ Icon, text }) => (
+              <li key={text} className="flex items-start gap-2.5">
+                <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/10">
+                  <Icon className="size-3 text-primary" />
+                </span>
+                <span className="text-[13px] leading-snug text-muted-foreground">{text}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-6 flex w-full max-w-md flex-col gap-2 sm:flex-row">
+            <button
+              onClick={startConnect}
+              disabled={connecting}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50"
+            >
+              {connecting ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  {t.settings.cloud.waitingSignIn}
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="size-3.5" />
+                  {t.settings.cloud.connectButton}
+                </>
+              )}
+            </button>
+            <a
+              href="https://openship.io/pricing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-muted/50 px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted sm:flex-none"
+            >
+              {pitch.viewPricing}
+              <ArrowUpRight className="size-3.5" />
+            </a>
+          </div>
+
+          <p className="mt-3.5 text-xs text-muted-foreground/70">{pitch.noLockIn}</p>
         </div>
       )}
     </div>

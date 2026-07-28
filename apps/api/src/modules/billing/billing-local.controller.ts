@@ -17,6 +17,7 @@
  */
 
 import type { Context } from "hono";
+import { CLOUD_CAPABILITIES } from "@repo/core";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { RequestContext } from "../../lib/request-context";
 import { getRequestContext } from "../../lib/request-context";
@@ -69,7 +70,8 @@ async function proxyToCloudBilling(
       status: 403,
       payload: {
         error: "Not connected to Openship Cloud.",
-        code: "cloud_not_connected",
+        // Single-sourced from the shared cloud-capability registry.
+        code: CLOUD_CAPABILITIES.billing.code,
       },
     };
   }

@@ -1,0 +1,30 @@
+{
+  "available": false,
+  "id": "freshrss",
+  "name": "FreshRSS",
+  "description": "Self-hosted RSS and Atom feed reader with a first-run setup wizard.",
+  "kind": "template",
+  "logo": "freshrss",
+  "category": "other",
+  "tags": [
+    "rss",
+    "feeds",
+    "reader"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "freshrss",
+      "image": "freshrss/freshrss:latest",
+      "ports": [
+        "80:80"
+      ],
+      "exposedPort": 80,
+      "exposed": true,
+      "volumes": [
+        "freshrss_data:/var/www/FreshRSS/data"
+      ],
+      "restart": "unless-stopped"
+    }
+  ]
+}

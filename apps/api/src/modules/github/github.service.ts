@@ -256,6 +256,23 @@ export async function listUserOwnedRepos(
  */
 
 /**
+ * The branch to deploy: the caller's explicit branch (trimmed) when given, else
+ * the repo's GitHub default branch. Single home for the "branch-or-default"
+ * idiom shared by linkProjectRepo, createProjectEnvironment, and the git-info
+ * surface. Callers own any further fallback (e.g. an env slug or "main").
+ */
+export async function resolveDefaultBranch(
+  ctx: RequestContext,
+  owner: string,
+  repo: string,
+  explicit?: string | null,
+): Promise<string> {
+  const chosen = explicit?.trim();
+  if (chosen) return chosen;
+  return (await getRepository(ctx, owner, repo)).default_branch;
+}
+
+/**
  * Get a single repository, optionally with branches.
  */
 export async function getRepository(

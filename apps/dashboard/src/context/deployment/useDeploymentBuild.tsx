@@ -23,12 +23,12 @@ import {
   INITIAL_STATE,
   ensurePublicEndpoints,
   normalizeComposeService,
-  publicEndpointsNeedCloud,
   resolveBuildElapsedMs,
   syncPublicEndpointState,
   usesServiceDeployment,
 } from "./types";
 import type { RawComposeService } from "./types";
+import { parseCloudRequiredCode } from "@repo/core";
 
 const ERROR_DEBOUNCE_MS = 1000;
 const MAX_RENDERED_BUILD_LOGS = 2000;
@@ -500,6 +500,64 @@ export function useDeploymentBuild(
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+  // Single place that turns a github-credential error CODE into the
+  // DeployCredentialModal. Shared by every deploy entry point (startDeployment,
+  // redeploy) so "any required GitHub → the modal, never a bare toast" holds
+  // everywhere, and the choice→action wiring lives in ONE spot. Returns true
+  // when it opened the modal (caller then skips the toast).
+  const maybeOpenCredentialModal = useCallback(
+    (
+      errorCode: string | null | undefined,
+      opts?: { trigger?: "preflight-fail" | "build-fail"; onResolved?: () => void },
+    ): boolean => {
+      const isCredential =
+        errorCode === "GITHUB_REMOTE_TOKEN_REQUIRED" ||
+        errorCode === "GITHUB_APP_INSTALLATION_REQUIRED" ||
+        errorCode === "GITHUB_CLI_REMOTE_BUILD_REJECTED" ||
+        errorCode === "GITHUB_TOKEN_REQUIRED";
+      if (!isCredential || !config.owner) return false;
+      // onResolved lets a caller retry the deploy after the user picks a fix
+      // (the build-progress page auto-redeploys); the pre-deploy gate leaves it
+      // undefined so the user re-clicks Deploy themselves.
+      const onResolved = opts?.onResolved;
+      let modalId = "";
+      modalId = showModal({
+        customContent: (
+          <DeployCredentialModal
+            trigger={opts?.trigger ?? "preflight-fail"}
+            owner={config.owner}
+            installUrl={installUrl ?? null}
+            projectId={config.projectId ?? null}
+            serverId={config.serverId ?? null}
+            deployTarget={config.deployTarget}
+            buildStrategy={config.buildStrategy}
+            selfHosted={selfHosted}
+            ghCliAvailable={!!githubState?.sources.ghCli.available}
+            onChoice={(choice) => {
+              hideModal(modalId);
+              if (choice.kind === "build-local") {
+                setConfig((prev) => ({ ...prev, buildStrategy: "local" }));
+                onResolved?.();
+              } else if (choice.kind === "install-app") {
+                onResolved?.();
+              } else if (choice.kind === "connect-server-github" && config.serverId) {
+                openGithubConnect(config.serverId, {
+                  onConnected:
+                    onResolved ??
+                    (() => showToast("GitHub connected — deploy again to continue.", "success", "GitHub")),
+                });
+              }
+            }}
+            onDismiss={() => hideModal(modalId)}
+          />
+        ),
+        maxWidth: "640px",
+      });
+      return true;
+    },
+    [config, installUrl, selfHosted, githubState, showModal, hideModal, openGithubConnect, setConfig, showToast],
+  );
+
   const startDeployment = useCallback(async (
     overrides?: {
       runtimeMode?: DeploymentConfig["runtimeMode"];
@@ -523,7 +581,12 @@ export function useDeploymentBuild(
       return null;
     }
 
-    if (!config.framework || config.framework === "unknown") {
+    // Framework is only meaningful for a single framework app. Docker, compose
+    // "services", and monorepo projects carry a project-level framework of
+    // "unknown" by design (the real stack lives on each service / sub-app row),
+    // so don't block Save/Deploy on it there — that wrongly rejected migrated
+    // and compose projects with "Please select a framework".
+    if (config.projectType === "app" && (!config.framework || config.framework === "unknown")) {
       showToast("Please select a framework", "error", "Error");
       return null;
     }
@@ -639,10 +702,15 @@ export function useDeploymentBuild(
         port: config.options.hasServer && config.options.productionPort
           ? Number(config.options.productionPort)
           : undefined,
+        // "None" routing → explicit [] so ensure() doesn't PERSIST a stale free
+        // subdomain onto the project row (this runs before the buildAccess
+        // payload below, which already handles None the same way).
         publicEndpoints: !isServiceDeployment && !isMonorepoDeployment
-          ? config.publicEndpoints.map((endpoint) => (
-              serializeProjectPublicEndpoint(endpoint, config.options.hasServer)
-            ))
+          ? config.noPublicRoute
+            ? []
+            : config.publicEndpoints.map((endpoint) => (
+                serializeProjectPublicEndpoint(endpoint, config.options.hasServer)
+              ))
           : undefined,
         hasServer: config.options.hasServer,
         hasBuild: config.options.hasBuild,
@@ -701,10 +769,14 @@ export function useDeploymentBuild(
         // Folder-upload: adopt the uploaded source (workspace or staging dir).
         uploadSessionId: config.uploadSessionId || undefined,
         envVars: Object.keys(envVarsMap).length > 0 ? envVarsMap : undefined,
+        // "None" routing → explicit [] (no public URL). Must be [], not
+        // undefined: undefined makes the backend auto-derive a free subdomain.
         publicEndpoints: !isServiceDeployment
-          ? config.publicEndpoints.map((endpoint) => (
-              serializeBuildPublicEndpoint(endpoint, config.options.hasServer)
-            ))
+          ? config.noPublicRoute
+            ? []
+            : config.publicEndpoints.map((endpoint) => (
+                serializeBuildPublicEndpoint(endpoint, config.options.hasServer)
+              ))
           : undefined,
         buildStrategy:
           config.projectType === "docker" || isServiceDeployment
@@ -714,13 +786,8 @@ export function useDeploymentBuild(
         // Only a server target uses serverId — never let a stale id ride along
         // with a cloud/local deploy (backend gates it too, but be explicit).
         serverId: config.deployTarget === "server" ? config.serverId : undefined,
-        // Per-deploy git credential forwarding — only sent for a server target
-        // (the only build that clones on-host). The API re-checks desktop +
-        // server-build before honoring it.
-        forwardGitCredentials:
-          config.deployTarget === "server" && config.forwardGitCredentials === true
-            ? true
-            : undefined,
+        // Git-credential forwarding is no longer a per-deploy choice — it's a
+        // generic per-operator setting (Settings → GitHub) the API reads directly.
         // Clone location — only meaningful for a server target. Clone-on-server
         // is now the DEFAULT (secure, atomic: credential forwarded over the SSH
         // relay for the clone, never stored). Only an explicit "api-host" pick
@@ -802,90 +869,24 @@ export function useDeploymentBuild(
       const errorCode = extractErrorCode(err);
 
       const canConnectCloud = canUseCloudConnection({ selfHosted, deployMode });
-      const needsManagedProjectDomainHelp =
-        canConnectCloud &&
-        !usesServiceDeployment(config) &&
-        config.deployTarget !== "cloud" &&
-        publicEndpointsNeedCloud(config.publicEndpoints) &&
-        errorCode === "CLOUD_REQUIRED_MANAGED_PROJECT_DOMAIN";
-      const needsManagedComposeDomainHelp =
-        canConnectCloud &&
-        usesServiceDeployment(config) &&
-        errorCode === "CLOUD_REQUIRED_MANAGED_COMPOSE_DOMAINS";
-      const needsCloudTargetHelp = errorCode === "CLOUD_REQUIRED_TARGET";
-      // Clone-token preflight failures — server's runPreflightChecks
-      // ran tokenFor("remote") and came up empty. Open the missing-
-      // credential modal in place of the toast so the user has three
-      // concrete recovery paths instead of a dead-end error.
-      const needsCloneCredentialHelp =
-        errorCode === "GITHUB_REMOTE_TOKEN_REQUIRED" ||
-        errorCode === "GITHUB_APP_INSTALLATION_REQUIRED" ||
-        errorCode === "GITHUB_CLI_REMOTE_BUILD_REJECTED";
-
-      if (needsManagedProjectDomainHelp) {
-        const openedModal = !requireCloud({
-          feature: `Using free .${baseDomain} domains on your own server`,
-          description: `Free .${baseDomain} domains are routed through Openship Cloud. To deploy this project to your own server, either connect Openship Cloud or switch this project to a custom domain.`,
-          secondaryHint: "If you prefer to stay fully self-hosted, change the project domain to a custom domain and deploy again.",
-        });
-        if (!openedModal) {
-          showToast(message, "error", "Error");
-        }
-      } else if (needsManagedComposeDomainHelp) {
-        const openedModal = !requireCloud({
-          feature: `Using free .${baseDomain} domains for your services`,
-          description: `One or more exposed services use free .${baseDomain} domains. To deploy them to your own server, either connect Openship Cloud or switch those services to custom domains.`,
-          secondaryHint: "Custom domains work without Openship Cloud. Free managed domains do not.",
-        });
-        if (!openedModal) {
-          showToast(message, "error", "Error");
-        }
-      } else if (needsCloudTargetHelp) {
-        const openedModal = !requireCloud("Deploying to Openship Cloud");
-        if (!openedModal) {
-          showToast(message, "error", "Error");
-        }
-      } else if (needsCloneCredentialHelp && config.owner) {
-        let modalId = "";
-        modalId = showModal({
-          customContent: (
-            <DeployCredentialModal
-              trigger="preflight-fail"
-              owner={config.owner}
-              installUrl={installUrl ?? null}
-              projectId={ensuredProjectId}
-              serverId={config.serverId ?? null}
-              deployTarget={config.deployTarget}
-              buildStrategy={config.buildStrategy}
-              selfHosted={selfHosted}
-              ghCliAvailable={!!githubState?.sources.ghCli.available}
-              onChoice={(choice) => {
-                if (choice.kind === "build-local") {
-                  setConfig((prev) => ({ ...prev, buildStrategy: "local" }));
-                } else if (choice.kind === "connect-server-github" && config.serverId) {
-                  openGithubConnect(config.serverId, {
-                    onConnected: () =>
-                      showToast(
-                        "GitHub connected — deploy again to continue.",
-                        "success",
-                        "GitHub",
-                      ),
-                  });
-                }
-                hideModal(modalId);
-              }}
-              onDismiss={() => hideModal(modalId)}
-            />
-          ),
-          maxWidth: "640px",
-        });
-      } else {
+      // Backend defense-in-depth: a cloud-requiring preflight failure carries a
+      // shared CLOUD_REQUIRED_* code. Map it → capability → the ONE connect modal
+      // (copy from the shared registry — no hardcoded strings). The up-front
+      // Sidebar gate handles the happy path; this is the fallback. On dismiss,
+      // surface the original error; on connect, the user re-deploys.
+      const cloudCapability = parseCloudRequiredCode(errorCode);
+      if (cloudCapability && canConnectCloud) {
+        const connected = await requireCloud(cloudCapability, { domain: baseDomain });
+        if (!connected) showToast(message, "error", "Error");
+      } else if (!maybeOpenCredentialModal(errorCode)) {
+        // Clone-token / credential preflight failures open the missing-credential
+        // modal (concrete recovery) instead of a dead-end toast.
         showToast(message, "error", "Error");
       }
       setState((prev) => ({ ...prev, isDeploying: false }));
       return null;
     }
-  }, [baseDomain, config, deployMode, hideModal, installUrl, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
+  }, [baseDomain, config, deployMode, hideModal, installUrl, maybeOpenCredentialModal, openGithubConnect, requireCloud, selfHosted, setConfig, showModal, showToast]);
 
   // `startBuild` controls which SSE endpoint to hit:
   //   - true  → POST /:id/build, which ALSO kicks off the build. Now only
@@ -1318,7 +1319,10 @@ export function useDeploymentBuild(
       } catch (error) {
         console.error("[DeploymentContext] Failed to redeploy:", error);
         const msg = getApiErrorMessage(error, "Failed to start redeployment");
-        showToast(msg, "error", "Error");
+        // A missing GitHub credential surfaces the SAME modal as the deploy
+        // wizard (never a bare toast) — one shared handler, one source of truth.
+        const openedModal = maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);
+        if (!openedModal) showToast(msg, "error", "Error");
         setState((prev) => ({
           ...prev,
           isDeploying: false,
@@ -1329,7 +1333,7 @@ export function useDeploymentBuild(
         return null;
       }
     },
-    [buildStream, showToast],
+    [buildStream, showToast, maybeOpenCredentialModal],
   );
 
   const reset = useCallback(() => {
@@ -1384,6 +1388,7 @@ export function useDeploymentBuild(
     reset,
     onTerminalReady,
     respondToPrompt,
+    maybeOpenCredentialModal,
     _setContainerFailed,
   };
 }

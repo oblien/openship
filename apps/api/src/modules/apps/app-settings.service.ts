@@ -10,19 +10,26 @@
  */
 
 import {
-  getAppTemplate,
   getAppManagement,
   getAppSettings,
+  getAppConnection,
+  getOutputService,
   flattenSettingFields,
   validateSetting,
   ValidationError,
   type AppManagement,
   type AppSettingGroup,
+  type AppConnectionGuide,
+  type LocalizedString,
 } from "@repo/core";
-import { repos } from "@repo/db";
+import { getTemplateForOrg } from "./catalog-source";
+import { repos, type Project, type Service } from "@repo/db";
 import type { RequestContext } from "../../lib/request-context";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import { encrypt, decrypt } from "../../lib/encryption";
+import { resolveServiceEndpointUrls } from "../../lib/public-endpoints";
+import { resolveProjectServerHost } from "../../lib/server-target";
+import { resolveDashboardPublicUrl } from "../../lib/public-url";
 
 const ENVIRONMENT = "production";
 
@@ -60,7 +67,9 @@ export async function getAppProjectSettings(
   projectId: string,
 ): Promise<AppSettingsView> {
   const project = await loadAppProject(ctx, projectId);
-  const template = project.appTemplateId ? getAppTemplate(project.appTemplateId) : undefined;
+  const template = project.appTemplateId
+    ? await getTemplateForOrg(project.organizationId, project.appTemplateId)
+    : undefined;
   const groups = template ? [...getAppSettings(template)] : [];
   const management = template ? getAppManagement(template) : null;
 
@@ -94,7 +103,9 @@ export async function updateAppProjectSettings(
   changes: AppSettingChange[],
 ): Promise<{ count: number; requiresRedeploy: boolean }> {
   const project = await loadAppProject(ctx, projectId);
-  const template = project.appTemplateId ? getAppTemplate(project.appTemplateId) : undefined;
+  const template = project.appTemplateId
+    ? await getTemplateForOrg(project.organizationId, project.appTemplateId)
+    : undefined;
   if (!template) throw new ValidationError("This app has no configurable settings.");
 
   const fields = flattenSettingFields(getAppSettings(template));
@@ -110,10 +121,15 @@ export async function updateAppProjectSettings(
     value: typeof c.value === "string" ? c.value : c.value == null ? "" : String(c.value),
   }));
 
-  // Validate everything (+ reject unknown keys) before touching storage.
+  // Validate everything (+ reject unknown keys) before touching storage. Mirror
+  // the install-wizard `required` gate for the explicit-empty case (a secret's
+  // blank means "leave unchanged", so it's exempt).
   for (const c of normalized) {
     const field = fieldOf(c.service, c.key);
     if (!field) throw new ValidationError(`Unknown setting: ${c.service}.${c.key}`);
+    if (field.required && !field.secret && c.value === "") {
+      throw new ValidationError(`${field.label} is required.`);
+    }
     const err = validateSetting(field, c.value);
     if (err) throw new ValidationError(err);
   }
@@ -154,4 +170,211 @@ export async function updateAppProjectSettings(
   }
 
   return { count, requiresRedeploy };
+}
+
+// ─── App connection card (URLs + generated keys, fully resolved) ─────────────
+
+/** One resolved connection value for the app Overview's Connection card. */
+export interface AppConnectionOutput {
+  id: string;
+  label: string;
+  help?: string;
+  /** Render masked with a reveal toggle. The real value is still sent (this is a
+   *  deliberate, template-curated credentials surface for an authorized member). */
+  secret: boolean;
+  /** Resolved PRIMARY value; "" when it can't be resolved yet (renders as "—"). */
+  value: string;
+  /** Catalog-recommended target env-var name for the "Use in a project" handover
+   *  (so the client doesn't guess). Undefined → the client falls back. */
+  envKey?: string;
+  /** Source SERVICE (docker alias) this output belongs to — lets the connect UI
+   *  group outputs by service and pick which service(s) to inject. Derived from
+   *  the output's declared `service` or its `source` prefix; null when neither
+   *  carries one (a `template:` value with no service → internal not available). */
+  service: string | null;
+  /** Part of the recommended one-click bundle — pre-checked in the handover. */
+  recommended?: boolean;
+  /** Label for the primary value in the switch (default "Default"); with `variants`. */
+  sourceLabel?: LocalizedString;
+  /** Resolved alternative forms of the value — the card shows a switch over
+   *  `[primary, …variants]`. Omitted when the output declares none. */
+  variants?: { id: string; label: LocalizedString; value: string }[];
+  /** Layout hint: "half" pairs with the next half-width output on one line. */
+  width?: "full" | "half";
+}
+
+export interface AppConnectionView {
+  title?: string;
+  description?: string;
+  outputs: AppConnectionOutput[];
+  /** Opinionated handover guidance (localizable) — see AppConnectionGuide. Copy
+   *  fields are passed through as-authored (string OR locale-map); the dashboard
+   *  resolves them against the active locale via `resolveLocalized`. */
+  guide?: AppConnectionGuide;
+}
+
+/**
+ * Host to reach a no-domain (port-only) service at. Prefers the project's own
+ * server (SSH host / SERVER_IP); falls back to the openship instance's own
+ * public host (so a same-box install resolves to the address the user already
+ * reaches openship on, e.g. localhost in dev). Null only if nothing is known.
+ */
+async function resolvePortOnlyHost(project: Project): Promise<string | null> {
+  const serverHost = await resolveProjectServerHost(project).catch(() => null);
+  if (serverHost) return serverHost;
+  try {
+    return new URL(resolveDashboardPublicUrl()).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Host ports a service publishes via fixed `host:container` mappings (port-only
+ *  fallback when there's no domain). Mirrors the deploy's `hostPublishedPorts`. */
+function servicePublishedHostPorts(service: Service): number[] {
+  const out: number[] = [];
+  for (const spec of (service.ports as string[] | null) ?? []) {
+    const parts = String(spec).split(":");
+    if (parts.length < 2) continue;
+    const host = Number(parts[parts.length - 2]);
+    if (Number.isFinite(host)) out.push(host);
+  }
+  return out;
+}
+
+/**
+ * Resolve an installed app's Connection card values from the single source of
+ * truth: the backing services' env (written once at install, encrypted at rest)
+ * + the same public-URL resolution the deploy uses. `env:<svc>:<KEY>` reads the
+ * stored env (secrets decrypted — this is a curated credentials surface, not the
+ * raw env editor); `publicUrl:<svc>[:<port>]` resolves the assigned domain URL,
+ * falling back to `http://<host>:<port>` for a no-domain (port-only) install.
+ */
+export async function getAppConnectionView(
+  ctx: RequestContext,
+  projectId: string,
+): Promise<AppConnectionView> {
+  const project = await loadAppProject(ctx, projectId);
+  const template = project.appTemplateId
+    ? await getTemplateForOrg(project.organizationId, project.appTemplateId)
+    : undefined;
+  const connection = template ? getAppConnection(template) : null;
+  if (!connection) return { outputs: [] };
+
+  const services = await repos.service.listByProject(projectId);
+  const byName = new Map(services.map((s) => [s.name, s]));
+
+  // Fetch each referenced service's env once, decrypting every value (all rows
+  // are encrypt()-ed at rest regardless of the secret flag).
+  const needed = new Set<string>();
+  const scanSource = (source: string) => {
+    const m = /^env:([^:]+):/.exec(source);
+    if (m) needed.add(m[1]);
+    // template: sources may reference `{{env:<svc>:<KEY>}}` too — fetch those.
+    if (source.startsWith("template:")) {
+      for (const mm of source.matchAll(/\{\{\s*env:([^:}]+):[^}]+\}\}/g)) needed.add(mm[1]);
+    }
+  };
+  for (const o of connection.outputs) {
+    scanSource(o.source);
+    for (const v of o.variants ?? []) scanSource(v.source);
+  }
+  const envByService = new Map<string, Record<string, string>>();
+  for (const name of needed) {
+    const svc = byName.get(name);
+    // Effective env, mirroring the deploy merge: the service's compose env map
+    // (JSONB, template literals like ME_CONFIG_BASICAUTH_USERNAME) as the base,
+    // overlaid by the env_vars table (generated secrets / config, decrypted).
+    // Reading only env_vars missed literals that never became env_var rows.
+    const map: Record<string, string> = { ...((svc?.environment as Record<string, string>) ?? {}) };
+    const rows = svc ? await repos.project.listEnvVars(projectId, ENVIRONMENT, svc.id) : [];
+    for (const row of rows) {
+      try {
+        map[row.key] = decrypt(row.value);
+      } catch {
+        map[row.key] = "";
+      }
+    }
+    envByService.set(name, map);
+  }
+
+  // Server host for the port-only URL fallback — resolved lazily (only if a
+  // publicUrl source has no assigned domain), and shared across every source in
+  // this view (primary + variants) so it's fetched at most once.
+  let serverHost: string | null | undefined;
+
+  /** Resolve ONE source string (`env:…` / `template:…` / `publicUrl:…`) → value,
+   *  "" when a piece can't resolve. Used for the primary source AND each variant. */
+  const resolveSource = async (source: string): Promise<string> => {
+    const em = /^env:([^:]+):(.+)$/.exec(source);
+    const pm = /^publicUrl:([^:]+)(?::(\d+))?$/.exec(source);
+    if (em) return envByService.get(em[1])?.[em[2]] ?? "";
+    if (source.startsWith("template:")) {
+      // A composed string (e.g. a `postgresql://…` connection URL): substitute
+      // `{{env:<svc>:<KEY>}}` and `{{host}}` (the port-only reachable host).
+      // Blank the whole value if any placeholder can't resolve — a URL with a
+      // missing password/host is worse than "—".
+      let tpl = source.slice("template:".length);
+      let ok = true;
+      tpl = tpl.replace(/\{\{\s*env:([^:}]+):([^}]+?)\s*\}\}/g, (_m, svc, key) => {
+        const v = envByService.get(svc)?.[key] ?? "";
+        if (!v) ok = false;
+        return v;
+      });
+      if (tpl.includes("{{host}}")) {
+        if (serverHost === undefined) serverHost = await resolvePortOnlyHost(project);
+        if (!serverHost) ok = false;
+        tpl = tpl.replaceAll("{{host}}", serverHost ?? "");
+      }
+      return ok ? tpl : "";
+    }
+    if (pm) {
+      const svc = byName.get(pm[1]);
+      if (svc) {
+        const port = pm[2] ? Number(pm[2]) : undefined;
+        const urls = resolveServiceEndpointUrls(project, svc);
+        const domainUrl = port !== undefined ? urls.find((u) => u.port === port)?.url : urls[0]?.url;
+        if (domainUrl) return domainUrl;
+        if (serverHost === undefined) serverHost = await resolvePortOnlyHost(project);
+        const hostPorts = servicePublishedHostPorts(svc);
+        const chosen = port !== undefined && hostPorts.includes(port) ? port : hostPorts[0];
+        if (serverHost && chosen !== undefined) return `http://${serverHost}:${chosen}`;
+      }
+    }
+    return "";
+  };
+
+  const outputs: AppConnectionOutput[] = [];
+  for (const o of connection.outputs) {
+    const value = await resolveSource(o.source);
+    // Resolve variants sequentially so they share the lazily-fetched serverHost
+    // (concurrent resolution would race on it — harmless but wasteful).
+    let variants: { id: string; label: LocalizedString; value: string }[] | undefined;
+    if (o.variants && o.variants.length > 0) {
+      variants = [];
+      for (const v of o.variants) {
+        variants.push({ id: v.id, label: v.label, value: await resolveSource(v.source) });
+      }
+    }
+    outputs.push({
+      id: o.id,
+      label: o.label,
+      help: o.help,
+      secret: !!o.secret,
+      value,
+      envKey: o.envKey,
+      service: getOutputService(o),
+      recommended: o.recommended,
+      sourceLabel: o.sourceLabel,
+      variants,
+      width: o.width,
+    });
+  }
+
+  return {
+    title: connection.title,
+    description: connection.description,
+    outputs,
+    guide: connection.guide,
+  };
 }

@@ -8,6 +8,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // modules/system/setup.controller.ts) still got a login screen — even though
 // authMiddleware, via lib/auth-mode.ts, had already resolved "none".
 //
+// The endpoint no longer derives authMode itself — it calls getAuthMode(), the
+// single canonical resolver — so these now assert that the value the dashboard
+// reads matches what the API actually enforces. Keeping a second copy of the
+// rules here is what let the two drift: the endpoint ignored
+// OPENSHIP_REQUIRE_AUTH / OPENSHIP_PUBLIC_URL and kept reporting a stale desktop
+// "cloud", rendering the Openship Cloud sign-in on an API that wanted no login.
+//
 // DEPLOY_MODE defaults to "docker" under vitest (see vitest.config.ts), so
 // these exercise the non-desktop path.
 
@@ -32,15 +39,33 @@ vi.mock("@repo/db", () => ({
 }));
 
 async function getEnv() {
+  const { Hono } = await import("hono");
   const { healthRoutes } = await import("../../src/modules/health/health.routes");
-  const res = await healthRoutes.request("/env");
+  // /health/env is rate-limited per client IP; in the real app clientIpMiddleware
+  // (app.ts) sets c.var.clientIp before this route runs. Requesting healthRoutes
+  // in isolation skips that, so the limiter can't resolve a subject and 400s
+  // "Missing client IP". Mirror the middleware so we exercise the handler itself.
+  const app = new Hono<{ Variables: { clientIp: string } }>();
+  app.use("*", async (c, next) => {
+    c.set("clientIp", "127.0.0.1");
+    await next();
+  });
+  app.route("/", healthRoutes);
+  const res = await app.request("/env");
   return { res, body: (await res.json()) as Record<string, unknown> };
 }
 
-afterEach(() => {
+afterEach(async () => {
   getThrows = false;
   delete settings.authMode;
   delete settings.teamMode;
+  // /health/env now delegates to getAuthMode(), which memoises its answer so
+  // authMiddleware doesn't hit the DB per request. Without clearing it here the
+  // first case's mode leaks into every later case (they all saw "none"). The
+  // real app clears it the same way after any settings write — see
+  // clearAuthModeCache() callers in modules/system/setup.controller.ts.
+  const { clearAuthModeCache } = await import("../../src/lib/auth-mode");
+  clearAuthModeCache();
 });
 
 describe("GET /health/env authMode", () => {

@@ -40,7 +40,7 @@ import type {
   RollbackInput,
   MakeActiveResult,
 } from "./types";
-import { BuildLogger, detectBuildKillHint, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
+import { BuildCancelledError, BuildLogger, detectBuildKillHint, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
 import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
@@ -73,6 +73,17 @@ export interface BareRuntimeOptions {
 
 const DEFAULT_WORK_DIR = "/opt/openship";
 const DEFAULT_BUILD_TIMEOUT = 10 * 60 * 1000;
+
+/**
+ * Dedicated base for static doc-roots — deliberately separate from
+ * DEFAULT_WORK_DIR. Static sites build in a Docker sandbox and serve their
+ * extracted files from here; this is the ONE directory shared into the edge
+ * container (via the `openship_static` volume) in docker-edge mode, so it must
+ * NOT contain server bundles, node_modules, or release secrets. A static-serve
+ * BareRuntime is constructed with `workDir = STATIC_RELEASE_BASE` so its
+ * releases/.builds subdirs confine here and promote stays same-FS.
+ */
+export const STATIC_RELEASE_BASE = "/opt/openship/static";
 
 
 
@@ -420,12 +431,12 @@ export class BareRuntime implements RuntimeAdapter {
     const buildEnv: BuildEnvironment = {
       projectDir: dir,
       exec: async (command, logCb) => {
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         const effectiveCommand = this.executor instanceof LocalExecutor
           ? wrapLocalBuildCommand(command)
           : command;
         const { code, output } = await this.executor.streamExec(effectiveCommand, logCb);
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         if (code !== 0) {
           const hint = detectBuildKillHint(output);
           throw new Error(
@@ -434,7 +445,7 @@ export class BareRuntime implements RuntimeAdapter {
         }
       },
       preflight: async (cfg, plog) => {
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         await this.ensureToolchain(this.executor, cfg.stack, plog);
         if (cfg.localPath) {
           await this.transferFiles(cfg.localPath, dir, plog);
@@ -498,6 +509,16 @@ export class BareRuntime implements RuntimeAdapter {
       abort.abort();
       this.activeBuilds.delete(sessionId);
     }
+    // Aborting only gates the API BETWEEN commands — the in-flight remote
+    // command (git/npm/vite) keeps running on the target until killed. Kill every
+    // process whose CWD is (under) this build's dir — SIGTERM, then SIGKILL the
+    // survivors. Killing it closes the streamExec channel so the pipeline unwinds
+    // to a cancelled result. Best-effort; a no-op for local builds / non-Linux
+    // targets (nothing runs under this dir there).
+    const dir = sq(this.buildDir(sessionId));
+    const scan = (sig: string) =>
+      `for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null); case "$c" in ${dir}|${dir}/*) kill -${sig} "\${p##*/}" 2>/dev/null || true;; esac; done`;
+    await this.executor.exec(`${scan("TERM")}; sleep 2; ${scan("KILL")}`).catch(() => {});
   }
 
   async getBuildLogs(sessionId: string): Promise<LogEntry[]> {

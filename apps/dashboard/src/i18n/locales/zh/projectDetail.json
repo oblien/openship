@@ -59,7 +59,9 @@
       "waiting": "正在等待传入请求……",
       "streamError": "流错误",
       "connectionLost": "与日志流的连接已断开",
-      "connectFailed": "连接日志流失败"
+      "connectFailed": "连接日志流失败",
+      "noDomain": "添加域名以查看请求日志",
+      "noDomainHint": "HTTP 请求日志按域名收集，请先为该项目添加域名。"
     },
     "terminal": {
       "fallbackName": "终端",
@@ -146,7 +148,9 @@
         "stopped": "已停止",
         "disabled": "已禁用",
         "failed": "失败",
-        "starting": "启动中"
+        "starting": "启动中",
+        "restarting": "重启中",
+        "unknown": "未知"
       },
       "network": "网络",
       "configuration": "配置",
@@ -203,7 +207,8 @@
         "serviceDeleted": "服务已删除",
         "deleteFailed": "删除服务失败",
         "backupRunFailed": "备份运行失败"
-      }
+      },
+      "duplicateContainers": "另一个容器也匹配此服务：{names}"
     },
     "settingsForm": {
       "name": "名称",

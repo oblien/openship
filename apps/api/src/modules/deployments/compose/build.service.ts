@@ -6,7 +6,12 @@
  * resolved directly without a build step.
  */
 
-import type { MultiServiceRuntimeAdapter, ResourceConfig, BuildResult } from "@repo/adapters";
+import type {
+  AmbientGitVia,
+  MultiServiceRuntimeAdapter,
+  ResourceConfig,
+  BuildResult,
+} from "@repo/adapters";
 import { BuildLogger } from "@repo/adapters";
 import { repos, type Deployment, type Project, type Service } from "@repo/db";
 
@@ -135,6 +140,8 @@ export async function buildComposeImages(opts: {
   gitCredentialHelperPath?: string;
   /** Per-server SSH clone credential (ssh-server-key / deploy-key mode). */
   gitSsh?: { privateKey: string; knownHosts: string };
+  /** The build host clones with its OWN verified git credentials (nothing shipped). */
+  gitAmbient?: { via: AmbientGitVia };
   /** Clone each service on the remote build host instead of transferring. */
   cloneOnServer?: boolean;
   /** Smart (partial) redeploy: build ONLY these services. Undefined = build
@@ -162,8 +169,22 @@ export async function buildComposeImages(opts: {
   //     would drop them to neither bucket and they'd silently fail at
   //     deploy time with a misleading "No image available" error.
   // External = compose rows with a pre-built image and no Dockerfile build.
+  // ONE-TIME image handover (migration cutover): a service named here deploys
+  // from an already-present image (a transferred / running container's image)
+  // with NO build and NO pull — it is seeded straight into imageRefs, exactly
+  // like a freshly-built one, so the SAME native deploy step consumes it. Keyed
+  // by service name (migration knows repo-service names). Only present on the
+  // migration's first deploy (per-deployment snapshot), so a later Redeploy has
+  // no handover and rebuilds/pulls natively — no separate migration deploy path.
+  const handover = opts.snapshot.handoverImages ?? {};
+  const isHandedOver = (service: { name: string }) => {
+    const img = handover[service.name];
+    return typeof img === "string" && img.length > 0;
+  };
+
   const buildable = enabled.filter(
     (service) =>
+      !isHandedOver(service) &&
       // Smart redeploy: skip building services that aren't in the target
       // subset — they're carried forward at deploy with their existing image.
       // Also skip env-only refresh services — they recreate from their
@@ -175,7 +196,9 @@ export async function buildComposeImages(opts: {
           !service.image &&
           (!!service.buildCommand || !!service.startCommand))),
   );
-  const external = enabled.filter((service) => !service.build && !!service.image);
+  const external = enabled.filter(
+    (service) => !isHandedOver(service) && !service.build && !!service.image,
+  );
 
   // This seeds the UI check-list immediately so users see every service.
   for (const service of enabled) {
@@ -183,6 +206,16 @@ export async function buildComposeImages(opts: {
       serviceName: service.name,
       serviceId: service.id,
       status: "pending",
+    });
+  }
+
+  for (const service of enabled) {
+    if (!isHandedOver(service)) continue;
+    imageRefs.set(service.id, handover[service.name]);
+    sessionManager.broadcastServiceStatus(opts.dep.id, {
+      serviceName: service.name,
+      serviceId: service.id,
+      status: "built",
     });
   }
 
@@ -300,13 +333,15 @@ export async function buildComposeImages(opts: {
           },
         });
 
-    // Clone-on-server credential, shared across the fan-out: the relay helper
-    // (desktop) or the token already on buildConfig.gitToken (non-desktop).
+    // Clone-on-server credential, shared across the fan-out (all services share
+    // one repo): the relay helper (desktop), a per-server ssh key, the server's
+    // own ambient credentials, or the token already on buildConfig.gitToken.
     if (opts.cloneOnServer) buildConfig.cloneOnServer = true;
     if (opts.gitCredentialHelperPath) {
       buildConfig.gitCredentialHelperPath = opts.gitCredentialHelperPath;
     }
     if (opts.gitSsh) buildConfig.gitSsh = opts.gitSsh;
+    if (opts.gitAmbient) buildConfig.gitAmbient = opts.gitAmbient;
 
     return { service, buildConfig, serviceLogger };
   };
@@ -386,7 +421,9 @@ export async function buildComposeImages(opts: {
   }
 
   if (buildable.length > 0) {
-    const succeeded = imageRefs.size - external.length;
+    // Count of images actually BUILT (builtImageRefs is set only on a build) —
+    // not imageRefs.size, which also holds external/pull + handed-over images.
+    const succeeded = builtImageRefs.size;
     if (buildFailures.size === 0) {
       opts.logger.step(
         "build",

@@ -22,6 +22,8 @@ import { canUseCloudConnection, usePlatform } from "@/context/PlatformContext";
 import { useGitHub } from "@/context/GitHubContext";
 import { Button } from "@/components/ui/button";
 import { openAuthWindow } from "@/utils/authWindow";
+import type { CloudCapability } from "@repo/core";
+import { useCloudCapabilityCopy, type CloudRequirementPrompt } from "./cloud/capability-copy";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -31,13 +33,6 @@ interface CloudUser {
   name: string;
   email: string;
   image?: string | null;
-}
-
-interface CloudRequirementPrompt {
-  feature: string;
-  description?: string;
-  secondaryHint?: string;
-  ctaLabel?: string;
 }
 
 interface CloudState {
@@ -50,13 +45,21 @@ interface CloudState {
   /** Whether a connect flow is in progress */
   connecting: boolean;
   /**
-   * Call before a cloud-only action. Shows the connect modal if
-   * not connected and returns `false`. Returns `true` if connected.
+   * Gate a cloud-requiring action. Resolves `true` immediately when connected
+   * (incl. SaaS/native). Otherwise shows the connect modal and resolves once the
+   * user acts: `true` after a successful connect (so the caller can PROCEED with
+   * no re-trigger), `false` if they dismiss.
+   *
+   * Pass a `CloudCapability` (copy resolved from the shared registry); a raw
+   * prompt object is still accepted for bespoke cases.
    *
    * Usage:
-   *   if (!requireCloud("deploy to cloud")) return;
+   *   if (!(await requireCloud("cloud-deploy-target"))) return;
    */
-  requireCloud: (feature: string | CloudRequirementPrompt) => boolean;
+  requireCloud: (
+    capability: CloudCapability | CloudRequirementPrompt,
+    vars?: { domain?: string },
+  ) => Promise<boolean>;
   /** Start the cloud connect flow (desktop IPC or browser popup) */
   startConnect: () => void;
   /** Force a status re-check (e.g. after connecting) */
@@ -96,6 +99,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   // so this consume is always safe. We use it to re-resolve GitHub state
   // whenever the cloud connection flips (below).
   const { refresh: refreshGitHub } = useGitHub();
+  const cloudCapabilityCopy = useCloudCapabilityCopy();
 
   const [connected, setConnected] = useState(false);
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
@@ -103,6 +107,10 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const [connecting, setConnecting] = useState(false);
   const [modalFeature, setModalFeature] = useState<CloudRequirementPrompt | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Resolvers for in-flight `requireCloud(...)` promises. A batch (not a single
+  // slot) because there's ONE shared modal + connect flow, so concurrent gates
+  // legitimately settle together on the same outcome. Drained atomically.
+  const pendingRef = useRef<Array<(v: boolean) => void>>([]);
 
   // Clean up polling on unmount
   useEffect(() => {
@@ -198,14 +206,50 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     void refreshGitHub();
   }, [isConnected, loading, refreshGitHub]);
 
+  // Settle every pending requireCloud promise once, then clear the batch
+  // atomically (reassign before calling, so a resolver that re-enters can't
+  // double-settle). Same settled-guard idea as confirmServerAccess.
+  const settlePendingCloud = useCallback((value: boolean) => {
+    const resolvers = pendingRef.current;
+    pendingRef.current = [];
+    resolvers.forEach((resolve) => resolve(value));
+  }, []);
+
+  // A successful connect flips `isConnected` true (via checkStatus / the
+  // postMessage refresh / the desktop poll). Whichever path gets there, resolve
+  // any waiting gates TRUE (so the caller proceeds) and close the modal. Only
+  // runs when gates are actually waiting, so a mount where SaaS is already
+  // connected is a no-op.
+  useEffect(() => {
+    if (isConnected && pendingRef.current.length > 0) {
+      settlePendingCloud(true);
+      setModalFeature(null);
+    }
+  }, [isConnected, settlePendingCloud]);
+
   const requireCloud = useCallback(
-    (feature: string | CloudRequirementPrompt): boolean => {
-      if (isConnected) return true;
-      setModalFeature(typeof feature === "string" ? { feature } : feature);
-      return false;
+    (
+      capability: CloudCapability | CloudRequirementPrompt,
+      vars?: { domain?: string },
+    ): Promise<boolean> => {
+      if (isConnected) return Promise.resolve(true);
+      const prompt =
+        typeof capability === "string" ? cloudCapabilityCopy(capability, vars) : capability;
+      setModalFeature(prompt);
+      return new Promise<boolean>((resolve) => {
+        pendingRef.current.push(resolve);
+      });
     },
-    [isConnected],
+    [isConnected, cloudCapabilityCopy],
   );
+
+  // Dismissing the modal (backdrop / X / "Maybe later") resolves waiting gates
+  // FALSE — the single false path, so an abandoned/blocked connect never leaks a
+  // pending promise (the modal stays the arbiter while `connecting`).
+  const dismissCloudModal = useCallback(() => {
+    setModalFeature(null);
+    settlePendingCloud(false);
+  }, [settlePendingCloud]);
 
   // Go straight to the SaaS API's handoff endpoint. The handoff itself
   // bounces to /login when the user isn't authenticated there, so this
@@ -337,7 +381,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onClick={() => setModalFeature(null)}
+            onClick={dismissCloudModal}
           />
 
           {/* Panel - solid bg via CSS var so it doesn't ghost out in dark mode
@@ -348,7 +392,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
           >
             {/* Close */}
             <button
-              onClick={() => setModalFeature(null)}
+              onClick={dismissCloudModal}
               className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:bg-muted"
             >
               <X className="size-4" />
@@ -399,7 +443,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
                 size="lg"
                 disabled={connecting}
                 onClick={() => {
-                  setModalFeature(null);
+                  // Keep the modal open in the `connecting` state — it stays the
+                  // dismissal arbiter. Success closes it (the isConnected effect);
+                  // an abandoned/blocked connect is dismissed → resolves false.
                   startConnect();
                 }}
               >
@@ -412,7 +458,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
               </Button>
               <Button
                 variant="ghost"
-                onClick={() => setModalFeature(null)}
+                onClick={dismissCloudModal}
               >
                 Maybe later
               </Button>

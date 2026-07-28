@@ -10,8 +10,9 @@
  * single "default" context on first read.
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { OS_DIR } from "./paths";
 import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
 
 /** Cached discovery from GET /api/health/env (see caps.ts). */
@@ -56,7 +57,7 @@ export interface ContextInfo {
 
 export const DEFAULT_CONTEXT = "default";
 
-const CONFIG_DIR = join(homedir(), ".openship");
+const CONFIG_DIR = OS_DIR;
 export const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
 function emptyConfig(): CliConfig {

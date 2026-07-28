@@ -1,0 +1,17 @@
+{
+  "available": false,
+  "id": "buzz",
+  "name": "Buzz",
+  "description": "Self-hostable workspace where humans and AI agents collaborate — chat, code, reviews, and workflows in one audit log.",
+  "kind": "template",
+  "logo": "buzz",
+  "category": "other",
+  "tags": [
+    "collaboration",
+    "ai",
+    "agents",
+    "chat",
+    "workflows",
+    "nostr"
+  ]
+}

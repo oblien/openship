@@ -60,7 +60,13 @@ export const deployCommand = new Command("deploy")
     // (same pipeline as the MCP / dashboard folder deploy). The git-only flags
     // don't apply to a fresh upload, so they force the git path if set.
     const inGitRepo = git(["rev-parse", "--is-inside-work-tree"]) === "true";
-    const gitOnlyFlags = opts.commit || opts.serviceIds || opts.smartRoute || opts.refresh;
+    // --service-ids scopes BOTH a git redeploy and a folder redeploy (so a
+    // backend-only change doesn't recreate stateful services), so it is NOT
+    // git-only; commit/smart-route/refresh genuinely need git history.
+    const gitOnlyFlags = opts.commit || opts.smartRoute || opts.refresh;
+    const serviceIds: string[] | undefined = opts.serviceIds
+      ? opts.serviceIds.split(",").map((s: string) => s.trim()).filter(Boolean)
+      : undefined;
 
     let deploymentId: string | undefined;
     let payload: Record<string, unknown> | undefined;
@@ -73,6 +79,7 @@ export const deployCommand = new Command("deploy")
           name: opts.name,
           projectId: opts.project || link?.projectId,
           environment: env,
+          serviceIds,
           onStep: (m) => {
             if (spinner) spinner.text = m;
           },
@@ -94,9 +101,6 @@ export const deployCommand = new Command("deploy")
 
       const branch: string | undefined =
         opts.branch || link?.branch || git(["rev-parse", "--abbrev-ref", "HEAD"]);
-      const serviceIds: string[] | undefined = opts.serviceIds
-        ? opts.serviceIds.split(",").map((s: string) => s.trim()).filter(Boolean)
-        : undefined;
 
       const body = {
         projectId,

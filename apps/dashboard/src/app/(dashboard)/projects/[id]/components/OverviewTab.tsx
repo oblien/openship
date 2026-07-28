@@ -3,6 +3,8 @@
 import React from "react";
 import Link from "next/link";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
+import { ConnectionCard } from "./ConnectionCard";
+import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
@@ -29,8 +31,16 @@ export const OverviewTab = () => {
     id,
     servicesData,
     selectedDomain,
+    domain,
+    domainsData,
   } = useProjectSettings();
   const { t } = useI18n();
+
+  // Analytics are traffic-to-a-domain — with no assigned domain the whole
+  // section stays empty (a port-only app / DB has no hostname to log). Hide it
+  // until a domain exists rather than show empty charts.
+  const hasDomain =
+    !!(selectedDomain || domain) || (domainsData?.domains?.length ?? 0) > 0;
 
   // ATOMIC PER-ENDPOINT HOOKS — each one owns its own skeleton state.
   // No context coupling, no useMemo soup. Module-level caches dedup
@@ -89,10 +99,30 @@ export const OverviewTab = () => {
   const hasAnalytics = !!analyticsData;
   const stats: Stat[] = showStatsSkeleton
     ? [
-        { label: t.projects.stats.serverRequests, value: "", icon: <Server className="size-4" />, loading: true },
-        { label: t.projects.stats.uniqueIPs, value: "", icon: <Users className="size-4" />, loading: true },
-        { label: t.projects.stats.avgResponse, value: "", icon: <Gauge className="size-4" />, loading: true },
-        { label: t.projects.stats.bandwidthOut, value: "", icon: <ArrowUpDown className="size-4" />, loading: true },
+        {
+          label: t.projects.stats.serverRequests,
+          value: "",
+          icon: <Server className="size-4" />,
+          loading: true,
+        },
+        {
+          label: t.projects.stats.uniqueIPs,
+          value: "",
+          icon: <Users className="size-4" />,
+          loading: true,
+        },
+        {
+          label: t.projects.stats.avgResponse,
+          value: "",
+          icon: <Gauge className="size-4" />,
+          loading: true,
+        },
+        {
+          label: t.projects.stats.bandwidthOut,
+          value: "",
+          icon: <ArrowUpDown className="size-4" />,
+          loading: true,
+        },
       ]
     : [
         {
@@ -143,12 +173,34 @@ export const OverviewTab = () => {
 
   return (
     <div className="space-y-5">
+      {/* Catalog-app connection details (URLs + generated keys) — surfaced so the
+          user copies them into the app; nothing renders for apps without one. */}
+      {projectData.isApp && (
+        <ConnectionCard
+          projectId={projectData.id}
+          appTemplateId={projectData.appTemplateId}
+          serverId={projectData.serverId}
+          deployTarget={deployTarget}
+        />
+      )}
+
+      {/* Databases/apps wired INTO this project (renders nothing when none). */}
+      {projectData.id && <ConnectedServicesCard projectId={projectData.id} />}
+
       {/* ── Info sections ─────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Infrastructure */}
         <Card title={t.projects.overview.infrastructure} icon={Cpu} iconColor="primary">
-          <Item label={t.projects.overview.platform} value={platformLabel} loading={showProjectInfoSkeleton} />
-          <Item label={t.projects.overview.mode} value={modeLabel} loading={showProjectInfoSkeleton} />
+          <Item
+            label={t.projects.overview.platform}
+            value={platformLabel}
+            loading={showProjectInfoSkeleton}
+          />
+          <Item
+            label={t.projects.overview.mode}
+            value={modeLabel}
+            loading={showProjectInfoSkeleton}
+          />
           {/* Port row shown when loading (we don't know hasServer yet)
               or when there's an actual server runtime. Once project
               info hydrates and we know it's static, the row is hidden. */}
@@ -162,7 +214,9 @@ export const OverviewTab = () => {
           {/* Which self-hosted server this runs on — links to the server page. */}
           {deployTarget === "server" && (showProjectInfoSkeleton || projectData.serverName) && (
             <div className="flex items-center justify-between gap-4">
-              <span className="text-[13px] text-muted-foreground">{t.projects.overview.server}</span>
+              <span className="text-[13px] text-muted-foreground">
+                {t.projects.overview.server}
+              </span>
               {showProjectInfoSkeleton ? (
                 <div className="h-[14px] w-24 rounded bg-muted-foreground/20 animate-pulse" />
               ) : projectData.serverId ? (
@@ -185,7 +239,9 @@ export const OverviewTab = () => {
         {/* Source & CI/CD */}
         <Card title={t.projects.overview.sourceCicd} icon={GitBranch} iconColor="orange">
           <div className="flex items-center justify-between">
-            <span className="text-[13px] text-muted-foreground">{t.projects.overview.repository}</span>
+            <span className="text-[13px] text-muted-foreground">
+              {t.projects.overview.repository}
+            </span>
             {showProjectInfoSkeleton ? (
               <div className="h-[14px] w-28 rounded bg-muted-foreground/20 animate-pulse" />
             ) : hasGit ? (
@@ -199,7 +255,9 @@ export const OverviewTab = () => {
                 <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
               </a>
             ) : (
-              <span className="text-[13px] text-muted-foreground/60">{t.projects.overview.notConnected}</span>
+              <span className="text-[13px] text-muted-foreground/60">
+                {t.projects.overview.notConnected}
+              </span>
             )}
           </div>
           <Item
@@ -222,8 +280,9 @@ export const OverviewTab = () => {
         </Card>
       </div>
 
-      {/* ── Monitoring ────────────────────────────────────────── */}
-
+      {/* ── Monitoring (only with a domain — no domain ⇒ no traffic) ── */}
+      {hasDomain && (
+        <>
       {/* Compact stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((s) => (
@@ -260,7 +319,9 @@ export const OverviewTab = () => {
         <div className="flex items-center justify-between mb-2.5">
           <div className="flex items-center gap-2">
             <BarChart3 className="size-3.5 text-primary" />
-            <span className="text-[13px] font-semibold text-foreground">{t.projects.overview.traffic}</span>
+            <span className="text-[13px] font-semibold text-foreground">
+              {t.projects.overview.traffic}
+            </span>
           </div>
           {dateRange && <span className="text-[11px] text-muted-foreground">{dateRange}</span>}
         </div>
@@ -288,7 +349,9 @@ export const OverviewTab = () => {
           </div>
         ) : !hasAnalytics ? (
           <div className="flex items-center justify-center h-[120px] rounded-xl border border-dashed border-border/50 bg-muted/10">
-            <span className="text-[12px] text-muted-foreground">{t.projects.overview.noTrafficData}</span>
+            <span className="text-[12px] text-muted-foreground">
+              {t.projects.overview.noTrafficData}
+            </span>
           </div>
         ) : (
           <div>
@@ -339,6 +402,8 @@ export const OverviewTab = () => {
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Connected Services bar */}
       <button
@@ -354,7 +419,9 @@ export const OverviewTab = () => {
           <div className="w-7 h-7 rounded-lg bg-success-bg flex items-center justify-center">
             <Layers className="size-3.5 text-success" />
           </div>
-          <span className="text-[13px] font-medium text-foreground">{t.projects.overview.services}</span>
+          <span className="text-[13px] font-medium text-foreground">
+            {t.projects.overview.services}
+          </span>
           {serviceCount > 0 && (
             <span className="text-[11px] font-semibold text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-md">
               {serviceCount}
@@ -379,7 +446,9 @@ export const OverviewTab = () => {
             </div>
           )}
           {serviceCount === 0 && (
-            <span className="text-xs text-muted-foreground">{t.projects.overview.noServicesConnected}</span>
+            <span className="text-xs text-muted-foreground">
+              {t.projects.overview.noServicesConnected}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -389,11 +458,13 @@ export const OverviewTab = () => {
       </button>
 
       {/* Top paths (compact) */}
-      {topPaths.length > 0 && (
+      {hasDomain && topPaths.length > 0 && (
         <div className="bg-card rounded-2xl border border-border/50 px-4 py-3.5">
           <div className="flex items-center gap-2 mb-3">
             <BarChart3 className="size-3.5 text-primary" />
-            <span className="text-[13px] font-semibold text-foreground">{t.projects.overview.topPaths}</span>
+            <span className="text-[13px] font-semibold text-foreground">
+              {t.projects.overview.topPaths}
+            </span>
           </div>
           <div className="space-y-2">
             {topPaths.slice(0, 5).map((p, idx) => (
@@ -490,9 +561,7 @@ function StatusItem({
       ) : (
         <span
           className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-            active
-              ? "bg-success-bg text-success"
-              : "bg-muted/60 text-muted-foreground/60"
+            active ? "bg-success-bg text-success" : "bg-muted/60 text-muted-foreground/60"
           }`}
         >
           <span

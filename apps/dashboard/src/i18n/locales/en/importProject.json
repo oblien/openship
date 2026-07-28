@@ -73,6 +73,7 @@
     "serverOnPort": "Server on port {port}",
     "serverPortNotSet": "Server port not set",
     "staticFromEdge": "Static from edge",
+    "staticPathHint": "Served as static files from the edge — nothing runs as a process.",
     "buildSettingsTitle": "Build Settings"
   },
   "projectSettings": {

@@ -34,6 +34,10 @@ Your role in an org sets your baseline access. From most to least powerful:
 An **owner** holds the keys to the money — plans, payment, and cancellation. An **admin** runs the day-to-day: they can invite teammates, deploy, add domains, and read the audit log, but they can't touch billing. A **member** is a trusted teammate who ships work but doesn't manage the team or see billing. **Restricted** starts with an empty keyring and gets keys one at a time.
 </Callout>
 
+<Callout title="The standard roles are coarse by design (beta)" type="warn">
+Owner, admin, and member are graded by resource **type**, not by action: a member has read, write, **and delete** across projects, servers, deployments, domains, jobs, and environment variables — the same as an admin apart from managing people and the audit log. Per-**action** (read vs write vs admin) and per-**resource** limits are enforced only through the **restricted** role and **scoped access tokens** described below. Treat member and admin as trusted, near-equal roles, and reach for a restricted member or a scoped token whenever you need real least-privilege. Fine-grained delegation for the standard roles is still maturing.
+</Callout>
+
 ## Permission tags: `resource:action`
 
 Under the hood, each route declares a short tag that names a resource and an action, like `project:read` or `domain:write`. Sub-resources add a middle segment — `project:service:write` means "edit a service that lives inside a project."

@@ -21,6 +21,7 @@ import { runOrphanSweep } from "../projects/orphan-gc-schedule";
 import { runRetentionSweep } from "../backups/retention-prune";
 import { pruneAuditEvents } from "../audit/audit-prune";
 import { runReconcileSweep } from "../deployments/reconcile-schedule";
+import { runImageGcSweep } from "../deployments/image-gc";
 import { verifyPendingDomains } from "../domains/domain.service";
 import { scanInstanceUpdates } from "../updates/updates.service";
 import { scanInstanceModules } from "../system/server-modules.service";
@@ -37,7 +38,7 @@ export interface SystemJobDef {
   available?: () => boolean;
 }
 
-const WEBHOOK_EVENT_RETENTION_DAYS = 7;
+const WEBHOOK_EVENT_RETENTION_DAYS = 30;
 const JOB_RUN_RETENTION_DAYS = 30;
 
 export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
@@ -57,6 +58,25 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     label: "Orphaned resource cleanup",
     defaultCron: "41 * * * *",
     run: async () => runOrphanSweep(),
+  },
+  {
+    key: "images:gc",
+    label: "Built-image garbage collection",
+    // Off-peak daily. Prunes each project's superseded build images beyond the
+    // rollback window on its deploy host. Cloud (SaaS) workloads live on Oblien,
+    // not local Docker, so there's nothing to sweep there.
+    defaultCron: "23 4 * * *",
+    available: () => platform().target !== "cloud",
+    run: async () => {
+      const r = await runImageGcSweep();
+      return {
+        scanned: r.projectsScanned,
+        removed: r.imagesRemoved,
+        bytesReclaimed: r.bytesReclaimed,
+        skipped: r.skippedInUse,
+        failed: r.errors,
+      };
+    },
   },
   {
     key: "permissions:pending-grant-prune",
@@ -82,7 +102,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     defaultCron: "47 3 * * *",
     run: async () => {
       const cutoff = new Date(Date.now() - WEBHOOK_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-      const deleted = await repos.githubWebhookEvent.pruneOlderThan(cutoff);
+      const deleted = await repos.webhookDelivery.pruneOlderThan(cutoff);
       return { deleted };
     },
   },

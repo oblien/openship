@@ -44,6 +44,27 @@ export function normalizeCustomHostname(raw: string): string {
 }
 
 /**
+ * True when `value` is a plausible email address.
+ *
+ * The ONE email rule, because the CLI had two and both let bad input through: the
+ * interactive wizard only checked for an `@` (so `test@gmail.co,` created an admin
+ * account nobody could receive mail at), and the headless resolver used
+ * `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`, which also accepts a trailing comma since `,` is
+ * neither whitespace nor `@`. Used for the admin login and the ACME contact — a
+ * malformed address there fails certificate issuance later, far from the typo.
+ *
+ * Intentionally practical, not RFC 5322: local part of the common characters, a
+ * dotted domain, and a TLD of 2+ letters. Quoted local parts and IP-literal
+ * domains are rejected — they're valid in the spec and never what someone typed
+ * into a setup prompt.
+ */
+export function isValidEmail(value: string): boolean {
+  const email = value?.trim() ?? "";
+  if (!email || email.length > 254) return false;
+  return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/.test(email);
+}
+
+/**
  * True when `host` (already run through normalizeCustomHostname) is a plausible
  * public DNS hostname. Rejects the shapes a bare hostname must never contain —
  * embedded path / port / scheme leftovers / whitespace, IPv4 literals,
@@ -92,4 +113,36 @@ export function formatDuration(seconds: number): string {
 /** Sleep for a given number of milliseconds */
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Race a promise against a timeout, rejecting with `Error(message)` after `ms`.
+ * `ms` of 0/undefined disables the timeout (returns the promise as-is). Clears
+ * the timer on settle so it never leaks. One shared impl — callers pass their
+ * own message so prior error contracts are preserved.
+ */
+export function withTimeout<T>(promise: Promise<T>, ms: number | undefined, message: string): Promise<T> {
+  if (!ms) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
+ * A POSIX-style environment variable NAME (letter/underscore, then
+ * alphanumerics/underscores). Single source for the rule that was duplicated
+ * across the connection service, the jobs runner, and the compose parser.
+ */
+export function isValidEnvKey(key: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
 }

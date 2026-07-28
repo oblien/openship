@@ -405,27 +405,35 @@ export function GitHubProvider({ children, initialData }: GitHubProviderProps) {
     return () => clearInterval(timer);
   }, [cliAction, refresh, showToast]);
 
+  /* ── Auto-detect a completed login ──────────────────────────── */
+  // Any pending CLI action (the device flow OR a `gh auth login` the operator ran
+  // on the instance) clears the moment the connection lands, so the UI never gets
+  // stuck showing a code/command after success.
+  useEffect(() => {
+    if (connected && cliAction) setCliAction(null);
+  }, [connected, cliAction]);
+
+  // Terminal (`gh auth login`) has no device code to poll — refresh the status
+  // periodically so the UI flips to connected as soon as the operator finishes,
+  // instead of requiring a manual "check connection".
+  useEffect(() => {
+    if (cliAction?.type !== "terminal") return;
+    const timer = setInterval(() => void refresh(), 4000);
+    return () => clearInterval(timer);
+  }, [cliAction, refresh]);
+
   /* ── Fetch repos for an owner ───────────────────────────────── */
   const fetchReposForOwner = useCallback(
     async (owner: string) => {
       if (!owner || !connected) return;
       setLoadingRepos(true);
       try {
-        // Backend is mode-aware - handles cloud (installation) vs desktop (OAuth) 
+        // Backend is mode-aware - handles cloud (installation) vs desktop
+        // (OAuth). No params → the full set in `data` (+ authoritative counts we
+        // don't need here; this context feeds the client-side pickers). A non-2xx
+        // (e.g. "not connected") throws ApiError and is handled by the catch.
         const res = await githubApi.getUserRepos(owner);
-        if (res && !res.error) {
-          const list = Array.isArray(res) ? res : res.data ?? res.repos ?? [];
-          setRepos(list);
-        } else {
-          setRepos([]);
-          if (res?.error) {
-            showToast(
-              typeof res.error === "string" ? res.error : "Couldn't load repositories",
-              "error",
-              "GitHub",
-            );
-          }
-        }
+        setRepos((res?.data ?? []) as GitHubRepo[]);
       } catch (err) {
         setRepos([]);
         if (isAbortError(err) || isNetworkError(err)) {

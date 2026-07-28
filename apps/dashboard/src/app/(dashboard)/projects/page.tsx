@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { Project } from "@/constants/mock";
 import ProjectCard from "./components/ProjectCard";
+import ProjectGridCard from "./components/ProjectGridCard";
+import { ViewToggle, type ProjectView } from "./components/ViewToggle";
 import {
   ProjectFilters,
   buildProjectFilterOptions,
@@ -17,7 +19,10 @@ import { useRouter } from "next/navigation";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Plus, Search, Server } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { HelpMenu } from "@/components/HelpMenu";
 import { usePlatform } from "@/context/PlatformContext";
+
+const VIEW_KEY = "openship-projects-view";
 
 export default function ProjectsPage() {
   const { t } = useI18n();
@@ -25,9 +30,22 @@ export default function ProjectsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<ProjectFilter>({ kind: "all" });
   const [isLoading, setIsLoading] = useState(true);
+  const [view, setView] = useState<ProjectView>("grid");
   const router = useRouter();
   const { selfHosted } = usePlatform();
   const isLoadingRef = useRef(false);
+
+  /* Remember the chosen view. Read in an effect rather than lazy-initialised
+   * state so the server and first client render agree — seeding from
+   * localStorage during render would hydrate-mismatch for anyone on grid. */
+  useEffect(() => {
+    const saved = window.localStorage.getItem(VIEW_KEY);
+    if (saved === "grid" || saved === "list") setView(saved);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(VIEW_KEY, view);
+  }, [view]);
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -87,13 +105,17 @@ export default function ProjectsPage() {
                   )}
             </p>
           </div>
-          <Link
-            href="/library"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 w-full sm:w-auto justify-center"
-          >
-            <Plus className="size-4" />
-            <span>{t.dashboard.pages.projects.createButton}</span>
-          </Link>
+          {/* Primary action + the shared ⋮ help menu, same as the Apps page. */}
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <Link
+              href="/library"
+              className="inline-flex flex-1 items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 sm:flex-none justify-center"
+            >
+              <Plus className="size-4" />
+              <span>{t.dashboard.pages.projects.createButton}</span>
+            </Link>
+            <HelpMenu />
+          </div>
         </div>
 
         {isLoading ? (
@@ -115,30 +137,48 @@ export default function ProjectsPage() {
           <EmptyState />
         ) : (
           <>
-            {/* Search — above the columns so the right column starts level
-                with the list, not the search box. */}
-            {projects.length > 3 && (
-              <div className="relative max-w-md mb-4">
-                <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder={t.dashboard.pages.projects.searchPlaceholder}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full ps-10 pe-4 py-2.5 bg-card border border-border/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all text-foreground placeholder:text-muted-foreground"
-                />
+            {/* Toolbar — constrained to the SAME grid columns as the content
+                below, so the search + view toggle end at the left (list) column's
+                edge instead of spanning full-page over the right filter column. */}
+            <div className="mb-4 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+              {/* Search on the LEFT, view toggle on the right. Rendered at every
+                  project count: hiding it below a threshold left the toggle
+                  floating with nothing to anchor it, and the toolbar read as
+                  broken rather than intentionally empty. */}
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder={t.dashboard.pages.projects.searchPlaceholder}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full ps-10 pe-4 py-2.5 bg-card border border-border/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all text-foreground placeholder:text-muted-foreground"
+                  />
+                </div>
+                <div className="shrink-0">
+                  <ViewToggle value={view} onChange={setView} />
+                </div>
               </div>
-            )}
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
               {/* Left: project list / empty state for the active search + filter */}
               <div className="min-w-0">
                 {filteredProjects.length > 0 ? (
-                  <div className="bg-card rounded-2xl border border-border/50 divide-y divide-border/50">
-                    {filteredProjects.map((project) => (
-                      <ProjectCard key={project.id} project={project} />
-                    ))}
-                  </div>
+                  view === "grid" ? (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                      {filteredProjects.map((project) => (
+                        <ProjectGridCard key={project.id} project={project} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-card rounded-2xl border border-border/50 divide-y divide-border/50">
+                      {filteredProjects.map((project) => (
+                        <ProjectCard key={project.id} project={project} />
+                      ))}
+                    </div>
+                  )
                 ) : (
                   <div className="flex min-h-[380px] flex-col items-center justify-center px-6 py-12 text-center">
                     <ProjectIllustration className="relative mx-auto mb-6 h-40 w-56" />

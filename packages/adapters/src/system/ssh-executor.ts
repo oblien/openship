@@ -246,8 +246,12 @@ export class SshExecutor implements CommandExecutor {
 
         stream.on("close", (code: number) => {
           finish(() => {
-            if (code !== 0) reject(new Error(stderr.trim() || `Exit code ${code}`));
-            else resolve(stdout.trim());
+            if (code !== 0) {
+              // Include stdout too — certbot & friends write the real error there
+              // while stderr only has boilerplate, so stderr-only hid the cause.
+              const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+              reject(new Error(detail || `Exit code ${code}`));
+            } else resolve(stdout.trim());
           });
         });
       });
@@ -410,6 +414,72 @@ export class SshExecutor implements CommandExecutor {
   }
 
   /**
+   * Pipe `body` into a remote command's stdin over a raw ssh2 channel, half-
+   * closing stdin at EOF. The streaming inverse of rawExec: used to stream a
+   * `docker save` tar straight into `docker load` on another host without
+   * staging the (multi-GB) image to a temp file. Bounded stderr tail for
+   * diagnostics; registered for transport-drop abort like _exec/_streamExec.
+   */
+  execWithInput(command: string, body: Readable): Promise<{ code: number; stderr: string; stdout: string }> {
+    return (async () => {
+      const client = await this.connect();
+      return new Promise<{ code: number; stderr: string; stdout: string }>((resolve, reject) => {
+        let settled = false;
+        const abort = (err: Error) => finish(() => reject(err));
+        const finish = (act: () => void) => {
+          if (settled) return;
+          settled = true;
+          this.inflight.delete(abort);
+          act();
+        };
+        this.inflight.add(abort);
+
+        client.exec(command, (err, stream) => {
+          if (err) return finish(() => reject(err));
+
+          let stderr = "";
+          stream.stderr.on("data", (d: Buffer) => {
+            stderr += d.toString();
+            if (stderr.length > 16 * 1024) stderr = stderr.slice(-16 * 1024);
+          });
+          // Capture stdout (docker load prints "Loaded image( ID)?: <ref>", which
+          // the caller needs to retag) AND keep the channel flowing so it doesn't
+          // stall on an unread buffer.
+          let stdout = "";
+          stream.on("data", (d: Buffer) => {
+            stdout += d.toString();
+            if (stdout.length > 16 * 1024) stdout = stdout.slice(-16 * 1024);
+          });
+
+          let exitCode: number | null = null;
+          stream.on("exit", (code: number | null) => {
+            exitCode = code;
+          });
+          stream.on("close", (code: number | null) => {
+            finish(() => {
+              const final = typeof code === "number" ? code : exitCode;
+              if (final == null) {
+                reject(
+                  new Error(
+                    "remote channel closed without an exit status — the SSH connection was terminated mid-command",
+                  ),
+                );
+              } else {
+                resolve({ code: final, stderr: stderr.trim(), stdout: stdout.trim() });
+              }
+            });
+          });
+
+          // body → channel stdin; end() sends EOF so the reader exits.
+          body.on("error", (e) => finish(() => { try { stream.close(); } catch {} reject(e); }));
+          stream.on("error", (e: Error) => finish(() => reject(e)));
+          body.pipe(stream);
+        });
+      });
+    })();
+  }
+
+  /**
    * Open an interactive PTY shell on the remote host. The returned
    * ShellSession wraps an ssh2 ClientChannel: writes go to stdin,
    * stdout/stderr emit on the readable streams, setWindow forwards to
@@ -472,6 +542,34 @@ export class SshExecutor implements CommandExecutor {
   async forwardUnixSocket(socketPath: string): Promise<Duplex> {
     const client = await this.connect();
     return openSshUnixSocket(client as StreamLocalCapableClient, socketPath);
+  }
+
+  /**
+   * Carry the Docker Engine API over a `docker system dial-stdio` exec channel
+   * on the pooled connection — the streamlocal-free transport used when the
+   * SSH server (or the Bun-compiled desktop runtime) can't do socket
+   * forwarding. Uses the SAME ENV_PREFIX as streamExec so `docker` resolves on
+   * PATH exactly as it does for the remote build (which is proven to work).
+   */
+  async openDockerDialStdio(): Promise<Duplex> {
+    const client = await this.connect();
+    return new Promise<Duplex>((resolve, reject) => {
+      client.exec(SshExecutor.ENV_PREFIX + "docker system dial-stdio", (err, stream) => {
+        if (err) return reject(err);
+        // Diagnostics: `docker system dial-stdio` writes any failure (daemon
+        // down, permission, "unknown command" on ancient docker) to stderr and
+        // exits non-zero. Surface it — otherwise dockerode just sees the stream
+        // close and reports an opaque timeout.
+        stream.stderr?.on("data", (d: Buffer) => {
+          const text = d.toString().trim();
+          if (text) console.warn(`[docker-ssh] dial-stdio stderr: ${text}`);
+        });
+        stream.on("exit", (code: number | null) => {
+          if (code) console.warn(`[docker-ssh] dial-stdio exited early (code=${code})`);
+        });
+        resolve(stream as unknown as Duplex);
+      });
+    });
   }
 
   async forwardPort(remoteHost: string, remotePort: number): Promise<Duplex> {

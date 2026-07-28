@@ -11,6 +11,7 @@ import { openCommand } from "./commands/open";
 // Run & workspace
 import { upCommand } from "./commands/up";
 import { stopCommand } from "./commands/stop";
+import { uninstallCommand } from "./commands/uninstall";
 import { initCommand } from "./commands/init";
 import { configCommand } from "./commands/config";
 import { contextCommand } from "./commands/context";
@@ -44,7 +45,7 @@ import { updateCommand } from "./commands/update";
 import { cacheCommand } from "./commands/cache";
 
 // Interactive setup / control (bare `openship`)
-import { runWizard, runControl } from "./commands/wizard";
+import { runWizard, runControl, isSetupInProgress } from "./commands/wizard";
 import { serviceStatus } from "./lib/service";
 
 // Injected at build time by tsup (define). Always present in the built binary.
@@ -63,13 +64,17 @@ program
   // Bare `openship` (no subcommand): setup wizard on a fresh box, or the control
   // panel once a service is already installed (manage instead of starting over).
   .action(async () => {
-    if (serviceStatus().installed) await runControl();
+    // A service is installed AND setup finished → manage it. If a prior setup
+    // was interrupted (service installed but never completed), resume the wizard
+    // instead of showing the control panel as if the install were done.
+    if (serviceStatus().installed && !isSetupInProgress()) await runControl();
     else await runWizard();
   });
 
 // Run the platform / auth / workspace
 program.addCommand(upCommand);
 program.addCommand(stopCommand);
+program.addCommand(uninstallCommand);
 program.addCommand(installCommand);
 program.addCommand(updateCommand);
 program.addCommand(openCommand);

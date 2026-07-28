@@ -8,7 +8,8 @@ import ignore from "ignore";
 import type { BuildConfig, LogCallback } from "../types";
 
 import { getTarCreateEnv, prepareSourceTarArgs } from "../archive";
-import { injectGitToken, toGitHubSshUrl } from "./build-pipeline";
+import { assembleGitClone } from "./build-pipeline";
+import { localGitSshWriter, materializeGitSsh, type GitSshMaterial } from "./git-ssh-material";
 import { generateDockerfile } from "./docker-build-plan";
 import { resolveDockerfileCandidates, resolveDockerRootDirectory } from "./docker-paths";
 
@@ -211,28 +212,29 @@ async function cloneGitSource(
   // SSH mode (per-server key / deploy key): clone over git@github.com with a
   // 0600 key + pinned known_hosts in a local temp dir (removed in finally).
   // Normally SSH clones run ON the server; this is the orchestrator fallback.
-  let cloneUrl: string;
-  let gitEnv: Record<string, string> | undefined;
-  let sshDir: string | null = null;
+  let sshMaterial: GitSshMaterial | undefined;
   if (config.gitSsh) {
-    sshDir = await mkdtemp(join(tmpdir(), "opsh-ghkey-"));
-    const keyFile = join(sshDir, "id");
-    const knownHostsFile = join(sshDir, "known_hosts");
-    await writeFile(keyFile, config.gitSsh.privateKey, { mode: 0o600 });
-    await writeFile(knownHostsFile, config.gitSsh.knownHosts, { mode: 0o600 });
-    gitEnv = {
-      GIT_SSH_COMMAND: `ssh -i ${keyFile} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${knownHostsFile}`,
-    };
-    cloneUrl = toGitHubSshUrl(config.repoUrl);
-  } else {
-    cloneUrl = injectGitToken(config.repoUrl, config.gitToken);
+    sshMaterial = await materializeGitSsh(
+      localGitSshWriter(),
+      await mkdtemp(join(tmpdir(), "opsh-ghkey-")),
+      config.gitSsh,
+    );
   }
+
+  // Same assembly the on-server clones use (git-clone.ts), in argv form.
+  // `config.gitAmbient` is deliberately NOT forwarded: it names credentials that
+  // exist on the BUILD SERVER, and this clone runs on the orchestrator standing
+  // in for it — the server's identity is not ours to use.
+  const { cloneUrl, env: gitEnv, credArgs } = assembleGitClone({
+    repoUrl: config.repoUrl,
+    gitToken: config.gitToken,
+    ssh: sshMaterial,
+  });
 
   try {
     await spawnGit(
       [
-        "-c",
-        "credential.helper=",
+        ...credArgs,
         "clone",
         "--progress",
         "--depth",
@@ -246,15 +248,16 @@ async function cloneGitSource(
     );
 
     if (config.commitSha) {
-      await spawnGit(
-        ["-c", "credential.helper=", "-C", targetPath, "checkout", config.commitSha],
-        { timeoutMs: GIT_CHECKOUT_IDLE_TIMEOUT_MS, onLog, env: gitEnv },
-      );
+      await spawnGit([...credArgs, "-C", targetPath, "checkout", config.commitSha], {
+        timeoutMs: GIT_CHECKOUT_IDLE_TIMEOUT_MS,
+        onLog,
+        env: gitEnv,
+      });
     }
 
     await rm(join(targetPath, ".git"), { recursive: true, force: true });
   } finally {
-    if (sshDir) await rm(sshDir, { recursive: true, force: true }).catch(() => {});
+    await sshMaterial?.cleanup();
   }
 }
 

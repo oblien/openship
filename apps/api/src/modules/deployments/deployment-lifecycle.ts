@@ -54,6 +54,15 @@ export async function cleanupBuildArtifact(
   runtime: RuntimeAdapter,
   artifactRef: string,
 ): Promise<void> {
+  // An absolute-path ref is a filesystem build DIRECTORY (a bare build dir, or a
+  // static Docker build's extracted doc-root at STATIC_RELEASE_BASE/.builds/…),
+  // NOT a docker image. (Image tags contain "/" but never START with it.)
+  // removeImage would 404-no-op on a path and leak the dir, so remove it as a
+  // directory — destroy() rm's an absolute path on both runtimes.
+  if (artifactRef.startsWith("/")) {
+    await runtime.destroy(artifactRef);
+    return;
+  }
   if (runtime instanceof DockerRuntime) {
     await runtime.removeImage(artifactRef);
     return;
@@ -283,6 +292,19 @@ export async function onCancelled(
   await repos.deployment.updateStatus(dep.id, "cancelled");
   await repos.deployment.finishBuildSession(buildSessionId, "cancelled", durationMs ?? 0, persistLogs());
   sessionManager.updateStatus(dep.id, "cancelled");
+
+  notification.emit({
+    organizationId: dep.organizationId,
+    eventType: "deployment.cancelled",
+    resourceType: "deployment",
+    resourceId: dep.id,
+    payload: {
+      projectName: ctx.project.name,
+      branch: dep.branch,
+      commitSha: dep.commitSha,
+      durationMs,
+    },
+  });
 }
 
 export async function onSuccess(

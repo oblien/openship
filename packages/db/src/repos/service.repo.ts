@@ -599,6 +599,18 @@ export function createServiceRepo(db: Database) {
       });
     },
 
+    /** service_deployment rows referencing any of these live container ids —
+     *  the "are these containers already managed by a project here?" lookup that
+     *  makes a re-import idempotent (refuse re-adopting an existing project's
+     *  containers instead of minting a duplicate `-2` set). Callers resolve each
+     *  row's deployment→project for org-scope + soft-delete checks. */
+    async findByContainerIds(containerIds: string[]): Promise<ServiceDeployment[]> {
+      if (containerIds.length === 0) return [];
+      return db.query.serviceDeployment.findMany({
+        where: inArray(serviceDeployment.containerId, containerIds),
+      });
+    },
+
     async listByService(serviceId: string) {
       return db.query.serviceDeployment.findMany({
         where: eq(serviceDeployment.serviceId, serviceId),

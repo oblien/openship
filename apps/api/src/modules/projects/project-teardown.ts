@@ -38,6 +38,7 @@ import { removeProjectFromServerManifests } from "../../lib/openship-manifest-sy
 import { cancelBuildSession } from "../deployments/build.service";
 import { deleteWebhook as deleteGitHubWebhook } from "../github/github.service";
 import type { RequestContext } from "../../lib/request-context";
+import { env } from "../../config";
 import {
   cleanupWebmailInstall,
   mailServerIdFromWebmailSlug,
@@ -127,6 +128,13 @@ export interface TeardownOptions {
    * runtime + rows but must NOT delete the webhook.
    */
   preserveWebhook?: boolean;
+  /**
+   * Record-only ("soft") delete: drop just the Openship DB record and LEAVE the
+   * server workload + data + on-server manifest intact, so the project can be
+   * re-imported later. Self-hosted only — IGNORED for a cloud project (its
+   * resources live on Oblien and must be reclaimed). Enforced in teardownProject.
+   */
+  recordOnly?: boolean;
   /**
    * Orphan-and-drop even when a resource on a REACHABLE server fails to
    * destroy (a persistent real error). Records the leaked resources for GC and
@@ -290,9 +298,20 @@ export async function teardownProject(
       return finalize(steps, false, "org_mismatch");
     }
 
+    // Record-only ("soft") delete: keep the server workload + data, drop just
+    // the Openship record. NEVER honored for a cloud project — its resources
+    // live on Oblien and must be reclaimed; this is the security boundary, not
+    // the UI toggle. (CLOUD_MODE = the SaaS itself, where nothing is "kept".)
+    const recordOnly = !!opts.recordOnly && !project.cloudWorkspaceId && !env.CLOUD_MODE;
+
     // ── Step 1: Cancel in-flight work (force=true only). ────────────────
+    // `keepProvisioned` for record-only: the cancel aborts the build and marks
+    // the row cancelled but must NOT destroy what the deploy already
+    // provisioned — otherwise the dashboard's automatic force-escalation on
+    // "active work" would tear down containers/images the user was promised
+    // stay on the server.
     if (opts.force) {
-      await stepCancelInFlight(projectId, ctx.userId, push);
+      await stepCancelInFlight(projectId, push, recordOnly);
     } else {
       push({ step: "cancel_in_flight", status: "skipped", details: "force=false" });
     }
@@ -306,55 +325,63 @@ export async function teardownProject(
       await stepDeleteWebhook(ctx, project, push);
     }
 
-    // ── Step 3: Tear down runtime + edge + pages + routes + volumes via
-    //   the existing manifest executor. Cloud workspaces destroy through
-    //   the same path because the cloud runtime adapter implements destroy().
-    //   Resources on an unreachable server are orphaned (not destroyed inline)
-    //   and returned here so we can record them for GC before the row drops.
-    const orphanCandidates = await stepRuntimeCleanup(
-      project,
-      opts.wipeVolumes ?? false,
-      opts.forceOrphan ?? false,
-      push,
-    );
+    // ── Steps 3+4: server-resource teardown — SKIPPED for record-only. ──
+    // Record-only keeps the workload, data, AND the on-server .openship manifest
+    // (so a later Docker re-scan can re-import the project); it drops only the DB
+    // row below. Otherwise: tear down runtime + edge + pages + routes + volumes
+    // (cloud workspaces destroy through the same path — the cloud adapter
+    // implements destroy()), webmail, and the server manifest entry.
+    let orphaned: OrphanedResourceSummary[] = [];
+    if (recordOnly) {
+      push({ step: "runtime_cleanup", status: "skipped", details: "record-only: kept on server" });
+      push({ step: "webmail", status: "skipped", details: "record-only: kept on server" });
+    } else {
+      // Resources on an unreachable server are orphaned (not destroyed inline)
+      // and returned here so we can record them for GC before the row drops.
+      const orphanCandidates = await stepRuntimeCleanup(
+        project,
+        opts.wipeVolumes ?? false,
+        opts.forceOrphan ?? false,
+        push,
+      );
 
-    // ── Step 4: Webmail filesystem + mail-state. ─────────────────────────
-    await stepWebmailTeardown(project, push);
+      await stepWebmailTeardown(project, push);
 
-    // Best-effort: drop this project from each server's .openship manifest so a
-    // later recover-from-server scan doesn't re-list it. Desktop-only inside;
-    // never gates the delete (reconcile's running-container check is the guard).
-    await removeProjectFromServerManifests(project).catch(() => {});
+      // Best-effort: drop this project from each server's .openship manifest so a
+      // later recover-from-server scan doesn't re-list it. Desktop-only inside;
+      // never gates the delete (reconcile's running-container check is the guard).
+      await removeProjectFromServerManifests(project).catch(() => {});
 
-    // ── ATOMICITY GATE: never drop the DB row while the SOURCE is dirty. ──
-    // If runtime cleanup (containers / images / volumes / cloud workspace /
-    // routes) or webmail teardown FAILED, KEEP the project row so the leaked
-    // resources still have a record to retry against. The `finally` below
-    // releases the lock (rowDeleted stays false), so the next delete attempt
-    // re-runs cleanup. The returned result carries the failed steps
-    // (finalize → ok:false, unrecoverable) so the UI shows what blocked it.
-    // GitHub-webhook unregister is best-effort (external state, not a host
-    // resource leak) and deliberately does NOT gate the delete.
-    const sourceClean = steps.every(
-      (s) =>
-        (s.step !== "runtime_cleanup" && s.step !== "webmail") ||
-        s.status === "ok" ||
-        s.status === "skipped",
-    );
-    if (!sourceClean) {
-      push({
-        step: "delete_db_row",
-        status: "skipped",
-        details: "kept: source cleanup incomplete — retry once the runtime is reachable",
-      });
-      return finalize(steps, false);
+      // ── ATOMICITY GATE: never drop the DB row while the SOURCE is dirty. ──
+      // If runtime cleanup (containers / images / volumes / cloud workspace /
+      // routes) or webmail teardown FAILED, KEEP the project row so the leaked
+      // resources still have a record to retry against. The `finally` below
+      // releases the lock (rowDeleted stays false), so the next delete attempt
+      // re-runs cleanup. The returned result carries the failed steps
+      // (finalize → ok:false, unrecoverable) so the UI shows what blocked it.
+      // GitHub-webhook unregister is best-effort (external state, not a host
+      // resource leak) and deliberately does NOT gate the delete.
+      const sourceClean = steps.every(
+        (s) =>
+          (s.step !== "runtime_cleanup" && s.step !== "webmail") ||
+          s.status === "ok" ||
+          s.status === "skipped",
+      );
+      if (!sourceClean) {
+        push({
+          step: "delete_db_row",
+          status: "skipped",
+          details: "kept: source cleanup incomplete — retry once the runtime is reachable",
+        });
+        return finalize(steps, false);
+      }
+
+      // About to drop the row — persist any orphaned resources FIRST so the GC
+      // sweep can still find + reclaim them after the project row (their only
+      // record) is gone. Only happens on the row-dropping path: a kept row keeps
+      // the resources tracked via the project itself, so no orphan record needed.
+      orphaned = await persistOrphans(ctx.organizationId, projectId, orphanCandidates);
     }
-
-    // About to drop the row — persist any orphaned resources FIRST so the GC
-    // sweep can still find + reclaim them after the project row (their only
-    // record) is gone. Only happens on the row-dropping path: a kept row keeps
-    // the resources tracked via the project itself, so no orphan record needed.
-    const orphaned = await persistOrphans(ctx.organizationId, projectId, orphanCandidates);
 
     // ── Step 5: Drop the DB row. FK CASCADE on project.id sweeps
     //   deployment, service, env_var, domain, backup_policy.
@@ -390,8 +417,8 @@ function finalize(
 
 async function stepCancelInFlight(
   projectId: string,
-  actorUserId: string,
   push: (s: TeardownStep) => void,
+  keepProvisioned: boolean,
 ): Promise<void> {
   const before = await getActiveProjectState(projectId);
   if (!before.blocking) {
@@ -403,12 +430,13 @@ async function stepCancelInFlight(
 
   // Cancel each active deployment — cancelBuildSession aborts the build,
   // tears down half-provisioned containers/images, and marks the row
-  // cancelled. Best-effort: a deployment that has already finished
-  // between listing and cancelling will throw ForbiddenError, which we
-  // ignore — the next quiesce poll will pick that up.
+  // cancelled. `keepProvisioned` (record-only delete) skips that teardown so
+  // the cancel stays non-destructive on the server. Best-effort: a deployment
+  // that has already finished between listing and cancelling will throw
+  // ForbiddenError, which we ignore — the next quiesce poll will pick that up.
   for (const depId of before.activeDeploymentIds) {
     try {
-      await cancelBuildSession(depId);
+      await cancelBuildSession(depId, { keepProvisioned });
     } catch (err) {
       cancelErrors.push(`deployment ${depId}: ${safeErrorMessage(err)}`);
     }

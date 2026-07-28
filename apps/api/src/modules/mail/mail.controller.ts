@@ -30,6 +30,7 @@ import crypto from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { buildMailBackupPayload } from "./admin/backup-plan";
 import { streamSSE } from "../../lib/sse";
+import { invalidatePlatformTransport } from "../../lib/mail";
 import { env } from "../../config";
 import { safeErrorMessage } from "@repo/core";
 import { sshManager } from "../../lib/ssh-manager";
@@ -57,6 +58,7 @@ import {
 import { checkMailHealth, MAIL_COMPONENTS } from "./mail-health.service";
 import { updatePostmasterPassword } from "./mail-credentials.service";
 import { reserveMailSetup } from "./mail-setup-lease";
+import { applyRelayToState } from "./admin/outbound-relay.service";
 import {
   readState,
   writeState,
@@ -881,6 +883,13 @@ export async function startSetup(c: Context) {
             ...state,
             dnsRecords: result.data.dnsRecords as Record<string, unknown>,
           };
+          // stepDkimKeys rebuilds dnsRecords SELF-HOST-ONLY. If an SES outbound
+          // relay is active, re-lay its send-hop records (SPF include + SES
+          // DKIM/MAIL FROM) back on — otherwise a re-install / resume silently
+          // drops them and SES sending breaks / DMARC misaligns.
+          if (state.outboundRelay?.enabled) {
+            state = { ...state, ...applyRelayToState(state, state.outboundRelay) };
+          }
           await stream.writeSSE({
             event: "dns_records",
             data: JSON.stringify({ records: state.dnsRecords }),
@@ -945,6 +954,10 @@ export async function startSetup(c: Context) {
         const { ensureOpenshipPlatformMailbox } = await import(
           "./admin/platform-mailbox.service"
         );
+        // Clear any cached "platform mailbox unavailable" marker from BEFORE the
+        // install finished — otherwise the send path keeps skipping this server
+        // for the rest of the failure window right after a successful install.
+        invalidatePlatformTransport(serverId);
         const creds = await ensureOpenshipPlatformMailbox(serverId);
         await stream.writeSSE({
           event: "log",

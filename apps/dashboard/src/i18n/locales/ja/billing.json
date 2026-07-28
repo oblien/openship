@@ -1,4 +1,15 @@
 {
+  "capacity": {
+    "title": "容量と使用状況",
+    "subtitle": "プランに含まれる容量と使用量です。ライブの数値は Openship Cloud から同期されます。",
+    "routes": "無料ルート",
+    "workspaces": "ワークスペース",
+    "unlimited": "無制限",
+    "used": "使用済み",
+    "of": "/ {max}",
+    "syncing": "クラウドから同期中"
+  },
+  "topupsComingSoon": "都度購入のクレジットチャージは近日提供予定です。ここで月間割り当てに加えてクレジットを追加できます。",
   "header": {
     "credits": "Credits",
     "creditsSuffix": "of {limit}",
@@ -156,7 +167,7 @@
     "weekTick": "第{n}週"
   },
   "layout": {
-    "title": "請求",
+    "title": "請求と使用状況",
     "subtitle": "サブスクリプション、使用量、支払い方法を管理します。"
   },
   "sidebar": {

@@ -43,7 +43,7 @@ const CODE_CHALLENGE_RE = /^[A-Za-z0-9_-]{40,128}$/;
 const STATE_RE = /^[A-Za-z0-9_\-.~]{1,256}$/;
 
 type ValidatedParams =
-  | { ok: true; redirect: string; redirectHost: string; state: string; codeChallenge: string }
+  | { ok: true; redirect?: string; redirectHost?: string; state: string; codeChallenge: string; isDevice: boolean }
   | { ok: false; error: string };
 
 /**
@@ -56,11 +56,11 @@ function validateParams(
   searchParams: URLSearchParams,
   msgs: Record<string, string>,
 ): ValidatedParams {
+  const isDevice = searchParams.get("mode") === "device";
   const redirect = searchParams.get("redirect");
   const state = searchParams.get("state");
   const codeChallenge = searchParams.get("code_challenge");
 
-  if (!redirect) return { ok: false, error: msgs.missingRedirect };
   if (!state) return { ok: false, error: msgs.missingState };
   if (!codeChallenge) return { ok: false, error: msgs.missingCodeChallenge };
 
@@ -69,6 +69,13 @@ function validateParams(
     return { ok: false, error: msgs.invalidCodeChallenge };
   }
 
+  // Device/poll flow: the CLI retrieves the code via connect-poll, so there's no
+  // browser redirect to require or validate — confirm in-place.
+  if (isDevice) {
+    return { ok: true, state, codeChallenge, isDevice: true };
+  }
+
+  if (!redirect) return { ok: false, error: msgs.missingRedirect };
   let url: URL;
   try {
     url = new URL(redirect);
@@ -92,6 +99,7 @@ function validateParams(
     redirectHost: url.host,
     state,
     codeChallenge,
+    isDevice: false,
   };
 }
 
@@ -124,16 +132,21 @@ function CloudAuthorizeInner() {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const { callbackUrl } = await cloudApi.connectAuthorize({
-        redirect: validated.redirect,
+      const res = await cloudApi.connectAuthorize({
+        ...(validated.redirect ? { redirect: validated.redirect } : {}),
         state: validated.state,
         codeChallenge: validated.codeChallenge,
+        ...(isDevice ? { mode: "device" as const } : {}),
       });
       if (isDevice) {
         // The code is now stored keyed by `state`; the CLI's poll will pick it
-        // up. Show a clean confirmation instead of navigating to a URL the
-        // remote box can't be reached at anyway.
+        // up. Show a clean confirmation — there's no redirect at all in this flow.
         setDeviceDone(true);
+        setSubmitting(false);
+        return;
+      }
+      if (!res.callbackUrl) {
+        setSubmitError(m.authorizeError);
         setSubmitting(false);
         return;
       }
@@ -142,7 +155,7 @@ function CloudAuthorizeInner() {
       // /api/auth/cloud-callback) needs to read the same-origin
       // localStorage PKCE verifier that was stashed before the popup
       // opened, so SPA routing won't work here.
-      window.location.href = callbackUrl;
+      window.location.href = res.callbackUrl;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         // Session expired between page load and click — bounce to login.
@@ -224,11 +237,15 @@ function CloudAuthorizeInner() {
           <ServerIcon className="size-7 text-primary-foreground" />
         </div>
         <h1 className="text-xl font-semibold">{m.title}</h1>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {m.instancePre}
-          <span className="font-medium text-foreground">{validated.redirectHost}</span>
-          {m.instancePost}
-        </p>
+        {/* Device/poll flow has no redirect host to name — the title alone is
+            the ask; only the browser-redirect flow shows "…to <host>". */}
+        {!isDevice && (
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {m.instancePre}
+            <span className="font-medium text-foreground">{validated.redirectHost}</span>
+            {m.instancePost}
+          </p>
+        )}
       </div>
 
       <div className="mb-6 rounded-lg border border-border bg-muted/30 p-4">
