@@ -507,7 +507,7 @@ jobs:
       - name: Verify Compose install support
         run: |
           bun run --cwd apps/cli test
-          bun apps/cli/dist/index.js up --help | grep -F -- "--compose"
+          node apps/cli/dist/index.js up --help | grep -F -- "--compose"
 
       - name: Publish to npm (OIDC trusted publishing — no token)
         working-directory: apps/cli
