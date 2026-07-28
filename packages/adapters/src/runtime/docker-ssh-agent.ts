@@ -29,6 +29,14 @@ const DOCKER_DIAL_STDIO_COMMAND = "docker system dial-stdio";
 // desktop (where streamlocal hangs) falls through to dial-stdio quickly instead
 // of stalling behind the 25s reachability cap on every connection.
 const STREAMLOCAL_PROBE_TIMEOUT_MS = 8_000;
+// Per-connection data-flow verification for the REAL bridge channel (see
+// `bridgeClient`) — deliberately much shorter than DOCKER_STREAMLOCAL_TIMEOUT_MS
+// (which just bounds the open call for a different caller). A working channel
+// answers in well under a second in every case observed; this only needs to be
+// generous enough to absorb normal latency, while leaving most of the caller's
+// overall reachability budget (e.g. the 25s migration-scan cap) free for the
+// dial-stdio fallback to actually complete if this channel proves dead.
+const STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS = 3_000;
 
 function toSshConfig(opts: DockerConnectionOptions): SshConfig {
   return {
@@ -357,10 +365,27 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
   // Dedicated SSH client for the ephemeral dial-stdio path (no pooled executor).
   // Reused across channels for the bridge's lifetime; closed in close().
   let dialClient: StreamLocalCapableClient | null = null;
+  // Set once a streamlocal channel opens but never carries data (see
+  // `bridgeClient`): some sshd/ssh2 combinations only reliably service the
+  // FIRST channel opened on a connection, so once the pooled connection has
+  // shown that failure mode, every dial-stdio call for the rest of this
+  // bridge's life uses a fresh ephemeral connection instead of risking the
+  // same fate on the pooled one.
+  let pooledConnectionUnreliable = false;
 
-  const openDialStdioUpstream = async (): Promise<Duplex> => {
+  /**
+   * @param forceEphemeral Skip the pooled executor even when it's available and
+   *   open a dedicated SSH connection instead. Used for the post-streamlocal-
+   *   failure fallback (see `bridgeClient`) — some sshd/ssh2 combinations only
+   *   reliably service the FIRST channel opened on a given connection, so
+   *   retrying on the SAME (already one-channel-deep) pooled connection risks
+   *   hitting the same dead-channel failure the streamlocal attempt just did.
+   *   A fresh connection's first channel has been reliable in every case
+   *   observed, at the cost of one extra SSH handshake.
+   */
+  const openDialStdioUpstream = async (forceEphemeral = false): Promise<Duplex> => {
     // Pooled executor path: same connection + env/PATH as the working build.
-    if (opts.executor?.openDockerDialStdio) {
+    if (!forceEphemeral && opts.executor?.openDockerDialStdio) {
       const stream = await opts.executor.openDockerDialStdio();
       stream.once("error", (e) =>
         console.warn(`[docker-ssh] dial-stdio channel error: ${safeErrorMessage(e)}`),
@@ -434,35 +459,182 @@ export function createDockerSshBridge(opts: DockerConnectionOptions): DockerSshB
     return modeDecision;
   };
 
-  const openUpstream = async (): Promise<Duplex> => {
+  // Buffer cap while verifying a streamlocal channel is alive (below). Generous —
+  // real requests that verify usually do so on the first response byte, well
+  // under a few KB of client-side request data; this is just a safety valve
+  // against unbounded memory growth on a pathological request.
+  const VERIFY_BUFFER_CAP_BYTES = 8 * 1024 * 1024;
+
+  function pipeThrough(client: net.Socket, upstream: Duplex): void {
+    const teardown = () => {
+      client.destroy();
+      upstream.destroy();
+    };
+    client.on("error", teardown);
+    upstream.on("error", teardown);
+    client.once("close", () => upstream.destroy());
+    upstream.once("close", () => client.destroy());
+    // Bidirectional pipe: propagates backpressure and end/close between
+    // dockerode's HTTP socket and the SSH upstream (streamlocal or dial-stdio).
+    client.pipe(upstream);
+    upstream.pipe(client);
+  }
+
+  /**
+   * Attach one accepted bridge client to a live upstream.
+   *
+   * Two independent failure modes are guarded against here:
+   *
+   * 1. Under the Bun-hosted API, dockerode's request is silently lost if we
+   *    don't start reading from the accepted client socket almost
+   *    immediately — confirmed empirically: a bare `net.createServer` handler
+   *    that delays attaching its first `data` listener by as little as ~50ms
+   *    of real timer time (no SSH involved at all) causes `docker.ping()` to
+   *    hang forever, with the request bytes never observed on the wire. So
+   *    `onClientData` is attached SYNCHRONOUSLY below, before any `await` —
+   *    everything the client sends is buffered from the first tick, and only
+   *    forwarded live once an upstream has actually been chosen.
+   * 2. decideMode()'s probe only proves ONE streamlocal channel can move
+   *    data — some sshd/ssh2 combinations service that first channel fine
+   *    and then silently swallow every channel-open after it: the open
+   *    promise resolves, but no byte ever crosses. So for streamlocal we
+   *    hold off declaring the channel usable until real data comes back. If
+   *    nothing does within STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS, the channel is
+   *    abandoned, the bridge permanently downgrades to dial-stdio, and the
+   *    buffered bytes (including anything collected during (1) or written
+   *    live to the dead channel) are replayed onto a fresh dial-stdio
+   *    channel so the client's in-flight request isn't lost. dial-stdio
+   *    itself isn't re-verified here — it's a plain exec channel, the same
+   *    transport the remote `docker build` already uses successfully.
+   */
+  async function bridgeClient(client: net.Socket): Promise<void> {
+    const buffered: Buffer[] = [];
+    let bufferedBytes = 0;
+    let clientGone = false;
+    let liveUpstream: Duplex | null = null;
+
+    const onClientData = (chunk: Buffer) => {
+      if (bufferedBytes < VERIFY_BUFFER_CAP_BYTES) {
+        buffered.push(chunk);
+        bufferedBytes += chunk.length;
+      }
+      liveUpstream?.write(chunk);
+    };
+    const onClientGone = () => {
+      clientGone = true;
+    };
+    client.on("data", onClientData);
+    client.on("error", onClientGone);
+    client.once("close", onClientGone);
+    const detach = () => {
+      client.removeListener("data", onClientData);
+      client.removeListener("error", onClientGone);
+      client.removeListener("close", onClientGone);
+    };
+
     const mode = await ensureMode();
-    return mode === "dialstdio" ? openDialStdioUpstream() : openStreamlocalUpstream(opts);
-  };
+    if (mode === "dialstdio") {
+      const upstream = await openDialStdioUpstream(pooledConnectionUnreliable);
+      detach();
+      if (clientGone) {
+        upstream.destroy();
+        return;
+      }
+      for (const chunk of buffered) upstream.write(chunk);
+      pipeThrough(client, upstream);
+      return;
+    }
+
+    const openPromise = openStreamlocalUpstream(opts);
+    try {
+      // Bound the open call itself, not just the data-flow verification below —
+      // some sshd/ssh2 combinations can hang the channel-open indefinitely
+      // (distinct from opening fine and then silently dropping data), and an
+      // unbounded await here would stall the whole bridge with no fallback.
+      liveUpstream = await withTimeout(
+        openPromise,
+        STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS,
+        `streamlocal channel open timed out after ${STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS / 1000}s`,
+      );
+    } catch (err) {
+      console.warn(
+        `[docker-ssh] streamlocal channel open failed (${opts.host ?? "?"}): ${safeErrorMessage(err)} — ` +
+          "downgrading this bridge to dial-stdio (fresh connection) and replaying the buffered request.",
+      );
+      // If the open eventually resolves after we've already moved on, don't
+      // leak the channel.
+      openPromise.then((s) => s.destroy()).catch(() => {});
+      detach();
+      if (clientGone) return;
+      upstreamMode = "dialstdio";
+      pooledConnectionUnreliable = true;
+      const upstream = await openDialStdioUpstream(true);
+      for (const chunk of buffered) upstream.write(chunk);
+      pipeThrough(client, upstream);
+      return;
+    }
+    // Flush anything collected before this candidate existed, then keep
+    // forwarding live via onClientData for as long as it's the active upstream.
+    for (const chunk of buffered) liveUpstream.write(chunk);
+
+    const flowed = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), STREAMLOCAL_DATA_VERIFY_TIMEOUT_MS);
+      const onFirstData = (chunk: Buffer) => {
+        clearTimeout(timer);
+        // This chunk was consumed to prove liveness — forward it now so
+        // `pipeThrough`'s later `.pipe()` doesn't miss it (streams don't
+        // replay past 'data' events to a listener attached afterwards).
+        client.write(chunk);
+        resolve(true);
+      };
+      liveUpstream!.once("data", onFirstData);
+      liveUpstream!.once("error", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+      liveUpstream!.once("close", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+    });
+
+    detach();
+
+    if (clientGone) {
+      liveUpstream.destroy();
+      return;
+    }
+
+    let upstream = liveUpstream;
+    if (!flowed) {
+      console.warn(
+        `[docker-ssh] streamlocal channel opened but no data flowed (${opts.host ?? "?"}) — ` +
+          "downgrading this bridge to dial-stdio (fresh connection) and replaying the buffered request.",
+      );
+      upstream.destroy();
+      upstreamMode = "dialstdio";
+      // The pooled connection just proved it can't reliably service a channel
+      // past its first — don't hand it a second chance for the rest of this
+      // bridge's life. Every dial-stdio call from here on (this one and every
+      // later connection routed through the `mode === "dialstdio"` fast path
+      // above) uses a dedicated ephemeral connection instead.
+      pooledConnectionUnreliable = true;
+      upstream = await openDialStdioUpstream(true);
+      for (const chunk of buffered) upstream.write(chunk);
+    }
+
+    pipeThrough(client, upstream);
+  }
 
   const server = net.createServer((client) => {
     clients.add(client);
     client.setNoDelay(true);
     client.once("close", () => clients.delete(client));
 
-    openUpstream()
-      .then((upstream) => {
-        const teardown = () => {
-          client.destroy();
-          upstream.destroy();
-        };
-        client.on("error", teardown);
-        upstream.on("error", teardown);
-        client.once("close", () => upstream.destroy());
-        upstream.once("close", () => client.destroy());
-        // Bidirectional pipe: propagates backpressure and end/close between
-        // dockerode's HTTP socket and the SSH upstream (streamlocal or dial-stdio).
-        client.pipe(upstream);
-        upstream.pipe(client);
-      })
-      .catch((error) => {
-        console.warn(`[docker-ssh] bridge upstream open failed: ${safeErrorMessage(error)}`);
-        client.destroy(error instanceof Error ? error : new Error(String(error)));
-      });
+    bridgeClient(client).catch((error) => {
+      console.warn(`[docker-ssh] bridge upstream open failed: ${safeErrorMessage(error)}`);
+      client.destroy(error instanceof Error ? error : new Error(String(error)));
+    });
   });
 
   return {
