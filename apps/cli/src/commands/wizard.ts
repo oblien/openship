@@ -736,6 +736,8 @@ export async function runWizard(): Promise<void> {
     migratedCertPems = edgePlan.certPems;
     log.step("Starting the Docker Compose stack…");
     const up = await composeUp({
+      // Prefetched above, before the preflight stopped anything.
+      alreadyFetched: true,
       publicUrl,
       trustProxy: behindProxy,
       version: __CLI_VERSION__,

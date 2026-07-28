@@ -165,6 +165,13 @@ export interface ComposeUpOpts {
   version?: string;
   /** Force the pull path even on a from-source install (escape hatch). */
   build?: boolean;
+  /**
+   * `composePrefetch` already pulled/built in THIS run, so skip straight to the
+   * swap. Not an optimisation: every second between the operator's proxy stopping
+   * and our edge binding is downtime, and a cached re-pull/re-build still costs
+   * seconds (and a registry round-trip that can hang).
+   */
+  alreadyFetched?: boolean;
 }
 
 /** Pinned compose stack. Vars come from the generated .env (env_file + interpolation). */
@@ -930,11 +937,13 @@ export async function composeUp(
   if (buildDir) {
     // Only the upstream images can be pulled; ours don't exist in a registry for
     // this ref. `--pull=false` on build keeps it working offline after the first run.
-    if (compose(["pull", "postgres", "redis"], { withBuildOverride: true }) !== 0) {
-      return { ok: false, apiPort, dashPort };
-    }
-    if (compose(["build"], { withBuildOverride: true }) !== 0) {
-      return { ok: false, apiPort, dashPort };
+    if (!opts.alreadyFetched) {
+      if (compose(["pull", "postgres", "redis"], { withBuildOverride: true }) !== 0) {
+        return { ok: false, apiPort, dashPort };
+      }
+      if (compose(["build"], { withBuildOverride: true }) !== 0) {
+        return { ok: false, apiPort, dashPort };
+      }
     }
     if (up({ withBuildOverride: true }) !== 0) {
       return { ok: false, apiPort, dashPort };
@@ -944,7 +953,9 @@ export async function composeUp(
     return { ok: true, apiPort, dashPort };
   }
 
-  if (compose(["pull"]) !== 0) return { ok: false, apiPort, dashPort };
+  if (!opts.alreadyFetched && compose(["pull"]) !== 0) {
+    return { ok: false, apiPort, dashPort };
+  }
   if (up() !== 0) return { ok: false, apiPort, dashPort };
   onEdgeContainerChanged();
   writeInstallMethod("compose");

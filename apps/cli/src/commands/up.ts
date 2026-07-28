@@ -29,7 +29,7 @@ import {
   type EdgeAction,
 } from "../lib/edge-preflight";
 import { importMigratedSites } from "../lib/edge-import";
-import { edgeIsServing, edgeCrashReason } from "@repo/adapters/proxy";
+import { edgeIsBroken, edgeCrashReason } from "@repo/adapters/proxy";
 import { LocalExecutor } from "@repo/adapters";
 import {
   resolveInstallInputs,
@@ -394,6 +394,8 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
       : "Starting Openship via Docker Compose…",
   ).start();
   const res = await composeUp({
+    // Prefetched above, before the preflight stopped anything.
+    alreadyFetched: true,
     apiPort: opts.port,
     dashboardPort: opts.dashboardPort,
     publicUrl,
@@ -421,15 +423,19 @@ async function runCompose(opts: UpOpts & { yes?: boolean }): Promise<{ apiPort: 
   // If we stopped the operator's proxy to free :80/:443, OUR edge now owes them a
   // working one. `compose up -d` succeeds as soon as the container is CREATED, so a
   // crash-looping edge gets this far reading as success — with their proxy stopped
-  // and every hostname on the box dark. Verify, and if it isn't serving, put THEIR
-  // proxy back rather than continuing into an import that can only fail.
+  // and every hostname on the box dark.
+  //
+  // Asks `edgeIsBroken`, not "is it serving": this branch STOPS our edge and restores
+  // theirs, so it must only fire on an unambiguous failure. An earlier version probed
+  // HTTP inside the container, got a false negative on a box serving live traffic, and
+  // reported it as dark — the guard became the outage.
   //
   // The takeover journal is deliberately left open: it is the record of what to
   // restart, and `completeHostEdge()` below (not reached) is what discards it.
-  if (edgePlan.action && !(await edgeIsServing(new LocalExecutor()))) {
+  if (edgePlan.action && (await edgeIsBroken(new LocalExecutor()))) {
     const reason = await edgeCrashReason(new LocalExecutor());
     console.error(
-      chalk.red(`\n  Openship's edge is not serving :80${reason ? ` — ${reason}` : "."}`),
+      chalk.red(`\n  Openship's edge container is not running${reason ? ` — ${reason}` : "."}`),
     );
     const restored = await rollbackHostEdge();
     console.error(

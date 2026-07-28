@@ -37,8 +37,8 @@ const e = vi.hoisted(() => ({
   rollbacks: 0,
   completes: 0,
   restored: true,
-  /** Our edge is up and answering :80 (the normal case). */
-  edgeServing: true,
+  /** Our edge container is crash-looping / exited (the abnormal case). */
+  edgeBroken: false,
   edgeCrashReason: null as string | null,
   /** Set once a stopped proxy's sites are imported (suppresses re-offering). */
   marked: 0,
@@ -47,7 +47,7 @@ const e = vi.hoisted(() => ({
 // controls them like the rest of the edge chain.
 vi.mock("@repo/adapters/proxy", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/adapters/proxy")>()),
-  edgeIsServing: async () => e.edgeServing,
+  edgeIsBroken: async () => e.edgeBroken,
   edgeCrashReason: async () => e.edgeCrashReason,
 }));
 vi.mock("@repo/adapters", () => ({ LocalExecutor: class {} }));
@@ -105,7 +105,7 @@ beforeEach(() => {
   e.rollbacks = 0;
   e.completes = 0;
   e.restored = true;
-  e.edgeServing = true;
+  e.edgeBroken = false;
   e.edgeCrashReason = null;
   // Clear any option values commander retained from a previous parse.
   (upCommand as any).setOptionValue?.("edge", undefined);
@@ -206,9 +206,9 @@ describe("openship up --compose (edge chain)", () => {
     expect(h.composeUpCalls).toBe(0);
   });
 
-  it("RESTORES the proxy when the edge comes up but isn't serving", async () => {
+  it("RESTORES the proxy when the edge container is crash-looping", async () => {
     e.plan = { proceed: true, action: "migrate", sites: [{ serverNames: ["a.com"], ssl: false, target: { kind: "proxy", url: "http://127.0.0.1:3000" } }] };
-    e.edgeServing = false;
+    e.edgeBroken = true;
     e.edgeCrashReason = "a duplicate default server for 0.0.0.0:80";
     fetchStub = stubFetch(() => ({ status: 200, json: { ok: true } }));
 

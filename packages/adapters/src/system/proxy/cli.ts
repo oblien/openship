@@ -29,7 +29,7 @@ export {
   // needs both so it stops hardcoding the name and re-implementing the parse.
   EDGE_CONTAINER_NAME,
   edgeFailureReason,
-  edgeIsServing,
+  edgeIsBroken,
   edgeCrashReason,
   sanitizeEdgeVhosts,
 } from "./detect";

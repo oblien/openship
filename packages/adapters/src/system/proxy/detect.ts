@@ -138,7 +138,7 @@ export async function sanitizeEdgeVhosts(
     `    echo "dropped-catchall $f"; rm -f "$f"; continue;`,
     `  fi;`,
     `  if grep -qE '[[:space:]]default_server' "$f"; then`,
-    `    sed -i -E 's/([[:space:]]listen[^;]*)[[:space:]]+default_server/\\1/g' "$f" && echo "unset-default $f";`,
+    `    sed -E 's/([[:space:]]listen[^;]*)[[:space:]]+default_server/\\1/g' "$f" > "$f.osh" && mv "$f.osh" "$f" && echo "unset-default $f";`,
     `  fi;`,
     `done`,
   ].join(" ");
@@ -154,35 +154,28 @@ export async function sanitizeEdgeVhosts(
 }
 
 /**
- * Is OUR edge actually SERVING on `port` (default 80), on the box `executor` reaches?
+ * Is our edge DEFINITIVELY broken — crash-looping, exited, never started?
  *
- * Running is not serving: `docker compose up -d` returns as soon as the container
- * is CREATED, and a crash-looping edge reads as "up" while every hostname on the
- * box is dark. So this asks two questions — is the container running, and does it
- * answer — and only both count.
+ * Deliberately asks the negative, and deliberately answers "no" when it can't tell.
+ * The caller acts on `true` by stopping our edge and restoring the operator's proxy,
+ * so a false positive TAKES DOWN A WORKING EDGE. That is exactly what happened with
+ * the previous version of this: it probed `wget` inside the container (no guarantee
+ * the image has it, and host networking makes 127.0.0.1 ambiguous), got a false
+ * negative on a box that was serving live traffic, and reported the box as dark.
  *
- * Executor-based on purpose: the same check has to work from the CLI on its own box
- * and from the API over SSH. It used to be a `spawnSync` in the CLI, which meant a
- * second way of running a command on a machine the codebase already has an executor
- * for, and a helper that couldn't be reused for a remote server.
+ * `docker inspect .State.Status` is the one signal that can't be misread: a
+ * crash-looping container says `restarting`, a dead one `exited`. Anything else —
+ * including an unreadable answer — is treated as fine, so the worst case is "we
+ * miss a broken edge" (which the very next step reports anyway) instead of "we tore
+ * down a healthy one".
  */
-export async function edgeIsServing(
-  executor: CommandExecutor,
-  port = 80,
-): Promise<boolean> {
-  const running = await tryExec(
+export async function edgeIsBroken(executor: CommandExecutor): Promise<boolean> {
+  const status = await tryExec(
     executor,
-    `docker inspect -f '{{.State.Running}}' ${sq(EDGE_CONTAINER_NAME)} 2>/dev/null`,
+    `docker inspect -f '{{.State.Status}}' ${sq(EDGE_CONTAINER_NAME)} 2>/dev/null`,
   );
-  if ((running ?? "").trim() !== "true") return false;
-  // wget exits 8 on an HTTP error status — the server ANSWERED, which is what's
-  // being proven. Only a connection failure means "not serving".
-  const probe = await tryExec(
-    executor,
-    containerShell(`wget -q -O /dev/null -T 3 http://127.0.0.1:${port}/ >/dev/null 2>&1; echo $?`),
-  );
-  const code = (probe ?? "").trim().split("\n").pop() ?? "1";
-  return code === "0" || code === "8";
+  const state = (status ?? "").trim();
+  return state === "restarting" || state === "exited" || state === "dead";
 }
 
 /** `sh -c` inside the edge container. Local to this module so it stays dependency-free. */
@@ -206,10 +199,9 @@ export async function edgeCrashReason(executor: CommandExecutor): Promise<string
  * The one line of an edge container's log that explains why it isn't running.
  *
  * nginx reports a fatal config problem as `[emerg]` — that line IS the diagnosis,
- * and the surrounding 40 lines are startup noise. When there is no `[emerg]` the
- * edge died for a non-config reason (bad mount, missing cert, wrong-arch image,
- * OOM), so fall back to the last thing it said rather than returning nothing:
- * "not serving" with no reason is what sent people digging by hand.
+ * and the surrounding 40 lines are startup noise. Returns null when there is no
+ * `[emerg]`: the log of a running edge is access lines, and quoting one of those as
+ * "the reason" is how a healthy box got reported as broken.
  *
  * Pure string work, deliberately: the two callers read the log through completely
  * different channels (the CLI shells out locally, the installer execs over SSH),
@@ -223,7 +215,10 @@ export function edgeFailureReason(containerLog: string): string | null {
     .filter(Boolean);
   const emerg = lines.find((l) => l.includes("[emerg]"));
   if (emerg) return emerg.replace(/^.*\[emerg\]\s*\d*#\d*:\s*/, "");
-  return lines.at(-1) ?? null;
+  // No `[emerg]` → nothing here explains a failure. Do NOT fall back to the last
+  // line: on a RUNNING edge that is an access-log entry, and reporting
+  // `"GET /favicon.ico" 404` as the reason the edge is down is worse than silence.
+  return null;
 }
 
 /**
