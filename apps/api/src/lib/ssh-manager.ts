@@ -307,9 +307,25 @@ export class SshConnectionManager {
     // 127.0.0.1 before this fix isn't stuck "cooling down". Org-gated via isLocalHostRow.
     const row = await repos.server.get(serverId).catch(() => undefined);
     if (row && (await isLocalHostRow(row))) {
-      this.recordSuccess(serverId);
-      debugSsh(`acquire:local-host server=${serverId} (${formatDuration(startedAt)})`);
-      return createHostExecutor();
+      const pending = this.connecting.get(serverId);
+      if (pending) return pending;
+
+      const promise = Promise.resolve(createHostExecutor());
+      this.connecting.set(serverId, promise);
+      try {
+        const exec = await promise;
+        const conn: ServerConnection = { executor: exec, idleTimer: null };
+        if (typeof exec.onDisconnect === "function") {
+          conn.unsubDisconnect = exec.onDisconnect((err) => this.onExecutorDisconnect(serverId, err));
+        }
+        this.servers.set(serverId, conn);
+        this.touchIdleTimer(serverId);
+        this.recordSuccess(serverId);
+        debugSsh(`acquire:local-host server=${serverId} (${formatDuration(startedAt)})`);
+        return exec;
+      } finally {
+        this.connecting.delete(serverId);
+      }
     }
 
     // Circuit-breaker: a server that just failed repeatedly is in cooldown —

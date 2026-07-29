@@ -52,19 +52,7 @@ async function withEdgeExecutor<T>(
   organizationId: string,
   fn: (exec: CommandExecutor) => Promise<T>,
 ): Promise<T> {
-  const server = await repos.server.getInOrganization(serverId, organizationId).catch(() => null);
-  if (server?.isLocal) {
-    const { createHostExecutor } = await import("@repo/adapters");
-    return fn(createHostExecutor());
-  }
   return sshManager.withExecutor(serverId, fn);
-}
-
-/** True when the server is the auto-registered local host (reachable via the
- *  host executor, not SSH — so no `probeReachable` dial). */
-async function isLocalHostServer(serverId: string, organizationId: string): Promise<boolean> {
-  const server = await repos.server.getInOrganization(serverId, organizationId).catch(() => null);
-  return Boolean(server?.isLocal);
 }
 
 /** Resolve the server a project's active deployment runs on (self-hosted only). */
@@ -117,15 +105,9 @@ export async function edgeStatus(c: Context) {
   }
   const { serverId } = resolved;
 
-  // Fast-fail if the box is offline — but ONLY dial SSH for a real remote server.
-  // The local host-server has no sshHost (probeReachable would falsely report it
-  // offline); it's always reachable through createHostExecutor.
-  const local = await isLocalHostServer(serverId, ctx.organizationId);
-  if (!local) {
-    const reachable = await sshManager.probeReachable(serverId).catch(() => false);
-    if (!reachable) {
-      return c.json({ ready: false, reachable: false });
-    }
+  const reachable = await sshManager.probeReachable(serverId).catch(() => false);
+  if (!reachable) {
+    return c.json({ ready: false, reachable: false });
   }
 
   try {

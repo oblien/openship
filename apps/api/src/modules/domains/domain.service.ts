@@ -316,11 +316,6 @@ async function withServerHostExecutor<T>(
 ): Promise<T | null> {
   const serverId = await resolveServerIdForProject(project);
   if (!serverId) return null;
-  const server = await repos.server.getInOrganization(serverId, ctx.organizationId).catch(() => null);
-  if (server?.isLocal) {
-    const { createHostExecutor } = await import("@repo/adapters");
-    return fn(createHostExecutor());
-  }
   return sshManager.withExecutor(serverId, fn).catch(() => null);
 }
 
@@ -346,12 +341,12 @@ async function edgeHostUnreachable(ctx: RequestContext, project: Project): Promi
   if (!serverId) return false;
   const server = await repos.server.getInOrganization(serverId, ctx.organizationId).catch(() => null);
   if (!server?.isLocal) return false;
-  const { createHostExecutor } = await import("@repo/adapters");
-  const exec = createHostExecutor();
-  return (
-    (await exec.exists("/.dockerenv").catch(() => false)) ||
-    (await exec.exists("/run/.containerenv").catch(() => false))
-  );
+  return sshManager.withExecutor(serverId, async (exec) => {
+    return (
+      (await exec.exists("/.dockerenv").catch(() => false)) ||
+      (await exec.exists("/run/.containerenv").catch(() => false))
+    );
+  }).catch(() => false);
 }
 
 const HOST_CHANNEL_HINT =

@@ -191,11 +191,13 @@ export interface SelfEdgeStepProgress {
 async function foreignProxyBlocksEdge(
   log?: (message: string, level?: "info" | "warn" | "error") => void,
 ): Promise<{ blocked: boolean; owner?: string }> {
+  let exec;
   try {
     const { createHostExecutor, foreignProxyOnEdge } = await import("@repo/adapters");
     // Probe the HOST's :80/:443, not the api container's netns — createHostExecutor
     // is LocalExecutor bare, SSH→host when containerized (OPENSHIP_HOST_SSH_*).
-    const { blocked, owner } = await foreignProxyOnEdge(createHostExecutor());
+    exec = createHostExecutor();
+    const { blocked, owner } = await foreignProxyOnEdge(exec);
     if (!blocked) return { blocked: false };
     log?.(
       `Not issuing TLS: ${owner} still owns ports 80/443, so Openship isn't the reverse proxy yet — ` +
@@ -205,6 +207,8 @@ async function foreignProxyBlocksEdge(
     return { blocked: true, owner };
   } catch {
     return { blocked: false };
+  } finally {
+    if (exec) await exec.dispose();
   }
 }
 
@@ -367,7 +371,12 @@ export function registerSelfAdoptReconcile(): void {
         try {
           const { createHostExecutor, recoverInterruptedTakeover } = await import("@repo/adapters");
           // Recover takeover on the HOST (createHostExecutor: local bare, SSH→host containerized).
-          await recoverInterruptedTakeover(createHostExecutor(), (e) => console.log(`[self-deploy] ${e.message}`));
+          const exec = createHostExecutor();
+          try {
+            await recoverInterruptedTakeover(exec, (e) => console.log(`[self-deploy] ${e.message}`));
+          } finally {
+            await exec.dispose();
+          }
         } catch {}
       }
 

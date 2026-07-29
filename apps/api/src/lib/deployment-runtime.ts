@@ -404,27 +404,20 @@ export async function resolveServerExecutor(
     port: server.sshPort ?? 22,
     user: server.sshUser || "root",
   };
-  // isLocal "This Server" OR a row that actually points at THIS host (a plain SSH
-  // row for the local box — loopback / SERVER_IP — in the box-owning org). Both
-  // resolve to the local host executor + mounted docker socket (DooD); dialing SSH
-  // to them hits the API's own loopback (no sshd) — the "Can't reach 127.0.0.1"
-  // failure. Org-gated (isLocalHostRow) so a teammate's org can't mint a host-root
-  // target from a loopback row.
-  if (await isLocalHostRow(server)) {
-    // Self-heal the persisted flag so EVERY `server.isLocal` consumer (edge,
-    // domains, tunnels, the servers list) agrees — not just this resolver.
-    // One-time, idempotent, best-effort; never blocks or fails the deploy.
-    if (!server.isLocal) {
-      repos.server.update(server.id, { isLocal: true }).catch(() => {});
-    }
-    return { id: server.id, executor: createHostExecutor(), conn, isLocal: true, ssh: null };
+  
+  const isLocal = await isLocalHostRow(server);
+  if (isLocal && !server.isLocal) {
+    repos.server.update(server.id, { isLocal: true }).catch(() => {});
   }
+
   const executor = await sshManager.acquire(server.id);
-  const ssh = server.sshHost ? await buildSshConfig(server) : null;
-  if (!ssh) {
+  const ssh = (!isLocal && server.sshHost) ? await buildSshConfig(server) : null;
+  
+  if (!isLocal && !ssh) {
     throw new Error("Invalid SSH configuration. Check host, auth method, and credentials.");
   }
-  return { id: server.id, executor, conn, isLocal: false, ssh };
+
+  return { id: server.id, executor, conn, isLocal, ssh };
 }
 
 /**

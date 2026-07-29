@@ -372,10 +372,14 @@ export async function selfEdgePreflight(c: Context) {
     // containerized (OPENSHIP_HOST_SSH_* set). Inspecting the api container's
     // own netns would return a wrong migrate/takeover prompt in docker mode.
     const executor = createHostExecutor();
-    const status = await detectEdge(executor);
-    // Scan the foreign proxy's sites (if importable) so the CLI can offer migration.
-    const { sites, warnings } = await importSites(executor, status);
-    return c.json({ status, sites, warnings });
+    try {
+      const status = await detectEdge(executor);
+      // Scan the foreign proxy's sites (if importable) so the CLI can offer migration.
+      const { sites, warnings } = await importSites(executor, status);
+      return c.json({ status, sites, warnings });
+    } finally {
+      await executor.dispose();
+    }
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 500);
   }
