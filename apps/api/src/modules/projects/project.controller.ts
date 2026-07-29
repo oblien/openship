@@ -1999,6 +1999,7 @@ export async function connectDomain(c: Context) {
       projectId: id,
       hostname: body.domain.trim(),
       isPrimary: true,
+      includeWww: body.includeWww ?? false,
       externalIngress: body.externalIngress ?? false,
     });
 

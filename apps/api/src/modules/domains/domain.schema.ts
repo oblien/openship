@@ -26,6 +26,9 @@ export const AddDomainBody = Type.Object({
     pattern: "^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$",
   }),
   isPrimary: Type.Optional(Type.Boolean({ default: false })),
+  /** Also connect the `www.` variant. It becomes its OWN pending row: the edge
+   *  binds one server_name per row and SSL renewal resolves www by hostname. */
+  includeWww: Type.Optional(Type.Boolean({ default: false })),
   /** Externally-managed ingress + TLS (Cloudflare Tunnel, LB): verify via TXT
    *  only, skip certbot, serve plain HTTP. Domain need not resolve to the box. */
   externalIngress: Type.Optional(Type.Boolean({ default: false })),

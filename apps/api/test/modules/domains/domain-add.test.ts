@@ -110,6 +110,33 @@ describe("addDomain retries", () => {
     });
   });
 
+  it("materializes the www variant as its own row when includeWww is set", async () => {
+    domainRepo.findByHostname.mockResolvedValue(null);
+    domainRepo.create.mockImplementation(async (data: any) => ({ id: `dom_${data.hostname}`, ...data }));
+
+    await addDomain(context as any, {
+      projectId: project.id,
+      hostname: "example.com",
+      isPrimary: true,
+      includeWww: true,
+    });
+
+    // The edge binds one server_name per domain row and SSL renewal looks the
+    // www record up by hostname, so "include www" is only real once a second
+    // row exists. Left out, the toggle silently connects the apex alone.
+    expect(domainRepo.create.mock.calls.map(([data]: [any]) => data.hostname)).toEqual([
+      "example.com",
+      "www.example.com",
+    ]);
+    // The apex stays primary — the www row is a sibling, not a replacement.
+    expect(domainRepo.create.mock.calls[1][0]).toMatchObject({
+      hostname: "www.example.com",
+      isPrimary: false,
+      verified: false,
+      status: "pending",
+    });
+  });
+
   it("still rejects a domain owned by another project", async () => {
     domainRepo.findByHostname.mockResolvedValue({
       ...existingDomain,

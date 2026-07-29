@@ -130,6 +130,7 @@ export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
       project,
       domain.externalIngress,
     );
+    await addWwwSibling(ctx, data, hostname);
     return { domain, records };
   }
 
@@ -155,7 +156,27 @@ export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
   }
 
   const records = await buildRecords(domain.hostname, token, project, domain.externalIngress);
+  await addWwwSibling(ctx, data, hostname);
   return { domain, records };
+}
+
+/**
+ * "Include www" asks for a SECOND routable hostname, not a flag on the apex row:
+ * the edge binds one server_name per domain row, and SSL provisioning resolves
+ * the www record by hostname (`domain-ssl.ts`, the `includeWww` branch). So the
+ * variant only exists once it has its own row, which then verifies and certs on
+ * its own. Runs after the apex so an apex conflict aborts before we mint www.
+ */
+async function addWwwSibling(ctx: RequestContext, data: TAddDomainBody, hostname: string) {
+  if (!data.includeWww || hostname.startsWith("www.")) return;
+
+  await addDomain(ctx, {
+    projectId: data.projectId,
+    hostname: `www.${hostname}`,
+    // The apex keeps primary — www is a sibling route, not a replacement.
+    isPrimary: false,
+    externalIngress: data.externalIngress,
+  });
 }
 
 /**
