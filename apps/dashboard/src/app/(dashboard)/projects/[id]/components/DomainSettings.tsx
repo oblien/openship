@@ -734,14 +734,24 @@ export const DomainSettings = () => {
         );
       }
 
+      const target = hasProjectServer
+        ? { port: portValue }
+        : { targetPath: newDomainPath.trim() || "/" };
       const nextEndpoint = createPublicEndpoint({
         domainType: newDomainType,
         ...(isCustom ? { customDomain: host } : { domain: host }),
-        ...(hasProjectServer ? { port: portValue } : { targetPath: newDomainPath.trim() || "/" }),
+        ...target,
       });
+      // publicEndpoints — not the domain rows — are what the backend reconciles
+      // routing against, and it deletes any project row this list omits. So the
+      // www variant has to ship in the same save as the apex or it never binds
+      // a vhost, and the row the connect call just created is dropped again.
+      const nextEndpoints = isCustom && includeWww
+        ? [nextEndpoint, createPublicEndpoint({ domainType: "custom", customDomain: `www.${host}`, ...target })]
+        : [nextEndpoint];
       const label = isCustom ? host : `${host}.${baseDomain}`;
       const ok = await persistPublicEndpoints(
-        [...publicEndpoints, nextEndpoint],
+        [...publicEndpoints, ...nextEndpoints],
         isCustom
           ? interpolate(t.projectSettings.domains.toast.addedCustom, { label })
           : interpolate(t.projectSettings.domains.toast.addedFree, { label }),
