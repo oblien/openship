@@ -695,8 +695,10 @@ export const DomainSettings = () => {
     const portValue = newDomainPort.trim();
 
     // The "Include www" toggle owns the www record — a hand-typed "www."
-    // prefix would double it up, so block it with guidance instead.
-    if (isCustom && host.startsWith("www.")) {
+    // prefix would double it up, so block it with guidance instead. Only while
+    // the toggle is ON: with it off nothing else claims the variant, and the
+    // block was the sole reason www could not be added as a domain at all.
+    if (isCustom && includeWww && host.startsWith("www.")) {
       showToast(t.projectSettings.domains.add.noWww, "error", t.projectSettings.domains.toast.addDomainTitle);
       return;
     }
