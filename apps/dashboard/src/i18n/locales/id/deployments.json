@@ -1,0 +1,173 @@
+{
+  "time": {
+    "secondsAgo": "{n} dtk yang lalu",
+    "minutesAgo": "{n} mnt yang lalu",
+    "hoursAgo": "{n} jam yang lalu",
+    "daysAgo": "{n} hr yang lalu",
+    "monthsAgo": "{n} bln yang lalu",
+    "yearsAgo": "{n} thn yang lalu"
+  },
+  "header": {
+    "title": "Deployment",
+    "loading": "Memuat…",
+    "countProjectOne": "{count} deployment",
+    "countProjectOther": "{count} deployment",
+    "countAllOne": "{deployments} total di {projects} proyek",
+    "countAllOther": "{deployments} total di {projects} proyek"
+  },
+  "filters": {
+    "searchPlaceholder": "Cari deployment...",
+    "all": "Semua",
+    "success": "Berhasil",
+    "failed": "Gagal",
+    "building": "Sedang build",
+    "canceled": "Dibatalkan"
+  },
+  "projectFilter": {
+    "allProjects": "Semua Proyek"
+  },
+  "sidebar": {
+    "overview": {
+      "title": "Ikhtisar",
+      "total": "Total",
+      "successful": "Berhasil",
+      "failed": "Gagal",
+      "inProgress": "Sedang Berjalan"
+    },
+    "autoDeploy": {
+      "title": "Auto-Deploy",
+      "description": "Aktifkan auto-deploy untuk memicu deployment secara otomatis pada setiap push ke branch utama Anda.",
+      "cta": "Buka pengaturan proyek"
+    },
+    "getStarted": {
+      "title": "Mulai",
+      "description": "Impor repositori Git atau gunakan template untuk membuat deployment pertama Anda.",
+      "cta": "Deploy proyek"
+    },
+    "recent": {
+      "title": "Terbaru",
+      "empty": "Deployment Anda akan muncul di sini",
+      "unknown": "Tidak diketahui"
+    }
+  },
+  "stats": {
+    "total": "Total",
+    "projectCountOne": "{count} proyek",
+    "projectCountOther": "{count} proyek",
+    "success": "Berhasil",
+    "failed": "Gagal",
+    "inProgress": "Sedang Berjalan",
+    "buildingNow": "sedang build"
+  },
+  "status": {
+    "deployed": "Ter-deploy",
+    "failed": "Gagal",
+    "canceled": "Dibatalkan",
+    "building": "Sedang build",
+    "deploying": "Sedang men-deploy",
+    "partial": "Sebagian",
+    "rejected": "Ditolak",
+    "verifying": "Memverifikasi",
+    "pending": "Menunggu"
+  },
+  "serviceStatus": {
+    "deployed": "Ter-deploy",
+    "failed": "Gagal",
+    "cancelled": "Dibatalkan",
+    "skipped": "Dilewati",
+    "building": "Sedang build",
+    "deploying": "Sedang men-deploy",
+    "running": "Berjalan",
+    "removedOnHost": "Dihapus di host",
+    "verifying": "Memverifikasi",
+    "pending": "Menunggu"
+  },
+  "card": {
+    "unknownProject": "Proyek Tidak Diketahui",
+    "versionTitle": "Versi {version}",
+    "active": "Aktif",
+    "activeTitle": "Ini adalah deployment yang saat ini melayani proyek",
+    "pinned": "Disematkan",
+    "pinnedTitle": "Disematkan — dikecualikan dari pemangkasan retensi. Tetap dapat dipulihkan untuk rollback tanpa batas waktu.",
+    "snapshotted": "Snapshot dibuat",
+    "snapshottedTitle": "Artifact diarsipkan — versi ini tersedia untuk rollback",
+    "manualDeploy": "Deploy manual",
+    "serviceTitle": "{name}: {label}",
+    "serviceTitleReason": "{name}: {label} ({reason})"
+  },
+  "empty": {
+    "filtered": {
+      "title": "Tidak ada deployment ditemukan",
+      "description": "Coba sesuaikan filter Anda atau hapus pencarian Anda."
+    },
+    "none": {
+      "title": "Belum ada deployment",
+      "description": "Deploy proyek pertama Anda dan akan muncul di sini beserta status build, detail commit, dan metrik performa.",
+      "deployButton": "Deploy Proyek",
+      "browseButton": "Jelajahi Template"
+    }
+  },
+  "modal": {
+    "title": "Detail Commit",
+    "project": "Proyek",
+    "unknownProject": "Proyek Tidak Diketahui",
+    "domain": "Domain",
+    "noDomain": "Tidak ada domain",
+    "status": "Status",
+    "environment": "Lingkungan",
+    "statusName": {
+      "success": "Berhasil",
+      "failed": "Gagal",
+      "building": "Sedang build",
+      "deploying": "Sedang men-deploy",
+      "canceled": "Dibatalkan",
+      "pending": "Menunggu"
+    },
+    "changedFiles": "Berkas yang Diubah ({count})",
+    "fileTypes": {
+      "added": "+ Ditambahkan",
+      "modified": "~ Dimodifikasi",
+      "removed": "- Dihapus"
+    },
+    "viewOnGithub": "Lihat di GitHub",
+    "visitSite": "Kunjungi Situs",
+    "manual": {
+      "title": "Deployment Manual",
+      "description": "Deployment ini dipicu secara manual dan tidak memiliki informasi commit.",
+      "deploymentId": "ID Deployment",
+      "created": "Dibuat",
+      "type": "Tipe",
+      "typeManual": "Manual"
+    }
+  },
+  "menu": {
+    "openDeployment": "Buka Deployment",
+    "viewRepository": "Lihat Repositori",
+    "copyDomainUrl": "Salin URL Domain",
+    "copyBuildId": "Salin Build ID",
+    "cancelDeployment": "Batalkan Deployment",
+    "rollback": "Rollback ke versi ini",
+    "rollbackTitle": {
+      "enabled": "Pulihkan proyek ke versi ini (hanya kode — data tidak berubah)",
+      "active": "Ini sudah menjadi versi aktif",
+      "pruned": "Artifact rollback telah dipangkas. Gunakan 'Deploy ulang commit ini' untuk membangun ulang dari sumber.",
+      "notReady": "Hanya deployment yang siap yang dapat di-rollback"
+    },
+    "redeploy": "Deploy ulang commit ini",
+    "redeployTitle": "Bangun ulang commit ini dari sumber. Lebih lambat dari rollback tetapi tetap berfungsi setelah artifact dipangkas.",
+    "pin": "Sematkan",
+    "unpin": "Lepas sematan",
+    "pinTitle": {
+      "pin": "Jaga deployment ini tetap dapat dipulihkan untuk rollback tanpa batas waktu (batas: 10 sematan per proyek)",
+      "unpin": "Izinkan deployment ini dipangkas saat retensi melebihi kapasitas",
+      "pruned": "Tidak dapat disematkan — artifact sudah dipangkas"
+    },
+    "deleteDeployment": "Hapus Deployment",
+    "confirmRollback": "Rollback ke versi ini?\n\nIni hanya memulihkan kode aplikasi. Data database dan volume tidak berubah.",
+    "rollbackFailed": "Rollback gagal",
+    "confirmRedeploy": "Deploy ulang commit {hash}?\n\nMembangun ulang commit ini dari sumber. Lebih lambat dari rollback (build penuh berjalan lagi), tetapi tetap berfungsi bahkan setelah artifact rollback dipangkas. Deployment baru akan muncul di daftar.",
+    "redeployFailed": "Deploy ulang gagal",
+    "pinFailed": "Gagal menyematkan deployment",
+    "unpinFailed": "Gagal melepas sematan deployment"
+  }
+}

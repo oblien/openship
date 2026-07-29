@@ -1,0 +1,186 @@
+{
+  "backups": {
+    "section": "Jadwal backup",
+    "sectionDesc": "Backup otomatis dijadwalkan per proyek atau layanan. Dikelola di bawah tab Backups tiap proyek.",
+    "projectDefault": "Bawaan proyek",
+    "mailServer": "Mail server",
+    "manage": "Kelola di Backups",
+    "badge": "Backup",
+    "never": "Belum pernah dijalankan",
+    "status": {
+      "succeeded": "Berhasil",
+      "failed": "Gagal",
+      "cancelled": "Dibatalkan",
+      "running": "Berjalan"
+    }
+  },
+  "title": "Jobs",
+  "subtitle": "Pemeliharaan bawaan dan perintah kustom yang berjalan di server Anda.",
+  "empty": "Belum ada job terjadwal.",
+  "searchPlaceholder": "Cari jobs…",
+  "noResults": "Tidak ada job yang cocok dengan filter Anda.",
+  "overview": {
+    "title": "Sekilas",
+    "subtitle": "Jobs pada instance ini",
+    "all": "Semua job",
+    "running": "Berjalan",
+    "failed": "Gagal",
+    "scheduled": "Terjadwal",
+    "disabled": "Nonaktif"
+  },
+  "loadFailed": "Gagal memuat jobs.",
+  "kind": {
+    "system": "Sistem",
+    "custom": "Kustom"
+  },
+  "fields": {
+    "schedule": "Jadwal",
+    "nextRun": "Jalan berikutnya",
+    "lastRun": "Jalan terakhir",
+    "never": "Belum pernah dijalankan",
+    "notScheduled": "Tidak terjadwal"
+  },
+  "status": {
+    "success": "Berhasil",
+    "failed": "Gagal",
+    "running": "Berjalan"
+  },
+  "actions": {
+    "run": "Jalankan sekarang",
+    "running": "Berjalan…",
+    "edit": "Edit jadwal",
+    "save": "Simpan",
+    "cancel": "Batal",
+    "enable": "Aktifkan",
+    "disable": "Nonaktifkan",
+    "viewLogs": "Log"
+  },
+  "cronHint": "Cron standar 5 kolom (menit jam hari bulan hari-dalam-minggu), UTC.",
+  "toast": {
+    "ran": "{label} dimulai.",
+    "ranFailed": "Gagal menjalankan {label}.",
+    "saved": "Jadwal diperbarui untuk {label}.",
+    "saved2": "Job diperbarui.",
+    "saveFailed": "Gagal memperbarui {label}.",
+    "enabled": "{label} diaktifkan.",
+    "disabled": "{label} dinonaktifkan.",
+    "toggleFailed": "Gagal memperbarui {label}.",
+    "title": "Jobs",
+    "created": "Job dibuat.",
+    "createFailed": "Gagal membuat job.",
+    "deleted": "Job dihapus.",
+    "deleteFailed": "Gagal menghapus job."
+  },
+  "newJob": "Job baru",
+  "sections": {
+    "system": "Job sistem",
+    "systemDesc": "Pemeliharaan bawaan pada instance ini.",
+    "custom": "Job kustom",
+    "customDesc": "Perintah yang Anda jalankan di server Anda, sesuai jadwal."
+  },
+  "customEmpty": {
+    "title": "Belum ada job kustom",
+    "desc": "Jalankan perintah di salah satu server Anda — sesuai jadwal, sekali, atau saat suatu peristiwa — dengan coba lagi, secret, log langsung, dan notifikasi.",
+    "cta": "Buat job",
+    "docs": "Dokumentasi"
+  },
+  "create": {
+    "title": "Job baru",
+    "name": "Nama",
+    "namePlaceholder": "Vacuum DB malam hari",
+    "server": "Server",
+    "servers": "Server",
+    "noServers": "Belum ada server terhubung — tambahkan satu terlebih dahulu.",
+    "command": "Perintah",
+    "commandPlaceholder": "pg_dump ... > /backups/db.sql",
+    "commandHint": "Berjalan melalui SSH di server yang dipilih. `docker run --rm image cmd` juga bisa.",
+    "scheduleType": "Kapan dijalankan",
+    "scheduleTypes": {
+      "recurring": "Sesuai jadwal",
+      "once": "Sekali",
+      "manual": "Manual"
+    },
+    "sections": {
+      "basics": "Dasar",
+      "schedule": "Jadwal",
+      "servers": "Server target",
+      "reliability": "Keandalan",
+      "environment": "Lingkungan",
+      "triggers": "Dependensi & pemicu",
+      "notifications": "Notifikasi"
+    },
+    "schedule": "Jadwal (cron)",
+    "runAt": "Jalankan pada",
+    "manualHint": "Berjalan hanya saat dipicu — Jalankan Sekarang, dependensi, atau suatu peristiwa.",
+    "timeout": "Timeout (d)",
+    "retryAttempts": "Percobaan maks",
+    "retryBackoff": "Backoff (d)",
+    "advanced": "Lanjutan",
+    "env": "Variabel lingkungan",
+    "addVar": "Tambah variabel",
+    "secrets": "Secret",
+    "addSecret": "Tambah secret",
+    "replaceSecrets": "Ganti secret",
+    "secretsSet": "secret diatur",
+    "noSecrets": "Tidak ada secret yang diatur.",
+    "dependencies": "Jalankan setelah",
+    "dependenciesHint": "Job ini berjalan setelah job yang dipilih berhasil.",
+    "triggers": "Pemicu peristiwa",
+    "notifications": "Notifikasi",
+    "noChannels": "Belum ada saluran notifikasi — tambahkan satu di Pengaturan → Notifikasi.",
+    "notificationsHint": "Menimpa pengaturan notifikasi global untuk job ini.",
+    "submit": "Buat job",
+    "creating": "Menyimpan…",
+    "cancel": "Batal",
+    "needServer": "Hubungkan server terlebih dahulu",
+    "pasteEnv": "Tempel .env",
+    "uploadEnv": "Unggah .env",
+    "envPasteEmpty": "Tidak ada variabel ditemukan",
+    "comingSoon": "Segera",
+    "setupChannel": "Siapkan saluran",
+    "customTriggerSoon": "Pemicu kustom",
+    "docsLink": "Pelajari tentang jobs",
+    "docsBody": "Jadwal, coba lagi, secret & notifikasi",
+    "summary": {
+      "title": "Ringkasan",
+      "command": "Perintah",
+      "schedule": "Jadwal",
+      "targets": "Target",
+      "retry": "Coba lagi",
+      "timeout": "Timeout",
+      "notify": "Notifikasi",
+      "none": "—",
+      "retryOff": "Tidak ada"
+    }
+  },
+  "edit": {
+    "title": "Edit job",
+    "action": "Edit",
+    "save": "Simpan perubahan"
+  },
+  "detail": {
+    "back": "Kembali ke jobs",
+    "tabs": {
+      "overview": "Ikhtisar",
+      "runs": "Jalan"
+    },
+    "servers": "Server",
+    "retry": "Coba lagi",
+    "retryValue": "{n} percobaan, backoff {s}d",
+    "notifyValue": "{c} saluran pada {s}",
+    "onceAt": "Sekali pada",
+    "noRuns": "Belum ada jalan."
+  },
+  "delete": {
+    "action": "Hapus",
+    "confirm": "Hapus job ini?",
+    "deleting": "Menghapus…"
+  },
+  "logs": {
+    "title": "Log jalan",
+    "streaming": "Melakukan streaming…",
+    "empty": "Belum ada output.",
+    "close": "Tutup",
+    "exit": "Kode keluar {code}"
+  }
+}

@@ -1,0 +1,171 @@
+{
+  "ghCliConsent": {
+    "title": "Baca repositori Anda?",
+    "body": "OpenShip dapat mencantumkan repositori GitHub Anda menggunakan gh CLI tempat Anda sudah masuk.",
+    "bodyWithLogin": "OpenShip dapat mencantumkan repositori GitHub Anda menggunakan gh CLI tempat Anda masuk sebagai @{login}.",
+    "pointNoCloud": "Tidak ada yang dikirim ke cloud — daftar tidak pernah meninggalkan mesin ini.",
+    "pointDesktopOnly": "Hanya berjalan di aplikasi desktop, menggunakan auth gh lokal Anda.",
+    "pointReadOnly": "Baca-saja: mencantumkan repo agar Anda dapat memilih satu untuk di-deploy.",
+    "allow": "Izinkan"
+  },
+  "page": {
+    "title": "Proyek Baru",
+    "subtitle": "Impor repositori, tempel URL, atau mulai dari template",
+    "tabs": {
+      "folder": "Folder",
+      "github": "GitHub",
+      "url": "URL Git",
+      "template": "Template"
+    }
+  },
+  "connect": {
+    "connectGithub": "Hubungkan GitHub",
+    "manageInSettings": "Kelola di Pengaturan",
+    "terminal": {
+      "title": "Hubungkan GitHub",
+      "checkConnection": "Periksa Koneksi",
+      "afterLogin": "Setelah masuk, klik \"Periksa Koneksi\" untuk melanjutkan."
+    },
+    "deviceFlow": {
+      "title": "Masukkan kode ini di GitHub",
+      "goToPrefix": "Buka",
+      "goToSuffix": "dan masukkan kode di atas.",
+      "waiting": "Menunggu otorisasi…"
+    },
+    "default": {
+      "title": "Hubungkan GitHub untuk men-deploy",
+      "descSelfHosted": "Pilih cara Openship menjangkau repositori Anda.",
+      "descSaas": "Tautkan akun GitHub Anda untuk menjelajahi repo dan deploy pada setiap push.",
+      "recommended": "Direkomendasikan",
+      "cloudApp": "Openship Cloud App",
+      "cloudAppDesc": "Deploy ke server jarak jauh dengan token berumur pendek.",
+      "connectCloud": "Hubungkan Openship Cloud",
+      "localBuilds": "Build lokal",
+      "ghCli": "Masuk dengan gh CLI",
+      "ghCliDesc": "Gunakan login GitHub mesin Anda. Tanpa cloud.",
+      "useGhCli": "Gunakan gh CLI",
+      "connecting": "Menghubungkan…"
+    }
+  },
+  "folderUpload": {
+    "emptyFolder": "Folder itu tampak kosong (atau semuanya diabaikan). Pilih folder proyek.",
+    "uploadError": "Gagal mengunggah folder",
+    "stackTitle": "Apa yang Anda deploy?",
+    "stackDesc": "Pilih stack untuk folder Anda — ini mengatur lingkungan build. Anda akan mengunggahnya berikutnya.",
+    "backToStack": "Kembali ke pemilihan stack",
+    "uploadTitle": "Unggah folder {stack} Anda",
+    "uploadSubtitle": "Dikemas di browser Anda — node_modules, .git, dan output build dilewati",
+    "dropTitle": "Letakkan folder proyek Anda atau klik untuk menelusuri",
+    "dropSubtitle": "Seluruh folder diunggah dan dibangun sebagai aplikasi {stack}",
+    "filesSingular": "{count} file",
+    "filesPlural": "{count} file",
+    "clearSelection": "Kosongkan pilihan",
+    "packing": "Mengemas folder…",
+    "uploading": "Mengunggah…",
+    "continue": "Lanjutkan"
+  },
+  "localProjects": {
+    "title": "Proyek Lokal",
+    "loading": "Memuat...",
+    "projectCountSingular": "{count} proyek",
+    "projectCountPlural": "{count} proyek",
+    "import": "Impor",
+    "empty": {
+      "title": "Belum ada proyek lokal",
+      "description": "Impor folder proyek dari mesin Anda untuk memindai, membangun, dan men-deploy-nya secara lokal",
+      "importProject": "Impor Proyek",
+      "howItWorks": "Cara kerjanya",
+      "dropTitle": "Letakkan atau telusuri",
+      "dropDesc": "Pilih folder proyek mana pun",
+      "autoDetectTitle": "Deteksi otomatis",
+      "autoDetectDesc": "Framework & konfigurasi ditemukan",
+      "deployTitle": "Deploy secara lokal",
+      "deployDesc": "Build & jalankan di mesin Anda"
+    },
+    "form": {
+      "title": "Impor dari folder",
+      "scanErrorDefault": "Gagal memindai direktori",
+      "dropTitle": "Letakkan folder di sini atau klik untuk menelusuri",
+      "dropSubtitle": "Pilih folder proyek Anda untuk mendeteksi framework secara otomatis",
+      "folderViaBrowser": "Folder dipilih melalui browser - silakan masukkan path absolut lengkap dan tekan Pindai",
+      "folderDropped": "Folder diletakkan - silakan masukkan path absolut lengkap dan tekan Pindai",
+      "pathPlaceholder": "/path/ke/proyek/anda",
+      "browse": "Telusuri",
+      "scan": "Pindai",
+      "importError": "Gagal mengimpor proyek",
+      "projectName": "Nama proyek",
+      "detected": "Terdeteksi",
+      "build": "Build:",
+      "install": "Instal:",
+      "output": "Output:",
+      "start": "Start:",
+      "importing": "Mengimpor...",
+      "importProject": "Impor Proyek"
+    }
+  },
+  "repositoryList": {
+    "searchPlaceholder": "Cari repositori...",
+    "visibility": {
+      "all": "Semua",
+      "public": "Publik",
+      "private": "Privat"
+    },
+    "sort": {
+      "recent": "Terbaru",
+      "name": "Nama",
+      "stars": "Bintang"
+    },
+    "addAccount": "Tambah akun GitHub",
+    "installTitle": "Instal GitHub App",
+    "installDesc": "Instal GitHub App di akun atau organisasi Anda untuk memberikan akses ke repositori Anda.",
+    "installButton": "Instal GitHub App",
+    "noMatching": "Tidak ada repositori yang cocok",
+    "noRepos": "Tidak ada repositori ditemukan",
+    "noMatchingDesc": "Coba istilah pencarian lain atau sesuaikan filter Anda",
+    "noReposDesc": "Akun ini belum memiliki repositori",
+    "privateBadge": "Privat",
+    "localOnly": "Lokal saja",
+    "localOnlyTooltip": "Openship App tidak terinstal di {owner}. Build lokal saja — instal App pada owner ini untuk mengaktifkan deploy jarak jauh.",
+    "repoCountSingular": "{count} repositori",
+    "repoCountPlural": "{count} repositori",
+    "matching": "cocok dengan \"{query}\"",
+    "pagination": {
+      "previous": "Sebelumnya",
+      "next": "Berikutnya",
+      "pageOf": "Halaman {page} dari {total}"
+    },
+    "time": {
+      "justNow": "baru saja",
+      "minutesAgo": "{n} mnt yang lalu",
+      "hoursAgo": "{n} jam yang lalu",
+      "daysAgo": "{n} hr yang lalu",
+      "monthsAgo": "{n} bln yang lalu"
+    }
+  },
+  "sidebar": {
+    "overview": "Ikhtisar",
+    "total": "Total",
+    "public": "Publik",
+    "private": "Privat",
+    "quickTip": "Tip Singkat",
+    "quickTipDesc": "Pilih repositori mana pun untuk men-deploy-nya secara instan. Konfigurasi deployment otomatis pada setiap push.",
+    "connection": "Koneksi",
+    "openshipGithubApp": "Openship GitHub App",
+    "connected": "Terhubung",
+    "notConnected": "Tidak terhubung",
+    "ghCli": "gh CLI",
+    "runGhAuth": "Jalankan `gh auth login`",
+    "openshipCloudApp": "Openship Cloud App",
+    "checking": "Memeriksa…",
+    "notConnectedManage": "Tidak terhubung — kelola di Pengaturan",
+    "optional": "Opsional",
+    "footnote": "Pustaka lokal via gh CLI; deploy jarak jauh menggunakan token berumur pendek —",
+    "manageGithubSettings": "kelola GitHub di Pengaturan"
+  },
+  "urlImport": {
+    "invalidUrl": "Masukkan URL repositori GitHub yang valid",
+    "title": "Impor dari URL Git",
+    "description": "Tempel URL repositori publik untuk mengimpor. Tidak memerlukan koneksi GitHub.",
+    "importButton": "Impor Repositori"
+  }
+}

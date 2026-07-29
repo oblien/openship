@@ -1,0 +1,149 @@
+{
+  "common": {
+    "goBack": "Kembali",
+    "continue": "Lanjutkan",
+    "back": "Kembali",
+    "optional": "(opsional)"
+  },
+  "topBar": {
+    "website": "Situs web",
+    "github": "GitHub",
+    "theme": "Ganti tema",
+    "language": "Bahasa"
+  },
+  "choose": {
+    "title": "Selamat datang di Openship",
+    "subtitle": "Pilih cara Anda ingin menjalankan Openship. Kedua opsi memberi Anda setiap fitur - dan Anda dapat beralih kapan saja.",
+    "cloud": {
+      "name": "Openship Cloud",
+      "desc": "Kami menangani infrastruktur, pembaruan, dan backup. Cukup masuk dan mulai men-deploy.",
+      "perk1": "Tidak perlu server",
+      "perk2": "Termasuk tingkat gratis",
+      "perk3": "Terkelola & selalu mutakhir",
+      "cta": "Lanjutkan dengan Cloud"
+    },
+    "or": "atau",
+    "selfhost": {
+      "name": "Self-Hosted",
+      "desc": "Jalankan Openship di perangkat keras Anda sendiri. Hubungkan server jarak jauh atau gunakan mesin ini.",
+      "perk1": "Kepemilikan data penuh",
+      "perk2": "Server jarak jauh atau Mac ini",
+      "perk3": "Kami menangani sisanya",
+      "cta": "Siapkan Server Saya"
+    },
+    "migrateNote": "Beralih antara Cloud dan Self-Hosted kapan saja dengan sekali klik - tanpa keterikatan, selamanya.",
+    "skip": "Lewati untuk sekarang"
+  },
+  "selfhost": {
+    "title": "Di mana Openship harus berjalan?",
+    "subtitleLine1": "Pilih tempat untuk menginstal platform Openship.",
+    "subtitleLine2": "Kedua opsi memberi Anda kontrol penuh dan kepemilikan data.",
+    "local": {
+      "title": "Mesin Ini",
+      "badge": "Beta",
+      "desc": "Instal Openship di sini - tanpa SSH, tanpa penyiapan jarak jauh",
+      "comingSoon": "Segera hadir",
+      "comingSoonDesc": "Menjalankan Openship langsung di mesin ini belum siap — hubungkan server untuk saat ini."
+    },
+    "remote": {
+      "title": "Server Lain",
+      "desc": "Hubungkan ke server jarak jauh, VPS, atau mesin apa pun di jaringan Anda melalui SSH"
+    }
+  },
+  "ssh": {
+    "title": "Hubungkan ke server Anda",
+    "subtitleLine1": "Masukkan detail server Anda dan pilih metode autentikasi.",
+    "subtitleLine2": "Kami akan menginstal dan mengonfigurasi semuanya secara otomatis.",
+    "serverNameLabel": "Nama Server",
+    "serverNamePlaceholder": "Production, Staging, Dev...",
+    "serverIpLabel": "Alamat IP Server",
+    "usernameLabel": "Nama pengguna",
+    "methodPassword": "Kata sandi",
+    "methodKey": "SSH Key",
+    "methodAgent": "Agent",
+    "agentHint": "Terhubung menggunakan SSH agent mesin ini — seperti VSCode, tanpa kata sandi atau key. Host yang menjalankan Openship harus sudah memiliki akses ke server ini (key yang dimuat di ssh-agent-nya).",
+    "passwordLabel": "Kata sandi",
+    "passwordPlaceholder": "Kata sandi server",
+    "keyPathLabel": "Path Key",
+    "browse": "Telusuri",
+    "passphraseLabel": "Passphrase",
+    "passphrasePlaceholder": "Kosongkan jika tidak ada",
+    "advanced": "Lanjutan",
+    "sshPortLabel": "Port SSH",
+    "jumpHostLabel": "Jump Host",
+    "extraArgsLabel": "Argumen SSH Tambahan",
+    "submit": "Simpan & Lanjutkan",
+    "tutorial": "Tutorial penyiapan langkah demi langkah",
+    "testConnection": "Uji koneksi",
+    "testing": "Menguji…",
+    "connected": "Terhubung",
+    "testFailed": "Koneksi gagal",
+    "testHint": "Verifikasi server dapat dijangkau sebelum melanjutkan."
+  },
+  "tunnel": {
+    "title": "Akses Internet",
+    "subtitle": "Server Anda memerlukan cara agar dapat dijangkau dari internet untuk webhook, SSL, dan akses publik.",
+    "providers": {
+      "edge": {
+        "title": "Openship Edge",
+        "desc": "Tanpa konfigurasi. SSL otomatis, ketersediaan tinggi, dan perlindungan DDoS - semuanya sudah tersedia.",
+        "badge": "Direkomendasikan"
+      },
+      "cloudflare": {
+        "title": "Cloudflare Tunnel",
+        "desc": "Gunakan akun Cloudflare Anda sendiri. Tingkat gratis tersedia."
+      },
+      "ngrok": {
+        "title": "ngrok",
+        "desc": "Ekspos layanan dengan token autentikasi ngrok Anda."
+      }
+    },
+    "cloudflareTokenLabel": "Token Cloudflare Tunnel",
+    "ngrokTokenLabel": "Token Autentikasi ngrok",
+    "cloudflarePlaceholder": "Tempel token tunnel Anda",
+    "ngrokPlaceholder": "Tempel token autentikasi ngrok Anda",
+    "edgeHint": "Openship Edge memerlukan akun Openship. Anda akan masuk untuk melanjutkan.",
+    "signInContinue": "Masuk & Lanjutkan"
+  },
+  "preferences": {
+    "title": "Preferensi Build",
+    "subtitleLine1": "Pilih cara proyek Anda dibangun saat men-deploy.",
+    "subtitleLine2": "Anda dapat mengubahnya nanti di pengaturan.",
+    "options": {
+      "auto": {
+        "title": "Auto",
+        "desc": "Kami memilih opsi terbaik per framework"
+      },
+      "server": {
+        "title": "Jarak Jauh",
+        "desc": "Build langsung di server deployment"
+      },
+      "local": {
+        "title": "Lokal",
+        "desc": "Build di Mac ini, lalu push ke server"
+      }
+    },
+    "hint": "Deployment via Git push selalu build di server - ini hanya berlaku untuk deploy manual."
+  },
+  "loading": {
+    "connecting": "Menghubungkan…",
+    "verifying": "Memverifikasi server Anda",
+    "retry": "Coba lagi",
+    "openingCloud": "Membuka Openship Cloud…",
+    "waitingAuth": "Menunggu autentikasi selesai",
+    "couldNotStartAuthTitle": "Tidak dapat memulai autentikasi cloud",
+    "authFailedTitle": "Autentikasi cloud gagal",
+    "couldNotStartAuthMsg": "Alur autentikasi desktop tidak dapat dimulai.",
+    "authFailedMsg": "Silakan coba lagi dan selesaikan proses masuk di browser Anda.",
+    "completingSignIn": "Menyelesaikan proses masuk…",
+    "returningToOpenship": "Kembali ke Openship",
+    "redirectingCloud": "Mengalihkan ke Openship Cloud…",
+    "newTabSignIn": "Anda akan menyelesaikan proses masuk di tab baru",
+    "couldNotSaveTitle": "Tidak dapat menyimpan konfigurasi",
+    "couldNotSaveMsg": "API tidak merespons. Pastikan layanan berjalan.",
+    "savingConfig": "Menyimpan konfigurasi…",
+    "almostThere": "Hampir selesai",
+    "settingUpAccount": "Menyiapkan akun Anda…",
+    "creatingSession": "Membuat sesi Anda"
+  }
+}
