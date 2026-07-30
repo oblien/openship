@@ -48,7 +48,12 @@ export function resolveBuildRuntimeModes(input: {
   baseTarget: "desktop" | "selfhosted" | "cloud";
   effectiveTarget: "local" | "server" | "cloud";
   willRunServices: boolean;
+  /** Swarm always builds through Docker; it may never fall through to BareRuntime. */
+  orchestratorMode?: "standalone" | "swarm";
 }): BuildRuntimeModes {
+  if (input.orchestratorMode === "swarm") {
+    return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
+  }
   if (input.willRunServices) {
     return { buildRuntimeMode: "docker", serveRuntimeMode: "docker" };
   }

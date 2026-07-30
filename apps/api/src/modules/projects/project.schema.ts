@@ -220,6 +220,12 @@ export const CreateProjectBody = Type.Object({
   cloudArchiveStrategy: Type.Optional(
     Type.Union([Type.Literal("inplace"), Type.Literal("offload")]),
   ),
+  /** Runtime isolation for an ordinary workload. Swarm always requires docker. */
+  runtimeMode: Type.Optional(Type.Union([Type.Literal("bare"), Type.Literal("docker")])),
+  /** Stack-level orchestration. Kept separate from the build/runtime engine. */
+  orchestratorMode: Type.Optional(
+    Type.Union([Type.Literal("standalone"), Type.Literal("swarm")]),
+  ),
 
   /** Project flavor - "monorepo" wires the request through the multi-app path below. */
   projectType: Type.Optional(

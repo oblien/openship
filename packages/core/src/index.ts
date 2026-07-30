@@ -8,6 +8,7 @@ export * from "./errors";
 export * from "./service-routing";
 export * from "./service-status";
 export * from "./runtime-config";
+export * from "./runtime-identity";
 export * from "./workspaces";
 export * from "./connectivity";
 export * from "./cloud-capability";

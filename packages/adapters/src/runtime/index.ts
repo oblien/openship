@@ -33,6 +33,7 @@ export {
   swarmTaskOwnership,
   type SwarmTaskOwnership,
 } from "./swarm/ownership";
+export type { StackRuntimeAdapter } from "./swarm/types";
 
 // ─── Supervisor ──────────────────────────────────────────────────────────────
 export type { ProcessSupervisor, SupervisorDeployOpts } from "./supervisor/types";

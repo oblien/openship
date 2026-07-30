@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
-import type { RoutingConfig, RouteRuleSpec } from "@repo/core";
+import type { OrchestratorMode, RoutingConfig, RouteRuleSpec } from "@repo/core";
 import { endpoints } from "./endpoints";
 
 /* ------------------------------------------------------------------ */
@@ -24,6 +24,7 @@ export interface ProjectOptionsBody {
   hasServer?: boolean;
   hasBuild?: boolean;
   runtimeMode?: "bare" | "docker";
+  orchestratorMode?: OrchestratorMode;
 }
 
 export interface ScanProjectResponse {

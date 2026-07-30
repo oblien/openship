@@ -4,6 +4,7 @@ import { posix as pathPosix } from "node:path";
 import { repos, type Project, type Deployment, type Domain } from "@repo/db";
 import {
   BUILD_ENV_VARS,
+  AppError,
   safeErrorMessage,
 } from "@repo/core";
 import type {
@@ -420,6 +421,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       baseTarget: plat.target,
       effectiveTarget: resolveEffectiveTarget(plat.target, snapshot),
       willRunServices,
+      orchestratorMode: snapshot.orchestratorMode,
     });
     if (runtimeModes.buildRuntimeMode === "docker") {
       logger.log(
@@ -444,6 +446,16 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     ssl = resolved.platform.ssl;
     system = resolved.platform.system;
     ctx.runtime = runtime;
+    if (resolved.orchestratorMode === "swarm") {
+      // The typed identity is intentionally in place before the stack runtime
+      // ships. Do not let a requested Swarm deploy reach the ordinary container
+      // pipeline while it has no stack-level apply implementation.
+      throw new AppError(
+        "Docker Swarm deployment is not enabled on this target yet. Configure a Swarm manager and use the stack deployment flow.",
+        409,
+        "SWARM_STACK_RUNTIME_UNAVAILABLE",
+      );
+    }
     // Persist the serve/lifecycle identity ONCE (no undo): bare for static
     // file-serve, docker for services, unchanged otherwise.
     if (runtimeModes.serveRuntimeMode !== undefined) {

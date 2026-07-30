@@ -666,6 +666,7 @@ export function useDeploymentBuild(
             ...(config.runtimeMode === "bare" || config.runtimeMode === "docker"
               ? { runtimeMode: config.runtimeMode }
               : {}),
+            ...(config.orchestratorMode ? { orchestratorMode: config.orchestratorMode } : {}),
           });
           showToast("Configuration saved", "success", "Saved");
           return projectId;
@@ -803,6 +804,7 @@ export function useDeploymentBuild(
           config.projectType === "docker" || isServiceDeployment
             ? "docker"
             : (overrides?.runtimeMode ?? config.runtimeMode),
+        ...(config.orchestratorMode ? { orchestratorMode: config.orchestratorMode } : {}),
         // Send the mode for BOTH multi-app shapes so the operator's per-app vs
         // single choice reaches the backend. Monorepo was previously omitted,
         // leaving the backend to guess via shouldUseProjectServicePipeline.

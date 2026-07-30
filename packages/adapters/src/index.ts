@@ -80,6 +80,7 @@ export {
   swarmTaskOwnership,
   type SwarmTaskOwnership,
 } from "./runtime/swarm/ownership";
+export type { StackRuntimeAdapter } from "./runtime/swarm/types";
 export {
   transferImage,
   type ImageTransferOptions,

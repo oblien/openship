@@ -9,7 +9,17 @@ import {
 } from "@repo/adapters";
 import type { Deployment } from "@repo/db";
 import { repos } from "@repo/db";
-import type { DeployTarget, RuntimeMode } from "@repo/core";
+import {
+  AppError,
+  assertSupportedExecutionMatrix,
+  deploymentWorkloadRef,
+  isSwarmStackRef,
+  resolveOrchestratorMode,
+  type DeployTarget,
+  type OrchestratorMode,
+  type RuntimeMode,
+  type RuntimeWorkloadRef,
+} from "@repo/core";
 import { env } from "../config";
 import { cloudClient, getOrgCloudToken } from "./cloud/client";
 import { resolveOrgCloudUserId } from "./cloud/transport";
@@ -28,6 +38,10 @@ import { isLocalHostRow } from "./box-org";
 export interface DeploymentMeta {
   deployTarget?: DeployTarget;
   runtimeMode?: RuntimeMode;
+  /** Stack/service orchestration, snapshotted separately from Docker-vs-bare. */
+  orchestratorMode?: OrchestratorMode;
+  /** Durable workload identity. New Swarm deployments use `swarm-stack`, never containerId. */
+  runtimeRef?: RuntimeWorkloadRef;
   serverId?: string;
   /**
    * Adopt an already-running, externally-supervised process instead of building
@@ -121,9 +135,29 @@ export interface ResolvedDeploymentPlatform {
   platform: Platform;
   effectiveTarget: DeployTarget;
   runtimeMode: RuntimeMode;
+  orchestratorMode: OrchestratorMode;
   usesManagedRouting: boolean;
   /** The server ID used for SSH targets (null for local/cloud). */
   serverId: string | null;
+}
+
+/**
+ * The RuntimeAdapter is intentionally container/process oriented. Swarm stack
+ * records must resolve through Platform.stackRuntime instead; accepting one
+ * here would turn a durable stack ID into a Docker container operation.
+ */
+function assertContainerRuntimeAllowed(
+  dep: Pick<Deployment, "meta"> & Partial<Pick<Deployment, "runtimeRef" | "containerId">>,
+): void {
+  const ref = deploymentWorkloadRef(dep);
+  const mode = resolveOrchestratorMode((dep.meta as DeploymentMeta | null | undefined)?.orchestratorMode);
+  if (isSwarmStackRef(ref) || mode === "swarm") {
+    throw new AppError(
+      "This deployment is managed as a Docker Swarm stack. Container-level operations are unavailable; use the stack service operations instead.",
+      409,
+      "SWARM_CONTAINER_OPERATION_UNSUPPORTED",
+    );
+  }
 }
 
 type OrgServer = NonNullable<Awaited<ReturnType<typeof repos.server.getInOrganization>>>;
@@ -253,6 +287,8 @@ export async function resolveDeploymentPlatform(
   const basePlatform = opts?.basePlatform ?? platform();
   const effectiveTarget = resolveEffectiveTarget(basePlatform.target, snapshot);
   const runtimeMode = snapshot.runtimeMode ?? (basePlatform.runtime.name === "docker" ? "docker" : "bare");
+  const orchestratorMode = resolveOrchestratorMode(snapshot.orchestratorMode);
+  assertSupportedExecutionMatrix({ runtimeMode, orchestratorMode, deployTarget: effectiveTarget });
 
   if (effectiveTarget === "local" || effectiveTarget === "server") {
     const resolvedServerId = effectiveTarget === "server" ? (snapshot.serverId ?? null) : null;
@@ -261,11 +297,13 @@ export async function resolveDeploymentPlatform(
       runtimeMode,
       snapshot.serverId,
       opts?.organizationId,
+      orchestratorMode,
     );
     return {
       platform: targetPlatform,
       effectiveTarget,
       runtimeMode,
+      orchestratorMode,
       usesManagedRouting: usesManagedRouting(basePlatform.target, effectiveTarget),
       serverId: resolvedServerId,
     };
@@ -291,6 +329,7 @@ export async function resolveDeploymentPlatform(
     platform: resolvedPlatform,
     effectiveTarget,
     runtimeMode,
+    orchestratorMode,
     usesManagedRouting: usesManagedRouting(basePlatform.target, effectiveTarget),
     serverId: null,
   };
@@ -319,6 +358,7 @@ export async function resolveTargetPlatform(
   runtimeMode: RuntimeMode = "bare",
   serverId?: string,
   organizationId?: string,
+  orchestratorMode: OrchestratorMode = "standalone",
 ): Promise<Platform> {
   // For SSH server targets, use the managed connection pool
   if (target === "server") {
@@ -337,6 +377,7 @@ export async function resolveTargetPlatform(
       return createPlatform({
         target: "selfhosted",
         runtime: runtimeMode,
+        orchestratorMode,
         executor,
         docker: runtimeMode === "docker" ? { transport: "socket" as const } : undefined,
         provisionLock: createProvisionLock("provision:local"),
@@ -346,6 +387,7 @@ export async function resolveTargetPlatform(
     return createPlatform({
       target: "selfhosted",
       runtime: runtimeMode,
+      orchestratorMode,
       executor, // ← managed executor from pool
       ssh: ssh!,
       docker: runtimeMode === "docker" ? toDockerSshTransport(ssh!, executor) : undefined,
@@ -360,6 +402,7 @@ export async function resolveTargetPlatform(
   return createPlatform({
     target: "selfhosted",
     runtime: runtimeMode,
+    orchestratorMode,
     docker: runtimeMode === "docker"
       ? { transport: "socket" as const }
       : undefined,
@@ -496,7 +539,8 @@ function toDockerSshTransport(ssh: SshConfig, executor: CommandExecutor): Docker
  * for long-lived operations (streaming).
  */
 export async function resolveDeploymentRuntime(
-  dep: Pick<Deployment, "meta" | "organizationId">,
+  dep: Pick<Deployment, "meta" | "organizationId"> &
+    Partial<Pick<Deployment, "runtimeRef" | "containerId">>,
 ): Promise<{
   runtime: RuntimeAdapter;
   /**
@@ -510,6 +554,7 @@ export async function resolveDeploymentRuntime(
   effectiveTarget: DeployTarget;
   serverId: string | null;
 }> {
+  assertContainerRuntimeAllowed(dep);
   const snapshot = (dep.meta ?? {}) as DeploymentMeta;
   const resolved = await resolveDeploymentPlatform(snapshot, {
     organizationId: dep.organizationId,
@@ -546,8 +591,10 @@ export async function resolveDeploymentRuntime(
  * the socket transport).
  */
 export async function resolveDeploymentRuntimeForRead(
-  dep: Pick<Deployment, "meta" | "organizationId">,
+  dep: Pick<Deployment, "meta" | "organizationId"> &
+    Partial<Pick<Deployment, "runtimeRef" | "containerId">>,
 ): Promise<{ runtime: RuntimeAdapter; serverId: string | null }> {
+  assertContainerRuntimeAllowed(dep);
   // Services are containers even when the app itself deploys "bare" — pin docker
   // so a bare project's sidecars still resolve a docker runtime (matches
   // resolveServicePlatform's long-standing behaviour).

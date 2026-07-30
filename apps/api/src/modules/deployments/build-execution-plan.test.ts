@@ -31,6 +31,19 @@ describe("resolveBuildRuntimeModes (pre-resolve flip, as data)", () => {
     ).toEqual({ buildRuntimeMode: "docker", serveRuntimeMode: "docker" });
   });
 
+  it("Swarm pins Docker for both build and lifecycle identity", () => {
+    expect(
+      resolveBuildRuntimeModes({
+        hasServer: true,
+        serverId: "srv_1",
+        baseTarget: "selfhosted",
+        effectiveTarget: "server",
+        willRunServices: false,
+        orchestratorMode: "swarm",
+      }),
+    ).toEqual({ buildRuntimeMode: "docker", serveRuntimeMode: "docker" });
+  });
+
   it("static on a remote server → build in Docker sandbox, serve identity bare", () => {
     expect(
       resolveBuildRuntimeModes({

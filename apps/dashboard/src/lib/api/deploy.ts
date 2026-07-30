@@ -1,6 +1,6 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { StackId, ComposeAdvanced, RoutingConfig } from "@repo/core";
+import type { StackId, ComposeAdvanced, OrchestratorMode, RoutingConfig } from "@repo/core";
 import type { CloudResourceTier, CloudResourceCustom, PublicEndpoint, PortCheckUI, OutputCheckUI } from "@/context/deployment/types";
 
 export type PrepareProjectSource =
@@ -238,6 +238,7 @@ export const deployApi = {
     /** Folder-upload deploy: adopt the uploaded source (workspace / staging dir). */
     uploadSessionId?: string;
     runtimeMode?: "bare" | "docker";
+    orchestratorMode?: OrchestratorMode;
     serviceDeploymentMode?: "services" | "single";
     services?: Array<{
       name: string;

@@ -27,6 +27,9 @@ import {
   type StackId,
   type DeployTarget,
   type BuildStrategy,
+  assertSupportedExecutionMatrix,
+  resolveOrchestratorMode,
+  type OrchestratorMode,
   type StackDefinition,
   type ReleaseSource,
 } from "@repo/core";
@@ -67,7 +70,7 @@ import {
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
 import { resolveReleaseDist, resolveLatestVersion, readApiVersion } from "../../lib/release-resolver";
-import { env } from "../../config";
+import { env, swarmSupportEnabled } from "../../config";
 
 function throwPreflightFailure(preflight: PreflightResult): never {
   const failedChecks = preflight.checks.filter((check) => check.status === "fail");
@@ -193,6 +196,8 @@ export interface DeploymentConfigSnapshot {
   serverId?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
   runtimeMode?: "bare" | "docker";
+  /** Separate stack/service orchestration strategy. Legacy rows default standalone. */
+  orchestratorMode?: OrchestratorMode;
   /**
    * Adopt an already-running process instead of building + starting one. Set
    * for the self-deployed control plane so it becomes a real deployment without
@@ -335,6 +340,9 @@ export function buildConfigSnapshot(
     // tab). So a redeploy/webhook deploy respects the saved choice instead of
     // re-defaulting. The wizard's per-deploy override still wins when passed.
     runtimeMode: toRuntimeMode(project.runtimeMode),
+    // Existing project rows predate this field and therefore resolve to the
+    // standalone lifecycle path without a rewrite.
+    orchestratorMode: resolveOrchestratorMode(project.orchestratorMode),
   };
 }
 
@@ -523,8 +531,18 @@ export async function resolveRollbackContext(
  */
 export async function resolveSnapshotTarget(
   project: Project,
-  override?: { deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" },
-): Promise<{ deployTarget?: DeployTarget; serverId?: string; runtimeMode?: "bare" | "docker" }> {
+  override?: {
+    deployTarget?: DeployTarget;
+    serverId?: string;
+    runtimeMode?: "bare" | "docker";
+    orchestratorMode?: OrchestratorMode;
+  },
+): Promise<{
+  deployTarget?: DeployTarget;
+  serverId?: string;
+  runtimeMode?: "bare" | "docker";
+  orchestratorMode: OrchestratorMode;
+}> {
   const activeMeta = project.activeDeploymentId
     ? ((await repos.deployment.findById(project.activeDeploymentId).catch(() => null))
         ?.meta as DeploymentConfigSnapshot | null)
@@ -552,8 +570,11 @@ export async function resolveSnapshotTarget(
 
   const runtimeMode =
     override?.runtimeMode ?? toRuntimeMode(project.runtimeMode) ?? activeMeta?.runtimeMode;
+  const orchestratorMode = resolveOrchestratorMode(
+    override?.orchestratorMode ?? project.orchestratorMode ?? activeMeta?.orchestratorMode,
+  );
 
-  return { deployTarget, serverId, runtimeMode };
+  return { deployTarget, serverId, runtimeMode, orchestratorMode };
 }
 
 function resolveRuntimeImage(project: Project): string {
@@ -826,6 +847,7 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
     deployTarget,
     serverId,
     runtimeMode,
+    orchestratorMode,
     serviceDeploymentMode,
     services,
     serviceIds,
@@ -953,10 +975,16 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // the single source of truth shared with triggerDeployment — UI override >
   // cloudWorkspaceId > active-deployment meta. Keeps the two deploy entry points
   // from diverging on where a project deploys.
-  const resolvedTarget = await resolveSnapshotTarget(project, { deployTarget, serverId, runtimeMode });
+  const resolvedTarget = await resolveSnapshotTarget(project, {
+    deployTarget,
+    serverId,
+    runtimeMode,
+    orchestratorMode,
+  });
   snapshot.deployTarget = resolvedTarget.deployTarget;
   snapshot.serverId = resolvedTarget.serverId;
   snapshot.runtimeMode = resolvedTarget.runtimeMode;
+  snapshot.orchestratorMode = resolvedTarget.orchestratorMode;
 
   // Folder-upload: point this deploy at the source the browser uploaded.
   //   - cloud (oblien-direct): adopt the pre-provisioned workspace, skip clone.
@@ -977,6 +1005,23 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
     }
   }
 
+  // Validate the complete target after upload handling, because an upload can
+  // intentionally switch the deploy target to cloud. This is before preflight,
+  // image build, or any runtime command.
+  assertSupportedExecutionMatrix({
+    runtimeMode: snapshot.runtimeMode ?? "docker",
+    orchestratorMode: snapshot.orchestratorMode,
+    deployTarget: snapshot.deployTarget,
+  });
+
+  if (snapshot.orchestratorMode === "swarm" && !swarmSupportEnabled()) {
+    throw new AppError(
+      "Docker Swarm support is disabled. Set OPENSHIP_EXPERIMENTAL_SWARM=true to enable the experimental stack flow.",
+      403,
+      "SWARM_FEATURE_DISABLED",
+    );
+  }
+
   // Persist an EXPLICIT runtime-isolation choice (the deploy "sandbox vs direct"
   // modal pick) onto the project so it STICKS. Without this the choice lives only
   // in this one deployment's snapshot: the modal re-asks every deploy, a later
@@ -992,6 +1037,15 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
       .update(project.id, { runtimeMode })
       .catch((err) =>
         console.warn(`[requestBuildAccess] failed to persist runtimeMode: ${safeErrorMessage(err)}`),
+      );
+  }
+  if (snapshot.orchestratorMode !== project.orchestratorMode) {
+    await repos.project
+      .update(project.id, { orchestratorMode: snapshot.orchestratorMode })
+      .catch((err) =>
+        console.warn(
+          `[requestBuildAccess] failed to persist orchestratorMode: ${safeErrorMessage(err)}`,
+        ),
       );
   }
 
@@ -1226,6 +1280,7 @@ export async function redeployBuildSession(
     meta.deployTarget = t.deployTarget;
     meta.serverId = t.serverId;
     meta.runtimeMode = t.runtimeMode;
+    meta.orchestratorMode = t.orchestratorMode;
     meta.buildStrategy = await settingsService.resolveStrategy(meta.framework, meta.buildStrategy, {
       deployTarget: meta.deployTarget,
     });

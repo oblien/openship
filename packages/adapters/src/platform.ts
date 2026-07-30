@@ -33,6 +33,7 @@
  */
 
 import type { RuntimeAdapter } from "./runtime/types";
+import type { StackRuntimeAdapter } from "./runtime/swarm/types";
 import type { RoutingProvider, SslProvider } from "./infra/types";
 import type { CommandExecutor, SshConfig, ProvisionLock } from "./types";
 import type { SetupStateStore } from "./system/state";
@@ -41,6 +42,11 @@ import type { SystemManager } from "./system/setup";
 import type { DockerConnectionOptions } from "./runtime/docker";
 import type { BareRuntimeOptions } from "./runtime/bare";
 import type { NginxProviderOptions } from "./infra/nginx";
+import {
+  assertSupportedExecutionMatrix,
+  resolveOrchestratorMode,
+  type OrchestratorMode,
+} from "@repo/core";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -64,6 +70,8 @@ export interface PlatformConfig {
   *   - "bare"   → Node.js processes + Nginx + certbot
    */
   runtime?: "docker" | "bare";
+  /** Separate workload orchestrator. Swarm always retains Docker as runtime. */
+  orchestratorMode?: OrchestratorMode;
   /** Docker connection options (only for docker runtime) */
   docker?: DockerConnectionOptions;
   /** Bare runtime options (only for bare runtime) */
@@ -135,6 +143,10 @@ export interface Platform {
   readonly target: PlatformTarget;
   /** Build/deploy/stop/start lifecycle */
   readonly runtime: RuntimeAdapter;
+  /** Workload orchestration is independent from the image/build runtime. */
+  readonly orchestratorMode: OrchestratorMode;
+  /** Null for standalone projects and until a Swarm manager adapter is resolved. */
+  readonly stackRuntime: StackRuntimeAdapter | null;
   /** Reverse-proxy route management */
   readonly routing: RoutingProvider;
   /** TLS certificate management */
@@ -161,6 +173,13 @@ export interface Platform {
  * This runs once at startup. After init, `getPlatform()` is synchronous.
  */
 export async function createPlatform(config: PlatformConfig): Promise<Platform> {
+  const orchestratorMode = resolveOrchestratorMode(config.orchestratorMode);
+  const effectiveRuntime = config.target === "desktop" ? "bare" : config.runtime ?? "docker";
+  assertSupportedExecutionMatrix({
+    runtimeMode: effectiveRuntime,
+    orchestratorMode,
+    ...(config.target === "cloud" ? { deployTarget: "cloud" as const } : {}),
+  });
   switch (config.target) {
     case "cloud":
       return createCloudPlatform(config);
@@ -190,6 +209,8 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
   return {
     target: "cloud",
     runtime: new CloudRuntime(client, { adminProxy: config.cloudAdminProxy }),
+    orchestratorMode: "standalone",
+    stackRuntime: null,
     routing: infra,
     ssl: infra,
     system: null,
@@ -205,6 +226,8 @@ async function createDesktopPlatform(config: PlatformConfig): Promise<Platform> 
   return {
     target: "desktop",
     runtime: new BareRuntime(config.bare),
+    orchestratorMode: "standalone",
+    stackRuntime: null,
     routing: noop,
     ssl: noop,
     system: null,
@@ -304,6 +327,7 @@ async function createInfraProvider(
 
 async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platform> {
   const runtimeMode = config.runtime ?? "docker";
+  const orchestratorMode = resolveOrchestratorMode(config.orchestratorMode);
 
   // The LOCAL edge-in-compose case only: here the api process shares the routing
   // mounts with the edge container and talks to the daemon over its own socket, so
@@ -346,16 +370,29 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   }
 
   // Infrastructure - runtime implies the reverse proxy
-  const { routing, ssl } = await createInfraProvider(
-    runtimeMode,
-    config,
-    executor,
-    useDockerEdge ? edgeContainer : undefined,
-  );
+  // Swarm begins external-routing first. Resolving a platform for a stack must
+  // not provision, take over, or mutate a host edge before a later explicit
+  // managed-routing feature opts in.
+  const { routing, ssl } = orchestratorMode === "swarm"
+    ? await (async () => {
+        const { NoopInfraProvider } = await import("./infra/noop");
+        const noop = new NoopInfraProvider();
+        return { routing: noop, ssl: noop };
+      })()
+    : await createInfraProvider(
+        runtimeMode,
+        config,
+        executor,
+        useDockerEdge ? edgeContainer : undefined,
+      );
 
   return {
     target: "selfhosted",
     runtime,
+    orchestratorMode,
+    // The manager adapter is constructed by API target resolution once it can
+    // bind a verified Swarm manager. Keep the slot explicit meanwhile.
+    stackRuntime: null,
     routing,
     ssl,
     system,
