@@ -784,26 +784,26 @@ export default function EmailsPage() {
   return (
     <PageContainer>
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <div className="flex min-w-0 items-center gap-3">
             {canGoBack && (
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex size-9 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground transition-colors hover:text-foreground"
+                className="flex shrink-0 size-9 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground transition-colors hover:text-foreground"
                 title={t.emails.page.backToServers}
               >
                 <ArrowLeft className="size-4 rtl:rotate-180" />
               </button>
             )}
-            <div>
+            <div className="min-w-0">
               <h1
-                className="text-2xl font-medium text-foreground/80"
+                className="truncate text-2xl font-medium text-foreground/80"
                 style={{ letterSpacing: "-0.2px" }}
               >
                 {t.emails.page.title}
               </h1>
-              <p className="text-sm text-muted-foreground/70 mt-1">
+              <p className="truncate text-sm text-muted-foreground/70 mt-1">
                 {t.emails.page.subtitle}
               </p>
             </div>
@@ -811,16 +811,20 @@ export default function EmailsPage() {
 
           {/* Add-server action while viewing a server (add a 2nd, etc.).
               The list view has its own Add button; the setup/progress views
-              are already the add flow. */}
+              are already the add flow. `whitespace-nowrap` + `shrink-0` keep
+              this on one line - it used to wrap onto 3 lines once the title
+              block above squeezed it for space on a narrow viewport. Label
+              text drops below `sm` so the button stays icon-only there
+              instead of fighting the title for room. */}
           {showAdmin && (
             <button
               type="button"
               onClick={handleAddNew}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               title={t.emails.page.addServer}
             >
-              <Plus className="size-4" />
-              {t.emails.page.addServer}
+              <Plus className="size-4 shrink-0" />
+              <span className="hidden sm:inline">{t.emails.page.addServer}</span>
             </button>
           )}
         </div>

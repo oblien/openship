@@ -93,12 +93,12 @@ export function ReputationBanner({ serverId, domain }: ReputationBannerProps) {
   if (!visible) return null;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-warning-border bg-warning-bg">
+    <div className="relative w-full overflow-hidden rounded-2xl border border-warning-border bg-warning-bg">
       <div
         aria-hidden
         className="absolute -top-12 -end-12 size-44 rounded-full bg-warning-bg blur-3xl pointer-events-none"
       />
-      <div className="relative flex items-start gap-3.5 p-4 pe-12">
+      <div className="relative flex items-start gap-3.5 p-4 pe-10 sm:pe-12">
         <div className="size-9 rounded-xl bg-warning-bg border border-warning-border flex items-center justify-center shrink-0">
           <Clock3
             className="size-4 text-warning"
