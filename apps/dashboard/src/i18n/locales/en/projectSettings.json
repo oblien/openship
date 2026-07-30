@@ -366,6 +366,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "viewOnGithub": "View on GitHub",
+    "viewOnGitlab": "View on GitLab",
     "recentCommits": "Recent Commits",
     "totalCommits": "{count} total",
     "noCommits": "No commits yet",

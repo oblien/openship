@@ -13,17 +13,44 @@
  */
 export const GITLAB_CONNECT_ERROR_KEY = "openship.gitlab.connectError";
 
-const MESSAGES: Record<string, string> = {
+/** Optional i18n overrides — keys match `settings.gitlab.connectErrors`. */
+export type GitlabConnectErrorMessages = {
+  default: string;
+  unknown: string;
+  account_already_linked_to_different_user: string;
+  email_doesnt_match: string;
+  email_not_found: string;
+  unable_to_link_account: string;
+};
+
+const FALLBACK: GitlabConnectErrorMessages = {
+  default: "Couldn't connect GitLab. Please try again.",
+  unknown: "Couldn't connect GitLab ({code}).",
   account_already_linked_to_different_user:
     "That GitLab account is already linked to a different Openship user. Sign in as that user, or disconnect GitLab there first.",
-  "email_doesn't_match":
+  email_doesnt_match:
     "Your GitLab email doesn't match this account's email. Connect a GitLab account that uses the same email.",
   email_not_found:
     "GitLab didn't share a usable email. Make your GitLab email public (or verify one) and try again.",
   unable_to_link_account: "Couldn't link your GitLab account. Please try again.",
 };
 
-export function gitlabConnectErrorMessage(code: string | null | undefined): string {
-  if (!code) return "Couldn't connect GitLab. Please try again.";
-  return MESSAGES[code] ?? `Couldn't connect GitLab (${code}).`;
+/** Better Auth uses `email_doesn't_match`; i18n keys can't embed `'`. */
+const CODE_TO_KEY: Record<string, keyof GitlabConnectErrorMessages> = {
+  account_already_linked_to_different_user: "account_already_linked_to_different_user",
+  "email_doesn't_match": "email_doesnt_match",
+  email_not_found: "email_not_found",
+  unable_to_link_account: "unable_to_link_account",
+};
+
+export function gitlabConnectErrorMessage(
+  code: string | null | undefined,
+  messages: GitlabConnectErrorMessages = FALLBACK,
+): string {
+  if (!code) return messages.default;
+  const key = CODE_TO_KEY[code];
+  if (key && key !== "default" && key !== "unknown") {
+    return messages[key];
+  }
+  return messages.unknown.replace("{code}", code);
 }

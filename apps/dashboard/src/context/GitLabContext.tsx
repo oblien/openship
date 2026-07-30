@@ -18,6 +18,7 @@ import {
 } from "@/lib/api/client";
 import { openAuthWindow } from "@/utils/authWindow";
 import { useToast } from "@/context/ToastContext";
+import { useI18n } from "@/components/i18n-provider";
 import {
   GITLAB_CONNECT_ERROR_KEY,
   gitlabConnectErrorMessage,
@@ -114,6 +115,8 @@ const EMPTY_STATE: GitLabConnectionState = {
 
 export function GitLabProvider({ children }: GitLabProviderProps) {
   const { showToast } = useToast();
+  const { t } = useI18n();
+  const g = t.settings.gitlab;
   const [state, setState] = useState<GitLabConnectionState>(EMPTY_STATE);
   const [connecting, setConnecting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -151,9 +154,9 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
         if (isAbortError(err) || isNetworkError(err)) return;
         setState(EMPTY_STATE);
         showToast(
-          getApiErrorMessage(err, "Couldn't load GitLab data"),
+          getApiErrorMessage(err, g.toastLoadFailed),
           "error",
-          "GitLab",
+          g.toastTitle,
         );
       } finally {
         setLoading(false);
@@ -165,7 +168,7 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
     } finally {
       if (inflightRefresh.current === work) inflightRefresh.current = null;
     }
-  }, [showToast]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showToast, g.toastLoadFailed, g.toastTitle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (initRef.current) return;
@@ -198,7 +201,11 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
             const linkError = localStorage.getItem(GITLAB_CONNECT_ERROR_KEY);
             if (linkError) {
               localStorage.removeItem(GITLAB_CONNECT_ERROR_KEY);
-              showToast(gitlabConnectErrorMessage(linkError), "error", "GitLab");
+              showToast(
+                gitlabConnectErrorMessage(linkError, g.connectErrors),
+                "error",
+                g.toastTitle,
+              );
             }
           } catch { /* storage unavailable */ }
           void refresh();
@@ -209,14 +216,14 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
 
       setConnecting(false);
       if (res?.error) {
-        showToast(res.error, "error", "GitLab");
+        showToast(res.error, "error", g.toastTitle);
       }
     } catch (err) {
       setConnecting(false);
       if (isAbortError(err) || isNetworkError(err)) return;
-      showToast(getApiErrorMessage(err, "Failed to connect to GitLab"), "error", "GitLab");
+      showToast(getApiErrorMessage(err, g.toastConnectFailed), "error", g.toastTitle);
     }
-  }, [refresh, showToast]);
+  }, [refresh, showToast, g]);
 
   /* ── Connect (Personal Access Token) ────────────────────────────── */
   const connectWithToken = useCallback(
@@ -232,18 +239,18 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
           await refresh();
           return { success: true };
         }
-        return { success: false, error: res?.error || "Invalid GitLab personal access token" };
+        return { success: false, error: res?.error || g.toastInvalidPat };
       } catch (err) {
-        const message = getApiErrorMessage(err, "Failed to connect to GitLab");
+        const message = getApiErrorMessage(err, g.toastConnectFailed);
         if (!isAbortError(err) && !isNetworkError(err)) {
-          showToast(message, "error", "GitLab");
+          showToast(message, "error", g.toastTitle);
         }
         return { success: false, error: message };
       } finally {
         setConnecting(false);
       }
     },
-    [refresh, showToast],
+    [refresh, showToast, g],
   );
 
   /* ── Disconnect ──────────────────────────────────────────────────── */
@@ -254,10 +261,10 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
         await refresh();
       } catch (err) {
         if (isAbortError(err) || isNetworkError(err)) return;
-        showToast(getApiErrorMessage(err, "Failed to disconnect from GitLab"), "error", "GitLab");
+        showToast(getApiErrorMessage(err, g.toastDisconnectFailed), "error", g.toastTitle);
       }
     },
-    [refresh, showToast],
+    [refresh, showToast, g],
   );
 
   /* ── Fetch projects for a namespace ─────────────────────────────── */
@@ -272,7 +279,11 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
         } else {
           setProjects([]);
           if (res?.error) {
-            showToast(typeof res.error === "string" ? res.error : "Couldn't load projects", "error", "GitLab");
+            showToast(
+              typeof res.error === "string" ? res.error : g.toastLoadProjectsFailed,
+              "error",
+              g.toastTitle,
+            );
           }
         }
       } catch (err) {
@@ -281,12 +292,12 @@ export function GitLabProvider({ children }: GitLabProviderProps) {
           setLoadingProjects(false);
           return;
         }
-        showToast(getApiErrorMessage(err, "Couldn't load projects"), "error", "GitLab");
+        showToast(getApiErrorMessage(err, g.toastLoadProjectsFailed), "error", g.toastTitle);
       } finally {
         setLoadingProjects(false);
       }
     },
-    [connected, showToast],
+    [connected, showToast, g],
   );
 
   const setSelectedNamespace = useCallback(

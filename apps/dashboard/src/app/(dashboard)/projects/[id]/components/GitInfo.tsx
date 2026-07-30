@@ -227,7 +227,7 @@ export const GitInfo = () => {
             className="w-full px-4 py-2.5 bg-muted/60 hover:bg-muted text-foreground rounded-full font-medium text-sm transition-all flex items-center justify-center gap-2"
           >
             {generateIcon('External_link_HtLszLDBXqHilHK674zh2aKoSL7xUhyboAzP.png', 16, 'currentColor')}
-            {isGitlab ? 'View on GitLab' : t.projectSettings.gitInfo.viewOnGithub}
+            {isGitlab ? t.projectSettings.gitInfo.viewOnGitlab : t.projectSettings.gitInfo.viewOnGithub}
           </a>
         </div>
       </div>

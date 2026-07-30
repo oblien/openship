@@ -200,7 +200,20 @@
     "patPlaceholder": "glpat-xxxxxxxxxxxxxxxxxxxx",
     "patSubmit": "Connect",
     "toastConnected": "GitLab connected",
-    "toastTitle": "GitLab"
+    "toastTitle": "GitLab",
+    "toastLoadFailed": "Couldn't load GitLab data",
+    "toastConnectFailed": "Failed to connect to GitLab",
+    "toastDisconnectFailed": "Failed to disconnect from GitLab",
+    "toastLoadProjectsFailed": "Couldn't load projects",
+    "toastInvalidPat": "Invalid GitLab personal access token",
+    "connectErrors": {
+      "default": "Couldn't connect GitLab. Please try again.",
+      "unknown": "Couldn't connect GitLab ({code}).",
+      "account_already_linked_to_different_user": "That GitLab account is already linked to a different Openship user. Sign in as that user, or disconnect GitLab there first.",
+      "email_doesnt_match": "Your GitLab email doesn't match this account's email. Connect a GitLab account that uses the same email.",
+      "email_not_found": "GitLab didn't share a usable email. Make your GitLab email public (or verify one) and try again.",
+      "unable_to_link_account": "Couldn't link your GitLab account. Please try again."
+    }
   },
   "deployDefaults": {
     "title": "Deploy Defaults",
