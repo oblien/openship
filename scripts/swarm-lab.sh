@@ -1,20 +1,23 @@
 #!/bin/sh
 # Disposable Docker Swarm lab. It creates only the fixed openship-swarm-lab
-# Compose project and the openship-swarm-fixture stack; cleanup refuses every
-# other target. See docs/swarm/TEST-MATRIX.md.
+# Compose project, a nested ordinary Compose Traefik fixture, and the
+# openship-swarm-fixture stack; cleanup refuses every other target. See
+# docs/swarm/TEST-MATRIX.md.
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 compose_file="$repo_root/fixtures/swarm/lab.compose.yml"
 stack_file="$repo_root/fixtures/swarm/stack.yml"
+compose_traefik_file="$repo_root/fixtures/swarm/compose-traefik.yml"
 lab_project="openship-swarm-lab"
+compose_traefik_project="openship-compose-traefik-fixture"
 manager="openship-swarm-lab-manager"
 worker="openship-swarm-lab-worker"
 fixture_stack="openship-swarm-fixture"
 manager_host="tcp://127.0.0.1:23750"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|status|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -76,6 +79,16 @@ case "${1:-}" in
     docker -H "$manager_host" stack deploy --detach=false -c "$stack_file" "$fixture_stack"
     docker -H "$manager_host" stack services "$fixture_stack"
     ;;
+  compose-proxy)
+    require_docker
+    require_lab
+    test "$compose_traefik_project" = "openship-compose-traefik-fixture" || {
+      echo "Refusing unexpected Compose fixture" >&2
+      exit 1
+    }
+    docker -H "$manager_host" compose -p "$compose_traefik_project" -f "$compose_traefik_file" up -d
+    docker -H "$manager_host" compose -p "$compose_traefik_project" -f "$compose_traefik_file" ps
+    ;;
   status)
     require_docker
     require_lab
@@ -92,6 +105,11 @@ case "${1:-}" in
     require_docker
     require_lab
     test "$fixture_stack" = "openship-swarm-fixture" || { echo "Refusing unexpected stack" >&2; exit 1; }
+    test "$compose_traefik_project" = "openship-compose-traefik-fixture" || {
+      echo "Refusing unexpected Compose fixture" >&2
+      exit 1
+    }
+    docker -H "$manager_host" compose -p "$compose_traefik_project" -f "$compose_traefik_file" down --volumes --remove-orphans || true
     docker -H "$manager_host" stack rm "$fixture_stack"
     ;;
   down)

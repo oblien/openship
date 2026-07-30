@@ -75,6 +75,12 @@ export type {
 export { assertCapability, isMultiServiceRuntime } from "./runtime/types";
 export { DockerRuntime, type DockerConnectionOptions } from "./runtime/docker";
 export {
+  describeSwarmTaskOwnership,
+  isSwarmTaskContainer,
+  swarmTaskOwnership,
+  type SwarmTaskOwnership,
+} from "./runtime/swarm/ownership";
+export {
   transferImage,
   type ImageTransferOptions,
   type ImageTransferResult,

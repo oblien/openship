@@ -93,6 +93,7 @@ import { startExecStream, daemonConnectionFrom } from "./docker-exec-stream";
 import { resolveDockerfileCandidates } from "./docker-paths";
 import { generateDockerfile, staticBuilderOutputPath } from "./docker-build-plan";
 import { transferLocalDirectory } from "./transfer";
+import { swarmTaskOwnership } from "./swarm/ownership";
 import { safeErrorMessage, type ComposeAdvanced, type ComposeHealthcheck } from "@repo/core";
 import {
   type DockerConnectionOptions,
@@ -2163,6 +2164,7 @@ export class DockerRuntime implements RuntimeAdapter {
         ...(ip ? { ip } : {}),
         composeProject: labels["com.docker.compose.project"] || undefined,
         composeService: labels["com.docker.compose.service"] || undefined,
+        swarmTask: swarmTaskOwnership(labels),
       };
     });
   }
@@ -2210,6 +2212,7 @@ export class DockerRuntime implements RuntimeAdapter {
         ? configFiles.split(",").map((s) => s.trim()).filter(Boolean)
         : undefined,
       composeWorkingDir: labels["com.docker.compose.project.working_dir"] || undefined,
+      swarmTask: swarmTaskOwnership(labels),
     };
   }
 

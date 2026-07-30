@@ -8,7 +8,7 @@
  * into one normalized `DiscoveredStack`. Nothing here mutates the server.
  */
 
-import type { DockerContainerDetail } from "@repo/adapters";
+import type { DockerContainerDetail, DockerContainerSummary } from "@repo/adapters";
 import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
 import { createServerDockerRuntime } from "../../lib/deployment-runtime";
@@ -21,6 +21,7 @@ import {
   reconcileOpenshipProjects,
   isBuildHelper,
   type DiscoveredStack,
+  type DiscoveredSwarmTask,
 } from "./docker-reconcile";
 import { scanProxyRoutes } from "./proxy-route-scan";
 
@@ -32,6 +33,7 @@ export type {
   DiscoveredStack,
   DiscoveredService,
   DiscoveredVolumeMount,
+  DiscoveredSwarmTask,
   OpenshipProjectGroup,
 } from "./docker-reconcile";
 export { reconcileStack } from "./docker-reconcile";
@@ -62,6 +64,35 @@ async function mapLimit<T, R>(
   });
   await Promise.all(workers);
   return results;
+}
+
+/**
+ * Swarm task containers are visible in `docker ps`, but are not standalone
+ * workloads. Keep them out of every migration/adoption path before any inspect,
+ * image read, volume copy, or later cutover can touch their container IDs.
+ */
+export function partitionDiscoveredContainers(containers: DockerContainerSummary[]): {
+  candidates: DockerContainerSummary[];
+  swarmTasks: DiscoveredSwarmTask[];
+} {
+  const swarmTasks: DiscoveredSwarmTask[] = [];
+  const candidates: DockerContainerSummary[] = [];
+
+  for (const container of containers) {
+    if (!container.swarmTask) {
+      candidates.push(container);
+      continue;
+    }
+    swarmTasks.push({
+      containerId: container.id,
+      containerName: container.names[0],
+      image: container.image,
+      state: container.state,
+      status: container.status,
+      ownership: container.swarmTask,
+    });
+  }
+  return { candidates, swarmTasks };
 }
 
 /**
@@ -172,12 +203,16 @@ export async function discoverServerStack(
         // FLAT DOCKER mode ignores the openship.* namespace: every container (minus
         // transient build helpers) is a generic candidate, so Openship-managed
         // workloads adopt as plain compose/standalone — no managed set, no re-import.
+        const { candidates: nonSwarmContainers, swarmTasks } = partitionDiscoveredContainers(containers);
+        if (swarmTasks.length > 0) {
+          step(`Excluded ${swarmTasks.length} Docker Swarm task container(s) from standalone adoption.`);
+        }
         const isOpenshipOwned = (labels: Record<string, string>) =>
           Object.keys(labels).some((k) => k === "openship" || k.startsWith("openship."));
-        const managed = flatDocker ? [] : containers.filter((c) => isOpenshipOwned(c.labels));
+        const managed = flatDocker ? [] : nonSwarmContainers.filter((c) => isOpenshipOwned(c.labels));
         const candidates = flatDocker
-          ? containers.filter((c) => !isBuildHelper(c.labels))
-          : containers.filter((c) => !isOpenshipOwned(c.labels));
+          ? nonSwarmContainers.filter((c) => !isBuildHelper(c.labels))
+          : nonSwarmContainers.filter((c) => !isOpenshipOwned(c.labels));
         const managedApp = managed.filter(
           (c) => c.labels["openship.project"] && !isBuildHelper(c.labels),
         );
@@ -318,6 +353,7 @@ export async function discoverServerStack(
           imageCmds,
           openshipProjects,
           proxyRoutesByPort,
+          swarmTasks,
         });
       })(),
       DISCOVERY_TIMEOUT_MS,

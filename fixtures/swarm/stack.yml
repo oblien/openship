@@ -47,6 +47,26 @@ services:
     networks:
       - app
 
+  swarm-traefik:
+    image: traefik:v3.2
+    command:
+      - --entrypoints.web.address=:80
+      - --providers.docker.exposedbydefault=false
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: ingress
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        com.openship.swarm.fixture: "true"
+    networks:
+      - app
+
 networks:
   app:
     driver: overlay

@@ -27,6 +27,12 @@ export { runBuildPipeline, BuildLogger, parseLogLevel, type BuildEnvironment } f
 export { DockerRuntime, type DockerConnectionOptions } from "./docker";
 export { BareRuntime, type BareRuntimeOptions } from "./bare";
 export { CloudRuntime } from "./cloud";
+export {
+  describeSwarmTaskOwnership,
+  isSwarmTaskContainer,
+  swarmTaskOwnership,
+  type SwarmTaskOwnership,
+} from "./swarm/ownership";
 
 // ─── Supervisor ──────────────────────────────────────────────────────────────
 export type { ProcessSupervisor, SupervisorDeployOpts } from "./supervisor/types";

@@ -110,6 +110,21 @@ export interface DiscoveredStack {
     ssl: { enabled: boolean; certPath?: string; keyPath?: string };
     source?: string;
   }>;
+  /** Docker Swarm task containers are observable only; they cannot be selected
+   * for the standalone container adoption flow. */
+  swarmTasks: Array<{
+    containerId: string;
+    containerName?: string;
+    image: string;
+    state: string;
+    status: string;
+    ownership: {
+      serviceId?: string;
+      serviceName?: string;
+      stackName?: string;
+      taskId?: string;
+    };
+  }>;
 }
 
 export interface ReimportResult {

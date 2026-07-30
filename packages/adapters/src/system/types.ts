@@ -163,6 +163,10 @@ export interface EdgeOccupant {
   systemdDescription?: string;
   isDocker?: boolean;
   containerName?: string;
+  /** When an ingress/host port belongs to a Docker Swarm service, normal
+   * container-level takeover is forbidden. */
+  swarmServiceName?: string;
+  swarmStackName?: string;
   proxy?: ProxyKind;
   /** true when this is our own OpenResty (never counted as a conflict) */
   managedByOpenship: boolean;
@@ -182,6 +186,8 @@ export interface EdgeStopTarget {
   unit?: string;
   pid?: number;
   container?: string;
+  swarmServiceName?: string;
+  swarmStackName?: string;
   label?: string;
 }
 

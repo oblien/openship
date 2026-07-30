@@ -7,7 +7,7 @@ Branch: `feat/docker-swarm`
 ## S0.1: Pin the baseline, feature guardrails, and disposable test topology
 
 Status: done
-Commit: pending
+Commit: `7fe2af41`
 Tests run:
 
 - `bun install --frozen-lockfile` — passed with Bun `1.3.3`.
@@ -49,3 +49,33 @@ Next:
 
 - Prevent container-level adoption and Edge takeover actions on Swarm task
   containers (S0.2).
+
+## S0.2: Make container migration and Edge takeover Swarm-aware
+
+Status: done
+Commit: recorded in repository history
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/ownership.test.ts test/docker-container-status.test.ts src/system/proxy/detect.test.ts` — passed (30 tests).
+- `bun --cwd apps/api vitest run test/modules/migration/docker-inspect.test.ts` — passed (9 tests).
+- `bun run --cwd packages/adapters lint`, `bun run --cwd apps/api lint`, and
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json` — passed.
+- `scripts/swarm-lab.sh up && scripts/swarm-lab.sh deploy && scripts/swarm-lab.sh compose-proxy && scripts/swarm-lab.sh status && scripts/swarm-lab.sh cleanup && scripts/swarm-lab.sh down` — passed. The nested manager ran a Swarm Traefik task on `*:80->80/tcp` and a separate ordinary Compose Traefik on `:18080`; cleanup removed only fixture resources.
+
+Evidence:
+
+- Docker task labels become a typed ownership discriminator on container
+  summaries and inspections. Migration discovery reports them separately and
+  prevents them entering the standalone adoption path before inspection or
+  image reads.
+- Edge port probing recognizes Swarm ingress ownership from the manager's
+  service table, names the owning stack/service, and refuses the legacy
+  container-level takeover with `SWARM_SERVICE_OWNED` before any executor
+  command is issued.
+- A read-only check against the local Docker daemon classified an existing
+  Swarm task with live service and task IDs, without changing it.
+
+Next:
+
+- Publish the tracker and draft review slice (S0.3), then begin the durable
+  orchestration domain model.
