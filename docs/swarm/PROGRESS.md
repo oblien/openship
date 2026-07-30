@@ -82,12 +82,12 @@ Next:
 
 ## S0.3: Publish implementation intent
 
-Status: in progress
+Status: done
 
 - Tracking issue: [#316 — Docker Swarm stack-native deployment support](https://github.com/oblien/openship/issues/316)
+- Draft review slice: [#317 — feat(swarm): establish safe stack-native foundation](https://github.com/oblien/openship/pull/317)
 - Related operator safety issue: [#311](https://github.com/oblien/openship/issues/311)
 - Related clustering/storage roadmap context: [#163](https://github.com/oblien/openship/issues/163)
 
-Next:
-
-- Push S0.1–S0.2 and open the linked draft PR.
+The draft contains the tested S0.1–S0.2 foundation. Work continues without
+waiting for review.
