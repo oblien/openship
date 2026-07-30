@@ -1,4 +1,4 @@
-import { and, desc, eq, max } from "drizzle-orm";
+import { and, desc, eq, max, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { swarmStack, swarmStackRevision } from "../schema";
@@ -45,6 +45,41 @@ export function createSwarmStackRepo(db: Database) {
         .update(swarmStack)
         .set({ ...patch, updatedAt: new Date() })
         .where(and(eq(swarmStack.id, id), eq(swarmStack.organizationId, organizationId)))
+        .returning();
+      return row;
+    },
+
+    /**
+     * Atomically update authoritative source material. SourceVersion is an
+     * optimistic lock: concurrent editors must refresh rather than silently
+     * replacing each other's compose paths or encrypted inline document.
+     */
+    async updateSourceInOrganization(
+      id: string,
+      organizationId: string,
+      expectedVersion: number,
+      patch: Pick<NewSwarmStack,
+        | "sourceKind"
+        | "sourcePaths"
+        | "sourcePath"
+        | "sourceBranch"
+        | "sourceCommitSha"
+        | "sourceYamlEnc"
+        | "sourceDigest"
+      >,
+    ): Promise<SwarmStack | undefined> {
+      const [row] = await db
+        .update(swarmStack)
+        .set({
+          ...patch,
+          sourceVersion: sql`${swarmStack.sourceVersion} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(swarmStack.id, id),
+          eq(swarmStack.organizationId, organizationId),
+          eq(swarmStack.sourceVersion, expectedVersion),
+        ))
         .returning();
       return row;
     },

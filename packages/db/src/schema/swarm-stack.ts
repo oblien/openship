@@ -43,6 +43,11 @@ export const swarmStack = pgTable(
     /** Ordered repository-relative source paths, used only under a private staging root. */
     sourcePaths: jsonb("source_paths").$type<string[]>().notNull().default([]),
     sourcePath: text("source_path"),
+    /** Optional immutable Git ref captured for a repository-backed source. */
+    sourceBranch: text("source_branch"),
+    sourceCommitSha: text("source_commit_sha"),
+    /** Optimistic concurrency token for source edits. */
+    sourceVersion: integer("source_version").notNull().default(1),
     /** Encrypted complete source/YAML document (enc1: envelope), never returned by default. */
     sourceYamlEnc: text("source_yaml_enc"),
     sourceDigest: text("source_digest"),
@@ -84,6 +89,8 @@ export const swarmStackRevision = pgTable(
       .references(() => swarmStack.id, { onDelete: "cascade" }),
     revision: integer("revision").notNull(),
     sourceDigest: text("source_digest"),
+    /** Repository commit used to render this immutable revision, when applicable. */
+    sourceCommitSha: text("source_commit_sha"),
     /** Encrypted, immutable rendered `docker stack config` output. */
     renderedYamlEnc: text("rendered_yaml_enc").notNull(),
     renderedDigest: text("rendered_digest").notNull(),

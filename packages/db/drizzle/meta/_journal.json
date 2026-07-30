@@ -519,6 +519,13 @@
       "when": 1785358401651,
       "tag": "0073_add_swarm_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1785358402651,
+      "tag": "0074_add_swarm_source_version",
+      "breakpoints": true
     }
   ]
 }

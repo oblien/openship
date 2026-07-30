@@ -22,6 +22,7 @@ import * as transfer from "./transfer.controller";
 import * as routeRules from "../route-rules/route-rule.controller";
 import * as ensureEdgeCtrl from "../domains/ensure-edge.controller";
 import * as incomingWebhooks from "../incoming-webhooks/incoming.controller";
+import * as swarmSource from "../swarm/swarm-source.controller";
 import {
   CreateProjectBody,
   EnsureProjectBody,
@@ -40,6 +41,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
+import { UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -166,6 +168,17 @@ r.patch(
   ctrl.update,
 );
 r.delete("/:id", { tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
+r.get("/:id/swarm/source", { tag: "project:read", localOnly: true, readOnly: true }, swarmSource.get);
+r.post(
+  "/:id/swarm/source/validate",
+  { tag: "project:read", localOnly: true, readOnly: true, body: UpdateSwarmStackSourceBody },
+  swarmSource.validate,
+);
+r.put(
+  "/:id/swarm/source",
+  { tag: "project:write", localOnly: true, body: UpdateSwarmStackSourceBody },
+  swarmSource.replace,
+);
 r.get("/:id/info", { tag: "project:read", mcp: { description: "Get a project's detailed info (runtime, build, source)." } }, cloudProjectProxy, ctrl.getInfo);
 r.get("/:id/environments", { tag: "project:read", mcp: { description: "List a project's environments (production / previews)." } }, cloudProjectProxy, ctrl.listEnvironments);
 r.post(

@@ -253,3 +253,28 @@ Evidence:
 Next:
 
 - Model authoritative repository, inline, and observed stack sources (S3.1).
+
+## S3.1: Authoritative repository, inline, and observed sources
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd packages/db lint`, `bun run --cwd apps/api lint`, and
+  `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd packages/db vitest run src/repos/swarm-persistence.repo.test.ts src/migrations-additive.test.ts` — passed (6 tests).
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-source.model.test.ts` — passed (3 tests).
+
+Evidence:
+
+- Stack sources distinguish repository, encrypted inline, and adopted observed
+  variants. Repository source preserves compose-file order plus branch/commit;
+  adopted state remains non-deployable.
+- `source_version` provides organization-scoped optimistic editing, and normal
+  API DTOs expose only source presence/digest metadata—not inline YAML.
+- `GET/POST/PUT /api/projects/:id/swarm/source` is project-authorized,
+  feature-gated, and validates/records source without invoking Docker.
+
+Next:
+
+- Build a lossless source projection and Swarm compatibility parser (S3.2).

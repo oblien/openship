@@ -75,6 +75,27 @@ describe("Swarm persistence repositories", () => {
     })).toBeUndefined();
   });
 
+  it("updates authoritative source only for the owning organization and expected version", async () => {
+    const first = await repos.stack.updateSourceInOrganization("swarm_a", "org_a", 1, {
+      sourceKind: "repository",
+      sourcePaths: ["compose.yaml", "deploy/production.yaml"],
+      sourcePath: ".",
+      sourceBranch: "main",
+      sourceCommitSha: "a1b2c3d4",
+      sourceYamlEnc: null,
+      sourceDigest: "sha256:source-a",
+    });
+    expect(first).toMatchObject({ sourceVersion: 2, sourcePaths: ["compose.yaml", "deploy/production.yaml"] });
+    expect(await repos.stack.updateSourceInOrganization("swarm_a", "org_a", 1, {
+      sourceKind: "adopted", sourcePaths: [], sourcePath: null, sourceBranch: null,
+      sourceCommitSha: null, sourceYamlEnc: null, sourceDigest: null,
+    })).toBeUndefined();
+    expect(await repos.stack.updateSourceInOrganization("swarm_a", "org_b", 2, {
+      sourceKind: "adopted", sourcePaths: [], sourcePath: null, sourceBranch: null,
+      sourceCommitSha: null, sourceYamlEnc: null, sourceDigest: null,
+    })).toBeUndefined();
+  });
+
   it("preserves a service row when its observed Swarm service ID changes or source removes it", async () => {
     await repos.service.syncSwarmProjections("project_a", [
       {
