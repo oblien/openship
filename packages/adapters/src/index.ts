@@ -83,7 +83,14 @@ export {
 export type { StackRuntimeAdapter } from "./runtime/swarm/types";
 export { SwarmRuntime } from "./runtime/swarm/runtime";
 export { SwarmProbeError, normalizeSwarmManagerInfo } from "./runtime/swarm/normalize";
-export type { SwarmManagerInfo, SwarmProbeFailureCode } from "./runtime/swarm/types";
+export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./runtime/swarm/health";
+export type {
+  SwarmDiscoverySnapshot,
+  SwarmManagerInfo,
+  SwarmProbeFailureCode,
+  SwarmServiceHealth,
+  SwarmStackHealth,
+} from "./runtime/swarm/types";
 export {
   transferImage,
   type ImageTransferOptions,

@@ -36,7 +36,14 @@ export {
 export type { StackRuntimeAdapter } from "./swarm/types";
 export { SwarmRuntime } from "./swarm/runtime";
 export { SwarmProbeError, normalizeSwarmManagerInfo } from "./swarm/normalize";
-export type { SwarmManagerInfo, SwarmProbeFailureCode } from "./swarm/types";
+export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./swarm/health";
+export type {
+  SwarmDiscoverySnapshot,
+  SwarmManagerInfo,
+  SwarmProbeFailureCode,
+  SwarmServiceHealth,
+  SwarmStackHealth,
+} from "./swarm/types";
 
 // ─── Supervisor ──────────────────────────────────────────────────────────────
 export type { ProcessSupervisor, SupervisorDeployOpts } from "./supervisor/types";
