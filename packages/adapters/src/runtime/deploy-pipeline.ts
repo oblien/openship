@@ -227,7 +227,8 @@ export async function runDeployPipeline(
     // this entirely — the old deployment keeps serving until the route swap.
     if (!overlap && previousContainerId) {
       await deactivatePrevious();
-      // Give the OS a moment to release the port / socket.
+      // Give the OS / docker-proxy a moment to release the port. Pinned
+      // loopback-port binds also reclaim+retry inside DockerRuntime.deploy.
       await new Promise((r) => setTimeout(r, 1000));
     }
 

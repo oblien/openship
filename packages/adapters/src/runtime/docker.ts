@@ -53,6 +53,28 @@ import { PassThrough, Writable, type Readable } from "node:stream";
  */
 const isDockerNotFoundError = isRuntimeNotFoundError;
 
+/** Docker bind failure when another container (or a lagging docker-proxy) still
+ *  holds the published host port — common on loopback-port redeploys. */
+export function isPortAlreadyAllocatedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /port is already allocated|address already in use/i.test(msg);
+}
+
+/** Host ports pinned in a PortBindings map (e.g. loopback-port publishes). */
+export function hostPortsFromBindings(
+  portBindings: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null | undefined>,
+): number[] {
+  const ports = new Set<number>();
+  for (const bindings of Object.values(portBindings)) {
+    if (!bindings) continue;
+    for (const b of bindings) {
+      const n = b.HostPort ? Number(b.HostPort) : NaN;
+      if (Number.isFinite(n) && n > 0) ports.add(n);
+    }
+  }
+  return [...ports];
+}
+
 /** Clamp a terminal window dimension to a sane min/max with default. */
 function clampShellWindow(
   value: number | undefined,
@@ -405,6 +427,73 @@ function extractNetworkInfo(data: { NetworkSettings: any }): {
 function parseLoadedImageRef(output: string): string | undefined {
   const matches = [...(output || "").matchAll(/Loaded image(?: ID)?:\s*(\S+)/gi)];
   return matches.length ? matches[matches.length - 1][1].trim() : undefined;
+}
+
+/**
+ * Force-remove Openship containers that currently publish any of `hostPorts`.
+ * Foreign (non-Openship) occupants fail loudly — we never silently kill them.
+ *
+ * Covers the common redeploy failure where deactivate missed an orphan still
+ * bound to the project's pinned loopback port. A post-rm docker-proxy lag with
+ * no container left is handled by start retries in `deploy`, not here.
+ */
+async function reclaimOpenshipHostPorts(
+  docker: Dockerode,
+  hostPorts: number[],
+  log: LogCallback,
+): Promise<void> {
+  if (hostPorts.length === 0) return;
+  const wanted = new Set(hostPorts);
+  const containers = await docker.listContainers({ all: true });
+
+  for (const c of containers) {
+    const conflict: number[] = [
+      ...new Set(
+        (c.Ports ?? [])
+          .map((p) => p.PublicPort)
+          .filter((p): p is number => typeof p === "number" && wanted.has(p)),
+      ),
+    ];
+    // Stopped/created containers omit live Ports — check PortBindings so a
+    // leftover "created" container that reserved the pinned host port is still
+    // found. Only inspect Openship-labeled containers (cheap filter).
+    const labels = c.Labels ?? {};
+    const openship = Object.keys(labels).some((k) => k.startsWith("openship."));
+    if (conflict.length === 0 && openship) {
+      try {
+        const info = await docker.getContainer(c.Id).inspect();
+        for (const p of hostPortsFromBindings(info.HostConfig?.PortBindings ?? {})) {
+          if (wanted.has(p) && !conflict.includes(p)) conflict.push(p);
+        }
+      } catch {
+        /* gone between list and inspect */
+      }
+    }
+    if (conflict.length === 0) continue;
+
+    const name = (c.Names?.[0] ?? c.Id).replace(/^\//, "");
+    if (!openship) {
+      throw new Error(
+        `Host port ${conflict.join(", ")} is already in use by container ${name} ` +
+          `(not managed by Openship). Free it or change the project's host port.`,
+      );
+    }
+
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Removing leftover container ${name} still bound to host port ${conflict.join(", ")}...\n`,
+      level: "warn",
+    });
+    try {
+      await docker.getContainer(c.Id).remove({ force: true });
+    } catch (err) {
+      if (!isDockerNotFoundError(err)) throw err;
+    }
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ─── Docker runtime ──────────────────────────────────────────────────────────
@@ -1827,6 +1916,7 @@ export class DockerRuntime implements RuntimeAdapter {
       : undefined;
 
     const restartPolicy = resolveRestartPolicy(config.restartPolicy);
+    const pinnedHostPorts = config.hostPort ? [config.hostPort] : [];
 
     log({
       timestamp: new Date().toISOString(),
@@ -1834,35 +1924,83 @@ export class DockerRuntime implements RuntimeAdapter {
       level: "info",
     });
 
-    const container = await this.docker.createContainer({
-      name: containerName,
-      Image: imageRef,
-      Cmd: cmd,
-      Env: env,
-      Labels: this.labels({
-        deploymentId: config.deploymentId,
-        projectId: config.projectId,
-      }),
-      ExposedPorts: { [`${config.port}/tcp`]: {} },
-      HostConfig: {
-        RestartPolicy: restartPolicy,
-        Memory: config.resources.memoryMb * 1024 * 1024,
-        CpuShares: Math.round(config.resources.cpuCores * 1024),
-        // Publish on the LOOPBACK interface only — the edge (host process, or a
-        // host-net OpenResty container) reaches it at 127.0.0.1:<hostPort>, and
-        // it never faces the network. Binding 0.0.0.0 here would expose every
-        // app directly, bypassing the edge's SSL/rate-limit/rules (and Docker's
-        // iptables bypass ufw). A pinned `config.hostPort` (loopback-port route
-        // strategy) is stable across redeploys; otherwise a random loopback port.
-        PortBindings: {
-          [`${config.port}/tcp`]: [
-            { HostIp: "127.0.0.1", HostPort: config.hostPort ? String(config.hostPort) : "" },
-          ],
-        },
-      },
-    });
+    // Loopback-port redeploys pin 127.0.0.1:<hostPort>. Reclaim any Openship
+    // orphan still bound there, then retry start if docker-proxy hasn't released
+    // the bind yet (common right after destroy).
+    const maxAttempts = pinnedHostPorts.length > 0 ? 5 : 1;
+    let container: Dockerode.Container | undefined;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (pinnedHostPorts.length > 0) {
+        await reclaimOpenshipHostPorts(this.docker, pinnedHostPorts, log);
+        if (attempt > 1) await sleep(400 * attempt);
+      }
 
-    await container.start();
+      try {
+        container = await this.docker.createContainer({
+          name: containerName,
+          Image: imageRef,
+          Cmd: cmd,
+          Env: env,
+          Labels: this.labels({
+            deploymentId: config.deploymentId,
+            projectId: config.projectId,
+          }),
+          ExposedPorts: { [`${config.port}/tcp`]: {} },
+          HostConfig: {
+            RestartPolicy: restartPolicy,
+            Memory: config.resources.memoryMb * 1024 * 1024,
+            CpuShares: Math.round(config.resources.cpuCores * 1024),
+            // Publish on the LOOPBACK interface only — the edge (host process, or a
+            // host-net OpenResty container) reaches it at 127.0.0.1:<hostPort>, and
+            // it never faces the network. Binding 0.0.0.0 here would expose every
+            // app directly, bypassing the edge's SSL/rate-limit/rules (and Docker's
+            // iptables bypass ufw). A pinned `config.hostPort` (loopback-port route
+            // strategy) is stable across redeploys; otherwise a random loopback port.
+            PortBindings: {
+              [`${config.port}/tcp`]: [
+                { HostIp: "127.0.0.1", HostPort: config.hostPort ? String(config.hostPort) : "" },
+              ],
+            },
+          },
+        });
+        await container.start();
+        lastErr = undefined;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (container) {
+          try {
+            await container.remove({ force: true });
+          } catch {
+            /* best effort — avoid orphaning a created-but-unstarted container */
+          }
+          container = undefined;
+        }
+        // Name collision from a prior failed attempt: remove the leftover by name
+        // so the next create can reuse the deterministic containerName.
+        try {
+          const leftover = this.docker.getContainer(containerName);
+          await leftover.remove({ force: true });
+        } catch {
+          /* no leftover / not found */
+        }
+        if (
+          pinnedHostPorts.length === 0 ||
+          !isPortAlreadyAllocatedError(err) ||
+          attempt === maxAttempts
+        ) {
+          throw err;
+        }
+        log({
+          timestamp: new Date().toISOString(),
+          message: `Host port ${pinnedHostPorts.join(", ")} still allocated — retrying start (${attempt}/${maxAttempts})...\n`,
+          level: "warn",
+        });
+      }
+    }
+    if (lastErr) throw lastErr;
+    if (!container) throw new Error("Deploy completed but no container was created");
 
     log({
       timestamp: new Date().toISOString(),
@@ -3079,6 +3217,7 @@ export class DockerRuntime implements RuntimeAdapter {
 
     // Port bindings
     const { exposedPorts, portBindings } = parsePortBindings(config.ports);
+    const pinnedHostPorts = hostPortsFromBindings(portBindings);
 
     // Project-scope NAMED volumes (openship-<slug>-<name>) so two projects can
     // never share one docker volume; bind mounts / anonymous volumes pass
@@ -3122,7 +3261,11 @@ export class DockerRuntime implements RuntimeAdapter {
       }
     }
 
-    const container = await this.docker.createContainer({
+    if (pinnedHostPorts.length > 0) {
+      await reclaimOpenshipHostPorts(this.docker, pinnedHostPorts, log);
+    }
+
+    const createOpts = {
       name: containerName,
       Image: config.image,
       Cmd: cmd,
@@ -3156,15 +3299,52 @@ export class DockerRuntime implements RuntimeAdapter {
           },
         },
       },
-    });
+    };
 
-    try {
-      await container.start();
-    } catch (startErr) {
-      // Clean up the created container so it doesn't become orphaned
-      try { await container.remove({ force: true }); } catch { /* best effort */ }
-      throw startErr;
+    const maxAttempts = pinnedHostPorts.length > 0 ? 5 : 1;
+    let container: Dockerode.Container | undefined;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (pinnedHostPorts.length > 0 && attempt > 1) {
+        await reclaimOpenshipHostPorts(this.docker, pinnedHostPorts, log);
+        await sleep(400 * attempt);
+      }
+      try {
+        container = await this.docker.createContainer(createOpts);
+        await container.start();
+        lastErr = undefined;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (container) {
+          try {
+            await container.remove({ force: true });
+          } catch {
+            /* best effort */
+          }
+          container = undefined;
+        }
+        try {
+          await this.docker.getContainer(containerName).remove({ force: true });
+        } catch {
+          /* no leftover */
+        }
+        if (
+          pinnedHostPorts.length === 0 ||
+          !isPortAlreadyAllocatedError(err) ||
+          attempt === maxAttempts
+        ) {
+          throw err;
+        }
+        log({
+          timestamp: new Date().toISOString(),
+          message: `Host port ${pinnedHostPorts.join(", ")} still allocated — retrying start (${attempt}/${maxAttempts})...\n`,
+          level: "warn",
+        });
+      }
     }
+    if (lastErr) throw lastErr;
+    if (!container) throw new Error(`Service ${config.serviceName} produced no container`);
 
     // Get container IP on the project network
     const data = await container.inspect();
