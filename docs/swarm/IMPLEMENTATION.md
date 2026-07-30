@@ -42,6 +42,7 @@ digest, not mutable tags.
 See [OPERATOR-GUIDE.md](OPERATOR-GUIDE.md) for a production operating runbook,
 [COMPATIBILITY-MATRIX.md](COMPATIBILITY-MATRIX.md) for cross-runtime behavior,
 [UPSTREAM-HANDOFF.md](UPSTREAM-HANDOFF.md) for the review packet,
+[REQUIREMENTS-AUDIT.md](REQUIREMENTS-AUDIT.md) for the plan-to-evidence index,
 [TEST-MATRIX.md](TEST-MATRIX.md) for the disposable test topology,
 [FAILURE-RECOVERY.md](FAILURE-RECOVERY.md) for operator recovery decisions, and
 [PROGRESS.md](PROGRESS.md) for current implementation evidence.

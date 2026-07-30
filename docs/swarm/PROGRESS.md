@@ -1594,6 +1594,12 @@ Evidence:
 - The rebase required only additive project-route import resolutions; each
   retained upstream incoming-webhook routes and the corresponding Swarm body
   schema. The post-rebase API tests and build verify that merged surface.
+- A second post-rebase disposable-lab run completed observation without mutation,
+  managed scale/restart/log/remove, worker digest-pull distribution, revision and
+  resource harnesses, Edge replacement/config routing, reversible cutover, and
+  namespace-scoped cleanup/down. The operations harness now supplies the
+  required current source-version token to its destructive confirmation, matching
+  the production API contract.
 
 ## Gate C: replacement-ready
 
