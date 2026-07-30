@@ -478,3 +478,37 @@ Evidence:
 Next:
 
 - Build the feature-gated observe-mode dashboard flow (S4.4).
+
+## S4.4: Observe-mode dashboard flow
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bunx tsc --noEmit -p apps/api/tsconfig.json` and
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-observation.service.test.ts`
+  — passed (3 tests).
+- `bun --cwd apps/dashboard vitest run src/i18n/i18n-parity.test.ts` — known
+  pre-existing failure: `deploy` reports 90 missing locale keys against a
+  baseline of 18; this change adds no locale keys.
+
+Evidence:
+
+- The server page shows a Docker Swarm capability tab only when the API's
+  experimental feature flag is enabled. It presents manager identity, health,
+  node and stack counts, stack-first discovery, standalone services, and
+  service/task/node detail from read-only discovery endpoints.
+- Import has an explicit confirmation that it saves only OpenShip observation
+  metadata and makes no Docker or Portainer workload changes. Imported stacks
+  open in a dedicated observed-project page instead of the standard deployment
+  shell.
+- The observed-project view labels the stack read-only, presents source and
+  drift status, offers a safe refresh, and deliberately omits workload,
+  source, routing, and deletion mutations while explaining why an external
+  controller remains the writer.
+
+Next:
+
+- Record reproducible Docker-event evidence for repeated observe-mode polling,
+  import, refresh, and source validation (S4.5).

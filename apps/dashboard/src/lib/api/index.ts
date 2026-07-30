@@ -102,6 +102,17 @@ export { cloudApi } from "./cloud";
 export type { CloudStatus } from "./cloud";
 export { servicesApi, serviceKind } from "./services";
 export type { Service, ServiceContainer, ServiceEnvVar, ServiceInput } from "./services";
+export { swarmApi } from "./swarm";
+export type {
+  SwarmDiscoveryView,
+  SwarmManager,
+  SwarmNode,
+  SwarmObservation,
+  SwarmStackDetail,
+  SwarmStackView,
+  SwarmSummary,
+  SwarmTask,
+} from "./swarm";
 export { mailApi } from "./mail";
 export { mailAdminApi } from "./mail-admin";
 export type {

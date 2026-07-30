@@ -62,6 +62,7 @@ describe("Swarm observation refresh", () => {
   it("returns safe source and drift status for the observe-mode project", async () => {
     const test = fixture();
     await expect(test.service.status("proj-blog", "org-a")).resolves.toMatchObject({
+      stackName: "blog", managerServerId: "server-a", clusterId: "cluster-a",
       managementMode: "observe", source: { kind: "adopted", status: "missing", deployable: false }, drift: { status: "unknown" },
     });
   });

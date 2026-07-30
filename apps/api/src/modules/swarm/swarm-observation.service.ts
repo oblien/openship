@@ -75,6 +75,12 @@ export function createSwarmObservationService(overrides: Partial<ObservationDepe
       const stack = await deps.getStack(projectId, organizationId);
       if (!stack) throw new NotFoundError("Swarm stack for project", projectId);
       return {
+        // These identifiers are metadata for the dashboard's read-only detail
+        // views. They are deliberately returned with the observation rather
+        // than inferred from a deployment: observed stacks do not create one.
+        stackName: stack.stackName,
+        managerServerId: stack.managerServerId,
+        clusterId: stack.clusterId,
         managementMode: stack.managementMode,
         source: {
           kind: stack.sourceKind,
