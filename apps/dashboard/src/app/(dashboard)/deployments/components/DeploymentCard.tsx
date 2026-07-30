@@ -140,7 +140,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
     deployment.commit?.message && deployment.commit.message !== "Manual deployment";
 
   return (
-    <div className="group relative flex items-center gap-4 px-4 py-4 transition-colors hover:bg-muted/25">
+    <div className="group relative flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-muted/25 sm:flex-row sm:items-center sm:gap-4">
       <Link
         href={`/build/${deployment.id}`}
         aria-label={deployment.projectName || t.deployments.card.unknownProject}
@@ -162,7 +162,11 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
       {/* Main info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-          <p className="text-sm font-semibold text-foreground truncate">
+          {/* min-w-0: without it, a nowrap-truncated flex item's min-content
+              equals its FULL text width, so it refuses to shrink and spills
+              over the siblings (status badge/commit hash) laid out beside it
+              instead of truncating - the mobile overlap bug. */}
+          <p className="min-w-0 text-sm font-semibold text-foreground truncate">
             {deployment.projectName || t.deployments.card.unknownProject}
           </p>
           {deployment.version != null && (
@@ -275,8 +279,11 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
         </div>
       </div>
 
-      {/* Right side - commit hash + actions */}
-      <div className="relative z-10 flex items-center gap-2 shrink-0">
+      {/* Right side - commit hash + actions. Stacks as its own row on
+          mobile (indented to align under the title) instead of sharing
+          the main row, where it used to overlap the status badge /
+          commit message once those ran out of space. Unchanged from sm up. */}
+      <div className="relative z-10 flex items-center gap-2 ps-[52px] shrink-0 sm:ps-0">
         {hasCommitData && (
           <button
             onClick={(e) => {
