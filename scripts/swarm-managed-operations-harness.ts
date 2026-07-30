@@ -114,7 +114,12 @@ await liveLogStream.done;
 if (!streamedEntries.some((entry) => entry.includes("openship-swarm-worker-alive"))) {
   throw new Error("Manager task log follow did not receive the worker heartbeat before cancellation.");
 }
-const removal = await operations.remove({ projectId, organizationId, confirmedStackName: stackName });
+const removal = await operations.remove({
+  projectId,
+  organizationId,
+  confirmedStackName: stackName,
+  expectedSourceVersion: binding.sourceVersion,
+});
 if (removal.state !== "removed") throw new Error(`Managed stack removal did not settle: ${removal.state}`);
 const afterRemoval = await runtime.discover();
 if (afterRemoval.services.some((service) => service.stackName === stackName)) {
