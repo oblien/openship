@@ -1565,3 +1565,44 @@ Next:
 
 - Prepare upstream review units, compatibility matrix, and handoff material
   (S14.6).
+
+## S14.6: Upstream review units and Gate C handoff
+
+Status: done
+Commit: pending
+Checks run:
+
+- `git fetch upstream main` followed by `git rebase upstream/main` — passed;
+  the branch is based on `6a677363ec06de0ca6c9b8bb5b3cbbf853d70a30`.
+- Post-rebase `bun run test` — passed: API (159 files, 1,407 tests and three
+  intentional skips), adapters (666 tests), DB (54 tests), CLI (178 tests),
+  dashboard, desktop, and core all succeeded.
+- Post-rebase `bun run build`, `bun run --cwd apps/api lint`,
+  `bun run --cwd packages/adapters lint`, `bun run --cwd apps/cli lint`,
+  `bunx prettier --check` for the handoff documents, and `git diff --check`
+  — passed.
+
+Evidence:
+
+- `UPSTREAM-HANDOFF.md` contains the ready-to-review PR description, security
+  and migration notes, commands, lab demo, honest screenshot/video capture
+  list, follow-ups, and ten contiguous review-unit ranges. No PR was opened by
+  this task.
+- `COMPATIBILITY-MATRIX.md` records behavior across standalone Docker/Compose,
+  Swarm, bare, and cloud/static targets, including feature-off behavior and
+  local-volume limits.
+- The rebase required only additive project-route import resolutions; each
+  retained upstream incoming-webhook routes and the corresponding Swarm body
+  schema. The post-rebase API tests and build verify that merged surface.
+
+## Gate C: replacement-ready
+
+Status: passed for the reviewed implementation and disposable lab evidence.
+
+The completed manager/worker proofs cover prebuilt and source-built images,
+private registry distribution, observe/claim/release/drift, service operations,
+external routing and explicit reversible Edge cutover, revision resources and
+storage warnings, restart-safe reconciliation, full regression/security/chaos
+checks, and operator documentation. A production operator must still make the
+explicit one-writer claim decision and retain Portainer as a fallback console,
+as described in `OPERATOR-GUIDE.md`.
