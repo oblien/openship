@@ -403,3 +403,25 @@ Evidence:
 Next:
 
 - Deliver side-by-side stack discovery and observe-mode import (Phase 4).
+
+## S4.1: Stack-first discovery namespaces
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd apps/api lint` and `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-discovery-view.test.ts` — passed.
+
+Evidence:
+
+- `/api/swarm/:serverId/stacks` returns deterministic stack cards built from
+  Docker's namespace labels, with current service health/tasks/nodes and safe
+  network/config/secret metadata. Standalone Swarm services are separate.
+- Portainer labels are display-only metadata; OpenShip does not rely on them to
+  operate a workload. Explicitly marked OpenShip control-plane services are
+  excluded from browse results.
+
+Next:
+
+- Import live stacks as organization-scoped observe-only projects (S4.2).

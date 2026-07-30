@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
 import { swarmDiscovery } from "./swarm.service";
+import { buildSwarmDiscoveryView } from "./swarm-discovery-view";
 
 function target(c: Context) {
   const ctx = getRequestContext(c);
@@ -39,7 +40,7 @@ export async function nodes(c: Context) {
 export async function stacks(c: Context) {
   const { serverId, organizationId } = target(c);
   const snapshot = await swarmDiscovery.discover(serverId, organizationId);
-  return c.json({ stacks: snapshot.stacks, observedAt: snapshot.observedAt, diagnostics: snapshot.diagnostics });
+  return c.json(buildSwarmDiscoveryView(snapshot));
 }
 
 export async function stack(c: Context) {
