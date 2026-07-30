@@ -1000,3 +1000,44 @@ Next:
 - Make OpenShip-managed configs and secrets content-addressed and retained with
   each immutable revision (S11.2), then integrate revision retention/pinning
   (S11.3).
+
+## S11.2: Revision-safe configs and secrets
+
+Status: done
+Commit: `a4a7752f`
+Tests run:
+
+- `bun --filter @repo/adapters test src/runtime/swarm/normalize.test.ts` —
+  passed (2 tests).
+- `bun --filter @repo/api test src/modules/swarm/swarm-managed-resources.test.ts src/modules/swarm/swarm-compatibility.test.ts src/modules/deployments/swarm/deploy.service.test.ts src/modules/swarm/swarm-source.service.test.ts`
+  — passed (22 tests).
+- `bun run --cwd apps/api lint`, `sh -n scripts/swarm-lab.sh`, and
+  `git diff --check` — passed.
+- `scripts/swarm-lab.sh up && scripts/swarm-lab.sh resource-proof && scripts/swarm-lab.sh cleanup && scripts/swarm-lab.sh down`
+  — passed on July 30, 2026. The disposable manager held two labelled versions
+  of both the config and secret; after reapplying the first retained document,
+  service inspection reported the original two resource names again.
+
+Evidence:
+
+- Source-backed `configs.*.file` and `secrets.*.file` now become deterministic
+  `openship_<project>_<logical-name>_<hash-prefix>` manager resources. The
+  rendered document binds only the top-level resource source to that immutable
+  name, preserving every service's logical source and target filename.
+- Resources are created through a `0700` manager stage with content passed only
+  through the file transport. Discovery and idempotency use Docker list
+  metadata; secret payloads are never inspected, returned, logged, or put in a
+  revision manifest.
+- Concrete config/secret resource names are retained in every revision, with
+  safe kind/logical-name/digest metadata. Exact rollback therefore verifies and
+  reattaches the prior versions before mutation. Existing manager objects must
+  carry the expected OpenShip labels or the deploy fails before writing a
+  payload.
+- Docker list-label parsing now preserves managed-resource metadata, and
+  repository source projections correctly consume only Compose documents rather
+  than attempting to parse staged config/secret payload files as YAML.
+
+Next:
+
+- Integrate Swarm revision retention, rollback-window pruning, deployment
+  pinning, and safe artifact garbage collection (S11.3).
