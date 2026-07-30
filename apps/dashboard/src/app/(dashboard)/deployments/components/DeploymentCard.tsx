@@ -278,6 +278,18 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
               </span>
             </>
           ) : null}
+          {/* Commit hash - mobile only here (plain text, matching this row's
+              rhythm instead of the padded pill button on the right, which on
+              its own separate row read as loose/disconnected). Desktop keeps
+              the clickable pill next to the menu, unchanged. */}
+          {hasCommitData && (
+            <>
+              <span className="text-muted-foreground/40 sm:hidden">·</span>
+              <span className="font-mono text-xs text-muted-foreground shrink-0 sm:hidden">
+                {deployment.commit.hash.slice(0, 7)}
+              </span>
+            </>
+          )}
           {deployment.branch && (
             <>
               <span className="text-muted-foreground/40 hidden sm:inline">·</span>
@@ -290,10 +302,12 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
         </div>
       </div>
 
-      {/* Right side - commit hash + actions. Stacks as its own row on
-          mobile (indented to align under the title) instead of sharing
-          the main row, where it used to overlap the status badge /
-          commit message once those ran out of space. Unchanged from sm up.
+      {/* Right side - commit hash + actions. The hash pill is desktop-only
+          now (see the mobile plain-text version inline in the time row
+          above) - back on the main row rather than a separate stacked one,
+          since the title's own min-w-0 fix is what actually stops the
+          overlap, and with just the menu button left here on mobile there's
+          nothing left to be loose about.
 
           `z-10` makes this a stacking context, which caps the dropdown inside
           it — every row's actions block sat at the same z-10, so later rows
@@ -301,7 +315,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
           whole block while the menu is open is what puts it above the siblings;
           the dropdown's own z-50 only orders it within this block. */}
       <div
-        className={`relative flex items-center gap-2 ps-[52px] shrink-0 sm:ps-0 ${isMenuOpen ? "z-30" : "z-10"}`}
+        className={`relative flex items-center gap-2 shrink-0 ${isMenuOpen ? "z-30" : "z-10"}`}
       >
         {hasCommitData && (
           <button
@@ -316,7 +330,7 @@ export const DeploymentCard: React.FC<DeploymentCardProps> = ({
                 setIsCommitModalOpen(true);
               }
             }}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground sm:inline-flex"
           >
             {deployment.commit.hash.slice(0, 7)}
             {deployment.owner && deployment.repo && <ExternalLink className="size-3" />}
