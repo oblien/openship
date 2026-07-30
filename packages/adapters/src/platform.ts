@@ -147,6 +147,8 @@ export interface Platform {
   readonly orchestratorMode: OrchestratorMode;
   /** Null for standalone projects and until a Swarm manager adapter is resolved. */
   readonly stackRuntime: StackRuntimeAdapter | null;
+  /** Serializes manager-scoped stack operations; distinct from edge provisioning. */
+  readonly stackLock: ProvisionLock | null;
   /** Reverse-proxy route management */
   readonly routing: RoutingProvider;
   /** TLS certificate management */
@@ -211,6 +213,7 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
     runtime: new CloudRuntime(client, { adminProxy: config.cloudAdminProxy }),
     orchestratorMode: "standalone",
     stackRuntime: null,
+    stackLock: null,
     routing: infra,
     ssl: infra,
     system: null,
@@ -228,6 +231,7 @@ async function createDesktopPlatform(config: PlatformConfig): Promise<Platform> 
     runtime: new BareRuntime(config.bare),
     orchestratorMode: "standalone",
     stackRuntime: null,
+    stackLock: null,
     routing: noop,
     ssl: noop,
     system: null,
@@ -386,13 +390,22 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
         useDockerEdge ? edgeContainer : undefined,
       );
 
+  const stackRuntime = orchestratorMode === "swarm"
+    ? await (async () => {
+        const { SwarmRuntime } = await import("./runtime/swarm/runtime");
+        return SwarmRuntime.create({ executor });
+      })()
+    : null;
+
   return {
     target: "selfhosted",
     runtime,
     orchestratorMode,
-    // The manager adapter is constructed by API target resolution once it can
-    // bind a verified Swarm manager. Keep the slot explicit meanwhile.
-    stackRuntime: null,
+    // A Swarm platform is valid only after this manager probe succeeds.
+    stackRuntime,
+    // API target resolution already supplies a server-scoped lock. Stack apply
+    // will use it instead of the unrelated edge-provisioning work.
+    stackLock: orchestratorMode === "swarm" ? config.provisionLock ?? null : null,
     routing,
     ssl,
     system,
