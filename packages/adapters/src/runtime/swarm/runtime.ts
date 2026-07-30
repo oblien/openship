@@ -456,6 +456,9 @@ export class SwarmRuntime implements StackRuntimeAdapter {
           ? "SWARM_STACK_INTERPOLATION_FAILED"
           : "SWARM_STACK_CONFIG_FAILED", message }]);
       }
+      if (Buffer.byteLength(renderedYaml, "utf8") > MAX_RENDERED_STACK_BYTES) {
+        throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_TOO_LARGE", message: "Docker rendered a stack document larger than the safe review limit." }]);
+      }
       const warnings = safeWarnings(await executor.readFile(warningsPath).catch(() => ""));
       const canonical = canonicalRenderedYaml(renderedYaml);
       return { renderedYaml: canonical, renderedDigest: renderedDigest(canonical), overrideYaml: override, warnings };

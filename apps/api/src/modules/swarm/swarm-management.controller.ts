@@ -12,6 +12,7 @@ export async function claim(c: Context) {
     organizationId: ctx.organizationId,
     confirmedStackName: body.confirmedStackName,
     previewLiveDigest: body.previewLiveDigest,
+    expectedSourceVersion: body.expectedSourceVersion,
   });
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "swarm.stack.claim.requested",
@@ -25,7 +26,7 @@ export async function claim(c: Context) {
 export async function release(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<TReleaseSwarmManagementBody>();
-  const result = await swarmManagement.release(c.req.param("id")!, ctx.organizationId, body.confirmedStackName);
+  const result = await swarmManagement.release(c.req.param("id")!, ctx.organizationId, body.confirmedStackName, body.expectedSourceVersion);
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "swarm.stack.management.released",
     resourceType: "project",

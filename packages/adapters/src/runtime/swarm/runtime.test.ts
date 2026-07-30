@@ -178,6 +178,33 @@ describe("SwarmRuntime manager probe", () => {
     expect(rm).toHaveBeenCalledWith("/tmp/openship-swarm-render.def456");
   });
 
+  it("bounds an oversized manager-rendered document before returning it to the API", async () => {
+    const rm = vi.fn().mockResolvedValue(undefined);
+    const runtime = await SwarmRuntime.create({
+      executor: {
+        exec: async (command: string) => {
+          if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
+          if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
+          if (command.startsWith("umask 077 && mktemp")) return "/tmp/openship-swarm-render.large123";
+          if (command.includes("docker stack config")) return "x".repeat(10_000_001);
+          throw new Error("unexpected");
+        },
+        writeFile: async () => {},
+        readFile: async () => "",
+        rm,
+      },
+    });
+
+    await expect(runtime.renderStack({
+      files: [{ path: "compose.yaml", content: "services: {}\n" }],
+      composePaths: ["compose.yaml"],
+    })).rejects.toMatchObject({
+      name: "SwarmRenderError",
+      issues: [{ code: "SWARM_STACK_RENDER_TOO_LARGE" }],
+    });
+    expect(rm).toHaveBeenCalledWith("/tmp/openship-swarm-render.large123");
+  });
+
   it("deploys only a reviewed rendered document with explicit image resolution and private cleanup", async () => {
     const commands: string[] = [];
     const writes = new Map<string, string>();

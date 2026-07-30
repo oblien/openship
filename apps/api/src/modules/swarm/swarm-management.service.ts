@@ -48,6 +48,7 @@ export function createSwarmManagementService(overrides: Partial<ManagementDepend
       organizationId: string;
       confirmedStackName: string;
       previewLiveDigest: string;
+      expectedSourceVersion: number;
     }) {
       const stack = await stackForProject(input.projectId, input.organizationId);
       if (stack.managementMode === "managed") {
@@ -55,6 +56,9 @@ export function createSwarmManagementService(overrides: Partial<ManagementDepend
       }
       if (input.confirmedStackName.trim() !== stack.stackName) {
         throw new AppError("Type the exact stack name to confirm management.", 400, "SWARM_STACK_CONFIRMATION_REQUIRED");
+      }
+      if (input.expectedSourceVersion !== stack.sourceVersion) {
+        throw new AppError("The stack source changed after review. Render the current source and confirm again.", 409, "SWARM_STACK_CONFIRMATION_STALE");
       }
       if (stack.sourceKind === "adopted" || stack.sourceStatus !== "valid") {
         throw new AppError("Link and validate authoritative stack source before claiming management.", 409, "SWARM_SOURCE_REQUIRED");
@@ -96,10 +100,13 @@ export function createSwarmManagementService(overrides: Partial<ManagementDepend
     },
 
     /** Stop future writes without stopping or removing any Swarm resource. */
-    async release(projectId: string, organizationId: string, confirmedStackName: string) {
+    async release(projectId: string, organizationId: string, confirmedStackName: string, expectedSourceVersion: number) {
       const stack = await stackForProject(projectId, organizationId);
       if (confirmedStackName.trim() !== stack.stackName) {
         throw new AppError("Type the exact stack name to release management.", 400, "SWARM_RELEASE_CONFIRMATION_REQUIRED");
+      }
+      if (expectedSourceVersion !== stack.sourceVersion) {
+        throw new AppError("The stack source changed after review. Refresh and confirm release again.", 409, "SWARM_RELEASE_CONFIRMATION_STALE");
       }
       const updated = await deps.updateStack(stack.id, organizationId, {
         managementMode: "observe",

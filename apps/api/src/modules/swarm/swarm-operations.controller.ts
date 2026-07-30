@@ -117,6 +117,7 @@ export async function remove(c: Context) {
     projectId: c.req.param("id")!,
     organizationId: ctx.organizationId,
     confirmedStackName: body.confirmedStackName,
+    expectedSourceVersion: body.expectedSourceVersion,
   });
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "swarm.stack.removed",

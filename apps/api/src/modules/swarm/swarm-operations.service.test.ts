@@ -153,7 +153,7 @@ describe("managed Swarm service scaling", () => {
   it("removes only the confirmed owned stack and waits for manager absence", async () => {
     const test = fixture();
     await expect(test.service.remove({
-      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog",
+      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", expectedSourceVersion: 1,
     })).resolves.toMatchObject({ stackName: "blog", affectedServices: ["web"], state: "removed" });
     expect(test.removeStack).toHaveBeenCalledWith({ stackName: "blog" });
   });
@@ -161,7 +161,7 @@ describe("managed Swarm service scaling", () => {
   it("requires the exact stack name before a destructive stack operation", async () => {
     const test = fixture();
     await expect(test.service.remove({
-      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "BLOG",
+      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "BLOG", expectedSourceVersion: 1,
     })).rejects.toMatchObject({ code: "SWARM_REMOVE_CONFIRMATION_INVALID", statusCode: 400 });
     expect(test.removeStack).not.toHaveBeenCalled();
   });
@@ -169,7 +169,7 @@ describe("managed Swarm service scaling", () => {
   it("refuses stack removal when Docker would delete stack-owned configs or secrets", async () => {
     const test = fixture({ stackOwnedPersistentObject: true });
     await expect(test.service.remove({
-      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog",
+      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", expectedSourceVersion: 1,
     })).rejects.toMatchObject({ code: "SWARM_PERSISTENT_OBJECT_PRECONDITION", statusCode: 409 });
     expect(test.removeStack).not.toHaveBeenCalled();
   });
@@ -177,11 +177,19 @@ describe("managed Swarm service scaling", () => {
   it("reconciles an accepted removal after the manager response is lost without reissuing it", async () => {
     const test = fixture({ responseLostAfterRemove: true });
     await expect(test.service.remove({
-      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog",
+      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", expectedSourceVersion: 1,
     })).resolves.toMatchObject({ state: "removed", output: expect.stringContaining("connection was lost") });
     expect(test.removeStack).toHaveBeenCalledTimes(1);
     expect(test.updateStack).toHaveBeenCalledWith("swarm-blog", "org-a", expect.objectContaining({
       driftDetails: expect.objectContaining({ operation: { kind: "remove", state: "removed" } }),
     }));
+  });
+
+  it("rejects a stale source version before issuing destructive removal", async () => {
+    const test = fixture({ stackOverride: { ...stack, sourceVersion: 2 } });
+    await expect(test.service.remove({
+      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", expectedSourceVersion: 1,
+    })).rejects.toMatchObject({ code: "SWARM_REMOVE_CONFIRMATION_STALE", statusCode: 409 });
+    expect(test.removeStack).not.toHaveBeenCalled();
   });
 });

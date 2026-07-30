@@ -39,6 +39,7 @@ export type TRenderSwarmStackSourceBody = Static<typeof RenderSwarmStackSourceBo
 export const ClaimSwarmStackBody = Type.Object({
   confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),
   previewLiveDigest: Type.String({ pattern: "^sha256:[a-f0-9]{64}$" }),
+  expectedSourceVersion: SourceVersion,
 });
 
 export type TClaimSwarmStackBody = Static<typeof ClaimSwarmStackBody>;
@@ -54,6 +55,7 @@ export type TScaleSwarmServiceBody = Static<typeof ScaleSwarmServiceBody>;
 /** Typed-name confirmation before removing an entire managed stack. */
 export const RemoveSwarmStackBody = Type.Object({
   confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),
+  expectedSourceVersion: SourceVersion,
 });
 
 export type TRemoveSwarmStackBody = Static<typeof RemoveSwarmStackBody>;
@@ -89,6 +91,7 @@ export type TSetSwarmVolumeReplacementAcknowledgementsBody = Static<typeof SetSw
 /** Typed-name confirmation before returning a stack to another controller. */
 export const ReleaseSwarmManagementBody = Type.Object({
   confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),
+  expectedSourceVersion: SourceVersion,
 });
 
 export type TReleaseSwarmManagementBody = Static<typeof ReleaseSwarmManagementBody>;

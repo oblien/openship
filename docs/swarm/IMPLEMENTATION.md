@@ -21,6 +21,11 @@ control may be exposed while this gate is off.
 - Source files are staged in a private directory and rendered with
   `docker stack config`; OpenShip does not reimplement Compose or Swarm
   semantics.
+- A Docker socket or SSH target with Swarm manager control is **cluster-admin,
+  root-equivalent authority**: it can create services, mount host resources,
+  distribute registry credentials, and read manager-visible metadata. Bind
+  OpenShip only to a manager and organization you trust; do not share that
+  target with untrusted tenants or expose its Docker socket to the network.
 - A managed apply persists an encrypted immutable rendered revision before
   `docker stack deploy`. UI previews and audit output are redacted.
 - External routing is the initial default. Existing Portainer, Traefik, Nginx

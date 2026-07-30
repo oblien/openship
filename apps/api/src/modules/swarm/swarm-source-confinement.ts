@@ -8,8 +8,8 @@
 
 import { realpath, readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { parseDocument } from "yaml";
 import { AppError } from "@repo/core";
+import { parseSafeSwarmYaml } from "./swarm-yaml";
 
 export const DEFAULT_SWARM_SOURCE_LIMITS = {
   maxFileBytes: 2_000_000,
@@ -164,9 +164,7 @@ function namedFileReferences(value: unknown, field: string): StackSourceReferenc
 export function collectStackSourceReferences(files: Array<{ path: string; content: string }>): StackSourceReference[] {
   const references: StackSourceReference[] = files.map((file) => ({ field: "composePaths", path: file.path, kind: "file" }));
   for (const file of files) {
-    const document = parseDocument(file.content, { prettyErrors: false });
-    if (document.errors.length > 0) throw sourceError(`Source file ${file.path} is not valid YAML.`, "SWARM_SOURCE_INVALID");
-    const source = record(document.toJSON());
+    const source = record(parseSafeSwarmYaml(file.content, "Source file " + file.path));
     if (!source) throw sourceError(`Source file ${file.path} must be a YAML mapping.`, "SWARM_SOURCE_INVALID");
     references.push(...namedFileReferences(source.configs, "configs"));
     references.push(...namedFileReferences(source.secrets, "secrets"));
@@ -216,7 +214,7 @@ export async function validateConfinedStackSource(
   let configCount = 0;
   let secretCount = 0;
   for (const file of files) {
-    const document = record(parseDocument(file.content, { prettyErrors: false }).toJSON()) ?? {};
+    const document = record(parseSafeSwarmYaml(file.content, "Source file " + file.path)) ?? {};
     serviceCount += Object.keys(record(document.services) ?? {}).length;
     configCount += Object.keys(record(document.configs) ?? {}).length;
     secretCount += Object.keys(record(document.secrets) ?? {}).length;

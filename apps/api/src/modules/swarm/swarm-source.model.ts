@@ -1,9 +1,9 @@
 /** Pure validation and redaction rules for authoritative Swarm stack sources. */
 
 import { createHash } from "node:crypto";
-import { parseDocument } from "yaml";
 import { AppError, type SwarmSourceKind } from "@repo/core";
 import type { SwarmStack } from "@repo/db";
+import { parseSafeSwarmYaml } from "./swarm-yaml";
 
 export const MAX_SWARM_STACK_NAME_LENGTH = 63;
 export const MAX_INLINE_STACK_SOURCE_BYTES = 1_000_000;
@@ -79,11 +79,7 @@ function validateInlineYaml(yaml: string): string {
   if (Buffer.byteLength(yaml, "utf8") > MAX_INLINE_STACK_SOURCE_BYTES) {
     throw new AppError("Inline stack YAML exceeds the 1 MB source limit.", 400, "SWARM_SOURCE_TOO_LARGE");
   }
-  const doc = parseDocument(yaml, { prettyErrors: false });
-  if (doc.errors.length > 0) {
-    throw new AppError("Inline stack YAML is not valid YAML.", 400, "SWARM_SOURCE_INVALID");
-  }
-  const document = doc.toJSON();
+  const document = parseSafeSwarmYaml(yaml, "Inline stack YAML");
   if (!document || typeof document !== "object" || Array.isArray(document) || !Object.hasOwn(document, "services")) {
     throw new AppError("A stack source must contain a top-level services mapping.", 400, "SWARM_SOURCE_INVALID");
   }

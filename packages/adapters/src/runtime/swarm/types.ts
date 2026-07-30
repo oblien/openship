@@ -69,6 +69,7 @@ export interface SwarmRenderIssue {
   code:
     | "SWARM_STACK_CONFIG_FAILED"
     | "SWARM_STACK_INTERPOLATION_FAILED"
+    | "SWARM_STACK_RENDER_TOO_LARGE"
     | "SWARM_STACK_RENDER_UNAVAILABLE";
   message: string;
 }

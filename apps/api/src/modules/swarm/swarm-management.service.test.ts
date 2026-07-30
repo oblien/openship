@@ -6,7 +6,7 @@ import { createSwarmManagementService } from "./swarm-management.service";
 
 const stack = {
   id: "swarm-blog", projectId: "project-blog", organizationId: "org-a", managerServerId: "server-a", clusterId: "cluster-a",
-  stackName: "blog", managementMode: "observe", claimedAt: null, sourceKind: "inline", sourceStatus: "valid", sourceDigest: "sha256:source",
+  stackName: "blog", managementMode: "observe", claimedAt: null, sourceKind: "inline", sourceStatus: "valid", sourceVersion: 4, sourceDigest: "sha256:source",
   driftDetails: {},
 } as unknown as SwarmStack;
 
@@ -35,7 +35,7 @@ describe("Swarm management ownership", () => {
   it("requires the exact stack name and current preview digest before a first-write claim", async () => {
     const test = fixture();
     await expect(test.service.claim({
-      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", previewLiveDigest: "sha256:0".padEnd(71, "0"),
+      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", previewLiveDigest: "sha256:0".padEnd(71, "0"), expectedSourceVersion: 4,
     })).rejects.toMatchObject({ code: "SWARM_STACK_CLAIM_STALE", statusCode: 409 });
     expect(test.updateStack).not.toHaveBeenCalled();
   });
@@ -44,7 +44,7 @@ describe("Swarm management ownership", () => {
     const test = fixture();
     const digest = swarmLiveStateDigest(snapshot.services);
     await expect(test.service.claim({
-      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", previewLiveDigest: digest,
+      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", previewLiveDigest: digest, expectedSourceVersion: 4,
     })).resolves.toEqual({ stackName: "blog", managementMode: "observe", claimPending: true, liveDigest: digest });
     expect(test.updateStack).toHaveBeenCalledWith("swarm-blog", "org-a", expect.objectContaining({
       claimedAt: expect.any(Date),
@@ -54,7 +54,7 @@ describe("Swarm management ownership", () => {
 
   it("releases management without contacting or stopping the stack", async () => {
     const test = fixture();
-    await expect(test.service.release("project-blog", "org-a", "blog"))
+    await expect(test.service.release("project-blog", "org-a", "blog", 4))
       .resolves.toEqual({ stackName: "blog", managementMode: "observe", released: true });
     expect(test.updateStack).toHaveBeenCalledWith("swarm-blog", "org-a", expect.objectContaining({
       managementMode: "observe", claimedAt: null,
@@ -63,8 +63,19 @@ describe("Swarm management ownership", () => {
 
   it("requires an exact name before releasing management", async () => {
     const test = fixture();
-    await expect(test.service.release("project-blog", "org-a", "Blog"))
+    await expect(test.service.release("project-blog", "org-a", "Blog", 4))
       .rejects.toMatchObject({ code: "SWARM_RELEASE_CONFIRMATION_REQUIRED", statusCode: 400 });
+    expect(test.updateStack).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale source version before claim or release changes ownership", async () => {
+    const test = fixture();
+    const digest = swarmLiveStateDigest(snapshot.services);
+    await expect(test.service.claim({
+      projectId: "project-blog", organizationId: "org-a", confirmedStackName: "blog", previewLiveDigest: digest, expectedSourceVersion: 3,
+    })).rejects.toMatchObject({ code: "SWARM_STACK_CONFIRMATION_STALE", statusCode: 409 });
+    await expect(test.service.release("project-blog", "org-a", "blog", 3))
+      .rejects.toMatchObject({ code: "SWARM_RELEASE_CONFIRMATION_STALE", statusCode: 409 });
     expect(test.updateStack).not.toHaveBeenCalled();
   });
 });

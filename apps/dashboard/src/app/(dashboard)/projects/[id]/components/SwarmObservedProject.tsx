@@ -246,7 +246,8 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
 
   const claimAndApply = useCallback(async () => {
     const stackName = data?.observation.stackName;
-    if (!stackName || !preview) return;
+    const sourceVersion = data?.source.version;
+    if (!stackName || !preview || !sourceVersion) return;
     const riskKinds = new Set(["service-remove", "network-port-change", "config-secret-reference-change"]);
     const risky = preview.changes.filter((change) => riskKinds.has(change.kind));
     if (risky.length > 0 && !window.confirm(`This first apply includes ${risky.length} storage, config/secret, network/port, or service-removal change(s). Review the rendered source below. Continue to typed confirmation?`)) return;
@@ -254,7 +255,11 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
     if (confirmed === null) return;
     setClaiming(true);
     try {
-      await swarmApi.claimManagement(projectId, { confirmedStackName: confirmed, previewLiveDigest: preview.liveStateDigest });
+      await swarmApi.claimManagement(projectId, {
+        confirmedStackName: confirmed,
+        previewLiveDigest: preview.liveStateDigest,
+        expectedSourceVersion: sourceVersion,
+      });
       const started = await deployApi.trigger({ projectId, forceAll: true });
       const deploymentId = started?.data?.deployment?.id as string | undefined;
       showToast("Management claim accepted. Swarm is applying the reviewed stack and will verify labels before enabling routine controls.", "success", "Docker Swarm");
@@ -265,7 +270,7 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
     } finally {
       setClaiming(false);
     }
-  }, [data?.observation.stackName, load, preview, projectId, router, showToast]);
+  }, [data?.observation.stackName, data?.source.version, load, preview, projectId, router, showToast]);
 
   const downloadHandoff = useCallback((handoff: SwarmStackHandoff) => {
     const blob = new Blob([JSON.stringify(handoff, null, 2)], { type: "application/json" });
@@ -279,7 +284,8 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
 
   const releaseManagement = useCallback(async () => {
     const stackName = data?.observation.stackName;
-    if (!stackName) return;
+    const sourceVersion = data?.source.version;
+    if (!stackName || !sourceVersion) return;
     setReleasing(true);
     try {
       // Export first: release is deliberately reversible, but a handoff must
@@ -288,7 +294,7 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
       downloadHandoff(handoff);
       const confirmed = window.prompt(`The handoff file was downloaded. Releasing ${stackName} stops future OpenShip writes but leaves all workloads and labels in place.\n\nType the exact stack name to release management.`);
       if (confirmed === null) return;
-      await swarmApi.releaseManagement(projectId, confirmed);
+      await swarmApi.releaseManagement(projectId, { confirmedStackName: confirmed, expectedSourceVersion: sourceVersion });
       setPreview(null);
       showToast("Management released. OpenShip is now observing this stack only; workloads were not changed.", "success", "Docker Swarm");
       await load();
@@ -297,7 +303,7 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
     } finally {
       setReleasing(false);
     }
-  }, [data?.observation.stackName, downloadHandoff, load, projectId, showToast]);
+  }, [data?.observation.stackName, data?.source.version, downloadHandoff, load, projectId, showToast]);
 
   const removeStack = useCallback(() => {
     const stackName = data?.observation.stackName;
@@ -308,13 +314,17 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
 
   const confirmRemoveStack = useCallback(async () => {
     const stackName = data?.observation.stackName;
-    if (!stackName || removalConfirmation.trim() !== stackName) {
+    const sourceVersion = data?.source.version;
+    if (!stackName || !sourceVersion || removalConfirmation.trim() !== stackName) {
       showToast("Enter the exact stack name to remove managed services.", "error", "Docker Swarm");
       return;
     }
     setRemoving(true);
     try {
-      const result = await swarmApi.removeStack(projectId, stackName);
+      const result = await swarmApi.removeStack(projectId, {
+        confirmedStackName: stackName,
+        expectedSourceVersion: sourceVersion,
+      });
       showToast(
         result.state === "removed" ? `Removed ${result.stackName}. Persistent resources were preserved.` : `Removal was accepted for ${result.stackName}; manager confirmation is still pending.`,
         result.state === "removed" ? "success" : "info",
@@ -327,7 +337,7 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
     } finally {
       setRemoving(false);
     }
-  }, [data?.observation.stackName, load, projectId, removalConfirmation, showToast]);
+  }, [data?.observation.stackName, data?.source.version, load, projectId, removalConfirmation, showToast]);
 
   const restart = useCallback(async (service: NonNullable<StackData["detail"]>["services"][number]) => {
     if (!window.confirm(`Rolling restart ${service.sourceServiceName}? Swarm will recreate its tasks using the existing update policy.`)) return;

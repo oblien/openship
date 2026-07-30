@@ -322,15 +322,15 @@ export const swarmApi = {
     api.put<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/volume-replacement-acknowledgements`, { acknowledgements }).then((result) => result.source),
   renderSource: (projectId: string, environment: Record<string, string> = {}) =>
     api.post<SwarmSourcePreview>(`projects/${projectId}/swarm/source/render`, { environment }),
-  claimManagement: (projectId: string, input: { confirmedStackName: string; previewLiveDigest: string }) =>
+  claimManagement: (projectId: string, input: { confirmedStackName: string; previewLiveDigest: string; expectedSourceVersion: number }) =>
     api.post<{ stackName: string; managementMode: "observe"; claimPending: true; liveDigest: string }>(
       `projects/${projectId}/swarm/claim`,
       input,
     ),
-  releaseManagement: (projectId: string, confirmedStackName: string) =>
+  releaseManagement: (projectId: string, input: { confirmedStackName: string; expectedSourceVersion: number }) =>
     api.post<{ stackName: string; managementMode: "observe"; released: true }>(
       `projects/${projectId}/swarm/release-management`,
-      { confirmedStackName },
+      input,
     ),
   handoff: (projectId: string) => api.get<SwarmStackHandoff>(`projects/${projectId}/swarm/handoff`),
   refreshObservation: (projectId: string) =>
@@ -352,8 +352,8 @@ export const swarmApi = {
       `projects/${projectId}/swarm/services/${encodeURIComponent(serviceName)}/restart`,
       {},
     ),
-  removeStack: (projectId: string, confirmedStackName: string) =>
-    api.post<SwarmRemoveResult>(`projects/${projectId}/swarm/remove`, { confirmedStackName }),
+  removeStack: (projectId: string, input: { confirmedStackName: string; expectedSourceVersion: number }) =>
+    api.post<SwarmRemoveResult>(`projects/${projectId}/swarm/remove`, input),
   serviceLogs: (projectId: string, serviceName: string, options: SwarmLogOptions = {}) =>
     api.get<{ data: SwarmServiceLogsResult }>(serviceLogPath(projectId, serviceName), { params: options })
       .then((response) => response.data),

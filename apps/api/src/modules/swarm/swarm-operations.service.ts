@@ -440,6 +440,7 @@ export function createSwarmOperationsService(overrides: Partial<Dependencies> = 
       projectId: string;
       organizationId: string;
       confirmedStackName: string;
+      expectedSourceVersion: number;
     }) {
       if (!deps.featureEnabled()) {
         throw new AppError("Docker Swarm support is not enabled on this OpenShip instance.", 404, "SWARM_FEATURE_DISABLED");
@@ -451,6 +452,9 @@ export function createSwarmOperationsService(overrides: Partial<Dependencies> = 
       }
       if (input.confirmedStackName.trim() !== stack.stackName) {
         throw new AppError("Type the exact managed stack name to confirm removal.", 400, "SWARM_REMOVE_CONFIRMATION_INVALID");
+      }
+      if (input.expectedSourceVersion !== stack.sourceVersion) {
+        throw new AppError("The stack source changed after review. Refresh and confirm removal again.", 409, "SWARM_REMOVE_CONFIRMATION_STALE");
       }
       if (!stack.managerServerId) throw new AppError("This stack no longer has a Swarm manager target.", 409, "SWARM_MANAGER_UNAVAILABLE");
       const platform = await deps.resolvePlatform(stack.managerServerId, input.organizationId);
