@@ -1184,3 +1184,46 @@ Next:
 
 - Preserve effective volume and network identities during claim, deploy,
   rollback, and release (S12.4).
+
+## S12.4: Preserve volume and network identities during adoption
+
+Status: done
+Commit: pending resource-identity completion slice
+Tests run:
+
+- `bun --filter @repo/db test src/migrations-additive.test.ts src/repos/swarm-persistence.repo.test.ts`
+  — passed (9 tests).
+- `bun --filter @repo/api test src/modules/swarm/swarm-resource-identities.test.ts src/modules/deployments/swarm/deploy.service.test.ts src/modules/swarm/swarm-operations.service.test.ts`
+  — passed (34 tests).
+- `bun run --cwd packages/db lint`, `bun run --cwd apps/api lint`,
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json`, `sh -n scripts/swarm-lab.sh`,
+  and `git diff --check` — passed.
+- `scripts/swarm-lab.sh up`, `scripts/swarm-lab.sh resource-identity-proof`,
+  `scripts/swarm-lab.sh cleanup`, and `scripts/swarm-lab.sh down` — passed on
+  July 30, 2026. A pre-existing external volume marker and external overlay
+  network survived deploy, redeploy, and `docker stack rm`; fixture cleanup
+  then removed only the fixed proof volume/network.
+
+Evidence:
+
+- Effective resource identities follow Docker Stack semantics: only unnamed
+  resources are `<stack>_<logical-name>`; explicit `name:`, `external: true`,
+  drivers, and driver options remain controller-owned Compose semantics rather
+  than receiving standalone Docker namespacing.
+- First claim compares desired effective volume names to the names attached to
+  live services. A mismatch blocks before a revision is created or Docker is
+  mutated. Managed redeploy likewise compares the prior ready revision's
+  encrypted rendered document to the new render and rejects a changed volume
+  identity without an explicit acknowledgement.
+- The acknowledgement is project-scoped and records the precise
+  logical/previous/next identity tuple. A different destination volume needs
+  a separate review. Revision manifests retain safe effective-name metadata;
+  driver-option values are deliberately not copied into the manifest.
+- Rollback reapplies immutable retained YAML; prune, release, and ordinary
+  stack removal have no volume-delete operation. The live proof verifies
+  stack removal leaves external storage/network identities in place.
+
+Next:
+
+- Complete the project configuration and settings workflows for Swarm stacks
+  (S13.1).
