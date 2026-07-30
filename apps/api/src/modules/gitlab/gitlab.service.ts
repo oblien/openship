@@ -179,7 +179,7 @@ export async function getFileRaw(
 export async function listBranches(
   ctx: RequestContext,
   projectId: number,
-): Promise<Array<{ name: string; protected: boolean; default: boolean }>> {
+): Promise<Array<{ name: string; sha: string; protected: boolean; default: boolean }>> {
   const { token, baseUrl } = await requireCred(ctx);
   const branches = await glFetch<GitLabBranch[]>(token, {
     path: `/projects/${projectId}/repository/branches`,
@@ -188,9 +188,58 @@ export async function listBranches(
   });
   return branches.map((b) => ({
     name: b.name,
+    sha: b.commit?.id ?? "",
     protected: b.protected,
     default: b.default,
   }));
+}
+
+/**
+ * Recent commits on a branch — shape matches GitHub's getRecentCommits so the
+ * project Source tab can render either provider without a second code path.
+ */
+export async function getRecentCommits(
+  ctx: RequestContext,
+  projectId: number,
+  branch: string,
+  perPage = 10,
+): Promise<
+  Array<{
+    sha: string;
+    message: string;
+    author: string;
+    authorAvatar: string;
+    date: string;
+    url: string;
+  }>
+> {
+  try {
+    const { token, baseUrl } = await requireCred(ctx);
+    const data = await glFetch<
+      Array<{
+        id: string;
+        title: string;
+        message: string;
+        author_name: string;
+        authored_date: string;
+        web_url: string;
+      }>
+    >(token, {
+      path: `/projects/${projectId}/repository/commits`,
+      params: { ref_name: branch, per_page: perPage },
+      baseUrl,
+    });
+    return data.map((c) => ({
+      sha: c.id,
+      message: c.message || c.title || "",
+      author: c.author_name || "Unknown",
+      authorAvatar: "",
+      date: c.authored_date || "",
+      url: c.web_url || "",
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export function mintWebhookSecret(): string {

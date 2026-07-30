@@ -498,6 +498,12 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         }));
 
         const gitProvider = response.provider === "gitlab" ? "gitlab" : "github";
+        const htmlUrl =
+          (typeof response.html_url === "string" && response.html_url) ||
+          (typeof response.git_url === "string" && response.git_url.replace(/\.git$/i, "")) ||
+          (gitProvider === "gitlab"
+            ? `https://gitlab.com/${response.owner}/${response.repo}`
+            : `https://github.com/${response.owner}/${response.repo}`);
         setGitData({
           repository: {
             name: `${response.owner}/${response.repo}`,
@@ -505,10 +511,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
             // switch gates on.
             full_name: `${response.owner}/${response.repo}`,
             provider: gitProvider === "gitlab" ? "GitLab" : "GitHub",
-            url:
-              gitProvider === "gitlab"
-                ? `https://gitlab.com/${response.owner}/${response.repo}`
-                : `https://github.com/${response.owner}/${response.repo}`,
+            url: htmlUrl,
           },
           gitProvider,
           branch: response.branch || "main",

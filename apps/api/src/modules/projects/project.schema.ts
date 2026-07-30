@@ -359,10 +359,25 @@ export const UpdateResourcesBody = Type.Object({
 
 /** POST /:id/git/link — link a git repository to the project. */
 export const LinkRepoBody = Type.Object({
-  owner: Type.String({ minLength: 1, description: "GitHub repo owner." }),
-  repo: Type.String({ minLength: 1, description: "GitHub repo name." }),
+  owner: Type.String({ minLength: 1, description: "Repo owner / namespace path." }),
+  repo: Type.String({ minLength: 1, description: "Repo / project path segment." }),
   branch: Type.Optional(Type.String({ description: "Deploy branch (defaults to the repo default)." })),
-  installationId: Type.Optional(Type.Number({ description: "GitHub App installation id, when known." })),
+  installationId: Type.Optional(
+    Type.Number({
+      description:
+        "GitHub App installation id, or the numeric GitLab project id when provider is gitlab (required for GitLab).",
+    }),
+  ),
+  provider: Type.Optional(
+    Type.Union([Type.Literal("github"), Type.Literal("gitlab")], {
+      description: 'Source provider. Defaults to "github".',
+    }),
+  ),
+  gitUrl: Type.Optional(
+    Type.String({
+      description: "Optional clone URL override (used for self-hosted GitLab).",
+    }),
+  ),
 });
 
 /** POST /:id/auto-deploy — enable/disable auto-deploy on push. */

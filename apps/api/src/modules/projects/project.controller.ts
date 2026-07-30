@@ -1353,13 +1353,52 @@ export async function getGitInfo(c: Context) {
     .filter((d) => d.verified)
     .map((d) => ({ hostname: d.hostname, ssl: d.sslStatus === "active" }));
 
+  const isGitlab = info.gitProvider === "gitlab";
+  const gitlabProjectId =
+    isGitlab && info.installationId != null ? Number(info.installationId) : NaN;
+
   let branch = info.gitBranch ?? "";
-  if (!branch && info.gitOwner && info.gitRepo) {
-    branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
+  let commits: Array<{
+    sha: string;
+    message: string;
+    author: string;
+    authorAvatar: string;
+    date: string;
+    url: string;
+  }> = [];
+
+  if (isGitlab && Number.isFinite(gitlabProjectId)) {
+    const gitlab = await import("../gitlab/gitlab.service");
+    if (!branch) {
+      try {
+        const glProject = await gitlab.getProject(ctx, gitlabProjectId);
+        branch = glProject.defaultBranch || "main";
+      } catch {
+        branch = "main";
+      }
+    }
+    if (branch) {
+      commits = await gitlab.getRecentCommits(ctx, gitlabProjectId, branch, 10);
+    }
+  } else {
+    if (!branch && info.gitOwner && info.gitRepo) {
+      branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
+    }
+    if (branch && info.gitOwner && info.gitRepo) {
+      commits = await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10);
+    }
   }
-  const commits = branch
-    ? await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
-    : [];
+
+  // Prefer the stored clone URL (covers self-hosted GitLab); fall back to a
+  // constructed https URL for the Source tab's "open on provider" link.
+  const gitUrl = info.gitUrl ?? null;
+  const htmlUrl = gitUrl
+    ? gitUrl.replace(/\.git$/i, "").replace(/^git@([^:]+):/, "https://$1/")
+    : info.gitOwner && info.gitRepo
+      ? isGitlab
+        ? `${(await resolveUserGitlabBaseUrl(ctx.userId)).replace(/\/$/, "")}/${info.gitOwner}/${info.gitRepo}`
+        : `https://github.com/${info.gitOwner}/${info.gitRepo}`
+      : null;
 
   return c.json({
     success: true,
@@ -1367,6 +1406,8 @@ export async function getGitInfo(c: Context) {
     repo: info.gitRepo,
     branch,
     provider: info.gitProvider ?? "github",
+    git_url: gitUrl,
+    html_url: htmlUrl,
     commits: commits.map((c) => ({
       sha: c.sha,
       message: c.message,
@@ -1396,6 +1437,26 @@ export async function listBranches(c: Context) {
 
   if (!info.gitOwner || !info.gitRepo) {
     return c.json({ success: false, error: "No repository connected" }, 400);
+  }
+
+  if (info.gitProvider === "gitlab") {
+    const gitlabProjectId = info.installationId != null ? Number(info.installationId) : NaN;
+    if (!Number.isFinite(gitlabProjectId)) {
+      return c.json(
+        { success: false, error: "GitLab project id missing — re-link the repository" },
+        400,
+      );
+    }
+    const { listBranches: listGitlabBranches } = await import("../gitlab/gitlab.service");
+    const branches = await listGitlabBranches(ctx, gitlabProjectId);
+    return c.json({
+      success: true,
+      data: branches.map((branch) => ({
+        name: branch.name,
+        sha: branch.sha,
+        protected: branch.protected,
+      })),
+    });
   }
 
   const branches = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo);
