@@ -20,8 +20,10 @@ export interface GlRequest {
 const GL_FETCH_TIMEOUT_MS = 20_000;
 
 /**
- * Normalize a user- or env-supplied GitLab origin to `https://host` (no path).
+ * Normalize a user- or env-supplied GitLab origin to `scheme://host` (no path).
  * Accepts bare hosts (`gitlab.example.com`) and strips trailing slashes.
+ * Does NOT apply CLOUD_MODE SSRF policy — call {@link assertAllowedGitlabBaseUrl}
+ * before fetching a user-supplied origin.
  */
 export function normalizeGitlabBaseUrl(input: string): string | null {
   const trimmed = input.trim();
@@ -37,12 +39,72 @@ export function normalizeGitlabBaseUrl(input: string): string | null {
   }
 }
 
+/** Instance-wide GitLab origin from env (default https://gitlab.com). */
+export function configuredGitlabOrigin(): string {
+  return normalizeGitlabBaseUrl(env.GITLAB_BASE_URL) ?? "https://gitlab.com";
+}
+
+/**
+ * CLOUD_MODE SSRF guard for user-supplied GitLab origins.
+ *
+ * On the multi-tenant SaaS, connect() fetches `baseUrl` with a Bearer token
+ * before saving — a custom host is a classic SSRF. Refuse anything other than
+ * the configured public origin (HTTPS). Self-hosted operators may point at
+ * their own GitLab (http + private hosts allowed).
+ */
+export function assertAllowedGitlabBaseUrl(origin: string): void {
+  let u: URL;
+  try {
+    u = new URL(origin);
+  } catch {
+    throw new Error("Invalid GitLab URL");
+  }
+
+  if (!env.CLOUD_MODE) {
+    if (u.protocol !== "http:" && u.protocol !== "https:") {
+      throw new Error("GitLab URL must use http or https");
+    }
+    return;
+  }
+
+  if (u.protocol !== "https:") {
+    throw new Error("GitLab URL must use HTTPS");
+  }
+
+  const allowed = configuredGitlabOrigin();
+  if (u.origin !== allowed) {
+    throw new Error(
+      `Custom GitLab URLs are not allowed on Openship Cloud. Use ${allowed} or connect OAuth.`,
+    );
+  }
+}
+
+/**
+ * Normalize + apply SSRF policy. Returns null when the input is empty/malformed;
+ * throws when the origin is well-formed but disallowed (CLOUD_MODE).
+ */
+export function parseAllowedGitlabBaseUrl(input: string): string | null {
+  const normalized = normalizeGitlabBaseUrl(input);
+  if (!normalized) return null;
+  assertAllowedGitlabBaseUrl(normalized);
+  return normalized;
+}
+
 export function gitlabWebBase(baseUrl?: string | null): string {
   if (baseUrl) {
     const normalized = normalizeGitlabBaseUrl(baseUrl);
-    if (normalized) return normalized;
+    if (normalized) {
+      // Defense in depth: never fetch a disallowed origin even if a stale
+      // row slipped into user_settings before the CLOUD_MODE guard existed.
+      try {
+        assertAllowedGitlabBaseUrl(normalized);
+        return normalized;
+      } catch {
+        /* fall through to configured origin */
+      }
+    }
   }
-  return env.GITLAB_BASE_URL.replace(/\/$/, "");
+  return configuredGitlabOrigin();
 }
 
 export function gitlabApiBase(baseUrl?: string | null): string {

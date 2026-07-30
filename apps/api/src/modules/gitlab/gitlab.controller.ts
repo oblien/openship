@@ -3,13 +3,34 @@
  */
 
 import type { Context } from "hono";
+import { repos } from "@repo/db";
 import { auth } from "../../lib/auth";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveApiPublicUrl } from "../../lib/public-url";
 import * as gitlabAuth from "./gitlab.auth";
 import * as gitlabService from "./gitlab.service";
-import { glFetchSoft, gitlabWebBase, normalizeGitlabBaseUrl } from "./gitlab.http";
+import {
+  glFetchSoft,
+  gitlabWebBase,
+  parseAllowedGitlabBaseUrl,
+} from "./gitlab.http";
 import type { GitLabUser } from "./gitlab.types";
+
+function getSetCookieHeaders(headers: Headers): string[] {
+  const responseHeaders = headers as Headers & {
+    getSetCookie?: () => string[];
+  };
+
+  if (typeof responseHeaders.getSetCookie === "function") {
+    const cookies = responseHeaders.getSetCookie();
+    if (cookies.length > 0) {
+      return cookies;
+    }
+  }
+
+  const cookie = headers.get("set-cookie");
+  return cookie ? [cookie] : [];
+}
 
 export async function getStatus(c: Context) {
   const ctx = getRequestContext(c);
@@ -43,14 +64,22 @@ export async function connect(c: Context) {
     }
     let baseUrl = gitlabWebBase();
     if (rawBaseUrl) {
-      const normalized = normalizeGitlabBaseUrl(rawBaseUrl);
-      if (!normalized) {
-        return c.json(
-          { success: false, error: "Invalid GitLab URL. Use an origin like https://gitlab.example.com" },
-          400,
-        );
+      try {
+        const normalized = parseAllowedGitlabBaseUrl(rawBaseUrl);
+        if (!normalized) {
+          return c.json(
+            {
+              success: false,
+              error: "Invalid GitLab URL. Use an origin like https://gitlab.example.com",
+            },
+            400,
+          );
+        }
+        baseUrl = normalized;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Invalid GitLab URL";
+        return c.json({ success: false, error: message }, 400);
       }
-      baseUrl = normalized;
     }
     const user = await glFetchSoft<GitLabUser>(pat, { path: "/user", baseUrl });
     if (!user) {
@@ -94,10 +123,15 @@ export async function connect(c: Context) {
 }
 
 /**
- * Start Better Auth linkSocialAccount for GitLab and return the redirect URL.
+ * Start Better Auth linkSocialAccount for GitLab and redirect to the provider.
+ *
+ * Mirrors GitHub's connectRedirect: this route is `.public()` (no
+ * authMiddleware / request context) because the popup navigates here
+ * directly; session cookies still ride on the request for Better Auth.
+ * We MUST forward Better Auth's OAuth state Set-Cookie onto the 302 or
+ * the callback can't complete the link.
  */
 export async function connectRedirect(c: Context) {
-  const ctx = getRequestContext(c);
   if (!gitlabAuth.isGitlabOAuthConfigured()) {
     return c.json({ error: "GitLab OAuth is not configured" }, 400);
   }
@@ -111,16 +145,42 @@ export async function connectRedirect(c: Context) {
       body: {
         provider: "gitlab",
         callbackURL,
+        disableRedirect: true,
       },
       headers: c.req.raw.headers,
+      asResponse: true,
     });
 
-    const raw = result as unknown as { url?: string; redirect?: string | boolean };
-    const url = typeof raw.url === "string" ? raw.url : typeof raw.redirect === "string" ? raw.redirect : null;
-    if (!url) {
-      return c.json({ error: "Failed to start GitLab OAuth" }, 500);
+    if (result instanceof Response) {
+      const cookies = getSetCookieHeaders(result.headers);
+      let redirectUrl: string | null = null;
+
+      const locationHeader = result.headers.get("location");
+      if (locationHeader) {
+        redirectUrl = locationHeader;
+      }
+
+      try {
+        const body = (await result.json()) as { url?: string };
+        redirectUrl = redirectUrl ?? body?.url ?? null;
+      } catch {
+        // Ignore non-JSON bodies and fall back to headers-only handling.
+      }
+
+      if (redirectUrl) {
+        const response = c.redirect(redirectUrl);
+        for (const cookie of cookies) {
+          response.headers.append("Set-Cookie", cookie);
+        }
+        return response;
+      }
     }
-    return c.redirect(url);
+
+    if (result && typeof result === "object" && "url" in result) {
+      return c.redirect((result as { url: string }).url);
+    }
+
+    return c.json({ error: "Failed to start GitLab OAuth" }, 500);
   } catch (err) {
     const message = err instanceof Error ? err.message : "OAuth failed";
     return c.json({ error: message }, 500);
@@ -189,13 +249,36 @@ export async function registerWebhook(c: Context) {
   }
 }
 
+/**
+ * Mint a clone credential for a GitLab project.
+ *
+ * When `?projectId=` (Openship project id) is supplied, the project MUST
+ * belong to the caller's org AND be gitProvider=gitlab — otherwise a
+ * cross-org IDOR could decrypt any project's cloneTokenEncrypted (including
+ * a GitHub PAT stored in the same column). Prefer the caller's own
+ * OAuth/PAT when no project id is given.
+ */
 export async function getCloneToken(c: Context) {
   const ctx = getRequestContext(c);
   const projectId = Number(c.req.param("projectId"));
   if (!Number.isFinite(projectId)) {
     return c.json({ error: "Invalid projectId" }, 400);
   }
+
   const openshipProjectId = c.req.query("projectId") || undefined;
+  if (openshipProjectId) {
+    const project = await repos.project.findByIdInOrganization(
+      openshipProjectId,
+      ctx.organizationId,
+    );
+    if (!project) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+    if (project.gitProvider !== "gitlab") {
+      return c.json({ error: "Project is not linked to GitLab" }, 400);
+    }
+  }
+
   const result = await gitlabService.resolveCloneToken(ctx, openshipProjectId);
   if (!result) {
     return c.json({ error: "No GitLab token available" }, 403);

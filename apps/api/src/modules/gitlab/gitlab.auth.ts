@@ -12,6 +12,7 @@ import {
   glFetchSoft,
   gitlabWebBase,
   normalizeGitlabBaseUrl,
+  assertAllowedGitlabBaseUrl,
 } from "./gitlab.http";
 import type { GitLabConnectionState, GitLabUser } from "./gitlab.types";
 
@@ -63,6 +64,9 @@ export async function saveUserGitlabPat(
   const encrypted = encrypt(token);
   const now = new Date();
   const normalized = normalizeGitlabBaseUrl(baseUrl) ?? gitlabWebBase();
+  // Re-assert at persist time so a caller that skipped the controller
+  // guard cannot write a CLOUD_MODE-disallowed origin into user_settings.
+  assertAllowedGitlabBaseUrl(normalized);
   const updates = {
     gitlabCloneTokenEncrypted: encrypted,
     gitlabCloneTokenSetAt: now,

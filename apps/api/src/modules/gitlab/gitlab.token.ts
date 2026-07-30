@@ -33,7 +33,9 @@ export interface GitLabTokenContext {
 
 async function readProjectToken(projectId: string): Promise<string | null> {
   const project = await repos.project.findById(projectId);
-  if (!project?.cloneTokenEncrypted) return null;
+  // Provider-agnostic column — never decrypt a non-GitLab project's PAT
+  // (would leak GitHub clone tokens via the GitLab clone-token endpoint).
+  if (!project?.cloneTokenEncrypted || project.gitProvider !== "gitlab") return null;
   try {
     return decrypt(project.cloneTokenEncrypted);
   } catch {
