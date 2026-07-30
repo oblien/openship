@@ -1041,3 +1041,43 @@ Next:
 
 - Integrate Swarm revision retention, rollback-window pruning, deployment
   pinning, and safe artifact garbage collection (S11.3).
+
+## S11.3: Retention and pinning integration
+
+Status: done
+Commit: `2e0af7f8`
+Tests run:
+
+- `bun --filter @repo/api test src/modules/swarm/swarm-managed-resources.test.ts src/modules/swarm/swarm-compatibility.test.ts src/modules/deployments/rollback/rollback-orchestrator.test.ts src/modules/deployments/swarm/reconcile.service.test.ts src/modules/deployments/swarm/resource-retention.service.test.ts src/modules/deployments/swarm/deploy.service.test.ts`
+  — passed (31 tests).
+- `bun --filter @repo/adapters test src/runtime/swarm/normalize.test.ts` —
+  passed (2 tests).
+- `bun --filter @repo/db test src/repos/swarm-persistence.repo.test.ts` —
+  passed (5 tests).
+- `bun run --cwd apps/api lint`, `sh -n scripts/swarm-lab.sh`, and
+  `git diff --check` — passed.
+- Disposable manager resource proof — passed on July 30, 2026. Two config and
+  two secret versions carried ISO creation metadata; after retained-YAML
+  rollback, service inspection attached the original config and secret names.
+
+Evidence:
+
+- Successful direct Swarm deploys and reconciliation-finalized deploys now enter
+  the same `artifact_retained_at`, active-deployment, rollback-window, and
+  pinned-deployment policy as other runtimes. A Swarm rollback refuses an
+  expired deployment even if an old revision row happens to remain.
+- Expiring an unpinned Swarm deployment deletes only its organization-scoped,
+  non-active revision artifact before clearing rollbackability; stack resources
+  are never sent to container archive/purge operations.
+- Revision refs are the resource GC keep-set. A cleanup candidate must be an
+  OpenShip-labelled object for the matching project, absent from every
+  ready/active/in-flight revision, and older than the 24-hour grace window.
+  The creation instant is an immutable metadata label, so GC uses Docker list
+  metadata and never inspects or exports a secret payload.
+- The daily `swarm:resource-gc` system job provides a manager-isolated backstop;
+  a failed manager is counted and logged without stopping other stack cleanup.
+
+Next:
+
+- Validate external config/secret references and expose safe consumer metadata
+  (S12.1), then add encrypted OpenShip-managed inputs (S12.2).
