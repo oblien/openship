@@ -10,7 +10,7 @@ function snapshot(): SwarmDiscoverySnapshot {
     stacks: [{ name: "blog", serviceIds: ["service-web"], serviceNames: ["web"] }],
     services: [{
       id: "service-web", name: "blog_web", sourceServiceName: "web", stackName: "blog", specVersion: 4,
-      mode: "replicated", desiredReplicas: 2, image: "nginx@sha256:abc", labels: {}, endpointMode: null,
+      mode: "replicated", desiredReplicas: 2, image: "nginx@sha256:abc", loggingDriver: null, labels: {}, endpointMode: null,
       placement: null, resources: null, updateConfig: null, rollbackConfig: null, restartPolicy: null,
       networks: ["blog_default"], configs: [], secrets: [], publishedPorts: [], updateState: null, updateMessage: null,
     }],

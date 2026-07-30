@@ -13,6 +13,7 @@ approximately 4 GB free RAM, and outbound access to pull public fixture images.
 | Read task state                                  | `scripts/swarm-lab.sh status`        | service/task table shows the fixture stack only                                                                                                                                                                                                                 |
 | Prove observe-mode coexistence                   | `scripts/swarm-lab.sh observe-proof` | runs repeated probe/discover/import/refresh plus Docker-native source validation while recording manager events; exits non-zero for any workload mutation                                                                                                       |
 | Prove managed prebuilt deploy and recovery       | `scripts/swarm-lab.sh managed-proof` | deploys a two-service inline stack through the production manager adapter twice; verifies revisions, stack/service refs, ownership labels, unchanged task IDs, then withholds an accepted Docker response and proves observation-only reconciliation settles it |
+| Prove managed service and stack operations       | `scripts/swarm-lab.sh operations-proof` | after `managed-proof`, scales the owned replicated `web` service to 2, then 0, then 1; force-restarts it; reads/follows service and task logs; and removes only the managed stack while confirming its external config and secret remain |
 | Capture mutations                                | `scripts/swarm-lab.sh events`        | Docker events filtered to `com.openship.swarm.fixture=true`                                                                                                                                                                                                     |
 | Remove fixtures only                             | `scripts/swarm-lab.sh cleanup`       | only the fixed observe and managed fixture stacks are removed                                                                                                                                                                                                   |
 | Destroy nested lab                               | `scripts/swarm-lab.sh down`          | only `openship-swarm-lab` Compose resources are removed                                                                                                                                                                                                         |
@@ -70,3 +71,24 @@ Verified locally on July 30, 2026: both prebuilt services converged, three
 revision records and service deployment references were produced, the second
 apply retained the two running task IDs, and the lost-response recovery settled
 ready without changing them. `cleanup` and `down` were then run successfully.
+
+## Managed operations proof
+
+Run `managed-proof` first, then `operations-proof`. The managed fixture creates
+an external config and secret inside the disposable manager; their payloads are
+never inspected or printed. The operations harness exercises production scale,
+restart, log-read, task-log, and follow/cancellation paths before invoking the
+typed-name managed removal. It verifies replacement task IDs after restart,
+the worker's heartbeat through both service and task logs, and the continued
+metadata presence of the external config and secret after stack removal.
+
+`docker stack rm` deletes stack-owned secrets (and may remove stack-owned
+configs), so OpenShip refuses removal while either is owned by the stack. Mark
+them external first; named volumes and external networks are left alone. The
+lab cleanup removes only its fixed external config and secret after all fixture
+services are absent.
+
+Verified locally on July 30, 2026: the scale sequence converged, a force update
+changed the web task ID without changing its service ID, service/task log reads
+and a cancelled follow stream saw the worker heartbeat, and removal retained
+the external config and secret.

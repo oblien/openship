@@ -20,7 +20,7 @@ function snapshot(): SwarmDiscoverySnapshot {
     stacks: [{ name: "blog", serviceIds: ["svc-a"], serviceNames: ["web"] }],
     services: [{
       id: "svc-a", name: "blog_web", sourceServiceName: "web", stackName: "blog", specVersion: 1,
-      mode: "replicated", desiredReplicas: 1, image: "repo/web@sha256:abc", labels: {}, endpointMode: null,
+      mode: "replicated", desiredReplicas: 1, image: "repo/web@sha256:abc", loggingDriver: null, labels: {}, endpointMode: null,
       placement: null, resources: null, updateConfig: null, rollbackConfig: null, restartPolicy: null,
       networks: [], configs: [], secrets: [], publishedPorts: [], updateState: null, updateMessage: null,
     }],

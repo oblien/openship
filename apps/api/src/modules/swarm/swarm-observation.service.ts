@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import type { Platform, SwarmDiscoverySnapshot, SwarmServiceState } from "@repo/adapters";
 import { AppError, NotFoundError, type SwarmServiceProjection } from "@repo/core";
-import { repos, type SwarmStack, type SwarmStackRevision } from "@repo/db";
+import { repos, type Project, type SwarmStack, type SwarmStackRevision } from "@repo/db";
 import { swarmSupportEnabled } from "../../config";
 import { resolveTargetPlatform } from "../../lib/deployment-runtime";
 import { classifySwarmSpecDrift } from "./swarm-drift";
@@ -25,6 +25,8 @@ interface ObservationDependencies {
     patch: Record<string, unknown>,
   ) => Promise<unknown>;
   syncProjections: (projectId: string, projections: SwarmServiceProjection[]) => Promise<unknown>;
+  getProject: (projectId: string) => Promise<Project | undefined>;
+  updateDeploymentStatus: (deploymentId: string, status: string, patch: Record<string, unknown>) => Promise<unknown>;
   now: () => Date;
 }
 
@@ -109,6 +111,16 @@ function state(services: SwarmServiceState[]): Record<string, unknown> {
   };
 }
 
+function removalState(details: unknown): "reconciling" | "removed" | null {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return null;
+  const operation = (details as Record<string, unknown>).operation;
+  if (!operation || typeof operation !== "object" || Array.isArray(operation)) return null;
+  const record = operation as Record<string, unknown>;
+  return record.kind === "remove" && (record.state === "reconciling" || record.state === "removed")
+    ? record.state
+    : null;
+}
+
 export function createSwarmObservationService(overrides: Partial<ObservationDependencies> = {}) {
   const deps: ObservationDependencies = {
     featureEnabled: swarmSupportEnabled,
@@ -123,6 +135,9 @@ export function createSwarmObservationService(overrides: Partial<ObservationDepe
       repos.swarmStack.updateInOrganization(id, organizationId, patch),
     syncProjections: (projectId, projections) =>
       repos.service.syncSwarmProjections(projectId, projections),
+    getProject: (projectId) => repos.project.findById(projectId),
+    updateDeploymentStatus: (deploymentId, status, patch) =>
+      repos.deployment.updateStatus(deploymentId, status, patch),
     now: () => new Date(),
     ...overrides,
   };
@@ -132,6 +147,47 @@ export function createSwarmObservationService(overrides: Partial<ObservationDepe
   async function recordSnapshot(stack: SwarmStack, snapshot: SwarmDiscoverySnapshot) {
     const services = snapshot.services.filter((service) => service.stackName === stack.stackName);
     const current = digest(services);
+    const removal = removalState(stack.driftDetails);
+    if (removal === "reconciling") {
+      if (services.length === 0) {
+        const details = {
+          summary: "Managed stack removal was confirmed by a later manager observation; persistent resources were intentionally preserved.",
+          operation: { kind: "remove", state: "removed" },
+        };
+        await deps.updateStack(stack.id, stack.organizationId, {
+          lastObservedDigest: current,
+          observedState: { services: [] },
+          lastObservedAt: deps.now(),
+          driftStatus: "unknown",
+          driftDetails: details,
+        });
+        await deps.syncProjections(stack.projectId, []);
+        const project = await deps.getProject(stack.projectId);
+        if (project?.activeDeploymentId) {
+          await deps.updateDeploymentStatus(project.activeDeploymentId, "cancelled", {
+            errorMessage: "Managed Swarm stack removal was confirmed by the manager. Persistent resources were preserved.",
+          });
+        }
+        return { status: "clean" as const, digest: current, changed: true, details };
+      }
+      const details = {
+        summary: "Managed stack removal is still reconciling; services remain on the manager.",
+        operation: { kind: "remove", state: "reconciling" },
+        remainingServices: services.map((service) => service.sourceServiceName).sort(),
+      };
+      await deps.updateStack(stack.id, stack.organizationId, {
+        lastObservedDigest: current,
+        observedState: state(services),
+        lastObservedAt: deps.now(),
+        driftStatus: "unknown",
+        driftDetails: details,
+      });
+      await deps.syncProjections(
+        stack.projectId,
+        services.map((service) => projection(service)),
+      );
+      return { status: "drifted" as const, digest: current, changed: true, details };
+    }
     const revision =
       stack.managementMode === "managed" && stack.lastAppliedRevisionId
         ? await deps.getRevision(stack.lastAppliedRevisionId, stack.organizationId)
@@ -194,6 +250,7 @@ export function createSwarmObservationService(overrides: Partial<ObservationDepe
         managerServerId: stack.managerServerId,
         clusterId: stack.clusterId,
         managementMode: stack.managementMode,
+        revisionId: stack.lastAppliedRevisionId ?? null,
         source: {
           kind: stack.sourceKind,
           status: stack.sourceStatus,

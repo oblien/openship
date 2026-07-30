@@ -261,11 +261,14 @@ export class SshExecutor implements CommandExecutor {
   streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
-    return this._streamExec(command, onLog).catch((err) => {
+    if (opts?.signal?.aborted) return Promise.resolve({ code: 0, output: "" });
+    return this._streamExec(command, onLog, opts).catch((err) => {
+      if (opts?.signal?.aborted) return { code: 0, output: "" };
       if (SshExecutor.isChannelError(err)) {
         this.recoverFromChannelError();
-        return this._streamExec(command, onLog);
+        return this._streamExec(command, onLog, opts);
       }
       throw err;
     });
@@ -274,11 +277,16 @@ export class SshExecutor implements CommandExecutor {
   private async _streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
     const client = await this.connect();
+    if (opts?.signal?.aborted) return { code: 0, output: "" };
 
     return new Promise<{ code: number; output: string }>((resolve, reject) => {
       let settled = false;
+      let stream: import("ssh2").ClientChannel | null = null;
+      const abortSignal = () => stream?.close();
+      opts?.signal?.addEventListener("abort", abortSignal, { once: true });
 
       // A transport drop mid-stream rejects with SshDisconnectedError instead
       // of silently resolving `code ?? 1` (truncated output). Callers treat the
@@ -287,13 +295,19 @@ export class SshExecutor implements CommandExecutor {
       const finish = (act: () => void) => {
         if (settled) return;
         settled = true;
+        opts?.signal?.removeEventListener("abort", abortSignal);
         this.inflight.delete(abort);
         act();
       };
       this.inflight.add(abort);
 
-      client.exec(SshExecutor.ENV_PREFIX + command, (err, stream) => {
+      client.exec(SshExecutor.ENV_PREFIX + command, (err, channel) => {
         if (err) return finish(() => reject(err));
+        stream = channel;
+        if (opts?.signal?.aborted) {
+          channel.close();
+          return finish(() => resolve({ code: 0, output: "" }));
+        }
 
         // Raw passthrough (see LocalExecutor.streamExec): forward the untouched
         // byte stream as rawData so the client's xterm renders "\r"/ANSI
@@ -307,17 +321,21 @@ export class SshExecutor implements CommandExecutor {
           onLog(logEntry(text, level, data.toString("base64")));
         };
 
-        stream.on("data", (data: Buffer) => onChunk(data, "info"));
-        stream.stderr.on("data", (data: Buffer) => onChunk(data, "warn"));
+        channel.on("data", (data: Buffer) => onChunk(data, "info"));
+        channel.stderr.on("data", (data: Buffer) => onChunk(data, "warn"));
 
         // ssh2's 'close' often carries no code; the real exit status arrives on
         // 'exit'. A close with NO exit status means the channel was torn down
         // under the command (connection reset / session exhaustion), not a real
         // exit — surface that instead of masking it as a generic exit code 1 (#34).
         let exitCode: number | null = null;
-        stream.on("exit", (code: number | null) => { exitCode = code; });
-        stream.on("close", (code: number | null) => {
+        channel.on("exit", (code: number | null) => { exitCode = code; });
+        channel.on("close", (code: number | null) => {
           finish(() => {
+            if (opts?.signal?.aborted) {
+              resolve({ code: 0, output: chunks.join("") });
+              return;
+            }
             const final = typeof code === "number" ? code : exitCode;
             if (final == null) {
               reject(

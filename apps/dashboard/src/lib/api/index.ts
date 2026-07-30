@@ -106,8 +106,11 @@ export { swarmApi } from "./swarm";
 export type {
   SwarmDiscoveryView,
   SwarmManager,
+  SwarmLogEntry,
+  SwarmLogOptions,
   SwarmNode,
   SwarmObservation,
+  SwarmServiceLogsResult,
   SwarmStackDetail,
   SwarmStackView,
   SwarmSummary,

@@ -588,6 +588,7 @@ export interface CommandExecutor {
   streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }>;
 
   /** Write content to a file on the target machine. Creates dirs as needed. */

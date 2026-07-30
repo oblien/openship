@@ -599,7 +599,7 @@ Next:
 ## S6.1–S6.4: Convergence, reconciliation, and drift
 
 Status: done
-Commit: pending
+Commit: `e8bc3cb6`
 Tests run:
 
 - `bun --cwd packages/adapters vitest run src/runtime/swarm/health.test.ts src/runtime/swarm/normalize.test.ts` — passed (6 tests).
@@ -636,3 +636,44 @@ Evidence:
 Next:
 
 - Implement routine managed service and stack operations (Phase 7).
+
+## S7.1–S7.5: Managed day-two operations and dashboard
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/runtime.test.ts src/runtime/swarm/normalize.test.ts src/runtime/swarm/health.test.ts` — passed (17 tests).
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-operations.service.test.ts src/modules/swarm/swarm-observation.service.test.ts` — passed (18 tests).
+- TypeScript checks for `packages/adapters`, `apps/api`, and `apps/dashboard` — passed.
+- `scripts/swarm-lab.sh up`, `scripts/swarm-lab.sh managed-proof`, and
+  `scripts/swarm-lab.sh operations-proof` — passed against the disposable
+  nested manager and worker on July 30, 2026.
+
+Evidence:
+
+- Managed, organization-scoped endpoints scale owned replicated services from
+  zero to 10,000 replicas, optionally persist a valid inline-source replica
+  target, and reject global/job/unowned services before a Docker command.
+  Force restart retains the service ID and existing Swarm update policy while
+  convergence reports a terminal or reconciling result.
+- Service and task logs are manager-scoped and bounded. They support tail,
+  since, timestamps, task scope, and cancellable SSE follow; Docker log-driver
+  limitations are actionable. Source-known sensitive environment values and
+  common credential-shaped output are redacted before browser delivery.
+- Removal requires the exact stack name, managed labels on every service, and
+  manager cluster identity. `docker stack rm` is used only after refusing
+  stack-owned configs/secrets that Docker would delete; volumes and external
+  resources are never coupled to cleanup. An accepted removal with a lost
+  response records `reconciling` and later observation settles absence without
+  repeating the destructive command.
+- The project dashboard now exposes service/task logs, task scope, follow/stop,
+  inspect detail, scale, restart, and guarded removal. It retains read-only
+  log/inspect access for observed stacks and hides all writers there.
+- The disposable proof observed the worker heartbeat through service and task
+  logs, cancelled a live follow stream, and confirmed its external config and
+  secret remained after managed-stack removal.
+
+Next:
+
+- Begin observed-stack adoption and deliberate claim comparison (Phase 8).

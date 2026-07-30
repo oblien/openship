@@ -233,9 +233,14 @@ export class SystemSshExecutor implements CommandExecutor {
   async streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
     await this.ensureMaster();
     return new Promise((resolve) => {
+      if (opts?.signal?.aborted) {
+        resolve({ code: 0, output: "" });
+        return;
+      }
       const child = spawn(
         "ssh",
         [...this.baseArgs(), sshTarget(this.config), SystemSshExecutor.ENV_PREFIX + command],
@@ -246,6 +251,12 @@ export class SystemSshExecutor implements CommandExecutor {
       // byte stream as rawData so the client's xterm renders "\r"/ANSI natively
       // — remote builds get in-place progress repaints too, not new lines.
       const chunks: string[] = [];
+      let aborted = false;
+      const abort = () => {
+        aborted = true;
+        child.kill("SIGTERM");
+      };
+      opts?.signal?.addEventListener("abort", abort, { once: true });
 
       const onChunk = (chunk: Buffer, level: LogEntry["level"]) => {
         const text = chunk.toString();
@@ -257,13 +268,15 @@ export class SystemSshExecutor implements CommandExecutor {
       child.stdout.on("data", (chunk: Buffer) => onChunk(chunk, "info"));
       child.stderr.on("data", (chunk: Buffer) => onChunk(chunk, "warn"));
       child.on("error", (err) => {
+        opts?.signal?.removeEventListener("abort", abort);
         onLog(logEntry(`Process error: ${err.message}`, "error"));
-        resolve({ code: 1, output: err.message });
+        resolve({ code: aborted ? 0 : 1, output: err.message });
       });
       child.on("close", (code) => {
+        opts?.signal?.removeEventListener("abort", abort);
         const c = code ?? 1;
         void this.maybeSignalDisconnect(c).catch(() => {});
-        resolve({ code: c, output: chunks.join("") });
+        resolve({ code: aborted ? 0 : c, output: chunks.join("") });
       });
     });
   }

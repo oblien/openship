@@ -70,16 +70,20 @@ function fixture(discovery = snapshot()) {
   } as unknown as SwarmStack;
   const updateStack = vi.fn().mockResolvedValue(undefined);
   const syncProjections = vi.fn().mockResolvedValue([]);
+  const updateDeploymentStatus = vi.fn().mockResolvedValue(undefined);
   return {
     stack,
     updateStack,
     syncProjections,
+    updateDeploymentStatus,
     service: createSwarmObservationService({
       featureEnabled: () => true,
       getStack: async () => stack,
       resolvePlatform: async () => ({ stackRuntime: { discover: async () => discovery } }) as never,
       updateStack,
       syncProjections,
+      updateDeploymentStatus,
+      getProject: async () => ({ id: "proj-blog", activeDeploymentId: "deployment-blog" }) as never,
       now: () => new Date("2026-07-30T00:00:00.000Z"),
     }),
   };
@@ -120,9 +124,32 @@ describe("Swarm observation refresh", () => {
       managerServerId: "server-a",
       clusterId: "cluster-a",
       managementMode: "observe",
+      revisionId: null,
       source: { kind: "adopted", status: "missing", deployable: false },
       drift: { status: "unknown" },
     });
+  });
+
+  it("settles a response-lost managed removal from later manager absence without another write", async () => {
+    const absent = snapshot();
+    absent.stacks = [];
+    absent.services = [];
+    const test = fixture(absent);
+    Object.assign(test.stack, {
+      managementMode: "managed",
+      driftDetails: { operation: { kind: "remove", state: "reconciling" } },
+    });
+    await expect(test.service.refresh("proj-blog", "org-a")).resolves.toMatchObject({
+      status: "clean",
+      changed: true,
+      details: { operation: { kind: "remove", state: "removed" } },
+    });
+    expect(test.updateStack).toHaveBeenCalledWith("swarm-blog", "org-a", expect.objectContaining({
+      observedState: { services: [] },
+      driftDetails: expect.objectContaining({ operation: { kind: "remove", state: "removed" } }),
+    }));
+    expect(test.syncProjections).toHaveBeenCalledWith("proj-blog", []);
+    expect(test.updateDeploymentStatus).toHaveBeenCalledWith("deployment-blog", "cancelled", expect.any(Object));
   });
 
   it("batches periodic managed-stack refreshes through one manager discovery", async () => {

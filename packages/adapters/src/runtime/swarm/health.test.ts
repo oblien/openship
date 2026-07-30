@@ -11,6 +11,7 @@ const service: SwarmServiceState = {
   mode: "replicated",
   desiredReplicas: 1,
   image: "nginx:alpine",
+  loggingDriver: null,
   labels: {},
   endpointMode: null,
   placement: null,

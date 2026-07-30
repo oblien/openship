@@ -96,6 +96,14 @@ export type {
   SwarmRenderIssue,
   DeployStackInput,
   DeployedStack,
+  ScaleSwarmServiceInput,
+  RestartSwarmServiceInput,
+  SwarmServiceLogsInput,
+  SwarmServiceLogEntry,
+  SwarmServiceLogResult,
+  SwarmServiceLogStream,
+  RemoveSwarmStackInput,
+  SwarmServiceOperation,
 } from "./runtime/swarm/types";
 export {
   transferImage,

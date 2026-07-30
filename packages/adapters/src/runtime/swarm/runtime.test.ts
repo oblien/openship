@@ -204,4 +204,70 @@ describe("SwarmRuntime manager probe", () => {
       .rejects.toMatchObject({ name: "SwarmDeployError" });
     expect(exec.mock.calls.some(([command]) => String(command).includes("docker stack deploy"))).toBe(false);
   });
+
+  it("uses bounded service and stack operations without accepting untrusted shell identifiers", async () => {
+    const commands: string[] = [];
+    const runtime = await SwarmRuntime.create({
+      executor: {
+        exec: async (command: string) => {
+          commands.push(command);
+          if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
+          if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
+          if (command.startsWith("docker service scale")) return "blog_web scaled to 0";
+          if (command.startsWith("docker service update")) return "blog_web restarted";
+          if (command.startsWith("docker stack rm")) return "Removing service blog_web";
+          throw new Error(`unexpected command: ${command}`);
+        },
+      },
+    });
+
+    await expect(runtime.scaleService({ serviceId: "service-1", replicas: 0 })).resolves.toEqual({ output: "blog_web scaled to 0" });
+    await expect(runtime.restartService({ serviceId: "service-1" })).resolves.toEqual({ output: "blog_web restarted" });
+    await expect(runtime.removeStack({ stackName: "blog" })).resolves.toEqual({ output: "Removing service blog_web" });
+    expect(commands).toEqual(expect.arrayContaining([
+      expect.stringContaining("docker service scale --detach=false 'service-1=0'"),
+      expect.stringContaining("docker service update --detach=false --force 'service-1'"),
+      expect.stringContaining("docker stack rm 'blog'"),
+    ]));
+    await expect(runtime.scaleService({ serviceId: "service; rm -rf /", replicas: 1 })).rejects.toMatchObject({ name: "SwarmDeployError" });
+  });
+
+  it("reads and follows bounded service or task logs with caller cancellation", async () => {
+    const commands: string[] = [];
+    const streamExec = vi.fn((_command: string, onLog: (entry: { message: string }) => void, opts?: { signal?: AbortSignal }) => {
+      onLog({ message: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z booted\n" });
+      return new Promise<{ code: number; output: string }>((resolve) => {
+        opts?.signal?.addEventListener("abort", () => resolve({ code: 0, output: "" }), { once: true });
+      });
+    });
+    const runtime = await SwarmRuntime.create({
+      executor: {
+        exec: async (command: string) => {
+          commands.push(command);
+          if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
+          if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
+          if (command.startsWith("docker service logs")) return "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z ready";
+          throw new Error(`unexpected command: ${command}`);
+        },
+        streamExec,
+      },
+    });
+
+    await expect(runtime.getServiceLogs({ serviceId: "service-1", tail: 20, since: "1h" })).resolves.toEqual({
+      entries: [{ raw: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z ready", timestamp: "2026-07-30T00:00:00.000000000Z", message: "ready", serviceName: "blog_web", taskId: "task-1", nodeName: "manager" }],
+    });
+    const entries: unknown[] = [];
+    const stream = runtime.streamServiceLogs({ serviceId: "service-1", taskId: "task-1", tail: 5 }, (entry) => entries.push(entry));
+    stream.stop();
+    await stream.done;
+    expect(entries).toEqual([{ raw: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z booted", timestamp: "2026-07-30T00:00:00.000000000Z", message: "booted", serviceName: "blog_web", taskId: "task-1", nodeName: "manager" }]);
+    expect(commands).toEqual(expect.arrayContaining([
+      expect.stringContaining("docker service logs --timestamps --tail 20 --since '1h' 'service-1'"),
+    ]));
+    expect(streamExec).toHaveBeenCalledWith(
+      expect.stringContaining("docker service logs --timestamps --tail 5 --follow 'task-1'"),
+      expect.any(Function),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
 });

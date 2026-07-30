@@ -26,6 +26,7 @@ import * as swarmSource from "../swarm/swarm-source.controller";
 import * as swarmObservation from "../swarm/swarm-observation.controller";
 import * as swarmManagement from "../swarm/swarm-management.controller";
 import * as swarmStack from "../swarm/swarm-stack.controller";
+import * as swarmOperations from "../swarm/swarm-operations.controller";
 import {
   CreateProjectBody,
   EnsureProjectBody,
@@ -44,7 +45,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
-import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, RenderSwarmStackSourceBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
+import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, ScaleSwarmServiceBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -203,6 +204,31 @@ r.post(
   "/:id/swarm/release-management",
   { tag: "project:write", localOnly: true },
   swarmManagement.release,
+);
+r.post(
+  "/:id/swarm/services/:serviceName/scale",
+  { tag: "project:write", localOnly: true, body: ScaleSwarmServiceBody },
+  swarmOperations.scale,
+);
+r.post(
+  "/:id/swarm/services/:serviceName/restart",
+  { tag: "project:write", localOnly: true },
+  swarmOperations.restart,
+);
+r.get(
+  "/:id/swarm/services/:serviceName/logs",
+  { tag: "project:read", localOnly: true, readOnly: true },
+  swarmOperations.logs,
+);
+r.get(
+  "/:id/swarm/services/:serviceName/logs/stream",
+  { tag: "project:read", localOnly: true, readOnly: true },
+  swarmOperations.logStream,
+);
+r.post(
+  "/:id/swarm/remove",
+  { tag: "project:admin", localOnly: true, body: RemoveSwarmStackBody },
+  swarmOperations.remove,
 );
 r.get("/:id/info", { tag: "project:read", mcp: { description: "Get a project's detailed info (runtime, build, source)." } }, cloudProjectProxy, ctrl.getInfo);
 r.get("/:id/environments", { tag: "project:read", mcp: { description: "List a project's environments (production / previews)." } }, cloudProjectProxy, ctrl.listEnvironments);

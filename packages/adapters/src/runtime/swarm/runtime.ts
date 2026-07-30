@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { CommandExecutor } from "../../types";
+import type { CommandExecutor, LogEntry } from "../../types";
 import { sq } from "../git-clone";
 import {
   groupSwarmStacks,
@@ -21,10 +21,18 @@ import type {
   RenderedStack,
   DeployStackInput,
   DeployedStack,
+  RemoveSwarmStackInput,
+  RestartSwarmServiceInput,
+  ScaleSwarmServiceInput,
+  SwarmServiceLogEntry,
+  SwarmServiceLogResult,
+  SwarmServiceLogStream,
+  SwarmServiceLogsInput,
+  SwarmServiceOperation,
 } from "./types";
 
 export interface SwarmRuntimeOptions {
-  executor: Pick<CommandExecutor, "exec"> & Partial<Pick<CommandExecutor, "writeFile" | "readFile" | "rm">>;
+  executor: Pick<CommandExecutor, "exec"> & Partial<Pick<CommandExecutor, "streamExec" | "writeFile" | "readFile" | "rm">>;
   /** Bounded so a failed manager/SSH link cannot pin an API request. */
   timeoutMs?: number;
   /** Bound a malformed/large manager response before it reaches an API payload. */
@@ -120,6 +128,70 @@ function assertDeployStackName(value: string): string {
     throw new SwarmDeployError("A Docker Swarm stack name is invalid.");
   }
   return stackName;
+}
+
+function assertServiceId(value: string): string {
+  const serviceId = value.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$/.test(serviceId)) {
+    throw new SwarmDeployError("A Docker Swarm service identifier is invalid.");
+  }
+  return serviceId;
+}
+
+function assertLogTail(value: number | undefined): number {
+  if (value === undefined) return 200;
+  if (!Number.isInteger(value) || value < 1 || value > 1_000) {
+    throw new SwarmDeployError("Log tail must be an integer from 1 to 1,000.");
+  }
+  return value;
+}
+
+function assertLogSince(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const since = value.trim();
+  // Docker accepts RFC3339 timestamps and simple duration values. Keep the
+  // shell surface deliberately smaller than Docker's broad parser.
+  if (!since || since.length > 128 || !/^[0-9T:.+\-Zsmhdw]+$/i.test(since)) {
+    throw new SwarmDeployError("Log since must be an RFC3339 timestamp or Docker duration.");
+  }
+  return since;
+}
+
+function parseServiceLogLine(line: string, timestamps: boolean): SwarmServiceLogEntry {
+  const prefix = line.match(/^(.+?)\.(\d+)\.([A-Za-z0-9_.-]+)@([^|\s]+)\s+\|\s+(.*)$/);
+  const raw = line;
+  const formatted = prefix?.[5] ?? line;
+  const metadata = prefix
+    ? { serviceName: prefix[1] ?? null, taskId: prefix[3] ?? null, nodeName: prefix[4] ?? null }
+    : { serviceName: null, taskId: null, nodeName: null };
+  if (timestamps) {
+    const match = formatted.match(/^(\d{4}-\d{2}-\d{2}T[^\s]+)\s+(.*)$/);
+    if (match) return { raw, timestamp: match[1]!, message: match[2] ?? "", ...metadata };
+  }
+  return { raw, timestamp: null, message: formatted, ...metadata };
+}
+
+function logCommand(input: SwarmServiceLogsInput, follow = false): { command: string; timestamps: boolean } {
+  const target = assertServiceId(input.taskId ?? input.serviceId);
+  const tail = assertLogTail(input.tail);
+  const since = assertLogSince(input.since);
+  const timestamps = input.timestamps !== false;
+  return {
+    command: [
+      "docker service logs",
+      ...(timestamps ? ["--timestamps"] : []),
+      "--tail",
+      String(tail),
+      ...(since ? ["--since", sq(since)] : []),
+      ...(follow ? ["--follow"] : []),
+      sq(target),
+    ].join(" "),
+    timestamps,
+  };
+}
+
+function boundedOutput(value: string): string {
+  return value.length > 16_000 ? `${value.slice(0, 16_000)}…` : value;
 }
 
 function assertRenderedStack(value: string): string {
@@ -375,7 +447,7 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       ].join(" ");
       try {
         const output = await executor.exec(command, { timeout: Math.max(this.timeoutMs, 120_000) });
-        return { output: output.length > 16_000 ? `${output.slice(0, 16_000)}…` : output };
+        return { output: boundedOutput(output) };
       } catch (error) {
         const detail = error instanceof Error ? error.message.replace(/\s+/g, " ").trim() : "";
         throw new SwarmDeployError(
@@ -384,6 +456,93 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       }
     } finally {
       if (stage) await executor.rm(stage).catch(() => {});
+    }
+  }
+
+  async scaleService(input: ScaleSwarmServiceInput): Promise<SwarmServiceOperation> {
+    const serviceId = assertServiceId(input.serviceId);
+    if (!Number.isInteger(input.replicas) || input.replicas < 0 || input.replicas > 10_000) {
+      throw new SwarmDeployError("Replica count must be a non-negative integer no greater than 10,000.");
+    }
+    return this.runOperation(
+      `docker service scale --detach=false ${sq(`${serviceId}=${input.replicas}`)}`,
+      "Docker could not scale the Swarm service.",
+    );
+  }
+
+  async restartService(input: RestartSwarmServiceInput): Promise<SwarmServiceOperation> {
+    const serviceId = assertServiceId(input.serviceId);
+    return this.runOperation(
+      `docker service update --detach=false --force ${sq(serviceId)}`,
+      "Docker could not restart the Swarm service.",
+    );
+  }
+
+  async getServiceLogs(input: SwarmServiceLogsInput): Promise<SwarmServiceLogResult> {
+    const { command, timestamps } = logCommand(input);
+    try {
+      const output = await this.executor.exec(command, { timeout: Math.max(this.timeoutMs, 30_000) });
+      return {
+        entries: output
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .slice(-1_000)
+          .map((line) => parseServiceLogLine(line, timestamps)),
+      };
+    } catch {
+      throw new SwarmDeployError(
+        "Docker could not read this service's logs. Its logging driver may not support manager-side reads.",
+      );
+    }
+  }
+
+  streamServiceLogs(
+    input: SwarmServiceLogsInput,
+    onEntry: (entry: SwarmServiceLogEntry) => void,
+  ): SwarmServiceLogStream {
+    if (!this.executor.streamExec) {
+      throw new SwarmDeployError("This manager transport cannot stream Docker service logs.");
+    }
+    const { command, timestamps } = logCommand(input, true);
+    const controller = new AbortController();
+    let buffer = "";
+    const emit = (line: string) => {
+      if (line.length > 0) onEntry(parseServiceLogLine(line, timestamps));
+    };
+    const done = this.executor.streamExec(command, (entry: LogEntry) => {
+      buffer += entry.message;
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) emit(line);
+    }, { signal: controller.signal })
+      .then(({ code }) => {
+        if (buffer) emit(buffer);
+        if (code !== 0 && !controller.signal.aborted) {
+          throw new SwarmDeployError(
+            "Docker stopped the log stream. Its logging driver may not support manager-side follow.",
+          );
+        }
+      });
+    return {
+      done,
+      stop: () => controller.abort(),
+    };
+  }
+
+  async removeStack(input: RemoveSwarmStackInput): Promise<SwarmServiceOperation> {
+    const stackName = assertDeployStackName(input.stackName);
+    return this.runOperation(
+      `docker stack rm ${sq(stackName)}`,
+      "Docker could not remove the Swarm stack.",
+    );
+  }
+
+  private async runOperation(command: string, failure: string): Promise<SwarmServiceOperation> {
+    try {
+      return { output: boundedOutput(await this.executor.exec(command, { timeout: Math.max(this.timeoutMs, 120_000) })) };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message.replace(/\s+/g, " ").trim() : "";
+      throw new SwarmDeployError(detail ? `${failure} ${detail.slice(0, 1_000)}` : failure);
     }
   }
 

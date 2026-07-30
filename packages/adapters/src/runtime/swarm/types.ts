@@ -24,6 +24,16 @@ export interface StackRuntimeAdapter {
   renderStack(input: RenderStackInput): Promise<RenderedStack>;
   /** Applies a reviewed, non-interpolated document through the manager. */
   deployStack(input: DeployStackInput): Promise<DeployedStack>;
+  /** Mutates one already-owned scheduler service without treating it as a container. */
+  scaleService(input: ScaleSwarmServiceInput): Promise<SwarmServiceOperation>;
+  /** Recreates tasks using the service's existing Swarm update policy. */
+  restartService(input: RestartSwarmServiceInput): Promise<SwarmServiceOperation>;
+  /** Reads bounded logs for one scheduler service or a verified task. */
+  getServiceLogs(input: SwarmServiceLogsInput): Promise<SwarmServiceLogResult>;
+  /** Follows scheduler service logs until the caller stops the stream. */
+  streamServiceLogs(input: SwarmServiceLogsInput, onEntry: (entry: SwarmServiceLogEntry) => void): SwarmServiceLogStream;
+  /** Removes a stack after callers preflight stack-owned persistent objects. */
+  removeStack(input: RemoveSwarmStackInput): Promise<SwarmServiceOperation>;
   /** The platform owns any shared SSH executor; this adapter has no implicit teardown. */
   dispose?(): Promise<void>;
 }
@@ -77,6 +87,60 @@ export interface DeployedStack {
   output: string;
 }
 
+export interface ScaleSwarmServiceInput {
+  /** Engine service ID obtained from a fresh manager discovery. */
+  serviceId: string;
+  replicas: number;
+}
+
+export interface RestartSwarmServiceInput {
+  /** Engine service ID obtained from a fresh manager discovery. */
+  serviceId: string;
+}
+
+export interface SwarmServiceLogsInput {
+  /** Engine service ID, or a task ID after the caller has verified ownership. */
+  serviceId: string;
+  /** Optional task ID scopes output to exactly one task. */
+  taskId?: string;
+  /** Docker's bounded historical line count. */
+  tail?: number;
+  /** Docker-compatible RFC3339 timestamp or duration accepted by `--since`. */
+  since?: string;
+  /** Preserve Docker timestamps when present. Defaults to true. */
+  timestamps?: boolean;
+}
+
+export interface SwarmServiceLogEntry {
+  /** Docker's original (but caller-redactable) formatted line. */
+  raw: string;
+  timestamp: string | null;
+  message: string;
+  serviceName: string | null;
+  taskId: string | null;
+  nodeName: string | null;
+}
+
+export interface SwarmServiceLogResult {
+  entries: SwarmServiceLogEntry[];
+}
+
+export interface SwarmServiceLogStream {
+  /** Resolves when Docker stops producing logs or the caller invokes stop. */
+  done: Promise<void>;
+  /** Cancels the manager-side follow command. Safe to call repeatedly. */
+  stop: () => void;
+}
+
+export interface RemoveSwarmStackInput {
+  stackName: string;
+}
+
+/** Bounded, safe command output suitable for an operational timeline. */
+export interface SwarmServiceOperation {
+  output: string;
+}
+
 export interface SwarmDiscoveryDiagnostic {
   resource: "nodes" | "services" | "tasks" | "networks" | "volumes" | "configs" | "secrets";
   message: string;
@@ -116,6 +180,8 @@ export interface SwarmServiceState {
   mode: SwarmServiceMode;
   desiredReplicas: number | null;
   image: string | null;
+  /** Task-level Docker logging driver name, never driver configuration. */
+  loggingDriver?: string | null;
   /** Names only from ContainerSpec.Env; values never cross the adapter boundary. */
   environmentKeys?: string[];
   /** Safe healthcheck metadata. Commands are deliberately omitted. */

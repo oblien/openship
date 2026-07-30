@@ -189,6 +189,11 @@ const responseLostRuntime: StackRuntimeAdapter = {
     await runtime.deployStack(input);
     throw new Error("connection lost after manager accepted stack deploy");
   },
+  scaleService: (input) => runtime.scaleService(input),
+  restartService: (input) => runtime.restartService(input),
+  getServiceLogs: (input) => runtime.getServiceLogs(input),
+  streamServiceLogs: (input, onEntry) => runtime.streamServiceLogs(input, onEntry),
+  removeStack: (input) => runtime.removeStack(input),
 };
 const responseLostDeploy = createSwarmDeployService({
   featureEnabled: () => true,

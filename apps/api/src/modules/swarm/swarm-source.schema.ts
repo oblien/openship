@@ -43,6 +43,21 @@ export const ClaimSwarmStackBody = Type.Object({
 
 export type TClaimSwarmStackBody = Static<typeof ClaimSwarmStackBody>;
 
+/** An explicit runtime replica override, optionally persisted into inline source. */
+export const ScaleSwarmServiceBody = Type.Object({
+  replicas: Type.Integer({ minimum: 0, maximum: 10_000 }),
+  persistence: Type.Union([Type.Literal("temporary"), Type.Literal("inline-source")]),
+});
+
+export type TScaleSwarmServiceBody = Static<typeof ScaleSwarmServiceBody>;
+
+/** Typed-name confirmation before removing an entire managed stack. */
+export const RemoveSwarmStackBody = Type.Object({
+  confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),
+});
+
+export type TRemoveSwarmStackBody = Static<typeof RemoveSwarmStackBody>;
+
 /** Bind an as-yet absent stack name to an existing OpenShip project. */
 export const CreateSwarmStackBindingBody = Type.Object({
   serverId: Type.String({ minLength: 1 }),

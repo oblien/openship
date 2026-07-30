@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, getApiBaseUrl } from "./client";
 
 export type SwarmHealthState =
   | "ready"
@@ -109,8 +109,16 @@ export interface SwarmStackDetail {
     name: string;
     sourceServiceName: string;
     mode: string;
+    specVersion: number | null;
     desiredReplicas: number | null;
     image: string | null;
+    loggingDriver?: string | null;
+    endpointMode: string | null;
+    networks: string[];
+    volumes?: string[];
+    configs: string[];
+    secrets: string[];
+    publishedPorts: Array<{ target: number; published: number | null; protocol: string; mode: string }>;
     updateState: string | null;
     updateMessage: string | null;
   }>;
@@ -124,6 +132,7 @@ export interface SwarmObservation {
   managerServerId: string | null;
   clusterId: string;
   managementMode: "observe" | "managed";
+  revisionId: string | null;
   source: {
     kind: "repository" | "inline" | "adopted";
     status: "missing" | "linked-unvalidated" | "valid" | "invalid";
@@ -135,6 +144,61 @@ export interface SwarmObservation {
     lastObservedAt: string | null;
     digest: string | null;
   };
+}
+
+export interface SwarmScaleResult {
+  serviceName: string;
+  replicas: number;
+  persistence: "temporary" | "inline-source";
+  sourcePersisted: boolean;
+  sourcePersistenceWarning?: string;
+  state: "ready" | "failed" | "reconciling";
+  output: string;
+}
+
+export interface SwarmRestartResult {
+  serviceName: string;
+  serviceId: string;
+  previousTaskIds: string[];
+  state: "ready" | "failed" | "reconciling";
+  output: string;
+}
+
+export interface SwarmRemoveResult {
+  stackName: string;
+  affectedServices: string[];
+  state: "removed" | "reconciling";
+  attempts: number;
+  remainingServices?: string[];
+  output: string;
+}
+
+export interface SwarmLogEntry {
+  raw: string;
+  timestamp: string | null;
+  message: string;
+  serviceName: string | null;
+  taskId: string | null;
+  nodeName: string | null;
+  level: "info" | "warn" | "error";
+}
+
+export interface SwarmServiceLogsResult {
+  serviceName: string;
+  taskId?: string;
+  loggingDriver: string | null;
+  entries: SwarmLogEntry[];
+}
+
+export type SwarmLogOptions = {
+  taskId?: string;
+  tail?: number;
+  since?: string;
+  timestamps?: boolean;
+};
+
+function serviceLogPath(projectId: string, serviceName: string): string {
+  return `projects/${projectId}/swarm/services/${encodeURIComponent(serviceName)}/logs`;
 }
 
 export const swarmApi = {
@@ -155,4 +219,30 @@ export const swarmApi = {
       `projects/${projectId}/swarm/observation/refresh`,
       {},
     ),
+  scaleService: (
+    projectId: string,
+    serviceName: string,
+    input: { replicas: number; persistence: "temporary" | "inline-source" },
+  ) =>
+    api.post<SwarmScaleResult>(
+      `projects/${projectId}/swarm/services/${encodeURIComponent(serviceName)}/scale`,
+      input,
+    ),
+  restartService: (projectId: string, serviceName: string) =>
+    api.post<SwarmRestartResult>(
+      `projects/${projectId}/swarm/services/${encodeURIComponent(serviceName)}/restart`,
+      {},
+    ),
+  removeStack: (projectId: string, confirmedStackName: string) =>
+    api.post<SwarmRemoveResult>(`projects/${projectId}/swarm/remove`, { confirmedStackName }),
+  serviceLogs: (projectId: string, serviceName: string, options: SwarmLogOptions = {}) =>
+    api.get<{ data: SwarmServiceLogsResult }>(serviceLogPath(projectId, serviceName), { params: options })
+      .then((response) => response.data),
+  serviceLogStreamUrl: (projectId: string, serviceName: string, options: SwarmLogOptions = {}) => {
+    const url = new URL(`${serviceLogPath(projectId, serviceName)}/stream`, getApiBaseUrl());
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
+    return url.toString();
+  },
 };

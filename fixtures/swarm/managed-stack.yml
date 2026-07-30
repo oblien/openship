@@ -10,8 +10,22 @@ services:
 
   worker:
     image: alpine:3.21
-    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    command: ["sh", "-c", "while true; do echo openship-swarm-worker-alive; sleep 2; done"]
+    configs:
+      - source: openship_lab_config
+        target: /run/config/openship-lab
+    secrets:
+      - source: openship_lab_secret
+        target: openship-lab-secret
     deploy:
       replicas: 1
       update_config:
         monitor: 1ms
+
+configs:
+  openship_lab_config:
+    external: true
+
+secrets:
+  openship_lab_secret:
+    external: true

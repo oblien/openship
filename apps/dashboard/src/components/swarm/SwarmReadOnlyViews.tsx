@@ -65,7 +65,7 @@ export function SwarmNodesTable({ nodes }: { nodes: SwarmNode[] }) {
   );
 }
 
-export function SwarmTasksTable({ tasks }: { tasks: SwarmTask[] }) {
+export function SwarmTasksTable({ tasks, onLogs }: { tasks: SwarmTask[]; onLogs?: (task: SwarmTask) => void }) {
   if (tasks.length === 0) {
     return <p className="py-6 text-center text-sm text-muted-foreground">No current tasks were returned for this stack.</p>;
   }
@@ -79,6 +79,7 @@ export function SwarmTasksTable({ tasks }: { tasks: SwarmTask[] }) {
             <th className="px-4 py-3">Node</th>
             <th className="px-4 py-3">Current state</th>
             <th className="px-4 py-3">Desired</th>
+            {onLogs && <th className="px-4 py-3">Logs</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-border/40">
@@ -92,6 +93,7 @@ export function SwarmTasksTable({ tasks }: { tasks: SwarmTask[] }) {
                 {task.error && <p className="mt-1 max-w-64 text-xs text-danger">{task.error}</p>}
               </td>
               <td className="px-4 py-3 text-muted-foreground">{task.desiredState}</td>
+              {onLogs && <td className="px-4 py-3"><button type="button" onClick={() => onLogs(task)} className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted">Logs</button></td>}
             </tr>
           ))}
         </tbody>

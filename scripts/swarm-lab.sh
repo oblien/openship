@@ -16,10 +16,12 @@ manager="openship-swarm-lab-manager"
 worker="openship-swarm-lab-worker"
 fixture_stack="openship-swarm-fixture"
 managed_stack="openship-swarm-managed-fixture"
+managed_config="openship_lab_config"
+managed_secret="openship_lab_secret"
 manager_host="tcp://127.0.0.1:23750"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -64,6 +66,22 @@ wait_for_stack_removal() {
     fi
     sleep 1
   done
+}
+
+ensure_managed_persistent_objects() {
+  if ! docker -H "$manager_host" config inspect "$managed_config" >/dev/null 2>&1; then
+    printf '%s\n' 'openship managed lab config' | docker -H "$manager_host" config create "$managed_config" - >/dev/null
+  fi
+  if ! docker -H "$manager_host" secret inspect "$managed_secret" >/dev/null 2>&1; then
+    # The disposable value never enters process output; only presence is later
+    # asserted through metadata-only discovery.
+    printf '%s\n' 'openship-managed-lab-secret-value' | docker -H "$manager_host" secret create "$managed_secret" - >/dev/null
+  fi
+}
+
+remove_managed_persistent_objects() {
+  docker -H "$manager_host" config rm "$managed_config" >/dev/null 2>&1 || true
+  docker -H "$manager_host" secret rm "$managed_secret" >/dev/null 2>&1 || true
 }
 
 start_lab() {
@@ -158,7 +176,14 @@ case "${1:-}" in
     require_docker
     require_lab
     command -v bun >/dev/null 2>&1 || { echo "bun is required for the managed deploy proof" >&2; exit 1; }
+    ensure_managed_persistent_objects
     INTERNAL_TOKEN="openship-swarm-managed-proof-internal-token-0001" DOCKER_HOST="$manager_host" OPENSHIP_SWARM_MANAGED_STACK="$managed_stack" bun "$repo_root/scripts/swarm-managed-deploy-harness.ts"
+    ;;
+  operations-proof)
+    require_docker
+    require_lab
+    command -v bun >/dev/null 2>&1 || { echo "bun is required for the managed operations proof" >&2; exit 1; }
+    INTERNAL_TOKEN="openship-swarm-managed-operations-proof-internal-token-0001" DOCKER_HOST="$manager_host" OPENSHIP_SWARM_MANAGED_STACK="$managed_stack" bun "$repo_root/scripts/swarm-managed-operations-harness.ts"
     ;;
   events)
     require_docker
@@ -179,6 +204,7 @@ case "${1:-}" in
     docker -H "$manager_host" stack rm "$managed_stack" || true
     wait_for_stack_removal "$fixture_stack"
     wait_for_stack_removal "$managed_stack"
+    remove_managed_persistent_objects
     ;;
   down)
     require_docker

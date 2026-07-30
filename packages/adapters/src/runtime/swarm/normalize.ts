@@ -205,6 +205,7 @@ export function normalizeSwarmService(value: unknown): SwarmServiceState {
   const spec = asRecord(service?.Spec);
   const task = asRecord(spec?.TaskTemplate);
   const container = asRecord(task?.ContainerSpec);
+  const logDriver = asRecord(task?.LogDriver);
   const endpoint = asRecord(spec?.EndpointSpec);
   const update = asRecord(service?.UpdateStatus);
   const serviceLabels = labels(spec?.Labels);
@@ -231,6 +232,7 @@ export function normalizeSwarmService(value: unknown): SwarmServiceState {
     mode: serviceMode(spec?.Mode),
     desiredReplicas: integer(replicated?.Replicas) ?? integer(replicatedJob?.TotalCompletions),
     image: text(container?.Image),
+    loggingDriver: text(logDriver?.Name),
     ...(environmentKeys(container?.Env).length
       ? { environmentKeys: environmentKeys(container?.Env) }
       : {}),

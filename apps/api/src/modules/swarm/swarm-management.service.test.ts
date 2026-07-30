@@ -13,7 +13,7 @@ const stack = {
 const snapshot: SwarmDiscoverySnapshot = {
   manager: { engineVersion: null, apiVersion: null, localNodeState: "active", controlAvailable: true, clusterId: "cluster-a", nodeId: "node-a", nodeAddress: null, managerAddress: null },
   nodes: [], stacks: [{ name: "blog", serviceIds: ["service-web"], serviceNames: ["web"] }],
-  services: [{ id: "service-web", name: "blog_web", sourceServiceName: "web", stackName: "blog", specVersion: 1, mode: "replicated", desiredReplicas: 1, image: "nginx:1.27-alpine", labels: {}, endpointMode: null, placement: null, resources: null, updateConfig: null, rollbackConfig: null, restartPolicy: null, networks: [], configs: [], secrets: [], publishedPorts: [], updateState: null, updateMessage: null }],
+  services: [{ id: "service-web", name: "blog_web", sourceServiceName: "web", stackName: "blog", specVersion: 1, mode: "replicated", desiredReplicas: 1, image: "nginx:1.27-alpine", loggingDriver: null, labels: {}, endpointMode: null, placement: null, resources: null, updateConfig: null, rollbackConfig: null, restartPolicy: null, networks: [], configs: [], secrets: [], publishedPorts: [], updateState: null, updateMessage: null }],
   tasks: [], networks: [], volumes: [], configs: [], secrets: [], diagnostics: [], observedAt: "2026-07-30T00:00:00.000Z",
 };
 
