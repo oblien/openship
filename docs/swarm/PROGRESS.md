@@ -717,3 +717,27 @@ Next:
 
 - Add encrypted OCI registry credentials and the source-build image
   publish/digest workflow (Phase 9).
+
+## S9.1: Encrypted OCI registry credentials
+
+Status: in-progress
+Commit: pending
+Tests run:
+
+- TypeScript checks for `packages/db`, `apps/api`, and `apps/dashboard` — passed.
+
+Evidence:
+
+- The existing organization-scoped registry table now has a complete safe API:
+  list/create/update/delete/test. Credential writes use the established
+  encryption envelope; every read returns a `hasCredentials` flag only.
+- Registry hosts and repository prefixes are normalized before persistence.
+  Connection checks use a bounded V2 request, retain a generic outcome only,
+  and never include the token in an API response, audit event, or error text.
+- The dashboard API client has the corresponding typed write-only credential
+  shape. Stack attachment and the source-build/push flow remain next.
+
+Next:
+
+- Attach a selected registry to a Swarm stack and add the dashboard management
+  panel, then implement manager-scoped temporary auth and digest-pinned pushes.

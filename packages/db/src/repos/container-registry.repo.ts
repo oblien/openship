@@ -40,5 +40,13 @@ export function createContainerRegistryRepo(db: Database) {
         .returning();
       return row;
     },
+
+    async deleteInOrganization(id: string, organizationId: string): Promise<boolean> {
+      const rows = await db
+        .delete(containerRegistry)
+        .where(and(eq(containerRegistry.id, id), eq(containerRegistry.organizationId, organizationId)))
+        .returning();
+      return rows.length > 0;
+    },
   };
 }

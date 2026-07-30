@@ -48,6 +48,8 @@ export { githubApi } from "./github";
 export { iconsApi } from "./icons";
 export { imagesApi } from "./images";
 export type { ImageCatalogEntry, ListImagesResponse } from "./images";
+export { registriesApi } from "./registries";
+export type { ContainerRegistry, ContainerRegistryInput } from "./registries";
 export { aiApi } from "./ai";
 export { sandboxApi } from "./sandbox";
 export { systemApi } from "./system";
@@ -110,8 +112,11 @@ export type {
   SwarmLogOptions,
   SwarmNode,
   SwarmObservation,
+  SwarmSourcePreview,
   SwarmServiceLogsResult,
+  SwarmStackHandoff,
   SwarmStackDetail,
+  SwarmStackSource,
   SwarmStackView,
   SwarmSummary,
   SwarmTask,
