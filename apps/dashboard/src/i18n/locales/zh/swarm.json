@@ -1,0 +1,35 @@
+{
+  "deployment": {
+    "phases": {
+      "source": "解析源文件",
+      "validate": "验证",
+      "build": "构建",
+      "push": "推送镜像",
+      "apply": "应用堆栈",
+      "converge": "验证收敛",
+      "route": "路由",
+      "reconcile": "协调"
+    },
+    "rollbackConfirm": "要回滚到 Swarm 修订版本 {revision} 吗？OpenShip 将部署其不可变的已渲染配置并验证收敛状态。",
+    "rollback": "回滚到此修订版本",
+    "redeploy": "重新部署当前源文件"
+  },
+  "connection": {
+    "title": "集群连接",
+    "probe": "探测管理节点",
+    "rebind": "重新绑定管理节点",
+    "rebindLabel": "重新绑定管理节点",
+    "chooseServer": "选择现有的 OpenShip 服务器",
+    "confirmRebind": "要将此项目重新绑定到 {target} 吗？OpenShip 会在保存前验证管理节点访问权限和相同的集群 ID。",
+    "rebindSuccess": "管理节点绑定已更新为 {endpoint}。",
+    "configuredEndpoint": "已配置端点",
+    "managerHealth": "管理节点健康状态",
+    "controlAvailability": "控制可用性",
+    "expectedCluster": "预期集群",
+    "reportedCluster": "报告的集群",
+    "managerNode": "管理节点",
+    "lastSuccessfulProbe": "上次成功探测",
+    "lastError": "上次错误",
+    "nodeInventory": "只读节点清单"
+  }
+}

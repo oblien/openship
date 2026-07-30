@@ -1,0 +1,35 @@
+{
+  "deployment": {
+    "phases": {
+      "source": "Kaynağı çöz",
+      "validate": "Doğrula",
+      "build": "Derle",
+      "push": "İmajı gönder",
+      "apply": "Yığını uygula",
+      "converge": "Yakınsamayı doğrula",
+      "route": "Yönlendir",
+      "reconcile": "Uzlaştır"
+    },
+    "rollbackConfirm": "Swarm düzeltmesi {revision} sürümüne geri dönülsün mü? OpenShip değiştirilemez işlenmiş yapılandırmasını dağıtacak ve yakınsamayı doğrulayacak.",
+    "rollback": "Bu düzeltmeye geri dön",
+    "redeploy": "Geçerli kaynağı yeniden dağıt"
+  },
+  "connection": {
+    "title": "Küme bağlantısı",
+    "probe": "Yöneticiyi sına",
+    "rebind": "Yöneticiyi yeniden bağla",
+    "rebindLabel": "Yöneticiyi yeniden bağla",
+    "chooseServer": "Mevcut bir OpenShip sunucusu seçin",
+    "confirmRebind": "Bu proje {target} hedefine yeniden bağlansın mı? OpenShip kaydetmeden önce yönetici erişimini ve aynı küme kimliğini doğrulayacak.",
+    "rebindSuccess": "Yönetici bağlaması {endpoint} olarak güncellendi.",
+    "configuredEndpoint": "Yapılandırılmış uç nokta",
+    "managerHealth": "Yönetici sağlığı",
+    "controlAvailability": "Denetim kullanılabilirliği",
+    "expectedCluster": "Beklenen küme",
+    "reportedCluster": "Bildirilen küme",
+    "managerNode": "Yönetici düğümü",
+    "lastSuccessfulProbe": "Son başarılı sınama",
+    "lastError": "Son hata",
+    "nodeInventory": "Salt okunur düğüm envanteri"
+  }
+}

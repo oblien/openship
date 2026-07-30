@@ -1,0 +1,35 @@
+{
+  "deployment": {
+    "phases": {
+      "source": "Resolver fonte",
+      "validate": "Validar",
+      "build": "Compilar",
+      "push": "Enviar imagem",
+      "apply": "Aplicar pilha",
+      "converge": "Verificar convergência",
+      "route": "Roteamento",
+      "reconcile": "Reconciliar"
+    },
+    "rollbackConfirm": "Reverter para a revisão do Swarm {revision}? O OpenShip implantará a configuração renderizada imutável e verificará a convergência.",
+    "rollback": "Reverter para esta revisão",
+    "redeploy": "Implantar novamente a fonte atual"
+  },
+  "connection": {
+    "title": "Conexão do cluster",
+    "probe": "Testar gerenciador",
+    "rebind": "Vincular gerenciador novamente",
+    "rebindLabel": "Vincular gerenciador novamente",
+    "chooseServer": "Escolher um servidor OpenShip existente",
+    "confirmRebind": "Vincular este projeto novamente a {target}? O OpenShip verificará o acesso do gerenciador e o mesmo ID de cluster antes de salvar.",
+    "rebindSuccess": "Vínculo do gerenciador atualizado para {endpoint}.",
+    "configuredEndpoint": "Endpoint configurado",
+    "managerHealth": "Estado do gerenciador",
+    "controlAvailability": "Disponibilidade de controle",
+    "expectedCluster": "Cluster esperado",
+    "reportedCluster": "Cluster informado",
+    "managerNode": "Nó do gerenciador",
+    "lastSuccessfulProbe": "Último teste bem-sucedido",
+    "lastError": "Último erro",
+    "nodeInventory": "Inventário de nós somente leitura"
+  }
+}

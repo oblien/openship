@@ -28,6 +28,8 @@ import {
 } from "@/lib/api";
 import { useDeployment } from "@/context/DeploymentContext";
 import { shortId } from "@/components/swarm/SwarmReadOnlyViews";
+import { interpolate, useI18n } from "@/components/i18n-provider";
+import { Modal } from "@/components/ui/Modal";
 
 type LiveStackState = {
   observation: SwarmObservation;
@@ -37,17 +39,17 @@ type LiveStackState = {
 
 const PHASES: ReadonlyArray<{
   id: "swarm-source" | "swarm-render" | "swarm-build" | "swarm-push" | "swarm-apply" | "swarm-converge" | "swarm-route" | "swarm-reconcile";
-  label: string;
+  labelKey: "source" | "validate" | "build" | "push" | "apply" | "converge" | "route" | "reconcile";
   optional?: boolean;
 }> = [
-  { id: "swarm-source", label: "Resolve source" },
-  { id: "swarm-render", label: "Validate" },
-  { id: "swarm-build", label: "Build", optional: true },
-  { id: "swarm-push", label: "Push image", optional: true },
-  { id: "swarm-apply", label: "Apply stack" },
-  { id: "swarm-converge", label: "Converge" },
-  { id: "swarm-route", label: "Route" },
-  { id: "swarm-reconcile", label: "Reconcile", optional: true },
+  { id: "swarm-source", labelKey: "source" },
+  { id: "swarm-render", labelKey: "validate" },
+  { id: "swarm-build", labelKey: "build", optional: true },
+  { id: "swarm-push", labelKey: "push", optional: true },
+  { id: "swarm-apply", labelKey: "apply" },
+  { id: "swarm-converge", labelKey: "converge" },
+  { id: "swarm-route", labelKey: "route" },
+  { id: "swarm-reconcile", labelKey: "reconcile", optional: true },
 ] as const;
 
 function formatDuration(value?: number): string {
@@ -95,6 +97,7 @@ export default function SwarmDeploymentProcessing({
   onRedeploy: () => void | Promise<string | null>;
 }) {
   const router = useRouter();
+  const { t } = useI18n();
   const { state } = useDeployment();
   const deploymentId = state.deploymentId;
   const [status, setStatus] = useState<SwarmBuildStatus | null>(null);
@@ -102,6 +105,7 @@ export default function SwarmDeploymentProcessing({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
+  const [confirmingRollback, setConfirmingRollback] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (silent = false) => {
@@ -155,10 +159,11 @@ export default function SwarmDeploymentProcessing({
   const allPhases = useMemo(
     () => PHASES.map((phase) => ({
       ...phase,
+      label: t.swarm.deployment.phases[phase.labelKey],
       status: phaseStates[phase.id],
       duration: status?.phaseDurations[phase.id],
     })),
-    [phaseStates, status?.phaseDurations],
+    [phaseStates, status?.phaseDurations, t.swarm.deployment.phases],
   );
   const deploymentStatus = status?.deploymentStatus ?? (state.isDeploying ? "deploying" : "queued");
   const isTerminalFailure = deploymentStatus === "failed" || deploymentStatus === "cancelled";
@@ -166,13 +171,13 @@ export default function SwarmDeploymentProcessing({
 
   const rollback = async () => {
     if (!deploymentId || !status?.swarm?.revision || rollingBack) return;
-    if (!window.confirm(`Roll back to Swarm revision ${status.swarm.revision.revision}? OpenShip will deploy its immutable rendered configuration and verify convergence.`)) return;
     setRollingBack(true);
     try {
       const result = await deployApi.rollback(deploymentId);
       const nextId = result?.data?.id as string | undefined;
       if (nextId) router.push(`/build/${nextId}`);
       else await load(true);
+      setConfirmingRollback(false);
     } catch (cause) {
       setError(getApiErrorMessage(cause, "Unable to start the Swarm rollback."));
     } finally {
@@ -236,7 +241,7 @@ export default function SwarmDeploymentProcessing({
         <section className="rounded-2xl border border-border/50 bg-card p-5">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-foreground">Service convergence and placement</h2><p className="mt-1 text-sm text-muted-foreground">Live manager state, not task-container guesses.</p></div>{live?.detail && <span className="rounded-full bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">{live.detail.services.length} services</span>}</div>
           {!live?.detail ? <div className="mt-4 space-y-2">{(status?.swarm?.services.length ?? 0) > 0 ? status!.swarm!.services.map((service) => <div key={service.serviceId} className="rounded-xl border border-border/50 p-3"><div className="flex items-center justify-between gap-3"><p className="font-medium text-foreground">{service.serviceName || shortId(service.serviceId)}</p><p className={`text-xs ${service.status === "failure" ? "text-danger" : "text-muted-foreground"}`}>{service.status}</p></div>{service.errorMessage && <p className="mt-2 text-xs text-danger">{service.errorMessage}</p>}</div>) : <p className="rounded-xl border border-border/50 bg-muted/[0.16] px-3 py-3 text-sm text-muted-foreground">No live services are currently reported for this namespace. This is expected before the first apply or while the manager is unavailable.</p>}</div> : <div className="mt-4 space-y-2">{live.detail.services.map((service) => {
-            const placement = taskPlacement(service.id, live.detail.tasks);
+            const placement = taskPlacement(service.id, live.detail!.tasks);
             const recorded = status?.swarm?.services.find((item) => item.serviceName === service.sourceServiceName);
             const error = recorded?.errorMessage || placement.errors[0];
             return <div key={service.id} className="rounded-xl border border-border/50 p-3"><div className="flex flex-wrap items-center justify-between gap-3"><div className="min-w-0"><p className="font-medium text-foreground">{service.sourceServiceName}</p><p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{service.image || recorded?.imageDigest || recorded?.imageRef || "No image reported"}</p><p className="mt-1 text-xs text-muted-foreground">Nodes: {placement.nodes.join(", ") || "pending placement"}</p></div><div className="text-right"><p className="text-sm font-medium text-foreground">{placement.running}/{placement.desired || service.desiredReplicas || "?"} running</p><p className={`mt-1 text-xs ${placement.state === "ready" ? "text-success" : placement.state === "failed" ? "text-danger" : "text-warning"}`}>{placement.state === "failed" ? `${placement.failureKind} failure` : placement.state}{placement.failed > 0 ? ` · ${placement.failed} failed` : ""}</p></div></div>{error && <p className="mt-2 text-xs text-danger">{error}</p>}</div>;
@@ -246,10 +251,17 @@ export default function SwarmDeploymentProcessing({
 
       <aside className="space-y-6">
         <section className="rounded-2xl border border-border/50 bg-card p-5"><div className="flex items-center gap-2"><Boxes className="size-4 text-muted-foreground" /><h2 className="font-semibold text-foreground">Stack target</h2></div><dl className="mt-4 space-y-3 text-sm"><DetailRow label="Stack" value={status?.swarm?.stackName || live?.observation.stackName || "—"} mono /><DetailRow label="Ownership" value={status?.swarm?.managementMode === "managed" ? "OpenShip managed" : "Read-only / observed"} /><DetailRow label="Cluster" value={status?.swarm?.clusterId ? shortId(status.swarm.clusterId) : "—"} mono /><DetailRow label="Manager" value={status?.swarm?.managerServerId ? shortId(status.swarm.managerServerId) : "—"} mono /><DetailRow label="Routing" value={status?.swarm?.revision?.routingMode === "openship-edge" ? "OpenShip Edge" : "External"} /></dl></section>
-        <section className="rounded-2xl border border-border/50 bg-card p-5"><h2 className="font-semibold text-foreground">Actions</h2><div className="mt-4 space-y-2"><button type="button" onClick={() => void onRedeploy()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"><RefreshCw className="size-3.5" />Redeploy current source</button>{canRollback && <button type="button" disabled={rollingBack} onClick={() => void rollback()} className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60">{rollingBack ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}Roll back to this revision</button>}<p className="pt-1 text-xs leading-relaxed text-muted-foreground">Rollback reapplies this immutable rendered revision; it does not load editable source or delete persistent volumes.</p></div></section>
+        <section className="rounded-2xl border border-border/50 bg-card p-5"><h2 className="font-semibold text-foreground">Actions</h2><div className="mt-4 space-y-2"><button type="button" onClick={() => void onRedeploy()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"><RefreshCw className="size-3.5" />{t.swarm.deployment.redeploy}</button>{canRollback && <button type="button" disabled={rollingBack} onClick={() => setConfirmingRollback(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60">{rollingBack ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}{t.swarm.deployment.rollback}</button>}<p className="pt-1 text-xs leading-relaxed text-muted-foreground">Rollback reapplies this immutable rendered revision; it does not load editable source or delete persistent volumes.</p></div></section>
         {deploymentStatus === "reconciling" && <section className="rounded-2xl border border-warning/25 bg-warning/5 p-5"><div className="flex items-start gap-3"><CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" /><div><h2 className="font-semibold text-foreground">Waiting for manager truth</h2><p className="mt-1 text-sm text-muted-foreground">OpenShip will re-read stack services and settle this deployment without issuing speculative rollback or removal commands.</p></div></div></section>}
       </aside>
     </div>
+    <Modal isOpen={confirmingRollback} onClose={() => setConfirmingRollback(false)} ariaLabel={t.swarm.deployment.rollback}>
+      <div className="p-6">
+        <h2 className="text-lg font-semibold text-foreground">{t.swarm.deployment.rollback}</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{status?.swarm?.revision ? interpolate(t.swarm.deployment.rollbackConfirm, { revision: String(status.swarm.revision.revision) }) : ""}</p>
+        <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setConfirmingRollback(false)} className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted">Cancel</button><button type="button" data-autofocus disabled={rollingBack} onClick={() => void rollback()} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{rollingBack && <Loader2 className="size-3.5 animate-spin" />}{t.swarm.deployment.rollback}</button></div>
+      </div>
+    </Modal>
   </main>;
 }
 

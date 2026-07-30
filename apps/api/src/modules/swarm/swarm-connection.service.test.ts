@@ -93,10 +93,11 @@ function fixture(options: {
     resolvePlatform,
     service: createSwarmConnectionService({
       featureEnabled: () => true,
-      getStack: async () => current,
+      getStack: async (projectId, organizationId) =>
+        projectId === "project-blog" && organizationId === "org-a" ? current : undefined,
       getServer: async (serverId, organizationId) =>
         organizationId === "org-a" ? servers.find((server) => server.id === serverId) : undefined,
-      listServers: async () => servers,
+      listServers: async (organizationId) => organizationId === "org-a" ? servers : [],
       resolvePlatform: resolvePlatform as never,
       updateStack,
     }),
@@ -155,7 +156,7 @@ describe("Swarm manager connection", () => {
     expect(test.updateStack).not.toHaveBeenCalled();
   });
 
-  it("rejects a worker/non-manager candidate and cross-organization server IDs", async () => {
+  it("rejects a worker/non-manager candidate and cross-organization project IDs before probing a target", async () => {
     const worker = fixture({ candidateHasManager: false });
     await expect(worker.service.rebind({
       projectId: "project-blog",
@@ -165,11 +166,13 @@ describe("Swarm manager connection", () => {
     expect(worker.updateStack).not.toHaveBeenCalled();
 
     const test = fixture();
+    await expect(test.service.status("project-blog", "org-b")).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(test.service.rebind({
       projectId: "project-blog",
       organizationId: "org-b",
       serverId: "server-b",
     })).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(test.updateStack).not.toHaveBeenCalled();
+    expect(test.resolvePlatform).not.toHaveBeenCalled();
   });
 });

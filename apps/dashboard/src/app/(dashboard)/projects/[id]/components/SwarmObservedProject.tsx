@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Boxes, Download, Eye, FileText, Loader2, RefreshCw, Rocket, ScrollText, ShieldCheck, TriangleAlert, X } from "lucide-react";
 import { ApiError, deployApi, getApiErrorMessage, projectsApi, registriesApi, swarmApi, type ContainerRegistry, type SwarmLogEntry, type SwarmManagerConnection, type SwarmNode, type SwarmObservation, type SwarmSourcePreview, type SwarmStackDetail, type SwarmStackHandoff, type SwarmStackSource, type SwarmTask } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { interpolate, useI18n } from "@/components/i18n-provider";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Modal } from "@/components/ui/Modal";
 import { HealthBadge, formatObservedAt, shortId, SwarmNodesTable, SwarmTasksTable } from "@/components/swarm/SwarmReadOnlyViews";
 
 type StackData = {
@@ -34,6 +36,8 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
   const [scalingService, setScalingService] = useState<string | null>(null);
   const [restartingService, setRestartingService] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
+  const [removalConfirmation, setRemovalConfirmation] = useState("");
   const [sourceEditor, setSourceEditor] = useState<"inline" | "repository" | null>(null);
   const [inlineYaml, setInlineYaml] = useState("");
   const [repositoryPaths, setRepositoryPaths] = useState("");
@@ -295,26 +299,35 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
     }
   }, [data?.observation.stackName, downloadHandoff, load, projectId, showToast]);
 
-  const removeStack = useCallback(async () => {
+  const removeStack = useCallback(() => {
     const stackName = data?.observation.stackName;
     if (!stackName) return;
-    const confirmed = window.prompt(`This removes all managed services in ${stackName}. Persistent volumes, networks, configs, and secrets are preserved.\n\nType the exact stack name to continue.`);
-    if (confirmed === null) return;
+    setRemovalConfirmation("");
+    setConfirmingRemoval(true);
+  }, [data?.observation.stackName]);
+
+  const confirmRemoveStack = useCallback(async () => {
+    const stackName = data?.observation.stackName;
+    if (!stackName || removalConfirmation.trim() !== stackName) {
+      showToast("Enter the exact stack name to remove managed services.", "error", "Docker Swarm");
+      return;
+    }
     setRemoving(true);
     try {
-      const result = await swarmApi.removeStack(projectId, confirmed);
+      const result = await swarmApi.removeStack(projectId, stackName);
       showToast(
         result.state === "removed" ? `Removed ${result.stackName}. Persistent resources were preserved.` : `Removal was accepted for ${result.stackName}; manager confirmation is still pending.`,
         result.state === "removed" ? "success" : "info",
         "Docker Swarm",
       );
+      setConfirmingRemoval(false);
       await load();
     } catch (cause) {
       showToast(getApiErrorMessage(cause, "Unable to remove this managed stack."), "error", "Docker Swarm");
     } finally {
       setRemoving(false);
     }
-  }, [data?.observation.stackName, load, projectId, showToast]);
+  }, [data?.observation.stackName, load, projectId, removalConfirmation, showToast]);
 
   const restart = useCallback(async (service: NonNullable<StackData["detail"]>["services"][number]) => {
     if (!window.confirm(`Rolling restart ${service.sourceServiceName}? Swarm will recreate its tasks using the existing update policy.`)) return;
@@ -453,6 +466,33 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
           {data.observation.managementMode === "observe" && <section className="rounded-2xl border border-border/50 bg-card p-5"><div className="flex items-start gap-3"><div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><ShieldCheck className="size-4" /></div><div><h2 className="font-semibold text-foreground">Why actions are disabled</h2><p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">The stack may be managed through Portainer, Docker CLI, GitOps, or another controller. Leaving those actions unavailable prevents OpenShip from becoming a competing writer while you evaluate the integration.</p></div></div></section>}
         </div>
       )}
+      <Modal
+        isOpen={confirmingRemoval}
+        onClose={() => { if (!removing) setConfirmingRemoval(false); }}
+        closable={!removing}
+        showCloseButton={!removing}
+        ariaLabel="Remove managed stack"
+      >
+        <div className="p-6">
+          <h2 className="text-lg font-semibold text-foreground">Remove managed stack</h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">This removes every service managed by <strong className="font-semibold text-foreground">{data?.observation.stackName}</strong> from the selected Swarm manager. Persistent volumes, configs, secrets, networks, and externally managed resources are preserved.</p>
+          <label htmlFor="swarm-remove-stack-name" className="mt-5 block text-sm font-medium text-foreground">Type the exact stack name to confirm</label>
+          <input
+            id="swarm-remove-stack-name"
+            data-autofocus
+            value={removalConfirmation}
+            onChange={(event) => setRemovalConfirmation(event.target.value)}
+            disabled={removing}
+            autoComplete="off"
+            spellCheck={false}
+            className="mt-1.5 w-full rounded-lg border border-border bg-card px-3 py-2 font-mono text-sm text-foreground outline-none focus:border-danger disabled:opacity-60"
+          />
+          <div className="mt-5 flex justify-end gap-2">
+            <button type="button" disabled={removing} onClick={() => setConfirmingRemoval(false)} className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60">Cancel</button>
+            <button type="button" disabled={removing || removalConfirmation.trim() !== data?.observation.stackName} onClick={() => void confirmRemoveStack()} className="inline-flex items-center gap-2 rounded-lg bg-danger px-3 py-2 text-sm font-medium text-white hover:bg-danger/90 disabled:opacity-60">{removing && <Loader2 className="size-3.5 animate-spin" />}Remove stack</button>
+          </div>
+        </div>
+      </Modal>
     </PageContainer>
   );
 }
@@ -462,9 +502,12 @@ function ManagerConnectionPanel({ projectId, onRebound }: {
   onRebound: () => void | Promise<void>;
 }) {
   const { showToast } = useToast();
+  const { t } = useI18n();
+  const strings = t.swarm.connection;
   const [connection, setConnection] = useState<SwarmManagerConnection | null>(null);
   const [loading, setLoading] = useState(true);
   const [rebinding, setRebinding] = useState(false);
+  const [confirmingRebind, setConfirmingRebind] = useState(false);
   const [selectedServerId, setSelectedServerId] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -494,12 +537,17 @@ function ManagerConnectionPanel({ projectId, onRebound }: {
     if (!connection || !selectedServerId || rebinding) return;
     const candidate = connection.candidates.find((item) => item.id === selectedServerId);
     if (!candidate || candidate.isCurrent) return;
-    if (!window.confirm("Rebind this project to " + (candidate.name || candidate.endpoint) + "? OpenShip will prove manager access and the same cluster ID before saving.")) return;
+    setConfirmingRebind(true);
+  };
+
+  const confirmRebind = async () => {
+    if (!selectedServerId || rebinding) return;
     setRebinding(true);
     try {
       const result = await swarmApi.rebindManager(projectId, selectedServerId);
-      showToast("Manager binding updated to " + result.endpoint + ".", "success", "Docker Swarm");
+      showToast(interpolate(strings.rebindSuccess, { endpoint: result.endpoint }), "success", "Docker Swarm");
       await Promise.all([loadConnection(), onRebound()]);
+      setConfirmingRebind(false);
     } catch (cause) {
       showToast(getApiErrorMessage(cause, "The selected target could not be used as this stack's manager."), "error", "Docker Swarm");
     } finally {
@@ -508,6 +556,7 @@ function ManagerConnectionPanel({ projectId, onRebound }: {
   };
 
   const manager = connection?.manager;
+  const selectedCandidate = connection?.candidates.find((candidate) => candidate.id === selectedServerId);
   const healthy = manager?.health === "healthy";
   const stateClass = healthy
     ? "bg-success/10 text-success"
@@ -518,36 +567,46 @@ function ManagerConnectionPanel({ projectId, onRebound }: {
   return <section className="rounded-2xl border border-border/50 bg-card p-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h2 className="font-semibold text-foreground">Cluster connection</h2>
+        <h2 className="font-semibold text-foreground">{strings.title}</h2>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">This project uses one explicitly selected manager. OpenShip does not automatically fail over or route commands through multiple managers.</p>
       </div>
-      <button type="button" disabled={loading} onClick={() => void loadConnection()} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60">{loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Probe manager</button>
+      <button type="button" disabled={loading} onClick={() => void loadConnection()} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60">{loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{strings.probe}</button>
     </div>
     {error && <p role="alert" className="mt-4 rounded-xl border border-danger/25 bg-danger-bg/35 px-3 py-2 text-sm text-danger">{error}</p>}
     {manager && <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <ConnectionValue label="Configured endpoint" value={manager.server ? (manager.server.name || manager.server.endpoint) + " · " + manager.server.endpoint : "Missing server target"} />
-      <ConnectionValue label="Manager health" value={manager.health.replaceAll("-", " ")} valueClass={stateClass} />
-      <ConnectionValue label="Control availability" value={manager.controlAvailable === null ? "Unknown" : manager.controlAvailable ? "Available" : "Unavailable"} />
-      <ConnectionValue label="Expected cluster" value={shortId(connection?.expectedClusterId)} mono />
-      <ConnectionValue label="Reported cluster" value={shortId(manager.clusterId)} mono />
-      <ConnectionValue label="Manager node" value={manager.nodeId ? shortId(manager.nodeId) : "Not reported"} mono />
-      <ConnectionValue label="Last successful probe" value={formatObservedAt(manager.lastSuccessfulProbeAt)} />
-      <ConnectionValue label="Last error" value={manager.lastError || "None"} valueClass={manager.lastError ? "text-danger" : undefined} />
+      <ConnectionValue label={strings.configuredEndpoint} value={manager.server ? (manager.server.name || manager.server.endpoint) + " · " + manager.server.endpoint : "Missing server target"} />
+      <ConnectionValue label={strings.managerHealth} value={manager.health.replaceAll("-", " ")} valueClass={stateClass} />
+      <ConnectionValue label={strings.controlAvailability} value={manager.controlAvailable === null ? "Unknown" : manager.controlAvailable ? "Available" : "Unavailable"} />
+      <ConnectionValue label={strings.expectedCluster} value={shortId(connection?.expectedClusterId)} mono />
+      <ConnectionValue label={strings.reportedCluster} value={shortId(manager.clusterId)} mono />
+      <ConnectionValue label={strings.managerNode} value={manager.nodeId ? shortId(manager.nodeId) : "Not reported"} mono />
+      <ConnectionValue label={strings.lastSuccessfulProbe} value={formatObservedAt(manager.lastSuccessfulProbeAt)} />
+      <ConnectionValue label={strings.lastError} value={manager.lastError || "None"} valueClass={manager.lastError ? "text-danger" : undefined} />
     </div>}
     {connection && <div className="mt-5 rounded-xl border border-border/50 bg-muted/[0.16] p-4">
       <div className="flex flex-wrap items-end gap-3">
-        <label className="min-w-0 flex-1 text-sm font-medium text-foreground">Rebind manager
+        <label className="min-w-0 flex-1 text-sm font-medium text-foreground">{strings.rebindLabel}
           <select value={selectedServerId} onChange={(event) => setSelectedServerId(event.target.value)} disabled={loading || rebinding} className="mt-1.5 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary disabled:opacity-60">
-            <option value="">Choose an existing OpenShip server</option>
+            <option value="">{strings.chooseServer}</option>
             {connection.candidates.map((candidate) => <option key={candidate.id} value={candidate.id} disabled={candidate.isCurrent}>{candidate.name || candidate.endpoint}{candidate.isCurrent ? " (current)" : ""}</option>)}
           </select>
         </label>
-        <button type="button" disabled={!selectedServerId || rebinding || loading || connection.candidates.find((candidate) => candidate.id === selectedServerId)?.isCurrent} onClick={() => void rebind()} className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-60">{rebinding && <Loader2 className="size-3.5 animate-spin" />}Rebind manager</button>
+        <button type="button" disabled={!selectedServerId || rebinding || loading || connection.candidates.find((candidate) => candidate.id === selectedServerId)?.isCurrent} onClick={() => void rebind()} className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-60">{rebinding && <Loader2 className="size-3.5 animate-spin" />}{strings.rebind}</button>
       </div>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">The selected server is probed before this project is changed. It must report active manager control and the same cluster ID. Worker targets and other clusters are rejected without saving.</p>
     </div>}
+    <Modal isOpen={confirmingRebind} onClose={() => setConfirmingRebind(false)} ariaLabel={strings.rebind}>
+      <div className="p-6">
+        <h3 className="text-lg font-semibold text-foreground">{strings.rebind}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{interpolate(strings.confirmRebind, { target: selectedCandidate?.name || selectedCandidate?.endpoint || "" })}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={() => setConfirmingRebind(false)} className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted">Cancel</button>
+          <button type="button" data-autofocus disabled={rebinding} onClick={() => void confirmRebind()} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{rebinding && <Loader2 className="size-3.5 animate-spin" />}{strings.rebind}</button>
+        </div>
+      </div>
+    </Modal>
     {manager && <div className="mt-5">
-      <h3 className="text-sm font-semibold text-foreground">Read-only node inventory</h3>
+      <h3 className="text-sm font-semibold text-foreground">{strings.nodeInventory}</h3>
       {manager.nodes.length === 0
         ? <p className="mt-2 text-sm text-muted-foreground">No node inventory is available while the manager is unreachable.</p>
         : <div className="mt-3 grid gap-2 lg:grid-cols-2">{manager.nodes.map((node) => <div key={node.id} className="rounded-xl border border-border/50 p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-medium text-foreground">{node.hostname}</p><p className="mt-0.5 font-mono text-xs text-muted-foreground">{shortId(node.id)}</p></div><p className="text-xs text-muted-foreground">{node.status} · {node.availability}</p></div><p className="mt-2 text-xs text-muted-foreground">{node.managerStatus || "Worker"} · {node.engineVersion || "Engine unknown"}</p>{Object.keys(node.labels).length > 0 && <div className="mt-2 flex flex-wrap gap-1">{Object.entries(node.labels).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => <span key={key} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{key}={value}</span>)}</div>}</div>)}</div>}

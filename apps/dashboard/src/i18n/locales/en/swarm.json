@@ -1,0 +1,35 @@
+{
+  "deployment": {
+    "phases": {
+      "source": "Resolve source",
+      "validate": "Validate",
+      "build": "Build",
+      "push": "Push image",
+      "apply": "Apply stack",
+      "converge": "Converge",
+      "route": "Route",
+      "reconcile": "Reconcile"
+    },
+    "rollbackConfirm": "Roll back to Swarm revision {revision}? OpenShip will deploy its immutable rendered configuration and verify convergence.",
+    "rollback": "Roll back to this revision",
+    "redeploy": "Redeploy current source"
+  },
+  "connection": {
+    "title": "Cluster connection",
+    "probe": "Probe manager",
+    "rebind": "Rebind manager",
+    "rebindLabel": "Rebind manager",
+    "chooseServer": "Choose an existing OpenShip server",
+    "confirmRebind": "Rebind this project to {target}? OpenShip will prove manager access and the same cluster ID before saving.",
+    "rebindSuccess": "Manager binding updated to {endpoint}.",
+    "configuredEndpoint": "Configured endpoint",
+    "managerHealth": "Manager health",
+    "controlAvailability": "Control availability",
+    "expectedCluster": "Expected cluster",
+    "reportedCluster": "Reported cluster",
+    "managerNode": "Manager node",
+    "lastSuccessfulProbe": "Last successful probe",
+    "lastError": "Last error",
+    "nodeInventory": "Read-only node inventory"
+  }
+}

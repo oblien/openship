@@ -1,0 +1,35 @@
+{
+  "deployment": {
+    "phases": {
+      "source": "ソースを解決",
+      "validate": "検証",
+      "build": "ビルド",
+      "push": "イメージをプッシュ",
+      "apply": "スタックを適用",
+      "converge": "収束を確認",
+      "route": "ルーティング",
+      "reconcile": "調整"
+    },
+    "rollbackConfirm": "Swarm リビジョン {revision} にロールバックしますか？OpenShip は不変のレンダリング済み構成をデプロイし、収束を確認します。",
+    "rollback": "このリビジョンにロールバック",
+    "redeploy": "現在のソースを再デプロイ"
+  },
+  "connection": {
+    "title": "クラスター接続",
+    "probe": "マネージャーを確認",
+    "rebind": "マネージャーを再バインド",
+    "rebindLabel": "マネージャーを再バインド",
+    "chooseServer": "既存の OpenShip サーバーを選択",
+    "confirmRebind": "このプロジェクトを {target} に再バインドしますか？OpenShip は保存前にマネージャーのアクセス権と同じクラスター ID を確認します。",
+    "rebindSuccess": "マネージャーのバインドを {endpoint} に更新しました。",
+    "configuredEndpoint": "構成済みエンドポイント",
+    "managerHealth": "マネージャーの状態",
+    "controlAvailability": "制御の可用性",
+    "expectedCluster": "想定クラスター",
+    "reportedCluster": "報告されたクラスター",
+    "managerNode": "マネージャーノード",
+    "lastSuccessfulProbe": "最後に成功した確認",
+    "lastError": "最後のエラー",
+    "nodeInventory": "読み取り専用ノード一覧"
+  }
+}
