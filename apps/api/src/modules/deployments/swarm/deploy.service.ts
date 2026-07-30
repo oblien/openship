@@ -7,6 +7,9 @@
  */
 
 import {
+  BuildLogger,
+  DEFAULT_BUILD_RESOURCE_CONFIG,
+  DockerRuntime,
   deriveSwarmStackHealth,
   type Platform,
   type SwarmDiscoverySnapshot,
@@ -23,22 +26,24 @@ import {
   type Deployment,
   type Project,
   type Service,
+  type ContainerRegistry,
   type SwarmStack,
   type SwarmStackRevision,
 } from "@repo/db";
 import { swarmSupportEnabled } from "../../../config";
-import { encryptSecretField } from "../../../lib/credential-encryption";
+import { decryptSecretField, encryptSecretField } from "../../../lib/credential-encryption";
 import { resolveTargetPlatform } from "../../../lib/deployment-runtime";
 import { resolveOrgOwner } from "../../../lib/org-actor";
 import { isConnectionLoss } from "../../../lib/remote-state";
 import { buildBackgroundContext } from "../../../lib/request-context";
+import { resolveBuildGitToken } from "../../github/clone-auth";
 import { evaluateSwarmCompatibility } from "../../swarm/swarm-compatibility";
 import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm-preview";
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
 import { resolveStackSourceFiles, type ResolvedSwarmStackSource } from "../../swarm/swarm-source.service";
 import { swarmConvergence } from "./convergence.service";
 
-type SwarmPlatform = Pick<Platform, "stackRuntime">;
+type SwarmPlatform = Pick<Platform, "runtime" | "stackRuntime">;
 
 export interface SwarmDeployLogger {
   log(message: string, level?: "info" | "warn" | "error"): void;
@@ -48,6 +53,8 @@ export interface SwarmDeployLogger {
 interface Dependencies {
   featureEnabled: () => boolean;
   getStack: (projectId: string, organizationId: string) => Promise<SwarmStack | undefined>;
+  getRegistry: (registryId: string, organizationId: string) => Promise<ContainerRegistry | undefined>;
+  getRevision: (revisionId: string, organizationId: string) => Promise<SwarmStackRevision | undefined>;
   resolvePlatform: (serverId: string, organizationId: string) => Promise<SwarmPlatform>;
   createRevision: (
     stackId: string,
@@ -197,6 +204,238 @@ function pendingClaimDigest(stack: SwarmStack): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
+function registryDeploymentAuth(registry: ContainerRegistry | null): {
+  serverAddress: string;
+  username: string;
+  password: string;
+} | undefined {
+  if (!registry) return undefined;
+  const username = registry.username?.trim() || undefined;
+  const password = decryptSecretField(registry.credentialsEnc);
+  if (!!username !== !!password) {
+    throw new AppError(
+      "The selected registry has incomplete login credentials. Set both username and credential, or clear both for a public registry.",
+      409,
+      "REGISTRY_CREDENTIALS_INCOMPLETE",
+    );
+  }
+  return username && password
+    ? { serverAddress: registry.registryUrl, username, password }
+    : undefined;
+}
+
+function imageSegment(value: string, fallback: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
+}
+
+function relativeBuildContext(stack: SwarmStack, value: string): string | undefined {
+  const context = value.trim() || ".";
+  if (context.startsWith("/") || context.includes("\\") || context.split("/").some((part) => part === ".." || part === "")) {
+    throw new AppError("A source-built service has an unsafe build context.", 409, "SWARM_BUILD_CONTEXT_INVALID");
+  }
+  const root = stack.sourcePath?.replace(/\/$/, "") ?? "";
+  if (root && root.split("/").some((part) => !part || part === "." || part === "..")) {
+    throw new AppError("The linked stack source path is unsafe for a source build.", 409, "SWARM_BUILD_CONTEXT_INVALID");
+  }
+  if (context === ".") return root || undefined;
+  return root && context !== root && !context.startsWith(`${root}/`) ? `${root}/${context}` : context;
+}
+
+function sourceBuildDefinition(service: SwarmServiceProjection): { context: string; dockerfile?: string } | null {
+  if (!service.build) return null;
+  if (typeof service.build === "string") return { context: service.build };
+  const context = typeof service.build.context === "string" ? service.build.context : ".";
+  const dockerfile = typeof service.build.dockerfile === "string" ? service.build.dockerfile.trim() : undefined;
+  if (dockerfile && (dockerfile.startsWith("/") || dockerfile.includes("\\") || dockerfile.split("/").some((part) => part === ".." || part === ""))) {
+    throw new AppError("A source-built service has an unsafe Dockerfile path.", 409, "SWARM_BUILD_CONTEXT_INVALID");
+  }
+  return { context, ...(dockerfile ? { dockerfile } : {}) };
+}
+
+function canonicalChangedPath(value: string): string | null {
+  const path = value.trim().replaceAll("\\", "/").replace(/^\.\//, "");
+  if (!path || path.startsWith("/") || path.split("/").some((part) => !part || part === "." || part === "..")) return null;
+  return path;
+}
+
+function pathIsWithin(path: string, root: string | undefined): boolean {
+  return !root || path === root || path.startsWith(`${root}/`);
+}
+
+/**
+ * A precise webhook path set may carry a prior digest only when every changed
+ * file belongs to a known independent build context. Any missing digest,
+ * source-file edit, shared/outside file, malformed path, or truncated set
+ * rebuilds conservatively instead.
+ */
+export function selectSourceBuilds(input: {
+  stack: SwarmStack;
+  deployment: Deployment;
+  buildable: Array<{ service: SwarmServiceProjection; build: { context: string; dockerfile?: string } }>;
+  previousImages: Record<string, string>;
+}): { build: typeof input.buildable; preserved: Record<string, string> } {
+  const all = () => ({ build: input.buildable, preserved: {} });
+  if (input.buildable.length === 0 || input.deployment.forceAll || input.deployment.changedPathsTruncated) return all();
+  const changed = input.deployment.changedPaths;
+  if (!changed || changed.length === 0) return all();
+
+  const buildRoots = input.buildable.map((entry) => ({
+    ...entry,
+    root: relativeBuildContext(input.stack, entry.build.context),
+  }));
+  const sourceRoot = input.stack.sourcePath?.replace(/\/$/, "") ?? "";
+  const composePaths = new Set(input.stack.sourcePaths.map((path) =>
+    sourceRoot && path !== sourceRoot && !path.startsWith(`${sourceRoot}/`) ? `${sourceRoot}/${path}` : path,
+  ));
+  const affected = new Set<string>();
+  for (const rawPath of changed) {
+    const path = canonicalChangedPath(rawPath);
+    if (!path || composePaths.has(path)) return all();
+    const matches = buildRoots.filter((entry) => pathIsWithin(path, entry.root));
+    // A project-level/shared file lies outside every declared context; no
+    // exact dependency graph is available, so rebuild all rather than reuse a
+    // potentially stale artifact. Overlapping contexts rebuild each match.
+    if (matches.length === 0) return all();
+    for (const entry of matches) affected.add(entry.service.sourceServiceName);
+  }
+  const build: typeof input.buildable = [];
+  const preserved: Record<string, string> = {};
+  for (const entry of input.buildable) {
+    const previous = input.previousImages[entry.service.sourceServiceName];
+    if (affected.has(entry.service.sourceServiceName) || !previous?.includes("@sha256:")) {
+      build.push(entry);
+    } else {
+      preserved[entry.service.sourceServiceName] = previous;
+    }
+  }
+  return { build, preserved };
+}
+
+/** Build `build:` services on the manager daemon and turn each into `repo@digest`. */
+async function publishSourceBuilds(input: {
+  stack: SwarmStack;
+  project: Project;
+  deployment: Deployment;
+  services: SwarmServiceProjection[];
+  registry: ContainerRegistry | null;
+  registryAuth: ReturnType<typeof registryDeploymentAuth>;
+  previousImages: Record<string, string>;
+  runtime: Platform["runtime"];
+  logger: SwarmDeployLogger;
+}): Promise<Record<string, string>> {
+  const buildable = input.services.flatMap((service) => {
+    const build = sourceBuildDefinition(service);
+    return build ? [{ service, build }] : [];
+  });
+  if (buildable.length === 0) return {};
+  if (!input.registry) {
+    throw new AppError(
+      "This stack has source-built services. Select an OCI registry before applying it.",
+      409,
+      "SWARM_BUILD_REGISTRY_REQUIRED",
+    );
+  }
+  if (!(input.runtime instanceof DockerRuntime)) {
+    throw new AppError(
+      "The selected Swarm manager cannot build and publish source services through Docker.",
+      503,
+      "SWARM_BUILD_RUNTIME_UNAVAILABLE",
+    );
+  }
+  if (input.stack.sourceKind !== "repository" || !input.project.gitOwner || !input.project.gitRepo) {
+    throw new AppError(
+      "Source-built services require a linked repository stack source so OpenShip can use its bounded build context.",
+      409,
+      "SWARM_BUILD_REPOSITORY_REQUIRED",
+    );
+  }
+  const owner = await resolveOrgOwner(input.deployment.organizationId);
+  if (!owner) {
+    throw new AppError("The organization owner is unavailable to prepare the source build.", 503, "SWARM_SOURCE_REPOSITORY_UNAVAILABLE");
+  }
+  const git = await resolveBuildGitToken({
+    ctx: buildBackgroundContext({ userId: owner.userId, organizationId: input.deployment.organizationId, label: "swarm:source-build" }),
+    projectId: input.project.id,
+    owner: input.project.gitOwner,
+    repo: input.project.gitRepo,
+    buildStrategy: "local",
+  });
+  const repository = [
+    input.registry.registryUrl,
+    ...(input.registry.repositoryPrefix ? [input.registry.repositoryPrefix] : []),
+    imageSegment(input.project.slug, "project"),
+  ].join("/");
+  const selected = selectSourceBuilds({
+    stack: input.stack,
+    deployment: input.deployment,
+    buildable,
+    previousImages: input.previousImages,
+  });
+  const overrides: Record<string, string> = { ...selected.preserved };
+  for (const serviceName of Object.keys(selected.preserved)) {
+    input.logger.log(`Reusing immutable registry digest for unchanged service ${serviceName}\n`);
+  }
+  for (const { service, build } of selected.build) {
+    const serviceName = imageSegment(service.sourceServiceName, "service");
+    const target = `${repository}/${serviceName}:${imageSegment(input.deployment.id, "deployment")}`;
+    input.logger.step("swarm-build", "started", `Building and publishing ${service.sourceServiceName}`);
+    const buildLogger = new BuildLogger((entry) => {
+      input.logger.log(entry.message, entry.level === "error" ? "error" : entry.level === "warn" ? "warn" : "info");
+    });
+    let result: Awaited<ReturnType<DockerRuntime["build"]>>;
+    try {
+      result = await input.runtime.build({
+        sessionId: `${input.deployment.id}-${serviceName}`,
+        projectId: input.project.id,
+        slug: `swarm-${imageSegment(input.project.slug, "project")}-${serviceName}`,
+        repoUrl: input.project.gitUrl ?? `https://github.com/${input.project.gitOwner}/${input.project.gitRepo}.git`,
+        branch: input.stack.sourceBranch ?? input.project.gitBranch ?? "main",
+        commitSha: input.stack.sourceCommitSha ?? input.deployment.commitSha ?? undefined,
+        stack: "docker",
+        buildImage: "",
+        runtimeImage: "",
+        packageManager: "",
+        installCommand: "",
+        buildCommand: "",
+        outputDirectory: "",
+        port: 3000,
+        rootDirectory: relativeBuildContext(input.stack, build.context),
+        dockerfilePath: build.dockerfile,
+        hasServer: true,
+        envVars: {},
+        resources: DEFAULT_BUILD_RESOURCE_CONFIG,
+        gitToken: git.token,
+      }, buildLogger);
+    } catch {
+      input.logger.step("swarm-build", "failed", `Could not build ${service.sourceServiceName}`);
+      throw new AppError(`Could not build source service ${service.sourceServiceName}.`, 502, "SWARM_BUILD_FAILED");
+    }
+    if (result.status !== "deploying" || !result.imageRef) {
+      input.logger.step("swarm-build", "failed", `Could not build ${service.sourceServiceName}`);
+      throw new AppError(`Could not build source service ${service.sourceServiceName}.`, 502, "SWARM_BUILD_FAILED");
+    }
+    try {
+      const published = await input.runtime.publishImage({
+        source: result.imageRef,
+        target,
+        ...(input.registryAuth ? { auth: input.registryAuth } : {}),
+        onProgress: (message) => input.logger.log(message),
+      });
+      overrides[service.sourceServiceName] = published.digestRef;
+      input.logger.step("swarm-build", "completed", `Published ${service.sourceServiceName} as an immutable registry digest`);
+    } catch {
+      input.logger.step("swarm-build", "failed", `Could not publish ${service.sourceServiceName}`);
+      throw new AppError(`Could not publish source service ${service.sourceServiceName} to the configured registry.`, 502, "SWARM_IMAGE_PUBLISH_FAILED");
+    }
+  }
+  return overrides;
+}
+
 export type SwarmDeployOutcome = {
   runtimeRef: RuntimeWorkloadRef;
   revisionId: string;
@@ -210,6 +449,10 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
     featureEnabled: swarmSupportEnabled,
     getStack: (projectId, organizationId) =>
       repos.swarmStack.getForProjectInOrganization(projectId, organizationId),
+    getRegistry: (registryId, organizationId) =>
+      repos.containerRegistry.getInOrganization(registryId, organizationId),
+    getRevision: (revisionId, organizationId) =>
+      repos.swarmStack.getRevisionInOrganization(revisionId, organizationId),
     resolvePlatform: async (serverId, organizationId) =>
       resolveTargetPlatform("server", "docker", serverId, organizationId, "swarm"),
     createRevision: (stackId, organizationId, data) =>
@@ -298,6 +541,21 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           503,
           "SWARM_MANAGER_UNAVAILABLE",
         );
+      const registryResult = stack.registryId
+        ? await deps.getRegistry(stack.registryId, deployment.organizationId)
+        : null;
+      if (stack.registryId && !registryResult) {
+        throw new AppError(
+          "The selected container registry is no longer available. Choose a registry before deploying this stack.",
+          409,
+          "REGISTRY_REQUIRED",
+        );
+      }
+      const registry = registryResult ?? null;
+      const registryAuth = registryDeploymentAuth(registry);
+      const previousRevision = stack.lastAppliedRevisionId
+        ? await deps.getRevision(stack.lastAppliedRevisionId, deployment.organizationId)
+        : undefined;
 
       logger.step(
         "swarm-render",
@@ -329,11 +587,23 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           "SWARM_STACK_OWNERSHIP_CONFLICT",
         );
       }
+      const imageOverrides = await publishSourceBuilds({
+        stack,
+        project,
+        deployment,
+        services: source.services,
+        registry,
+        registryAuth,
+        previousImages: previousRevision?.serviceImages ?? {},
+        runtime: platform.runtime,
+        logger,
+      });
       const rendered = await platform.stackRuntime.renderStack({
         files: sourceMaterial.files,
         composePaths: sourceMaterial.composePaths,
         environment,
         ownershipLabels: ownership,
+        imageOverrides,
       });
       const resolvedSource = projectSwarmStackSource([
         { path: "rendered-stack.yaml", content: rendered.renderedYaml },
@@ -341,7 +611,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       const compatibility = evaluateSwarmCompatibility({
         renderedYaml: rendered.renderedYaml,
         discovery: before,
-        registryConfigured: !!stack.registryId,
+        registryConfigured: !!registry,
       });
       if (compatibility.blockers.length > 0) {
         throw new AppError(
@@ -422,7 +692,8 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           renderedYaml: rendered.renderedYaml,
           prune,
           resolveImage: "always",
-          withRegistryAuth: stack.withRegistryAuth,
+          withRegistryAuth: !!registryAuth,
+          ...(registryAuth ? { registryAuth } : {}),
         });
         dockerStackDeployOutput = safeDeployOutput(result.output, environment);
         if (dockerStackDeployOutput)

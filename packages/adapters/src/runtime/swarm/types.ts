@@ -53,6 +53,8 @@ export interface RenderStackInput {
   /** Minimal, generated overlay; source files are never rewritten. */
   /** Service name → generated service labels. */
   ownershipLabels?: Record<string, Record<string, string>>;
+  /** Service name → immutable image reference produced by a source build. */
+  imageOverrides?: Record<string, string>;
 }
 
 export interface SwarmRenderIssue {
@@ -78,8 +80,17 @@ export interface DeployStackInput {
   /** Managed-stack pruning remains an explicit caller decision. */
   prune?: boolean;
   resolveImage?: "always" | "changed" | "never";
-  /** Credential setup remains outside this API; this only adds Docker's flag. */
+  /** Docker propagates the temporary manager credentials to Swarm workers. */
   withRegistryAuth?: boolean;
+  /**
+   * Registry login material used only to create a temporary manager-side
+   * DOCKER_CONFIG. It is never included in a shell command or adapter output.
+   */
+  registryAuth?: {
+    serverAddress: string;
+    username: string;
+    password: string;
+  };
 }
 
 export interface DeployedStack {

@@ -53,13 +53,22 @@ export async function getStackSource(projectId: string, organizationId: string) 
 /** Changes metadata only; no image, service, or manager mutation occurs here. */
 export async function setStackRegistry(projectId: string, organizationId: string, registryId: string | null) {
   const stack = await stackForProject(projectId, organizationId);
+  let withRegistryAuth = false;
   if (registryId) {
     const registry = await repos.containerRegistry.getInOrganization(registryId, organizationId);
     if (!registry) throw new NotFoundError("Container registry", registryId);
+    if (!!registry.username !== !!registry.credentialsEnc) {
+      throw new AppError(
+        "A registry login needs both a username and credential, or neither for a public registry.",
+        409,
+        "REGISTRY_CREDENTIALS_INCOMPLETE",
+      );
+    }
+    withRegistryAuth = !!registry.username && !!registry.credentialsEnc;
   }
   const updated = await repos.swarmStack.updateInOrganization(stack.id, organizationId, {
     registryId,
-    withRegistryAuth: !!registryId,
+    withRegistryAuth,
   });
   if (!updated) throw new NotFoundError("Swarm stack", stack.id);
   return serializeStackSource(updated);

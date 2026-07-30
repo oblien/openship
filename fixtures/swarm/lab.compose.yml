@@ -9,6 +9,9 @@ services:
       - dockerd
       - --host=tcp://0.0.0.0:2375
       - --host=unix:///var/run/docker.sock
+      # Disposable lab only: permits the nested registry proof below. The
+      # production path uses HTTPS or a manager-configured trusted registry.
+      - --insecure-registry=0.0.0.0/0
     ports:
       - 127.0.0.1:23750:2375
     labels:
@@ -28,6 +31,7 @@ services:
     command:
       - dockerd
       - --host=unix:///var/run/docker.sock
+      - --insecure-registry=0.0.0.0/0
     labels:
       com.openship.swarm.lab: "true"
     healthcheck:

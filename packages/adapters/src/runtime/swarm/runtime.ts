@@ -101,17 +101,34 @@ function declaredComposeVersion(files: Array<{ path: string; content: string }>,
   return null;
 }
 
-function overrideYaml(labelsByService: Record<string, Record<string, string>>, composeVersion: string | null): string {
-  const services = Object.entries(labelsByService).sort(([a], [b]) => a.localeCompare(b));
+function overrideYaml(
+  labelsByService: Record<string, Record<string, string>>,
+  imageOverrides: Record<string, string>,
+  composeVersion: string | null,
+): string {
+  const serviceNames = Array.from(new Set([
+    ...Object.keys(labelsByService),
+    ...Object.keys(imageOverrides),
+  ])).sort((a, b) => a.localeCompare(b));
   const header = composeVersion ? `version: ${JSON.stringify(composeVersion)}\n` : "";
-  if (services.length === 0) return `${header}services: {}\n`;
+  if (serviceNames.length === 0) return `${header}services: {}\n`;
   // JSON strings are valid YAML scalars and avoid bespoke quoting rules.
-  return `${header}services:\n${services.map(([service, labels]) =>
-    `  ${JSON.stringify(service)}:\n    deploy:\n      labels:\n${Object.entries(labels)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => `        ${JSON.stringify(key)}: ${JSON.stringify(value)}`)
-      .join("\n")}`,
-  ).join("\n")}\n`;
+  return `${header}services:\n${serviceNames.map((service) => {
+    const labels = labelsByService[service];
+    const image = imageOverrides[service];
+    const lines = [`  ${JSON.stringify(service)}:`];
+    if (image) lines.push(`    image: ${JSON.stringify(image)}`);
+    if (labels && Object.keys(labels).length > 0) {
+      lines.push(
+        "    deploy:",
+        "      labels:",
+        ...Object.entries(labels)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, value]) => `        ${JSON.stringify(key)}: ${JSON.stringify(value)}`),
+      );
+    }
+    return lines.join("\n");
+  }).join("\n")}\n`;
 }
 
 function canonicalRenderedYaml(value: string): string {
@@ -372,7 +389,11 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       const environmentPath = `${stage}/.openship-render.env`;
       const overridePath = `${stage}/.openship-render.override.yaml`;
       const warningsPath = `${stage}/.openship-render.warnings`;
-      const override = overrideYaml(input.ownershipLabels ?? {}, declaredComposeVersion(files, composePaths));
+      const override = overrideYaml(
+        input.ownershipLabels ?? {},
+        input.imageOverrides ?? {},
+        declaredComposeVersion(files, composePaths),
+      );
       await executor.writeFile(environmentPath, explicitEnvironment(input.environment ?? {}));
       await executor.writeFile(overridePath, override);
       const command = [
@@ -423,6 +444,12 @@ export class SwarmRuntime implements StackRuntimeAdapter {
     if (resolveImage !== "always" && resolveImage !== "changed" && resolveImage !== "never") {
       throw new SwarmDeployError("The requested image resolution policy is invalid.");
     }
+    if (input.withRegistryAuth && !input.registryAuth) {
+      throw new SwarmDeployError("Registry credential propagation requires a temporary registry login.");
+    }
+    if (input.registryAuth && (!input.registryAuth.serverAddress.trim() || !input.registryAuth.username || !input.registryAuth.password)) {
+      throw new SwarmDeployError("Registry credential propagation is incomplete.");
+    }
 
     let stage: string | null = null;
     try {
@@ -436,7 +463,17 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       }
       const documentPath = `${stage}/rendered-stack.yaml`;
       await executor.writeFile(documentPath, renderedYaml);
+      if (input.registryAuth) {
+        // Docker accepts the standard config.json auth shape. The stage was
+        // created under umask 077 and is removed in finally below, including on
+        // connection loss or cancellation. The base64 value is data, not a log.
+        const auth = Buffer.from(`${input.registryAuth.username}:${input.registryAuth.password}`).toString("base64");
+        await executor.writeFile(`${stage}/config.json`, JSON.stringify({
+          auths: { [input.registryAuth.serverAddress.trim()]: { auth } },
+        }));
+      }
       const command = [
+        ...(input.registryAuth ? [`DOCKER_CONFIG=${sq(stage)}`] : []),
         "docker stack deploy --detach=false",
         `--resolve-image ${resolveImage}`,
         ...(input.withRegistryAuth ? ["--with-registry-auth"] : []),

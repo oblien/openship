@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Boxes, Download, Eye, FileText, Loader2, RefreshCw, Rocket, ScrollText, ShieldCheck, TriangleAlert, X } from "lucide-react";
-import { deployApi, getApiErrorMessage, projectsApi, swarmApi, type SwarmLogEntry, type SwarmNode, type SwarmObservation, type SwarmSourcePreview, type SwarmStackDetail, type SwarmStackHandoff, type SwarmStackSource, type SwarmTask } from "@/lib/api";
+import { deployApi, getApiErrorMessage, projectsApi, registriesApi, swarmApi, type ContainerRegistry, type SwarmLogEntry, type SwarmNode, type SwarmObservation, type SwarmSourcePreview, type SwarmStackDetail, type SwarmStackHandoff, type SwarmStackSource, type SwarmTask } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { HealthBadge, formatObservedAt, shortId, SwarmNodesTable, SwarmTasksTable } from "@/components/swarm/SwarmReadOnlyViews";
@@ -406,6 +406,19 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
             onClaim={() => void claimAndApply()}
           />
 
+          <RegistryPanel
+            projectId={projectId}
+            source={data.source}
+            onSourceChange={(source) => setData((current) => current ? {
+              ...current,
+              source,
+              observation: {
+                ...current.observation,
+                source: { kind: source.kind, status: source.status, deployable: source.deployable },
+              },
+            } : current)}
+          />
+
           {data.detail && <section className="rounded-2xl border border-border/50 bg-card"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 px-5 py-4"><div><h2 className="font-semibold text-foreground">Live stack state</h2><p className="mt-0.5 text-sm text-muted-foreground">Manager read at {formatObservedAt(data.detail.observedAt)}.</p></div><HealthBadge state={data.detail.health.state} /></div><div className="flex border-b border-border/50 px-3">{(["services", "tasks", "nodes"] as View[]).map((candidate) => <button key={candidate} type="button" onClick={() => setView(candidate)} className={`relative px-4 py-3 text-sm font-medium capitalize transition-colors ${view === candidate ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{candidate}{view === candidate && <span className="absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-primary" />}</button>)}</div><div className="p-5">{view === "services" && <Services detail={data.detail} managed={data.observation.managementMode === "managed"} scalingService={scalingService} restartingService={restartingService} onScale={scale} onRestart={restart} onLogs={(service) => void openLogs(service.sourceServiceName)} onInspect={setInspectedService} loadingLogs={loadingLogs} />}{view === "tasks" && <SwarmTasksTable tasks={data.detail.tasks} onLogs={openTaskLogs} />}{view === "nodes" && <SwarmNodesTable nodes={data.nodes} />}</div></section>}
 
           {inspectedService && <ServiceInspectPanel service={inspectedService} onClose={() => setInspectedService(null)} />}
@@ -417,6 +430,146 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
       )}
     </PageContainer>
   );
+}
+
+type RegistryDraft = {
+  name: string;
+  registryUrl: string;
+  repositoryPrefix: string;
+  username: string;
+  credentials: string;
+  insecure: boolean;
+};
+
+const EMPTY_REGISTRY_DRAFT: RegistryDraft = {
+  name: "", registryUrl: "", repositoryPrefix: "", username: "", credentials: "", insecure: false,
+};
+
+/** Organization registries are edited here only as an input to the current stack. */
+function RegistryPanel({ projectId, source, onSourceChange }: {
+  projectId: string;
+  source: SwarmStackSource;
+  onSourceChange: (source: SwarmStackSource) => void;
+}) {
+  const { showToast } = useToast();
+  const [registries, setRegistries] = useState<ContainerRegistry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | "new" | null>(null);
+  const [draft, setDraft] = useState<RegistryDraft>(EMPTY_REGISTRY_DRAFT);
+
+  const loadRegistries = useCallback(async () => {
+    setLoading(true);
+    try {
+      setRegistries(await registriesApi.list());
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "Unable to load container registries."), "error", "Container registry");
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => { void loadRegistries(); }, [loadRegistries]);
+
+  const selectRegistry = useCallback(async (registryId: string | null) => {
+    setSaving(true);
+    try {
+      onSourceChange(await swarmApi.setRegistry(projectId, registryId));
+      showToast(registryId ? "Registry attached to this stack." : "Registry detached from this stack.", "success", "Container registry");
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "Unable to update this stack registry."), "error", "Container registry");
+    } finally {
+      setSaving(false);
+    }
+  }, [onSourceChange, projectId, showToast]);
+
+  const beginEdit = (registry?: ContainerRegistry) => {
+    if (!registry) {
+      setDraft(EMPTY_REGISTRY_DRAFT);
+      setEditing("new");
+      return;
+    }
+    setDraft({
+      name: registry.name,
+      registryUrl: registry.registryUrl,
+      repositoryPrefix: registry.repositoryPrefix ?? "",
+      username: registry.username ?? "",
+      credentials: "",
+      insecure: registry.insecure,
+    });
+    setEditing(registry.id);
+  };
+
+  const saveRegistry = async () => {
+    if (!draft.name.trim() || !draft.registryUrl.trim()) {
+      showToast("Registry name and address are required.", "error", "Container registry");
+      return;
+    }
+    setSaving(true);
+    try {
+      const input = {
+        name: draft.name.trim(),
+        registryUrl: draft.registryUrl.trim(),
+        repositoryPrefix: draft.repositoryPrefix.trim() || null,
+        username: draft.username.trim() || null,
+        ...(draft.credentials ? { credentials: draft.credentials } : {}),
+        insecure: draft.insecure,
+      };
+      const registry = editing === "new"
+        ? await registriesApi.create({ ...input, ...(draft.credentials ? { credentials: draft.credentials } : {}) })
+        : await registriesApi.update(editing!, input);
+      await loadRegistries();
+      setEditing(null);
+      setDraft(EMPTY_REGISTRY_DRAFT);
+      if (editing === "new") onSourceChange(await swarmApi.setRegistry(projectId, registry.id));
+      showToast(editing === "new" ? "Registry created and attached to this stack." : "Registry updated.", "success", "Container registry");
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "Unable to save this registry."), "error", "Container registry");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testRegistry = async (registryId: string) => {
+    setTesting(registryId);
+    try {
+      await registriesApi.test(registryId);
+      await loadRegistries();
+      showToast("Registry connection succeeded.", "success", "Container registry");
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "Registry connection failed."), "error", "Container registry");
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  const removeRegistry = async (registry: ContainerRegistry) => {
+    if (!window.confirm(`Delete registry ${registry.name}? Existing digest-pinned deployments remain runnable, but future builds cannot use it.`)) return;
+    setSaving(true);
+    try {
+      await registriesApi.remove(registry.id);
+      if (source.registryId === registry.id) onSourceChange(await swarmApi.setRegistry(projectId, null));
+      await loadRegistries();
+      showToast("Registry deleted.", "success", "Container registry");
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "Unable to delete this registry."), "error", "Container registry");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const attached = registries.find((registry) => registry.id === source.registryId) ?? null;
+  return <section className="rounded-2xl border border-border/50 bg-card p-5">
+    <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold text-foreground">Container registry</h2><p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">Required only for source-built services. OpenShip publishes a deterministic tag, records the registry digest, and workers receive credentials only for the stack apply.</p></div><button type="button" disabled={saving} onClick={() => beginEdit()} className="rounded-xl border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60">Add registry</button></div>
+    <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"><label className="text-sm text-muted-foreground">Registry used by this stack<select value={source.registryId ?? ""} disabled={loading || saving} onChange={(event) => void selectRegistry(event.target.value || null)} className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary"><option value="">No registry selected</option>{registries.map((registry) => <option key={registry.id} value={registry.id}>{registry.name} · {registry.registryUrl}</option>)}</select></label><div className="self-end pb-0.5 text-sm text-muted-foreground">{attached ? `${attached.hasCredentials ? "Authenticated" : "Public"} · ${attached.repositoryPrefix || "no namespace"}` : "Prebuilt-image stacks do not need one."}</div></div>
+    {loading ? <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Loading registries…</div> : registries.length === 0 ? <p className="mt-4 rounded-xl border border-border/50 bg-muted/[0.18] px-3 py-2 text-sm text-muted-foreground">No registry is configured yet. Add one before deploying a service with <code>build:</code>.</p> : <div className="mt-4 space-y-2">{registries.map((registry) => <div key={registry.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-3 py-3 ${registry.id === source.registryId ? "border-primary/35 bg-primary/[0.035]" : "border-border/50"}`}><div className="min-w-0"><p className="font-medium text-foreground">{registry.name}{registry.id === source.registryId && <span className="ml-2 text-xs font-normal text-primary">Attached</span>}</p><p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{registry.registryUrl}{registry.repositoryPrefix ? `/${registry.repositoryPrefix}` : ""}</p><p className="mt-1 text-xs text-muted-foreground">{registry.hasCredentials ? `Username ${registry.username || "configured"} · credential stored securely` : "Public registry · no credential stored"}{registry.lastVerifyError ? ` · Last test failed: ${registry.lastVerifyError}` : registry.lastVerifiedAt ? " · Connection verified" : ""}</p></div><div className="flex items-center gap-2"><button type="button" disabled={saving || testing !== null} onClick={() => void testRegistry(registry.id)} className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60">{testing === registry.id ? "Testing…" : "Test"}</button><button type="button" disabled={saving} onClick={() => beginEdit(registry)} className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60">Edit</button><button type="button" disabled={saving} onClick={() => void removeRegistry(registry)} className="rounded-lg border border-danger/30 px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger-bg disabled:opacity-60">Delete</button></div></div>)}</div>}
+    {editing && <div className="mt-5 rounded-xl border border-border/50 bg-muted/[0.16] p-4"><div className="flex items-center justify-between gap-3"><div><h3 className="font-medium text-foreground">{editing === "new" ? "Add registry" : "Edit registry"}</h3><p className="mt-1 text-sm text-muted-foreground">Credentials are write-only. Leave the credential field empty when editing to keep the saved value.</p></div><button type="button" onClick={() => { setEditing(null); setDraft(EMPTY_REGISTRY_DRAFT); }} className="text-sm text-muted-foreground hover:text-foreground">Cancel</button></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><RegistryInput label="Name" value={draft.name} onChange={(name) => setDraft((current) => ({ ...current, name }))} placeholder="Production registry" /><RegistryInput label="Registry address" value={draft.registryUrl} onChange={(registryUrl) => setDraft((current) => ({ ...current, registryUrl }))} placeholder="registry.example.com:5000" /><RegistryInput label="Namespace (optional)" value={draft.repositoryPrefix} onChange={(repositoryPrefix) => setDraft((current) => ({ ...current, repositoryPrefix }))} placeholder="team" /><RegistryInput label="Username (optional)" value={draft.username} onChange={(username) => setDraft((current) => ({ ...current, username }))} placeholder="robot" /><label className="text-sm text-muted-foreground sm:col-span-2">Credential {editing !== "new" && <span className="text-xs">(leave blank to keep existing)</span>}<input type="password" value={draft.credentials} onChange={(event) => setDraft((current) => ({ ...current, credentials: event.target.value }))} autoComplete="new-password" className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary" /></label><label className="flex items-center gap-2 text-sm text-muted-foreground sm:col-span-2"><input type="checkbox" checked={draft.insecure} onChange={(event) => setDraft((current) => ({ ...current, insecure: event.target.checked }))} />Use HTTP for a private, trusted registry</label></div><div className="mt-4 flex justify-end"><button type="button" disabled={saving} onClick={() => void saveRegistry()} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{saving && <Loader2 className="size-3.5 animate-spin" />}Save registry</button></div></div>}
+  </section>;
+}
+
+function RegistryInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+  return <label className="text-sm text-muted-foreground">{label}<input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary" /></label>;
 }
 
 function SourceManagementPanel({

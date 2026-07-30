@@ -116,6 +116,7 @@ describe("SwarmRuntime manager probe", () => {
       composePaths: ["compose.yaml"],
       environment: { IMAGE_TAG: "v1", REGEX: "$${1}" },
       ownershipLabels: { web: { "com.openship.stack-id": "swarm_a" } },
+      imageOverrides: { web: "registry.example.com/team/blog/web@sha256:deadbeef" },
     });
 
     expect(result).toMatchObject({
@@ -126,6 +127,7 @@ describe("SwarmRuntime manager probe", () => {
     expect(writes.get("/tmp/openship-swarm-render.abc123/compose.yaml")).toContain("$${1}");
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.env")).toContain("REGEX='$${1}'");
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("com.openship.stack-id");
+    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("registry.example.com/team/blog/web@sha256:deadbeef");
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain('version: "3.9"');
     const renderCommand = commands.find((command) => command.includes("docker stack config"))!;
     expect(renderCommand).toContain("env -i PATH=\"$PATH\"");
@@ -203,6 +205,40 @@ describe("SwarmRuntime manager probe", () => {
     await expect(runtime.deployStack({ stackName: "Not Allowed", renderedYaml: "services: {}" }))
       .rejects.toMatchObject({ name: "SwarmDeployError" });
     expect(exec.mock.calls.some(([command]) => String(command).includes("docker stack deploy"))).toBe(false);
+  });
+
+  it("uses a private temporary Docker config for registry propagation without putting credentials in a command", async () => {
+    const commands: string[] = [];
+    const writes = new Map<string, string>();
+    const rm = vi.fn().mockResolvedValue(undefined);
+    const runtime = await SwarmRuntime.create({
+      executor: {
+        exec: async (command: string) => {
+          commands.push(command);
+          if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
+          if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
+          if (command.startsWith("umask 077 && mktemp -d /tmp/openship-swarm-deploy.")) return "/tmp/openship-swarm-deploy.auth123";
+          if (command.startsWith("DOCKER_CONFIG='")) return "Creating service demo_web";
+          throw new Error(`unexpected command: ${command}`);
+        },
+        writeFile: async (path, content) => { writes.set(path, content); },
+        rm,
+      },
+    });
+
+    await runtime.deployStack({
+      stackName: "demo",
+      renderedYaml: "services:\n  web:\n    image: registry.example.com/team/web@sha256:deadbeef\n",
+      withRegistryAuth: true,
+      registryAuth: { serverAddress: "registry.example.com", username: "robot", password: "not-in-command" },
+    });
+
+    const config = JSON.parse(writes.get("/tmp/openship-swarm-deploy.auth123/config.json") ?? "{}") as { auths?: Record<string, { auth?: string }> };
+    expect(config.auths?.["registry.example.com"]?.auth).toBe(Buffer.from("robot:not-in-command").toString("base64"));
+    const command = commands.find((entry) => entry.startsWith("DOCKER_CONFIG='"))!;
+    expect(command).toContain("--with-registry-auth");
+    expect(command).not.toContain("not-in-command");
+    expect(rm).toHaveBeenCalledWith("/tmp/openship-swarm-deploy.auth123");
   });
 
   it("uses bounded service and stack operations without accepting untrusted shell identifiers", async () => {

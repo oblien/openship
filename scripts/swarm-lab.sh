@@ -18,10 +18,13 @@ fixture_stack="openship-swarm-fixture"
 managed_stack="openship-swarm-managed-fixture"
 managed_config="openship_lab_config"
 managed_secret="openship_lab_secret"
+registry_service="openship-swarm-lab-registry"
+registry_proof_service="openship-swarm-registry-proof"
+registry_proof_image="openship-swarm-registry-proof:build"
 manager_host="tcp://127.0.0.1:23750"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -84,6 +87,36 @@ remove_managed_persistent_objects() {
   docker -H "$manager_host" secret rm "$managed_secret" >/dev/null 2>&1 || true
 }
 
+manager_node_address() {
+  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$manager"
+}
+
+ensure_lab_registry() {
+  if docker -H "$manager_host" service inspect "$registry_service" >/dev/null 2>&1; then
+    return
+  fi
+  docker -H "$manager_host" service create \
+    --name "$registry_service" \
+    --constraint 'node.role == manager' \
+    --publish published=5000,target=5000,protocol=tcp,mode=host \
+    registry:2 >/dev/null
+  attempts=0
+  until docker -H "$manager_host" service ps --filter desired-state=running --format '{{.CurrentState}}' "$registry_service" | grep -q '^Running'; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 45 ]; then
+      echo "Nested lab registry did not become ready" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
+remove_lab_registry_objects() {
+  docker -H "$manager_host" service rm "$registry_proof_service" >/dev/null 2>&1 || true
+  docker -H "$manager_host" service rm "$registry_service" >/dev/null 2>&1 || true
+  docker -H "$manager_host" image rm "$registry_proof_image" >/dev/null 2>&1 || true
+}
+
 start_lab() {
   docker compose -p "$lab_project" -f "$compose_file" up -d
   wait_for_dind "$manager"
@@ -104,6 +137,7 @@ start_lab() {
   fi
 
   docker exec "$manager" docker node ls
+  ensure_lab_registry
 }
 
 case "${1:-}" in
@@ -185,6 +219,43 @@ case "${1:-}" in
     command -v bun >/dev/null 2>&1 || { echo "bun is required for the managed operations proof" >&2; exit 1; }
     INTERNAL_TOKEN="openship-swarm-managed-operations-proof-internal-token-0001" DOCKER_HOST="$manager_host" OPENSHIP_SWARM_MANAGED_STACK="$managed_stack" bun "$repo_root/scripts/swarm-managed-operations-harness.ts"
     ;;
+  registry-proof)
+    require_docker
+    require_lab
+    ensure_lab_registry
+    registry_address="$(manager_node_address):5000"
+    test -n "$registry_address" || { echo "Could not resolve nested registry address" >&2; exit 1; }
+    target="$registry_address/openship/registry-proof:deployment-1"
+    # Build only on the manager daemon, publish under a deterministic tag, and
+    # deploy the digest to an explicitly worker-constrained service. The worker
+    # has no pre-existing login and must pull from the manager-published registry.
+    printf '%s\n' 'FROM busybox:1.36' 'CMD ["sh", "-c", "echo registry-proof; sleep 3600"]' | docker -H "$manager_host" build -t "$registry_proof_image" - >/dev/null
+    docker -H "$manager_host" tag "$registry_proof_image" "$target"
+    docker -H "$manager_host" image push "$target" >/dev/null
+    digest="$(docker -H "$manager_host" image inspect --format '{{index .RepoDigests 0}}' "$target")"
+    case "$digest" in
+      "$registry_address"/*@sha256:*) ;;
+      *) echo "Registry push did not produce an immutable digest" >&2; exit 1 ;;
+    esac
+    docker -H "$manager_host" service rm "$registry_proof_service" >/dev/null 2>&1 || true
+    worker_hostname="$(docker exec "$worker" hostname)"
+    docker -H "$manager_host" service create \
+      --name "$registry_proof_service" \
+      --constraint "node.hostname == $worker_hostname" \
+      --with-registry-auth \
+      "$digest" >/dev/null
+    attempts=0
+    until docker -H "$manager_host" service ps --no-trunc --format '{{.Node}} {{.CurrentState}} {{.Image}}' "$registry_proof_service" | grep -q "^$worker_hostname Running .*@sha256:"; do
+      attempts=$((attempts + 1))
+      if [ "$attempts" -ge 45 ]; then
+        docker -H "$manager_host" service ps --no-trunc "$registry_proof_service" >&2 || true
+        echo "Worker did not pull and run the digest-pinned registry image" >&2
+        exit 1
+      fi
+      sleep 1
+    done
+    echo "Registry proof passed: worker pulled and ran $digest"
+    ;;
   events)
     require_docker
     require_lab
@@ -205,6 +276,7 @@ case "${1:-}" in
     wait_for_stack_removal "$fixture_stack"
     wait_for_stack_removal "$managed_stack"
     remove_managed_persistent_objects
+    remove_lab_registry_objects
     ;;
   down)
     require_docker

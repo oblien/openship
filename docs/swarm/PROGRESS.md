@@ -720,11 +720,12 @@ Next:
 
 ## S9.1: Encrypted OCI registry credentials
 
-Status: in-progress
-Commit: pending
+Status: done
+Commit: pending registry/source-build milestone
 Tests run:
 
-- TypeScript checks for `packages/db`, `apps/api`, and `apps/dashboard` — passed.
+- `bun --cwd apps/api vitest run src/modules/registries/registry.service.test.ts` — passed (2 tests).
+- TypeScript checks for `apps/api` and `apps/dashboard` — passed.
 
 Evidence:
 
@@ -732,12 +733,57 @@ Evidence:
   list/create/update/delete/test. Credential writes use the established
   encryption envelope; every read returns a `hasCredentials` flag only.
 - Registry hosts and repository prefixes are normalized before persistence.
-  Connection checks use a bounded V2 request, retain a generic outcome only,
-  and never include the token in an API response, audit event, or error text.
-- The dashboard API client has the corresponding typed write-only credential
-  shape. Stack attachment and the source-build/push flow remain next.
+  Connection checks use a bounded V2 request and the standard bearer-token
+  challenge where needed. Tokens and credential responses stay in-process and
+  generic outcomes only reach API/audit/dashboard surfaces.
+- The observed-stack dashboard now supports creating, editing, testing,
+  selecting, and detaching an organization registry. Credentials are write-only
+  and never rendered after save. Registry attachment validates complete login
+  pairs and does not touch running services.
 
 Next:
 
-- Attach a selected registry to a Swarm stack and add the dashboard management
-  panel, then implement manager-scoped temporary auth and digest-pinned pushes.
+- Complete per-service build-record status fan-out for source-build failures.
+
+## S9.2–S9.5: Digest publication, manager auth, source builds, and smart selection
+
+Status: in progress
+Commit: pending registry/source-build milestone
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/runtime.test.ts src/runtime/docker-registry.test.ts` — passed (13 tests).
+- `bun --cwd apps/api vitest run src/modules/deployments/swarm/deploy.service.test.ts src/modules/swarm/swarm-source.service.test.ts` — passed (11 tests).
+- TypeScript checks for `packages/adapters`, `apps/api`, and `apps/dashboard` — passed.
+- `scripts/swarm-lab.sh up`, `scripts/swarm-lab.sh registry-proof`,
+  `scripts/swarm-lab.sh cleanup`, and `scripts/swarm-lab.sh down` — the proof
+  worker was observed running the manager-published digest on July 30, 2026;
+  the command-stream wrapper dropped its final nested-BuildKit cell, so this is
+  retained as manual task-state evidence rather than a clean shell transcript.
+
+Evidence:
+
+- Docker publication tags a built image deterministically under
+  `<registry>/<namespace>/<project>/<service>:<deployment>`, pushes using
+  Dockerode in-memory credentials where available, retries only transient
+  transport/rate-limit failures, resolves `repo@sha256`, and removes only the
+  temporary tag after that digest is known. Registry output is reduced to safe
+  progress milestones.
+- The Swarm adapter writes a standard Docker `config.json` only under its
+  `umask 077` manager stage, prefixes the deploy with its temporary
+  `DOCKER_CONFIG`, adds `--with-registry-auth` only for a complete configured
+  login, and removes the stage on success or failure. No permanent manager
+  Docker config is changed.
+- Repository-backed `build:` services are built on the selected manager’s
+  Docker runtime, published, and supplied to `docker stack config` through a
+  generated digest-image override. Prebuilt services are retained unchanged.
+  Inline source with `build:` is refused because it cannot supply a bounded
+  cloneable build context.
+- Webhook deployments with an exact, non-truncated changed-path set reuse a
+  previous digest only for source-built services whose independent contexts are
+  unchanged. Compose edits, shared/unknown paths, missing digests, force-all,
+  and truncated path sets rebuild conservatively.
+
+Next:
+
+- Persist source-build start/failure status into per-service deployment rows
+  before the stack apply, then promote this milestone to complete.

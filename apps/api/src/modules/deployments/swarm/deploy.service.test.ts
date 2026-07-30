@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SwarmDiscoverySnapshot } from "@repo/adapters";
-import type { Deployment, Project, SwarmStack } from "@repo/db";
-import { createSwarmDeployService, type SwarmDeployLogger } from "./deploy.service";
+import type { SwarmServiceProjection } from "@repo/core";
+import type { ContainerRegistry, Deployment, Project, SwarmStack } from "@repo/db";
+import { createSwarmDeployService, selectSourceBuilds, type SwarmDeployLogger } from "./deploy.service";
 import { swarmLiveStateDigest } from "../../swarm/swarm-preview";
 
 const stack = {
@@ -150,6 +151,7 @@ function fixture(
     deployError?: Error;
     stackOverride?: SwarmStack;
     beforeDiscovery?: SwarmDiscoverySnapshot;
+    registry?: ContainerRegistry;
   } = {},
 ) {
   const activeStack = options.stackOverride ?? stack;
@@ -182,6 +184,7 @@ function fixture(
   const service = createSwarmDeployService({
     featureEnabled: () => true,
     getStack: async () => activeStack,
+    getRegistry: async () => options.registry,
     resolvePlatform: async () =>
       ({
         stackRuntime: {
@@ -221,6 +224,51 @@ const project = { id: "project-blog", organizationId: "org-a" } as Project;
 const deployment = { id: "deployment-1", organizationId: "org-a" } as Deployment;
 
 describe("managed Swarm deploy", () => {
+  it("reuses only a prior digest for an unchanged isolated source-build context", () => {
+    const result = selectSourceBuilds({
+      stack: {
+        ...stack,
+        sourceKind: "repository",
+        sourcePath: "deploy",
+        sourcePaths: ["compose.yaml"],
+      } as SwarmStack,
+      deployment: { ...deployment, forceAll: false, changedPaths: ["deploy/web/src/main.ts"], changedPathsTruncated: false } as Deployment,
+      buildable: [
+        { service: { sourceServiceName: "web", mode: "replicated", build: "web", sourceState: "present" }, build: { context: "web" } },
+        { service: { sourceServiceName: "worker", mode: "replicated", build: "worker", sourceState: "present" }, build: { context: "worker" } },
+      ],
+      previousImages: {
+        web: "registry.example.com/team/blog/web@sha256:web",
+        worker: "registry.example.com/team/blog/worker@sha256:worker",
+      },
+    });
+    expect(result.build.map((entry) => entry.service.sourceServiceName)).toEqual(["web"]);
+    expect(result.preserved).toEqual({ worker: "registry.example.com/team/blog/worker@sha256:worker" });
+  });
+
+  it("rebuilds every source service when the stack source changes or changed paths are incomplete", () => {
+    const buildable: Array<{ service: SwarmServiceProjection; build: { context: string } }> = [
+      { service: { sourceServiceName: "web", mode: "replicated", build: "web", sourceState: "present" }, build: { context: "web" } },
+      { service: { sourceServiceName: "worker", mode: "replicated", build: "worker", sourceState: "present" }, build: { context: "worker" } },
+    ];
+    for (const deploymentOverride of [
+      { changedPaths: ["deploy/compose.yaml"], changedPathsTruncated: false },
+      { changedPaths: ["deploy/web/src/main.ts"], changedPathsTruncated: true },
+    ]) {
+      const result = selectSourceBuilds({
+        stack: { ...stack, sourceKind: "repository", sourcePath: "deploy", sourcePaths: ["compose.yaml"] } as SwarmStack,
+        deployment: { ...deployment, forceAll: false, ...deploymentOverride } as Deployment,
+        buildable,
+        previousImages: {
+          web: "registry.example.com/team/blog/web@sha256:web",
+          worker: "registry.example.com/team/blog/worker@sha256:worker",
+        },
+      });
+      expect(result.build.map((entry) => entry.service.sourceServiceName)).toEqual(["web", "worker"]);
+      expect(result.preserved).toEqual({});
+    }
+  });
+
   it("records a revision before applying and persists stack/service runtime references after manager convergence", async () => {
     const test = fixture();
     test.createRevision.mockImplementationOnce(async () => {
@@ -293,6 +341,27 @@ describe("managed Swarm deploy", () => {
       "org-a",
       expect.objectContaining({ applyStatus: "converging" }),
     );
+  });
+
+  it("passes only the decrypted registry credential to the transient deploy adapter input", async () => {
+    const registry = {
+      id: "registry-a",
+      organizationId: "org-a",
+      registryUrl: "registry.example.com",
+      repositoryPrefix: "team",
+      username: "robot",
+      credentialsEnc: "write-only-secret",
+    } as ContainerRegistry;
+    const test = fixture({
+      stackOverride: { ...stack, registryId: registry.id, withRegistryAuth: true } as SwarmStack,
+      registry,
+    });
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger })).resolves.toMatchObject({ state: "ready" });
+    expect(test.deployStack).toHaveBeenCalledWith(expect.objectContaining({
+      withRegistryAuth: true,
+      registryAuth: { serverAddress: "registry.example.com", username: "robot", password: "write-only-secret" },
+    }));
+    expect(test.log.mock.calls.flat().join("\n")).not.toContain("write-only-secret");
   });
 
   it("treats a lost deploy command response as indeterminate instead of running container cleanup", async () => {
