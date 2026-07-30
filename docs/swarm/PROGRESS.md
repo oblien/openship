@@ -380,3 +380,26 @@ Next:
 
 - Expand compatibility and storage preflight into hard blockers and
   remediation-bearing warnings (S3.6).
+
+## S3.6: Swarm compatibility and storage preflight
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd apps/api lint` and `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-compatibility.test.ts src/modules/swarm/swarm-preview.test.ts` — passed (5 tests).
+
+Evidence:
+
+- Missing external networks, volumes, configs, and secrets are apply blockers;
+  source-built services without a configured OCI registry are blocked too.
+- Local named-volume movability, unsupported service-log drivers, job modes,
+  and Compose-to-Swarm behavior gaps are remediation-bearing warnings. Existing
+  manager metadata is used by name only—no config/secret content is read.
+- The render preview endpoint returns this typed compatibility report alongside
+  redacted output and never mutates a stack.
+
+Next:
+
+- Deliver side-by-side stack discovery and observe-mode import (Phase 4).

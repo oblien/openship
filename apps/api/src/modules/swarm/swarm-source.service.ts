@@ -15,6 +15,7 @@ import {
 } from "./swarm-source.model";
 import { projectSwarmStackSource } from "./swarm-stack-projection";
 import { previewSwarmStack, redactRenderWarnings } from "./swarm-preview";
+import { evaluateSwarmCompatibility } from "./swarm-compatibility";
 
 function assertEnabled(): void {
   if (!swarmSupportEnabled()) {
@@ -131,10 +132,16 @@ export async function renderStackSource(
       lastObservedLiveDigest: stack.lastObservedDigest,
       interpolationValues: environment,
     });
+    const compatibility = evaluateSwarmCompatibility({
+      renderedYaml: rendered.renderedYaml,
+      discovery: observed,
+      registryConfigured: !!stack.registryId,
+    });
     return {
       valid: true,
       ...preview,
       warnings: redactRenderWarnings(rendered.warnings, environment),
+      compatibility,
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
