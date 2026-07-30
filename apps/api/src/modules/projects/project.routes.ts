@@ -23,6 +23,7 @@ import * as routeRules from "../route-rules/route-rule.controller";
 import * as ensureEdgeCtrl from "../domains/ensure-edge.controller";
 import * as incomingWebhooks from "../incoming-webhooks/incoming.controller";
 import * as swarmSource from "../swarm/swarm-source.controller";
+import * as swarmManagedInput from "../swarm/swarm-managed-input.controller";
 import * as swarmObservation from "../swarm/swarm-observation.controller";
 import * as swarmManagement from "../swarm/swarm-management.controller";
 import * as swarmStack from "../swarm/swarm-stack.controller";
@@ -45,7 +46,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
-import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, ScaleSwarmServiceBody, SetSwarmRoutingModeBody, SetSwarmStackRegistryBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
+import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, SaveSwarmManagedInputBody, ScaleSwarmServiceBody, SetSwarmRoutingModeBody, SetSwarmStackRegistryBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -173,6 +174,9 @@ r.patch(
 );
 r.delete("/:id", { tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
 r.get("/:id/swarm/source", { tag: "project:read", localOnly: true, readOnly: true }, swarmSource.get);
+r.get("/:id/swarm/managed-inputs", { tag: "project:read", localOnly: true, readOnly: true }, swarmManagedInput.list);
+r.post("/:id/swarm/managed-inputs", { tag: "project:write", localOnly: true, body: SaveSwarmManagedInputBody }, swarmManagedInput.save);
+r.delete("/:id/swarm/managed-inputs/:inputId", { tag: "project:write", localOnly: true }, swarmManagedInput.remove);
 r.get("/:id/swarm/handoff", { tag: "project:admin", localOnly: true, readOnly: true }, swarmSource.handoff);
 r.post(
   "/:id/swarm/stack",

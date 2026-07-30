@@ -86,3 +86,10 @@ export const CreateSwarmStackBindingBody = Type.Object({
 });
 
 export type TCreateSwarmStackBindingBody = Static<typeof CreateSwarmStackBindingBody>;
+
+export const SaveSwarmManagedInputBody = Type.Object({
+  kind: Type.Union([Type.Literal("config"), Type.Literal("secret")]),
+  logicalName: Type.String({ minLength: 1, maxLength: 128 }),
+  value: Type.String({ minLength: 1, maxLength: 1_000_000 }),
+});
+export type TSaveSwarmManagedInputBody = Static<typeof SaveSwarmManagedInputBody>;
