@@ -915,3 +915,50 @@ Next:
 
 - Implement explicit reversible router cutover planning and verification
   (S10.5), then deterministic rollback revisions (S11.1).
+
+## S10.5: Explicit reversible router cutover
+
+Status: done
+Commit: `febbadae`
+Tests run:
+
+- `bun --filter @repo/adapters test src/runtime/swarm/runtime.test.ts src/runtime/swarm/cutover.test.ts src/runtime/swarm/edge.test.ts`
+  — passed (22 tests).
+- `bun --filter @repo/api test src/modules/swarm/swarm-edge.service.test.ts`
+  — passed (4 tests).
+- `bun run --cwd packages/adapters lint`, `bun run --cwd apps/api lint`,
+  `sh -n scripts/swarm-lab.sh`, and `git diff --check` — passed.
+- `scripts/swarm-lab.sh cleanup && scripts/swarm-lab.sh down && scripts/swarm-lab.sh up && scripts/swarm-lab.sh cutover-proof`
+  — passed on July 30, 2026. It reported `healthVerified: true`, the expected
+  empty managed-route set, a zero-replica legacy router, and a running Edge
+  task; direct manager inspection confirmed port removal, Edge's host 80/443
+  publication, ingress placement, overlay attachment, no surviving journal or
+  health-probe service. `cleanup && down` then passed.
+
+Evidence:
+
+- The read-only cutover plan distinguishes host/container port ownership from
+  Swarm service ownership, rejects ambiguous or unsupported router shapes, and
+  binds a mutation to the reviewed service ID and spec version. The HTTP API
+  requires an explicit maintenance acknowledgment and exact router-name
+  confirmation; normal claim/deploy paths do not call it.
+- Cutover only changes the router service spec: it persists the original
+  replica/80/443 state in a labelled Docker-config journal, scales the router
+  down, removes its two edge publications, then creates the labelled Edge.
+  It never resolves or executes against a task container, avoiding a
+  rescheduling race. Failed Edge scheduling, health, or route verification
+  removes only an OpenShip-owned Edge and restores the exact publications and
+  replica count; a durable journal supports explicit later recovery if rollback
+  itself cannot complete.
+- Swarm discovery now inspects full node metadata after `docker node ls`, so
+  the deliberate `openship.edge.ingress=true` placement label is actually
+  visible to topology and cutover decisions.
+- A short-lived ingress-pinned service checks HTTP overlay connectivity to
+  Edge, then checks every OpenShip-managed route domain with its Host header;
+  5xx/unreachable routes fail cutover. The successful result returns the exact
+  served managed-domain set from config labels only, never config payloads.
+
+Next:
+
+- Reapply exact prior revisions without weakening the service-DNS route and
+  Edge ownership guarantees (S11.1).
