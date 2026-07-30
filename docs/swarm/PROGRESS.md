@@ -875,7 +875,7 @@ Evidence:
 ## S10.4: Route OpenShip domains to Swarm service DNS
 
 Status: done
-Commit: `2f74f30a`
+Commit: `d4ff7600`
 Tests run:
 
 - `bun --filter @repo/adapters test src/runtime/swarm/edge-routes.test.ts` —
