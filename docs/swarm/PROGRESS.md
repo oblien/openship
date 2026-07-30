@@ -516,7 +516,7 @@ Next:
 ## S4.5: Zero-mutation coexistence proof
 
 Status: done
-Commit: pending
+Commit: 58df87d0
 Tests run:
 
 - `sh -n scripts/swarm-lab.sh` and TypeScript checks for `apps/api` and
@@ -541,3 +541,15 @@ Next:
 
 - Complete Gate A review, then begin the prebuilt-image managed stack apply
   path (Phase 5).
+
+## Gate A: Safe read-only evaluation
+
+Status: passed
+
+The manager probe rejects inactive and worker endpoints; Swarm task ownership
+is excluded from container migration and proxy takeover; labeled stack
+discovery and observed import are feature-gated; authoritative source can be
+linked, rendered, redacted, and compared; and the disposable lab has recorded
+an event-clean repeated-observation run. The next slice is the managed,
+prebuilt-image stack apply path. Portainer remains an external writer until a
+future explicit claim flow is implemented.

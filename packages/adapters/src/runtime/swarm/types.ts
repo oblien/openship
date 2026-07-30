@@ -22,6 +22,8 @@ export interface StackRuntimeAdapter {
   probe(): Promise<SwarmManagerInfo>;
   discover(): Promise<SwarmDiscoverySnapshot>;
   renderStack(input: RenderStackInput): Promise<RenderedStack>;
+  /** Applies a reviewed, non-interpolated document through the manager. */
+  deployStack(input: DeployStackInput): Promise<DeployedStack>;
   /** The platform owns any shared SSH executor; this adapter has no implicit teardown. */
   dispose?(): Promise<void>;
 }
@@ -54,6 +56,22 @@ export interface RenderedStack {
   renderedDigest: string;
   overrideYaml: string;
   warnings: string[];
+}
+
+/** The deploy adapter accepts Docker-rendered config, never source documents. */
+export interface DeployStackInput {
+  stackName: string;
+  renderedYaml: string;
+  /** Managed-stack pruning remains an explicit caller decision. */
+  prune?: boolean;
+  resolveImage?: "always" | "changed" | "never";
+  /** Credential setup remains outside this API; this only adds Docker's flag. */
+  withRegistryAuth?: boolean;
+}
+
+export interface DeployedStack {
+  /** Bounded Docker CLI output suitable for deployment logs. */
+  output: string;
 }
 
 export interface SwarmDiscoveryDiagnostic {

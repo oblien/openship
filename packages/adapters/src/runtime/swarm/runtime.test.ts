@@ -159,4 +159,48 @@ describe("SwarmRuntime manager probe", () => {
     });
     expect(rm).toHaveBeenCalledWith("/tmp/openship-swarm-render.def456");
   });
+
+  it("deploys only a reviewed rendered document with explicit image resolution and private cleanup", async () => {
+    const commands: string[] = [];
+    const writes = new Map<string, string>();
+    const rm = vi.fn().mockResolvedValue(undefined);
+    const runtime = await SwarmRuntime.create({
+      executor: {
+        exec: async (command: string) => {
+          commands.push(command);
+          if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
+          if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
+          if (command.startsWith("umask 077 && mktemp -d /tmp/openship-swarm-deploy.")) {
+            return "/tmp/openship-swarm-deploy.abc123";
+          }
+          if (command.startsWith("docker stack deploy")) return "Creating service demo_web";
+          throw new Error(`unexpected command: ${command}`);
+        },
+        writeFile: async (path, content) => { writes.set(path, content); },
+        rm,
+      },
+    });
+
+    await expect(runtime.deployStack({
+      stackName: "demo",
+      renderedYaml: "services:\n  web:\n    image: nginx:1.27-alpine\n",
+    })).resolves.toEqual({ output: "Creating service demo_web" });
+
+    expect(writes.get("/tmp/openship-swarm-deploy.abc123/rendered-stack.yaml")).toContain("nginx:1.27-alpine");
+    const command = commands.find((entry) => entry.startsWith("docker stack deploy"))!;
+    expect(command).toContain("--resolve-image always");
+    expect(command).not.toContain("--prune");
+    expect(command).not.toContain("nginx:1.27-alpine");
+    expect(rm).toHaveBeenCalledWith("/tmp/openship-swarm-deploy.abc123");
+  });
+
+  it("rejects invalid deploy input before invoking docker", async () => {
+    const exec = vi.fn(async (command: string) =>
+      command.startsWith("docker info") ? JSON.stringify(managerInfo) : JSON.stringify(serverVersion),
+    );
+    const runtime = await SwarmRuntime.create({ executor: { exec, writeFile: async () => {}, rm: async () => {} } });
+    await expect(runtime.deployStack({ stackName: "Not Allowed", renderedYaml: "services: {}" }))
+      .rejects.toMatchObject({ name: "SwarmDeployError" });
+    expect(exec.mock.calls.some(([command]) => String(command).includes("docker stack deploy"))).toBe(false);
+  });
 });

@@ -19,6 +19,8 @@ import type {
   SwarmManagerInfo,
   RenderStackInput,
   RenderedStack,
+  DeployStackInput,
+  DeployedStack,
 } from "./types";
 
 export interface SwarmRuntimeOptions {
@@ -39,8 +41,18 @@ export class SwarmRenderError extends Error {
   }
 }
 
+/** A manager-side apply failure. Its message is safe to put in a deployment log. */
+export class SwarmDeployError extends Error {
+  constructor(message = "Docker could not deploy the rendered stack.") {
+    super(message);
+    this.name = "SwarmDeployError";
+  }
+}
+
 const MAX_RENDER_SOURCE_FILES = 250;
 const STAGING_PREFIX = "/tmp/openship-swarm-render.";
+const DEPLOY_STAGING_PREFIX = "/tmp/openship-swarm-deploy.";
+const MAX_RENDERED_STACK_BYTES = 10_000_000;
 
 function assertStagingPath(path: string): string {
   const normalized = path.trim().replaceAll("\\", "/");
@@ -89,6 +101,21 @@ function canonicalRenderedYaml(value: string): string {
 
 function renderedDigest(value: string): string {
   return `sha256:${createHash("sha256").update(canonicalRenderedYaml(value)).digest("hex")}`;
+}
+
+function assertDeployStackName(value: string): string {
+  const stackName = value.trim();
+  if (!/^[a-z0-9][a-z0-9_.-]{0,62}$/.test(stackName)) {
+    throw new SwarmDeployError("A Docker Swarm stack name is invalid.");
+  }
+  return stackName;
+}
+
+function assertRenderedStack(value: string): string {
+  if (!value.trim() || Buffer.byteLength(value, "utf8") > MAX_RENDERED_STACK_BYTES) {
+    throw new SwarmDeployError("The rendered stack document is missing or exceeds the deploy size limit.");
+  }
+  return canonicalRenderedYaml(value);
 }
 
 function safeWarnings(value: string): string[] {
@@ -288,6 +315,58 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       const warnings = safeWarnings(await executor.readFile(warningsPath).catch(() => ""));
       const canonical = canonicalRenderedYaml(renderedYaml);
       return { renderedYaml: canonical, renderedDigest: renderedDigest(canonical), overrideYaml: override, warnings };
+    } finally {
+      if (stage) await executor.rm(stage).catch(() => {});
+    }
+  }
+
+  /**
+   * Applies a Docker-produced stack config. Callers must perform ownership and
+   * compatibility checks first; this adapter deliberately knows nothing about
+   * project policy and never accepts raw source documents or environment maps.
+   */
+  async deployStack(input: DeployStackInput): Promise<DeployedStack> {
+    const executor = this.executor;
+    if (!executor.writeFile || !executor.rm) {
+      throw new SwarmDeployError("This manager transport cannot safely stage a stack deployment.");
+    }
+    const stackName = assertDeployStackName(input.stackName);
+    const renderedYaml = assertRenderedStack(input.renderedYaml);
+    const resolveImage = input.resolveImage ?? "always";
+    if (resolveImage !== "always" && resolveImage !== "changed" && resolveImage !== "never") {
+      throw new SwarmDeployError("The requested image resolution policy is invalid.");
+    }
+
+    let stage: string | null = null;
+    try {
+      const created = await executor.exec(
+        `umask 077 && mktemp -d ${DEPLOY_STAGING_PREFIX}XXXXXX`,
+        { timeout: Math.max(this.timeoutMs, 120_000) },
+      );
+      stage = created.trim();
+      if (!new RegExp(`^${DEPLOY_STAGING_PREFIX.replace(".", "\\.")}[A-Za-z0-9]+$`).test(stage)) {
+        throw new SwarmDeployError("Manager returned an invalid deployment staging directory.");
+      }
+      const documentPath = `${stage}/rendered-stack.yaml`;
+      await executor.writeFile(documentPath, renderedYaml);
+      const command = [
+        "docker stack deploy --detach=false",
+        `--resolve-image ${resolveImage}`,
+        ...(input.withRegistryAuth ? ["--with-registry-auth"] : []),
+        ...(input.prune ? ["--prune"] : []),
+        "--compose-file",
+        sq(documentPath),
+        sq(stackName),
+      ].join(" ");
+      try {
+        const output = await executor.exec(command, { timeout: Math.max(this.timeoutMs, 120_000) });
+        return { output: output.length > 16_000 ? `${output.slice(0, 16_000)}…` : output };
+      } catch (error) {
+        const detail = error instanceof Error ? error.message.replace(/\s+/g, " ").trim() : "";
+        throw new SwarmDeployError(
+          detail ? `Docker stack deploy failed: ${detail.slice(0, 1_000)}` : undefined,
+        );
+      }
     } finally {
       if (stage) await executor.rm(stage).catch(() => {});
     }
