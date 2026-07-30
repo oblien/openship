@@ -1,1 +1,8 @@
-export { cloudRuntimeTarget, env, internalApiUrl, runtimeTarget, webhookProxyTarget } from "./env";
+export {
+  cloudRuntimeTarget,
+  env,
+  internalApiUrl,
+  runtimeTarget,
+  swarmSupportEnabled,
+  webhookProxyTarget,
+} from "./env";

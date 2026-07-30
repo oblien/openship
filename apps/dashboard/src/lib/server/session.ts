@@ -111,6 +111,8 @@ export type DeploymentInfo = {
   /** True when OpenShip runs ON a server (self-hosted, non-desktop) — the host
    *  is itself a deployable target, auto-registered as an isLocal server. */
   isServerHost?: boolean;
+  /** Experimental Docker Swarm capability, resolved by the API. */
+  swarmSupportEnabled?: boolean;
   authMode: "cloud" | "local" | "none";
   cloudAuthUrl: string;
   cloudApiUrl: string;

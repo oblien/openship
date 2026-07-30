@@ -19,6 +19,8 @@ export type ClientDeploymentInfo = {
   selfHosted: boolean;
   deployMode: string;
   authMode: "cloud" | "local" | "none";
+  /** Experimental Docker Swarm capability, resolved by the API. */
+  swarmSupportEnabled?: boolean;
   /** Running server release (self-hosted). Absent on older servers. */
   version?: string;
 };

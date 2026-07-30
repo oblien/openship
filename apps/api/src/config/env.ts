@@ -129,6 +129,12 @@ const envSchema = z.object({
   /* ---------- Mode ---------- */
   CLOUD_MODE: envBool("false"),
   /**
+   * Enables the experimental Docker Swarm surfaces. This deliberately defaults
+   * off so an upgrade cannot expose a second writer for an existing Swarm until
+   * the operator explicitly opts in.
+   */
+  OPENSHIP_EXPERIMENTAL_SWARM: envBool("false"),
+  /**
    * MASTER switch for the whole Openship Cloud billing feature (subscriptions,
    * top-ups, Stripe portal). OFF by default → the billing state reports
    * `billing.status = "coming_soon"` and every Stripe-mutating endpoint fails
@@ -398,6 +404,17 @@ const envSchema = z.object({
 type Env = z.infer<typeof envSchema>;
 
 export const env: Env = envSchema.parse(process.env);
+
+/**
+ * The single feature gate for Docker Swarm support.
+ *
+ * Keep callers behind this helper rather than reading process.env themselves:
+ * the value is parsed once by the typed environment schema and is also exposed
+ * to the dashboard through GET /api/health/env.
+ */
+export function swarmSupportEnabled(): boolean {
+  return env.OPENSHIP_EXPERIMENTAL_SWARM === true;
+}
 
 // Print resolution at MODULE LOAD, before any handler runs. If
 // boot crashes (e.g. EADDRINUSE on listen), this still shows. The

@@ -14,6 +14,8 @@ interface PlatformContextValue {
   /** OpenShip runs ON a server (self-hosted, non-desktop): the host is itself a
    *  deployable target, auto-registered as the isLocal "This Server". */
   isServerHost: boolean;
+  /** True only when the API has explicitly enabled experimental Swarm support. */
+  swarmSupportEnabled: boolean;
   authMode: "cloud" | "local" | "none";
   cloudAuthUrl: string;
   cloudApiUrl: string;
@@ -48,6 +50,7 @@ interface PlatformProviderProps {
   selfHosted?: boolean;
   deployMode?: string;
   isServerHost?: boolean;
+  swarmSupportEnabled?: boolean;
   authMode?: "cloud" | "local" | "none";
   cloudAuthUrl?: string;
   cloudApiUrl?: string;
@@ -68,6 +71,7 @@ export function PlatformProvider({
   selfHosted: initialSelfHosted = true,
   deployMode = "docker",
   isServerHost = false,
+  swarmSupportEnabled = false,
   authMode = "local",
   cloudAuthUrl = CLOUD_DASHBOARD_URL,
   cloudApiUrl = CLOUD_API_URL,
@@ -84,6 +88,7 @@ export function PlatformProvider({
         selfHosted,
         deployMode,
         isServerHost,
+        swarmSupportEnabled,
         authMode,
         cloudAuthUrl,
         cloudApiUrl,
