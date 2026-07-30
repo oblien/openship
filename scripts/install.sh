@@ -98,7 +98,22 @@ if ! command -v node >/dev/null 2>&1; then
   fi
 fi
 
-# 5. Next steps.
+# 5. Docker is the CLI's job, not ours. `openship up` / the wizard install it via
+#    ensureDocker() only when they actually need the compose stack — this script also
+#    runs on laptops and CI that just manage REMOTE servers. (OPENSHIP_SKIP_DOCKER is
+#    still accepted; it no longer does anything.)
+#
+#    The one thing the CLI can't fix for you: group membership needs a new login.
+if [ "$(uname -s)" = "Linux" ] \
+  && command -v docker >/dev/null 2>&1 \
+  && ! docker info >/dev/null 2>&1 \
+  && [ "$(id -u)" -ne 0 ] \
+  && ! id -nG | tr ' ' '\n' | grep -qx docker; then
+  info "Docker is installed but your user can't reach the daemon."
+  info "Fix: sudo usermod -aG docker $(id -un) — then log out and back in (or: newgrp docker)."
+fi
+
+# 6. Next steps.
 cat <<EOF
 
 $(printf '\033[32m✔\033[0m') Openship installed.

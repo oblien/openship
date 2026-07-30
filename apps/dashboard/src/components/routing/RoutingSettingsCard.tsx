@@ -43,6 +43,15 @@ export interface RoutingSettingsCardProps {
   /** Place the exposed-port field to the RIGHT of the domain input (label above)
    *  instead of on its own row below — saves height when there's horizontal room. */
   portInline?: boolean;
+  /** Hide the Free/Custom segmented — the caller drives `domainType` from its
+   *  own outer control (avoids a redundant nested toggle). */
+  hideTypeToggle?: boolean;
+  /** Auto-clean a typed `www.` prefix off the custom hostname on commit — set for
+   *  the PRIMARY/apex input only (never the `www.<apex>` variant endpoint, which
+   *  would collapse into the apex). The `www.` variant is added via the card's own
+   *  "Include www" switch, so a user typing `www.example.com` as their primary
+   *  gets `example.com` + the toggle, not a conflicting duplicate route. */
+  stripWww?: boolean;
 }
 
 export function RoutingSettingsCard({
@@ -66,6 +75,8 @@ export function RoutingSettingsCard({
   saveMode = "change",
   actionSlot,
   portInline = false,
+  hideTypeToggle = false,
+  stripWww = false,
 }: RoutingSettingsCardProps) {
   const { baseDomain } = usePlatform();
   const { t } = useI18n();
@@ -153,8 +164,29 @@ export function RoutingSettingsCard({
     void onDomainChange(next);
   };
 
+  // Clean a typed `www.` off the PRIMARY hostname (apex input only) — see stripWww.
+  const cleanCustomHost = (value: string) => {
+    const lowered = value.toLowerCase();
+    return stripWww ? lowered.replace(/^www\./, "") : lowered;
+  };
+
   const commitCustomDomain = () => {
-    void onCustomDomainChange(draftCustomDomain.toLowerCase());
+    const cleaned = cleanCustomHost(draftCustomDomain);
+    if (cleaned !== draftCustomDomain) setDraftCustomDomain(cleaned);
+    void onCustomDomainChange(cleaned);
+  };
+
+  // Strip on blur (not per-keystroke, which would fight the user typing "www.").
+  // Explicit mode commits the draft; change mode re-commits the already-live value.
+  const handleCustomDomainBlur = () => {
+    if (saveMode === "explicit") {
+      if (draftCustomDomain !== customDomain || cleanCustomHost(draftCustomDomain) !== draftCustomDomain) {
+        commitCustomDomain();
+      }
+    } else if (stripWww) {
+      const cleaned = cleanCustomHost(customDomain);
+      if (cleaned !== customDomain) void onCustomDomainChange(cleaned);
+    }
   };
 
   const commitPort = () => {
@@ -169,15 +201,17 @@ export function RoutingSettingsCard({
     }
   };
 
-  // Exposed-port field with the label ABOVE — used when `portInline` places it
-  // to the right of the domain input. Matches the input height (h-11) so the
-  // two bottom-align.
+  // Exposed-port field placed to the RIGHT of the domain input. No label above
+  // (it used to float over empty space beside the label-less domain input); the
+  // placeholder + aria-label carry the meaning and both fields are a plain h-11
+  // so the row aligns cleanly with no dead whitespace.
   const portInlineField = showsPortTarget ? (
     <div className="shrink-0">
-      <label className="mb-1.5 block text-[13px] font-medium text-muted-foreground">{w.exposedPort}</label>
       <input
         type="text"
         inputMode="numeric"
+        aria-label={w.exposedPort}
+        title={w.exposedPort}
         value={saveMode === "explicit" ? draftPort : exposedPort}
         onChange={(event) => {
           if (saveMode === "explicit") setDraftPort(event.target.value);
@@ -186,10 +220,10 @@ export function RoutingSettingsCard({
         onBlur={() => {
           if (saveMode === "explicit" && draftPort !== (exposedPort ?? "")) commitPort();
         }}
-        placeholder="3000"
+        placeholder={w.exposedPort}
         disabled={disabled}
         list={hasPortOptions ? portListId : undefined}
-        className="w-24 h-11 rounded-2xl border border-border/50 bg-background/60 px-3.5 text-sm text-foreground outline-none"
+        className="w-24 h-11 rounded-2xl border border-border/50 bg-background/60 px-3.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/40"
       />
       {hasPortOptions && (
         <datalist id={portListId}>
@@ -218,38 +252,44 @@ export function RoutingSettingsCard({
             className={`relative rounded-full transition-colors duration-200 ${visible ? "bg-info-solid" : "bg-muted-foreground/20"}`}
             style={{ height: "22px", width: "40px" }}
           >
-            <span className={`absolute top-0.5 start-0.5 w-[18px] h-[18px] rounded-full bg-white shadow-sm transition-transform duration-200 ${visible ? "translate-x-[18px] rtl:-translate-x-[18px]" : "translate-x-0"}`} />
+            <span className={`absolute top-0.5 start-0.5 w-[18px] h-[18px] rounded-full bg-background shadow-sm transition-transform duration-200 ${visible ? "translate-x-[18px] rtl:-translate-x-[18px]" : "translate-x-0"}`} />
           </button>
         </div>
       )}
 
       {visible && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void onDomainTypeChange("free")}
-                disabled={disabled}
-                aria-label={w.freeSubdomain}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "free" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
-              >
-                {w.free}
-              </button>
-              <button
-                type="button"
-                onClick={() => void onDomainTypeChange("custom")}
-                disabled={disabled}
-                aria-label={w.customDomain}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "custom" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
-              >
-                {w.custom}
-              </button>
+          {(!hideTypeToggle || (!portInline && actionSlot)) && (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {!hideTypeToggle && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void onDomainTypeChange("free")}
+                      disabled={disabled}
+                      aria-label={w.freeSubdomain}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "free" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
+                    >
+                      {w.free}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDomainTypeChange("custom")}
+                      disabled={disabled}
+                      aria-label={w.customDomain}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${domainType === "custom" ? "bg-primary/10 text-primary ring-1 ring-primary/15" : "bg-muted/40 text-muted-foreground hover:bg-muted/60"}`}
+                    >
+                      {w.custom}
+                    </button>
+                  </>
+                )}
+              </div>
+              {/* When the port is inline, the add-domain "+" moves to the end of
+                  the input row (after Exposed port); otherwise it sits here. */}
+              {!portInline && actionSlot}
             </div>
-            {/* When the port is inline, the add-domain "+" moves to the end of
-                the input row (after Exposed port); otherwise it sits here. */}
-            {!portInline && actionSlot}
-          </div>
+          )}
 
           {domainType === "free" ? (
             <div className="flex items-end gap-2">
@@ -304,9 +344,7 @@ export function RoutingSettingsCard({
                         void onCustomDomainChange(next);
                       }
                     }}
-                    onBlur={() => {
-                      if (saveMode === "explicit" && draftCustomDomain !== customDomain) commitCustomDomain();
-                    }}
+                    onBlur={handleCustomDomainBlur}
                     placeholder="app.example.com"
                     className="flex-1 h-full px-3.5 text-sm bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40"
                   />
@@ -326,23 +364,20 @@ export function RoutingSettingsCard({
                 {portInline && actionSlot}
               </div>
 
-              {/* DNS hint — lazy: only shown once records are resolvable (or
-                  loading). No "enter a valid domain" nag; DNS isn't required up
+              {/* DNS hint — shown ONLY once records actually resolve. The
+                  "checking…" loading state was dropped: it flashed on every
+                  keystroke and jittered the card height. DNS isn't required up
                   front (verified later at preflight / in domain settings). */}
-              {(loadingRecords || hasRecords) && (
+              {hasRecords && (
                 <div className="rounded-lg border border-border/50 bg-muted/20 overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-2">
                     <Server className="size-3 text-muted-foreground shrink-0" />
-                    {loadingRecords ? (
-                      <p className="text-sm text-muted-foreground flex-1">{w.checkingDns}</p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground flex-1">
-                        {interpolate(w.addRecordHint, {
-                          primary: dnsRecords.find((record) => record.type !== "TXT")?.type ?? "",
-                          txt: "TXT",
-                        })}
-                      </p>
-                    )}
+                    <p className="text-sm text-muted-foreground flex-1">
+                      {interpolate(w.addRecordHint, {
+                        primary: dnsRecords.find((record) => record.type !== "TXT")?.type ?? "",
+                        txt: "TXT",
+                      })}
+                    </p>
                     {hasRecords && (
                       <button
                         type="button"

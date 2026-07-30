@@ -59,6 +59,7 @@ export type {
   DiscoveredGroup,
   DiscoveredService,
   DiscoveredVolumeMount,
+  ComposeRepoService,
   OpenshipProjectGroup,
   ReimportResult,
   AdoptResult,
@@ -66,6 +67,10 @@ export type {
   MigrationPreviewService,
   MigrationRun,
   MigrationStatus,
+  TransferProgress,
+  CustomPath,
+  PendingItem,
+  ConflictAction,
 } from "./server-migration";
 export type {
   DomainChoice,
@@ -103,10 +108,12 @@ export { mailAdminApi } from "./mail-admin";
 export type {
   AdminDomain,
   AdminMailbox,
+  AdminAlias,
   CreateDomainPayload,
   UpdateDomainPayload,
   CreateMailboxPayload,
   UpdateMailboxPayload,
+  CreateAliasPayload,
   DomainDependents,
   AdditionalDomainDnsState,
   MailServerStats,

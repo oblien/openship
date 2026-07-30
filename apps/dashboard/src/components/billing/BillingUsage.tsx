@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Loader2, ArrowDownUp, ChevronDown, AlertCircle } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { UsageChart } from "./UsageChart";
+import { BillingCapacity } from "./BillingCapacity";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { BillingState } from "@/lib/api/billing";
 import type { Dictionary } from "@/i18n";
@@ -345,6 +346,9 @@ export const BillingUsage: React.FC<BillingUsageProps> = ({ state }) => {
           suffix={projection === null ? t.billing.usage.kpi.noPeriod : t.billing.usage.kpi.credits}
         />
       </div>
+
+      {/* ── Capacity & usage (free routes + resource ceilings) ──── */}
+      <BillingCapacity state={state} />
 
       {/* ── Chart ───────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border/50 bg-card p-6">

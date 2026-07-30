@@ -53,7 +53,7 @@ export function Switch({
       }`}
     >
       <span
-        className={`inline-block ${dims.knob} transform rounded-full bg-white shadow-sm transition-transform ${
+        className={`inline-block ${dims.knob} transform rounded-full bg-background shadow-sm transition-transform ${
           checked ? dims.on : dims.off
         }`}
       />

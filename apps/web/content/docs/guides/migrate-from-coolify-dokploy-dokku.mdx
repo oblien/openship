@@ -1,0 +1,275 @@
+---
+title: Migrate from Coolify, Dokploy, or Dokku
+description: Move an existing self-hosted server onto Openship without redeploying from scratch — Openship scans your running Docker containers and adopts them in place, with a zero-downtime path and server-to-server moves.
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+Already running apps on **Coolify**, **Dokploy**, or **Dokku**? You don't rebuild them on Openship. Openship
+**scans the Docker containers already running on your server and adopts them in place** — reusing the exact
+image that's live right now, with no rebuild and, on the same server, no data move. It's a guided, one-click
+import, and your workloads keep serving while it happens.
+
+<Callout title="The one idea that makes this different">
+Every other platform here only deploys **new** workloads. Openship can point at a server's **existing**
+running containers, read their domains and volumes, and take them over — including taking over the
+`:80/:443` reverse proxy from Coolify/Dokploy/Dokku, rollback-safe.
+</Callout>
+
+## How the import works
+
+Openship models the move as a short, reversible pipeline:
+
+1. **Scan** *(read-only — nothing is changed)* — over SSH, Openship enumerates **all** containers, volumes,
+   and networks on the server (not just ones it owns), reads their compose config, and joins your existing
+   proxy's vhosts to each container by published port to recover its **current domains + SSL**.
+2. **Adopt** *(records only)* — it creates a `services` project mirroring the running containers. Each
+   adopted service carries the container's **current image and no build context**, so Openship re-runs
+   exactly what's live and **never rebuilds**. Services come in **unexposed**, so routing is untouched at
+   import time.
+3. **Take over the edge** *(later, opt-in, rollback-safe)* — when you add a domain, Openship journals your
+   old proxy's state, disables it, installs its **OpenResty** edge, and re-registers your vhosts + certs. If
+   anything fails — or the box reboots mid-way — it rolls back automatically.
+4. **Cut over** *(opt-in, confirmed)* — only when you say so does it stop and remove the *old* containers.
+   Your source volumes are never touched.
+
+<Callout title="Screenshot">The import wizard's scan step, showing discovered containers with their detected domains + volumes. *(screenshot pending)*</Callout>
+
+## Before you start
+
+<Callout type="warn" title="Keep your old proxy running for the scan">
+Don't stop Coolify/Dokploy/Dokku's proxy *before* scanning — Openship reads your live domains and
+certificates from it. You'll retire it later, and Openship does that step for you (and can roll it back).
+</Callout>
+
+- Migration is **self-hosted only** and needs `server:write` on the source (and target, for server-to-server).
+- **Connect the source server to Openship over SSH first** (Servers → Add server). Your apps and their proxy
+  stay running throughout.
+- You can safely stop the old platform's **control-plane app** at any time — your running app containers and
+  their proxy don't depend on it. Leave the *proxy* up until the takeover step.
+
+## Migrate a server (step by step)
+
+<Steps>
+
+<Step>
+### Connect the server and scan
+
+Add the server over SSH, then start the import. Openship scans it read-only and lists what it found — each
+container with its recovered domain(s), ports, and volumes. (On a large or slow server, use the streaming
+scan so the client doesn't time out.)
+
+<Callout title="Screenshot">Servers → the connected server → **Import / Migrate**, mid-scan. *(screenshot pending)*</Callout>
+</Step>
+
+<Step>
+### Pick workloads (3-step wizard)
+
+The wizard walks **select → link source → domains**. Your reverse proxy (Traefik / nginx / Caddy / …) is
+**automatically excluded** from the workload set and left running untouched — Openship never adopts or
+blind-stops it during import.
+</Step>
+
+<Step>
+### Choose a volume strategy — this decides downtime
+
+This is the important choice:
+
+- **Reuse in place** *(same server, default)* → **attach-live**: the running container is adopted as-is,
+  its records rebuilt from the live container, the current image reused. No move, no recreation.
+  **→ zero downtime.**
+- **Copy**, or **any server-to-server move** → **deploy path**: originals are stopped for a consistent
+  volume copy, then a fresh deploy is verified to "ready." **→ a real downtime window** (polled up to ~20 min).
+
+<Callout type="info" title="Trust the strategy, not the banner">
+The preview may conservatively warn about "downtime" even for the zero-downtime reuse case. The **reuse
+in-place** strategy is genuinely zero-downtime for the workload — the container is never stopped.
+</Callout>
+</Step>
+
+<Step>
+### Take over the domains + edge
+
+When you add a domain to a migrated service, Openship runs its edge takeover: it **journals your old
+proxy's config, disables it, installs OpenResty on `:80/:443`, and re-registers your vhosts and
+certificates** — rolling back on any failure or an interrupted reboot. Existing sites are imported from
+**nginx, Caddy, Apache, or Traefik**; HAProxy/unknown proxies are replaced rather than imported.
+
+<Callout type="info" title="The only brief interruption">
+Your containers keep running the whole time. The single short blip is the moment `:80/:443` swaps from your
+old proxy to OpenResty while it installs — measured in seconds, and rollback-safe.
+</Callout>
+
+<Callout title="Screenshot">A migrated service's Domains tab after the edge takeover — domain live on OpenResty with a valid certificate. *(screenshot pending)*</Callout>
+</Step>
+
+<Step>
+### Verify, then cut over and remove the old platform
+
+Confirm everything serves through Openship. Then run **cutover** (explicit, token-confirmed): it stops and
+removes only the *old* deploy-set containers — **never your source volumes**. Once you're happy, remove
+Coolify/Dokploy/Dokku entirely; Openship now owns the box.
+
+<Callout title="Verify before you cut over" type="warn">
+Cutover **stops and removes the old workload**, so don't run it until the Openship-managed app is fully healthy:
+it loads and serves traffic, your **data is intact** (sign in, open a record, check volumes/uploads and any
+database), and every service is `RUNNING`. Cutover leaves your **source volumes untouched**, so the old
+deploy-set stays as a fallback until you're certain. If anything's off — missing data, a service that won't
+start, routing/TLS wrong — **don't cut over**; leave the old containers running and
+[open an issue on GitHub](https://github.com/oblien/openship/issues) and we'll help.
+</Callout>
+</Step>
+
+</Steps>
+
+## Server-to-server migration
+
+Moving a whole stack from one host to another is the same flow, with the data streamed across:
+
+- Named volumes and movable app-data mounts stream **A → B** directly (same daemon: a `tar → tar` copy; across
+  daemons: a gzip stream). System paths (`/proc`, `/sys`, `/var/lib/docker`, sockets, …) are never copied.
+- Openship **refuses to overwrite a non-empty same-named volume** on the target, so you can't clobber data.
+- Server-to-server always uses the **deploy path** (a downtime window), and it **can't move locally-built
+  images** — those have no registry to pull from on B, so take them over **in place on their current server**
+  instead.
+
+<Callout title="Screenshot">The server-to-server move showing volume transfer progress A → B. *(screenshot pending)*</Callout>
+
+## Why the architecture is different
+
+Two things are worth understanding, because they're where Openship genuinely diverges from the others:
+
+- **A programmable OpenResty edge.** Routing runs on OpenResty with a **database-driven, reload-free
+  per-route rules engine** — per-route rate limiting, IP/CIDR + country + user-agent bans, method/CIDR/country
+  allow-lists, and hotlink protection — pushed live into a shared dictionary with **no nginx reload and no
+  Redis**, plus built-in request/bandwidth analytics and a live log stream. Coolify and Dokploy expose Traefik
+  middlewares and Dokku exposes nginx templates that can approximate these rules; Openship's difference is that
+  it's a managed, reload-free, per-route surface — **not** that it does more at the protocol level (see the
+  honest caveats below).
+- **A real desktop mode.** Openship ships a **native desktop app** that runs the entire control plane — API,
+  dashboard, embedded database, in-process jobs — **bound to loopback on your own machine**, with no-login
+  access granted only to same-machine (kernel-verified) callers and **nothing left running after you quit**.
+  It's the isolated, solo way to drive your servers; the always-on `openship up` CLI service is a separate mode.
+
+## Honest comparison
+
+All four are open-source, Docker-based, self-hosted PaaS tools, and they share most of the baseline. We're not
+going to pretend otherwise — **migrate for the differences, not the essentials.**
+
+**Shared essentials (all four do these):** git-push / webhook auto-deploy · Dockerfile builds · automatic
+Let's Encrypt TLS with auto-renew · one-click databases · scheduled S3 backups · multi-server over SSH · REST
+API + scoped tokens · a CLI · rollbacks · per-event notifications · **and an official MCP server** (Coolify's
+is read-only, Dokploy's covers the full API, Openship's is write-capable). "Has an MCP server" is **not** a
+reason to switch.
+
+**The full picture** — differentiators in **bold**; `✓` built-in · `~` partial / manual / paid · `✗` not
+available. Where a competitor leads (Coolify's 280+ catalog, Dokploy's HTTP/3, Dokku's zero-downtime default,
+buildpack breadth), it's marked honestly.
+
+**Deploys & builds**
+
+| | Coolify | Dokploy | Dokku | Openship |
+|---|:---:|:---:|:---:|:---:|
+| Git push / webhook auto-deploy | ✓ | ✓ | ✓ | ✓ |
+| Dockerfile & prebuilt-image deploy | ✓ | ✓ | ✓ | ✓ |
+| **Source never passes through an always-on control plane** | ✗ cloned on the server | ✗ zip → server | ✗ push → host | **✓ desktop → target direct** |
+| Docker Compose / multi-service | ✓ | ✓ | ✗ | ✓ |
+| Buildpacks (Nixpacks / Heroku) | ✓ | ✓ | ✓ | ~ auto stack-detect |
+| Rollback to a previous release | ✓ | ✓ | ✓ | ✓ |
+| Per-PR preview environments | ✓ | ✓ | ~ | ~ |
+| Zero-downtime *new* deploys | ~ health-gated | ~ health-gated | ✓ default | ~ health-gated |
+
+**Servers & migration**
+
+| | Coolify | Dokploy | Dokku | Openship |
+|---|:---:|:---:|:---:|:---:|
+| Multi-server over SSH | ✓ | ✓ | ~ K3s | ✓ |
+| Server health / resource monitoring | ~ | ✓ | ~ plugin | ✓ |
+| Fine-grained server access grants | ✗ | ~ ent. | ✗ | ✓ |
+| **Adopt existing running containers** | ✗ | ✗ | ✗ | **✓** |
+| **Server-to-server move (with data)** | ✗ | ✗ | ✗ | **✓** |
+| **Leave management, keep apps + data running (re-importable)** | ✗ delete prunes managed containers | ✗ delete tears down | ✗ `apps:destroy` removes | **✓ record-only, re-adoptable** |
+| **Relocate the whole instance into managed cloud — and back** | ✗ control-plane only | ✗ control-plane only | ✗ no managed cloud | **✓ instance dump → Cloud, reversible switch-back** |
+| **Take over an existing reverse proxy** | ✗ | ✗ | ✗ | **✓** |
+
+**Networking & edge**
+
+| | Coolify | Dokploy | Dokku | Openship |
+|---|:---:|:---:|:---:|:---:|
+| Automatic Let's Encrypt TLS | ✓ | ✓ | ✓ | ✓ |
+| Unlimited custom domains + wildcards | ✓ | ✓ | ✓ | ✓ |
+| HTTP/3 (QUIC) | ✗ | ✓ | ✗ | ✗ |
+| CDN / response caching | ✗ | ✗ | ✗ | ✗ |
+| **Per-route rate limiting** | ~ Traefik mw | ~ Traefik mw | ~ nginx | **✓ UI, reload-free** |
+| **IP / CIDR ban + allow-lists** | ~ mw | ~ mw | ~ nginx | **✓ UI** |
+| **Country (geo) blocking** | ✗ | ✗ | ~ GeoIP module | **✓ built-in ** |
+| **Bad-user-agent + hotlink protection** | ~ mw | ~ mw | ~ nginx | **✓ UI** |
+| **Built-in request analytics** (traffic, status codes, top paths, geo) | ✗ add-on | ✗ add-on | ✗ | **✓** |
+| **Live per-route request-log stream** | ~ proxy logs | ~ proxy logs | ~ files | **✓** |
+| Resource metrics (CPU / memory / bandwidth) | ~ basic | ✓ | ~ plugin | ✓ |
+
+The edge is where the gap is widest: every route gets **per-route rate limiting, IP/CIDR + country + user-agent
+bans, and hotlink protection** from a UI (pushed live, no nginx reload), plus **built-in traffic analytics**
+— requests, status codes, top paths, and **geo/country breakdowns** — and a **live per-route request-log
+stream**. Coolify and Dokploy give you Traefik middlewares and bolt-on Grafana/Plausible; native
+country-level blocking and built-in request analytics aren't there. (Honestly: it's *not* a CDN or WAF — no
+HTTP/3, caching, or OWASP rules.)
+
+**Data, team & platform**
+
+| | Coolify | Dokploy | Dokku | Openship |
+|---|:---:|:---:|:---:|:---:|
+| One-click databases | ✓ 8 | ✓ 6 | ✓ 16 | ✓ catalog |
+| Scheduled S3 backups + restore | ✓ | ✓ | ~ per-DB | ✓ |
+| Volume backups | ~ | ✓ | ~ | ✓ |
+| One-click app catalog | ✓ **280+** | ✓ | ~ community | ✓ curated |
+| Teams / organizations | ✓ | ✓ | ~ Pro | ✓ |
+| Fine-grained RBAC + audit log | ~ coarse | ~ ent. | ✗ | ✓ |
+| Scoped API tokens (PAT) + CLI | ✓ | ✓ | ~ Pro | ✓ |
+| Scheduled jobs / cron | ✓ | ✓ | ~ plugin | ✓ |
+| Web dashboard | ✓ | ✓ | ✗ Pro | ✓ |
+| MCP for AI agents | ✓ read-only | ✓ full-API | ~ community | ✓ write + re-auth |
+| **Native desktop app — no always-on daemon, loopback isolation** | ✗ | ✗ | ✗ | **✓** |
+| **Built-in full mail server** | ✗ | ✗ | ~ community | **✓** |
+| **Self-hosted + managed-cloud from one instance** | ✗ control-plane only | ✗ | ✗ | **✓ Cloud runs the workload** |
+
+The defensible reasons to move are the bold rows: **adopting what's already running**, **moving stacks between
+servers with their data**, **leaving without lock-in** (a record-only removal drops just Openship's record and
+leaves your apps + data running on your box, re-importable later) or **relocating the whole instance into
+Openship Cloud and back**, **taking over your existing proxy**, the **programmable edge**, the **built-in mail
+server**, and the **self-hosted + cloud hybrid** where the cloud target actually runs your workload (unlike a
+managed control plane that still leans on your own servers). None of the other three can adopt a running stack,
+move one with its data, or hand it back to you still running — every "migration" is a manual rsync-and-redeploy
+or a community script.
+
+Two more are structural rather than feature checkboxes. **Desktop mode has no always-on daemon** — the control
+plane runs on your laptop only while the app is open, so nothing sits in the background burning resources; the
+other three all need a control-plane server running around the clock. And in that mode **your source is never
+uploaded to a control plane**: the desktop reads your folder straight off disk, or the target server clones from
+your git using your forwarded credentials, so the code goes disk-or-git → server directly. Coolify clones on the
+Coolify server, Dokploy takes a zip upload, and Dokku takes a `git push` — in every case your code lands on a
+long-lived control-plane box first. (For a self-hosted Openship instance the trade-off is the same as theirs —
+this edge is specific to desktop mode.)
+
+## Honest caveats
+
+- **Zero-downtime is narrow, not blanket.** Only a **same-server "reuse in place"** import is truly
+  zero-downtime. Same-server "copy" and **every** server-to-server move stop the originals for a consistent
+  copy and verify a fresh deploy (up to ~20 min) — a real window. The edge takeover briefly interrupts
+  `:80/:443` while OpenResty installs.
+- **The edge is programmable access rules + analytics — not a CDN and not a WAF.** There's no HTTP/3, no
+  brotli, and no response caching layer; the rules are a built-in ruleset (bans / allow-deny / hotlink /
+  method / rate-limit), not ModSecurity/OWASP CRS. It's also self-hosted-only — managed-cloud projects route
+  through the cloud edge, where rule coverage is still partial.
+- **The mail server is a real mail server.** It's a genuine Postfix + Dovecot stack — so DNS/DKIM/SPF setup,
+  deliverability, and ongoing mail ops are yours to run. The others sidestep this by not offering mail at all.
+- **Catalog breadth isn't the pitch.** Coolify's 280+ one-click services is the largest catalog here; Openship
+  leads on the *migration and edge* story, not template count.
+
+## Next steps
+
+<Cards>
+  <Card title="Custom servers" href="/docs/guides/custom-servers" description="Connect a VPS or dedicated box over SSH — the first step before any import." />
+  <Card title="Custom domains" href="/docs/guides/custom-domains" description="Point a domain at a migrated service and let the OpenResty edge issue TLS." />
+  <Card title="Backups & restore" href="/docs/guides/backups-restore" description="Set up scheduled backups for your newly-adopted databases and volumes." />
+</Cards>

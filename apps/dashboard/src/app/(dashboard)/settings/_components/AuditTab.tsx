@@ -395,7 +395,7 @@ export function AuditTab() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/50 bg-card sadwq">
+      <div className="rounded-2xl border border-border/50 bg-card">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />

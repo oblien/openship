@@ -22,6 +22,7 @@ const NATIVE: Record<Locale, string> = {
   pt: "Português",
   ja: "日本語",
   zh: "中文",
+  tr: "Türkçe",
 };
 
 /** Short glyph for the card's leading tile. */
@@ -34,6 +35,7 @@ const CODE: Record<Locale, string> = {
   pt: "PT",
   ja: "日",
   zh: "中",
+  tr: "TR",
 };
 
 export function LanguageSetting() {

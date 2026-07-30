@@ -136,6 +136,11 @@ resource types it was granted. And if a `tools/call` touches something outside t
 `404` — the scope doing its job. For the full protocol details (JSON-RPC methods, negotiation, error codes),
 see the [MCP API reference](/docs/api/mcp).
 
+The **organization boundary** applies to MCP exactly as it does to a browser session: because every call
+runs through the same per-resource permission check, an MCP client acts only within organizations you
+belong to and can never reach another org's projects, servers, or secrets — a resource outside your
+membership comes back `404`, just as it would in the dashboard. See [Isolation](/docs/security/isolation).
+
 ## Which tools map to which API
 
 Tools aren't a separate feature set — each one **maps onto a permission-tagged REST route**, and the tool name
@@ -157,12 +162,27 @@ UI can flag a destructive call before it runs.
 | `get_github_repos` | `/api/github` | [GitHub API](/docs/api/github) |
 | `get_analytics` | `/api/analytics` | [Analytics API](/docs/api/analytics) |
 | `get_notifications_channels` | `/api/notifications` | [Notifications API](/docs/api/notifications) |
+| `get_settings`, `patch_settings_build_mode` | `/api/settings` | [Settings API](/docs/api/settings) |
+| `get_projects_by_projectId_backup_policies`, `post_backup_policies_by_policyId_run` | `/api/backups` | [Backups API](/docs/api/backups) |
+| `get_cloud_status`, `get_cloud_workspaces` | `/api/cloud` | [Cloud API](/docs/api/cloud) |
+| `get_jobs`, `post_jobs_by_key_run` | `/api/jobs` | [Jobs guide](/docs/guides/jobs) |
+| `get_apps_catalog`, `post_apps` | `/api/apps` | *(REST reference pending)* |
+| `get_updates`, `post_updates_scan` | `/api/updates` | [Updating Openship](/docs/guides/updating) |
 
 <Callout title="Credentials and auth are never exposed" type="info">
 The `tokens`, `auth`, and `mcp` modules are hard-blocked from ever becoming tools — a full-access MCP token
 can't mint itself a fresh credential or escape its own scope. Manage tokens and connected clients from the
 dashboard or the [Tokens API](/docs/api/tokens), not from an agent.
 </Callout>
+
+## Guided flows
+
+Some tasks are a chain of calls in a specific order — deploying a repo, uploading a folder, installing a
+catalog app. The server ships a small set of **prompts** (`prompts/list` / `prompts/get`) that spell those
+chains out step by step, referencing the exact tools to call. Compatible clients surface them as
+slash-commands or starters, so an agent can pick a flow and follow it rather than reverse-engineering the
+order from the flat tool list. See the [MCP API reference](/docs/api/mcp#guided-flows-prompts) for the full
+catalog.
 
 ## Verify from the terminal
 

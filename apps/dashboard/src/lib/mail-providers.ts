@@ -6,14 +6,15 @@
  * to paste. `sendOnly` transactional relays (Resend, SES, SendGrid, Mailgun,
  * Postmark) have no IMAP mailbox to read from.
  *
- * Brand mark: `logo` is a simpleicons slug; `logoSrc` is an explicit logo URL
- * (takes precedence). Several brands (AWS, SendGrid, Postmark, Fastmail) aren't
- * on simpleicons, so they use the favicon service — the same real-logo source
- * AppLogo already uses for Convex. AppLogo falls back to a neutral glyph if a
- * mark is missing/offline.
+ * Brand mark: every provider uses `logoSrc` — the real favicon fetched from
+ * Google's favicon service (`brandLogo`), the same real-logo source AppLogo uses
+ * for Convex. This gives the actual brand marks (Gmail envelope, AWS, Resend, …)
+ * rather than the monochrome simpleicons glyphs. `logo` (a simpleicons slug) is
+ * still supported as a fallback but no longer used here. AppLogo falls back to a
+ * neutral glyph if a mark is missing/offline.
  */
 
-/** Real brand logo via the favicon service (used where simpleicons has no mark). */
+/** Real brand logo via the favicon service — the actual brand favicon. */
 const brandLogo = (domain: string): string =>
   `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 
@@ -21,6 +22,7 @@ export type MailProviderId =
   | "custom"
   | "resend"
   | "ses"
+  | "oracle"
   | "sendgrid"
   | "mailgun"
   | "postmark"
@@ -61,7 +63,9 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
   {
     id: "gmail",
     label: "Gmail",
-    logo: "gmail",
+    // gmail.com's favicon resolves to the generic Google "G"; use Gmail's own
+    // product icon (the multicolor envelope) — Google's stable gstatic asset.
+    logoSrc: "https://ssl.gstatic.com/images/branding/product/2x/gmail_2020q4_64dp.png",
     backendProvider: "custom",
     imapHost: "imap.gmail.com",
     imapPort: 993,
@@ -82,9 +86,21 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
     hint: "Use the SMTP credentials from the SES console (an IAM SMTP user). Change the region in the host if yours differs.",
   },
   {
+    id: "oracle",
+    label: "Oracle Cloud",
+    logoSrc: brandLogo("oracle.com"),
+    backendProvider: "custom",
+    sendOnly: true,
+    imapHost: "",
+    imapPort: 993,
+    smtpHost: "smtp.email.us-ashburn-1.oci.oraclecloud.com",
+    smtpPort: 587,
+    hint: "OCI Email Delivery: generate SMTP credentials (Email Delivery → SMTP Credentials) and use them here. Change the region in the host if yours differs.",
+  },
+  {
     id: "resend",
     label: "Resend",
-    logo: "resend",
+    logoSrc: brandLogo("resend.com"),
     backendProvider: "custom",
     sendOnly: true,
     imapHost: "",
@@ -110,7 +126,7 @@ export const MAIL_PROVIDERS: readonly MailProvider[] = [
   {
     id: "mailgun",
     label: "Mailgun",
-    logo: "mailgun",
+    logoSrc: brandLogo("mailgun.com"),
     backendProvider: "custom",
     sendOnly: true,
     imapHost: "",

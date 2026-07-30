@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Navbar, Footer } from "@/components/landing";
+import { ContactForm } from "@/components/contact-form";
 
-const PAGE_TITLE = "Contact";
+const PAGE_TITLE = "Contact Us";
 const PAGE_DESCRIPTION =
-  "Reach the Openship team — community, sales, security, privacy, and legal. Or open an issue on GitHub.";
+  "Get in touch with the Openship team. Send us a message and we'll get back to you as soon as possible.";
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -22,61 +23,6 @@ export const metadata: Metadata = {
   },
 };
 
-type Channel = {
-  id: string;
-  title: string;
-  desc: string;
-  label: string;
-  href: string;
-  external?: boolean;
-};
-
-const CHANNELS: Channel[] = [
-  {
-    id: "community",
-    title: "Community & bugs",
-    desc: "Questions, bug reports, and feature requests happen in the open. This is the fastest way to reach us.",
-    label: "github.com/oblien/openship",
-    href: "https://github.com/oblien/openship/issues",
-    external: true,
-  },
-  {
-    id: "general",
-    title: "General",
-    desc: "Say hello, partnerships, or press.",
-    label: "hello@openship.io",
-    href: "mailto:hello@openship.io",
-  },
-  {
-    id: "sales",
-    title: "Sales & business",
-    desc: "Openship Cloud, Business plans, and SLAs.",
-    label: "sales@openship.io",
-    href: "mailto:sales@openship.io",
-  },
-  {
-    id: "security",
-    title: "Security",
-    desc: "Report a vulnerability privately. See the Trust page for our disclosure policy.",
-    label: "security@oblien.com",
-    href: "mailto:security@oblien.com",
-  },
-  {
-    id: "privacy",
-    title: "Privacy",
-    desc: "Data-access requests and privacy questions.",
-    label: "privacy@openship.io",
-    href: "mailto:privacy@openship.io",
-  },
-  {
-    id: "legal",
-    title: "Legal",
-    desc: "Terms, licensing, and legal notices.",
-    label: "legal@openship.io",
-    href: "mailto:legal@openship.io",
-  },
-];
-
 export default function ContactPage() {
   return (
     <>
@@ -84,22 +30,13 @@ export default function ContactPage() {
       <main className="legal-root">
         <section className="legal-hero">
           <div className="legal-container">
-            <p className="legal-eyebrow">Contact</p>
+            <p className="legal-eyebrow">Contact Us</p>
             <h1 className="legal-title">
-              Talk to us.<br />
-              <span className="legal-title-soft">Pick the right door.</span>
+              We&rsquo;re here to help.<br />
+              <span className="legal-title-soft">Send us a message.</span>
             </h1>
             <p className="legal-meta">
-              Openship is open source — most conversations happen on{" "}
-              <a
-                href="https://github.com/oblien/openship"
-                className="legal-meta-link"
-                target="_blank"
-                rel="noreferrer"
-              >
-                GitHub
-              </a>
-              .
+              Fill out the form below and we&rsquo;ll reply within 24 hours.
             </p>
           </div>
         </section>
@@ -107,38 +44,46 @@ export default function ContactPage() {
         <section className="legal-body">
           <div className="legal-container">
             <div className="legal-grid">
-              <aside className="legal-toc" aria-label="Table of contents">
-                <p className="legal-toc-title">Channels</p>
+              <aside className="legal-toc" aria-label="Contact info">
+                <p className="legal-toc-title">Contact info</p>
                 <ol>
-                  {CHANNELS.map((c, i) => (
-                    <li key={c.id}>
-                      <a href={`#${c.id}`}>
-                        <span className="legal-toc-n">{String(i + 1).padStart(2, "0")}</span>
-                        {c.title}
-                      </a>
-                    </li>
-                  ))}
+                  <li>
+                    <a href="mailto:support@oblien.com">
+                      <span className="legal-toc-n">01</span>
+                      Support
+                    </a>
+                  </li>
+                  <li>
+                    <a href="https://github.com/oblien/openship/issues" target="_blank" rel="noreferrer">
+                      <span className="legal-toc-n">02</span>
+                      GitHub issues
+                    </a>
+                  </li>
+                  <li>
+                    <a href="mailto:security@oblien.com">
+                      <span className="legal-toc-n">03</span>
+                      Security
+                    </a>
+                  </li>
+                  <li>
+                    <a href="mailto:privacy@openship.io">
+                      <span className="legal-toc-n">04</span>
+                      Privacy
+                    </a>
+                  </li>
+                  <li>
+                    <a href="mailto:legal@openship.io">
+                      <span className="legal-toc-n">05</span>
+                      Legal
+                    </a>
+                  </li>
                 </ol>
               </aside>
 
               <article className="legal-article">
-                {CHANNELS.map((c, i) => (
-                  <section key={c.id} id={c.id} className="legal-section">
-                    <header className="legal-section-head">
-                      <span className="legal-section-n">{String(i + 1).padStart(2, "0")}</span>
-                      <h2 className="legal-section-title">{c.title}</h2>
-                    </header>
-                    <p className="legal-p">{c.desc}</p>
-                    <p className="legal-p">
-                      <a
-                        href={c.href}
-                        {...(c.external ? { target: "_blank", rel: "noreferrer" } : {})}
-                      >
-                        {c.label}
-                      </a>
-                    </p>
-                  </section>
-                ))}
+                <section className="legal-section" style={{ borderBottom: "none" }}>
+                  <ContactForm />
+                </section>
 
                 <footer className="legal-foot">
                   <p>

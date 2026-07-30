@@ -36,7 +36,19 @@ export type {
   ShellOptions,
   ShellSession,
   ProvisionLock,
+  AmbientGitVia,
 } from "./types";
+
+// The one clone-command assembler (token / relay / ssh / ambient) + its shell
+// quoting, shared with the API so a probe and the clone it predicts can't drift.
+export {
+  sq,
+  assembleGitClone,
+  injectGitToken,
+  toGitHubSshUrl,
+  type GitCloneAuth,
+  type GitCloneInvocation,
+} from "./runtime/git-clone";
 
 export { BUILD_STEPS } from "./types";
 
@@ -62,7 +74,16 @@ export type {
 } from "./runtime/types";
 export { assertCapability, isMultiServiceRuntime } from "./runtime/types";
 export { DockerRuntime, type DockerConnectionOptions } from "./runtime/docker";
-export { BareRuntime, type BareRuntimeOptions } from "./runtime/bare";
+export {
+  transferImage,
+  type ImageTransferOptions,
+  type ImageTransferResult,
+} from "./runtime/image-transfer";
+export { BareRuntime, STATIC_RELEASE_BASE, type BareRuntimeOptions } from "./runtime/bare";
+// The doc-root resolver, exported so the output-check path derives the served
+// location with the SAME confinement rules the deploy used (no reimplementation:
+// this function is what rejects absolute paths and `../` traversal out of the root).
+export { resolveStaticOutputPath } from "./runtime/stack-output";
 export {
   CloudRuntime,
   type CloudAdminProxy,
@@ -75,6 +96,7 @@ export {
   type DeployRouting,
   type DeployPipelineInput,
   type DeployPipelineResult,
+  type PromptPayload,
   type PromptUserFn,
   runDeployPipeline,
 } from "./runtime/deploy-pipeline";
@@ -88,8 +110,14 @@ export {
   probeListeningPort,
   ensurePortAvailable,
 } from "./runtime/port-conflict";
+export {
+  allocateHostPort,
+  pickHostPort,
+  type AllocateHostPortOptions,
+} from "./runtime/host-port";
 export { type RuntimeMode, type CreateRuntimeOptions, createRuntime } from "./runtime/index";
 export { resolveDockerfileCandidates } from "./runtime/docker-paths";
+export { scopedVolumeName, scopeVolumeBinds, isHostPathSource } from "./runtime/volume-namespace";
 
 // ─── Infrastructure layer ────────────────────────────────────────────────────
 export type { RoutingProvider, SslProvider } from "./infra/types";
@@ -108,7 +136,11 @@ export {
 export { CloudInfraProvider } from "./infra/cloud";
 export { NoopInfraProvider } from "./infra/noop";
 export {
+  ACME_HTTP01_PORT,
   OPENRESTY_MGMT_PORT,
+  EDGE_CONTAINER_MOUNTS,
+  EDGE_HOST_PATHS,
+  EDGE_HOST_STATE_DIR,
   deployLuaScripts,
   detectOpenRestyPaths,
   type OpenRestyPaths,
@@ -141,16 +173,48 @@ export {
   EdgeConflictError,
   EdgeMigrateRequested,
   freeEdgeTargets,
+  invalidateEdgeContainer,
+  ourEdgeContainerRunning,
   probeEdge,
+  resolveOurEdgeContainer,
   stopTargetsForStatus,
-} from "./system/edge-preflight";
-export { scanImportableSites, canImportProxy } from "./system/proxy-import";
+} from "./system/proxy/detect";
+export {
+  containerEdgeProvider,
+  dockerAvailable,
+  ensureContainerEdge,
+  resolveEdgeImage,
+  setDefaultEdgeImage,
+  buildEdgeRunCommand,
+  type ContainerEdgeOptions,
+  type ContainerEdgeResult,
+} from "./system/proxy/ensure-container-edge";
+export { scanImportableSites, canImportProxy, scanOpenshipEdge } from "./system/proxy/import";
 export {
   runEdgeTakeover,
-  recoverInterruptedTakeover,
+  registerImportedSites,
   type EdgeTakeoverOptions,
   type EdgeTakeoverResult,
-} from "./system/edge-takeover";
+  type RegisterImportedSitesOptions,
+} from "./system/proxy/takeover";
+export {
+  recoverInterruptedTakeover,
+  beginEdgeTakeover,
+  rollbackEdgeTakeover,
+  completeEdgeTakeover,
+} from "./system/proxy/takeover-journal";
+// The consolidated reverse-proxy / edge facade (single point for the chain).
+export { detectEdge, importSites, takeoverOnMigrate, foreignProxyOnEdge, ensureEdge } from "./system/proxy";
+// The reverse-proxy READ api: sites, by-port index, per-host vhost + cert.
+export { edgeProxy, edgeProxyFor, buildProxyRouteIndex, collectProxyCerts } from "./system/proxy/api";
+export type {
+  EdgeProxyApi,
+  ProxySiteRoute,
+  ProxySiteRouteSsl,
+  AdoptedCert,
+  CertCandidate,
+} from "./system/proxy/api";
+export { validateCertFor, readDeclaredPair, isSafeCertPath } from "./system/proxy/cert-material";
 
 export type { SetupState, SetupStateStore, ComponentState } from "./system/state";
 export { FileStateStore } from "./system/state";
@@ -199,9 +263,29 @@ export {
   type PortProbeExecutor,
   type PortProbeResult,
 } from "./system/port-listen";
+export {
+  scanPorts,
+  parseSsListeners,
+  parseProcNetListeners,
+  isLoopbackAddress,
+  describeService,
+  type PortScanExecutor,
+  type PortScanResult,
+  type HostListener,
+  type PortProto,
+  type PortFamily,
+} from "./system/port-scan";
 export { probeStaticOutput, type OutputProbeResult } from "./system/output-exists";
 
-export { LocalExecutor, SshExecutor, SystemSshExecutor, createExecutor } from "./system/executor";
+export { LocalExecutor, SshExecutor, SystemSshExecutor, createExecutor, createHostExecutor, hostControlDisabled } from "./system/executor";
+export { DockerEdgeExecutor } from "./system/docker-edge-executor";
+export {
+  edgeContainerExecutor,
+  containerCommand,
+  readEdgeFile,
+  writeEdgeFile,
+  type EdgeFilesAt,
+} from "./system/edge-container-executor";
 export {
   ensureRemoteJournal,
   runJournaled,
@@ -220,10 +304,9 @@ export {
 export {
   checkAll as checkAllComponents,
   checkComponents,
-  checkCertbot,
   checkDocker,
   checkGit,
-  checkOpenResty,
+  checkEdge,
   COMPONENT_CHECKS,
 } from "./system/checks";
 export {
@@ -231,12 +314,12 @@ export {
   COMPONENT_UNINSTALLERS,
   getRemovalSupport,
   installCertbot,
+  installContainerEdge,
   installDocker,
   installGit,
   installOpenResty,
   installRsync,
-  uninstallCertbot,
-  uninstallOpenResty,
+  uninstallEdge,
   uninstallRsync,
 } from "./system/installer";
 export { SystemManager, type SystemManagerOptions } from "./system/setup";

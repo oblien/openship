@@ -1,3 +1,4 @@
+import { stripXmlComments } from "./comments";
 import type { WorkspaceDetector } from "./types";
 
 /**
@@ -17,10 +18,11 @@ import type { WorkspaceDetector } from "./types";
  * Implementation note: we scope module extraction to the first `<modules>...</modules>`
  * block so we don't accidentally pick up modules listed under `<profiles>` or
  * other irrelevant places. This is the dominant real-world shape; profile-only
- * monorepos are rare.
+ * monorepos are rare. `<!-- … -->` comments are stripped first, so a
+ * commented-out `<module>` is not read as a declared one.
  */
 function parsePomXml(content: string): string[] {
-  const modulesBlock = content.match(/<modules\b[^>]*>([\s\S]*?)<\/modules>/i);
+  const modulesBlock = stripXmlComments(content).match(/<modules\b[^>]*>([\s\S]*?)<\/modules>/i);
   if (!modulesBlock) return [];
 
   const moduleEntries = modulesBlock[1].matchAll(/<module\b[^>]*>\s*([\s\S]*?)\s*<\/module>/gi);

@@ -29,6 +29,7 @@
  *   • resolveProjectSource / proxyToSaaS — the underlying primitives.
  */
 import type { Context, Next } from "hono";
+import { CLOUD_UNREACHABLE_CODE } from "@repo/core";
 import { repos } from "@repo/db";
 import { env } from "../../config";
 import { getRequestContext } from "../request-context";
@@ -100,7 +101,7 @@ export async function proxyToSaaS(
   const res = await cloudFetchAsOrgOwner(organizationId, path, init);
   if (!res) {
     return c.json(
-      { error: "Openship Cloud is unreachable", code: "CLOUD_UNREACHABLE" },
+      { error: "Openship Cloud is unreachable", code: CLOUD_UNREACHABLE_CODE },
       503,
     );
   }

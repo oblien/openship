@@ -78,6 +78,30 @@
       "toggleFailed": "Échec du changement d'état du projet",
       "clearInstallFailed": "Échec du vidage du cache d'installation",
       "clearBuildFailed": "Échec du vidage du cache de build"
+    },
+    "routing": {
+      "title": "Routage",
+      "description": "Comment l'edge atteint l'upstream de cette app",
+      "intro": "Choisissez comment l'edge adresse le conteneur de ce projet.",
+      "note": "Le port loopback est recommandé : un port hôte privé 127.0.0.1, stable entre les redémarrages et jamais exposé sur le réseau. L'IP du conteneur est avancée (bascules sans interruption ; nécessite l'edge sur le bridge Docker ; non pris en charge sur Docker Desktop).",
+      "modes": {
+        "auto": {
+          "label": "Auto",
+          "desc": "Recommandé (port loopback)"
+        },
+        "loopbackPort": {
+          "label": "Port loopback",
+          "desc": "Port hôte privé 127.0.0.1"
+        },
+        "containerIp": {
+          "label": "IP du conteneur",
+          "desc": "Avancé — IP du bridge"
+        }
+      },
+      "toast": {
+        "saved": "Routage défini sur {mode}",
+        "failed": "Échec de la mise à jour du routage"
+      }
     }
   },
   "backup": {
@@ -202,7 +226,12 @@
     "close": "Fermer",
     "applyTitle": "Appliquer sans recompilation",
     "applyText": "Enregistré. Appliquez-les au service en cours — il redémarre avec le nouvel environnement, sans clonage ni recompilation.",
-    "applyButton": "Appliquer (redémarrage, sans recompilation)"
+    "applyButton": "Appliquer (redémarrage, sans recompilation)",
+    "linkedBadge": "Lié",
+    "linkedManaged": "via {app}",
+    "linkedTitle": "Intégration liée",
+    "linkedBody": "Cette valeur provient de la connexion {app}. Gérez-la depuis cette app — les modifications ici ne sont pas conservées.",
+    "unlink": "Supprimer la connexion"
   },
   "gitInfo": {
     "repository": "Dépôt",
@@ -464,7 +493,11 @@
     "confirmDeleteWipe": "Supprimer + effacer les données",
     "confirmDeleteEnvWipe": "Supprimer l'environnement + effacer les données",
     "confirmDelete": "Supprimer le projet",
-    "confirmDeleteEnv": "Supprimer l'environnement"
+    "confirmDeleteEnv": "Supprimer l'environnement",
+    "linkedTitleOne": "{count} projet est connecté à cette app",
+    "linkedTitleOther": "{count} projets sont connectés à cette app",
+    "linkedNote": "Ils continuent de tourner, données intactes — ils perdent seulement cette connexion. Redéployez-les pour l'appliquer.",
+    "linkedNoteRecordOnly": "Ils continuent de tourner, mais le lien part avec l'enregistrement — un réimport ultérieur ne le rétablit pas."
   },
   "routing": {
     "title": "Routage",
@@ -673,6 +706,13 @@
       "submit": "Installer le certificat",
       "submitting": "Installation...",
       "close": "Annuler"
+    },
+    "edge": {
+      "setUp": "Configurer l'edge",
+      "ready": "Edge prêt",
+      "checking": "Vérification de l'edge…",
+      "recheck": "Revérifier",
+      "foreignProxyHint": "Un autre proxy occupe 80/443"
     }
   },
   "routeRules": {

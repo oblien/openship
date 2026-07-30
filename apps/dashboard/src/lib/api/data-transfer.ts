@@ -18,6 +18,10 @@ export interface ImportResult {
   rowsRestored: number;
   secretsRehydrated: number;
   secretsSkipped: boolean;
+  /** Imported projects whose source is a local folder path from the SOURCE
+   *  machine — that path won't exist here (e.g. a Mac path on a Linux server), so
+   *  re-point or re-deploy before their next deploy. Empty when nothing needs it. */
+  localPathProjects: Array<{ slug: string; localPath: string }>;
 }
 
 const LONG_TIMEOUT = 600_000;

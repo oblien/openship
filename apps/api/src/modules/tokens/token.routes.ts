@@ -5,7 +5,6 @@
  */
 
 import { Hono } from "hono";
-import { tbValidator } from "@hono/typebox-validator";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./token.controller";
 import { CreateTokenBody } from "./token.schema";
@@ -16,7 +15,7 @@ const r = secureRouter(new Hono(), {
 });
 
 r.get("/", { tag: "settings:read" }, ctrl.list);
-r.post("/", { tag: "settings:write" }, tbValidator("json", CreateTokenBody), ctrl.create);
+r.post("/", { tag: "settings:write", body: CreateTokenBody }, ctrl.create);
 r.delete("/:id", { tag: "settings:write" }, ctrl.revoke);
 r.post("/mcp-authorize", { tag: "settings:write" }, ctrl.authorizeMcpClient);
 // Connected MCP clients (OAuth bindings) — list + disconnect (revoke).

@@ -1,10 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import {
   flattenSettingFields,
   envToSettingValue,
   settingToEnvValue,
+  validateSetting,
+  isFieldVisible,
+  splitMultiValue,
   getAppTemplate,
   getAppManagement,
   type AppSettingField,
@@ -66,6 +69,14 @@ export function buildChanges(
   return out;
 }
 
+/** Aggregate validity of the currently-VISIBLE fields (hidden `showIf` fields
+ *  don't gate). `missingRequiredKeys` are the fk()s of empty required fields. */
+export interface FormValidity {
+  valid: boolean;
+  hasErrors: boolean;
+  missingRequiredKeys: string[];
+}
+
 interface AppSettingsFormProps {
   groups: readonly AppSettingGroup[];
   values: Record<string, FormValue>;
@@ -83,6 +94,9 @@ interface AppSettingsFormProps {
   flat?: boolean;
   /** Heading for `flat` mode. */
   title?: string;
+  /** Reported whenever validity of the visible fields changes (install wizard
+   *  gates Install on this; the day-2 tab omits it). */
+  onValidityChange?: (v: FormValidity) => void;
 }
 
 export function AppSettingsForm({
@@ -95,36 +109,66 @@ export function AppSettingsForm({
   filter,
   flat = false,
   title,
+  onValidityChange,
 }: AppSettingsFormProps) {
+  // A field is shown when it passes the caller's filter + advanced gate AND its
+  // `showIf` condition holds against current values. `showIf` reads sibling
+  // values by (service, key) — the same fk() the form state is keyed on.
+  const valueGet = (service: string, key: string) => values[fk(service, key)];
+  const shown = (f: AppSettingField) =>
+    (!filter || filter(f)) && (showAdvanced || !f.advanced) && isFieldVisible(f, valueGet);
+
+  // validateSetting works on the ENV string; boolean controls can't be invalid.
+  const errorFor = (f: AppSettingField): string | null => {
+    const v = values[fk(f.service, f.key)];
+    return typeof v === "string" ? validateSetting(f, v) : null;
+  };
+  const isEmpty = (f: AppSettingField): boolean => {
+    const v = values[fk(f.service, f.key)];
+    return v === undefined || v === "";
+  };
+
+  // Report aggregate validity of the VISIBLE fields (hidden ones never gate).
+  const visibleAll = flattenSettingFields(groups).filter(shown);
+  const missingRequiredKeys = visibleAll
+    .filter((f) => f.required && !f.secret && isEmpty(f))
+    .map((f) => fk(f.service, f.key));
+  const hasErrors = visibleAll.some((f) => errorFor(f) != null);
+  const summary = `${hasErrors}|${missingRequiredKeys.join(",")}`;
+  const lastSummary = useRef<string | null>(null);
+  useEffect(() => {
+    if (!onValidityChange) return;
+    if (lastSummary.current === summary) return;
+    lastSummary.current = summary;
+    onValidityChange({ valid: !hasErrors && missingRequiredKeys.length === 0, hasErrors, missingRequiredKeys });
+  }, [summary, hasErrors, missingRequiredKeys, onValidityChange]);
+
+  const renderField = (f: AppSettingField) => (
+    <Field
+      key={fk(f.service, f.key)}
+      field={f}
+      value={values[fk(f.service, f.key)]}
+      error={errorFor(f)}
+      secretSet={!!isSet?.(f)}
+      secretSetLabel={secretSetLabel}
+      onChange={(v) => onChange(f, v)}
+    />
+  );
+
   if (flat) {
-    const fields = flattenSettingFields(groups).filter(
-      (f) => (!filter || filter(f)) && (showAdvanced || !f.advanced),
-    );
+    const fields = visibleAll;
     if (fields.length === 0) return null;
     return (
       <div className="bg-card rounded-2xl border border-border/50 p-5">
         {title && <h3 className="text-sm font-semibold text-foreground">{title}</h3>}
-        <div className={`space-y-4 ${title ? "mt-4" : ""}`}>
-          {fields.map((f) => (
-            <Field
-              key={fk(f.service, f.key)}
-              field={f}
-              value={values[fk(f.service, f.key)]}
-              secretSet={!!isSet?.(f)}
-              secretSetLabel={secretSetLabel}
-              onChange={(v) => onChange(f, v)}
-            />
-          ))}
-        </div>
+        <div className={`space-y-4 ${title ? "mt-4" : ""}`}>{fields.map(renderField)}</div>
       </div>
     );
   }
   return (
     <div className="space-y-5">
       {groups.map((group) => {
-        const visible = group.fields.filter(
-          (f) => (!filter || filter(f)) && (showAdvanced || !f.advanced),
-        );
+        const visible = group.fields.filter(shown);
         if (visible.length === 0) return null;
         return (
           <div key={group.id} className="bg-card rounded-2xl border border-border/50 p-5">
@@ -132,18 +176,7 @@ export function AppSettingsForm({
             {group.description && (
               <p className="mt-1 text-xs text-muted-foreground">{group.description}</p>
             )}
-            <div className="mt-4 space-y-4">
-              {visible.map((f) => (
-                <Field
-                  key={fk(f.service, f.key)}
-                  field={f}
-                  value={values[fk(f.service, f.key)]}
-                  secretSet={!!isSet?.(f)}
-                  secretSetLabel={secretSetLabel}
-                  onChange={(v) => onChange(f, v)}
-                />
-              ))}
-            </div>
+            <div className="mt-4 space-y-4">{visible.map(renderField)}</div>
           </div>
         );
       })}
@@ -162,23 +195,40 @@ export function hasAdvancedFields(
 function Field({
   field,
   value,
+  error,
   secretSet,
   secretSetLabel,
   onChange,
 }: {
   field: AppSettingField;
   value: FormValue | undefined;
+  error: string | null;
   secretSet: boolean;
   secretSetLabel: string;
   onChange: (v: FormValue) => void;
 }) {
-  const inputCls =
-    "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring";
+  const base =
+    "w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring";
+  const inputCls = `${base} ${error ? "border-danger" : "border-input"}`;
+  const str = typeof value === "string" ? value : "";
+  // Password type OR an explicitly-secret field masks (fixes the old bug where a
+  // type:"password" non-secret field rendered as visible text).
+  const masked = field.secret || field.type === "password";
+  const selected = field.type === "multiselect" ? new Set(splitMultiValue(field, str)) : null;
+  const toggleMulti = (val: string) => {
+    const next = new Set(selected ?? []);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
+    onChange([...next].join(field.separator ?? ","));
+  };
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-medium text-foreground">{field.label}</label>
+        <label className="text-sm font-medium text-foreground">
+          {field.label}
+          {field.required && <span className="ms-0.5 text-danger">*</span>}
+        </label>
         {field.type === "boolean" && (
           <button
             type="button"
@@ -191,37 +241,74 @@ function Field({
           >
             <span
               className={`absolute top-0.5 size-4 rounded-full bg-background transition-transform ${
-                value === true ? "translate-x-4" : "translate-x-0.5"
+                value === true ? "translate-x-[18px]" : "translate-x-0.5"
               }`}
             />
           </button>
         )}
       </div>
 
-      {field.type === "select" ? (
-        <select
-          className={`${inputCls} mt-2`}
-          value={typeof value === "string" ? value : ""}
-          onChange={(e) => onChange(e.target.value)}
-        >
+      {field.type === "boolean" ? null : field.type === "select" ? (
+        <select className={`${inputCls} mt-2`} value={str} onChange={(e) => onChange(e.target.value)}>
           {(field.options ?? []).map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}
         </select>
-      ) : field.type === "boolean" ? null : (
-        <input
-          type={field.secret ? "password" : field.type === "number" ? "number" : "text"}
-          className={`${inputCls} mt-2`}
-          value={typeof value === "string" ? value : ""}
+      ) : field.type === "radio" ? (
+        <div className="mt-2 space-y-1.5">
+          {(field.options ?? []).map((o) => (
+            <label key={o.value} className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name={fk(field.service, field.key)}
+                checked={str === o.value}
+                onChange={() => onChange(o.value)}
+              />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      ) : field.type === "multiselect" ? (
+        <div className="mt-2 space-y-1.5">
+          {(field.options ?? []).map((o) => (
+            <label key={o.value} className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={!!selected?.has(o.value)}
+                onChange={() => toggleMulti(o.value)}
+              />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      ) : field.type === "textarea" ? (
+        <textarea
+          className={`${inputCls} mt-2 min-h-24 font-mono`}
+          value={str}
           placeholder={field.placeholder}
-          autoComplete={field.secret ? "new-password" : undefined}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      ) : (
+        <input
+          type={masked ? "password" : field.type === "number" ? "number" : "text"}
+          className={`${inputCls} mt-2`}
+          value={str}
+          placeholder={field.placeholder}
+          autoComplete={masked ? "new-password" : undefined}
+          min={field.type === "number" ? field.min : undefined}
+          max={field.type === "number" ? field.max : undefined}
+          step={field.type === "number" ? (field.step ?? (field.integer ? 1 : undefined)) : undefined}
           onChange={(e) => onChange(e.target.value)}
         />
       )}
 
-      {field.help && <p className="mt-1.5 text-xs text-muted-foreground">{field.help}</p>}
+      {error ? (
+        <p className="mt-1 text-xs text-danger">{error}</p>
+      ) : (
+        field.help && <p className="mt-1.5 text-xs text-muted-foreground">{field.help}</p>
+      )}
       {field.secret && secretSet && (
         <p className="mt-1 text-xs text-muted-foreground">{secretSetLabel}</p>
       )}

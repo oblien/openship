@@ -1,6 +1,6 @@
 {
   "name": "openship",
-  "version": "0.3.0",
+  "version": "0.4.8",
   "description": "Open-source, self-hostable deployment platform",
   "license": "Apache-2.0",
   "repository": {
@@ -11,8 +11,14 @@
     "apps/*",
     "packages/*"
   ],
+  "trustedDependencies": [
+    "electron",
+    "esbuild"
+  ],
   "scripts": {
-    "build": "turbo run build",
+    "build": "turbo run build --filter=@repo/api --filter=@repo/dashboard",
+    "build:all": "turbo run build",
+    "start": "turbo run start --filter=@repo/api --filter=@repo/dashboard --concurrency=10",
     "build:desktop": "bun run --cwd apps/desktop make",
     "build:cli": "bun run --cwd apps/cli build",
     "cli": "bun run --cwd apps/cli cli",
@@ -30,14 +36,14 @@
     "dev:web": "turbo run dev --filter=@repo/web",
     "dev:email": "turbo run dev --filter=@repo/email",
     "dev:turbo": "turbo run dev",
-    "dev:clean": "ps -A -o pid,command 2>/dev/null | grep -E 'src/index\\.ts|next/dist/bin/next' | grep -v grep | awk '{print $1}' | xargs -I {} kill -9 {} 2>/dev/null; for p in 4000 4100 3001 3002; do pid=$(lsof -ti tcp:$p 2>/dev/null); [ -n \"$pid\" ] && kill -9 $pid 2>/dev/null; done; echo 'cleaned'",
+    "clean": "ps -A -o pid,command 2>/dev/null | grep -E 'src/index\\.ts|next/dist/bin/next' | grep -v grep | awk '{print $1}' | xargs -I {} kill -9 {} 2>/dev/null; for p in 4000 4100 3001 3002; do pid=$(lsof -ti tcp:$p 2>/dev/null); [ -n \"$pid\" ] && kill -9 $pid 2>/dev/null; done; echo 'cleaned'",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:generate": "turbo run db:generate --filter=@repo/db",
     "db:push": "turbo run db:push --filter=@repo/db",
     "db:migrate": "turbo run db:migrate --filter=@repo/db",
-    "clean": "turbo run clean && rm -rf node_modules",
+    "dev:clean": "turbo run clean && rm -rf node_modules",
     "clean:modules": "find apps packages -name node_modules -type d -prune -exec rm -rf {} + && rm -rf node_modules",
     "release": "bun scripts/release.ts",
     "prepare": "git config core.hooksPath .githooks || true"

@@ -90,11 +90,17 @@ export function serviceKind(
 
 /**
  * A monorepo sub-app that is a STATIC build (frontend/static framework, no
- * long-running server command of its own). Such a sub-app is served as files
- * by a minimal nginx image (built via the static Dockerfile branch) rather than
- * by running a `startCommand`. Derived from the persisted `framework` category +
- * absence of a start command, so no extra DB column is needed. Compose services
- * (Dockerfile/image) are never treated as static here.
+ * long-running server command of its own). Served as FILES rather than by running
+ * a `startCommand`:
+ *
+ *   self-hosted → the build output is moved to a host directory and the edge serves
+ *                 it with `root`. No container, no port, no second web server.
+ *   cloud       → a minimal nginx image, because Oblien runs the workload and there
+ *                 is no host directory to serve.
+ *
+ * Derived from the persisted `framework` category + absence of a start command, so
+ * no extra DB column is needed. Compose services (Dockerfile/image) are never
+ * treated as static here.
  */
 export function isStaticService(service: {
   kind?: string | null;

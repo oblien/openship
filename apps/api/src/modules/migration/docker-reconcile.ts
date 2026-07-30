@@ -23,6 +23,7 @@ import { classifyProxy } from "@repo/adapters";
 import type { ComposeHealthcheck } from "@repo/core";
 import type { ComposeService } from "../../lib/compose-parser";
 import type { ManifestProjectEntry } from "../../lib/openship-manifest";
+import type { ExistingRoute } from "./proxy-route-scan";
 
 export interface DiscoveredVolumeMount {
   /** "volume" reuses a named volume in place; "bind" is a host path. */
@@ -43,6 +44,11 @@ export interface DiscoveredService {
   containerName?: string;
   running: boolean;
   image?: string;
+  /** Content-addressable image ID (sha256:…) from the container inspect. Stable
+   *  even when the `image` tag has drifted/been pruned — so it's the reliable
+   *  ref for sizing, presence checks, and `docker save` (the tag can fail to
+   *  resolve for a locally-built compose image). */
+  imageId?: string;
   /** compose build context (set → adoption builds this Dockerfile). */
   build?: string;
   dockerfile?: string;
@@ -63,6 +69,18 @@ export interface DiscoveredService {
    *  stripped from an imported non-proxy service; the signal that a proxy owns
    *  the edge. */
   edgePorts?: number[];
+  /** Routes the server's EXISTING (foreign) reverse proxy already serves for this
+   *  container, matched by published host port — so the wizard can show the
+   *  current domain(s)+path+SSL and offer to keep them. ONE ENTRY PER (port,path):
+   *  a container behind a path-fan-out domain (`/ → :1010`, `/v3 → :1020`) or with
+   *  several published ports collects several. Absent = no proxied route detected. */
+  existingRoute?: Array<{
+    port: number;
+    path: string;
+    domains: string[];
+    ssl: { enabled: boolean; certPath?: string; keyPath?: string };
+    source?: string;
+  }>;
   warnings: string[];
 }
 
@@ -100,8 +118,14 @@ export interface OpenshipProjectGroup {
   runtimeMode?: string | null;
   /** Whether this project id already exists in this instance's DB. */
   knownHere: boolean;
+  /** A full recovery snapshot (`dumpSubgraph`) exists on the server → re-import
+   *  restores it faithfully. False → best-effort reconstruction from live docker. */
+  hasSnapshot: boolean;
   /** Deployment id from the label/manifest — carried for future live-status recovery. */
   deploymentId?: string;
+  /** When this project was last deployed (manifest `updatedAt`) — a "last seen"
+   *  hint in the UI. Absent when there's no manifest (label-only recovery). */
+  updatedAt?: string;
   /** Live service containers reconstructed from runtime state. */
   services: DiscoveredService[];
 }
@@ -124,6 +148,10 @@ export interface DiscoveredStack {
   /** Openship projects recovered from the server (see {@link OpenshipProjectGroup});
    *  `knownHere: false` entries are re-importable. Empty when none found. */
   openshipProjects: OpenshipProjectGroup[];
+  /** Every route the foreign proxy serves, flattened (one per port+path). Lets the
+   *  wizard SHOW each detected domain/path + its guessed service, so a fan-out
+   *  path isn't silently dropped; unmatched ones also appear in `warnings`. */
+  proxyRoutes: ExistingRoute[];
 }
 
 // Docker-injected / shell env that should never be imported as app config.
@@ -242,11 +270,55 @@ function inspectHealthcheckToCompose(
 /** Merge one container's inspect truth with its (optional) declared compose
  *  service. `imageDefaults` = the image's baked-in "KEY=VALUE" env, subtracted
  *  so only user-set vars are imported. */
+/**
+ * The compose-service IDENTITY for a discovered container — the name a migrated
+ * service adopts. Priority:
+ *   1. an explicit compose-file declaration (`declared.name`)
+ *   2. the `com.docker.compose.service` label (a real compose stack)
+ *   3. Openship's own `openship.service` label — Openship deploys compose
+ *      services as plain dockerode containers (`openship-<slug>-<svc>`) that
+ *      carry NO compose label, so without this step the moved service was named
+ *      after the CONTAINER (`openship-openship-web`) and no longer matched its
+ *      git-compose definition (`web`) → the reconcile created a DUPLICATE
+ *      bare-name row instead of updating the moved one in place.
+ *   4. the raw container name (last resort).
+ */
+export function discoveredServiceName(
+  detail: { composeService?: string; labels?: Record<string, string>; name: string },
+  declared: { name?: string } | undefined,
+): string {
+  return declared?.name ?? detail.composeService ?? detail.labels?.["openship.service"] ?? detail.name;
+}
+
+/**
+ * Display-grouping key for an Openship-DEPLOYED container that carries no
+ * compose label. Openship runs compose services as plain containers named
+ * `openship-<slug>-<svc>` (labels `openship.project`/`openship.service`, but NO
+ * `com.docker.compose.project`), so without this they all collapse into the
+ * single "standalone" bucket — the exact symptom in flat-docker mode where a
+ * moved stack (supabase / mongodb / …) showed as N loose containers instead of
+ * one group. Derive the stack SLUG from the container name minus the EXACT
+ * `openship.service` suffix (using the label makes it precise even for
+ * hyphenated service names like `mongo-express`). Returns null when the
+ * container isn't an Openship compose service (→ truly standalone).
+ */
+export function openshipStackName(
+  containerName: string | undefined,
+  serviceLabel: string | undefined,
+): string | null {
+  if (!containerName || !serviceLabel) return null;
+  const stripped = containerName.replace(/^openship-/, "");
+  const suffix = `-${serviceLabel}`;
+  if (!stripped.endsWith(suffix)) return null;
+  return stripped.slice(0, -suffix.length) || null;
+}
+
 export function toDiscoveredService(
   detail: DockerContainerDetail,
   declared: ComposeService | undefined,
   imageDefaults?: Set<string>,
   imageCmd?: string[],
+  proxyRoutesByPort?: Map<number, ExistingRoute[]>,
 ): DiscoveredService {
   const mounts = toDiscoveredMounts(detail.mounts);
   const warnings: string[] = [];
@@ -277,7 +349,7 @@ export function toDiscoveredService(
     declared?.advanced?.healthcheck ??
     (detail.healthcheck ? inspectHealthcheckToCompose(detail.healthcheck) : undefined);
 
-  const name = declared?.name ?? detail.composeService ?? detail.name;
+  const name = discoveredServiceName(detail, declared);
   const image = detail.image || declared?.image;
   const ports = portsToComposeStrings(detail.ports);
 
@@ -290,6 +362,34 @@ export function toDiscoveredService(
       ? classifyProxy([image, command, name].filter(Boolean).join(" "))
       : undefined;
 
+  // Match every route the foreign proxy serves, across ALL published host ports —
+  // no break, so a path-fan-out domain (its paths live on different ports) and a
+  // multi-port container both collect all their routes.
+  let existingRoute: DiscoveredService["existingRoute"];
+  if (proxyRoutesByPort && proxyRoutesByPort.size > 0) {
+    const routes: NonNullable<DiscoveredService["existingRoute"]> = [];
+    // Iterate DISTINCT public ports. Docker publishes each host port on BOTH
+    // IPv4 (0.0.0.0) and IPv6 (::), so detail.ports lists the same publicPort
+    // twice — without deduping we'd push the same route (same domain) twice and
+    // the wizard would show each domain doubled (and submit two identical
+    // endpoints). proxyRoutesByPort already holds one entry per (port,path), so
+    // visiting each port ONCE preserves path-fan-out while killing the IPv4/IPv6
+    // double-count. (portsToComposeStrings already dedups the same way.)
+    const publicPorts = [
+      ...new Set(
+        detail.ports
+          .map((p) => p.publicPort)
+          .filter((n): n is number => typeof n === "number" && Number.isFinite(n) && n > 0),
+      ),
+    ];
+    for (const port of publicPorts) {
+      for (const hit of proxyRoutesByPort.get(port) ?? []) {
+        routes.push({ port: hit.port, path: hit.path, domains: hit.domains, ssl: hit.ssl, source: hit.source });
+      }
+    }
+    if (routes.length > 0) existingRoute = routes;
+  }
+
   return {
     name,
     source: declared ? "compose" : "container",
@@ -297,6 +397,7 @@ export function toDiscoveredService(
     containerName: detail.name,
     running: detail.state === "running",
     image,
+    imageId: detail.imageId,
     build: declared?.build,
     dockerfile: declared?.dockerfile,
     ports,
@@ -309,6 +410,7 @@ export function toDiscoveredService(
     healthcheck,
     proxyKind,
     edgePorts: edgePorts.length > 0 ? edgePorts : undefined,
+    existingRoute,
     warnings,
   };
 }
@@ -331,21 +433,31 @@ export function reconcileStack(opts: {
   imageCmds?: Map<string, string[]>;
   /** Openship projects recovered from the server (computed in the IO shell). */
   openshipProjects?: OpenshipProjectGroup[];
+  /** published host port → route the foreign proxy already serves (from the
+   *  IO-shell proxy scan). Attached per-service by matching published ports. */
+  proxyRoutesByPort?: Map<number, ExistingRoute[]>;
 }): DiscoveredStack {
-  const { serverId, details, volumes, networks, declared, alreadyManaged, imageDefaults, imageCmds } = opts;
+  const { serverId, details, volumes, networks, declared, alreadyManaged, imageDefaults, imageCmds, proxyRoutesByPort } = opts;
 
   const composeProjects = [
     ...new Set(details.map((d) => d.composeProject).filter((p): p is string => Boolean(p))),
   ];
 
-  // Build each service alongside the compose project it belongs to, then group.
+  // Build each service alongside the group it belongs to, then group. Priority:
+  // the real compose project → else the Openship stack slug (openship-deployed
+  // services have no compose label, so this keeps a moved stack together instead
+  // of flattening it into standalone) → else truly standalone (null).
   const built = details.map((d) => ({
-    project: d.composeProject ?? null,
+    project:
+      d.composeProject ??
+      openshipStackName(d.name, d.labels?.["openship.service"]) ??
+      null,
     service: toDiscoveredService(
       d,
       d.composeService ? declared.get(d.composeService) : undefined,
       imageDefaults?.get(d.image),
       imageCmds?.get(d.image),
+      proxyRoutesByPort,
     ),
   }));
   const services = built.map((b) => b.service);
@@ -397,6 +509,22 @@ export function reconcileStack(opts: {
     );
   }
 
+  // Every route the foreign proxy serves, flattened for the wizard's route review
+  // (so a domain/path can be seen + reassigned, not silently dropped). A route
+  // whose upstream port matches NO discovered service is UNMATCHED — surface it
+  // as a warning so a fan-out path (e.g. api.onvo.me/v3 → an unselected/hidden
+  // container) is never lost without the operator knowing.
+  const proxyRoutes = [...(proxyRoutesByPort?.values() ?? [])].flat();
+  const matchedPorts = new Set(services.flatMap((s) => (s.existingRoute ?? []).map((r) => r.port)));
+  for (const r of proxyRoutes) {
+    if (!matchedPorts.has(r.port)) {
+      warnings.push(
+        `Reverse-proxy route ${r.domains[0] ?? "?"}${r.path === "/" ? "" : r.path} → :${r.port} ` +
+          `has no matching adopted service — it won't be published. Import the service on that port to keep it.`,
+      );
+    }
+  }
+
   return {
     serverId,
     composeProjects,
@@ -408,8 +536,22 @@ export function reconcileStack(opts: {
     adoptable: services.length > 0,
     alreadyManaged,
     openshipProjects: opts.openshipProjects ?? [],
+    proxyRoutes,
   };
 }
+
+/**
+ * A TRANSIENT build-helper container — not a live app. The `openship.build`
+ * label alone is NOT sufficient: it's baked into every locally-built image
+ * (`openship/<app>:bld_…`) and Docker inherits image labels onto the running
+ * container, so real deploy containers carry it too. A genuine build helper has
+ * `openship.build` but NO `openship.deployment`/`openship.service` (those are
+ * set only when a real app container is created). Used to keep transient
+ * builders out of both the adopt grid and the re-import set without dropping the
+ * real (locally-built) app containers.
+ */
+export const isBuildHelper = (labels: Record<string, string>) =>
+  !!labels["openship.build"] && !labels["openship.deployment"] && !labels["openship.service"];
 
 /**
  * Reconstruct OPENSHIP-owned projects from their live containers + the server's
@@ -428,16 +570,18 @@ export function reconcileOpenshipProjects(opts: {
   manifestById: Map<string, ManifestProjectEntry> | null;
   /** Project ids that already exist in this instance's DB. */
   knownHereIds: Set<string>;
+  /** Project ids with a full recovery snapshot on the server (faithful restore). */
+  snapshotIds: Set<string>;
   imageDefaults?: Map<string, Set<string>>;
   imageCmds?: Map<string, string[]>;
 }): OpenshipProjectGroup[] {
-  const { managedDetails, manifestById, knownHereIds, imageDefaults, imageCmds } = opts;
+  const { managedDetails, manifestById, knownHereIds, snapshotIds, imageDefaults, imageCmds } = opts;
 
   const byProject = new Map<string, DockerContainerDetail[]>();
   for (const d of managedDetails) {
     const projectId = d.labels["openship.project"];
     if (!projectId) continue; // not project-owned (infra/network helper) — skip
-    if (d.labels["openship.build"]) continue; // transient build container — not a service
+    if (isBuildHelper(d.labels)) continue; // transient build container — not a service
     const list = byProject.get(projectId) ?? [];
     list.push(d);
     byProject.set(projectId, list);
@@ -458,6 +602,7 @@ export function reconcileOpenshipProjects(opts: {
     out.push({
       projectId,
       knownHere: knownHereIds.has(projectId),
+      hasSnapshot: snapshotIds.has(projectId),
       suggestedName:
         entry?.name ||
         entry?.slug ||
@@ -475,6 +620,7 @@ export function reconcileOpenshipProjects(opts: {
         : undefined,
       runtimeMode: entry?.runtimeMode ?? undefined,
       deploymentId,
+      updatedAt: entry?.updatedAt,
       services,
     });
   }

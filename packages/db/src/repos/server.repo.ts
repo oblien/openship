@@ -45,6 +45,21 @@ export function createServerRepo(db: Database) {
     },
 
     /**
+     * The auto-registered "this host" row (VPS / server-host mode), if any.
+     * Scoped to one org because the self-server is created in the founding
+     * admin's org. Used by the boot reconcile for idempotency.
+     */
+    async findLocal(organizationId: string): Promise<Server | undefined> {
+      return db.query.servers.findFirst({
+        where: and(eq(servers.organizationId, organizationId), eq(servers.isLocal, true)),
+        // Deterministic: if more than one row was ever flagged local (a boot
+        // reconcile row + an adopted/self-healed one), always return the oldest —
+        // the canonical "This Server" — never an arbitrary pick.
+        orderBy: (s, { asc }) => asc(s.createdAt),
+      });
+    },
+
+    /**
      * Bulk lookup — used by enrichProjectsBatch to resolve server
      * names for many projects in one round trip instead of one query
      * per project. Returns Map<id, Server> with no entry for unknown

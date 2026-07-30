@@ -18,6 +18,7 @@ import * as githubAuth from "./github.auth";
 import * as githubService from "./github.service";
 import { createGitHubSource } from "./sources";
 import { filterAllowedRepos, filterAllowedAccounts } from "./github-access";
+import { paginateRepoList, type RepoListParams } from "./repo-list";
 import { getRequestContext } from "../../lib/request-context";
 
 /** Map a MappedRepository to the owner/repo key the access filter needs.
@@ -75,11 +76,21 @@ export async function getStatus(c: Context) {
     source.resolveInstallUrl(),
   ]);
   const allowedAccounts = await filterAllowedAccounts(ctx, accounts, (a) => a.login);
+  // Connect methods, derived server-side from the SAME chain table that resolves
+  // credentials. The dashboard used to decide this itself from `selfHosted` /
+  // `deployMode`, which is how it ended up offering a forwarding toggle that could
+  // never take effect and a Cloud App row on a box with no cloud link.
+  const { resolveGitHubCapabilities } = await import("./github.capabilities");
+  const { isCloudConnected } = await import("../../lib/cloud/session");
+  const capabilities = await resolveGitHubCapabilities(ctx, {
+    cloudConnected: await isCloudConnected(ctx.userId).catch(() => false),
+  }).catch(() => null);
   return c.json({
     state,
     accounts: allowedAccounts,
     installUrl: install.url,
     cloudUnreachable: install.cloudUnreachable ?? false,
+    capabilities,
   });
 }
 
@@ -115,6 +126,15 @@ export async function getHome(c: Context) {
     filterAllowedRepos(ctx, data.repos, repoKey),
     filterAllowedAccounts(ctx, data.accounts, (a) => a.login),
   ]);
+  // Same capability payload as /github/status. The library reads /home, so without
+  // it here the empty state would have to fall back to guessing platform policy —
+  // the duplication this whole thing removes.
+  const { resolveGitHubCapabilities } = await import("./github.capabilities");
+  const { isCloudConnected } = await import("../../lib/cloud/session");
+  const capabilities = await resolveGitHubCapabilities(ctx, {
+    cloudConnected: await isCloudConnected(ctx.userId).catch(() => false),
+  }).catch(() => null);
+
   return c.json({
     ...data,
     accounts,
@@ -123,6 +143,7 @@ export async function getHome(c: Context) {
     // cloud-app mode + SaaS down: the card shows "Openship Cloud
     // unreachable" instead of a dead install button (installUrl is "").
     cloudUnreachable,
+    capabilities,
   });
 }
 
@@ -333,19 +354,36 @@ export async function connect(c: Context) {
 
   // ── CLI: no token yet ──────────────────────────────────────
   if (mode === "cli") {
-    // No GITHUB_CLIENT_ID → run `gh auth login` in terminal
-    if (!env.GITHUB_CLIENT_ID) {
+    // Dynamic import: gh device flow is self-hosted only; never on the SaaS.
+    const { startDeviceFlow, deviceFlowAvailable } = await import("./github.local-auth");
+
+    // The browser device flow is the DEFAULT path: it needs no app registration,
+    // no cloud account and no shell on the box. Only when no client id resolves at
+    // all do we fall back to telling the operator to run `gh auth login` — which on
+    // a remote self-hosted instance means SSH-ing in, so it's a last resort, not
+    // the first offer.
+    if (!deviceFlowAvailable()) {
+      // No device client id on this instance. Ask for a token IN THE UI rather
+      // than telling the operator to go run `gh auth login` somewhere — on a
+      // container install the api image has no `gh` and cannot see the host's
+      // ~/.config/gh, so that instruction was unactionable on the very topology
+      // that hits this branch. `gh auth login` stays as a secondary hint because
+      // reading hosts.yml still works on a bare install that has it.
       return c.json({
         connected: false,
-        flow: "terminal" as const,
+        flow: "token" as const,
         command: "gh auth login",
-        message: "Run this command in your terminal, then click refresh.",
+        message:
+          "Paste a GitHub token to connect this instance. " +
+          "Needs the `repo` scope (add `read:org` to see organization repos).",
       });
     }
-    // Has CLIENT_ID → start device flow
     try {
-      // Dynamic import: gh device flow is self-hosted only; never on the SaaS.
-      const { startDeviceFlow } = await import("./github.local-auth");
+      // Completing a device sign-in is the same explicit operator act as pasting a
+      // token, so record the opt-in up front — otherwise the finished sign-in
+      // stores a credential tokenFor refuses to use.
+      const settingsService = await import("../settings/settings.service");
+      await settingsService.setGhCliOperatorOptedIn(userId, true);
       const verification = await startDeviceFlow(userId);
       return c.json({
         connected: false,
@@ -494,7 +532,84 @@ export async function pollConnect(c: Context) {
   if (!status) {
     return c.json({ status: "none" as const }, 404);
   }
-  return c.json(status);
+  // NEVER return the access token to the browser. On completion the device flow
+  // has already persisted it server-side (startDeviceFlow → gh-cli token store);
+  // the client only needs the status. Returning `status` verbatim here leaked the
+  // token onto the wire (and into any client logging). Strip it.
+  const { token: _token, ...safe } = status;
+  return c.json(safe);
+}
+
+/**
+ * POST /github/instance-token — connect this instance with a pasted GitHub token.
+ *
+ * The no-setup fallback for an instance with no device client id, and the answer
+ * for anyone who'd rather hand over a scoped PAT than sign in interactively. The
+ * token lands in the SAME durable slot the device flow writes
+ * (`instance_settings.ghDeviceTokenEncrypted`), so it participates as the
+ * instance's git identity through `getLocalGhToken()` — one credential source,
+ * not a second competing one.
+ *
+ * Validated before it is stored: `inspectPatScope` proves it works and reports
+ * its scopes, `classifyPatScope` decides reject / warn / accept. Storing an
+ * unvalidated token would surface as a broken clone deep inside a deploy instead
+ * of an error on the field the operator just typed into.
+ *
+ * Self-hosted only — CLOUD_MODE has no instance-wide git identity by design.
+ */
+export async function setInstanceToken(c: Context) {
+  if (env.CLOUD_MODE) {
+    return c.json({ error: "Not available on Openship Cloud", code: "NOT_SUPPORTED" }, 400);
+  }
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<{ token?: string }>().catch(() => null);
+  const token = body?.token?.trim();
+  if (!token) {
+    return c.json({ error: "token is required", code: "INVALID_TOKEN" }, 400);
+  }
+
+  let report: Awaited<ReturnType<typeof githubService.inspectPatScope>>;
+  try {
+    report = await githubService.inspectPatScope(token);
+  } catch (err) {
+    return c.json(
+      { error: err instanceof Error ? err.message : "Could not validate token", code: "INVALID_TOKEN" },
+      400,
+    );
+  }
+  const verdict = githubService.classifyPatScope(report);
+  if (!verdict.ok) {
+    return c.json({ error: verdict.reason, code: "INSUFFICIENT_SCOPE" }, 400);
+  }
+
+  const { setStoredDeviceToken } = await import("./github.local-auth");
+  await setStoredDeviceToken(token, "token");
+  // Sweep this user's cached GitHub state so /status and the importer see the new
+  // identity on the NEXT read. Without it the connection only appeared after the
+  // cached verdict aged out — i.e. "I added a token but New Project still fails".
+  await githubAuth.invalidateUserGitHubCache(ctx.userId);
+  // Clicking connect means "I want to be connected" — clear any prior
+  // Disconnect suppression, same as the interactive connect path does.
+  const settingsService = await import("../settings/settings.service");
+  await settingsService.setGithubCliDisabled(ctx.userId, false);
+  // …and record the operator opt-in `tokenFor` gates the stored-credential branch
+  // on. Nothing ever set that flag, so a pasted token was stored, the UI said
+  // "Connected", and the next deploy still reported "no App/PAT token is
+  // available". Pasting a credential into Openship IS the explicit act the flag
+  // was designed to capture.
+  await settingsService.setGhCliOperatorOptedIn(ctx.userId, true);
+
+  if (ctx.organizationId) {
+    audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+      eventType: "github.instance_token.set",
+      resourceType: "github",
+      resourceId: "*",
+      // Login + scopes only. The token itself must never reach the audit log.
+      after: { login: report.user, scopes: report.scopes },
+    });
+  }
+
+  return c.json({ connected: true, login: report.user, warning: verdict.warning });
 }
 
 /**
@@ -545,7 +660,8 @@ export async function listRepos(c: Context) {
   const owner = c.req.query("owner");
   const repos = await (await createGitHubSource(ctx)).listReposForOwner(owner || undefined);
   if (repos === null) return c.json({ error: "Not connected to GitHub" }, 400);
-  return c.json({ data: await filterAllowedRepos(ctx, repos, repoKey) });
+  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
+  return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
 }
 
 /** GET /github/orgs/:org/repos - List repos for an organisation.
@@ -555,7 +671,30 @@ export async function listOrgRepos(c: Context) {
   const org = param(c, "org");
   const repos = await (await createGitHubSource(ctx)).listReposForOwner(org);
   if (repos === null) return c.json({ error: "Not connected to GitHub" }, 400);
-  return c.json({ data: await filterAllowedRepos(ctx, repos, repoKey) });
+  const allowed = await filterAllowedRepos(ctx, repos, repoKey);
+  return c.json(paginateRepoList(allowed, parseRepoListParams(c)));
+}
+
+/** Parse the repo-list query (page/perPage/search/visibility/sort). All
+ *  optional: with no `perPage` the response is the full filtered set (+counts),
+ *  so the MCP `list repos` tool and legacy callers are unaffected. */
+function parseRepoListParams(c: Context): RepoListParams {
+  const num = (raw?: string) => {
+    const n = Number(raw);
+    return raw && Number.isFinite(n) ? n : undefined;
+  };
+  const visibility = c.req.query("visibility");
+  const sort = c.req.query("sort");
+  return {
+    page: num(c.req.query("page")),
+    perPage: num(c.req.query("perPage")),
+    search: c.req.query("search") || undefined,
+    visibility:
+      visibility === "public" || visibility === "private" || visibility === "all"
+        ? visibility
+        : undefined,
+    sort: sort === "name" || sort === "stars" || sort === "updated" ? sort : undefined,
+  };
 }
 
 /** GET /github/repos/:owner/:repo - Get a single repository */

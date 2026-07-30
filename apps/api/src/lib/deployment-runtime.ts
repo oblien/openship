@@ -16,6 +16,7 @@ import { resolveOrgCloudUserId } from "./cloud/transport";
 import { platform } from "./controller-helpers";
 import { buildSshConfig, sshManager } from "./ssh-manager";
 import { createProvisionLock } from "./provision-lock";
+import { isLocalHostRow } from "./box-org";
 
 /**
  * The shape of `deployment.meta` JSONB. Snapshotted per-deploy —
@@ -64,6 +65,26 @@ export interface DeploymentMeta {
    * port advisory, so it doesn't re-nag after a refresh.
    */
   portCheckSkipped?: (number | string)[];
+  /**
+   * Advisory post-deploy static-output probe — the file-side twin of `portCheck`,
+   * one entry per routed path. Point-in-time; never gates the deploy. An entry
+   * that is `checked && (!found || !hasIndex)` is a 404 waiting to happen.
+   */
+  outputCheck?: OutputCheckResult[];
+  /** Routed paths the operator dismissed from the output advisory. */
+  outputCheckSkipped?: string[];
+  /**
+   * The outputDirectory this deployment is actually SERVED from, relative to its
+   * release root — `""` when a Docker sandbox build already extracted the doc-root.
+   *
+   * Persisted because it CANNOT be recomputed after the fact: `resolveDeployRouting`
+   * keys off the BUILD runtime (docker for a sandbox static) while `runtimeMode` is
+   * persisted as the SERVE identity ("bare"), so a later recompute reads "bare" and
+   * answers `project.outputDirectory` — pointing a probe at `<root>/dist` when the
+   * edge serves `<root>`. Reading it back is the only way the check and the edge
+   * agree on one path.
+   */
+  staticServeOutputDir?: string;
 }
 
 /** One exposed port's advisory probe outcome (persisted in `deployment.meta`). */
@@ -155,10 +176,15 @@ async function resolveOrgServer(
  * can never drift (a drift caused the self-hosted→cloud-preflight 403).
  */
 export function resolveEffectiveTarget(base: Platform["target"], snapshot: DeploymentMeta): DeployTarget {
+  // AUTO-DETECT, don't hardcode per host platform: a deployment PINNED to a
+  // specific server always routes over SSH to that server — whether the host is
+  // a self-hosted box OR the DESKTOP app operating a remote server. Only the SaaS
+  // (base "cloud") reaches its workloads via the cloud API instead of SSH. This
+  // is what makes a desktop→remote-server deploy's edge/SSL run on the SERVER
+  // (over SSH), not silently fall back to the laptop's noop provider.
+  if (base !== "cloud" && snapshot.serverId) return "server";
   if (base === "desktop") return snapshot.deployTarget ?? "cloud";
   if (base === "selfhosted") {
-    // Explicit server ID → always SSH
-    if (snapshot.serverId) return "server";
     // UI chose "server" target but serverId may be missing → still route to SSH
     if (snapshot.deployTarget === "server") return "server";
     // Local-orchestrated cloud deploy: build on THIS host, upload the output to
@@ -296,30 +322,36 @@ export async function resolveTargetPlatform(
 ): Promise<Platform> {
   // For SSH server targets, use the managed connection pool
   if (target === "server") {
-    // One org-scoped resolution — returns the verified row, so no second
-    // fetch and no non-org fallback. (resolveOrgServer throws if the org
-    // is missing or the server isn't in it.)
-    const server = await resolveOrgServer(serverId, organizationId);
-    const executor = await sshManager.acquire(server.id);
+    // ONE resolution for the server's executor + transport (isLocal → host
+    // executor + socket docker; else → pooled SSH). Shared with
+    // createServerDockerRuntime / createServerCommandExecutor — no drift.
+    const { id, executor, isLocal, ssh } = await resolveServerExecutor(
+      serverId,
+      organizationId,
+    );
 
-    // SSH config for the Docker SSH transport (dockerode uses its own connection).
-    const ssh = server.sshHost ? await buildSshConfig(server) : null;
-
-    if (!ssh) {
-      throw new Error("Invalid SSH configuration. Check host, auth method, and credentials.");
+    // The auto-registered "This Server" row IS the OpenShip host (VPS /
+    // server-host mode): local host executor, host docker socket (DooD),
+    // everything on-box.
+    if (isLocal) {
+      return createPlatform({
+        target: "selfhosted",
+        runtime: runtimeMode,
+        executor,
+        docker: runtimeMode === "docker" ? { transport: "socket" as const } : undefined,
+        provisionLock: createProvisionLock("provision:local"),
+      });
     }
 
     return createPlatform({
       target: "selfhosted",
       runtime: runtimeMode,
       executor, // ← managed executor from pool
-      ssh,
-      docker: runtimeMode === "docker"
-        ? toDockerSshTransport(ssh, executor)
-        : undefined,
+      ssh: ssh!,
+      docker: runtimeMode === "docker" ? toDockerSshTransport(ssh!, executor) : undefined,
       // Serialize provisioning per target server, so concurrent deploys (across
       // projects / single-app + compose) never race apt/openresty/networks/state.
-      provisionLock: createProvisionLock(`provision:server:${server.id}`),
+      provisionLock: createProvisionLock(`provision:server:${id}`),
     });
   }
 
@@ -346,16 +378,94 @@ export async function resolveTargetPlatform(
  * `sshManager` and is left intact.
  */
 export async function createServerDockerRuntime(
-  serverId: string,
+  /** Undefined is allowed: `resolveServerExecutor` falls back to the org's single
+   *  server, which is the same fallback a server-target deploy with no recorded
+   *  serverId takes. Keeps that rule in ONE place. */
+  serverId: string | undefined,
   organizationId: string,
 ): Promise<DockerRuntime> {
+  const { executor, isLocal, ssh } = await resolveServerExecutor(serverId, organizationId);
+  // isLocal ("This Server") → the host daemon over the local/mounted socket
+  // (bare host, or DooD when the API is containerized) — no SSH bridge. Others
+  // → dockerode over the pooled SSH connection.
+  if (isLocal) {
+    return DockerRuntime.create({ transport: "socket" });
+  }
+  return DockerRuntime.create(toDockerSshTransport(ssh!, executor));
+}
+
+/**
+ * THE single server → {executor, endpoint, transport} resolver. One place
+ * decides how to reach a server, so resolveTargetPlatform (deploy),
+ * createServerDockerRuntime (docker/migrate), and createServerCommandExecutor
+ * (direct transfer) never drift:
+ *   - isLocal "This Server" → the LOCAL host executor (createHostExecutor:
+ *     LocalExecutor bare / SSH→host when containerized) + host docker socket;
+ *     `ssh` is null (no bridge). Closes the gap where callers assumed SSH.
+ *   - remote → the pooled SSH executor + its decrypted SshConfig.
+ * `conn` is the box's SSH endpoint as a PEER would dial it (a placeholder for an
+ * isLocal peer — the direct-transfer both-direction probe routes around it by
+ * making the local box the initiator).
+ */
+export async function resolveServerExecutor(
+  serverId: string | undefined,
+  organizationId: string | undefined,
+): Promise<{
+  id: string;
+  executor: CommandExecutor;
+  conn: { host: string; port: number; user: string };
+  isLocal: boolean;
+  ssh: SshConfig | null;
+}> {
   const server = await resolveOrgServer(serverId, organizationId);
+  const conn = {
+    host: server.sshHost || "127.0.0.1",
+    port: server.sshPort ?? 22,
+    user: server.sshUser || "root",
+  };
+  // isLocal "This Server" OR a row that actually points at THIS host (a plain SSH
+  // row for the local box — loopback / SERVER_IP — in the box-owning org). Both
+  // resolve to the local host executor + mounted docker socket (DooD); dialing SSH
+  // to them hits the API's own loopback (no sshd) — the "Can't reach 127.0.0.1"
+  // failure. Org-gated (isLocalHostRow) so a teammate's org can't mint a host-root
+  // target from a loopback row.
+  if (await isLocalHostRow(server)) {
+    // Self-heal the persisted flag so EVERY `server.isLocal` consumer (edge,
+    // domains, tunnels, the servers list) agrees — not just this resolver.
+    // One-time, idempotent, best-effort; never blocks or fails the deploy.
+    if (!server.isLocal) {
+      repos.server.update(server.id, { isLocal: true }).catch(() => {});
+    }
+    // POOLED, not a fresh `createHostExecutor()`. This executor outlives the call
+    // (the deploy holds it), so it can't be scoped with `withHostExecutor` — but
+    // `acquire` returns the shared host channel for a local row, which is what
+    // stops one deploy from leaving behind an sshd session (#291).
+    return {
+      id: server.id,
+      executor: await sshManager.acquire(server.id),
+      conn,
+      isLocal: true,
+      ssh: null,
+    };
+  }
   const executor = await sshManager.acquire(server.id);
   const ssh = server.sshHost ? await buildSshConfig(server) : null;
   if (!ssh) {
     throw new Error("Invalid SSH configuration. Check host, auth method, and credentials.");
   }
-  return DockerRuntime.create(toDockerSshTransport(ssh, executor));
+  return { id: server.id, executor, conn, isLocal: false, ssh };
+}
+
+/**
+ * A server's raw CommandExecutor + SSH endpoint, for the direct
+ * server-to-server migration transfer. Thin façade over resolveServerExecutor.
+ */
+export async function createServerCommandExecutor(
+  serverId: string,
+  organizationId: string,
+): Promise<{ executor: CommandExecutor; conn: { host: string; port: number; user: string }; isLocal: boolean }> {
+  const { executor, conn, isLocal } = await resolveServerExecutor(serverId, organizationId);
+  return { executor, conn, isLocal };
 }
 
 /** Map the shared SSH config → dockerode SSH transport options with pooled executor. */
@@ -410,4 +520,53 @@ export async function resolveDeploymentRuntime(
     effectiveTarget: resolved.effectiveTarget,
     serverId: resolved.serverId,
   };
+}
+
+/**
+ * The RUNTIME ALONE for a deployment — for READ paths (live container state,
+ * logs, usage) that never provision anything.
+ *
+ * `resolveDeploymentRuntime` above picks `.runtime` off a FULL platform, and
+ * building that platform is not free: on a bare self-hosted box `createPlatform`
+ * eagerly constructs the infra provider, which runs `detectOpenRestyPaths` and
+ * then re-asserts the nginx.conf include + self-heals the edge Lua — inside the
+ * `provision:local` provision lock. Fine for a deploy; wrong for a POLLED read,
+ * which only needs one `docker ps`, and which then contends with any in-flight
+ * deploy holding that lock (that contention is how service status timed out and
+ * rendered "unknown" while the containers were up).
+ *
+ * The target decision is NOT re-derived here: `resolveEffectiveTarget` stays the
+ * one authority (so `deployTarget:"server"` with no recorded serverId, and a
+ * desktop deployment with no deployTarget, both resolve exactly as a deploy
+ * would), and the server→docker transport stays `createServerDockerRuntime`.
+ * Only cloud keeps the platform path — its runtime is an Oblien HTTP client with
+ * no executor and no OpenResty, so there is nothing to skip.
+ *
+ * Callers own `runtime.dispose()` (tears down the SSH loopback bridge; no-op on
+ * the socket transport).
+ */
+export async function resolveDeploymentRuntimeForRead(
+  dep: Pick<Deployment, "meta" | "organizationId">,
+): Promise<{ runtime: RuntimeAdapter; serverId: string | null }> {
+  // Services are containers even when the app itself deploys "bare" — pin docker
+  // so a bare project's sidecars still resolve a docker runtime (matches
+  // resolveServicePlatform's long-standing behaviour).
+  const snapshot = { ...((dep.meta ?? {}) as DeploymentMeta), runtimeMode: "docker" as const };
+  const effectiveTarget = resolveEffectiveTarget(platform().target, snapshot);
+
+  if (effectiveTarget === "server") {
+    return {
+      runtime: await createServerDockerRuntime(snapshot.serverId, dep.organizationId),
+      // Same value resolveDeploymentPlatform reports: the RECORDED id, which
+      // streaming callers use to retain/release the pooled SSH connection.
+      serverId: snapshot.serverId ?? null,
+    };
+  }
+  if (effectiveTarget === "local") {
+    return { runtime: await DockerRuntime.create({ transport: "socket" }), serverId: null };
+  }
+  const resolved = await resolveDeploymentPlatform(snapshot, {
+    organizationId: dep.organizationId,
+  });
+  return { runtime: resolved.platform.runtime, serverId: resolved.serverId };
 }

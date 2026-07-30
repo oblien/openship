@@ -165,6 +165,25 @@ function hasAnyRootMarker(detection: StackDetection | undefined, fileSet: Set<st
   return false;
 }
 
+/**
+ * A repo with a NON-JS backend framework at its root that ALSO ships a Vite/
+ * asset frontend must detect as the BACKEND, not as a bare Vite SPA. Stock
+ * scaffolds do exactly this: `laravel new` (v9+) includes vite.config.js + a
+ * package.json, which otherwise shadows Laravel — the deploy then lands on the
+ * `vite` stack with an empty start command and is refused. Restricted to
+ * unambiguous non-JS backends (PHP/Python/Ruby/Elixir) so a pure-JS Vite app is
+ * untouched and a Go/Rust monorepo with a JS frontend isn't flipped. #231
+ */
+function hasBackendMarker(fileSet: Set<string>): boolean {
+  return (
+    fileSet.has("composer.json") || // Laravel / Symfony (PHP)
+    fileSet.has("artisan") || // Laravel
+    fileSet.has("manage.py") || // Django (Python)
+    fileSet.has("gemfile") || // Rails (Ruby)
+    fileSet.has("mix.exs") // Phoenix (Elixir)
+  );
+}
+
 /** True if any of the stack's deps appears in the dep map. */
 function hasAnyDep(detection: StackDetection | undefined, deps: Record<string, string>): boolean {
   const list = detection?.deps;
@@ -206,7 +225,12 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
   { stack: "remix" },
   { stack: "angular" },
   { stack: "gatsby" },
-  { stack: "vite" },
+  // Vite matches on its own root markers, but a backend framework (Laravel/
+  // Symfony/Django/Rails/Phoenix) shipping a Vite asset frontend must fall
+  // through to its own rule below — otherwise stock `laravel new` detects as a
+  // bare Vite SPA (empty start command → deploy refused). Veto the Vite match
+  // when a backend marker is present. #231
+  { stack: "vite", fileMatch: (fs) => hasAnyRootMarker(STACKS.vite.detection, fs) && !hasBackendMarker(fs) },
   // CRA has no durable file marker - depMatch alone is authoritative.
   {
     stack: "cra",

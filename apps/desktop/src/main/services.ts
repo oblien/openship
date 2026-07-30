@@ -18,17 +18,37 @@ import { app, net, utilityProcess } from "electron";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
+import { resolvePortPair } from "@repo/core/ports";
 
-const API_BIN = process.platform === "win32" ? "openship-api.exe" : "openship-api";
+// The API + dashboard both run under Electron's OWN Node (utilityProcess.fork —
+// no Dock tile), NOT a bun binary. `NodeService` is either that utility process
+// or the ELECTRON_RUN_AS_NODE spawn fallback.
+type NodeService = ReturnType<typeof utilityProcess.fork> | ChildProcess;
 
-type DashProc = ReturnType<typeof utilityProcess.fork> | ChildProcess;
-
-let apiProc: ChildProcess | null = null;
-let dashboardProc: DashProc | null = null;
+let apiProc: NodeService | null = null;
+let dashboardProc: NodeService | null = null;
 let started = false;
+// Liveness for the API. A utilityProcess (the normal path) exposes no
+// `exitCode`, so we track exit ourselves — startApi sets this on the process's
+// exit event, and teardown reads it instead of a per-type property.
+let apiExited = false;
+
+/**
+ * Terminate a service, whichever kind it is. A ChildProcess takes a signal
+ * (SIGTERM graceful, SIGKILL forced); Electron's utilityProcess exposes only a
+ * signal-less kill() (SIGTERM-equivalent, and Electron hard-kills it on app
+ * quit regardless). Swallows "already gone".
+ */
+function killService(p: NodeService, signal?: NodeJS.Signals): void {
+  try {
+    if ("postMessage" in p) (p as ReturnType<typeof utilityProcess.fork>).kill();
+    else (p as ChildProcess).kill(signal);
+  } catch {
+    // already gone
+  }
+}
 
 // Resolved local origins. Default to the fixed dev ports (used unpackaged /
 // before services start); overwritten with the dynamic ports actually bound.
@@ -39,28 +59,6 @@ let localDashboardUrl = LOCAL_DASHBOARD_URL;
 export const getLocalApiUrl = (): string => localApiUrl;
 /** The dashboard origin the app is actually using (dynamic once packaged). */
 export const getLocalDashboardUrl = (): string => localDashboardUrl;
-
-/** Reserve a free TCP port on loopback (bind :0, read it, release). */
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      const port = addr && typeof addr === "object" ? addr.port : 0;
-      srv.close(() => (port ? resolve(port) : reject(new Error("no free port"))));
-    });
-  });
-}
-
-/** True if a specific TCP port is bindable on loopback right now. */
-function isPortFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const srv = createServer();
-    srv.once("error", () => resolve(false));
-    srv.listen(port, "127.0.0.1", () => srv.close(() => resolve(true)));
-  });
-}
 
 /**
  * Persist the chosen ports so a restart reuses the SAME origin. Session cookies
@@ -93,12 +91,26 @@ function saveStoredPorts(api: number, dashboard: number): void {
 function resourcePaths() {
   const root = process.resourcesPath;
   return {
-    apiBin: join(root, "bin", API_BIN),
+    // The API bundle (Bun.build target:node) — run under Electron's Node, not a
+    // bun binary. Its sibling package.json marks it type:module so index.js loads
+    // as ESM. See apps/desktop/build/stage.ts for why it's a Node bundle.
+    apiEntry: join(root, "server", "index.js"),
     migrationsDir: join(root, "migrations"),
     pgliteDir: join(root, "pglite"),
+    // Vendored GeoLite2-Country DB. geo-ip.ts otherwise probes paths relative to
+    // its own module (inside the bundle, resources/server) — every candidate
+    // misses and it silently downloads 8.8 MB from GitHub on the first
+    // server-flag lookup (and shows no flags at all offline).
+    geoipDb: join(root, "geoip", "GeoLite2-Country.mmdb"),
+    // The iRedMail engine tree the mail-server install packs and streams to the
+    // target VPS. Handed to the API as MAIL_SERVER_ENGINE_DIR below — its own
+    // default resolves relative to apps/api's cwd, which is WRONG here (the API
+    // runs with cwd=userData), producing "tar: could not chdir to
+    // '…/Library/apps/email/engine'".
+    engineDir: join(root, "engine"),
     dashboardDir: join(root, "dashboard", "apps", "dashboard"),
-    // ssh2 + dockerode live here (externalized from the compiled API binary);
-    // the binary resolves them via NODE_PATH — see the spawn below.
+    // ssh2 + dockerode live here (external to the API bundle); the API resolves
+    // them via NODE_PATH — see startApi below.
     nodeModulesDir: join(root, "node_modules"),
   };
 }
@@ -163,7 +175,7 @@ async function startDashboard(
   dashboardDir: string,
   dashPort: number,
   apiOrigin: string,
-): Promise<DashProc | null> {
+): Promise<NodeService | null> {
   const url = `http://127.0.0.1:${dashPort}/`;
   const serverJs = join(dashboardDir, "server.js");
   const env: NodeJS.ProcessEnv = {
@@ -209,6 +221,56 @@ async function startDashboard(
 }
 
 /**
+ * Start the API bundle and resolve with the process once it answers /api/health,
+ * or null if it never comes up. Same two-tier launch as the dashboard: prefer
+ * utilityProcess.fork (Electron's Node, no Dock tile), fall back to an
+ * ELECTRON_RUN_AS_NODE spawn.
+ *
+ * This is what fixes Docker-over-SSH on the desktop: the API runs under Node
+ * (Electron's), exactly like `bun dev` (node --import tsx) and the self-hosted
+ * `node dist/index.js`. The old `bun --compile` binary could not — see
+ * apps/desktop/build/stage.ts for the full why (ssh2/dockerode + bun #25500).
+ */
+async function startApi(
+  apiEntry: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  healthUrl: string,
+): Promise<NodeService | null> {
+  apiExited = false;
+  // 1. Preferred — utilityProcess (Electron's Node, no Dock tile). The API runs
+  //    migrations on boot, so give it a generous readiness window.
+  const up = utilityProcess.fork(apiEntry, [], { cwd, stdio: "pipe", env });
+  let upDead = false;
+  up.on("exit", (code) => {
+    upDead = true;
+    apiExited = true;
+    console.log(`[openship] api(utility) exited (code=${code})`);
+  });
+  pipeLogs("api", up);
+  if (await waitForPort(healthUrl, () => upDead)) return up;
+
+  // 2. Fallback — ELECTRON_RUN_AS_NODE spawn (works, but tiles the Dock).
+  killService(up);
+  console.log("[openship] api utilityProcess did not start — falling back to node spawn");
+  apiExited = false;
+  const sp = spawn(process.execPath, [apiEntry], {
+    cwd,
+    env: { ...env, ELECTRON_RUN_AS_NODE: "1" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let spDead = false;
+  sp.on("exit", (code, signal) => {
+    spDead = true;
+    apiExited = true;
+    console.log(`[openship] api exited (code=${code ?? "null"} signal=${signal ?? "none"})`);
+  });
+  pipeLogs("api", sp);
+  if (await waitForPort(healthUrl, () => spDead)) return sp;
+  return null;
+}
+
+/**
  * Start the bundled API + dashboard and resolve once both answer. Idempotent.
  * @param internalToken shared secret for Electron → API internal calls
  */
@@ -216,13 +278,14 @@ export async function startLocalServices(internalToken: string): Promise<void> {
   if (started) return;
   started = true;
 
-  const { apiBin, migrationsDir, pgliteDir, dashboardDir, nodeModulesDir } = resourcePaths();
+  const { apiEntry, migrationsDir, pgliteDir, geoipDb, engineDir, dashboardDir, nodeModulesDir } =
+    resourcePaths();
   const userData = app.getPath("userData");
   const dataDir = join(userData, "data");
   mkdirSync(dataDir, { recursive: true });
 
-  if (!existsSync(apiBin)) {
-    throw new Error(`Bundled API binary missing at ${apiBin}`);
+  if (!existsSync(apiEntry)) {
+    throw new Error(`Bundled API entry missing at ${apiEntry}`);
   }
 
   const authSecret = loadOrCreateAuthSecret();
@@ -233,23 +296,29 @@ export async function startLocalServices(internalToken: string): Promise<void> {
   const MAX_ATTEMPTS = 3;
   const stored = loadStoredPorts();
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    // Attempt 1 reuses last run's ports when they're still free (stable origin
-    // → session survives restarts); otherwise pick fresh free ports.
-    const apiPort =
-      attempt === 1 && stored.api && (await isPortFree(stored.api))
-        ? stored.api
-        : await getFreePort();
-    let dashPort =
-      attempt === 1 &&
-      stored.dashboard &&
-      stored.dashboard !== apiPort &&
-      (await isPortFree(stored.dashboard))
-        ? stored.dashboard
-        : await getFreePort();
-    if (dashPort === apiPort) dashPort = await getFreePort();
+    // Attempt 1 reuses last run's ports when it can (stable origin → the session
+    // survives a restart); a retry means a chosen port raced away, so it asks for
+    // fresh ones rather than the pair that just failed.
+    //
+    // `resolvePortPair` is the SAME resolver the CLI installs with (@repo/core/ports).
+    // This used to be a local `isPortFree() ? stored : getFreePort()`, which had no
+    // grace period: on a restart the app probes the remembered port while its own
+    // dying process still holds it, so it moved to a brand-new port and — cookies
+    // being bound to `localhost:<port>` — logged the user out on every restart.
+    // The shared resolver waits briefly for our own process to release it first.
+    //
+    // NO `defaults` on purpose: a packaged app must never land on 4000/3001, where
+    // a dev server lives. Without them the resolver hands out ephemeral ports,
+    // which is what this launcher has always wanted.
+    const { api: apiPort, dashboard: dashPort } = await resolvePortPair(
+      attempt === 1 ? { stored } : {},
+    );
 
-    const apiOrigin = `http://localhost:${apiPort}`;
-    const dashOrigin = `http://localhost:${dashPort}`;
+    // Use 127.0.0.1, not localhost: the API/dashboard bind IPv4 loopback only
+    // (OPENSHIP_API_HOST=127.0.0.1), and clients that resolve `localhost` → ::1
+    // first (e.g. Bun's fetch) get connection-refused before OAuth starts (#119).
+    const apiOrigin = `http://127.0.0.1:${apiPort}`;
+    const dashOrigin = `http://127.0.0.1:${dashPort}`;
 
     // Clean env: strip anything that would steer the API onto an external
     // Postgres. Empty DATABASE_URL + no POSTGRES_* → embedded PGlite.
@@ -271,6 +340,13 @@ export async function startLocalServices(internalToken: string): Promise<void> {
     }
     Object.assign(apiEnv, {
       DEPLOY_MODE: "desktop",
+      // DECLARE the auth mode. The API no longer infers zero-auth from
+      // DEPLOY_MODE, and it no longer lets a persisted instance_settings row
+      // override this — a stale "cloud" row used to send this loopback-only app to
+      // a remote sign-in screen with no way back. The API refuses to boot in
+      // desktop mode without this, so it can never silently become a lockout.
+      // Not a bypass: zeroAuthAllowed() still requires a loopback peer.
+      OPENSHIP_AUTH_MODE: "none",
       OPENSHIP_TARGET: "local",
       OPENSHIP_JOB_RUNNER: "in-process", // no Redis in desktop; skip the probe
       NODE_ENV: "production",
@@ -282,44 +358,56 @@ export async function startLocalServices(internalToken: string): Promise<void> {
       PGLITE_DATA_DIR: dataDir,
       OPENSHIP_MIGRATIONS_DIR: migrationsDir,
       OPENSHIP_PGLITE_ASSETS_DIR: pgliteDir,
-      // The dashboard runs on a dynamic port not in the API's static origin
-      // table — trust it explicitly so CORS / origin-guard / auth accept it.
-      OPENSHIP_EXTRA_TRUSTED_ORIGINS: `${dashOrigin},http://127.0.0.1:${dashPort}`,
+      // Point geo-ip.ts straight at the staged mmdb. Only set when the file is
+      // actually there, so a stale/partial Resources dir falls back to geo-ip's
+      // own download path instead of pinning a bad override.
+      ...(existsSync(geoipDb) ? { OPENSHIP_GEOIP_DB: geoipDb } : {}),
+      // Pin the mail-server install source to the staged engine tree. Gated on
+      // existsSync so a stale/partial Resources dir falls back to the resolver's
+      // default rather than pinning a path that definitely isn't there.
+      ...(existsSync(engineDir) ? { MAIL_SERVER_ENGINE_DIR: engineDir } : {}),
+      // The dashboard + API run on dynamic ports not in the API's static origin
+      // table — trust both loopback spellings of each explicitly so CORS /
+      // origin-guard / auth accept them regardless of which a client resolves.
+      OPENSHIP_EXTRA_TRUSTED_ORIGINS: [
+        `http://127.0.0.1:${dashPort}`,
+        `http://localhost:${dashPort}`,
+        `http://127.0.0.1:${apiPort}`,
+        `http://localhost:${apiPort}`,
+      ].join(","),
       // Where the API redirects after desktop-login / desktop-claim / cloud auth
       // (else it'd send the window to the static localhost:3001 → white screen).
       OPENSHIP_LOCAL_DASHBOARD_URL: dashOrigin,
+      // The origin external MCP/OAuth clients actually reach this API at. Feeds
+      // the OAuth discovery/issuer/authorize/token URLs (resolveAuthBaseUrl) so
+      // they're reachable on the dynamic port instead of the static localhost:4000
+      // fallback (#119). URL-construction ONLY — it must NOT be OPENSHIP_PUBLIC_URL,
+      // which would trip zeroAuthAllowed's "publicly-served" rejection and kill
+      // the desktop's zero-auth session.
+      OPENSHIP_ADVERTISED_ORIGIN: apiOrigin,
       BETTER_AUTH_SECRET: authSecret,
       INTERNAL_TOKEN: internalToken,
-      // The compiled API binary loads ssh2/dockerode (externalized from the
-      // --compile bundle) from the staged Resources/node_modules via NODE_PATH.
-      // This ONLY works on Bun < 1.3.4: Bun 1.3.4 regressed `--compile --external`
-      // resolution to the virtual $bunfs root, ignoring NODE_PATH/CWD (oven-sh/bun
-      // #25500), which broke desktop startup with "Cannot find package 'ssh2'"
-      // (issue #111). The build pins a pre-1.3.4 Bun (.bun-version) + a stage.ts
-      // canary — do NOT bump Bun past that until #25500 is fixed upstream.
+      // The API bundle keeps ssh2/dockerode EXTERNAL (bundling them mangles
+      // ssh2's dynamic cipher/KEX require()s + dockerode's transport). The bundle
+      // is ESM and lives at Resources/server/index.js, so `import "ssh2"` resolves
+      // by the normal parent-dir node_modules walk → Resources/node_modules (its
+      // parent). ESM import IGNORES NODE_PATH; it's set only as a belt-and-braces
+      // fallback for any CJS `require()` deep in the SSH/Docker stack. Running
+      // under Electron's Node (startApi) makes this plain Node resolution — the
+      // same as `bun dev` and self-hosted `node dist/index.js`, where Docker
+      // over SSH works.
       NODE_PATH: nodeModulesDir,
     });
 
-    let apiDead = false;
-
-    apiProc = spawn(apiBin, [], {
-      cwd: userData, // writable, and free of any repo .env
-      env: apiEnv,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    apiProc.on("exit", (code, signal) => {
-      apiDead = true;
-      console.log(`[openship] api exited (code=${code ?? "null"} signal=${signal ?? "none"})`);
-    });
-    pipeLogs("api", apiProc);
-
-    // API + dashboard start in parallel. startDashboard handles its own
-    // readiness + utilityProcess→spawn fallback, resolving the live process.
-    const [apiReady, dashProc] = await Promise.all([
-      waitForPort(`http://127.0.0.1:${apiPort}/api/health`, () => apiDead),
+    // API + dashboard start in parallel. Each handles its own readiness +
+    // utilityProcess→spawn fallback and resolves the live process (or null).
+    const [apiRes, dashProc] = await Promise.all([
+      startApi(apiEntry, userData, apiEnv, `http://127.0.0.1:${apiPort}/api/health`),
       startDashboard(dashboardDir, dashPort, apiOrigin),
     ]);
+    apiProc = apiRes;
     dashboardProc = dashProc;
+    const apiReady = Boolean(apiRes);
 
     if (apiReady && dashProc) {
       localApiUrl = apiOrigin;
@@ -342,19 +430,18 @@ export async function startLocalServices(internalToken: string): Promise<void> {
 
 /** Kill both children. Safe to call anytime / repeatedly. */
 export function stopLocalServices(): void {
-  // API: SIGTERM then SIGKILL fallback.
-  if (apiProc && apiProc.exitCode === null) {
+  // API: SIGTERM then a SIGKILL fallback. The SIGKILL escalation only applies to
+  // the ChildProcess fallback — a utilityProcess exposes just kill(), and
+  // Electron hard-kills it on app quit anyway.
+  if (apiProc && !apiExited) {
     const p = apiProc;
-    p.kill("SIGTERM");
-    setTimeout(() => {
-      if (p.exitCode === null) {
-        try {
-          p.kill("SIGKILL");
-        } catch {
-          // already gone
-        }
-      }
-    }, 4000).unref?.();
+    killService(p, "SIGTERM");
+    if ("exitCode" in p) {
+      const cp = p as ChildProcess;
+      setTimeout(() => {
+        if (cp.exitCode === null) killService(cp, "SIGKILL");
+      }, 4000).unref?.();
+    }
   }
   // Dashboard: .kill() terminates it — works for both a utilityProcess and a
   // ChildProcess (the fallback). Electron also tears a utilityProcess down with
@@ -398,7 +485,7 @@ export async function stopLocalServicesAndWait(graceMs = 8000): Promise<void> {
   }
   dashboardProc = null;
 
-  if (p && p.exitCode === null) {
+  if (p && !apiExited) {
     await new Promise<void>((resolve) => {
       let settled = false;
       let killTimer: ReturnType<typeof setTimeout> | undefined;
@@ -411,20 +498,15 @@ export async function stopLocalServicesAndWait(graceMs = 8000): Promise<void> {
         resolve();
       };
 
-      p.once("exit", done);
-      try {
-        p.kill("SIGTERM");
-      } catch {
-        done(); // already gone
-        return;
-      }
+      // Both a utilityProcess and a ChildProcess emit "exit"; their typed once()
+      // overloads differ, so register via the shared EventEmitter shape.
+      (p as unknown as NodeJS.EventEmitter).once("exit", done);
+      killService(p, "SIGTERM"); // lets the API release the PGlite lock cleanly
       killTimer = setTimeout(() => {
-        if (p.exitCode === null) {
-          try {
-            p.kill("SIGKILL");
-          } catch {
-            // already gone
-          }
+        // SIGKILL escalation is ChildProcess-only; a utilityProcess has no
+        // forced-kill, but the capTimer + app-quit teardown still bound the wait.
+        if ("exitCode" in p && (p as ChildProcess).exitCode === null) {
+          killService(p, "SIGKILL");
         }
       }, graceMs);
       // Backstop: resolve even if the 'exit' event is somehow missed after kill.

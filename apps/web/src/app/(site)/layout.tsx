@@ -132,7 +132,7 @@ const organizationLd = {
   sameAs: [
     "https://github.com/oblien/openship",
     "https://x.com/openshipio",
-    "https://discord.gg/openship",
+    "https://discord.gg/Q9eWNCeXjg",
   ],
   contactPoint: [
     {

@@ -36,6 +36,11 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { setActiveOrganizationId } from "@/lib/api/client";
+import { projectsApi } from "@/lib/api";
+import {
+  getSidebarNavCountsRevision,
+  subscribeSidebarNavCounts,
+} from "@/lib/sidebar-nav-counts";
 
 /**
  * Org list / member shapes from Better Auth's organization plugin.
@@ -157,6 +162,18 @@ export function Sidebar() {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [navCounts, setNavCounts] = useState<{ projects: number; apps: number } | null>(null);
+  const [navCountsRevision, setNavCountsRevision] = useState(getSidebarNavCountsRevision);
+  const countFor = (key: string): number | null => {
+    if (!navCounts) return null;
+    if (key === "projects") return navCounts.projects;
+    if (key === "apps") return navCounts.apps;
+    return null;
+  };
+
+  useEffect(() => subscribeSidebarNavCounts(() => {
+    setNavCountsRevision(getSidebarNavCountsRevision());
+  }), []);
 
   // Org switcher state. Lazy-loaded — `list()` and the active org fetch
   // only fire after the first popover open so the sidebar doesn't pay
@@ -218,6 +235,44 @@ export function Sidebar() {
       cancelled = true;
     };
   }, [user?.id]);
+
+  // Nav counts — Projects & Apps only, from the same `projects/home` payload
+  // both pages load. Apps are projects with `isApp` (catalog installs); the
+  // Projects nav counts the REST (real projects), exactly mirroring what each
+  // page renders — apps live only under Apps, never double-counted.
+  //
+  // Gated on `orgsLoaded`: the count fetch must run under the resolved active
+  // org (the org effect above sets `setActiveOrganizationId` a round-trip
+  // later). Firing on mount races that and can pull an extra project from the
+  // wrong scope — the "2 real projects showed 3" bug. Re-runs on org switch.
+  useEffect(() => {
+    if (!orgsLoaded) return;
+    let cancelled = false;
+    projectsApi
+      .getHome()
+      .then((res) => {
+        if (cancelled || !res?.success || !Array.isArray(res.projects)) return;
+        // Distinct by id — the payload merges local + cloud, which can list the
+        // same project twice; a dupe must not inflate the tally.
+        const seen = new Set<string>();
+        let projects = 0;
+        let apps = 0;
+        for (const p of res.projects) {
+          const id = p?.id;
+          if (id && seen.has(id)) continue;
+          if (id) seen.add(id);
+          if (p?.isApp) apps += 1;
+          else projects += 1;
+        }
+        setNavCounts({ projects, apps });
+      })
+      .catch(() => {
+        /* counts are optional chrome — silent on failure */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgsLoaded, activeOrgId, navCountsRevision]);
 
   async function handleOrgSwitch(orgId: string) {
     if (orgId === activeOrgId) {
@@ -333,6 +388,7 @@ export function Sidebar() {
               <div className="space-y-1">
                 {items.map(({ key, href, icon: Icon }) => {
                   const active = isActive(href);
+                  const count = countFor(key);
                   return (
                     <Link
                       key={key}
@@ -345,7 +401,15 @@ export function Sidebar() {
                         }`}
                     >
                       <Icon className="size-[18px] shrink-0" strokeWidth={1.7} />
-                      {!collapsed && label(key)}
+                      {!collapsed && <span className="flex-1 truncate">{label(key)}</span>}
+                      {/* Subtle right-aligned tally — Projects & Apps only, hidden
+                          at 0 and when collapsed. Muted + tabular so it reads as
+                          metadata, not a notification badge. */}
+                      {!collapsed && count != null && count > 0 && (
+                        <span className="shrink-0 text-[13px] tabular-nums text-muted-foreground/45">
+                          {count}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}
@@ -360,7 +424,12 @@ export function Sidebar() {
             transparent-WHITE — fine on light, but a light sheen on the mid-gray
             dim card and invisible on the near-black dark card. Use the solid
             card hue in dim AND dark so the ramp stays the card's own color. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-card to-card/0 dim:from-[var(--th-card-bg-solid)] dim:to-transparent dark:from-[var(--th-card-bg-solid)] dark:to-transparent" />
+        {/* Scroll fade. ONE gradient for every theme: --th-card-on-page is the
+            opaque composite of this card over the page, so the fade starts at
+            exactly the surface behind it. The per-theme variants this replaces
+            faded from --th-card-bg-solid (the MODAL surface) — #060606 in dark
+            against a real sidebar of #0d0d0d, i.e. a black band. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-[var(--th-card-on-page)] to-transparent" />
       </div>
 
       {/* ── New Project ─────────────────────────────────────── */}

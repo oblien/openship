@@ -158,7 +158,9 @@
     "close": "关闭 {label}",
     "serverLimit": "服务器限制：最多 {max} 个并发 shell。",
     "newShell": "新建 shell",
-    "noTerminals": "没有打开的终端。"
+    "noTerminals": "没有打开的终端。",
+    "expand": "展开",
+    "collapse": "收起"
   },
   "buildPage": {
     "thisRepo": "此仓库",

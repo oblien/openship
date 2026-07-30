@@ -152,6 +152,11 @@ function combineStartCommand(
     return commandToShell(entrypoint);
   }
 
+  // A shell-form ENTRYPOINT runs via `/bin/sh -c` and takes no CMD arguments.
+  if (entrypoint.form === "shell") {
+    return commandToShell(entrypoint);
+  }
+
   const entrypointShell = commandToShell(entrypoint);
   const cmdShell = commandToShell(cmd);
   return cmdShell ? `${entrypointShell} ${cmdShell}` : entrypointShell;

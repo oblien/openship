@@ -9,31 +9,9 @@ import DeploymentProcessing from "@/components/import-project/DeploymentProcessi
 import ComposeDeploymentProcessing from "@/components/import-project/ComposeDeploymentProcessing";
 import BuildSkeleton from "@/components/import-project/BuildSkeleton";
 import { useAuth } from "@/context/AuthContext";
-import { useGitHub } from "@/context/GitHubContext";
-import { useModal } from "@/context/ModalContext";
-import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
-import { useServerGitHubConnectModal } from "@/components/github/ServerGitHubConnect";
-import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { ResourceNotFound } from "@/components/resource-not-found";
 import { Rocket, Home, PackageX } from "lucide-react";
-
-/**
- * Error codes that mean "the deploy couldn't get a clone token for the
- * repo's owner". Throwing these from the backend currently lands as a
- * toast + a 'failed' build screen. This module catches those codes and
- * opens DeployCredentialModal so the user gets actual recovery options
- * instead of a dead-end.
- *
- * See apps/api/src/modules/deployments/preflight.ts and
- * apps/api/src/modules/github/github.token.ts for the throw sites.
- */
-const CLONE_TOKEN_ERROR_CODES = new Set([
-  "GITHUB_APP_INSTALLATION_REQUIRED",
-  "GITHUB_CLI_REMOTE_BUILD_REJECTED",
-  "GITHUB_REMOTE_TOKEN_REQUIRED",
-  "GITHUB_TOKEN_REQUIRED",
-]);
 
 const BuildPage: React.FC = () => {
   const params = useParams();
@@ -41,11 +19,7 @@ const BuildPage: React.FC = () => {
   const router = useRouter();
   const { isLoggedIn } = useAuth();
   const deploymentId = params.id as string;
-  const { state, config, connectToBuild, loadBuildSession, redeploy, updateConfig } = useDeployment();
-  const { installUrl, state: githubState } = useGitHub();
-  const { selfHosted } = usePlatform();
-  const { showModal, hideModal } = useModal();
-  const openGithubConnect = useServerGitHubConnectModal();
+  const { state, config, connectToBuild, loadBuildSession, redeploy, maybeOpenCredentialModal } = useDeployment();
   const { t } = useI18n();
   const initializedDeploymentRef = useRef<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -145,70 +119,18 @@ const BuildPage: React.FC = () => {
   // with no next step.
   useEffect(() => {
     if (!state.deploymentFailed || !state.errorCode) return;
-    if (!CLONE_TOKEN_ERROR_CODES.has(state.errorCode)) return;
-
-    // De-dupe — same deployment + same code shouldn't reopen the modal
-    // on every state tick.
+    // De-dupe — same deployment + same code shouldn't reopen the modal on every
+    // state tick. The shared handler (useDeploymentBuild.maybeOpenCredentialModal)
+    // owns the modal + its options; here we just pass the build-fail trigger and
+    // an auto-redeploy on the user's fix.
     const key = `${deploymentId}:${state.errorCode}`;
     if (shownModalRef.current === key) return;
-    shownModalRef.current = key;
-
-    let modalId = "";
-    modalId = showModal({
-      customContent: (
-        <DeployCredentialModal
-          trigger="build-fail"
-          owner={config.owner || t.misc.buildPage.thisRepo}
-          installUrl={installUrl ?? null}
-          projectId={config.projectId ?? null}
-          serverId={config.serverId ?? null}
-          deployTarget={config.deployTarget}
-          buildStrategy={config.buildStrategy}
-          selfHosted={selfHosted}
-          ghCliAvailable={!!githubState?.sources.ghCli.available}
-          onChoice={(choice) => {
-            if (choice.kind === "build-local") {
-              updateConfig({ buildStrategy: "local" });
-              hideModal(modalId);
-              void handleRedeploy();
-            } else if (choice.kind === "install-app") {
-              // App popup closed; redeploy lets the backend re-check.
-              hideModal(modalId);
-              void handleRedeploy();
-            } else if (choice.kind === "connect-server-github") {
-              // Open the shared per-server connect model; redeploy once connected.
-              hideModal(modalId);
-              if (config.serverId)
-                openGithubConnect(config.serverId, { onConnected: () => void handleRedeploy() });
-            } else {
-              // add-token (navigated away) or dismiss — just close.
-              hideModal(modalId);
-            }
-          }}
-          onDismiss={() => hideModal(modalId)}
-        />
-      ),
-      maxWidth: "640px",
+    const opened = maybeOpenCredentialModal(state.errorCode, {
+      trigger: "build-fail",
+      onResolved: () => void handleRedeploy(),
     });
-  }, [
-    state.deploymentFailed,
-    state.errorCode,
-    deploymentId,
-    config.owner,
-    config.deployTarget,
-    config.buildStrategy,
-    config.projectId,
-    config.serverId,
-    installUrl,
-    githubState,
-    selfHosted,
-    showModal,
-    hideModal,
-    openGithubConnect,
-    updateConfig,
-    handleRedeploy,
-    t,
-  ]);
+    if (opened) shownModalRef.current = key;
+  }, [state.deploymentFailed, state.errorCode, deploymentId, maybeOpenCredentialModal, handleRedeploy]);
 
   if (notFound) {
     return (

@@ -1,0 +1,33 @@
+{
+  "available": false,
+  "id": "gitea",
+  "name": "Gitea",
+  "description": "Self-hosted Git with issues, pull requests, and a first-run setup wizard.",
+  "kind": "template",
+  "logo": "gitea",
+  "category": "other",
+  "tags": [
+    "git",
+    "vcs",
+    "developer"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "gitea",
+      "image": "gitea/gitea:1",
+      "ports": [
+        "3000:3000"
+      ],
+      "exposedPort": 3000,
+      "exposed": true,
+      "environment": {
+        "GITEA__server__ROOT_URL": "{{publicUrl:gitea}}"
+      },
+      "volumes": [
+        "gitea_data:/data"
+      ],
+      "restart": "unless-stopped"
+    }
+  ]
+}

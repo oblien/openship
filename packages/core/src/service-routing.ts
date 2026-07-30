@@ -42,6 +42,41 @@ export function normalizeServiceLabel(value: string): string {
 }
 
 /**
+ * Longest label the free `<slug>.opsh.io` namespace accepts. The cloud rejects
+ * anything longer with `invalid_slug` ("Slug must be 1-48 chars"), so a
+ * generated label past this never routes — and at ~63+ chars it also fails
+ * nginx's `server_names_hash` on the box's own edge.
+ */
+export const MAX_SERVICE_LABEL_LENGTH = 48;
+
+/**
+ * Deterministic short suffix, so a truncated label stays unique AND stable
+ * across deploys — a random one would mint a new hostname every time.
+ */
+function labelHash(value: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36).slice(0, 6);
+}
+
+/**
+ * Clamp a GENERATED label to what the free-subdomain namespace accepts,
+ * keeping a hash of the full value so two long labels sharing a prefix don't
+ * collide. Applied only to defaults: an explicit subdomain the operator typed
+ * is left exactly as written, so it fails loudly instead of silently becoming
+ * a different hostname than the one they asked for.
+ */
+function clampServiceLabel(label: string): string {
+  if (label.length <= MAX_SERVICE_LABEL_LENGTH) return label;
+  const suffix = `-${labelHash(label)}`;
+  const head = label.slice(0, MAX_SERVICE_LABEL_LENGTH - suffix.length).replace(/-+$/, "");
+  return `${head}${suffix}`;
+}
+
+/**
  * Generate the default hostname label for a service.
  *
  * For compose services, "frontend-style" names ("web", "app", "frontend")
@@ -109,7 +144,9 @@ export function resolveServiceHostnameLabel(
   explicitSubdomain?: string | null,
   kind: "compose" | "monorepo" = "compose",
 ): string {
-  return normalizeServiceLabel(
-    explicitSubdomain || defaultServiceHostnameLabel(projectLabel, serviceName, kind),
+  // Explicit subdomains pass through unclamped — see clampServiceLabel.
+  if (explicitSubdomain) return normalizeServiceLabel(explicitSubdomain);
+  return clampServiceLabel(
+    normalizeServiceLabel(defaultServiceHostnameLabel(projectLabel, serviceName, kind)),
   );
 }

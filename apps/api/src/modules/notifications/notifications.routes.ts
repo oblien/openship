@@ -9,6 +9,7 @@
 import { Hono } from "hono";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./notifications.controller";
+import { CreateChannelBody, UpdateChannelBody, UpsertSubscriptionBody } from "./notification.schema";
 
 const r = secureRouter(new Hono(), {
   module: "notifications",
@@ -21,13 +22,14 @@ r.get("/categories", { tag: "notifications:read", mcp: { description: "List noti
 
 // ── Channels (per-user)
 r.get("/channels", { tag: "notifications:read", mcp: { description: "List the caller's notification channels (email, webhook, etc.)." } }, ctrl.listChannels);
-r.post("/channels", { tag: "notifications:write", mcp: { description: "Create a notification channel." } }, ctrl.createChannel);
-r.patch("/channels/:id", { tag: "notifications:write", mcp: { description: "Update a notification channel." } }, ctrl.updateChannel);
+r.post("/channels", { tag: "notifications:write", body: CreateChannelBody, mcp: { description: "Create a notification channel." } }, ctrl.createChannel);
+r.patch("/channels/:id", { tag: "notifications:write", body: UpdateChannelBody, mcp: { description: "Update a notification channel." } }, ctrl.updateChannel);
+r.post("/channels/:id/test", { tag: "notifications:write", mcp: { description: "Send a test delivery to a channel; marks it verified on success." } }, ctrl.testChannel);
 r.delete("/channels/:id", { tag: "notifications:write", mcp: { description: "Delete a notification channel." } }, ctrl.deleteChannel);
 
 // ── Subscriptions (per-user × org)
 r.get("/subscriptions", { tag: "notifications:read", mcp: { description: "List the caller's notification subscriptions." } }, ctrl.listSubscriptions);
-r.put("/subscriptions", { tag: "notifications:write", mcp: { description: "Create or update a notification subscription." } }, ctrl.upsertSubscription);
+r.put("/subscriptions", { tag: "notifications:write", body: UpsertSubscriptionBody, mcp: { description: "Create or update a notification subscription." } }, ctrl.upsertSubscription);
 r.delete("/subscriptions/:id", { tag: "notifications:write", mcp: { description: "Delete a notification subscription." } }, ctrl.deleteSubscription);
 
 // ── Org defaults (admin-controlled — admin tag)

@@ -434,7 +434,7 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
   }, [pty]);
 
   return (
-    <div className={`relative flex h-full w-full flex-col overflow-hidden bg-[#0a0a0a] ${className}`}>
+    <div className={`relative flex h-full w-full flex-col overflow-hidden ${theme === "light" ? "bg-white" : "bg-[#0a0a0a]"} ${className}`}>
       {/* Status banner overlay */}
       {banner && (
         <div

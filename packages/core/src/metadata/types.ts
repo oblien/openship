@@ -66,6 +66,23 @@ export interface RoutingConfig {
 }
 
 /**
+ * A domain served by path fan-out across services: one root upstream at `/` plus
+ * extra path-prefix locations, each pointing at a (possibly different) service.
+ * Persisted on the project so the composition is RE-EMITTED from live upstreams
+ * on every redeploy (like `RoutingConfig`), not just at first publish. Populated
+ * by a cross-server migration that adopted a multi-upstream vhost
+ * (e.g. `api.onvo.me` `/` → web, `/v3` → api).
+ */
+export interface ProjectCompositeRoute {
+  hostname: string;
+  isCustomDomain: boolean;
+  /** Service served at `/` (the route's primary upstream). */
+  rootServiceId: string;
+  /** Extra path-prefix locations, resolved to their service's upstream at deploy. */
+  locations: { pathPrefix: string; serviceId: string }[];
+}
+
+/**
  * Normalized build/run hints extracted from one metadata file. Every field is
  * optional - a parser sets only what its file actually declares.
  */

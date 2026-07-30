@@ -158,7 +158,9 @@
     "close": "{label} を閉じる",
     "serverLimit": "サーバー上限: 同時シェル {max} 個まで。",
     "newShell": "新しいシェル",
-    "noTerminals": "開いているターミナルはありません。"
+    "noTerminals": "開いているターミナルはありません。",
+    "expand": "拡大",
+    "collapse": "縮小"
   },
   "buildPage": {
     "thisRepo": "このリポジトリ",

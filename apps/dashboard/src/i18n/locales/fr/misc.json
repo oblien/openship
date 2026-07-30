@@ -161,7 +161,9 @@
     "close": "Fermer {label}",
     "serverLimit": "Limite du serveur : {max} shells simultanés.",
     "newShell": "Nouveau shell",
-    "noTerminals": "Aucun terminal ouvert."
+    "noTerminals": "Aucun terminal ouvert.",
+    "expand": "Agrandir",
+    "collapse": "Réduire"
   },
   "buildPage": {
     "thisRepo": "ce dépôt",

@@ -35,6 +35,10 @@
         "backToDashboard": "Voltar ao painel",
         "createNewProject": "Criar novo projeto"
       },
+      "loadFailed": {
+        "title": "Não foi possível carregar este projeto",
+        "subtitle": "Ocorreu um problema ao acessar este projeto. Verifique sua conexão e tente novamente."
+      },
       "accessDenied": {
         "title": "Acesso negado",
         "subtitle": "Você não tem permissão para acessar este recurso.",

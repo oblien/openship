@@ -35,6 +35,10 @@
         "backToDashboard": "Back to Dashboard",
         "createNewProject": "Create New Project"
       },
+      "loadFailed": {
+        "title": "Couldn't load this project",
+        "subtitle": "There was a problem reaching this project. Check your connection and try again."
+      },
       "accessDenied": {
         "title": "Access Denied",
         "subtitle": "You don't have permission to access this resource.",

@@ -112,9 +112,18 @@
     "noServers": "لا توجد خوادم مهيّأة بعد - أضف واحدًا من منتقي النشر.",
     "clearDefault": "مسح الافتراضي (اسأل في كل مرة)",
     "targets": {
-      "local": { "label": "هذا الجهاز", "desc": "Docker / بيئة تشغيل محلية" },
-      "server": { "label": "خادمي", "desc": "خادم SSH مهيّأ" },
-      "cloud": { "label": "Openship Cloud", "desc": "بنية تحتية سحابية مُدارة" }
+      "local": {
+        "label": "هذا الجهاز",
+        "desc": "Docker / بيئة تشغيل محلية"
+      },
+      "server": {
+        "label": "خادمي",
+        "desc": "خادم SSH مهيّأ"
+      },
+      "cloud": {
+        "label": "Openship Cloud",
+        "desc": "بنية تحتية سحابية مُدارة"
+      }
     },
     "labelFor": {
       "yourServer": "خادمك",
@@ -134,9 +143,18 @@
     "loading": "جارٍ تحميل التفضيلات…",
     "intro": "اختر استراتيجية البناء الافتراضية لعمليات النشر الجديدة. تتوفّر تجاوزات لكل مشروع في إعدادات المشروع.",
     "modes": {
-      "auto": { "label": "تلقائي", "desc": "ذكي حسب إطار العمل" },
-      "server": { "label": "خادم", "desc": "البناء عن بُعد" },
-      "local": { "label": "محلي", "desc": "البناء على الجهاز" }
+      "auto": {
+        "label": "تلقائي",
+        "desc": "ذكي حسب إطار العمل"
+      },
+      "server": {
+        "label": "خادم",
+        "desc": "البناء عن بُعد"
+      },
+      "local": {
+        "label": "محلي",
+        "desc": "البناء على الجهاز"
+      }
     },
     "toast": {
       "setTo": "تم تعيين وضع البناء إلى {mode}",
@@ -255,7 +273,7 @@
   },
   "team": {
     "heading": "الفريق",
-    "descPersonal": "الأشخاص الذين لديهم وصول إلى مساحة عملك الشخصية. ادعُ المتعاونين مباشرةً، أو أنشئ مؤسسة فريق منفصلة.",
+    "descPersonal": "الأشخاص الذين لديهم حق الوصول إلى مساحة عملك الشخصية.",
     "descTeam": "الأشخاص الذين لديهم وصول إلى مشاريع هذه المؤسسة وعمليات نشرها وخوادمها.",
     "inviteMember": "دعوة عضو",
     "createTeamCard": {
@@ -284,6 +302,14 @@
     "memberPanel": {
       "subtitle": "تنطبق المنح على الأعضاء المقيّدين. يتمتع المالك/المسؤول/العضو بوصول على مستوى المؤسسة افتراضيًا.",
       "saveLabel": "حفظ الوصول"
+    },
+    "serverAccessWarning": {
+      "title": "منح وصول كامل إلى الخادم؟",
+      "body": "سيحصل {member} على تحكم كامل في {scope} — كل عملية نشر وبياناتها، وجميع التطبيقات التي تعمل عليه، والأسرار ومتغيرات البيئة المخزّنة، والوصول إلى الطرفية، وأي تكاملات مرتبطة (مثل رموز GitHub ومفاتيح النشر المخزّنة له). سيتمكن من إدارة هذه الموارد أو حذفها.",
+      "scopeAllServers": "جميع الخوادم في هذه المؤسسة",
+      "scopeThisServer": "هذا الخادم",
+      "scopeCount": "{count} خوادم",
+      "confirm": "منح الوصول"
     },
     "confirmRemove": "إزالة هذا العضو من المؤسسة؟",
     "workspace": {
@@ -408,6 +434,8 @@
       "empty": "لا توجد قنوات بعد. أضف واحدة لبدء تلقّي الإشعارات.",
       "verified": "مؤكَّدة",
       "unverified": "غير مؤكَّدة",
+      "sendTest": "إرسال اختبار",
+      "testSent": "تم إرسال الاختبار",
       "deleteChannel": "حذف القناة",
       "addChannel": "إضافة قناة",
       "confirmDelete": "حذف هذه القناة؟ ستتوقف الاشتراكات التي تستخدمها.",
@@ -416,12 +444,16 @@
     },
     "describe": {
       "slackWebhook": "‏Webhook الخاص بـ Slack",
+      "discordWebhook": "Discord webhook",
+      "msteamsWebhook": "‏Webhook الخاص بـ Microsoft Teams",
       "inApp": "أيقونة الجرس في لوحة التحكم"
     },
     "kinds": {
       "email": "البريد الإلكتروني",
       "webhook": "Webhook",
       "slack": "Slack",
+      "discord": "Discord",
+      "msteams": "Microsoft Teams",
       "in_app": "داخل التطبيق"
     },
     "form": {
@@ -429,6 +461,8 @@
       "emailPlaceholder": "you@example.com",
       "webhookPlaceholder": "https://example.com/openship-hook",
       "slackPlaceholder": "https://hooks.slack.com/services/...",
+      "discordPlaceholder": "https://discord.com/api/webhooks/...",
+      "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
       "adding": "جارٍ الإضافة…",
       "addChannel": "إضافة قناة",
       "labelRequired": "التسمية مطلوبة"
@@ -438,12 +472,14 @@
       "description": "اختر أي الأحداث تذهب إلى أي قناة. كل خلية اشتراك واحد.",
       "empty": "أضف قناة أولًا للاشتراك في الأحداث.",
       "eventHeader": "الحدث",
-      "cellAria": "{category} عبر {channel}"
+      "cellAria": "{category} عبر {channel}",
+      "notifyMe": "إشعاري"
     },
     "orgDefaults": {
       "title": "الإعدادات الافتراضية للمؤسسة",
       "description": "إعدادات افتراضية تُطبَّق عند انضمام عضو جديد إلى هذه المؤسسة. يمكن للأعضاء تجاوزها لكل قناة.",
-      "notifyAria": "الإشعار عند {category}"
+      "notifyAria": "الإشعار عند {category}",
+      "nChannels": "{n} قنوات"
     }
   },
   "audit": {
@@ -657,5 +693,29 @@
     "toastLoadStateFailed": "تعذّر تحميل الحالة",
     "toastRemoteUnreachable": "الجهة البعيدة غير قابلة للوصول. حدّد \"لا تسحب البيانات البعيدة\" للعودة على أي حال.",
     "toastSwitchBackFailed": "فشلت العودة"
+  },
+  "routePreferences": {
+    "title": "التوجيه",
+    "description": "كيفية وصول الحافة إلى منافذ تطبيقاتك",
+    "loading": "جارٍ تحميل التفضيلات…",
+    "intro": "اختر أسلوب العنونة الافتراضي للمشاريع المستضافة ذاتيًا الجديدة. تتوفّر التجاوزات لكل مشروع في إعدادات المشروع.",
+    "modes": {
+      "auto": {
+        "label": "تلقائي",
+        "desc": "موصى به (منفذ محلي)"
+      },
+      "loopbackPort": {
+        "label": "منفذ محلي",
+        "desc": "منفذ مضيف خاص 127.0.0.1"
+      },
+      "containerIp": {
+        "label": "عنوان الحاوية",
+        "desc": "متقدّم — عنوان الجسر"
+      }
+    },
+    "toast": {
+      "setTo": "تم ضبط أسلوب التوجيه إلى {mode}",
+      "failed": "تعذّر تحديث أسلوب التوجيه"
+    }
   }
 }

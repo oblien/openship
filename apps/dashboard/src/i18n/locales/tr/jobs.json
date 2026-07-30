@@ -1,0 +1,186 @@
+{
+  "backups": {
+    "section": "Yedekleme zamanlamaları",
+    "sectionDesc": "Proje veya servis bazında otomatik zamanlanmış yedeklemeler. Her projenin Yedekler sekmesi altında yönetilir.",
+    "projectDefault": "Proje varsayılanı",
+    "mailServer": "E-posta sunucusu",
+    "manage": "Yedeklerde Yönet",
+    "badge": "Yedekleme",
+    "never": "Hiç çalıştırılmadı",
+    "status": {
+      "succeeded": "Başarılı",
+      "failed": "Başarısız",
+      "cancelled": "İptal Edildi",
+      "running": "Çalışıyor"
+    }
+  },
+  "title": "Görevler",
+  "subtitle": "Sunucularınızda çalışan dahili bakım ve özel komutlar.",
+  "empty": "Henüz zamanlanmış görev yok.",
+  "searchPlaceholder": "Görevlerde ara…",
+  "noResults": "Filtrelerinizle eşleşen görev bulunamadı.",
+  "overview": {
+    "title": "Hızlı bakış",
+    "subtitle": "Bu kurulumdaki görevler",
+    "all": "Tüm görevler",
+    "running": "Çalışıyor",
+    "failed": "Başarısız",
+    "scheduled": "Zamanlanmış",
+    "disabled": "Pasif"
+  },
+  "loadFailed": "Görevler yüklenemedi.",
+  "kind": {
+    "system": "Sistem",
+    "custom": "Özel"
+  },
+  "fields": {
+    "schedule": "Zamanlama",
+    "nextRun": "Sonraki çalışma",
+    "lastRun": "Son çalışma",
+    "never": "Hiç çalıştırılmadı",
+    "notScheduled": "Zamanlanmadı"
+  },
+  "status": {
+    "success": "Başarılı",
+    "failed": "Başarısız",
+    "running": "Çalışıyor"
+  },
+  "actions": {
+    "run": "Şimdi çalıştır",
+    "running": "Çalıştırılıyor…",
+    "edit": "Zamanlamayı düzenle",
+    "save": "Kaydet",
+    "cancel": "İptal",
+    "enable": "Etkinleştir",
+    "disable": "Devre dışı bırak",
+    "viewLogs": "Günlükler"
+  },
+  "cronHint": "Standart 5 alanlı cron (dakika saat gün ay haftanın_günü), UTC.",
+  "toast": {
+    "ran": "{label} başlatıldı.",
+    "ranFailed": "{label} çalıştırılamadı.",
+    "saved": "{label} için zamanlama güncellendi.",
+    "saved2": "Görev güncellendi.",
+    "saveFailed": "{label} güncellenemedi.",
+    "enabled": "{label} etkinleştirildi.",
+    "disabled": "{label} devre dışı bırakıldı.",
+    "toggleFailed": "{label} güncellenemedi.",
+    "title": "Görevler",
+    "created": "Görev oluşturuldu.",
+    "createFailed": "Görev oluşturulamadı.",
+    "deleted": "Görev silindi.",
+    "deleteFailed": "Görev silinemedi."
+  },
+  "newJob": "Yeni görev",
+  "sections": {
+    "system": "Sistem görevleri",
+    "systemDesc": "Bu kurulumdaki yerleşik bakım görevleri.",
+    "custom": "Özel görevler",
+    "customDesc": "Sunucularınızda bir zamanlamaya göre çalıştırdığınız komutlar."
+  },
+  "customEmpty": {
+    "title": "Henüz özel görev yok",
+    "desc": "Sunucularınızdan birinde bir zamanlamaya göre, bir defalık veya bir olaya bağlı olarak komut çalıştırın — tekrar deneme, gizli veriler, canlı günlükler ve bildirimler ile.",
+    "cta": "Görev oluştur",
+    "docs": "Dokümanlar"
+  },
+  "create": {
+    "title": "Yeni görev",
+    "name": "Ad",
+    "namePlaceholder": "Gece veritabanı temizliği (vacuum)",
+    "server": "Sunucu",
+    "servers": "Sunucular",
+    "noServers": "Henüz sunucu bağlanmadı — önce bir tane ekleyin.",
+    "command": "Komut",
+    "commandPlaceholder": "pg_dump ... > /backups/db.sql",
+    "commandHint": "Seçilen sunucu(lar) üzerinde SSH ile çalışır. `docker run --rm image cmd` komutu da çalışır.",
+    "scheduleType": "Ne zaman çalışacak",
+    "scheduleTypes": {
+      "recurring": "Bir zamanlamaya göre",
+      "once": "Bir defa",
+      "manual": "Manuel"
+    },
+    "sections": {
+      "basics": "Temel Bilgiler",
+      "schedule": "Zamanlama",
+      "servers": "Hedef sunucular",
+      "reliability": "Güvenilirlik",
+      "environment": "Ortam",
+      "triggers": "Bağımlılıklar ve tetikleyiciler",
+      "notifications": "Bildirimler"
+    },
+    "schedule": "Zamanlama (cron)",
+    "runAt": "Çalıştırılma zamanı",
+    "manualHint": "Yalnızca tetiklendiğinde çalışır — Şimdi Çalıştır, bir bağımlılık veya bir olay.",
+    "timeout": "Zaman aşımı (sn)",
+    "retryAttempts": "Maksimum deneme",
+    "retryBackoff": "Denemeler arası bekleme (sn)",
+    "advanced": "Gelişmiş",
+    "env": "Ortam değişkenleri",
+    "addVar": "Değişken ekle",
+    "secrets": "Gizli Veriler (Secrets)",
+    "addSecret": "Gizli veri ekle",
+    "replaceSecrets": "Gizli verileri değiştir",
+    "secretsSet": "gizli veri ayarlandı",
+    "noSecrets": "Gizli veri ayarlanmadı.",
+    "dependencies": "Şundan sonra çalıştır",
+    "dependenciesHint": "Bu görev, seçilen görev(ler) başarıyla tamamlandıktan sonra çalışır.",
+    "triggers": "Olay tetikleyicileri",
+    "notifications": "Bildirimler",
+    "noChannels": "Henüz bildirim kanalı yok — Ayarlar → Bildirimler kısmından ekleyin.",
+    "notificationsHint": "Bu görev için genel bildirim ayarlarını geçersiz kılar.",
+    "submit": "Görev oluştur",
+    "creating": "Kaydediliyor…",
+    "cancel": "İptal",
+    "needServer": "Önce bir sunucu bağlayın",
+    "pasteEnv": ".env Yapıştır",
+    "uploadEnv": ".env Yükle",
+    "envPasteEmpty": "Değişken bulunamadı",
+    "comingSoon": "Yakında",
+    "setupChannel": "Bir kanal kurun",
+    "customTriggerSoon": "Özel tetikleyici",
+    "docsLink": "Görevler hakkında bilgi edinin",
+    "docsBody": "Zamanlamalar, tekrar denemeler, gizli veriler ve bildirimler",
+    "summary": {
+      "title": "Özet",
+      "command": "Komut",
+      "schedule": "Zamanlama",
+      "targets": "Hedefler",
+      "retry": "Tekrar Deneme",
+      "timeout": "Zaman Aşımı",
+      "notify": "Bildirimler",
+      "none": "—",
+      "retryOff": "Yok"
+    }
+  },
+  "edit": {
+    "title": "Görevi düzenle",
+    "action": "Düzenle",
+    "save": "Değişiklikleri kaydet"
+  },
+  "detail": {
+    "back": "Görevlere dön",
+    "tabs": {
+      "overview": "Genel Bakış",
+      "runs": "Çalıştırmalar"
+    },
+    "servers": "Sunucular",
+    "retry": "Tekrar Deneme",
+    "retryValue": "{n} deneme, {s} sn bekleme",
+    "notifyValue": "{s} durumlarında {c} kanal",
+    "onceAt": "Bir defa çalıştırılma:",
+    "noRuns": "Henüz çalışma yok."
+  },
+  "delete": {
+    "action": "Sil",
+    "confirm": "Bu görev silinsin mi?",
+    "deleting": "Siliniyor…"
+  },
+  "logs": {
+    "title": "Çalıştırma günlükleri",
+    "streaming": "Canlı akış…",
+    "empty": "Henüz çıktı yok.",
+    "close": "Kapat",
+    "exit": "Çıkış kodu {code}"
+  }
+}

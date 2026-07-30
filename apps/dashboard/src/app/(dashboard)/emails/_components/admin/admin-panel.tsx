@@ -25,6 +25,7 @@ import {
   LayoutDashboard,
   Globe,
   UserRound,
+  Forward,
   FileText,
   HeartPulse,
   Send,
@@ -39,6 +40,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { OverviewTab } from "./overview-tab";
 import { DomainsTab } from "./domains-tab";
 import { MailboxesTab } from "./mailboxes-tab";
+import { AliasesTab } from "./aliases-tab";
 import { DnsTab } from "./dns-tab";
 import { HealthTab } from "./health-tab";
 import { TestTab } from "./test-tab";
@@ -62,6 +64,7 @@ type TabKey =
   | "overview"
   | "domains"
   | "mailboxes"
+  | "aliases"
   | "dns"
   | "health"
   | "test"
@@ -78,6 +81,7 @@ const TABS: TabDef[] = [
   { key: "overview", icon: LayoutDashboard },
   { key: "domains", icon: Globe },
   { key: "mailboxes", icon: UserRound },
+  { key: "aliases", icon: Forward },
   { key: "dns", icon: FileText },
   { key: "health", icon: HeartPulse },
   { key: "test", icon: Send },
@@ -164,6 +168,14 @@ export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: Mai
         )}
         {tab === "mailboxes" && (
           <MailboxesTab
+            serverId={serverId}
+            primaryDomain={primaryDomain}
+            selectedDomain={selectedDomain}
+            onSelectDomain={(d) => setQuery({ domain: d })}
+          />
+        )}
+        {tab === "aliases" && (
+          <AliasesTab
             serverId={serverId}
             primaryDomain={primaryDomain}
             selectedDomain={selectedDomain}

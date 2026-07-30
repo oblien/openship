@@ -73,6 +73,19 @@ function isSafeHeaderValue(value: string): boolean {
   return !/["\\\n\r]/.test(value); // emitted double-quoted
 }
 
+/** A vercel.json redirect status: an HTTP 3xx integer, else the permanent/temporary default. */
+function redirectStatus(statusCode: number | undefined, permanent: boolean | undefined): number {
+  if (
+    statusCode !== undefined &&
+    Number.isInteger(statusCode) &&
+    statusCode >= 300 &&
+    statusCode <= 399
+  ) {
+    return statusCode;
+  }
+  return permanent ? 308 : 307;
+}
+
 function isFullUrl(destination: string): boolean {
   return /^https?:\/\//i.test(destination.trim());
 }
@@ -137,7 +150,7 @@ export function compileVercelRouting(
     out.redirects.push({
       path: loc.path,
       exact: loc.exact,
-      statusCode: redirect.statusCode ?? (redirect.permanent ? 308 : 307),
+      statusCode: redirectStatus(redirect.statusCode, redirect.permanent),
       destination: redirect.destination,
     });
   }

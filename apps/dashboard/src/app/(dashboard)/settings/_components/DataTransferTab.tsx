@@ -2,8 +2,9 @@
 
 /**
  * Instance-tab section (self-hosted only, owner-only) — export the entire
- * instance database to a file and import one on another install, for migrating
- * between two desktops. Secrets travel re-encrypted under a passphrase the
+ * instance database to a file and import one on another install: migrating
+ * between installs, e.g. a desktop → a self-hosted server (PGlite → Postgres is
+ * handled), or desktop ↔ desktop. Secrets travel re-encrypted under a passphrase the
  * user sets on export and re-enters on import; the API re-encrypts them under
  * the destination install's own key.
  *
@@ -219,6 +220,9 @@ function ImportModal({
   const [mode, setMode] = useState<ImportMode>("wipe");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Post-import warning: local-folder projects whose source path won't exist on
+  // this install. Kept persistent (not a toast) so it survives the wipe reload.
+  const [notice, setNotice] = useState<{ text: string; wipe: boolean } | null>(null);
 
   const reset = () => {
     setFile(null);
@@ -227,6 +231,7 @@ function ImportModal({
     setPassphrase("");
     setMode("wipe");
     setError(null);
+    setNotice(null);
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -271,6 +276,22 @@ function ImportModal({
       }
       onToast(parts.join(" · "), "success", t.settings.common.toast.importComplete);
 
+      // Local-folder projects reference a SOURCE-machine path that won't exist
+      // here — hold the modal open on a persistent warning so it's read before
+      // the wipe reload, instead of vanishing with the toast.
+      const localPathProjects = result.localPathProjects ?? [];
+      if (localPathProjects.length > 0) {
+        const list = localPathProjects.map((p) => `• ${p.slug}  (${p.localPath})`).join("\n");
+        setNotice({
+          text:
+            `${localPathProjects.length} imported project(s) deploy from a local folder on the source machine. ` +
+            `That path doesn't exist on this install, so their next deploy can't find the source. ` +
+            `Re-point localPath, or re-deploy each from a folder on THIS machine:\n${list}`,
+          wipe: mode === "wipe",
+        });
+        return; // keep the modal open; the notice's action closes/reloads
+      }
+
       onClose();
       reset();
       // A wipe replaces the current user/session — reload so the app
@@ -306,6 +327,32 @@ function ImportModal({
             <p className="text-xs text-muted-foreground">{t.settings.dataTransfer.import.modalSubtitle}</p>
           </div>
         </div>
+
+        {notice && (
+          <div className="mb-4 rounded-lg border border-warning/40 bg-warning/[0.06] px-3 py-2.5 text-xs text-warning">
+            <div className="mb-2 flex items-center gap-2 font-medium">
+              <TriangleAlert className="size-4 shrink-0" /> Import complete — one thing to check
+            </div>
+            <pre className="whitespace-pre-wrap font-sans leading-relaxed">{notice.text}</pre>
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (notice.wipe && typeof window !== "undefined") {
+                    window.location.reload();
+                  } else {
+                    setNotice(null);
+                    onClose();
+                    reset();
+                  }
+                }}
+                className="rounded-md bg-warning/20 px-3 py-1.5 font-medium text-warning hover:bg-warning/30"
+              >
+                {notice.wipe ? "Reload to finish" : "Done"}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-4">
           <div>

@@ -8,6 +8,8 @@
  */
 import { registerTunnelAutostart } from "../ssh-tunnel-manager";
 import { registerSelfAdoptReconcile } from "./self-deploy";
+import { registerSelfServerReconcile } from "./self-server";
+import { registerAppServiceMaterializeBackfill } from "../../modules/services/service.service";
 
 export function registerStartupHooks(): void {
   // Desktop: re-open saved port-forward tunnels marked auto-start.
@@ -15,4 +17,9 @@ export function registerStartupHooks(): void {
   // Self-app: reconcile the control-plane adopt deployment + route/port/cert +
   // public URL on every boot (backfills existing installs; heals port drift).
   registerSelfAdoptReconcile();
+  // Server-host: register this host as an isLocal "This Server" deploy target.
+  registerSelfServerReconcile();
+  // #231: backfill an app-framework project's app as a service row when it has
+  // sidecars but no app row, so its deploy stops dropping the app.
+  registerAppServiceMaterializeBackfill();
 }

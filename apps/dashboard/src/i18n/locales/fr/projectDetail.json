@@ -59,7 +59,9 @@
       "waiting": "En attente des requêtes entrantes…",
       "streamError": "Erreur de flux",
       "connectionLost": "Connexion au flux de journaux perdue",
-      "connectFailed": "Échec de la connexion au flux de journaux"
+      "connectFailed": "Échec de la connexion au flux de journaux",
+      "noDomain": "Ajoutez un domaine pour voir les journaux de requêtes",
+      "noDomainHint": "Les journaux de requêtes HTTP sont collectés par domaine — ajoutez d'abord un domaine à ce projet."
     },
     "terminal": {
       "fallbackName": "Terminal",
@@ -149,7 +151,9 @@
         "stopped": "Arrêté",
         "disabled": "Désactivé",
         "failed": "Échoué",
-        "starting": "Démarrage"
+        "starting": "Démarrage",
+        "restarting": "Redémarrage",
+        "unknown": "Inconnu"
       },
       "network": "Réseau",
       "configuration": "Configuration",
@@ -210,7 +214,8 @@
       "internalAddress": "Adresse interne",
       "internalAddressHint": "Les autres services atteignent celui-ci à cette adresse.",
       "currentIp": "IP actuelle",
-      "currentIpHint": "Change au redémarrage — utilisez plutôt l'adresse interne ci-dessus."
+      "currentIpHint": "Change au redémarrage — utilisez plutôt l'adresse interne ci-dessus.",
+      "duplicateContainers": "Un autre conteneur correspond aussi à ce service : {names}"
     },
     "settingsForm": {
       "name": "Nom",

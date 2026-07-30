@@ -91,11 +91,36 @@ A role is just a bundle of permissions. Openship has four, from most powerful to
   which resources (specific projects, servers, and so on) they're allowed to reach. Use this for
   someone who should only touch one or two things.
 
+<Callout title="Team roles are broad by design — invite people you trust (beta)" type="warn">
+Owner, Admin, and Member are **coarse, high-trust roles**. A **Member** can deploy, create and
+**delete** projects and servers, run jobs, manage domains, and read and write environment variables —
+nearly everything an Admin can, minus managing people and reading the audit log. The roles differ only
+in a narrow band (billing is owner-only; the audit log is owner/admin). So add someone as **Member or
+Admin only if you'd trust them with near-admin control** of the workspace.
+
+For a collaborator who should be limited to specific things, use the **Restricted** role with
+per-resource grants, or hand out a **scoped / read-only [access token](/docs/security/permissions#access-tokens-follow-the-same-rules)**.
+Those are the paths that actually enforce *read vs write vs admin* and confine access to specific
+projects or servers — fine-grained, per-action limits for the standard roles are still on the roadmap
+(**beta**), so treat a team organization as a **trusted-collaborator** workspace for now.
+
+This is about permissions *inside* one workspace. **Between** organizations, isolation is enforced — one
+org can never see or touch another's projects, servers, or secrets (see [Isolation](/docs/security/isolation)).
+</Callout>
+
 <Callout title="Changing a role later" type="info">
 Only the **owner** can change someone's role. On the Team tab, each member (except you) has a role
 dropdown next to their name — pick a new role and it applies right away. Owners and admins can also
 **remove** a member with the trash icon; Openship asks you to confirm first. You can't change or
 remove yourself.
+</Callout>
+
+<Callout title="Granting server access is high-blast-radius" type="warn">
+Giving a member access to a **server** (when inviting, or by editing their access on the Team tab) is a
+bigger deal than a role change: on that server they can reach every deployment and its **data**, the apps
+running on it, injected **secrets/env vars**, a live **terminal**, and any **GitHub tokens** used for its
+deploys. Because of that, Openship shows a **confirmation** that spells out exactly what the new access
+exposes before it takes effect. Grant server access only to people you trust with everything on that box.
 </Callout>
 
 For the full rules on how permissions and per-resource access are enforced, see

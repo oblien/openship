@@ -28,6 +28,7 @@
  */
 
 import type { Context } from "hono";
+import { cloudRequiredCode } from "@repo/core";
 import { dumpSubgraph } from "@repo/db";
 import { cloudClient } from "../../../lib/cloud/client";
 import { withMigration } from "./with-migration";
@@ -51,7 +52,9 @@ export interface MigrateToCloudResult {
 }
 
 export class MigrateToCloudNotConnectedError extends Error {
-  readonly code = "MIGRATE_TO_CLOUD_NOT_CONNECTED" as const;
+  // Sourced from the shared cloud-capability registry (single source of truth);
+  // identical string, no wire-format change.
+  readonly code = cloudRequiredCode("migrate-to-cloud");
   constructor() {
     super(
       "This instance is not connected to Openship Cloud. Connect your cloud account in Settings first.",
@@ -123,7 +126,7 @@ export async function migrateInstanceToCloud(
       });
 
       if (!result.ok) {
-        if (result.code === "MIGRATE_TO_CLOUD_NOT_CONNECTED") {
+        if (result.code === cloudRequiredCode("migrate-to-cloud")) {
           throw new MigrateToCloudNotConnectedError();
         }
         if (result.code === "INGEST_TARGET_NOT_EMPTY") {

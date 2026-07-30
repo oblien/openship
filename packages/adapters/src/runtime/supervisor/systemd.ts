@@ -23,6 +23,27 @@ import { DeployError } from "@repo/core";
 /** Prefix for all openship systemd units */
 const UNIT_PREFIX = "openship";
 
+/**
+ * Escape an env value for a double-quoted systemd `Environment=` assignment.
+ *
+ * `Environment=` takes a SPACE-SEPARATED list of assignments, so an unquoted
+ * value is cut at its first space. Quoting fixes that, and inside the quotes
+ * systemd applies C-style escapes plus `%` specifier expansion — so `"`, `\`
+ * and `%` have to be escaped, and a literal newline (which would otherwise
+ * inject raw lines into the unit) is encoded as `\n`.
+ *
+ * Backslash is replaced first so the escapes introduced below aren't re-escaped.
+ */
+export function escapeSystemdEnvValue(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/%/g, "%%")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+}
+
 export class SystemdSupervisor implements ProcessSupervisor {
   readonly name = "systemd";
 
@@ -67,13 +88,14 @@ export class SystemdSupervisor implements ProcessSupervisor {
    * Build a systemd unit file contents string.
    *
    * Uses Type=exec so systemd tracks the actual process (not the shell wrapper).
-   * Environment vars are set via Environment= directives (one per line)
-   * which avoids any shell quoting issues.
+   * Environment vars are set via Environment= directives (one per line), which
+   * avoids any SHELL quoting issues - but systemd does its own parsing, so each
+   * assignment is double-quoted and escaped (see escapeSystemdEnvValue).
    */
   private buildUnitFile(opts: SupervisorDeployOpts): string {
     const envLines = Object.entries(opts.env)
       .filter(([key]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
-      .map(([k, v]) => `Environment=${k}=${v}`)
+      .map(([k, v]) => `Environment="${k}=${escapeSystemdEnvValue(v)}"`)
       .join("\n");
 
     return `[Unit]

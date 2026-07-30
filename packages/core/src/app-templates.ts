@@ -13,18 +13,30 @@
  *     iRedMail). The catalog entry just points at that flow (`flowHref`); it does
  *     NOT instantiate services here.
  *
- * `configFields` are the operator-facing inputs the Create-App form renders;
- * each maps to a service env key. Fields with `generate:"secret"` are filled
- * with a strong random value by the instantiator (operators never type them);
- * fields sharing a `generateGroup` get the SAME generated value (e.g. a DB
- * password that must match across two services). Secret fields are written
- * through the per-service encrypted-env path, never stored as plaintext here.
+ * Two field systems, split by ROLE (don't mix them up):
+ *   - `configFields` (AppConfigField) = MACHINE-generated / derived env. Fields
+ *     with `generate:"secret"|"jwt"` are filled by the instantiator (operators
+ *     never type them); a shared `generateGroup` yields the SAME value across
+ *     services (e.g. a DB password that must match). Secret/`secret:true` fields
+ *     (and any key listed in a service's `secretEnv`) are written through the
+ *     per-service encrypted-env path, never stored as plaintext here.
+ *   - `settings` (AppSettingField) with `installStep:true` = the HUMAN-facing
+ *     inputs the install wizard renders (text/select/number/…, validated). These
+ *     — not `configFields` — are what the operator fills in the Create-App form.
  */
 
 import type { ComposeHealthcheck } from "./types";
 import type { AppManagement, AppSettingGroup } from "./app-settings";
+import catalog from "./apps/catalog.json";
 
-export type AppCategory = "backend" | "database" | "cms" | "mail" | "analytics" | "automation" | "other";
+export type AppCategory =
+  | "backend"
+  | "database"
+  | "cms"
+  | "mail"
+  | "analytics"
+  | "automation"
+  | "other";
 
 export interface TemplateServiceSpec {
   /** Service name — also its hostname/alias on the project network. */
@@ -47,7 +59,9 @@ export interface TemplateServiceSpec {
   }[];
   /** Non-secret environment defaults. */
   environment?: Readonly<Record<string, string>>;
-  /** Env keys the operator/instantiator must fill in (secrets) — not stored as defaults. */
+  /** Env keys on this service that are SECRETS: stored encrypted, never written
+   *  as plaintext compose env. A key listed here is forced-secret whether its
+   *  value comes from `environment` or a `configField`. */
   secretEnv?: readonly string[];
   /** Named volumes / bind mounts (compose syntax). Named volumes are project-scoped. */
   volumes?: readonly string[];
@@ -73,17 +87,240 @@ export interface AppConfigField {
   type?: "text" | "password";
   /** Prefilled default. */
   default?: string;
-  /** Auto-generate a strong random value (operator never types it). */
-  generate?: "secret";
+  /** Auto-generate a value the operator never types:
+   *  - "secret" → a strong random hex string.
+   *  - "jwt"    → an HS256 JWT signed with the JWT secret of `jwtSecretGroup`,
+   *              carrying `jwtRole` (Supabase anon / service_role keys). */
+  generate?: "secret" | "jwt";
   /** Fields sharing a group get the SAME generated value (cross-service match). */
   generateGroup?: string;
+  /** For generate:"jwt" — the `generateGroup` of the secret to sign with. */
+  jwtSecretGroup?: string;
+  /** For generate:"jwt" — the `role` claim (e.g. "anon", "service_role"). */
+  jwtRole?: string;
   required?: boolean;
   /** Write as an encrypted secret (isSecret:true). */
   secret?: boolean;
 }
 
+/**
+ * A command run INSIDE a service's container around the deploy, whose stdout is
+ * captured and persisted as a service env var. For values the app can only mint
+ * itself once it's running (e.g. Convex's admin key, derived in-container from
+ * INSTANCE_SECRET+INSTANCE_NAME). By default advisory (a failure never fails the
+ * deploy); set `mustSucceed` to gate the deploy on it. Commands MUST be
+ * re-run-safe (may run again on redeploy). All execution is strictly IN-CONTAINER
+ * — never a host shell.
+ */
+export interface AppPrepareStep {
+  /** Service whose container the command runs in. */
+  service: string;
+  /** Command executed via the runtime's in-container exec (`sh -c <command>`). */
+  command: string;
+  /** Logical id for the captured value (matches an `AppOutput.id`). */
+  capture: string;
+  /** Regex whose first group is extracted from stdout; whole trimmed stdout when
+   *  omitted. E.g. Convex prints `Admin key: <name>|<hex>`. */
+  capturePattern?: string;
+  /** Persist the captured value as an env key on `service` (encrypted at rest). */
+  persistAs?: { key: string; secret?: boolean };
+  /** Skip when the persisted value already exists (default true). */
+  once?: boolean;
+  /**
+   * When the step runs relative to the container lifecycle:
+   *  - "post-start" (default): after the container is running — today's behavior.
+   *  - "post-ready": after `readiness` passes (a real signal, not a fixed retry).
+   *  - "pre-deploy": RESERVED — before the container exists. NOT yet supported by
+   *    the engine (needs a one-shot init container); a declared pre-deploy step is
+   *    skipped with a logged notice. For DB init today use `files`
+   *    (→ /docker-entrypoint-initdb.d) + `dependsOn` + `healthcheck`.
+   */
+  phase?: "pre-deploy" | "post-start" | "post-ready";
+  /** Fail the deploy when this step errors (default false = advisory). */
+  mustSucceed?: boolean;
+  /** For phase:"post-ready" — gate the command on this in-container check
+   *  passing: poll `test` (via `sh -c`) every `interval` ms up to `retries`. */
+  readiness?: { test: string; interval?: number; retries?: number };
+}
+
+/** An alternative labeled form of an AppOutput's value (e.g. an internal-network
+ *  URL vs the public one). Same `source` grammar as AppOutput. */
+export interface AppOutputVariant {
+  id: string;
+  label: LocalizedString;
+  /** `env:<service>:<KEY>`, `publicUrl:<service>[:<port>]`, or `template:…`. */
+  source: string;
+}
+
+/** One value surfaced on the app's Connection card for the user to copy. */
+export interface AppOutput {
+  id: string;
+  label: string;
+  help?: string;
+  /** `env:<service>:<KEY>` (a stored env value), `publicUrl:<service>[:<port>]`,
+   *  or `template:…`. The canonical/default value — also what the "Use in a
+   *  project" handover injects. */
+  source: string;
+  /** Render masked with a reveal toggle (a credential) vs a plain copyable value. */
+  secret?: boolean;
+  /** Recommended target env-var name when wiring this value into another project
+   *  (e.g. dbUrl → "DATABASE_URL"). Authored in the catalog so the "Use in a
+   *  project" flow can prefill it instead of guessing client-side. */
+  envKey?: string;
+  /** Source SERVICE this output belongs to (a `TemplateServiceSpec.name` /
+   *  `AppEndpoint.service`, i.e. the docker network alias). Authoritative for
+   *  internal-mode host rewriting — needed when the `source` string can't carry
+   *  it (a `template:` URL). Falls back to the service parsed from `source`
+   *  (`env:<service>:…` / `publicUrl:<service>…`) via `getOutputService`. */
+  service?: string;
+  /** Part of the one-click recommended bundle — pre-checked in the connection
+   *  handover so the user doesn't have to reason about which value to inject. */
+  recommended?: boolean;
+  /** Label for the PRIMARY `source` in the value switch (default "Default").
+   *  Only meaningful alongside `variants` (e.g. "Public"). */
+  sourceLabel?: LocalizedString;
+  /** Additional labeled forms of the SAME value — the card shows a switch over
+   *  `[primary, …variants]` and swaps the shown/copied value. Omit for a single value. */
+  variants?: readonly AppOutputVariant[];
+  /** Layout hint on the Connection card: two consecutive `half` outputs pair on
+   *  one line; `full` (default) spans the row. */
+  width?: "full" | "half";
+}
+
+/**
+ * A catalog string that may be a plain value OR an inline per-locale map, so a
+ * template (or a user-authored overlay) can localize copy right in the JSON:
+ *   "Ready to use"  |  { "en": "Ready to use", "fr": "Prêt à l'emploi" }
+ * Resolve with `resolveLocalized(value, locale)`.
+ */
+export type LocalizedString = string | { [locale: string]: string };
+
+/** Pick the right locale from a LocalizedString (→ exact locale → base lang →
+ *  `en` → first available → ""). Plain strings pass through unchanged. */
+export function resolveLocalized(
+  value: LocalizedString | undefined | null,
+  locale?: string,
+  fallback = "en",
+): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  const base = locale?.split("-")[0];
+  return (
+    (locale && value[locale]) ||
+    (base && value[base]) ||
+    value[fallback] ||
+    Object.values(value)[0] ||
+    ""
+  );
+}
+
+/**
+ * Plain-language handover guidance for wiring this app into ANOTHER project —
+ * the "how do I connect this to my app" answer. Rendered by the Use-in-a-project
+ * modal, natively. Optional; apps without it fall back to generic copy. All copy
+ * fields are `LocalizedString` so a template can ship translations inline.
+ */
+export interface AppConnectionGuide {
+  /** One-liner framing ("Your app gets the connection ready to use."). */
+  intro?: LocalizedString;
+  /** The copy-ready usage line ("Read `process.env.DATABASE_URL` in your code —
+   *  it's set on the next deploy."). */
+  useHint?: LocalizedString;
+  /** Preselected reachability mode for the handover (default "internal"). */
+  defaultMode?: "internal" | "public";
+}
+
+/** Post-install connection details (URLs, generated keys) shown to the user. */
+export interface AppConnection {
+  title?: string;
+  description?: string;
+  outputs: readonly AppOutput[];
+  /** Opinionated handover guidance for the "Use in a project" flow. */
+  guide?: AppConnectionGuide;
+}
+
+/**
+ * A thing this app exposes that the install wizard asks the user how to ship.
+ * `http` endpoints are web UIs / APIs that route through a domain (free/custom)
+ * or run port-only; `tcp` endpoints are raw ports (a database) that can't be
+ * domain-routed — the user publishes the port (firewall) or keeps it internal.
+ * In desktop mode the wizard shows a "reach it on localhost" hint for port-only
+ * / internal endpoints (advisory copy — there is no automatic port-forwarding
+ * yet). Declared per template; when a template omits `endpoints`, one `http`
+ * endpoint is derived per exposed service.
+ */
+/** An exposure mode a wizard endpoint can take. http: domain|port; tcp: publish|internal. */
+export type EndpointMode = "domain" | "port" | "publish" | "internal";
+
+export interface AppEndpoint {
+  /** Service the endpoint belongs to (matches a TemplateServiceSpec.name). */
+  service: string;
+  /** Container port. */
+  port: number;
+  /** Human label for the wizard/overview ("Studio & API", "Database"). */
+  label: string;
+  /** `http` = domain-routable web UI/API; `tcp` = raw port (DB) — no domain. */
+  kind: "http" | "tcp";
+  /** Must be reachable for the app to be usable (default true). */
+  required?: boolean;
+  /** Declared reachability intent — a DB defaults to internal, a UI to public. */
+  scope?: "public" | "internal" | "local";
+  /** Pre-selected exposure mode in the install wizard. Else the wizard's own
+   *  default: http → domain when Cloud is connected, port otherwise; tcp → publish. */
+  defaultMode?: EndpointMode;
+  /** Restrict the exposure choices offered (else all valid for the kind). */
+  allowedModes?: readonly EndpointMode[];
+}
+
+/**
+ * A connectable BUNDLE this app advertises to other projects — a named set of
+ * connection outputs (by `AppOutput.id`) a consumer can wire in one click.
+ */
+export interface AppProvides {
+  id: string;
+  /** `AppOutput.id`s (from `connection.outputs`) this bundle exposes. */
+  outputRefs: readonly string[];
+  /** Category hint for matching a consumer's `requires`. */
+  category?: AppCategory;
+}
+
+/**
+ * A connection this app NEEDS from another project — drives an install-time
+ * picker + one-click auto-wire. Still same-org and still user-confirmed; this
+ * only declares the intent so the wizard can offer it instead of manual wiring.
+ */
+export interface AppRequires {
+  id: string;
+  label: LocalizedString;
+  /** Match candidate source apps by category (e.g. "database"). */
+  category?: AppCategory;
+  /** Target env var the resolved connection value is injected as. */
+  envKey: string;
+  /** Reachability mode for the wired connection (default "public"). */
+  mode?: "internal" | "public";
+  /** A missing optional requirement doesn't block install (default false). */
+  optional?: boolean;
+}
+
 export interface AppTemplate {
   id: string;
+  /** Installable now (true) vs a dimmed "coming soon" placeholder (false/omitted). Drives AVAILABLE_APP_IDS. */
+  available?: boolean;
+  /** Trust mark shown in the catalog + wizard: an official open-source image,
+   *  version-pinned, with a reviewed deployment pipeline. Data-driven so a future
+   *  community/unverified app can omit it. */
+  verified?: boolean;
+  /**
+   * Catalog-schema revision this entry was authored against (absent ⇒ 1). A
+   * consumer DROPS (keeps last-good) any overlay entry whose `schemaVersion`
+   * exceeds `MAX_SUPPORTED_SCHEMA` rather than mis-installing it — the
+   * forward-compat gate that lets the shape evolve without breaking old boxes.
+   */
+  schemaVersion?: number;
+  /** Minimum Openship version (semver) required to install this app. Absent ⇒ any. */
+  minEngine?: string;
+  /** ISO timestamp of the last catalog edit — surface-only ("template updated"). */
+  updatedAt?: string;
   name: string;
   description: string;
   /** "template" = instantiate the services below; "flow" = defer to `flowHref`. */
@@ -108,699 +345,57 @@ export interface AppTemplate {
    * bespoke surface (mail → /emails).
    */
   management?: AppManagement;
+  /** Commands run post-deploy whose stdout becomes a captured/persisted output. */
+  prepare?: readonly AppPrepareStep[];
+  /** Connection details (URLs, generated keys) surfaced for the user to copy. */
+  connection?: AppConnection;
+  /**
+   * Exposable endpoints the install wizard asks the user how to ship (per
+   * endpoint). Omit → the wizard derives one `http` endpoint per exposed service
+   * (single-picker, unchanged behavior). See `getAppEndpoints`.
+   */
+  endpoints?: readonly AppEndpoint[];
+  /**
+   * Generated config files bind-mounted (read-only) into a service's container
+   * at deploy — for apps that need a config FILE, not just env (e.g. Kong's
+   * declarative `kong.yml`, Postgres init `.sql`). `content` may contain the
+   * same `{{publicUrl:…}}` and generated-key (`{{config:KEY}}`) placeholders as
+   * env, resolved at install. Self-hosted / desktop only (cloud can't bind-mount).
+   */
+  files?: readonly AppFile[];
+  /** Connectable bundles this app advertises to other projects. */
+  provides?: readonly AppProvides[];
+  /** Connections this app needs from other projects (install-time auto-wire). */
+  requires?: readonly AppRequires[];
 }
 
-/**
- * Convex — self-hosted reactive backend. Backend serves the API on 3210 and HTTP
- * actions on 3211; the dashboard (6791) talks to the backend. Data persists on a
- * named volume (SQLite) — the simplest production-capable start; Postgres is a
- * later config option. `INSTANCE_SECRET` is generated; the public origins
- * (`CONVEX_CLOUD_ORIGIN`/`CONVEX_SITE_ORIGIN`/`NEXT_PUBLIC_DEPLOYMENT_URL`) are
- * filled from the assigned domain by the instantiator's Convex post-deploy step.
- */
-const CONVEX_TEMPLATE: AppTemplate = {
-  id: "convex",
-  name: "Convex",
-  description: "Self-hosted Convex reactive backend + dashboard, with a persistent data volume.",
-  kind: "template",
-  logo: "convex",
-  category: "backend",
-  tags: ["backend", "database", "realtime"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "backend",
-      image: "ghcr.io/get-convex/convex-backend:latest",
-      ports: ["3210:3210", "3211:3211"],
-      exposedPort: 3210,
-      exposed: true,
-      // Two public routes: the API (3210) and HTTP actions (3211) each get their
-      // own subdomain (`<app>-backend` and `<app>-backend-http`).
-      routes: [{ port: 3210 }, { port: 3211, slugSuffix: "http" }],
-      environment: {
-        INSTANCE_NAME: "convex-self-hosted",
-        DISABLE_BEACON: "true",
-        // Resolved at deploy time to each port's assigned public URL. The API
-        // origin points at the 3210 route; HTTP actions at the 3211 route.
-        CONVEX_CLOUD_ORIGIN: "{{publicUrl:backend:3210}}",
-        CONVEX_SITE_ORIGIN: "{{publicUrl:backend:3211}}",
-      },
-      secretEnv: ["INSTANCE_SECRET"],
-      volumes: ["convex_data:/convex/data"],
-      healthcheck: {
-        test: ["CMD-SHELL", "curl -f http://localhost:3210/version || exit 1"],
-        interval: "10s",
-        timeout: "5s",
-        retries: 5,
-        startPeriod: "20s",
-      },
-      restart: "unless-stopped",
-    },
-    {
-      name: "dashboard",
-      image: "ghcr.io/get-convex/convex-dashboard:latest",
-      ports: ["6791:6791"],
-      exposedPort: 6791,
-      exposed: true,
-      dependsOn: ["backend"],
-      environment: {
-        // The dashboard talks to the backend over its public URL (resolved at deploy).
-        NEXT_PUBLIC_DEPLOYMENT_URL: "{{publicUrl:backend}}",
-      },
-      restart: "unless-stopped",
-    },
-  ],
-  configFields: [
-    {
-      key: "INSTANCE_SECRET",
-      service: "backend",
-      label: "Instance secret",
-      help: "Auto-generated. Signs the admin key and internal tokens.",
-      generate: "secret",
-      secret: true,
-    },
-  ],
-  management: { kind: "schema" },
-  settings: [
-    {
-      id: "general",
-      label: "General",
-      fields: [
-        {
-          key: "DISABLE_BEACON",
-          service: "backend",
-          label: "Disable telemetry beacon",
-          type: "boolean",
-          default: "true",
-        },
-      ],
-    },
-    {
-      id: "advanced",
-      label: "Advanced",
-      description: "Changing these regenerates or invalidates the deployment's admin key — the dashboard and CLI must be re-authenticated afterwards.",
-      fields: [
-        {
-          key: "INSTANCE_NAME",
-          service: "backend",
-          label: "Instance name",
-          help: "Sets the deployment name. Changing it AFTER the first deploy invalidates the admin key and locks the dashboard/CLI out — safest to set it here, at install.",
-          type: "text",
-          default: "convex-self-hosted",
-          advanced: true,
-          requiresRedeploy: true,
-          installStep: true,
-        },
-        {
-          key: "INSTANCE_SECRET",
-          service: "backend",
-          label: "Instance secret",
-          help: "Signs the admin key and internal tokens. Rotating it invalidates existing admin keys.",
-          type: "password",
-          secret: true,
-          advanced: true,
-          requiresRedeploy: true,
-        },
-      ],
-    },
-  ],
-};
+/** A generated file bind-mounted into a service container (see AppTemplate.files). */
+export interface AppFile {
+  /** Service whose container the file mounts into. */
+  service: string;
+  /** Absolute container path (the mount target). */
+  path: string;
+  /** File contents; may contain `{{publicUrl:…}}` / `{{config:KEY}}` placeholders. */
+  content: string;
+}
+
 
 /**
- * n8n — workflow automation. Single service; state persists on a volume (SQLite
- * by default). `N8N_ENCRYPTION_KEY` is generated and encrypts stored credentials.
+ * The bundled app catalog. Source of truth = per-app JSON in `apps/catalog/`,
+ * merged into `apps/catalog.json` by `scripts/gen-catalog.ts`. Trusted +
+ * generated, so it's imported + cast directly (no reparse). The API overlays a
+ * repo-fetched copy on top (shape-validated) so new/updated apps land without a
+ * redeploy — see apps/api `catalog-source.ts`.
  */
-const N8N_TEMPLATE: AppTemplate = {
-  id: "n8n",
-  name: "n8n",
-  description: "Workflow automation — connect apps and APIs with a visual editor.",
-  kind: "template",
-  logo: "n8n",
-  category: "automation",
-  tags: ["automation", "workflows", "integrations"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "n8n",
-      image: "n8nio/n8n:latest",
-      ports: ["5678:5678"],
-      exposedPort: 5678,
-      exposed: true,
-      environment: {
-        N8N_PORT: "5678",
-        N8N_PROTOCOL: "https",
-        GENERIC_TIMEZONE: "UTC",
-        // Public URL for webhook/callback links — resolved at deploy time.
-        WEBHOOK_URL: "{{publicUrl:n8n}}",
-      },
-      secretEnv: ["N8N_ENCRYPTION_KEY"],
-      volumes: ["n8n_data:/home/node/.n8n"],
-      restart: "unless-stopped",
-    },
-  ],
-  configFields: [
-    {
-      key: "N8N_ENCRYPTION_KEY",
-      service: "n8n",
-      label: "Encryption key",
-      help: "Auto-generated. Encrypts stored credentials.",
-      generate: "secret",
-      secret: true,
-    },
-  ],
-  management: { kind: "schema" },
-  settings: [
-    {
-      id: "general",
-      label: "General",
-      fields: [
-        {
-          key: "GENERIC_TIMEZONE",
-          service: "n8n",
-          label: "Timezone",
-          help: "Used by Schedule and Cron nodes.",
-          type: "text",
-          default: "UTC",
-          placeholder: "UTC",
-          installStep: true,
-        },
-        {
-          key: "N8N_DEFAULT_LOCALE",
-          service: "n8n",
-          label: "Locale",
-          type: "text",
-          default: "en",
-          placeholder: "en",
-        },
-      ],
-    },
-    {
-      id: "executions",
-      label: "Executions",
-      description: "Bound stored execution history so the data volume doesn't grow without limit.",
-      fields: [
-        {
-          key: "EXECUTIONS_DATA_PRUNE",
-          service: "n8n",
-          label: "Prune old executions",
-          type: "boolean",
-          default: "true",
-        },
-        {
-          key: "EXECUTIONS_DATA_MAX_AGE",
-          service: "n8n",
-          label: "Keep executions for (hours)",
-          help: "336 hours = 14 days.",
-          type: "number",
-          default: "336",
-          integer: true,
-          min: 1,
-          advanced: true,
-        },
-      ],
-    },
-  ],
-};
+export const APP_TEMPLATES: readonly AppTemplate[] = catalog.apps as unknown as readonly AppTemplate[];
 
 /**
- * Ghost — modern publishing platform. Ghost 5 requires MySQL in production, so
- * this is a two-service template; the DB password is generated once and shared
- * (matching `generateGroup`) between the DB and Ghost's connection config.
+ * The catalog schema revision this build authors AND understands. Bump ONLY on a
+ * BREAKING shape change (a removed/repurposed field); additive fields and new
+ * enum members never bump it. Overlay ingest gates against `MAX_SUPPORTED_SCHEMA`
+ * (see apps/schema.ts) so a newer-than-known entry degrades gracefully.
  */
-const GHOST_TEMPLATE: AppTemplate = {
-  id: "ghost",
-  name: "Ghost",
-  description: "Modern publishing platform for blogs, newsletters, and membership sites.",
-  kind: "template",
-  logo: "ghost",
-  category: "cms",
-  tags: ["cms", "blog", "newsletter"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "ghost-db",
-      image: "mysql:8.0",
-      environment: { MYSQL_DATABASE: "ghost" },
-      secretEnv: ["MYSQL_ROOT_PASSWORD"],
-      volumes: ["ghost_db:/var/lib/mysql"],
-      restart: "unless-stopped",
-    },
-    {
-      name: "ghost",
-      image: "ghost:5-alpine",
-      ports: ["2368:2368"],
-      exposedPort: 2368,
-      exposed: true,
-      dependsOn: ["ghost-db"],
-      environment: {
-        NODE_ENV: "production",
-        // Ghost builds absolute links (feeds, emails, admin) from `url` — resolved
-        // to its assigned public URL at deploy time.
-        url: "{{publicUrl:ghost}}",
-        database__client: "mysql",
-        database__connection__host: "ghost-db",
-        database__connection__user: "root",
-        database__connection__database: "ghost",
-      },
-      secretEnv: ["database__connection__password"],
-      volumes: ["ghost_content:/var/lib/ghost/content"],
-      restart: "unless-stopped",
-    },
-  ],
-  configFields: [
-    {
-      key: "MYSQL_ROOT_PASSWORD",
-      service: "ghost-db",
-      label: "Database password",
-      generate: "secret",
-      generateGroup: "ghostdb",
-      secret: true,
-    },
-    {
-      key: "database__connection__password",
-      service: "ghost",
-      label: "Ghost DB password",
-      generate: "secret",
-      generateGroup: "ghostdb",
-      secret: true,
-    },
-  ],
-};
-
-/**
- * Uptime Kuma — self-hosted uptime monitoring. Single service, SQLite on a volume.
- */
-const UPTIME_KUMA_TEMPLATE: AppTemplate = {
-  id: "uptime-kuma",
-  name: "Uptime Kuma",
-  description: "Self-hosted uptime monitoring with status pages and alerts.",
-  kind: "template",
-  logo: "uptime-kuma",
-  category: "other",
-  tags: ["monitoring", "uptime", "status"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "uptime-kuma",
-      image: "louislam/uptime-kuma:1",
-      ports: ["3001:3001"],
-      exposedPort: 3001,
-      exposed: true,
-      volumes: ["uptime_kuma_data:/app/data"],
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * Vaultwarden — lightweight self-hosted Bitwarden-compatible password manager.
- * Single service; data on a volume. `DOMAIN` must be its public URL (WebAuthn /
- * links) — resolved at deploy time.
- */
-const VAULTWARDEN_TEMPLATE: AppTemplate = {
-  id: "vaultwarden",
-  name: "Vaultwarden",
-  description: "Lightweight self-hosted password manager (Bitwarden-compatible).",
-  kind: "template",
-  logo: "vaultwarden",
-  category: "other",
-  tags: ["passwords", "security", "bitwarden"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "vaultwarden",
-      image: "vaultwarden/server:latest",
-      ports: ["80:80"],
-      exposedPort: 80,
-      exposed: true,
-      environment: {
-        DOMAIN: "{{publicUrl:vaultwarden}}",
-      },
-      volumes: ["vaultwarden_data:/data"],
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * Metabase — open-source BI / analytics. Single service; uses an embedded H2 DB
- * on a volume for a quick start (point at Postgres later for production).
- */
-const METABASE_TEMPLATE: AppTemplate = {
-  id: "metabase",
-  name: "Metabase",
-  description: "Open-source business intelligence — dashboards and questions over your data.",
-  kind: "template",
-  logo: "metabase",
-  category: "analytics",
-  tags: ["analytics", "bi", "dashboards"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "metabase",
-      image: "metabase/metabase:latest",
-      ports: ["3000:3000"],
-      exposedPort: 3000,
-      exposed: true,
-      environment: {
-        MB_DB_FILE: "/metabase-data/metabase.db",
-      },
-      volumes: ["metabase_data:/metabase-data"],
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * Directus — headless CMS + instant REST/GraphQL API. Single service on the
- * SQLite default (DB file + uploads on volumes). `SECRET` (token signing) is
- * generated; `PUBLIC_URL` is resolved at deploy time. The admin is created in
- * the Studio onboarding on first visit.
- */
-const DIRECTUS_TEMPLATE: AppTemplate = {
-  id: "directus",
-  name: "Directus",
-  description: "Headless CMS with an instant REST + GraphQL API over your data. Create the admin on first visit.",
-  kind: "template",
-  logo: "directus",
-  category: "cms",
-  tags: ["cms", "headless", "api"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "directus",
-      image: "directus/directus:latest",
-      ports: ["8055:8055"],
-      exposedPort: 8055,
-      exposed: true,
-      environment: {
-        DB_CLIENT: "sqlite3",
-        DB_FILENAME: "/directus/database/data.db",
-        PUBLIC_URL: "{{publicUrl:directus}}",
-      },
-      secretEnv: ["SECRET"],
-      volumes: ["directus_database:/directus/database", "directus_uploads:/directus/uploads"],
-      restart: "unless-stopped",
-    },
-  ],
-  configFields: [
-    {
-      key: "SECRET",
-      service: "directus",
-      label: "App secret",
-      help: "Auto-generated. Signs access tokens.",
-      generate: "secret",
-      secret: true,
-    },
-  ],
-};
-
-/**
- * NocoDB — Airtable-style database UI. Single service; SQLite metadata +
- * attachments persist on a volume. The first sign-up becomes the super admin.
- */
-const NOCODB_TEMPLATE: AppTemplate = {
-  id: "nocodb",
-  name: "NocoDB",
-  description: "Airtable-style spreadsheet UI over an SQL database. The first sign-up becomes the admin.",
-  kind: "template",
-  logo: "nocodb",
-  category: "database",
-  tags: ["database", "airtable", "no-code"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "nocodb",
-      image: "nocodb/nocodb:latest",
-      ports: ["8080:8080"],
-      exposedPort: 8080,
-      exposed: true,
-      volumes: ["nocodb_data:/usr/app/data"],
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * Grafana — metrics dashboards and visualization. Single service, embedded
- * SQLite on a volume. Default first login is admin / admin (forced change).
- */
-const GRAFANA_TEMPLATE: AppTemplate = {
-  id: "grafana",
-  name: "Grafana",
-  description: "Dashboards and visualization for your metrics and logs. First login is admin / admin.",
-  kind: "template",
-  logo: "grafana",
-  category: "analytics",
-  tags: ["analytics", "dashboards", "monitoring"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "grafana",
-      image: "grafana/grafana:latest",
-      ports: ["3000:3000"],
-      exposedPort: 3000,
-      exposed: true,
-      volumes: ["grafana_data:/var/lib/grafana"],
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * Gitea — self-hosted Git with issues and pull requests. Single service on the
- * SQLite default; all state (repos, DB, config) persists under /data. `ROOT_URL`
- * is resolved at deploy time for correct clone/redirect links. A setup wizard
- * runs on first visit (first registered user becomes admin).
- */
-const GITEA_TEMPLATE: AppTemplate = {
-  id: "gitea",
-  name: "Gitea",
-  description: "Self-hosted Git with issues, pull requests, and a first-run setup wizard.",
-  kind: "template",
-  logo: "gitea",
-  category: "other",
-  tags: ["git", "vcs", "developer"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "gitea",
-      image: "gitea/gitea:1",
-      ports: ["3000:3000"],
-      exposedPort: 3000,
-      exposed: true,
-      environment: { GITEA__server__ROOT_URL: "{{publicUrl:gitea}}" },
-      volumes: ["gitea_data:/data"],
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * code-server — VS Code in the browser. Single service; config + projects on
- * volumes. `PASSWORD` (the single login) is generated so first sign-in works.
- */
-const CODE_SERVER_TEMPLATE: AppTemplate = {
-  id: "code-server",
-  name: "code-server",
-  description: "Run VS Code in your browser, on your server. Login uses an auto-generated password.",
-  kind: "template",
-  logo: "code-server",
-  category: "other",
-  tags: ["developer", "ide", "vscode"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "code-server",
-      image: "codercom/code-server:latest",
-      ports: ["8080:8080"],
-      exposedPort: 8080,
-      exposed: true,
-      secretEnv: ["PASSWORD"],
-      volumes: [
-        "code_server_config:/home/coder/.config",
-        "code_server_local:/home/coder/.local",
-        "code_server_project:/home/coder/project",
-      ],
-      restart: "unless-stopped",
-    },
-  ],
-  configFields: [
-    {
-      key: "PASSWORD",
-      service: "code-server",
-      label: "Login password",
-      help: "Auto-generated. Required to sign in.",
-      generate: "secret",
-      secret: true,
-    },
-  ],
-};
-
-/**
- * FreshRSS — self-hosted RSS/Atom reader. Single service on the SQLite default;
- * config + DB persist on a volume. A setup wizard runs on first visit.
- */
-const FRESHRSS_TEMPLATE: AppTemplate = {
-  id: "freshrss",
-  name: "FreshRSS",
-  description: "Self-hosted RSS and Atom feed reader with a first-run setup wizard.",
-  kind: "template",
-  logo: "freshrss",
-  category: "other",
-  tags: ["rss", "feeds", "reader"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "freshrss",
-      image: "freshrss/freshrss:latest",
-      ports: ["80:80"],
-      exposedPort: 80,
-      exposed: true,
-      volumes: ["freshrss_data:/var/www/FreshRSS/data"],
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * Stirling PDF — a full local PDF toolkit (split/merge/convert/OCR). Single
- * service; configs + OCR language data on volumes. Recent images ship with
- * login enabled (default admin / stirling — change it on first sign-in).
- */
-const STIRLING_PDF_TEMPLATE: AppTemplate = {
-  id: "stirling-pdf",
-  name: "Stirling PDF",
-  description: "Split, merge, convert, OCR and edit PDFs locally. Default login is admin / stirling — change it.",
-  kind: "template",
-  logo: "stirling-pdf",
-  category: "other",
-  tags: ["pdf", "documents", "tools"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "stirling-pdf",
-      image: "stirlingtools/stirling-pdf:latest",
-      ports: ["8080:8080"],
-      exposedPort: 8080,
-      exposed: true,
-      volumes: ["stirling_config:/configs", "stirling_tessdata:/usr/share/tessdata"],
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * IT-Tools — a box of developer/sysadmin utilities. Fully client-side static
- * app; no login, no DB, no persistent state.
- */
-const IT_TOOLS_TEMPLATE: AppTemplate = {
-  id: "it-tools",
-  name: "IT-Tools",
-  description: "A handy collection of developer and sysadmin utilities. No login, no setup.",
-  kind: "template",
-  logo: "it-tools",
-  category: "other",
-  tags: ["developer", "tools", "utilities"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "it-tools",
-      image: "corentinth/it-tools:latest",
-      ports: ["80:80"],
-      exposedPort: 80,
-      exposed: true,
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * Excalidraw — virtual whiteboard for hand-drawn-style diagrams. The official
- * image is the client only (stateless; drawings live in the browser). Real-time
- * collaboration needs a separate room server, out of scope for this one-click.
- */
-const EXCALIDRAW_TEMPLATE: AppTemplate = {
-  id: "excalidraw",
-  name: "Excalidraw",
-  description: "Virtual whiteboard for sketches and diagrams. Stateless — drawings save in your browser.",
-  kind: "template",
-  logo: "excalidraw",
-  category: "other",
-  tags: ["whiteboard", "diagrams", "drawing"],
-  framework: "docker-compose",
-  services: [
-    {
-      name: "excalidraw",
-      image: "excalidraw/excalidraw:latest",
-      ports: ["80:80"],
-      exposedPort: 80,
-      exposed: true,
-      restart: "unless-stopped",
-    },
-  ],
-};
-
-/**
- * Openship Mail — a "flow" app: it doesn't instantiate compose services, it
- * hands off to the mail PROVIDER WIZARD at /apps/new/mail, which offers:
- *   • Self-host        → the iRedMail provisioning flow at /emails.
- *   • Connect existing → deploy just the Zero webmail UI against an external
- *                        IMAP/SMTP backend (Amazon SES / Gmail / Fastmail / custom).
- * Present in the catalog so mail is a first-class one-click app alongside the rest.
- */
-const MAIL_FLOW: AppTemplate = {
-  id: "mail",
-  name: "Openship Mail",
-  description: "A complete self-hosted mail server — SMTP/IMAP + webmail on your own domain.",
-  kind: "flow",
-  logo: "mail-webmail",
-  category: "mail",
-  tags: ["mail", "email", "smtp", "imap"],
-  // Catalog click → the provider wizard (chooses self-host vs connect-existing).
-  flowHref: "/apps/new/mail",
-  // Bespoke day-2 management surface — the mail provisioning + admin wizard.
-  management: { kind: "custom", href: "/emails" },
-};
-
-/**
- * Buzz (github.com/block/buzz, Apache-2.0) — a self-hostable workspace on a Nostr
- * relay where humans and AI agents collaborate: chat, code patches, reviews, and
- * workflows recorded as signed events in one audit log. Catalog placeholder for
- * now: listed but left out of AVAILABLE_APP_IDS, so the UI shows it dimmed as
- * "Coming soon" until an install path is wired. `kind: "template"` keeps it a
- * neutral entry (no services yet) — whoever enables it fills in the deploy shape.
- */
-const BUZZ_TEMPLATE: AppTemplate = {
-  id: "buzz",
-  name: "Buzz",
-  description: "Self-hostable workspace where humans and AI agents collaborate — chat, code, reviews, and workflows in one audit log.",
-  kind: "template",
-  logo: "buzz",
-  category: "other",
-  tags: ["collaboration", "ai", "agents", "chat", "workflows", "nostr"],
-};
-
-export const APP_TEMPLATES: readonly AppTemplate[] = [
-  MAIL_FLOW,
-  CONVEX_TEMPLATE,
-  N8N_TEMPLATE,
-  GHOST_TEMPLATE,
-  DIRECTUS_TEMPLATE,
-  NOCODB_TEMPLATE,
-  METABASE_TEMPLATE,
-  GRAFANA_TEMPLATE,
-  GITEA_TEMPLATE,
-  CODE_SERVER_TEMPLATE,
-  UPTIME_KUMA_TEMPLATE,
-  VAULTWARDEN_TEMPLATE,
-  FRESHRSS_TEMPLATE,
-  STIRLING_PDF_TEMPLATE,
-  IT_TOOLS_TEMPLATE,
-  EXCALIDRAW_TEMPLATE,
-  // ── Coming soon (not in AVAILABLE_APP_IDS) ──
-  BUZZ_TEMPLATE,
-];
+export const CURRENT_SCHEMA_VERSION = 1;
 
 export function getAppTemplate(id: string): AppTemplate | undefined {
   return APP_TEMPLATES.find((t) => t.id === id);
@@ -811,7 +406,9 @@ export function getAppTemplate(id: string): AppTemplate | undefined {
  * still shown — dimmed + "Coming soon", not installable — until it's ready.
  * Single switch: add an id here to light it up (and guard install server-side).
  */
-export const AVAILABLE_APP_IDS: ReadonlySet<string> = new Set(["mail", "n8n", "convex"]);
+export const AVAILABLE_APP_IDS: ReadonlySet<string> = new Set(
+  APP_TEMPLATES.filter((t) => t.available).map((t) => t.id),
+);
 
 /** Is this catalog app installable now, or a dimmed "coming soon" placeholder? */
 export function isAppAvailable(id: string): boolean {
@@ -831,4 +428,77 @@ export function getAppManagement(template: AppTemplate): AppManagement | null {
   if (template.management) return template.management;
   if (template.settings && template.settings.length > 0) return { kind: "schema" };
   return null;
+}
+
+/** Post-deploy prepare steps for an app (empty when it has none). */
+export function getAppPrepareSteps(template: AppTemplate): readonly AppPrepareStep[] {
+  return template.prepare ?? [];
+}
+
+/** Connection details to surface after install (null when the app declares none). */
+export function getAppConnection(template: AppTemplate): AppConnection | null {
+  return template.connection ?? null;
+}
+
+/**
+ * Exposable endpoints for the install wizard. Uses the template's explicit
+ * `endpoints` when present; otherwise derives one `http` endpoint per exposed
+ * service (its primary route/exposedPort) so single-web-UI apps (Convex, n8n, …)
+ * get the same one-picker flow they had before, with no per-template metadata.
+ */
+export function getAppEndpoints(template: AppTemplate): readonly AppEndpoint[] {
+  if (template.endpoints && template.endpoints.length > 0) return template.endpoints;
+  const derived: AppEndpoint[] = [];
+  for (const svc of template.services ?? []) {
+    if (!svc.exposed) continue;
+    const port = svc.exposedPort ?? svc.routes?.[0]?.port;
+    if (port === undefined) continue;
+    derived.push({ service: svc.name, port, label: svc.name, kind: "http" });
+  }
+  return derived;
+}
+
+/**
+ * The source SERVICE (docker network alias) an output belongs to: the explicit
+ * `output.service` when authored, else parsed from the `source` prefix
+ * (`env:<service>:…` / `publicUrl:<service>…`). Null for a `template:` source
+ * with no declared service — there's no alias to rewrite an internal URL to.
+ * Single authority so the DTO, the internal-URL rewrite, and validation agree.
+ */
+export function getOutputService(output: Pick<AppOutput, "service" | "source">): string | null {
+  if (output.service) return output.service;
+  const m = /^(?:env|publicUrl):([^:]+)/.exec(output.source ?? "");
+  return m?.[1] ?? null;
+}
+
+/**
+ * Resolve the internal docker endpoint (service alias + container port) an
+ * internal connection URL should point at: the declared endpoint for `service`,
+ * preferring one whose port matches `preferredPort` (the source URL's own port),
+ * else the required endpoint, else the first. Null when the service exposes no
+ * declared endpoint. Replaces the old port-coincidence guess — the service is
+ * authoritative, so two endpoints sharing a port or a portless URL resolve
+ * correctly.
+ */
+export function resolveInternalEndpoint(
+  template: AppTemplate,
+  service: string,
+  preferredPort?: number,
+): { service: string; port: number } | null {
+  const eps = getAppEndpoints(template).filter((e) => e.service === service);
+  if (eps.length === 0) return null;
+  const byPort =
+    preferredPort !== undefined ? eps.find((e) => e.port === preferredPort) : undefined;
+  const chosen = byPort ?? eps.find((e) => e.required) ?? eps[0]!;
+  return { service: chosen.service, port: chosen.port };
+}
+
+/** Connectable bundles this app advertises to other projects (empty when none). */
+export function getAppProvides(template: AppTemplate): readonly AppProvides[] {
+  return template.provides ?? [];
+}
+
+/** Connections this app needs from other projects (empty when none). */
+export function getAppRequires(template: AppTemplate): readonly AppRequires[] {
+  return template.requires ?? [];
 }

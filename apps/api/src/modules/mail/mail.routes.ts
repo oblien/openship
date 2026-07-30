@@ -120,6 +120,28 @@ r.delete(
   admin.deleteMailboxHandler,
 );
 
+/* ── Admin panel - aliases / forwards / catch-all ─────────────────── */
+r.get(
+  "/admin/:serverId/aliases",
+  { tag: "mail_server:list" },
+  admin.listAliasesHandler,
+);
+r.post(
+  "/admin/:serverId/aliases",
+  { tag: "mail_server:write" },
+  admin.createAliasHandler,
+);
+r.patch(
+  "/admin/:serverId/aliases/:id",
+  { tag: "mail_server:write" },
+  admin.updateAliasHandler,
+);
+r.delete(
+  "/admin/:serverId/aliases/:id",
+  { tag: "mail_server:admin" },
+  admin.deleteAliasHandler,
+);
+
 /* ── Admin panel - aggregates ─────────────────────────────────────── */
 r.get(
   "/admin/:serverId/stats",

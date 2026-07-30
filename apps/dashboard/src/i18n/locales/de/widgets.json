@@ -35,6 +35,10 @@
         "backToDashboard": "Zurück zum Dashboard",
         "createNewProject": "Neues Projekt erstellen"
       },
+      "loadFailed": {
+        "title": "Projekt konnte nicht geladen werden",
+        "subtitle": "Beim Erreichen dieses Projekts ist ein Problem aufgetreten. Prüfe deine Verbindung und versuche es erneut."
+      },
       "accessDenied": {
         "title": "Zugriff verweigert",
         "subtitle": "Du hast keine Berechtigung, auf diese Ressource zuzugreifen.",

@@ -70,6 +70,24 @@ const EMAIL_RE = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
  */
 const SUBMISSION_PORT = 465;
 
+/**
+ * The address to actually open the submission socket to.
+ *
+ * Queries public resolvers rather than the system stub for the reason in the
+ * comment at the call site: on the mail host, `/etc/hosts` maps the mail
+ * hostname to 127.0.1.1, which is useless (and wrong) from inside a container.
+ * Falls back to the hostname untouched when public DNS can't answer — a remote
+ * mail server reachable by name keeps working exactly as before, and a genuine
+ * DNS problem still surfaces as the connect error it is, not as a lookup crash.
+ */
+async function resolveSubmissionAddress(host: string): Promise<string> {
+  const { Resolver } = await import("node:dns/promises");
+  const resolver = new Resolver();
+  resolver.setServers(["1.1.1.1", "8.8.8.8"]);
+  const [v4] = await resolver.resolve4(host).catch(() => [] as string[]);
+  return v4 ?? host;
+}
+
 export class TestEmailError extends Error {}
 
 export interface SendTestEmailInput {
@@ -248,8 +266,18 @@ export async function sendTestEmail(
   // cert, wrong password, or blocked port surfaces here before we burn
   // a queue slot. sendMail() then does MAIL FROM / RCPT TO / DATA / QUIT
   // and returns the server's actual 250 response.
+  // Dial the address PUBLIC DNS gives, not whatever the local resolver
+  // returns. On the mail host itself `/etc/hosts` carries the
+  // `127.0.1.1 mail.<domain>` line the hostname step writes, and a
+  // containerized API inherits that answer through the host's resolver —
+  // then connects to 127.0.1.1 inside its OWN namespace, where nothing
+  // listens, and every send fails with `ECONNREFUSED 127.0.1.1:465` while
+  // Postfix is healthy on 0.0.0.0:465. `servername` keeps TLS validating
+  // against the hostname, so certificate checking is unchanged.
+  const connectHost = await resolveSubmissionAddress(smtpHost);
   const transporter: Transporter = nodemailer.createTransport({
-    host: smtpHost,
+    host: connectHost,
+    tls: { servername: smtpHost },
     port: SUBMISSION_PORT,
     secure: true,
     auth: { user: authUser, pass: smtpPassword },

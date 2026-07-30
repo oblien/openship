@@ -16,8 +16,8 @@ const h = vi.hoisted(() => ({
   canProceedClean: false,
   sites: [{}, {}] as unknown[],
   ensureFeature: vi.fn(async () => {}),
-  probeEdge: vi.fn(),
-  scanImportableSites: vi.fn(),
+  foreignProxyOnEdge: vi.fn(),
+  importSites: vi.fn(),
 }));
 
 vi.mock("@repo/adapters", () => ({
@@ -25,9 +25,8 @@ vi.mock("@repo/adapters", () => ({
   SystemManager: class {
     ensureFeature = h.ensureFeature;
   },
-  probeEdge: h.probeEdge,
-  scanImportableSites: h.scanImportableSites,
-  canImportProxy: (p: string | undefined) => p === "nginx",
+  foreignProxyOnEdge: h.foreignProxyOnEdge,
+  importSites: h.importSites,
   runEdgeTakeover: vi.fn(),
 }));
 
@@ -39,15 +38,22 @@ const origGetuid = process.getuid;
 beforeEach(() => {
   vi.clearAllMocks();
   Object.defineProperty(process, "platform", { value: "linux", configurable: true });
-  // @ts-expect-error — stub root so the not-root guard passes
+  // stub root so the not-root guard passes
   process.getuid = () => 0;
   h.canProceedClean = false;
-  h.probeEdge.mockImplementation(async () => ({
-    classification: h.canProceedClean ? "free" : "known",
-    canProceedClean: h.canProceedClean,
-    occupants: h.canProceedClean ? [] : [{ port: 80, command: "nginx", proxy: "nginx" }],
-  }));
-  h.scanImportableSites.mockImplementation(async () => ({ sites: h.sites, warnings: [] }));
+  h.foreignProxyOnEdge.mockImplementation(async () => {
+    const occupants = h.canProceedClean ? [] : [{ port: 80, command: "nginx", proxy: "nginx" }];
+    return {
+      status: {
+        classification: h.canProceedClean ? "free" : "known",
+        canProceedClean: h.canProceedClean,
+        occupants,
+      },
+      blocked: !h.canProceedClean && occupants.length > 0,
+      owner: occupants.map((o) => o.command).join(", "),
+    };
+  });
+  h.importSites.mockImplementation(async () => ({ proxy: "nginx", sites: h.sites, warnings: [] }));
 });
 
 afterEach(() => {
@@ -75,7 +81,7 @@ describe("ensureSelfEdgeInfra — halt + report", () => {
   it("occupied edge WITH pre-authorized takeover → skips the guard and installs", async () => {
     const res = await ensureSelfEdgeInfra(undefined, { edgeTakeover: true });
     expect(res.ok).toBe(true);
-    expect(h.probeEdge).not.toHaveBeenCalled(); // guard skipped when takeover is authorized
+    expect(h.foreignProxyOnEdge).not.toHaveBeenCalled(); // guard skipped when takeover is authorized
     expect(h.ensureFeature).toHaveBeenCalledWith("ssl", expect.any(Function));
   });
 });

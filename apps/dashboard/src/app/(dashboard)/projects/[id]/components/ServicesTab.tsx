@@ -4,7 +4,8 @@ import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { serviceKind, serviceCanStartWithoutBuild, servicesApi, sortServicesByPublicFirst, type Service, type ServiceContainer, type ServiceInput } from "@/lib/api/services";
-import { getApiErrorMessage } from "@/lib/api/client";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
+import { getApiErrorMessage, isAbortError } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
 import { resolveServiceHostnameLabel, internalServiceAddress } from "@repo/core";
 import { useRouter } from "next/navigation";
@@ -14,7 +15,6 @@ import {
   Layers,
   RefreshCw,
   Globe,
-  Container,
   AlertCircle,
   AlertTriangle,
   ChevronRight,
@@ -24,6 +24,7 @@ import {
 
 import { ServiceDetailPanel } from "./services/ServiceDetailPanel";
 import { AddServiceModal } from "./services/AddServiceModal";
+import { LinkedAppsCard } from "./services/LinkedAppsCard";
 
 /** Render a drift diff value (arrays → csv, objects → keys, scalars → string). */
 const fmtDriftVal = (v: unknown): string => {
@@ -71,10 +72,22 @@ export const ServicesTab = () => {
     try {
       setContainersLoading(true);
       setError(null);
-      const [, ctRes] = await Promise.all([refreshServices(), servicesApi.containers(id)]);
+      // allSettled, not all: with `all`, a rejection from the SECOND promise once
+      // the first has already rejected is orphaned, and an unhandled rejection
+      // surfaces as a bare runtime error overlay instead of this component's
+      // error state. The container read is also the one that can time out
+      // (it reflects live runtime state), so it must not take the tab down.
+      const [, containersResult] = await Promise.allSettled([
+        refreshServices(),
+        servicesApi.containers(id),
+      ]);
+      if (containersResult.status === "rejected") throw containersResult.reason;
+      const ctRes = containersResult.value;
       if (ctRes.success) setContainers(ctRes.containers ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.projects.services.failedLoad);
+      // An aborted request's message is "signal is aborted without reason" —
+      // useless to a user, so fall back to the generic copy for it.
+      setError(!isAbortError(e) && e instanceof Error ? e.message : t.projects.services.failedLoad);
     } finally {
       setContainersLoading(false);
     }
@@ -236,7 +249,7 @@ export const ServicesTab = () => {
   /* ── Empty state ───────────────────────────────────────────────── */
   if (services.length === 0) {
     return (
-      <>
+      <div className="space-y-5">
         <div className="bg-card rounded-2xl border border-border/50 px-6 pb-10 text-center">
           {/* SVG illustration - central app card linked to three service
               nodes (database, cache, queue). Uses the same `th-*` token
@@ -351,6 +364,10 @@ export const ServicesTab = () => {
             </button>
           </div>
         </div>
+        {/* A project can have a linked app before it has any service of its own
+            (wired at creation, not deployed yet) — don't hide the link behind
+            the empty state. */}
+        {hasProjectId && <LinkedAppsCard projectId={id} />}
         <AddServiceModal
           open={createOpen}
           projectName={projectSlugBase}
@@ -358,7 +375,7 @@ export const ServicesTab = () => {
           onClose={() => setCreateOpen(false)}
           onSubmit={handleCreateService}
         />
-      </>
+      </div>
     );
   }
 
@@ -395,6 +412,10 @@ export const ServicesTab = () => {
           initialTab={slug?.[2]}
           onRefresh={fetchData}
           onDeleted={closeService}
+          projectType={(projectData as { projectType?: string })?.projectType}
+          activeDeploymentId={projectData?.activeDeploymentId}
+          deployTarget={projectData?.deployTarget}
+          siblingServices={servicesData.services}
         />
       </div>
     );
@@ -526,14 +547,27 @@ export const ServicesTab = () => {
             : svc.image || svc.build || "";
           const urlHost = resolvedUrl?.replace("https://", "");
 
+          // Published host port (first `host:container` mapping) — what the
+          // service is reachable on off-box; falls back to the managed-route
+          // target port. Surfaced as a chip so port-only services (e.g. Kong on
+          // 8000) show WHERE they listen even without a domain.
+          const hostPort =
+            ((svc.ports as string[] | null) ?? [])
+              .map((p) => {
+                const parts = String(p).split(":");
+                return parts.length >= 2 ? Number(parts[parts.length - 2]) : NaN;
+              })
+              .find((n) => Number.isFinite(n)) ??
+            (svc.exposedPort ? Number(svc.exposedPort) : undefined);
+
           return (
             <button
               key={svc.id}
               onClick={() => openService(svc.id)}
               className="w-full flex items-center gap-4 px-5 py-4 text-start transition-colors hover:bg-foreground/[0.025]"
             >
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-muted/50">
-                <Container className="size-[18px] text-muted-foreground" />
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-muted/50 overflow-hidden">
+                <ServiceIcon service={svc} />
               </div>
 
               <div className="flex-1 min-w-0">
@@ -547,6 +581,11 @@ export const ServicesTab = () => {
                     <Globe className="size-2.5" />
                     {svc.exposed ? t.projects.services.public : t.projects.services.internal}
                   </span>
+                  {hostPort !== undefined && Number.isFinite(hostPort) && (
+                    <span className="inline-flex items-center rounded-full bg-muted/60 px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground/70">
+                      :{hostPort}
+                    </span>
+                  )}
                   {svc.drift && svc.drift.changes.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning">
                       <AlertTriangle className="size-2.5" />
@@ -593,6 +632,10 @@ export const ServicesTab = () => {
         })}
       </div>
 
+      {/* Apps wired into this project — not services we own (no container, no
+          start/stop), but part of what it runs against. */}
+      <LinkedAppsCard projectId={id} />
+
       <AddServiceModal
         open={createOpen}
         projectName={projectSlugBase}
@@ -632,6 +675,19 @@ function StatusBadge({ status, t }: { status: string; t: Dictionary }) {
       dot: "bg-warning-solid",
       badge: "bg-warning-bg text-warning",
       label: t.projects.serviceStatus.starting,
+    },
+    // A bouncing container is NOT running — it used to render green, which hid
+    // whole stacks in a crash loop.
+    restarting: {
+      dot: "bg-warning-solid",
+      badge: "bg-warning-bg text-warning",
+      label: t.projects.serviceStatus.restarting,
+    },
+    // The host couldn't be reached — say so instead of echoing a stale status.
+    unknown: {
+      dot: "bg-muted-foreground/40",
+      badge: "bg-muted/60 text-muted-foreground",
+      label: t.projects.serviceStatus.unknown,
     },
   };
   const s = map[status] ?? map.stopped;

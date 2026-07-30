@@ -49,6 +49,13 @@ const TAG_TO_CODE: Record<string, ConnectivityCode> = {
 
 // Ordered most-specific → least. Matched against the lowercased message.
 const MESSAGE_PATTERNS: Array<[RegExp, ConnectivityCode]> = [
+  // Filesystem errno codes first: Node spells EACCES as "EACCES: permission
+  // denied, <syscall> '<path>'", which the auth rule below would otherwise
+  // claim via its bare "permission denied" token — telling an operator their
+  // credentials were rejected when the real fix is chmod/chown on the path.
+  // Matching the errno (never present in SSH's "Permission denied (publickey)")
+  // keeps the two apart.
+  [/eacces|erofs/i, "permission_denied"],
   [/all configured authentication methods failed|permission denied|publickey|password rejected|authentication failed|auth fail/i, "auth_failed"],
   [/econnrefused|connection refused|ehostunreach|enetunreach|no route to host|host unreachable|enotfound|getaddrinfo|dns/i, "unreachable"],
   [/etimedout|timed out|timeout|keepalive timeout/i, "timeout"],

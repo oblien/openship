@@ -28,13 +28,39 @@ function parseRequirementsTxt(content: string): Record<string, string> {
   return deps;
 }
 
+/**
+ * Contents of the array literal assigned to `key` in a TOML table body, or null
+ * when the key is absent. Scans for the closing `]` tracking quote state and
+ * nesting, so brackets inside values (`"uvicorn[standard]"`) don't end it.
+ */
+function sliceArrayValue(body: string, key: string): string | null {
+  const open = body.match(new RegExp(`(?:^|\\n)\\s*${key}\\s*=\\s*\\[`));
+  if (!open || open.index === undefined) return null;
+
+  const from = open.index + open[0].length;
+  let depth = 1;
+  let quote: string | null = null;
+  for (let i = from; i < body.length; i++) {
+    const char = body[i];
+    if (quote) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") quote = char;
+    else if (char === "[") depth++;
+    else if (char === "]" && --depth === 0) return body.slice(from, i);
+  }
+  return null;
+}
+
 function parsePyprojectToml(content: string): Record<string, string> {
   const deps: Record<string, string> = {};
 
   // PEP 621 standard: [project].dependencies = ["flask>=2.0", "sqlalchemy"]
-  const pep621 = content.match(/\[project\][^[]*?dependencies\s*=\s*\[([\s\S]*?)\]/);
-  if (pep621) {
-    const items = pep621[1].matchAll(/["']([^"']+)["']/g);
+  const project = content.match(/\[project\]([\s\S]*?)(?=\n\[|$)/);
+  const pep621 = project ? sliceArrayValue(project[1], "dependencies") : null;
+  if (pep621 !== null) {
+    const items = pep621.matchAll(/["']([^"']+)["']/g);
     for (const item of items) {
       const m = item[1].match(/^([A-Za-z0-9][A-Za-z0-9._-]*)/);
       if (m) deps[normalizeName(m[1])] = "*";

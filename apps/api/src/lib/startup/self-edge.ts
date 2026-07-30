@@ -13,6 +13,7 @@
  */
 
 import { env } from "../../config/env";
+import { pinnedEdgeImage, withPinnedEdgeImage } from "../edge-image";
 
 export interface SelfEdgeInfraProgress {
   onLog?: (message: string, level?: "info" | "warn" | "error") => void;
@@ -63,6 +64,17 @@ async function runEnsure(
     else console.log(`[edge] ${message}`);
   };
 
+  // Docker-edge (compose): the edge runs as the `openship-edge` container bound
+  // to host :80/:443 via host networking — there is NO host OpenResty to
+  // apt-install, and a `LocalExecutor` here would target the api CONTAINER, not
+  // the host. The route + cert are still applied through the containerized edge
+  // by the normal pipeline (DockerEdgeExecutor). Freeing a foreign proxy off
+  // :80/:443 is handled by `openship up` on the host, not from inside here.
+  if (process.env.OPENSHIP_EDGE_MODE === "docker") {
+    log("docker edge mode — edge runs as a container; skipping host OpenResty install.");
+    return { ok: true };
+  }
+
   if (process.platform !== "linux") {
     log("managed edge needs a Linux host — skipping (use a reverse proxy in front).", "warn");
     return { ok: false, reason: "not_linux" };
@@ -75,9 +87,8 @@ async function runEnsure(
   const {
     createExecutor,
     SystemManager,
-    probeEdge,
-    scanImportableSites,
-    canImportProxy,
+    foreignProxyOnEdge,
+    importSites,
     runEdgeTakeover,
   } = await import("@repo/adapters");
   const executor = createExecutor(); // LocalExecutor — this same machine
@@ -86,15 +97,21 @@ async function runEnsure(
   // self-app's own route is added AFTER by the pipeline (reapplyProjectLiveRoutes),
   // not here — so no extraRoutes.
   if (options?.edgeMigrate) {
-    const status = await probeEdge(executor);
-    const proxy = status.occupants.find((o) => o.proxy)?.proxy;
-    const scan =
-      proxy && canImportProxy(proxy)
-        ? await scanImportableSites(executor, proxy)
-        : { sites: [], warnings: [] };
+    const { status } = await foreignProxyOnEdge(executor);
+    const scan = await importSites(executor, status);
     const res = await runEdgeTakeover(
       executor,
-      { status, sites: scan.sites, acmeEmail: env.OPENSHIP_ACME_EMAIL, extraRoutes: [] },
+      {
+        status,
+        sites: scan.sites,
+        acmeEmail: env.OPENSHIP_ACME_EMAIL,
+        extraRoutes: [],
+        // Pin the edge the takeover installs. `setDefaultEdgeImage` at boot already
+        // covers this, but state it here too: this is the ONE caller of
+        // runEdgeTakeover, so leaving its `edgeImage` unset is what made the option
+        // dead code — and a dead pin reads as "the takeover doesn't need one".
+        edgeImage: pinnedEdgeImage(),
+      },
       (entry) => log(entry.message, entry.level),
     );
     if (!res.ok) return { ok: false, reason: "migrate_failed" };
@@ -106,15 +123,11 @@ async function runEnsure(
   // someone's proxy). Report what's there — and how many sites it serves — so the
   // operator re-runs with migrate/take-over, instead of a bare downstream cert error.
   if (!options?.edgeTakeover) {
-    const status = await probeEdge(executor);
-    if (!status.canProceedClean && status.occupants.length > 0) {
-      const owner = status.occupants.map((o) => o.command ?? `port ${o.port}`).join(", ");
+    const { status, blocked, owner } = await foreignProxyOnEdge(executor);
+    if (blocked) {
       let siteCount = 0;
       try {
-        const proxy = status.occupants.find((o) => o.proxy)?.proxy;
-        if (proxy && canImportProxy(proxy)) {
-          siteCount = (await scanImportableSites(executor, proxy)).sites.length;
-        }
+        siteCount = (await importSites(executor, status)).sites.length;
       } catch {
         /* best-effort site count only */
       }
@@ -129,11 +142,14 @@ async function runEnsure(
     }
   }
 
-  // Install OpenResty + certbot (idempotent). edgeTakeover authorizes reclaiming
-  // 80/443 from an existing proxy without prompting.
-  const installerConfig = options?.edgeTakeover
-    ? { edgePolicy: { mode: "takeover" as const, stopTargets: [] } }
-    : undefined;
+  // Bring up the edge (idempotent — the container edge, or bare OpenResty on a
+  // Docker-less box). edgeTakeover authorizes reclaiming 80/443 from an existing
+  // proxy without prompting.
+  const installerConfig = withPinnedEdgeImage(
+    options?.edgeTakeover
+      ? { edgePolicy: { mode: "takeover" as const, stopTargets: [] } }
+      : {},
+  );
   const system = new SystemManager("bare", { executor, installerConfig });
   await system.ensureFeature("ssl", (entry) => log(entry.message));
   return { ok: true };

@@ -54,6 +54,23 @@ describe("compileVercelRouting", () => {
     ]);
   });
 
+  it("normalizes a non-3xx or out-of-range redirect status to a safe default", () => {
+    const out = compileVercelRouting({
+      redirects: [
+        { source: "/a", destination: "/x", statusCode: 200 },
+        { source: "/b", destination: "/y", statusCode: 999 },
+        { source: "/c", destination: "/z", statusCode: 302.5 },
+        { source: "/d", destination: "/w", statusCode: 404, permanent: true },
+      ],
+    });
+    expect(out.redirects).toEqual([
+      { path: "/a", exact: true, statusCode: 307, destination: "/x" },
+      { path: "/b", exact: true, statusCode: 307, destination: "/y" },
+      { path: "/c", exact: true, statusCode: 307, destination: "/z" },
+      { path: "/d", exact: true, statusCode: 308, destination: "/w" },
+    ]);
+  });
+
   it("compiles header rules and passes through cleanUrls/trailingSlash", () => {
     const out = compileVercelRouting({
       headers: [{ source: "/(.*)", headers: [{ key: "X-Frame-Options", value: "DENY" }] }],

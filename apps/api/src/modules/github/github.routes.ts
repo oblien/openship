@@ -27,6 +27,10 @@ r.get("/home", { tag: "github:read", mcp: { description: "GitHub home: connectio
 r.post("/connect", { tag: "github:write" }, ctrl.connect);
 r.public("get", "/connect/redirect", { reason: "GitHub OAuth callback - no session yet during redirect" }, ctrl.connectRedirect);
 r.post("/disconnect", { tag: "github:admin" }, ctrl.disconnect);
+// Instance-wide git identity from a pasted token — the no-setup path when this
+// instance has no device client id. `localOnly` because CLOUD_MODE has no such
+// identity; `github:admin` because it sets a credential for the whole instance.
+r.post("/instance-token", { tag: "github:admin", localOnly: true }, ctrl.setInstanceToken);
 
 /* ─── Accounts / Organisations ─────────────────────────────────────────── */
 // /home returns { state, accounts, repos } in one round trip — the

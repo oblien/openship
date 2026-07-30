@@ -58,17 +58,23 @@ Once it's up, **Openship registers itself as an app** (dashboard → Apps → *O
 
 ## Docker
 
+Self-host the pull-based stack — Postgres, Redis, API, dashboard, and the OpenResty edge on :80/:443. It lives in `docker/docker-compose.yml` and pulls published images (no build). Run it from the repo root:
+
 ```bash
 git clone https://github.com/oblien/openship.git && cd openship
 cp .env.example .env
-docker compose up -d
+docker compose --env-file .env -f docker/docker-compose.yml up -d
 ```
+
+Linux only (the edge needs host networking); pin `OPENSHIP_VERSION` in `.env` for reproducible upgrades, and build from source instead with `-f docker/docker-compose.build.yml … up -d --build`.
+
+> The repo-root `docker-compose.yml` is a different file — the SaaS / from-source control plane (builds from source, ships the marketing site, no edge or Docker socket). It does not self-host your apps.
 
 ---
 
 ## Users & access (self-hosted)
 
-- **Public signup is disabled.** The first admin is created by `openship up`'s setup wizard.
+- **Public signup is disabled after the first account.** The first admin comes from the `openship` setup wizard; with `openship up --compose` (or raw Docker) you register the first account in the dashboard. Everyone after joins by invite.
 - **Invite teammates** from **Settings → Team**. They get an accept link at your instance's URL (so the instance needs to be reachable — a public URL or your LAN).
 - **Lost the admin password?** Run `openship reset-admin-password` on the box (no sign-in needed; uses the local internal token).
 

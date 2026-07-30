@@ -1,0 +1,173 @@
+{
+  "time": {
+    "secondsAgo": "{n}sn önce",
+    "minutesAgo": "{n}dk önce",
+    "hoursAgo": "{n}sa önce",
+    "daysAgo": "{n}g önce",
+    "monthsAgo": "{n}ay önce",
+    "yearsAgo": "{n}yıl önce"
+  },
+  "header": {
+    "title": "Dağıtımlar",
+    "loading": "Yükleniyor…",
+    "countProjectOne": "{count} dağıtım",
+    "countProjectOther": "{count} dağıtım",
+    "countAllOne": "{projects} projede toplam {deployments} dağıtım",
+    "countAllOther": "{projects} projede toplam {deployments} dağıtım"
+  },
+  "filters": {
+    "searchPlaceholder": "Dağıtımlarda ara...",
+    "all": "Tümü",
+    "success": "Başarılı",
+    "failed": "Başarısız",
+    "building": "Derleniyor",
+    "canceled": "İptal Edildi"
+  },
+  "projectFilter": {
+    "allProjects": "Tüm Projeler"
+  },
+  "sidebar": {
+    "overview": {
+      "title": "Genel Bakış",
+      "total": "Toplam",
+      "successful": "Başarılı",
+      "failed": "Başarısız",
+      "inProgress": "Devam Ediyor"
+    },
+    "autoDeploy": {
+      "title": "Otomatik Dağıtım",
+      "description": "Ana dalınıza (main branch) yapılan her push işleminde dağıtımların otomatik tetiklenmesi için otomatik dağıtımı etkinleştirin.",
+      "cta": "Proje ayarlarına git"
+    },
+    "getStarted": {
+      "title": "Başlarken",
+      "description": "İlk dağıtımınızı oluşturmak için bir Git deposunu içe aktarın veya bir şablon kullanın.",
+      "cta": "Bir proje dağıt"
+    },
+    "recent": {
+      "title": "Son İşlemler",
+      "empty": "Dağıtımlarınız burada görünecek",
+      "unknown": "Bilinmiyor"
+    }
+  },
+  "stats": {
+    "total": "Toplam",
+    "projectCountOne": "{count} proje",
+    "projectCountOther": "{count} proje",
+    "success": "Başarılı",
+    "failed": "Başarısız",
+    "inProgress": "Devam Ediyor",
+    "buildingNow": "şu an derleniyor"
+  },
+  "status": {
+    "deployed": "Dağıtıldı",
+    "failed": "Başarısız",
+    "canceled": "İptal Edildi",
+    "building": "Derleniyor",
+    "deploying": "Dağıtılıyor",
+    "partial": "Kısmi",
+    "rejected": "Reddedildi",
+    "verifying": "Doğrulanıyor",
+    "pending": "Beklemede"
+  },
+  "serviceStatus": {
+    "deployed": "Dağıtıldı",
+    "failed": "Başarısız",
+    "cancelled": "İptal Edildi",
+    "skipped": "Atlandı",
+    "building": "Derleniyor",
+    "deploying": "Dağıtılıyor",
+    "running": "Çalışıyor",
+    "removedOnHost": "Sunucuda kaldırıldı",
+    "verifying": "Doğrulanıyor",
+    "pending": "Beklemede"
+  },
+  "card": {
+    "unknownProject": "Bilinmeyen Proje",
+    "versionTitle": "Sürüm {version}",
+    "active": "Aktif",
+    "activeTitle": "Şu anda projeye hizmet veren dağıtım budur",
+    "pinned": "Sabitlendi",
+    "pinnedTitle": "Sabitlendi — saklama temizliğinden muaftır ve geri alma için süresiz olarak korunur.",
+    "snapshotted": "Anlık Görüntü Alındı",
+    "snapshottedTitle": "Arşivlendi — bu sürüme geri dönülebilir",
+    "manualDeploy": "Manuel dağıtım",
+    "serviceTitle": "{name}: {label}",
+    "serviceTitleReason": "{name}: {label} ({reason})"
+  },
+  "empty": {
+    "filtered": {
+      "title": "Dağıtım bulunamadı",
+      "description": "Filtrelerinizi ayarlamayı veya aramanızı temizlemeyi deneyin."
+    },
+    "none": {
+      "title": "Henüz dağıtım yapılmadı",
+      "description": "İlk projenizi dağıtın; derleme durumu, commit detayları ve performans metrikleriyle burada görünecektir.",
+      "deployButton": "Proje Dağıt",
+      "browseButton": "Şablonlara Göz At"
+    }
+  },
+  "modal": {
+    "title": "Commit Detayları",
+    "project": "Proje",
+    "unknownProject": "Bilinmeyen Proje",
+    "domain": "Alan Adı",
+    "noDomain": "Alan adı yok",
+    "status": "Durum",
+    "environment": "Ortam",
+    "statusName": {
+      "success": "Başarılı",
+      "failed": "Başarısız",
+      "building": "Derleniyor",
+      "deploying": "Dağıtılıyor",
+      "canceled": "İptal Edildi",
+      "pending": "Beklemede"
+    },
+    "changedFiles": "Değişen Dosyalar ({count})",
+    "fileTypes": {
+      "added": "+ Eklendi",
+      "modified": "~ Değiştirildi",
+      "removed": "- Kaldırıldı"
+    },
+    "viewOnGithub": "GitHub'da Görüntüle",
+    "visitSite": "Siteyi Ziyaret Et",
+    "manual": {
+      "title": "Manuel Dağıtım",
+      "description": "Bu dağıtım manuel olarak tetiklendi ve commit bilgisi içermiyor.",
+      "deploymentId": "Dağıtım ID",
+      "created": "Oluşturulma",
+      "type": "Tür",
+      "typeManual": "Manuel"
+    }
+  },
+  "menu": {
+    "openDeployment": "Dağıtımı Aç",
+    "viewRepository": "Depoyu Görüntüle",
+    "copyDomainUrl": "Alan Adı URL'sini Kopyala",
+    "copyBuildId": "Derleme ID'sini Kopyala",
+    "cancelDeployment": "Dağıtımı İptal Et",
+    "rollback": "Bu sürüme geri dön (Rollback)",
+    "rollbackTitle": {
+      "enabled": "Projeyi bu sürüme geri yükle (yalnızca kod — veriler değişmez)",
+      "active": "Bu zaten aktif olan sürümdür",
+      "pruned": "Geri alma arşivi temizlenmiş. Kaynaktan tekrar derlemek için 'Bu commit'i yeniden dağıt' seçeneğini kullanın.",
+      "notReady": "Yalnızca hazır durumdaki dağıtımlara geri dönülebilir"
+    },
+    "redeploy": "Bu commit'i yeniden dağıt",
+    "redeployTitle": "Bu commit'i kaynaktan tekrar derler. Geri almadan daha yavaştır ancak arşiv temizlendikten sonra da çalışır.",
+    "pin": "Sabitle",
+    "unpin": "Sabitlemeyi Kaldır",
+    "pinTitle": {
+      "pin": "Bu dağıtımı süresiz olarak geri alınabilir durumda tut (sınır: proje başına 10 sabitlenmiş dağıtım)",
+      "unpin": "Saklama sınırı aşıldığında bu dağıtımın temizlenmesine izin ver",
+      "pruned": "Sabitlenemiyor — arşiv zaten temizlenmiş"
+    },
+    "deleteDeployment": "Dağıtımı Sil",
+    "confirmRollback": "Bu sürüme geri dönülsün mü?\n\nBu işlem yalnızca uygulama kodunu geri alır. Veritabanı ve kalıcı depolama birimi verileri değişmez.",
+    "rollbackFailed": "Geri alma başarısız oldu",
+    "confirmRedeploy": "{hash} commit'i yeniden dağıtılsın mı?\n\nBu commit kaynaktan tekrar derlenir. Geri almaya göre daha yavaştır (tam derleme tekrar çalışır) ancak geri alma arşivi silinmiş olsa bile çalışır. Listede yeni bir dağıtım görünecektir.",
+    "redeployFailed": "Yeniden dağıtım başarısız oldu",
+    "pinFailed": "Dağıtım sabitlenemedi",
+    "unpinFailed": "Dağıtım sabitlemesi kaldırılamadı"
+  }
+}

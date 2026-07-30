@@ -38,6 +38,7 @@ function toAdvisory(n: {
   const advisory: Advisory = {
     id: n.id,
     severity: toSeverity(n.severity),
+    announce: false,
     affects: "*",
     title: n.title,
     message: n.message,

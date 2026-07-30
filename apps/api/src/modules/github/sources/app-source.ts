@@ -84,7 +84,12 @@ export class GitHubAppSource implements GitHubSource {
     return this.listInstallationRepos(owner);
   }
 
-  /** Install-scoped repo listing (the App's `/installation/repositories`). */
+  /** Install-scoped repo listing (the App's `/installation/repositories`).
+   *  Pages through the FULL set. GitHub caps `per_page` at 100 and reports the
+   *  real `total_count`; a single unpaged request silently dropped repos 101+
+   *  (so any "N repositories" count was an undercount of the true total). Loop
+   *  until the batch is short or we've collected `total_count`, with a hard
+   *  page cap so a misbehaving upstream can never spin forever. */
   private async listInstallationRepos(
     owner: string,
     installationId?: number,
@@ -93,11 +98,28 @@ export class GitHubAppSource implements GitHubSource {
       () => null,
     );
     if (!token) return [];
-    const data = await ghFetch<{ repositories: GitHubRepository[] }>(token, {
-      url: "https://api.github.com/installation/repositories",
-      params: { per_page: 100 },
-    });
-    return mapRepositories(data.repositories ?? []).map((r) => ({
+    const perPage = 100;
+    const MAX_PAGES = 50; // 5000 repos — a safety backstop, never a real limit
+    const collected: GitHubRepository[] = [];
+    let total = Infinity;
+    for (let page = 1; collected.length < total && page <= MAX_PAGES; page++) {
+      const data = await ghFetch<{ total_count?: number; repositories: GitHubRepository[] }>(
+        token,
+        {
+          url: "https://api.github.com/installation/repositories",
+          params: { per_page: perPage, page },
+        },
+      );
+      const batch = data.repositories ?? [];
+      collected.push(...batch);
+      // Keep `total` at Infinity when total_count is absent — otherwise a full
+      // first page would set total=100 and the loop guard (collected < total)
+      // would exit before the short-batch break, silently dropping repos 101+.
+      // With Infinity, termination falls to the short-batch break / MAX_PAGES.
+      total = data.total_count ?? total;
+      if (batch.length < perPage) break; // last page
+    }
+    return mapRepositories(collected).map((r) => ({
       ...r,
       source: "app" as const,
     }));

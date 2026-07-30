@@ -21,7 +21,7 @@ import { getToken } from "../lib/config";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
 
-const INSTALLABLE = ["docker", "git", "openresty", "certbot", "rsync"] as const;
+const INSTALLABLE = ["docker", "git", "edge", "rsync"] as const;
 
 /**
  * Wrap a subcommand action: require a token, enforce self-host, and turn any

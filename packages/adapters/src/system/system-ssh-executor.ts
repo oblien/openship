@@ -276,6 +276,10 @@ export class SystemSshExecutor implements CommandExecutor {
     }
   }
 
+  async rename(from: string, to: string): Promise<void> {
+    await this.exec(`mv ${sq(from)} ${sq(to)}`);
+  }
+
   async readFile(path: string): Promise<string> {
     const res = await this.runSsh(`cat ${sq(path)}`);
     if (res.code !== 0) {

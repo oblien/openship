@@ -62,15 +62,17 @@ are per rolling minute.
 
 | Policy | Limit | Keyed by | Applies to |
 |---|---|---|---|
-| `default-anon` | 100 / min | IP | Any unauthenticated route |
-| `default-authed` | 600 / min | user | Any authenticated route |
-| `auth-tight` | 10 / min | IP | `POST /api/auth/*` (login, signup, reset) |
+| `default-anon` | 300 / min | IP | Any unauthenticated route |
+| `default-authed` | 3000 / min | user | Any authenticated route |
+| `auth-tight` | 10 / min | IP | `POST /api/auth/*` (login, signup, reset) and self-host invite signup |
 | `mcp` | 300 / min | IP | `/api/mcp` (tool-call bursts) |
 | `webhook-ingress` | 120 / min | source IP | Inbound webhook deliveries |
 | `billing-portal` | 20 / min | org | Stripe portal / checkout creation |
 
 Every response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`. `/api/health` is
-never limited (load balancers and SSR poll it).
+never limited (load balancers and SSR poll it). On a self-hosted instance with neither `TRUST_PROXY` nor
+`OPENSHIP_PUBLIC_URL` set, requests arriving over loopback skip the ordinary limits — the `auth-tight` login
+gate always enforces.
 
 <Callout title="429 — Too many requests" type="warn">
 When a bucket is exhausted the request gets a `429` with body `{"error":"Too many requests"}` plus a
@@ -118,6 +120,9 @@ route set by mode.
 | `/api/backup-destinations` | Backup targets, policies, schedules | Both |
 | `/api/notifications` | Channels, subscriptions, deliveries | Both |
 | `/api/audit` | Organization audit log | Both |
+| `/api/apps` | One-click app catalog and installer | Both |
+| `/api/updates` | Update status for apps, projects, self-app, webmail | Both |
+| `/api/notices` | Platform status notices (public read, operator push) | Both |
 | `/api/settings` | Workspace / deploy defaults | Both |
 | `/api/tokens` | Personal access tokens | Both |
 | `/api/permissions` | Roles and resource grants | Both |
@@ -126,6 +131,7 @@ route set by mode.
 | `/api/images` | Container image helpers | Both |
 | `/api/services/terminal` | Interactive service terminal (WebSocket) | Both |
 | `/api/cloud` | Cloud account link / gateway | Both (SaaS vs local route set) |
+| `/api/jobs` | Scheduled jobs, runs, triggers | Self-hosted only |
 | `/api/system` | Filesystem browse, instance setup, provisioning | Self-hosted only |
 | `/api/mail` | Self-hosted mail server wizard | Self-hosted only |
 | `/api/migration` | Adopt an existing Docker host | Self-hosted only |

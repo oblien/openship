@@ -37,6 +37,10 @@ export const domainsApi = {
   previewRecords: (hostname: string) =>
     api.post<{ data: DomainDnsRecords }>(endpoints.domains.preview, { hostname }),
 
+  /** Remove a domain/route (DELETE /domains/:id). Drops the route + its edge
+   *  registration; the app/service keeps running. Used by the per-card ⋯ menu. */
+  remove: (domainId: string) => api.delete(endpoints.domains.byId(domainId)),
+
   /**
    * Re-run DNS verification for a domain.
    *

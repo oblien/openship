@@ -108,6 +108,9 @@ export const getSession = cache(async (): Promise<SessionData | null> => {
 export type DeploymentInfo = {
   selfHosted: boolean;
   deployMode: string;
+  /** True when OpenShip runs ON a server (self-hosted, non-desktop) — the host
+   *  is itself a deployable target, auto-registered as an isLocal server. */
+  isServerHost?: boolean;
   authMode: "cloud" | "local" | "none";
   cloudAuthUrl: string;
   cloudApiUrl: string;

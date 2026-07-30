@@ -15,15 +15,19 @@
  */
 
 import type { Context } from "hono";
+import type { ImportedSite, ManualCert } from "@repo/adapters";
 import { repos, db, schema, eq } from "@repo/db";
 import { SYSTEM, safeErrorMessage } from "@repo/core";
+import { sshManager } from "../../lib/ssh-manager";
 import { env } from "../../config";
-import { assertNotCloud } from "../../lib/controller-helpers";
+import { assertNotCloud, platform } from "../../lib/controller-helpers";
 import { ensureLocalUser } from "../../lib/local-user";
 import { createProject } from "../projects/project-crud.service";
 import { cloudClient } from "../../lib/cloud/client";
 import { getCloudConnectionStatusForOrg } from "../../lib/cloud/session";
+import { resolveEdgeTargetHost } from "../../lib/edge-target";
 import { ensureAdoptDeployment, provisionSelfAppEdge } from "../../lib/startup/self-deploy";
+import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
 import { refreshSelfAppPublicUrl } from "../../lib/public-url";
 import { streamSSE } from "../../lib/sse";
 import {
@@ -52,7 +56,7 @@ const APP_TEMPLATE_ID = "openship";
  * email lookup misses it and provisions a PHANTOM user + org the admin can't see.
  * Query the admin row directly to avoid that. Returns null on a box with no admin.
  */
-async function foundingAdminId(): Promise<string | null> {
+export async function foundingAdminId(): Promise<string | null> {
   const [admin] = await db
     .select({ id: schema.user.id })
     .from(schema.user)
@@ -127,7 +131,7 @@ export async function cloudConnect(c: Context) {
     const { exchangeCodeWithCloud, mirrorCloudUser, storeCloudSession } = await import(
       "../../lib/cloud-auth-proxy"
     );
-    const { clearAuthModeCache } = await import("../../lib/auth-mode");
+    const { clearAuthModeCache, isAuthModePinned } = await import("../../lib/auth-mode");
     const data = await exchangeCodeWithCloud(body.code, body.codeVerifier);
     if (!data) return c.json({ error: "Could not verify with Openship Cloud" }, 401);
     const email = (data.user as { email?: string | null }).email ?? null;
@@ -158,8 +162,18 @@ export async function cloudConnect(c: Context) {
     await storeCloudSession(userId, data.sessionToken);
     // Fresh box → local login becomes cloud-backed (passwordless). Reuse the
     // singleton upsert; clear the cached mode so the change takes effect now.
-    await repos.instanceSettings.upsert({ authMode: "cloud" });
-    clearAuthModeCache();
+    //
+    // Skipped when the launcher DECLARED the mode (OPENSHIP_AUTH_MODE). This line
+    // is where the desktop bug came from: desktop has no local admin by design
+    // (zero-auth auto-provisions), so foundingAdminId() returns null and every
+    // "connect Openship Cloud" from Settings fell through to here and converted a
+    // loopback-only app to remote login — with no way back short of wiping the
+    // local DB. Linking a cloud account must not change how you log in to a box
+    // whose login method was declared at launch.
+    if (!isAuthModePinned()) {
+      await repos.instanceSettings.upsert({ authMode: "cloud" });
+      clearAuthModeCache();
+    }
     return c.json({ ok: true, userId, organizationId: `org_${userId}`, email });
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 500);
@@ -184,6 +198,12 @@ export async function selfRegister(c: Context) {
     edgeTakeover?: boolean;
     /** User accepted migrating the existing proxy's sites before taking over. */
     edgeMigrate?: boolean;
+    /** Bare install: stand up a LOCAL host edge (OpenResty on :80) on this box.
+     *  A free domain's Cloud edge forwards to :80 here, so the box needs the
+     *  vhost + the same foreign-proxy takeover a custom domain does — just no
+     *  cert (Cloud terminates TLS). In compose the container edge owns :80, so
+     *  this is omitted and only the route is registered. */
+    localEdge?: boolean;
   }>().catch(() => ({}) as Record<string, never>);
 
   const domainType = body.domainType ?? "byo";
@@ -200,18 +220,30 @@ export async function selfRegister(c: Context) {
     const slug = (body.slug ?? "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "");
     if (!slug) return c.json({ error: "slug is required for a free domain" }, 400);
     const hostname = `${slug}.${SYSTEM.DOMAINS.CLOUD_DOMAIN}`;
-    // Bare host/IP — strip any scheme/path the caller may have included.
-    const host = (body.publicHost || env.SERVER_IP || "")
-      .trim()
-      .replace(/^https?:\/\//i, "")
-      .replace(/\/.*$/, "");
+    // SAME resolver the deployed-app free subdomains use (managed-edge-proxy →
+    // resolveEdgeTargetHost), with the operator's `--public-url` host as the first
+    // candidate. Not a local copy of the rules: this path having its own notion of a
+    // valid target — none at all, in fact — is exactly how it came to wire
+    // `<slug>.opsh.io` at itself while the deploy path was guarded.
+    const { host, reason } = await resolveEdgeTargetHost(organizationId, {
+      preferHost: body.publicHost,
+    });
     if (!host) {
-      return c.json({ error: "Could not resolve this server's public address for the edge proxy" }, 400);
+      return c.json({ error: `Cannot route ${hostname} to this box: ${reason}` }, 400);
     }
-    // Oblien's edge validates `target` as a full URL (not `host:port`) and
-    // terminates TLS itself, forwarding to the origin box over plain HTTP on the
-    // dashboard port.
-    const target = `http://${host}:${dashPort}`;
+    // Bare public host — the SAME shape `managed-edge-proxy` sends for a deployed
+    // app's free subdomain (the shipped, proven path), and what the SaaS handler
+    // documents ("slug + target IP"). It schemes it to `http://<host>` itself, so
+    // Oblien always proxies to :80 = OUR EDGE.
+    //
+    // NOT `:${dashPort}`: pointing Cloud straight at :3001 meant the free domain
+    // only worked with that port open to the internet, put the dashboard on a
+    // public port in plain HTTP (bypassable — anyone hitting <ip>:3001 skipped the
+    // edge, its TLS, rate limits and rules), and left the local edge with no vhost
+    // for the hostname at all, so every request fell to default_server. Now the box
+    // needs nothing but :80/:443, and a free domain routes exactly like a custom
+    // one: through the edge, matched on Host, to the dashboard on loopback.
+    const target = host;
     try {
       const result = await cloudClient({ organizationId }).edgeProxy.sync({ slug, target });
       if (!result) {
@@ -223,8 +255,10 @@ export async function selfRegister(c: Context) {
     } catch (err) {
       return c.json({ error: safeErrorMessage(err) }, 502);
     }
-    // Oblien's edge terminates TLS for *.opsh.io and forwards to the box, so the
-    // domain is live + secured the moment the proxy syncs.
+    // Oblien's edge terminates TLS for *.opsh.io, so the domain is secured the
+    // moment the proxy syncs — but it forwards to :80 here, which is OUR edge, so
+    // the edge also needs a vhost for this hostname or every request lands on
+    // default_server and 404s.
     await repos.domain.findOrCreate({
       projectId,
       hostname,
@@ -235,6 +269,56 @@ export async function selfRegister(c: Context) {
       status: "active",
       sslStatus: "active",
     });
+    // Bare install: Cloud forwards to :80 on THIS box, so it needs a local edge
+    // (OpenResty) listening there — and if a foreign proxy already holds :80, the
+    // same takeover/migrate a custom domain runs. This is the SAME provisioner,
+    // minus the cert (Cloud terminates TLS). Streamed like the custom path so the
+    // wizard shows install/takeover progress. Skipping this is exactly why a bare
+    // free box with a foreign proxy on :80 resolved and then 404'd.
+    if (body.localEdge) {
+      const session = createSetupSession(
+        [
+          { name: "edge", label: "Install the edge (80/443)" },
+          { name: "route", label: "Route domain to Openship" },
+        ],
+        "self",
+      );
+      void provisionSelfAppEdge(
+        projectId,
+        hostname,
+        dashPort,
+        {
+          onLog: (message, level) => appendSetupLog(session.id, "edge", message, level),
+          onStep: (step, status) => updateComponentProgress(session.id, step, status),
+        },
+        // No cert step: the row above is `domainType: "free"`, so both the
+        // provisioner and manageDomainSsl skip issuance (tlsIssuedElsewhere) —
+        // Cloud terminates TLS for *.opsh.io.
+        { edgeTakeover: body.edgeTakeover === true, edgeMigrate: body.edgeMigrate === true },
+      )
+        .then(async (res) => {
+          await refreshSelfAppPublicUrl().catch(() => {});
+          finishSetupSession(session.id, res.verified ? "completed" : "failed");
+        })
+        .catch((err) => {
+          appendSetupLog(session.id, "edge", safeErrorMessage(err), "error");
+          finishSetupSession(session.id, "failed");
+        });
+      return c.json({ ok: true, url: `https://${hostname}`, hostname, sessionId: session.id });
+    }
+
+    // Compose (the container edge owns :80) or no host edge: just register the
+    // LOCAL route (plain :80 vhost — Cloud already terminated TLS). Best-effort
+    // like every routing step, but logged loudly: without it the domain resolves
+    // and then 404s, indistinguishable from a DNS problem to the operator.
+    const freshFree = await repos.project.findById(projectId);
+    if (freshFree) {
+      await reapplyProjectLiveRoutes(freshFree, [], { isSelfApp: true }).catch((err) =>
+        console.warn(
+          `[self-register] free domain ${hostname} registered with Cloud but the local edge route failed: ${safeErrorMessage(err)}`,
+        ),
+      );
+    }
     await refreshSelfAppPublicUrl().catch(() => {});
     return c.json({ ok: true, url: `https://${hostname}`, hostname });
   }
@@ -260,7 +344,7 @@ export async function selfRegister(c: Context) {
 
     const session = createSetupSession(
       [
-        { name: "openresty", label: "Install OpenResty + certbot" },
+        { name: "edge", label: "Install the edge" },
         { name: "route", label: "Route domain to Openship" },
         { name: "ssl", label: "Issue SSL certificate" },
       ],
@@ -332,20 +416,67 @@ export async function selfEdgePreflight(c: Context) {
   }
 
   try {
-    const { createExecutor, probeEdge, scanImportableSites, canImportProxy } = await import("@repo/adapters");
-    const executor = createExecutor();
-    const status = await probeEdge(executor);
-
-    // For a known, importable proxy, scan its sites so the CLI can offer migration.
-    let sites: unknown[] = [];
-    let warnings: string[] = [];
-    const proxy = status.occupants.find((o) => o.proxy)?.proxy;
-    if (status.classification === "known" && canImportProxy(proxy)) {
-      const scan = await scanImportableSites(executor, proxy!);
-      sites = scan.sites;
-      warnings = scan.warnings;
-    }
+    const { detectEdge, importSites } = await import("@repo/adapters");
+    // Host-op executor: LocalExecutor bare, SSH→host.docker.internal when
+    // containerized (OPENSHIP_HOST_SSH_* set). Inspecting the api container's
+    // own netns would return a wrong migrate/takeover prompt in docker mode.
+    // Pooled — this endpoint is polled by the CLI/wizard, and a per-call executor
+    // is what leaked sshd sessions until OOM (#291).
+    const { status, sites, warnings } = await sshManager.withHostExecutor(async (executor) => {
+      const detected = await detectEdge(executor);
+      // Scan the foreign proxy's sites (if importable) so the CLI can offer migration.
+      const scanned = await importSites(executor, detected);
+      return { status: detected, sites: scanned.sites, warnings: scanned.warnings };
+    });
     return c.json({ status, sites, warnings });
+  } catch (err) {
+    return c.json({ error: safeErrorMessage(err) }, 500);
+  }
+}
+
+/**
+ * POST /api/system/edge/import-sites — register sites parsed from a foreign proxy
+ * as routes on THIS box's CONTAINER edge (internal-token gated, docker-edge mode).
+ *
+ * `openship up` (compose) detects + stops the foreign proxy on the HOST and parses
+ * its vhosts BEFORE `docker compose up` (the host-net edge container can't bind
+ * :80/:443 otherwise, and it can't read the host filesystem). It then hands the
+ * parsed sites here — plus any cert PEMs it read host-side (`certPems`, keyed by
+ * the source cert path) — so we re-serve them through the container edge.
+ *
+ * No new routing machinery: we drive the SAME provider the deploy pipeline uses,
+ * resolved from the local platform (a `NginxProvider` on the `DockerEdgeExecutor`
+ * when `OPENSHIP_EDGE_MODE=docker`), via the shared `registerImportedSites`.
+ */
+export async function edgeImportSites(c: Context) {
+  const guard = assertNotCloud(c); if (guard) return guard;
+
+  let body: { sites?: unknown; certPems?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  if (!Array.isArray(body.sites)) return c.json({ error: "`sites` must be an array" }, 400);
+  const sites = body.sites as ImportedSite[];
+  if (sites.length === 0) return c.json({ registered: [], warnings: [] });
+
+  const certPems =
+    body.certPems && typeof body.certPems === "object"
+      ? (body.certPems as Record<string, ManualCert>)
+      : undefined;
+
+  try {
+    const { registerImportedSites } = await import("@repo/adapters");
+    const p = platform();
+    if (!p.executor) return c.json({ error: "This instance has no local edge to import into" }, 400);
+    const warnings: string[] = [];
+    const registered = await registerImportedSites(p.routing, p.ssl, p.executor, sites, {
+      certPems,
+      warnings,
+      onLog: (entry) => console.log(`[edge-import] ${entry.message}`),
+    });
+    return c.json({ registered, warnings });
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 500);
   }

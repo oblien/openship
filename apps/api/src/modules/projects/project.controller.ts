@@ -12,12 +12,15 @@ import { streamSSE } from "../../lib/sse";
 import { assertResourceInOrg, param } from "../../lib/controller-helpers";
 import { serviceKind } from "../../lib/deployable-service";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
+import { isLoopbackHost, isReservedLoopbackPort } from "../../lib/public-endpoints";
+import { buildUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import { getRequestContext } from "../../lib/request-context";
 import type { RequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
 import { audit, auditContextFrom } from "../../lib/audit";
 import * as projectService from "./project.service";
 import * as projectTeardown from "./project-teardown";
+import { getRouteStrategy } from "../settings/settings.service";
 import { checkProjectPorts } from "./port-check.service";
 import { checkProjectOutput } from "./output-check.service";
 import { AppError, safeErrorMessage } from "@repo/core";
@@ -38,24 +41,29 @@ import * as domainService from "../domains/domain.service";
 import * as prepareService from "../deployments/prepare.service";
 import { sshManager } from "../../lib/ssh-manager";
 import { env } from "../../config";
-import { sharedWebhookUrl, domainWebhookUrl } from "../../lib/public-url";
-import { resolveProjectTrafficSource, fetchMgmt, mgmtStream } from "../../lib/project-analytics";
+import { domainWebhookUrl } from "../../lib/public-url";
+import {
+  resolveProjectTrafficSource,
+  fetchMgmt,
+  mgmtStream,
+  probeMgmt,
+} from "../../lib/project-analytics";
 import { refreshProjectFaviconIfStale } from "../../lib/favicon-detector";
 import { getAdminOblienClient } from "../../lib/oblien-user-client";
 import { cloudClient } from "../../lib/cloud/client";
 import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
 import {
-  registerWebhook,
   updateWebhook,
   deleteWebhook,
   getWebhookStrategy,
   resolveWebhookStrategy,
   getAvailableStrategies,
   getRecentCommits,
-  getRepository,
+  resolveDefaultBranch,
   listBranches as listGitHubBranches,
 } from "../github/github.service";
 import { getInstallationIdByOrg, getInstallUrl } from "../github/github.auth";
+import { ensureSharedWebhook, findSharedWebhookId } from "./project-git-webhook";
 import { listProjectRouteRows, resolveProjectRouteState } from "../domains/project-route.service";
 
 // Track which servers have had Lua scripts deployed this session
@@ -364,6 +372,13 @@ export async function create(c: Context) {
   const ctx = getRequestContext(c);
   const { userId, organizationId } = ctx;
   const body = await c.req.json<TCreateProjectBody>();
+  // Seed the edge→app route strategy from the creator's default when the
+  // request didn't specify one. Only a non-"auto" default is written (auto is
+  // the schema default → loopback-port), so this is a no-op for most users.
+  if (body.routeStrategy === undefined) {
+    const routeDefault = await getRouteStrategy(userId).catch(() => "auto" as const);
+    if (routeDefault !== "auto") body.routeStrategy = routeDefault;
+  }
   const gitlabBaseUrl =
     body.gitProvider === "gitlab"
       ? await resolveUserGitlabBaseUrl(userId)
@@ -516,6 +531,10 @@ export async function remove(c: Context) {
     /* no body — fine */
   }
   const wipeVolumes = c.req.query("wipeVolumes") === "true" || bodyWipeVolumes === true;
+  // Record-only ("soft") delete: drop the Openship record, keep the server
+  // workload + data. Self-hosted only — teardownProject ignores it for a cloud
+  // project (the security boundary; this query flag is just the request).
+  const recordOnly = c.req.query("recordOnly") === "true";
 
   // Verify project exists in this org BEFORE the gate so we don't
   // leak "active work" details for a project that isn't ours.
@@ -602,6 +621,7 @@ export async function remove(c: Context) {
     force,
     forceOrphan,
     wipeVolumes,
+    recordOnly,
   });
 
   // Typed pre-step rejections short-circuit before we record a
@@ -649,9 +669,12 @@ export async function remove(c: Context) {
     after: {
       force,
       wipeVolumes,
+      recordOnly,
       ok: result.ok,
       rowDeleted: result.rowDeleted,
       steps: result.steps,
+      // Projects this app was unlinked from on the way out.
+      unlinkedProjectIds: [...new Set(result.unlinked.map((u) => u.projectId))],
     },
   });
 
@@ -665,6 +688,7 @@ export async function remove(c: Context) {
         message: "Project deleted, but some external cleanup failed",
         steps: result.steps,
         unrecoverable: result.unrecoverable,
+        unlinked: result.unlinked,
       },
       207,
     );
@@ -680,10 +704,14 @@ export async function remove(c: Context) {
       {
         ok: false,
         code: "PROJECT_TEARDOWN_FAILED",
-        canForceOrphan: true,
+        // forceOrphan only helps a resource-destroy failure — it records the leak
+        // for GC and drops the row. A failed unlink is a DB problem, so offering
+        // the storage-only escape there would just fail the same way.
+        canForceOrphan: result.unrecoverable.every((s) => s.step !== "unlink_consumers"),
         message: result.unrecoverable[0]?.error ?? "Teardown failed",
         steps: result.steps,
         unrecoverable: result.unrecoverable,
+        unlinked: result.unlinked,
       },
       409,
     );
@@ -697,6 +725,9 @@ export async function remove(c: Context) {
     // reclaim once the server is back. Drives the "will be cleaned up when the
     // server is reachable" toast. Empty on a fully-clean delete.
     orphaned: result.orphaned,
+    // Projects this app was linked into: they keep running, minus the injected
+    // env var, so their live container holds a dead value until the next deploy.
+    unlinked: result.unlinked,
   });
 }
 
@@ -1131,8 +1162,11 @@ export async function serverLogStreamToken(c: Context) {
 }
 
 /**
- * GET /projects/:id/server-logs/stream - SSE stream of HTTP request logs
- * from the OpenResty pipe_stream on the managed server.
+ * GET /projects/:id/server-logs/stream - SSE stream of HTTP request logs from the
+ * edge's pipe_stream on the managed server.
+ *
+ * The frames are the EDGE's (`event: request\ndata: …\n\n`) and are relayed
+ * byte-for-byte — nothing here re-frames them, or the browser drops events.
  *
  * Cloud projects use stream-token + direct edge connection instead.
  * Auto-deploys Lua scripts once per API session per server.
@@ -1172,15 +1206,33 @@ export async function serverLogStream(c: Context) {
       }
 
       const reqPath = `/logs/stream?domain=${encodeURIComponent(domain)}`;
-      const conn = await mgmtStream(serverId, reqPath);
+      // The transport either returns null (tunnel refused / mgmt answered non-2xx)
+      // or THROWS (no edge container on this box) — the throw used to escape here and
+      // kill the stream with no message at all, leaving the UI on a bare
+      // "connection lost".
+      let conn: Awaited<ReturnType<typeof mgmtStream>> = null;
+      let failure = "";
+      try {
+        conn = await mgmtStream(serverId, reqPath);
+      } catch (err) {
+        failure = safeErrorMessage(err);
+      }
       if (!conn) {
+        // Distinguish "the edge isn't answering at all" from "the edge is up but
+        // refused this request" (a blank/unknown domain makes pipe_stream.lua 400,
+        // which the transport reports the same way as a dead port). One extra probe,
+        // only on the failure path, turns an unactionable message into a diagnosis.
+        // Names the EDGE, not OpenResty: on a container install the operator has an
+        // `openship-edge` container, and no `openresty` service to go looking for.
+        const edgeUp = !failure && (await probeMgmt(serverId).catch(() => false));
+        const error = edgeUp
+          ? `The Openship edge is running but refused the log stream for ${domain}. ` +
+            `Check that this domain is routed through the edge, then retry.`
+          : `Couldn't reach the Openship edge's log service on this server` +
+            `${failure ? `: ${failure}` : ""}. Make sure the edge is running (\`docker ps\` should ` +
+            `show openship-edge) and redeploy the routing if it isn't.`;
         await sseStream
-          .writeSSE({
-            event: "error",
-            data: JSON.stringify({
-              error: "Failed to connect to log service - ensure OpenResty is running",
-            }),
-          })
+          .writeSSE({ event: "error", data: JSON.stringify({ error }) })
           .catch(() => {});
         return;
       }
@@ -1303,8 +1355,7 @@ export async function getGitInfo(c: Context) {
 
   let branch = info.gitBranch ?? "";
   if (!branch && info.gitOwner && info.gitRepo) {
-    const repository = await getRepository(ctx, info.gitOwner, info.gitRepo);
-    branch = repository.default_branch;
+    branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
   }
   const commits = branch
     ? await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
@@ -1365,10 +1416,9 @@ export async function listBranches(c: Context) {
  */
 export async function linkRepo(c: Context) {
   const ctx = getRequestContext(c);
-  const userId = ctx.userId;
-  const organizationId = ctx.organizationId;
+  const { userId, organizationId } = ctx;
   const id = param(c, "id");
-  await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: id, action: "write" });
+  await permission.assert(ctx, { resourceType: "project", resourceId: id, action: "write" });
   const body = await c.req.json<{
     owner: string;
     repo: string;
@@ -1380,18 +1430,13 @@ export async function linkRepo(c: Context) {
   const { owner, repo, branch, installationId, gitUrl: bodyGitUrl } = body;
   const provider = body.provider === "gitlab" ? "gitlab" : "github";
 
-  if (!owner?.trim() || !repo?.trim()) {
-    return c.json({ success: false, error: "owner and repo are required" }, 400);
-  }
-
-  const project = await repos.project.findById(id);
-  try {
-    assertResourceInOrg(project, "Project", organizationId, id);
-  } catch {
-    return c.json({ error: "Project not found" }, 404);
-  }
-
   if (provider === "gitlab") {
+    const project = await repos.project.findById(id);
+    try {
+      assertResourceInOrg(project, "Project", organizationId, id);
+    } catch {
+      return c.json({ error: "Project not found" }, 404);
+    }
     return linkGitlabRepo(c, {
       ctx,
       userId,
@@ -1406,108 +1451,49 @@ export async function linkRepo(c: Context) {
     });
   }
 
-  // Update git fields on the project
-  const gitUrl = `https://github.com/${owner}/${repo}.git`;
-  const defaultBranch = branch?.trim() || (await getRepository(ctx, owner, repo)).default_branch;
-
-  const gitFields: Record<string, unknown> = {
-    gitProvider: "github",
-    gitOwner: owner,
-    gitRepo: repo,
-    gitBranch: defaultBranch,
-    gitUrl,
-  };
-
-  const strategy = await resolveWebhookStrategy(project);
-
-  if (strategy === "app") {
-    // Cloud mode - verify the GitHub App is installed for this owner
-    const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
-    if (!resolvedInstId) {
+  const result = await projectService.linkProjectRepo(ctx, id, {
+    owner,
+    repo,
+    branch,
+    installationId,
+  });
+  if (!result.ok) {
+    if (result.code === "not_found") return c.json({ error: "Project not found" }, 404);
+    if (result.code === "app_not_installed") {
       return c.json(
         {
           success: false,
           error: "GitHub App is not installed for this account",
-          install_url: getInstallUrl(),
-          owner,
+          install_url: result.installUrl,
+          owner: result.owner,
         },
         400,
       );
     }
-    gitFields.installationId = resolvedInstId;
-    gitFields.autoDeploy = true;
-  } else if (strategy === "domain") {
-    // User has a verified domain for webhooks → direct delivery
-    // strategy === "domain" ⟹ webhookDomain is set (resolveWebhookStrategy).
-    const webhookUrl = domainWebhookUrl(project.webhookDomain!);
-    try {
-      const wh = await registerWebhook(ctx, owner, repo, webhookUrl, { projectId: project.id });
-      if (wh.hookId) gitFields.webhookId = wh.hookId;
-      gitFields.autoDeploy = true;
-    } catch {
-      // Link succeeds without auto-deploy - user can enable later
-    }
-  } else if (strategy === "repo") {
-    // Self-hosted with a public URL - create a repo-level push webhook.
-    let webhookId: number | null = null;
-    try {
-      const result = await registerWebhook(ctx, owner, repo, undefined, { projectId: project.id });
-      webhookId = result.hookId;
-      gitFields.webhookId = webhookId;
-      gitFields.autoDeploy = !!webhookId;
-    } catch {
-      // Webhook registration failed - link still succeeds, just no auto-deploy
-    }
-  }
-  // strategy === "none": no webhook path is available for this instance yet
-
-  await repos.project.update(id, gitFields);
-  if (project.groupId) {
-    await repos.projectGroup.update(project.groupId, {
-      gitProvider: "github",
-      gitOwner: owner,
-      gitRepo: repo,
-      gitUrl,
-      installationId: (gitFields.installationId as number | undefined) ?? installationId,
-    });
-
-    const sharedGitFields = {
-      gitProvider: "github",
-      gitOwner: owner,
-      gitRepo: repo,
-      gitUrl,
-      installationId: (gitFields.installationId as number | undefined) ?? installationId,
-      ...(typeof gitFields.webhookId === "number" ? { webhookId: gitFields.webhookId } : {}),
-    };
-    const siblings = await repos.project.listByGroup(project.groupId);
-    await Promise.all(
-      siblings
-        .filter((sibling) => sibling.id !== id)
-        .map((sibling) => repos.project.update(sibling.id, sharedGitFields)),
-    );
+    return c.json({ success: false, error: result.message }, 400);
   }
 
-  audit.recordAsync(auditContextFrom(c, organizationId, userId), {
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "project.updated",
     resourceType: "project",
     resourceId: id,
     after: {
       action: "git.linked",
-      gitOwner: owner,
-      gitRepo: repo,
-      gitBranch: defaultBranch,
-      webhookStrategy: strategy,
-      autoDeploy: !!gitFields.autoDeploy,
+      gitOwner: result.owner,
+      gitRepo: result.repo,
+      gitBranch: result.branch,
+      webhookStrategy: result.strategy,
+      autoDeploy: result.autoDeploy,
     },
   });
 
   return c.json({
     success: true,
-    owner,
-    repo,
-    branch: defaultBranch,
-    webhook_strategy: strategy,
-    auto_deploy: !!gitFields.autoDeploy,
+    owner: result.owner,
+    repo: result.repo,
+    branch: result.branch,
+    webhook_strategy: result.strategy,
+    auto_deploy: result.autoDeploy,
   });
 }
 
@@ -1638,58 +1624,6 @@ async function linkGitlabRepo(
     auto_deploy: !!gitFields.autoDeploy,
   });
 }
-
-async function listOrgRepoProjects(organizationId: string, owner: string, repo: string) {
-  const ownerKey = owner.toLowerCase();
-  const repoKey = repo.toLowerCase();
-  const projects = await repos.project.findByGitRepo(owner, repo, "github");
-  return projects.filter(
-    (p) =>
-      p.organizationId === organizationId &&
-      p.gitOwner?.toLowerCase() === ownerKey &&
-      p.gitRepo?.toLowerCase() === repoKey,
-  );
-}
-
-async function findSharedWebhookId(organizationId: string, owner: string, repo: string) {
-  const projects = await listOrgRepoProjects(organizationId, owner, repo);
-  return projects.find((p) => typeof p.webhookId === "number")?.webhookId ?? null;
-}
-
-async function syncSharedWebhookId(organizationId: string, owner: string, repo: string, webhookId: number) {
-  const projects = await listOrgRepoProjects(organizationId, owner, repo);
-  await Promise.all(
-    projects
-      .filter((p) => p.webhookId !== webhookId)
-      .map((p) => repos.project.update(p.id, { webhookId })),
-  );
-}
-
-async function ensureSharedWebhook(
-  ctx: import("../../lib/request-context").RequestContext,
-  project: Project,
-  owner: string,
-  repo: string,
-  webhookUrl?: string,
-) {
-  const existingHookId =
-    project.webhookId ?? (await findSharedWebhookId(project.organizationId, owner, repo));
-  const targetWebhookUrl = webhookUrl ?? sharedWebhookUrl();
-  const result = await registerWebhook(ctx, owner, repo, targetWebhookUrl, {
-    projectId: project.id,
-  });
-  if (!result.hookId) return null;
-
-  if (existingHookId && existingHookId !== result.hookId) {
-    await updateWebhook(ctx, owner, repo, existingHookId, {
-      active: false,
-    }).catch(() => undefined);
-  }
-
-  await syncSharedWebhookId(project.organizationId, owner, repo, result.hookId);
-  return result.hookId;
-}
-
 async function disableSharedWebhookIfUnused(
   ctx: RequestContext,
   organizationId: string,
@@ -1984,6 +1918,7 @@ async function reRegisterDomainRoute(
     cloudWorkspaceId: string | null;
     organizationId: string;
     webhookDomain: string | null;
+    routeStrategy: string | null;
   },
   hostname: string,
   enableWebhook: boolean,
@@ -2001,6 +1936,19 @@ async function reRegisterDomainRoute(
     if (!primarySvc?.ip) return;
 
     const port = primarySvc.hostPort?.toString() || project.port?.toString() || "3000";
+    const portNum = Number(port) || undefined;
+
+    // Never point a public webhook route at a reserved control-plane/mgmt port on
+    // the host loopback (admin API / dashboard / unauthenticated OpenResty mgmt
+    // 9145) — a member with a verified domain could otherwise proxy their vhost
+    // straight at an internal service. Mirrors resolveTargetUrl in
+    // project-route.service.ts.
+    if (isLoopbackHost(primarySvc.ip) && portNum !== undefined && isReservedLoopbackPort(portNum)) {
+      console.warn(
+        `[Webhook Domain] refusing reserved loopback upstream port ${portNum} for ${hostname}`,
+      );
+      return;
+    }
 
     // Single reused path (deployment-scoped self-hosted routing / cloud). The
     // webhook-proxy is forced on/off explicitly here because the project row's
@@ -2010,8 +1958,14 @@ async function reRegisterDomainRoute(
       registers: [
         {
           hostname,
-          targetUrl: `http://${primarySvc.ip}:${port}`,
-          port: Number(port) || undefined,
+          targetUrl:
+            buildUpstreamUrl({
+              strategy: resolveRouteStrategy(project.routeStrategy),
+              ip: primarySvc.ip,
+              hostPort: primarySvc.hostPort ?? undefined,
+              containerPort: project.port ?? portNum ?? 3000,
+            }) ?? `http://${primarySvc.ip}:${port}`,
+          port: portNum,
           isCustomDomain: false,
           webhook: enableWebhook,
         },
@@ -2294,6 +2248,7 @@ export async function connectDomain(c: Context) {
       hostname: body.domain.trim(),
       isPrimary: true,
       externalIngress: body.externalIngress ?? false,
+      includeWww: body.includeWww ?? false,
     });
 
     audit.recordAsync(auditContextFrom(c, organizationId, userId), {

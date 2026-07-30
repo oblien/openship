@@ -29,6 +29,27 @@ export interface AuthWindowHandle {
 /** Factory function signature - consumers only see this. */
 export type WindowOpenerFn = (initialUrl?: string) => AuthWindowHandle;
 
+/**
+ * Close the current browser auth popup after a successful callback.
+ *
+ * OAuth providers may apply Cross-Origin-Opener-Policy while the popup is on
+ * their origin. That deliberately clears `window.opener`, but the window is
+ * still script-opened and may close itself after it returns to our callback.
+ * Never gate this close on the opener reference.
+ */
+export function closeAuthWindowAfterSuccess(
+  delayMs = 600,
+  targetWindow: Pick<Window, "close"> = window,
+): void {
+  setTimeout(() => {
+    try {
+      targetWindow.close();
+    } catch {
+      /* window already closed / browser denied close */
+    }
+  }, delayMs);
+}
+
 /* ── Environment detection ────────────────────────────────────────── */
 
 function isElectron(): boolean {

@@ -11,7 +11,7 @@ import { getJobRunner } from "../../lib/job-runner";
 
 const PRUNE_JOB_ID = "github:webhook-event-prune";
 const PRUNE_CRON = "47 3 * * *";
-const RETENTION_DAYS = 7;
+const RETENTION_DAYS = 30; // webhook_delivery is a history feed, not just a dedup window
 
 export async function scheduleWebhookEventPrune(): Promise<void> {
   const runner = await getJobRunner();
@@ -21,7 +21,7 @@ export async function scheduleWebhookEventPrune(): Promise<void> {
     onTick: async () => {
       try {
         const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000);
-        const deleted = await repos.githubWebhookEvent.pruneOlderThan(cutoff);
+        const deleted = await repos.webhookDelivery.pruneOlderThan(cutoff);
         if (deleted > 0) {
           console.log(`[webhook-event-prune] deleted ${deleted} row(s) older than ${RETENTION_DAYS}d`);
         }

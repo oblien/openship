@@ -29,6 +29,12 @@ export const AddDomainBody = Type.Object({
   /** Externally-managed ingress + TLS (Cloudflare Tunnel, LB): verify via TXT
    *  only, skip certbot, serve plain HTTP. Domain need not resolve to the box. */
   externalIngress: Type.Optional(Type.Boolean({ default: false })),
+  /**
+   * Also claim `www.<hostname>`. Creates a SECOND pending domain row — the SSL
+   * layer's own `includeWww` only ever acted on an existing verified www ROW, so
+   * without this the toggle was a no-op end to end (issue #289).
+   */
+  includeWww: Type.Optional(Type.Boolean({ default: false })),
 });
 
 /** Operator-supplied certificate (BYO / Cloudflare Origin CA) to install for a
@@ -36,6 +42,11 @@ export const AddDomainBody = Type.Object({
 export const UploadCertBody = Type.Object({
   certPem: Type.String({ minLength: 1, maxLength: 100_000 }),
   keyPem: Type.String({ minLength: 1, maxLength: 100_000 }),
+});
+
+/** POST /preview — side-effect-free DNS-records preview for a hostname. */
+export const PreviewDomainBody = Type.Object({
+  hostname: Type.String({ minLength: 1, maxLength: 253, description: "Hostname to preview DNS records for." }),
 });
 
 // ─── Inferred types ──────────────────────────────────────────────────────────

@@ -70,12 +70,49 @@ const envSchema = z.object({
   OPENSHIP_PUBLIC_URL: z.string().optional(),
 
   /**
+   * The origin THIS API is actually reachable at — used ONLY to construct
+   * absolute auth/OAuth URLs (discovery issuer, authorize, token) so external
+   * MCP clients get a reachable origin instead of the static `runtimeTarget.api`
+   * fallback. The desktop app runs the API on a dynamic loopback port and passes
+   * `http://127.0.0.1:<apiPort>` here.
+   *
+   * SECURITY: this is a URL-CONSTRUCTION signal only. Unlike OPENSHIP_PUBLIC_URL
+   * it must NEVER feed the zero-auth / auth-mode / cookie / trustedOrigins-security
+   * gates — that's the whole point (it lets desktop advertise a reachable origin
+   * WITHOUT tripping `zeroAuthAllowed`'s "publicly-served" rejection).
+   */
+  OPENSHIP_ADVERTISED_ORIGIN: z.string().optional(),
+
+  /**
    * Force login (no zero-auth) even in desktop DEPLOY_MODE. The CLI sets this
    * for every `openship up` — a CLI-managed instance always requires a real
    * admin account (created by the CLI's setup), unlike the Electron desktop app
    * which keeps loopback zero-auth. Presence, not value, is the signal.
    */
   OPENSHIP_REQUIRE_AUTH: envBool("false"),
+
+  /**
+   * The instance's auth mode, DECLARED by whoever launches the API. When set it is
+   * the ONLY source — `getAuthMode()` returns it without reading the DB, without a
+   * fallback, and without inferring anything from DEPLOY_MODE.
+   *
+   * This exists because authMode decides whether a request needs a login at all,
+   * and it used to be *inferred*: a mutable `instanceSettings.authMode` row on top
+   * of a `DEPLOY_MODE === "desktop" ? "none" : "local"` guess on top of a catch-all
+   * default. A single stale row was enough to send the loopback-only desktop app to
+   * a remote sign-in screen with no way back.
+   *
+   * `.optional()` with NO default is deliberate: unset means "not declared", which
+   * keeps the DB-backed path for self-hosted instances that legitimately change
+   * mode at runtime (bootstrap-admin, upgrade-to-auth). An invalid value fails the
+   * boot rather than quietly degrading — see the DEPLOY_MODE=desktop assertion
+   * further down.
+   *
+   * NOT a bypass: `zeroAuthAllowed()` still independently requires desktop (or an
+   * explicit OPENSHIP_ALLOW_ZERO_AUTH) AND a kernel-reported loopback peer, so
+   * declaring "none" on a network-reachable box grants nothing on its own.
+   */
+  OPENSHIP_AUTH_MODE: z.enum(["none", "local", "cloud"]).optional(),
 
   /**
    * Managed edge: at boot, install OpenResty + certbot on THIS machine and
@@ -91,6 +128,24 @@ const envSchema = z.object({
 
   /* ---------- Mode ---------- */
   CLOUD_MODE: envBool("false"),
+  /**
+   * MASTER switch for the whole Openship Cloud billing feature (subscriptions,
+   * top-ups, Stripe portal). OFF by default → the billing state reports
+   * `billing.status = "coming_soon"` and every Stripe-mutating endpoint fails
+   * closed with a `BILLING_NOT_ENABLED` 403. Flip to `true` on the SaaS to make
+   * billing live — no dashboard release, no self-hosted change (self-hosted +
+   * local proxy their billing to the cloud, so the cloud alone owns this flag).
+   * Reads (state, usage, plans) stay open regardless so the UI can render the
+   * "coming soon" surface and live usage/capacity.
+   */
+  BILLING_ENABLED: envBool("false"),
+  /**
+   * Sub-switch for one-time credit top-ups WITHIN billing. Top-ups are
+   * available only when BILLING_ENABLED is also on. OFF by default → the state
+   * reports `topups.status = "coming_soon"` and `POST /topup` fails closed with
+   * `BILLING_TOPUPS_NOT_ENABLED`. Lets subscriptions launch before top-ups.
+   */
+  BILLING_TOPUPS_ENABLED: envBool("false"),
   /**
    * Openship Cloud only: hard cap on projects per user (a cloud org maps 1:1
    * to its owning SaaS user, so per-org == per-user here). Enforced at project
@@ -142,6 +197,20 @@ const envSchema = z.object({
   /* ---------- OAuth Providers ---------- */
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
+  /**
+   * Client id used for the GitHub DEVICE flow (browser code + verification URL),
+   * when the operator has not registered their own OAuth app.
+   *
+   * Separate from GITHUB_CLIENT_ID on purpose: that one is the operator's OAuth
+   * app and needs a SECRET to complete a redirect flow. The device flow has no
+   * secret at all — the user's approval in their browser IS the credential — so a
+   * client id can ship publicly and still be safe. Without this, a fresh
+   * self-hosted instance had no in-UI GitHub login at all: it fell through to
+   * "SSH into the box and run `gh auth login`".
+   *
+   * @see DEVICE_FLOW_CLIENT_ID for the shipped default.
+   */
+  GITHUB_DEVICE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
 
@@ -202,6 +271,14 @@ const envSchema = z.object({
    * dev) regardless of this flag.
    */
   TRUST_PROXY: envBool("false"),
+  /**
+   * Allow outbound notification webhooks to target internal/loopback/LAN hosts.
+   * Default false → the SSRF guard (assertPublicUrl) runs on self-hosted too, so
+   * a member can't point a channel at 127.0.0.1 / metadata / the private network.
+   * Single-tenant self-hosts that intentionally notify a LAN endpoint can opt in.
+   * Ignored under CLOUD_MODE (multi-tenant always guards).
+   */
+  NOTIFY_WEBHOOK_ALLOW_INTERNAL: envBool("false"),
   /** Public IP of the server - used for A record instructions in self-hosted mode. */
   SERVER_IP: z.string().optional(),
   /**
@@ -382,6 +459,55 @@ if (env.DEPLOY_MODE !== "desktop" && !env.INTERNAL_TOKEN) {
   );
 }
 
+// ─── desktop must DECLARE its auth mode ───────────────────────────────────
+//
+// getAuthMode() no longer infers "none" from DEPLOY_MODE — the launcher says so.
+// If the desktop app ever spawned the API without declaring it, the unpinned path
+// would resolve "local" and present a login screen on a box that has no admin
+// account: an unrecoverable lockout. Fail at boot with something actionable
+// instead. Electron sets this in apps/desktop/src/main/services.ts, and the two
+// are built + packaged in one stage.ts run so they cannot drift apart in a real
+// install. NODE_ENV=test is exempt so unit tests can exercise the unpinned path.
+if (env.DEPLOY_MODE === "desktop" && !env.OPENSHIP_AUTH_MODE && env.NODE_ENV !== "test") {
+  throw new Error(
+    `OPENSHIP_AUTH_MODE is required when DEPLOY_MODE="desktop". ` +
+      `The launcher must declare the auth mode (the desktop app sets "none"); ` +
+      `it is no longer inferred from the deploy mode.`,
+  );
+}
+
+// ─── "desktop" belongs to Electron alone ──────────────────────────────────
+//
+// DEPLOY_MODE=desktop is a POSTURE, not a convenience: it relaxes the zero-auth
+// gate (zero-auth-guard.ts), makes INTERNAL_TOKEN optional (internal-auth.ts),
+// silences the zero-auth banner, and reports `isServerHost: false` so the
+// dashboard stops treating the box as a deploy target.
+//
+// The CLI used to claim it on a bare VPS install purely to get an in-process job
+// runner. The result: a server-host install that identified as a laptop — no
+// "This Server" row (its startup hook is gated on modes:["selfhosted"]), a deploy
+// wizard offering only Openship Cloud, and a relaxed auth posture on a networked
+// box. The job runner never needed it (Redis reachability decides that).
+//
+// Electron declares BOTH DEPLOY_MODE=desktop and OPENSHIP_LOCAL_DASHBOARD_URL (it
+// serves the dashboard on a dynamic loopback port and must tell the API where).
+// Nothing else does. So a `desktop` claim without it is a launcher bug: warn
+// loudly rather than refuse, since a refusal here would brick the desktop app if
+// that pairing ever changes, and zeroAuthAllowed() still independently requires a
+// kernel-reported loopback peer.
+if (
+  env.DEPLOY_MODE === "desktop" &&
+  !env.OPENSHIP_LOCAL_DASHBOARD_URL &&
+  env.NODE_ENV !== "test"
+) {
+  console.warn(
+    `[env] DEPLOY_MODE="desktop" but OPENSHIP_LOCAL_DASHBOARD_URL is unset — ` +
+      `"desktop" is for the Electron app only. A server install should declare ` +
+      `DEPLOY_MODE="bare" (host processes) or "docker" (compose); claiming desktop ` +
+      `relaxes the zero-auth + internal-token gates and hides this box as a deploy target.`,
+  );
+}
+
 // ─── gh CLI auth modes are forbidden on the SaaS host ─────────────────────
 //
 // The multi-tenant SaaS (CLOUD_MODE=true) has no operator `gh` CLI and must
@@ -444,6 +570,26 @@ if (env.OPENSHIP_PUBLIC_URL) {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(
       `OPENSHIP_PUBLIC_URL must use http or https (got "${parsed.protocol}" in "${raw}").`,
+    );
+  }
+}
+
+// ─── OPENSHIP_ADVERTISED_ORIGIN validation ────────────────────────────────
+// URL-construction only (see the field doc). Same fail-loud shape as
+// OPENSHIP_PUBLIC_URL so a malformed origin can't produce junk discovery URLs.
+if (env.OPENSHIP_ADVERTISED_ORIGIN) {
+  const raw = env.OPENSHIP_ADVERTISED_ORIGIN.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(
+      `OPENSHIP_ADVERTISED_ORIGIN="${raw}" is not a valid absolute URL (expected e.g. http://127.0.0.1:54777).`,
+    );
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(
+      `OPENSHIP_ADVERTISED_ORIGIN must use http or https (got "${parsed.protocol}" in "${raw}").`,
     );
   }
 }

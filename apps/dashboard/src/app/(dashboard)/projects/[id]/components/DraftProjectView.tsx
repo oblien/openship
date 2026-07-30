@@ -25,16 +25,7 @@
 
 import { useCallback, useEffect, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Rocket,
-  Settings,
-  Trash2,
-  Github,
-  FolderCode,
-  Boxes,
-  Loader2,
-  Info,
-} from "lucide-react";
+import { Rocket, Settings, Trash2, Github, FolderCode, Boxes, Loader2, Info } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { AppLogo } from "@/components/AppLogo";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
@@ -69,7 +60,6 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
   const router = useRouter();
 
   const [attemptCount, setAttemptCount] = useState(0);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const status = getProjectStatus(projectData);
@@ -114,13 +104,19 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
       router.push(`/deploy/${encodeLocalSlug(projectData.localPath)}?${params}`);
       return;
     }
-    // Repo-less app: hydrate the wizard from the project's saved service rows.
+    // A catalog app reopens its install wizard (adopting this draft) rather than
+    // the technical deploy wizard. Fall back to /deploy if the template id is
+    // somehow missing.
+    if (isApp && appTemplateId) {
+      router.push(`/apps/new/${appTemplateId}?projectId=${projectData.id}`);
+      return;
+    }
     if (isApp) {
       router.push(`/deploy/${encodeProjectSlug(projectData.id)}`);
       return;
     }
     setActiveTab("settings");
-  }, [projectData, hasRepoSource, hasLocalSource, isApp, router, setActiveTab]);
+  }, [projectData, hasRepoSource, hasLocalSource, isApp, appTemplateId, router, setActiveTab]);
 
   const heading =
     status === "failed"
@@ -129,9 +125,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
         ? t.projects.draft.headingCancelled
         : t.projects.draft.headingReady;
   const subtext =
-    status === "draft"
-      ? t.projects.draft.subtextDraft
-      : t.projects.draft.subtextOther;
+    status === "draft" ? t.projects.draft.subtextDraft : t.projects.draft.subtextOther;
 
   // Draft "Details" — the key facts a draft can carry before its first deploy.
   const info = projectData as {
@@ -157,7 +151,6 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
       await onDeleteProject();
     } finally {
       setDeleting(false);
-      setConfirmOpen(false);
     }
   };
 
@@ -211,15 +204,29 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
         </div>
 
         {/* Details — the draft's key facts (type, stack, where it'll run). */}
-        <SectionCard icon={Info} title={t.projects.draft.detailsTitle} description={t.projects.draft.detailsDescription}>
+        <SectionCard
+          icon={Info}
+          title={t.projects.draft.detailsTitle}
+          description={t.projects.draft.detailsDescription}
+        >
           <div className="space-y-3">
-            <InfoRow label={t.projects.draft.type} value={isApp ? t.projects.draft.typeApp : t.projects.draft.typeProject} />
+            <InfoRow
+              label={t.projects.draft.type}
+              value={isApp ? t.projects.draft.typeApp : t.projects.draft.typeProject}
+            />
             {projectData?.framework && (
               <InfoRow label={t.projects.draft.framework} value={String(projectData.framework)} />
             )}
-            <InfoRow label={t.projects.draft.target} value={hostingLabel ?? t.projects.draft.targetPending} />
-            {hasServiceFanout && <InfoRow label={t.projects.draft.services} value={String(info.serviceCount ?? "—")} />}
-            {info.createdAt && <InfoRow label={t.projects.draft.created} value={relativeTime(info.createdAt, t)} />}
+            <InfoRow
+              label={t.projects.draft.target}
+              value={hostingLabel ?? t.projects.draft.targetPending}
+            />
+            {hasServiceFanout && (
+              <InfoRow label={t.projects.draft.services} value={String(info.serviceCount ?? "—")} />
+            )}
+            {info.createdAt && (
+              <InfoRow label={t.projects.draft.created} value={relativeTime(info.createdAt, t)} />
+            )}
           </div>
         </SectionCard>
 
@@ -227,8 +234,15 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
             pristine draft (the hero already says "not deployed yet"). */}
         {attemptCount > 0 && (
           <div>
-            <h3 className="mb-3 px-1 text-[14px] font-semibold text-foreground">{t.projects.draft.attemptsTitle}</h3>
-            <DeploymentsContent projectId={id} projectName={projectData?.name} hideHeader hideSidebar />
+            <h3 className="mb-3 px-1 text-[14px] font-semibold text-foreground">
+              {t.projects.draft.attemptsTitle}
+            </h3>
+            <DeploymentsContent
+              projectId={id}
+              projectName={projectData?.name}
+              hideHeader
+              hideSidebar
+            />
           </div>
         )}
       </div>
@@ -242,18 +256,28 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
         >
           {isApp ? (
             <div className="space-y-2">
-              <InfoRow label={t.projects.draft.sourceTitle} value={t.projects.draft.managedImages} />
-              <p className="text-xs text-muted-foreground/70">{t.projects.draft.managedImagesText}</p>
+              <InfoRow
+                label={t.projects.draft.sourceTitle}
+                value={t.projects.draft.managedImages}
+              />
+              <p className="text-xs text-muted-foreground/70">
+                {t.projects.draft.managedImagesText}
+              </p>
             </div>
           ) : hasSource ? (
             <div className="space-y-3">
               {hasRepoSource && (
-                <InfoRow label={t.projects.draft.repository} value={`${projectData.gitOwner}/${projectData.gitRepo}`} />
+                <InfoRow
+                  label={t.projects.draft.repository}
+                  value={`${projectData.gitOwner}/${projectData.gitRepo}`}
+                />
               )}
               {hasRepoSource && projectData.gitBranch && (
                 <InfoRow label={t.projects.draft.branch} value={String(projectData.gitBranch)} />
               )}
-              {hasLocalSource && <InfoRow label={t.projects.draft.localPath} value={String(projectData.localPath)} />}
+              {hasLocalSource && (
+                <InfoRow label={t.projects.draft.localPath} value={String(projectData.localPath)} />
+              )}
               {projectData?.framework && (
                 <InfoRow label={t.projects.draft.framework} value={String(projectData.framework)} />
               )}
@@ -278,49 +302,48 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
           )}
         </SectionCard>
 
-        {/* Delete — de-emphasized. The section header owns the icon/title/
-            "can't be undone" copy; a single quiet trigger lives in the header's
-            action slot (right), escalating to a red confirm in the body only
-            when the user opts in — no duplicated "Delete project" row. */}
+        {/* Delete — always in its final state, no reveal step. A draft has no
+            workload to lose, and hiding Delete behind a quiet trigger only made
+            it take two clicks to bin an abandoned draft (which is most of what
+            this view is for).
+            Its counterpart is the constructive half of the same decision —
+            finish this draft, or drop it — so the pair reads as one fork rather
+            than a lone red button. That slot used to hold "Cancel", which had
+            nothing left to cancel once the confirm is permanent. */}
         <SectionCard
           icon={Trash2}
           title={t.projects.draft.deleteTitle}
           description={t.projects.draft.deleteDescription}
-          action={
-            confirmOpen ? undefined : (
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-foreground">
+              {t.projects.draft.deleteConfirmPrefix}{" "}
+              <span className="font-medium">{projectData?.name}</span>
+              {t.projects.draft.deleteConfirmSuffix}
+            </p>
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setConfirmOpen(true)}
-                className="inline-flex shrink-0 items-center rounded-xl border border-border/60 px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-danger/40 hover:text-danger"
+                onClick={handleDeploy}
+                disabled={deleting}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
               >
+                <Rocket className="size-4" />
+                {hasSource ? t.projects.draft.deployNow : t.projects.draft.connectSource}
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-danger-solid px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-50"
+              >
+                {deleting ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
                 {t.projects.draft.delete}
               </button>
-            )
-          }
-        >
-          {confirmOpen && (
-            <div className="space-y-3">
-              <p className="text-sm text-foreground">
-                {t.projects.draft.deleteConfirmPrefix} <span className="font-medium">{projectData?.name}</span>{t.projects.draft.deleteConfirmSuffix}
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setConfirmOpen(false)}
-                  disabled={deleting}
-                  className="flex-1 rounded-xl border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                >
-                  {t.projects.draft.cancel}
-                </button>
-                <button
-                  onClick={confirmDelete}
-                  disabled={deleting}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-danger-solid px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-50"
-                >
-                  {deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                  {t.projects.draft.delete}
-                </button>
-              </div>
             </div>
-          )}
+          </div>
         </SectionCard>
       </div>
     </div>

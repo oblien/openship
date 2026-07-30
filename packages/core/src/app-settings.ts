@@ -26,14 +26,22 @@ export interface AppSettingField {
   service: string;
   label: string;
   help?: string;
-  type: "text" | "password" | "boolean" | "select" | "number";
-  /** Choices for `type:"select"`. */
+  type: "text" | "password" | "boolean" | "select" | "number" | "multiselect" | "radio" | "textarea";
+  /** Choices for `type:"select"` / `"radio"` / `"multiselect"`. */
   options?: readonly AppSettingOption[];
+  /** Join char for a `type:"multiselect"` value in the stored env string (default ","). */
+  separator?: string;
   /** Bounds for `type:"number"` (inclusive). */
   min?: number;
   max?: number;
+  /** Step for a `type:"number"` input. */
+  step?: number;
   /** Require a whole number for `type:"number"`. */
   integer?: boolean;
+  /** Regex a `type:"text"|"textarea"|"password"` value must match (whole string). */
+  pattern?: string;
+  /** Message shown when `pattern` fails (else a generic one). */
+  patternError?: string;
   /** Effective value when the env key is unset. */
   default?: string;
   placeholder?: string;
@@ -52,6 +60,19 @@ export interface AppSettingField {
   installStep?: boolean;
   /** Must be non-empty before the app can be deployed (install-wizard gate). */
   required?: boolean;
+  /**
+   * Show this field only when another field's value matches — a SIMPLE
+   * equals/truthy check (never an expression / eval). `field` (+ optional
+   * `service`, defaults to this field's service) identifies the controlling
+   * field; `equals` matches a value or any in a list; `truthy` shows when the
+   * controlling value is non-empty / boolean-true.
+   */
+  showIf?: {
+    field: string;
+    service?: string;
+    equals?: string | readonly string[];
+    truthy?: boolean;
+  };
 }
 
 export interface AppSettingGroup {
@@ -106,15 +127,64 @@ export function validateSetting(field: AppSettingField, raw: string): string | n
     if (field.max != null && n > field.max) return `${field.label} must be at most ${field.max}`;
     return null;
   }
-  if (field.type === "select") {
+  if (field.type === "select" || field.type === "radio") {
     const allowed = (field.options ?? []).map((o) => o.value);
     if (!allowed.includes(raw)) return `${field.label} must be one of: ${allowed.join(", ")}`;
+    return null;
+  }
+  if (field.type === "multiselect") {
+    const allowed = new Set((field.options ?? []).map((o) => o.value));
+    const bad = splitMultiValue(field, raw).filter((t) => !allowed.has(t));
+    if (bad.length) return `${field.label}: unknown option(s) ${bad.join(", ")}`;
     return null;
   }
   if (field.type === "boolean") {
     if (raw !== settingTrueValue(field) && raw !== settingFalseValue(field)) {
       return `${field.label} must be a boolean`;
     }
+    return null;
+  }
+  // text / textarea / password
+  if (field.pattern) {
+    let re: RegExp | null = null;
+    try {
+      re = new RegExp(field.pattern);
+    } catch {
+      re = null; // a malformed author pattern never blocks the user
+    }
+    if (re && !re.test(raw)) return field.patternError ?? `${field.label} has an invalid format`;
   }
   return null;
+}
+
+/** Tokens of a `multiselect` env string (trimmed, empties dropped). */
+export function splitMultiValue(field: AppSettingField, raw: string): string[] {
+  return raw
+    .split(field.separator ?? ",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Evaluate a field's `showIf` against the current form values. No `showIf` ⇒
+ * always visible. Simple equals/truthy only (never eval). `get(service, key)`
+ * returns the current raw value of another field on the form.
+ */
+export function isFieldVisible(
+  field: AppSettingField,
+  get: (service: string, key: string) => string | boolean | undefined,
+): boolean {
+  const cond = field.showIf;
+  if (!cond) return true;
+  const cur = get(cond.service ?? field.service, cond.field);
+  if (cond.truthy !== undefined) {
+    const truthy = cur === true || (typeof cur === "string" && cur !== "" && cur !== "false");
+    return cond.truthy ? truthy : !truthy;
+  }
+  if (cond.equals !== undefined) {
+    const curStr = typeof cur === "boolean" ? String(cur) : (cur ?? "");
+    const list = Array.isArray(cond.equals) ? cond.equals : [cond.equals];
+    return list.includes(curStr);
+  }
+  return true;
 }

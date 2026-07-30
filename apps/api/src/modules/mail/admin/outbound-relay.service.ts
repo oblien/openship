@@ -189,6 +189,56 @@ function revertRelayDnsForDomain(records: PatchableRecords | null | undefined): 
 }
 
 /**
+ * Recompute the SES send-hop DNS across a whole mail-server state from a
+ * persisted `OutboundRelay` — SPF `include` + SES DKIM/MAIL FROM extras on every
+ * relayed domain (primary + additional), reverting the rest. Pure (no I/O).
+ *
+ * This is the SINGLE source of the relay→DNS mapping: `configureOutboundRelay`
+ * uses it after writing Postfix, and the DKIM-rebuild / domain-add hooks re-run
+ * it so a freshly rebuilt `dnsRecords` (which is otherwise self-host-only)
+ * doesn't silently drop the SES records. Idempotent — safe to re-apply.
+ */
+export function applyRelayToState(
+  state: MailServerState,
+  relay: OutboundRelay,
+): Pick<MailServerState, "dnsRecords" | "additionalDomains"> {
+  const primary = state.domain;
+  const additionalKeys = Object.keys(state.additionalDomains ?? {});
+  const scope = relay.scope === "selected" ? "selected" : "all";
+  const relayed = new Set(
+    scope === "all" ? [primary, ...additionalKeys] : (relay.domains ?? []),
+  );
+  const identityFor = (domain: string): RelayIdentity =>
+    domain === primary
+      ? { mailFromDomain: relay.mailFromDomain, sesDkim: relay.sesDkim }
+      : relay.identities?.[domain] ?? {};
+
+  const dnsRecords = relayed.has(primary)
+    ? applyRelayDnsForDomain(
+        { ...(state.dnsRecords ?? {}) } as PatchableRecords,
+        identityFor(primary),
+        relay.provider,
+        relay.region,
+      )
+    : revertRelayDnsForDomain(state.dnsRecords as PatchableRecords | null);
+
+  const additionalDomains = { ...(state.additionalDomains ?? {}) };
+  for (const d of additionalKeys) {
+    const entry = additionalDomains[d];
+    if (!entry) continue;
+    const patched = relayed.has(d)
+      ? applyRelayDnsForDomain(entry.records as unknown as PatchableRecords, identityFor(d), relay.provider, relay.region)
+      : revertRelayDnsForDomain(entry.records as unknown as PatchableRecords);
+    additionalDomains[d] = { ...entry, records: patched as unknown as typeof entry.records };
+  }
+
+  return {
+    dnsRecords: (dnsRecords ?? null) as MailServerState["dnsRecords"],
+    additionalDomains,
+  };
+}
+
+/**
  * Enable / update the outbound relay on the mail server. Idempotent —
  * re-running with new creds rewrites the map + reloads. Returns the updated
  * state (relay block masked-free is the caller's job via `getOutboundRelay`).
@@ -267,36 +317,9 @@ export async function configureOutboundRelay(
   };
 
   const next = await mutateState(exec, state.serverId, (s) => {
-    const primary = s.domain;
-    const additionalKeys = Object.keys(s.additionalDomains ?? {});
-    const relayed = new Set(scope === "all" ? [primary, ...additionalKeys] : (input.domains ?? []));
-    const identityFor = (domain: string): RelayIdentity =>
-      domain === primary
-        ? { mailFromDomain: input.mailFromDomain, sesDkim: input.sesDkim }
-        : input.identities?.[domain] ?? {};
-
-    // Primary domain (loose record map).
-    const dnsRecords = relayed.has(primary)
-      ? applyRelayDnsForDomain({ ...(s.dnsRecords ?? {}) } as PatchableRecords, identityFor(primary), input.provider, input.region)
-      : revertRelayDnsForDomain(s.dnsRecords as PatchableRecords | null);
-
-    // Additional domains (typed DnsRecordSet each).
-    const additionalDomains = { ...(s.additionalDomains ?? {}) };
-    for (const d of additionalKeys) {
-      const entry = additionalDomains[d];
-      if (!entry) continue;
-      const patched = relayed.has(d)
-        ? applyRelayDnsForDomain(entry.records as unknown as PatchableRecords, identityFor(d), input.provider, input.region)
-        : revertRelayDnsForDomain(entry.records as unknown as PatchableRecords);
-      additionalDomains[d] = { ...entry, records: patched as unknown as typeof entry.records };
-    }
-
-    return {
-      ...s,
-      outboundRelay: relay,
-      dnsRecords: (dnsRecords ?? null) as MailServerState["dnsRecords"],
-      additionalDomains,
-    };
+    // Single source of the relay→DNS mapping (see applyRelayToState).
+    const { dnsRecords, additionalDomains } = applyRelayToState(s, relay);
+    return { ...s, outboundRelay: relay, dnsRecords, additionalDomains };
   });
   if (!next) throw new Error("Failed to persist relay config.");
   return next;

@@ -43,6 +43,17 @@ export interface RouteRegister {
   hostname: string;
   /** Self-hosted upstream, e.g. `http://<ip>:<port>`. Required for self-hosted. */
   targetUrl?: string;
+  /**
+   * Serve this domain's `/` from FILES on the host instead of proxying to an
+   * upstream — `root <dir>; try_files $uri $uri/ /index.html;`.
+   *
+   * Mutually exclusive with `targetUrl`, and it composes with `proxyLocations`:
+   * `registerRoute` emits the extra path-prefix locations before `location /`, so a
+   * static frontend at `/` alongside a backend at `/api/` is ONE vhost with no web
+   * server of its own. Self-hosted only — Oblien runs the workload on cloud, so
+   * there is no host directory to serve and those keep a served container.
+   */
+  staticRoot?: string;
   /** Cloud target port (workspace expose / domains.connect). */
   port?: number;
   isCustomDomain: boolean;
@@ -139,9 +150,11 @@ export async function reconcileProjectRoutes(
   }
 
   for (const r of registers) {
-    if (!r.targetUrl) {
+    // A route serves `/` from ONE of two things: a host directory (static, files
+    // on disk) or an upstream. Neither → nothing to serve.
+    if (!r.staticRoot && !r.targetUrl) {
       console.warn(
-        `[route-apply] no upstream resolved for ${r.hostname} — route not applied (redeploy to re-sync)`,
+        `[route-apply] no upstream or static root resolved for ${r.hostname} — route not applied (redeploy to re-sync)`,
       );
       continue;
     }
@@ -150,7 +163,15 @@ export async function reconcileProjectRoutes(
       .registerRoute({
         domain: r.hostname,
         tls: true,
-        targetUrl: r.targetUrl,
+        // A custom domain's TLS is ours to terminate, so the edge must keep a :443
+        // listener up for it even before its cert exists — otherwise the origin
+        // refuses the handshake and a proxied domain shows Cloudflare 525 (#308).
+        // A free *.opsh.io host is fronted by Cloud's edge; not ours.
+        terminatesTlsLocally: r.isCustomDomain,
+        // staticRoot wins when present: it is the more specific instruction, and a
+        // caller that resolved a doc root has already decided this domain serves
+        // files. registerRoute keys off which one is set.
+        ...(r.staticRoot ? { staticRoot: r.staticRoot } : { targetUrl: r.targetUrl! }),
         ...(isWebhook ? { webhookProxy: webhookProxyTarget } : {}),
         ...(r.proxyLocations?.length ? { proxyLocations: r.proxyLocations } : {}),
         ...(r.redirects?.length ? { redirects: r.redirects } : {}),

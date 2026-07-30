@@ -82,9 +82,13 @@ never open it). Its summary line shows the current build location; expand it for
 - **Clone location** — for sandboxed/compose server deploys: **On your device** /
   **On Openship** (clone then upload; works everywhere) or **On the server** (clone on the
   server, no upload; best for big repos).
-- **Forward my git credentials** — desktop-only, Direct deploys: clone on the server using
-  your local `gh` identity instead of building and uploading. Nothing is stored on the
-  server.
+
+<Callout title="Forwarding your git identity is now a setting, not a per-deploy checkbox" type="info">
+The old per-deploy "Forward my git credentials" toggle has moved to a single per-operator switch —
+**Settings → Clone credentials → "Forward my git identity to build servers."** Turn it on once and every
+server clone uses your local `gh` over SSH (nothing stored on the server). See
+[Git authentication for private repos](/docs/guides/git-authentication) for the full clone-credential chain.
+</Callout>
 
 ### Save as default & Continue
 

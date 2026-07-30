@@ -63,7 +63,7 @@ export function RoutingConfigCard({
   const active = hasRoutingRules(draft);
 
   return (
-    <div className="rounded-2xl border border-border/50 bg-card sadwq">
+    <div className="rounded-2xl border border-border/50 bg-card">
       {/* Header doubles as the collapse toggle — the editor is advanced/optional
           so it stays tucked away until opened (or auto-opened when rules exist). */}
       <button

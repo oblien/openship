@@ -1,0 +1,13 @@
+/*
+ * Docs-only overrides layered on top of fumadocs-ui/style.css.
+ *
+ * Fumadocs ships Tailwind v4, whose preflight defaults interactive <button>s to
+ * `cursor: default` — so the sidebar's folder toggles and item rows (rendered as
+ * buttons/links) lose the pointer cursor and feel unclickable. Restore it for
+ * every interactive element inside the docs sidebar.
+ */
+#nd-sidebar a,
+#nd-sidebar button,
+#nd-sidebar [role="button"] {
+  cursor: pointer;
+}

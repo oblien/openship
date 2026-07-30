@@ -63,7 +63,9 @@ export function PersonalAccessTokens() {
   const openScopePicker = () => {
     let id = "";
     id = showModal({
-      maxWidth: "640px",
+      // Same wide shell as the member-grants editor — one row per resource with
+      // its permission chips inline (see ResourcePicker).
+      maxWidth: "min(94vw, 900px)",
       showCloseButton: false,
       customContent: (
         <GrantPickerModal

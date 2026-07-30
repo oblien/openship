@@ -208,7 +208,7 @@ jobs:
             asset: Openship-win32-x64.zip
           - os: ubuntu-latest
             label: Linux x64
-            find: "-name *.AppImage"
+            find: "-name *.AppImage -o -name *.deb -o -name *.rpm"
             asset: Openship.AppImage
           # GitHub-hosted native aarch64 runner → stage.ts derives arm64 from
           # process.arch, so the API bun --compile + the AppImage build are arm64.
@@ -265,21 +265,73 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          FILE="$(find apps/desktop/out/make -type f ${{ matrix.find }} | head -n1)"
-          if [[ -z "${FILE}" ]]; then
-            echo "No installer matched '${{ matrix.find }}' under apps/desktop/out/make"
+          mkdir -p dist
+          # Collect AppImage
+          APPIMAGE="$(find apps/desktop/out/make -type f -name '*.AppImage' | head -n1)"
+          if [[ -n "${APPIMAGE}" ]]; then
+            cp "${APPIMAGE}" "dist/${{ matrix.asset }}"
+            cd dist
+            if command -v shasum >/dev/null 2>&1; then
+              shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+            else
+              sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+            fi
+            cd ..
+          else
+            echo "::warning::No AppImage found"
+          fi
+          # Collect .deb
+          DEB="$(find apps/desktop/out/make -type f -name '*.deb' | head -n1)"
+          if [[ -n "${DEB}" ]]; then
+            cp "${DEB}" "dist/Openship.deb"
+            cd dist
+            if command -v shasum >/dev/null 2>&1; then
+              shasum -a 256 "Openship.deb" > "Openship.deb.sha256"
+            else
+              sha256sum "Openship.deb" > "Openship.deb.sha256"
+            fi
+            cd ..
+          else
+            echo "::warning::No .deb found"
+          fi
+          # Collect .rpm
+          RPM="$(find apps/desktop/out/make -type f -name '*.rpm' | head -n1)"
+          if [[ -n "${RPM}" ]]; then
+            cp "${RPM}" "dist/Openship.rpm"
+            cd dist
+            if command -v shasum >/dev/null 2>&1; then
+              shasum -a 256 "Openship.rpm" > "Openship.rpm.sha256"
+            else
+              sha256sum "Openship.rpm" > "Openship.rpm.sha256"
+            fi
+            cd ..
+          else
+            echo "::warning::No .rpm found"
+          fi
+          # Collect the Windows .zip (the primary asset on Windows — maker-zip
+          # emits out/make/zip/win32/x64/*.zip, which the AppImage/deb/rpm globs
+          # above never match). Guarded to the .zip target so a stray zip on a
+          # Linux runner is never mistaken for the AppImage asset.
+          if [[ "${{ matrix.asset }}" == *.zip ]]; then
+            ZIP="$(find apps/desktop/out/make -type f -name '*.zip' | head -n1)"
+            if [[ -n "${ZIP}" ]]; then
+              cp "${ZIP}" "dist/${{ matrix.asset }}"
+              cd dist
+              if command -v shasum >/dev/null 2>&1; then
+                shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+              else
+                sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+              fi
+              cd ..
+            else
+              echo "::warning::No .zip found"
+            fi
+          fi
+          # Fail if nothing was collected
+          if [[ -z "$(find dist -type f)" ]]; then
+            echo "No installers matched under apps/desktop/out/make"
             find apps/desktop/out/make -type f || true
             exit 1
-          fi
-          mkdir -p dist
-          cp "${FILE}" "dist/${{ matrix.asset }}"
-          # shasum exists on macOS/Linux but not the Windows Git-bash runner;
-          # sha256sum exists on Windows/Linux but not macOS. Use whichever is present.
-          cd dist
-          if command -v shasum >/dev/null 2>&1; then
-            shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
-          else
-            sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
           fi
 
       - name: Upload artifact
@@ -428,6 +480,19 @@ jobs:
   publish-npm:
     name: Publish CLI to npm
     runs-on: ubuntu-24.04
+    # npm is the ONE immutable artifact — a published version can never be
+    # replaced. So it must publish LAST, only after every other job in the
+    # release has succeeded (the `publish` job already depends on all the build
+    # jobs + emits the GitHub release). If any installer/image/release step
+    # fails, npm is NOT published, so the whole release can be fixed and re-run
+    # under the SAME version — no forced version bump, no npm-vs-installers
+    # mismatch. `always()` keeps the manual npm-only path working: on a
+    # workflow_dispatch the `publish` job is skipped (push-only), and we publish
+    # anyway; on a tag push we require `publish` to have succeeded.
+    needs: [publish]
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' || needs.publish.result == 'success')
     # OIDC trusted publishing: npm verifies this workflow's identity instead of
     # a long-lived token. id-token:write lets the runner mint the OIDC token.
     permissions:
@@ -471,15 +536,55 @@ jobs:
       - name: Build CLI
         run: bun run --cwd apps/cli build
 
+      # Gate: run the ACTUAL built bundle across node/bun/shebang/no-node and
+      # boot the real server. This is the last check before the IMMUTABLE npm
+      # publish, so a CLI that installs but can't launch (0.4.4 crash, #257
+      # boot, #261 shebang) fails the release under the SAME version instead of
+      # shipping. dist/ was just built above → skip its rebuild.
+      - name: Release smoke — built CLI launches + server boots
+        run: SMOKE_SKIP_BUILD=1 bash apps/cli/scripts/release-smoke.sh
+
       - name: Publish to npm (OIDC trusted publishing — no token)
         working-directory: apps/cli
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          # tsup bundles the @repo/* deps into dist/, so strip them from the
-          # published manifest — otherwise npm emits uninstallable workspace:*
-          # specifiers for packages that aren't on the registry.
-          npm pkg delete dependencies.@repo/core dependencies.@repo/onboarding
+          NAME="$(npm pkg get name | tr -d '"')"
+          VERSION="$(npm pkg get version | tr -d '"')"
+          # Idempotent re-release. npm versions are IMMUTABLE, so a re-run of a
+          # release whose CLI version is already published must SKIP npm rather
+          # than hard-fail — that's what lets a partial failure (a desktop
+          # installer, a Docker image, a GitHub release asset) be re-published
+          # for the SAME tag without the already-done npm step aborting the run.
+          if [ -n "$(npm view "${NAME}@${VERSION}" version 2>/dev/null || true)" ]; then
+            echo "::notice::${NAME}@${VERSION} already on npm — skipping publish (re-run of an existing release)."
+            exit 0
+          fi
+          # tsup bundles the @repo/* workspace packages into dist/, so they must
+          # NOT appear in the published manifest — a `workspace:*` specifier is
+          # uninstallable off the monorepo (bun/npm: "@repo/… failed to resolve").
+          # Strip EVERY workspace dependency generically: hard-coding the list
+          # once shipped a broken 0.4.1 that kept @repo/adapters. This can never
+          # silently miss a newly-added @repo/* again.
+          node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const stripped = [];
+            for (const k of Object.keys(p.dependencies || {})) {
+              if (String(p.dependencies[k]).startsWith("workspace:")) {
+                delete p.dependencies[k];
+                stripped.push(k);
+              }
+            }
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+            console.log("stripped workspace deps:", stripped.join(", ") || "(none)");
+          '
+          # Fail loudly if any workspace: specifier somehow survives — never ship
+          # an uninstallable package.
+          if grep -q '"workspace:' package.json; then
+            echo "::error::a workspace:* dependency survived the strip — refusing to publish an uninstallable package."
+            exit 1
+          fi
           # Prereleases (v1.2.3-rc.1) publish to the `next` dist-tag, not `latest`.
           if [[ "${TAG}" == *-* ]]; then
             npm publish --access public --tag next
@@ -533,16 +638,28 @@ jobs:
           if [[ "${TAG}" == *-* ]]; then
             PRERELEASE_FLAG="--prerelease"
           fi
-          gh release create "${TAG}" \
-            --title "Openship ${TAG}" \
-            --notes-from-tag \
-            ${PRERELEASE_FLAG} \
-            dist/openship-${TAG}-linux-amd64.tar.gz \
-            dist/openship-${TAG}-linux-amd64.tar.gz.sha256 \
-            dist/openship-email-${TAG}-linux-amd64.tar.gz \
-            dist/openship-email-${TAG}-linux-amd64.tar.gz.sha256 \
-            dist/openship-dashboard-${TAG}.tar.gz \
-            dist/openship-dashboard-${TAG}.tar.gz.sha256
+          CORE_ASSETS=(
+            "dist/openship-${TAG}-linux-amd64.tar.gz"
+            "dist/openship-${TAG}-linux-amd64.tar.gz.sha256"
+            "dist/openship-email-${TAG}-linux-amd64.tar.gz"
+            "dist/openship-email-${TAG}-linux-amd64.tar.gz.sha256"
+            "dist/openship-dashboard-${TAG}.tar.gz"
+            "dist/openship-dashboard-${TAG}.tar.gz.sha256"
+          )
+          # Idempotent: on a re-run the release already exists and `gh release
+          # create` would fail — re-upload the core assets with --clobber instead
+          # (matches the desktop-installer upload below), so a partial failure can
+          # be re-published for the SAME tag. Fresh tag → create it.
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "::notice::Release ${TAG} exists — re-uploading core assets (--clobber)."
+            gh release upload "${TAG}" "${CORE_ASSETS[@]}" --clobber
+          else
+            gh release create "${TAG}" \
+              --title "Openship ${TAG}" \
+              --notes-from-tag \
+              ${PRERELEASE_FLAG} \
+              "${CORE_ASSETS[@]}"
+          fi
 
       - name: Attach desktop installers
         env:
@@ -552,7 +669,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           # Upload whichever desktop installers built (fail-fast:false means a
           # single-OS failure shouldn't block the release).
-          for asset in Openship-arm64.dmg Openship-x64.dmg Openship-win32-x64.zip Openship.AppImage Openship-arm64.AppImage; do
+          for asset in Openship-arm64.dmg Openship-x64.dmg Openship-win32-x64.zip Openship.AppImage Openship-arm64.AppImage Openship.deb Openship.rpm; do
             if [[ -f "dist/${asset}" ]]; then
               gh release upload "${TAG}" "dist/${asset}" "dist/${asset}.sha256" --clobber
             else

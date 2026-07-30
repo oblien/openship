@@ -1,8 +1,10 @@
 import { serve } from "@hono/node-server";
-import { setBackupCredentialSecret } from "@repo/adapters";
+import { setBackupCredentialSecret, setDefaultEdgeImage } from "@repo/adapters";
+import { isDevWatchReload } from "@repo/db";
 import { app } from "./app";
 import { cloudRuntimeTarget, cloudRuntimeTargetId, env, runtimeTargetId } from "./config/env";
 import { getAuthMode } from "./lib/auth-mode";
+import { pinnedEdgeImage } from "./lib/edge-image";
 import { getJobRunner } from "./lib/job-runner";
 import { enforceRouteScanAtBoot } from "./lib/route-scanner";
 import { attachTunnelingLifecycle, type TunnelingLifecycle } from "./modules/tunneling";
@@ -17,6 +19,12 @@ const hostname = process.env.OPENSHIP_API_HOST?.trim() || undefined;
 // encrypts with (env applies the BETTER_AUTH_SECRET default; process.env may
 // not). Single source, no process.env mutation — see backup/common/credentials.
 setBackupCredentialSecret(env.BETTER_AUTH_SECRET);
+
+// Same pattern, same reason: adapters can't derive the pinned edge image (it comes
+// from APP_VERSION, i.e. apps/api/package.json), so declare it once here. Without
+// this, any edge install that forgot to pass the pin fell back to `:latest` and
+// could run edge Lua from a different build than the API driving it.
+setDefaultEdgeImage(pinnedEdgeImage());
 
 // Refuse to start if any registered route is mis-tagged or any
 // mutation route was mounted on a raw Hono instance (bypassing
@@ -109,19 +117,39 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     console.warn("[shutdown] tunnel close failed:", err);
   }
 
+  // A dev `--watch` reload is a RACE, not a graceful stop: the successor process
+  // is already up and will SIGKILL us after DEV_LOCK_TAKEOVER_GRACE_MS to claim
+  // the PGlite lock. Every second spent draining tunnels and jobs here is a
+  // second stolen from closeDb(), which is what actually frees that lock and
+  // checkpoints the database. Losing that race hard-kills PGlite mid-close, so
+  // the next boot pays WAL replay/recovery — the reason hot reloads felt slow and
+  // sometimes needed a second restart. So under a reload we drain almost nothing
+  // and race straight to closeDb(); a real shutdown (prod/desktop/Ctrl-C on a
+  // non-watch run) keeps the full graceful path.
+  const fastReload = isDevWatchReload();
+  if (fastReload) {
+    console.log("[shutdown] dev hot-reload — skipping drains to release the database lock");
+  }
+
   // Close any live SSH port-forward tunnels (desktop-only feature; the
   // manager is RAM-only, so this Map is empty on SaaS/VPS and the import
   // is cheap). Dynamic import keeps it off the cloud startup path.
-  try {
-    const { stopAllTunnels } = await import("./lib/ssh-tunnel-manager");
-    await stopAllTunnels();
-  } catch (err) {
-    console.warn("[shutdown] port-forward close failed:", err);
+  // Skipped on a reload: the successor re-opens them from `listAutoStart()` at
+  // boot anyway, and the OS reclaims the sockets when we exit.
+  if (!fastReload) {
+    try {
+      const { stopAllTunnels } = await import("./lib/ssh-tunnel-manager");
+      await stopAllTunnels();
+    } catch (err) {
+      console.warn("[shutdown] port-forward close failed:", err);
+    }
   }
 
   try {
     const runner = await getJobRunner();
-    await runner.shutdown(20_000);
+    // Budget must leave room for closeDb() inside the takeover grace; a dev
+    // reload abandons in-flight jobs rather than the database.
+    await runner.shutdown(fastReload ? 500 : 20_000);
   } catch (err) {
     console.warn("[shutdown] job runner close failed:", err);
   }

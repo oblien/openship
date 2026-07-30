@@ -11,7 +11,7 @@
  * filters and DO NOT cross-check membership themselves.
  */
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import {
@@ -30,7 +30,7 @@ export type NotificationDefault = typeof notificationDefault.$inferSelect;
 export type NotificationDelivery = typeof notificationDelivery.$inferSelect;
 export type NewNotificationDelivery = typeof notificationDelivery.$inferInsert;
 
-export type ChannelKind = "email" | "webhook" | "in_app" | "slack";
+export type ChannelKind = "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams";
 export type DeliveryStatus = "queued" | "sending" | "sent" | "failed" | "seen";
 
 // ─── notification_channel repo ───────────────────────────────────────────────
@@ -79,6 +79,30 @@ export function createNotificationChannelRepo(db: Database) {
         )
         .limit(1);
       return row;
+    },
+
+    /**
+     * Batched dispatcher lookup for the org-default fallback: every enabled +
+     * verified channel owned by any of `userIds` whose kind is in `kinds`.
+     * One query instead of N×K `findFirstVerifiedOfKind` calls. Empty inputs
+     * short-circuit to [].
+     */
+    async listVerifiedForUsersByKinds(
+      userIds: string[],
+      kinds: ChannelKind[],
+    ): Promise<NotificationChannel[]> {
+      if (userIds.length === 0 || kinds.length === 0) return [];
+      return db
+        .select()
+        .from(notificationChannel)
+        .where(
+          and(
+            inArray(notificationChannel.userId, userIds),
+            inArray(notificationChannel.kind, kinds),
+            eq(notificationChannel.verified, true),
+            eq(notificationChannel.enabled, true),
+          ),
+        );
     },
 
     async create(
@@ -158,6 +182,29 @@ export function createNotificationSubscriptionRepo(db: Database) {
             eq(notificationSubscription.enabled, true),
           ),
         );
+    },
+
+    /**
+     * Distinct userIds that have ANY subscription row (enabled OR disabled)
+     * for one (org, category). The dispatcher uses this to know who has made
+     * an explicit choice — those members are EXCLUDED from the org-default
+     * fallback so an opt-out (a disabled row) is respected and nobody is
+     * double-fired.
+     */
+    async listUserIdsWithSubscription(
+      organizationId: string,
+      category: string,
+    ): Promise<string[]> {
+      const rows = await db
+        .selectDistinct({ userId: notificationSubscription.userId })
+        .from(notificationSubscription)
+        .where(
+          and(
+            eq(notificationSubscription.organizationId, organizationId),
+            eq(notificationSubscription.category, category),
+          ),
+        );
+      return rows.map((r) => r.userId);
     },
 
     /**
@@ -247,7 +294,7 @@ export function createNotificationDefaultRepo(db: Database) {
       organizationId: string;
       category: string;
       defaultEnabled: boolean;
-      defaultChannelKind: ChannelKind;
+      defaultChannelKinds: ChannelKind[];
     }): Promise<NotificationDefault> {
       await db
         .insert(notificationDefault)
@@ -256,7 +303,7 @@ export function createNotificationDefaultRepo(db: Database) {
           target: [notificationDefault.organizationId, notificationDefault.category],
           set: {
             defaultEnabled: input.defaultEnabled,
-            defaultChannelKind: input.defaultChannelKind,
+            defaultChannelKinds: input.defaultChannelKinds,
             updatedAt: new Date(),
           },
         });

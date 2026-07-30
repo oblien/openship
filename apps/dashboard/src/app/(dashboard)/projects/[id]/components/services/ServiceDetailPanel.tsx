@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePlatform } from "@/context/PlatformContext";
-import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useToast } from "@/context/ToastContext";
 import {
   serviceKind,
@@ -13,8 +12,10 @@ import {
   type Service,
   type ServiceContainer,
   type ServiceInput,
+  type ServiceVolumeSizes,
 } from "@/lib/api/services";
 import { deployApi } from "@/lib/api/deploy";
+import { formatBytes } from "@/lib/formatBytes";
 import { resolveServiceHostnameLabel, internalServiceAddress } from "@repo/core";
 import {
   Play,
@@ -87,6 +88,20 @@ interface ServiceDetailPanelProps {
   initialTab?: string;
   onRefresh: () => void | Promise<void>;
   onDeleted?: () => void;
+  /** Project context — supplied by the caller instead of read from
+   *  ProjectSettingsContext, so the panel renders outside the projects route
+   *  tree (e.g. the server-detail Services tab). The projects route passes these
+   *  from `useProjectSettings()`. */
+  projectType?: string;
+  activeDeploymentId?: string | null;
+  deployTarget?: string | null;
+  /** Sibling services for the header switcher (same project). */
+  siblingServices?: Service[];
+  /** Deep-link the active tab into the URL (projects route). Off at server level. */
+  deepLink?: boolean;
+  /** Override the service switcher — server level swaps in place instead of
+   *  routing to /projects/…. When omitted, routes as before. */
+  onSwitchService?: (targetId: string, tab: string) => void;
 }
 
 /* ── Panel ──────────────────────────────────────────────────────────── */
@@ -99,12 +114,17 @@ export function ServiceDetailPanel({
   initialTab,
   onRefresh,
   onDeleted,
+  projectType,
+  activeDeploymentId,
+  deployTarget,
+  siblingServices,
+  deepLink = true,
+  onSwitchService,
 }: ServiceDetailPanelProps) {
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
-  const { projectData, servicesData } = useProjectSettings();
   const router = useRouter();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -121,7 +141,6 @@ export function ServiceDetailPanel({
 
   // Two-mode split (pipeline vs image app) + launchability — shared helpers so
   // this classification can't drift from the other call sites. See services.ts.
-  const projectType = (projectData as { projectType?: string })?.projectType;
   const usesDeployPipeline = serviceUsesDeployPipeline(service, projectType);
   const canStartWithoutBuild = serviceCanStartWithoutBuild(service);
 
@@ -132,13 +151,45 @@ export function ServiceDetailPanel({
   const changeTab = (tab: ServiceTab) => {
     setActiveTab(tab);
     // Deep-link the tab without a route push (scroll-preserving), matching
-    // ProjectSidebar's tab-sync so back/forward and refresh land on it.
-    if (typeof window !== "undefined") {
+    // ProjectSidebar's tab-sync so back/forward and refresh land on it. Skipped
+    // off the projects route (server level) where that URL shape doesn't apply.
+    if (deepLink && typeof window !== "undefined") {
       const scrollY = window.scrollY;
       window.history.replaceState({}, "", `/projects/${projectId}/services/${service.id}/${tab}`);
       requestAnimationFrame(() => window.scrollTo(0, scrollY));
     }
   };
+
+  // ── Volume sizes (lazy) ──────────────────────────────────────────────
+  // `du` on the host is slow, so we measure only when the Overview tab is open
+  // (not on every render/poll), cache the result for the mounted service, and
+  // skip cloud workloads (no host to du on).
+  const hasVolumes = !!service.volumes && service.volumes.length > 0;
+  const [volSizes, setVolSizes] = useState<ServiceVolumeSizes | null>(null);
+  const [volSizesLoading, setVolSizesLoading] = useState(false);
+  useEffect(() => {
+    setVolSizes(null); // drop the previous service's measurement on switch
+  }, [service.id]);
+  useEffect(() => {
+    if (activeTab !== "overview" || !hasVolumes || deployTarget === "cloud") return;
+    if (volSizes || volSizesLoading) return;
+    let cancelled = false;
+    setVolSizesLoading(true);
+    servicesApi
+      .volumeSizes(projectId, service.id)
+      .then((res) => {
+        if (!cancelled) setVolSizes(res);
+      })
+      .catch(() => {
+        if (!cancelled) setVolSizes(null);
+      })
+      .finally(() => {
+        if (!cancelled) setVolSizesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, hasVolumes, deployTarget, projectId, service.id, volSizes, volSizesLoading]);
 
   // ── Service switcher ─────────────────────────────────────────────────
   // Jump to another service WITHOUT leaving the current tab (Terminal stays
@@ -146,14 +197,15 @@ export function ServiceDetailPanel({
   // panel is keyed by service id upstream, so it remounts cleanly on the same
   // tab. Backup is compose-only — fall back to Overview if the target can't
   // show it, so a switch never lands on an empty hidden tab.
-  const switchableServices = servicesData?.services ?? [];
+  const switchableServices = siblingServices ?? [];
   const canSwitchService = switchableServices.length > 1;
   const switchService = (targetId: string) => {
     if (targetId === service.id) return;
     const target = switchableServices.find((s) => s.id === targetId);
     const targetTab =
       activeTab === "backup" && target && serviceKind(target) !== "compose" ? "overview" : activeTab;
-    router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
+    if (onSwitchService) onSwitchService(targetId, targetTab);
+    else router.push(`/projects/${projectId}/services/${targetId}/${targetTab}`);
   };
 
   // ── Env tab state (editable; the panel used to show env read-only) ────
@@ -332,7 +384,6 @@ export function ServiceDetailPanel({
    * apps don't get this — they Start/Stop.
    */
   const handleRedeployService = async () => {
-    const activeDeploymentId = projectData?.activeDeploymentId;
     if (!activeDeploymentId) {
       showToast(t.projectDetail.services.detail.toast.deployFirstRedeploy, "error", service.name);
       return;
@@ -468,6 +519,16 @@ export function ServiceDetailPanel({
         ) : sourceLabel ? (
           <span className="truncate text-sm text-muted-foreground">{sourceLabel}</span>
         ) : null}
+        {/* Another container on the host also answers to this service — a
+            leftover from an adopt/redeploy. It isn't the one we manage, and it
+            may still be holding a port or a volume. */}
+        {container?.duplicates && container.duplicates.length > 0 && (
+          <p className="mt-1 text-xs text-warning">
+            {interpolate(t.projectDetail.services.detail.duplicateContainers, {
+              names: container.duplicates.join(", "),
+            })}
+          </p>
+        )}
       </div>
 
       {/* ── Tab strip ──────────────────────────────────────────── */}
@@ -522,12 +583,12 @@ export function ServiceDetailPanel({
                 )}
                 {container?.containerId && (
                   <InfoCard
-                    label={projectData?.deployTarget === "cloud" ? t.projectDetail.services.detail.workspaceId : t.projectDetail.services.detail.containerId}
+                    label={deployTarget === "cloud" ? t.projectDetail.services.detail.workspaceId : t.projectDetail.services.detail.containerId}
                     // Docker ids are 64 chars — the 12-char short id is enough
                     // to `docker exec`. Cloud workspace ids are short/opaque, so
                     // show them in full (you need the whole thing to find it).
                     value={
-                      projectData?.deployTarget === "cloud"
+                      deployTarget === "cloud"
                         ? container.containerId
                         : container.containerId.slice(0, 12)
                     }
@@ -559,19 +620,47 @@ export function ServiceDetailPanel({
           {/* Volumes */}
           {service.volumes && service.volumes.length > 0 && (
             <div className="bg-card rounded-2xl border border-border/50 p-5">
-              <SectionHeader title={t.projectDetail.services.detail.volumes} icon={HardDrive} />
+              <SectionHeader
+                title={t.projectDetail.services.detail.volumes}
+                icon={HardDrive}
+                right={
+                  volSizesLoading ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Loader2 className="size-3 animate-spin" />
+                      Measuring…
+                    </span>
+                  ) : volSizes?.measurable && volSizes.totalBytes != null ? (
+                    <span className="text-xs font-semibold tabular-nums text-foreground">
+                      {volSizes.partial ? "≥ " : ""}
+                      {formatBytes(volSizes.totalBytes)}
+                    </span>
+                  ) : undefined
+                }
+              />
               <div className="space-y-2">
-                {service.volumes.map((vol) => (
-                  <div key={vol} className="flex items-center justify-between gap-3 group">
-                    <span className="truncate text-xs font-mono text-foreground">{vol}</span>
-                    <button
-                      onClick={() => copy(vol, `vol-${vol}`)}
-                      className="shrink-0 rounded p-1 opacity-0 transition-all hover:bg-muted group-hover:opacity-100"
-                    >
-                      {copied === `vol-${vol}` ? <Check className="size-3 text-success" /> : <Copy className="size-3 text-muted-foreground" />}
-                    </button>
-                  </div>
-                ))}
+                {service.volumes.map((vol, i) => {
+                  const vs = volSizes?.measurable ? volSizes.volumes[i] : undefined;
+                  return (
+                    <div key={vol} className="flex items-center justify-between gap-3 group">
+                      <span className="truncate text-xs font-mono text-foreground">{vol}</span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {volSizesLoading && !vs ? (
+                          <Loader2 className="size-3 animate-spin text-muted-foreground/60" />
+                        ) : vs && vs.bytes != null ? (
+                          <span className="text-[11px] tabular-nums text-muted-foreground">
+                            {formatBytes(vs.bytes)}
+                          </span>
+                        ) : null}
+                        <button
+                          onClick={() => copy(vol, `vol-${vol}`)}
+                          className="rounded p-1 opacity-0 transition-all hover:bg-muted group-hover:opacity-100"
+                        >
+                          {copied === `vol-${vol}` ? <Check className="size-3 text-success" /> : <Copy className="size-3 text-muted-foreground" />}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -653,13 +742,17 @@ export function ServiceDetailPanel({
               <div className="flex items-center gap-2 flex-wrap">
                 {container?.containerId ? (
                   <>
-                    {status === "running" && (
+                    {/* A container that's up OR bouncing OR whose state we can't
+                        read is NOT something to offer "Start" on — Stop/Restart
+                        are the honest actions. Only a genuinely down container
+                        gets Start. */}
+                    {status !== "stopped" && status !== "failed" && (
                       <>
                         <ActionButton icon={Square} label={t.projectDetail.services.detail.stop} loading={actionLoading === "stop"} onClick={() => handleContainerAction("stop")} variant="danger" />
                         <ActionButton icon={RotateCw} label={t.projectDetail.services.detail.restart} loading={actionLoading === "restart"} onClick={() => handleContainerAction("restart")} variant="warning" />
                       </>
                     )}
-                    {status !== "running" && (
+                    {(status === "stopped" || status === "failed") && (
                       <ActionButton icon={Play} label={t.projectDetail.services.detail.start} loading={actionLoading === "start"} onClick={() => handleContainerAction("start")} variant="success" />
                     )}
                   </>
@@ -680,7 +773,7 @@ export function ServiceDetailPanel({
                 )}
                 {/* Pipeline services (compose / monorepo / source-built) keep the
                     per-service Redeploy → build page. Image apps never show it. */}
-                {usesDeployPipeline && service.enabled && projectData?.activeDeploymentId && (
+                {usesDeployPipeline && service.enabled && activeDeploymentId && (
                   <ActionButton
                     icon={Rocket}
                     label={redeploying ? t.projectDetail.services.detail.redeploying : t.projectDetail.services.detail.redeploy}
@@ -819,12 +912,15 @@ export function ServiceDetailPanel({
 
 /* ── Primitives ─────────────────────────────────────────────────────── */
 
-function SectionHeader({ title, subtitle, icon: Icon }: { title: string; subtitle?: string; icon: React.ComponentType<{ className?: string }> }) {
+function SectionHeader({ title, subtitle, icon: Icon, right }: { title: string; subtitle?: string; icon: React.ComponentType<{ className?: string }>; right?: React.ReactNode }) {
   return (
     <div className="mb-4">
-      <div className="flex items-center gap-2">
-        <Icon className="size-4 text-muted-foreground" />
-        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Icon className="size-4 text-muted-foreground" />
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        </div>
+        {right}
       </div>
       {subtitle && <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>}
     </div>
@@ -840,6 +936,8 @@ function StatusBadge({ status }: { status: string }) {
     disabled: { dot: "bg-muted-foreground/20", badge: "bg-muted/40 text-muted-foreground/50", label: labels.disabled },
     failed: { dot: "bg-danger-solid", badge: "bg-danger-bg text-danger", label: labels.failed },
     starting: { dot: "bg-warning-solid", badge: "bg-warning-bg text-warning", label: labels.starting },
+    restarting: { dot: "bg-warning-solid", badge: "bg-warning-bg text-warning", label: labels.restarting },
+    unknown: { dot: "bg-muted-foreground/40", badge: "bg-muted/60 text-muted-foreground", label: labels.unknown },
   };
   const s = map[status] ?? map.stopped;
   return (

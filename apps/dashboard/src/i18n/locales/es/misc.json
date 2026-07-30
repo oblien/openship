@@ -158,7 +158,9 @@
     "close": "Cerrar {label}",
     "serverLimit": "Límite del servidor: {max} shells simultáneos.",
     "newShell": "Nuevo shell",
-    "noTerminals": "No hay terminales abiertas."
+    "noTerminals": "No hay terminales abiertas.",
+    "expand": "Expandir",
+    "collapse": "Contraer"
   },
   "buildPage": {
     "thisRepo": "este repositorio",

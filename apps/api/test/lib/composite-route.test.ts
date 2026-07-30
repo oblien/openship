@@ -131,3 +131,59 @@ describe("buildCompositeRegistration", () => {
     ).toBeNull();
   });
 });
+
+describe("buildCompositeRegistration — static frontend served from disk", () => {
+  const domain = { hostname: "app.example.com", isCustomDomain: true };
+  const targets: Record<string, string> = { api: "http://10.0.0.5:3000" };
+
+  it("serves the frontend from a host dir and still proxies the backend at /api/", () => {
+    const reg = buildCompositeRegistration({
+      services: [web, api],
+      resolveTargetUrl: (id) => targets[id] ?? null,
+      resolveDomain: () => domain,
+      resolveStaticRoot: (id) => (id === "web" ? "/opt/openship/static/proj/web" : null),
+    });
+    // One vhost: files at `/`, backend proxied at the prefix. No frontend upstream,
+    // so no container and no port for the static app.
+    expect(reg?.register.staticRoot).toBe("/opt/openship/static/proj/web");
+    expect(reg?.register.targetUrl).toBeUndefined();
+    expect(reg?.register.proxyLocations).toEqual([
+      { pathPrefix: "/api/", targetUrl: "http://10.0.0.5:3000" },
+    ]);
+  });
+
+  it("does NOT require a frontend upstream when a static root is given", () => {
+    // The whole point: a static frontend has no port. Resolving an upstream for it
+    // would fail the composite and silently drop back to per-service routing.
+    const reg = buildCompositeRegistration({
+      services: [web, api],
+      resolveTargetUrl: (id) => (id === "api" ? targets.api : null),
+      resolveDomain: () => domain,
+      resolveStaticRoot: (id) => (id === "web" ? "/opt/openship/static/proj/web" : null),
+    });
+    expect(reg).not.toBeNull();
+  });
+
+  it("falls back to a frontend upstream when no static root resolves (cloud)", () => {
+    // Oblien runs the workload; there is no host dir to serve, so the frontend
+    // stays a proxied container exactly as before.
+    const reg = buildCompositeRegistration({
+      services: [web, api],
+      resolveTargetUrl: (id) => ({ web: "http://10.0.0.4:8080", api: targets.api })[id] ?? null,
+      resolveDomain: () => domain,
+      resolveStaticRoot: () => null,
+    });
+    expect(reg?.register.targetUrl).toBe("http://10.0.0.4:8080");
+    expect(reg?.register.staticRoot).toBeUndefined();
+  });
+
+  it("still needs the backend upstream — a static root alone is not a composite", () => {
+    const reg = buildCompositeRegistration({
+      services: [web, api],
+      resolveTargetUrl: () => null,
+      resolveDomain: () => domain,
+      resolveStaticRoot: (id) => (id === "web" ? "/opt/openship/static/proj/web" : null),
+    });
+    expect(reg).toBeNull();
+  });
+});

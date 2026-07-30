@@ -1,0 +1,187 @@
+{
+  "page": {
+    "title": "E-posta Sunucusu",
+    "subtitle": "Birkaç tıkla kendi sunucunuzda barındırılan bir e-posta sunucusu kurun",
+    "backToServers": "E-posta sunucularına dön",
+    "addServer": "E-posta sunucusu ekle",
+    "removeModal": {
+      "title": "Bu e-posta sunucusu kaldırılsın mı?",
+      "description": "{label} sunucusunu yalnızca e-posta listesinden kaldırır. E-posta servisleri çalışmaya devam eder ve hiçbir şey silinmez — mevcut kurulumu istediğiniz zaman yeniden yönetime alabilirsiniz.",
+      "submit": "Listeden kaldır",
+      "submitting": "Kaldırılıyor…",
+      "body": "Sunucu üzerindeki kurulum aynen korunduğu için, daha sonra tekrar eklemek yeniden kurulum gerektirmeden tam yönetim sağlar."
+    },
+    "errors": {
+      "resetFailed": "Sıfırlama başarısız oldu",
+      "ackDns": "DNS ayarı onaylanamadı",
+      "ackPtr": "PTR ayarı onaylanamadı",
+      "selectServer": "Önce bir sunucu seçin",
+      "resolutionFailed": "Çözümleme başarısız oldu"
+    }
+  },
+  "adopt": {
+    "title": "Mevcut e-posta sunucusunu yönetime al",
+    "intro": "Sunucularınızdan birinde daha önce Openship ile bir e-posta sunucusu kurdunuz mu? Sunucuyu seçip tarayın — bir e-posta yığını bulunursa verilerinize dokunulmadan ve yeniden kurulum yapılmadan kontrol paneline tekrar alınır.",
+    "scanning": "Taranıyor…",
+    "scan": "Sunucuyu tara",
+    "detected": "E-posta sunucusu tespit edildi",
+    "domainLabel": "Alan Adı:",
+    "unknown": "bilinmiyor",
+    "stats": "iRedMail çalışıyor: {iredmail} · Kurulum: {install} · Webmail: {webmail}",
+    "yes": "evet",
+    "no": "hayır",
+    "complete": "tamamlandı",
+    "inProgress": "devam ediyor",
+    "present": "mevcut",
+    "notDeployed": "dağıtılmadı",
+    "cancel": "İptal",
+    "adopt": "Yönetime al",
+    "noInstall": "Bu sunucuda herhangi bir e-posta sunucusu kurulumu bulunamadı.",
+    "scanFailed": "Tarama başarısız — sunucuya erişilebiliyor mu?",
+    "adoptFailed": "Sunucu yönetime alınamadı"
+  },
+  "dns": {
+    "heading": "Devam etmeden önce DNS kayıtlarını yayınlayın",
+    "bodyBefore": "Bunlar olmadan e-posta teslimatı çalışmaz. Kayıtları DNS sağlayıcınıza ekleyin, ardından aşağıdaki düğmeye tıklayın: ",
+    "action": "Kayıtları ayarladım - devam et",
+    "bodyAfterResume": ". Kurulum {resumeStep}. adımdan (SSL sertifikası) devam eder.",
+    "bodyAfter": ".",
+    "autoConfigure": "DNS'i otomatik yapılandır",
+    "autoConfigureDesc": "Alan adınızın DNS sağlayıcısını seçin. Kayıtları onların API'sini kullanarak sizin için ekleyelim.",
+    "otherManual": "Diğer / manuel ayarla",
+    "otherManualDesc": "Yukarıdaki bildirimde yer alan her kaydı kopyalayıp sağlayıcınızın paneline yapıştırın",
+    "pickAnother": "Başka bir sağlayıcı seçin",
+    "comingSoon": "{provider} entegrasyonu - yakında",
+    "comingSoonBefore": "Bu sağlayıcıyla doğrudan API entegrasyonu henüz kullanıma sunulmadı. Şimdilik yukarıdaki bildirimde yer alan her kaydı kopyalayıp DNS sağlayıcınızın arayüzüne yapıştırın. Tamamladığınızda şu düğmeye tıklayın: ",
+    "comingSoonAfter": ".",
+    "gotIt": "Anladım",
+    "providers": {
+      "cloudflare": "Ücretsiz DNS, hızlı yayılma. En yaygın tercih.",
+      "hostinger": "Alan adını Hostinger üzerinden satın aldıysanız.",
+      "route53": "AWS barındırmalı DNS bölgeleri.",
+      "digitalocean": "DigitalOcean tarafından yönetilen bölgeler.",
+      "namecheap": "Varsayılan Namecheap DNS.",
+      "google": "Google tarafından yönetilen bölgeler."
+    }
+  },
+  "recordCard": {
+    "priority": "Öncelik: {priority}",
+    "copyValue": "Değeri kopyala"
+  },
+  "progress": {
+    "liveLogs": "Canlı günlükler",
+    "lineOne": "{count} satır",
+    "lineOther": "{count} satır",
+    "cancel": "İptal",
+    "resetTitle": "Sunucudaki kurulum durumunu temizle ve sıfırdan başla",
+    "confirmReset": "Onaylamak için tekrar tıklayın",
+    "reset": "Sıfırla",
+    "waiting": "Çıktı bekleniyor…",
+    "noBuffered": "Bu çalışma için arabellekte çıktı yok.",
+    "willStream": "Kurulum başladığında günlükler buraya akacaktır.",
+    "jumpToLatest": "En son satıra git",
+    "setupFailed": "Kurulum başarısız oldu",
+    "retryFromStep": "{resumeStep}. adımdan tekrar dene"
+  },
+  "serverList": {
+    "title": "E-posta sunucuları",
+    "addServer": "E-posta sunucusu ekle",
+    "removeFromList": "Listeden kaldır",
+    "removeAria": "{name} sunucusunu e-posta listesinden kaldır",
+    "installing": "Kuruluyor",
+    "running": "Çalışıyor",
+    "incomplete": "Tamamlanmamış"
+  },
+  "setup": {
+    "title": "E-posta Sunucusu Kurulumu",
+    "subtitle": "Bu sunucuda, kendi kendine barındırılan eksiksiz bir e-posta servisi dağıtın",
+    "domainLabel": "Alan Adı",
+    "domainPlaceholder": "example.com",
+    "willBeAtBefore": "E-posta sunucunuz şu adreste olacak: ",
+    "adminPasswordLabel": "Yönetici Şifresi",
+    "passwordPlaceholder": "Güçlü şifre - veya Oluştur'a tıklayın",
+    "passwordHint": "Kurulumdan sonra posta kutusuna giriş yapmak için kullanılır. Daha sonra yönetici panelinden değiştirebilirsiniz.",
+    "relay": {
+      "toggle": "Giden postaları Amazon SES üzerinden aktar (Relay)",
+      "hint": "Önerilir. SES'in güvenilir IP'leri üzerinden gönderim yapın (yeni sunucu IP'leri genellikle engelleme listelerindedir ve birçok barındırma sağlayıcısı giden 25 numaralı portu engeller). Gelen postalar bu sunucuda kalır.",
+      "region": "SES bölgesi",
+      "username": "SMTP kullanıcı adı",
+      "password": "SMTP şifresi",
+      "perDomainNote": "Tüm alan adları için geçerlidir. Alan adı bazlı yönlendirme ve her alan adının SES DKIM kayıtları kurulumdan sonra Gönderim sekmesinden yapılandırılır."
+    },
+    "startSetup": "Kurulumu Başlat",
+    "adoptCta": "Zaten e-posta sunucunuz var mı? Yönetime alın",
+    "whatInstalled": "Neler kurulacak",
+    "features": {
+      "stackLabel": "E-posta sunucusu paketi",
+      "stackDesc": "Postfix, Dovecot, spam koruması",
+      "sslLabel": "SSL Sertifikası",
+      "sslDesc": "Let's Encrypt otomatik SSL",
+      "dnsLabel": "DNS Yapılandırması",
+      "dnsDesc": "DKIM, SPF, DMARC kayıtları",
+      "adminLabel": "Yönetici Paneli",
+      "adminDesc": "Posta kutularını, alan adlarını ve takma adları (alias) yönetin"
+    },
+    "prerequisites": "Gereksinimler",
+    "prereq1": "DNS erişimi olan bir alan adı",
+    "prereq2": "Sağlayıcınız tarafından engellenmemiş Port 25",
+    "prereq3": "Temiz Ubuntu/Debian sunucu (önerilen)",
+    "hide": "Gizle",
+    "reveal": "Göster",
+    "generateTitle": "Güçlü rastgele bir şifre oluşturun",
+    "generate": "Oluştur"
+  },
+  "sidebar": {
+    "portConflict": {
+      "title": "Port Çakışması Tespit Edildi",
+      "subtitle": "E-posta sunucusu için 80/443 portları gereklidir",
+      "managed": "Yönetilen",
+      "known": "Bilinen Servis",
+      "unknown": "Bilinmiyor",
+      "container": "Konteyner: {name}",
+      "killWarning": "Bu süreci sonlandırmadan önce sürece ihtiyaç olmadığından emin olun. Bu işlem geri alınamaz.",
+      "allResolved": "Tüm çakışmalar çözüldü",
+      "rerun": "Port kontrolünü tekrar çalıştırın ve kuruluma devam edin.",
+      "resumeStep3": "3. Adımdan Devam Et"
+    },
+    "completion": {
+      "ready": "E-posta Sunucusu Hazır!",
+      "webmail": "Webmail",
+      "adminPanel": "Yönetici Paneli"
+    },
+    "dnsRef": {
+      "title": "Gerekli DNS Kayıtları",
+      "subtitle": "Referans - yayınladığınız kayıtları görmek için dokunun"
+    },
+    "steps": {
+      "title": "Tüm adımlar",
+      "interrupted": "Kurulum {step}. adımdan önce kesintiye uğradı. Kaldığı yerden devam etmek için sürdürün.",
+      "resume": "Devam Et",
+      "retry": "Tekrar Dene"
+    },
+    "details": {
+      "title": "Kurulum Detayları",
+      "domain": "Alan Adı",
+      "mailServer": "E-posta Sunucusu",
+      "started": "Başlatıldı"
+    }
+  },
+  "ptr": {
+    "heading": "Devam etmeden önce ters DNS (PTR) kaydını ayarlayın",
+    "bodyBefore": "PTR kayıtları ",
+    "bodyStrongPanel": "VPS sağlayıcınızın panelinden",
+    "bodyMid": " yapılandırılır (Hostinger, DigitalOcean, AWS vb.), ",
+    "bodyStrongNot": "DNS sağlayıcınızdan değil",
+    "bodyAfter": ". Eşleşen rDNS olmadan Gmail ve Outlook giden postalarınızı reddeder. Kurulum {resumeStep}. adımdan (SSL) devam eder.",
+    "recommended": "önerilen",
+    "ipLabel": "IP",
+    "setTo": "Ayarlanacak değer",
+    "copy": "Kopyala",
+    "howTo": "Nasıl ayarlanır:",
+    "howToBody": " VPS sağlayıcınıza giriş yapın, sunucunun ağ / DNS / rDNS ayarlarını bulun ve her IP için PTR kaydını şu şekilde ayarlayın: ",
+    "howToAfter": ". Yayılması genellikle 5–15 dakika sürer.",
+    "verifyWith": "Şununla doğrulayın:",
+    "shouldReturn": " şu değeri döndürmelidir: ",
+    "action": "PTR kayıtlarını ayarladım - devam et"
+  }
+}

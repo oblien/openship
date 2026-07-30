@@ -40,6 +40,10 @@ export interface McpToolDef {
     /** Resource type a grant must be on to enable this tool for a restricted
      *  principal (project-rooted sub-resources resolve to "project"). */
     grantRoot: string;
+    /** The dedicated project-create route (POST /projects, POST /apps install).
+     *  Reachable by an "own projects" create-capable grant — see the
+     *  canCreateProjects arm in filterToolsForPrincipal. */
+    projectCreate: boolean;
   };
 }
 
@@ -49,6 +53,11 @@ export interface McpPrincipal {
   readOnly: boolean;
   /** Resource types the token holds grants on — only consulted when role === "restricted". */
   grantedRootTypes: ReadonlySet<string>;
+  /** True when the token holds a create-capable project wildcard grant
+   *  ({project, "*", permissions:["create"]}) — the "own projects" scope. Lets a
+   *  restricted token see the project-create routes and the project list (which
+   *  it may call, filtered to its self-created projects). Mirrors permission.ts. */
+  canCreateProjects: boolean;
 }
 
 /**
@@ -101,10 +110,14 @@ function inputSchema(
     properties[p] = { type: "string", description: `Path parameter :${p}` };
   }
   properties.query = { type: "object", description: "Optional query-string parameters", additionalProperties: true };
-  if (hasBody) {
-    // The route's TypeBox body schema (JSON Schema at runtime) when declared,
-    // else a permissive fallback so a body can still be passed.
-    properties.body = bodySchema ?? { type: "object", description: "Request JSON body", additionalProperties: true };
+  if (hasBody && bodySchema) {
+    // Emit the route's TypeBox body schema (JSON Schema at runtime) verbatim.
+    // Convention: a mutating MCP route that takes a structured body declares it
+    // via `spec.body` (which also drives auto-validation); one with NO `spec.body`
+    // is a no-body action and advertises no `body` param at all — never a
+    // permissive blob that would make an agent guess at fields that don't exist.
+    // So "add a typed body to an MCP tool" == "add spec.body to its route".
+    properties.body = bodySchema;
   }
   return {
     type: "object",
@@ -143,7 +156,10 @@ export function getMcpTools(): McpToolDef[] {
       const leaf = parsed?.leaf ?? "";
       const pathParams = extractPathParams(route.path);
       const hasBody = BODY_METHODS.has(route.method);
-      const bodySchema = mcp?.body as Record<string, unknown> | undefined;
+      // Single-source body schema: the top-level `spec.body` (which also drives
+      // auto-validation) wins; `mcp.body` is a deprecated fallback.
+      const specBody = isPublicSpec(spec) ? undefined : spec.body;
+      const bodySchema = (specBody ?? mcp?.body) as Record<string, unknown> | undefined;
       return {
         name: toolName(route, taken),
         description: mcp?.description ?? `${route.method} ${route.path}`,
@@ -157,12 +173,45 @@ export function getMcpTools(): McpToolDef[] {
           root: parsed?.root ?? "",
           leaf,
           action: (parsed?.action ?? "read") as string,
-          wildcard: (parsed?.isList ?? false) || collection || ORG_SINGLETON_RESOURCES.has(leaf),
+          // "wildcard" = operates on the WHOLE org (a scoped token can never
+          // pass it). A list / collection / org-singleton op is org-wide ONLY
+          // when it carries no path params. WITH path params (e.g.
+          // /repos/:owner/:repo/branches, /projects/:id/deployments) it is
+          // scoped to a specific resource, so a grant on that resource's root
+          // type enables it — those must stay listable for scoped tokens.
+          wildcard:
+            ((parsed?.isList ?? false) || collection || ORG_SINGLETON_RESOURCES.has(leaf)) &&
+            pathParams.length === 0,
           grantRoot: PROJECT_ROOTED.has(leaf as CheckedResourceType) ? "project" : (parsed?.root ?? ""),
+          projectCreate: !isPublicSpec(spec) && spec.projectCreate === true,
         },
       };
     });
   return cached;
+}
+
+/**
+ * GitHub is granted at three widths that all key off the same route root
+ * ("github"): the org-wide `github`, per-account `github_installation`, and
+ * per-repo `github_repository`. Any of them satisfies a github-rooted tool for
+ * `tools/list` purposes (call-time still resolves the exact width — see
+ * github-access.ts). Without this, a repo-scoped token (grant type
+ * `github_repository`) would advertise ZERO github tools even though it can
+ * call the per-repo ones.
+ */
+const GITHUB_GRANT_FAMILY: ReadonlySet<string> = new Set([
+  "github",
+  "github_installation",
+  "github_repository",
+]);
+
+/** Does the principal hold a grant whose root type enables this tool? */
+function principalHasGrantFor(granted: ReadonlySet<string>, grantRoot: string): boolean {
+  if (grantRoot === "github") {
+    for (const t of GITHUB_GRANT_FAMILY) if (granted.has(t)) return true;
+    return false;
+  }
+  return granted.has(grantRoot);
 }
 
 /**
@@ -172,6 +221,10 @@ export function getMcpTools(): McpToolDef[] {
  * owner/admin/member by `roleAllowsResourceType`, and a restricted principal by
  * its grant set. `tools/call` still enforces per call — this only trims what's
  * advertised. A tool is listed iff the caller could succeed at it for some input.
+ *
+ * The "own projects" scope ({project, "*", create}) is handled explicitly via
+ * `principal.canCreateProjects`: such a token may CREATE projects and LIST its
+ * own, mirroring both arms of the runtime check in permission.ts.
  */
 export function filterToolsForPrincipal(tools: McpToolDef[], principal: McpPrincipal): McpToolDef[] {
   return tools.filter((t) => {
@@ -182,10 +235,19 @@ export function filterToolsForPrincipal(tools: McpToolDef[], principal: McpPrinc
     if (principal.role !== "restricted") {
       return roleAllowsResourceType(principal.role, t.perm.leaf as CheckedResourceType);
     }
-    // Restricted: wildcard ("*") ops (list / create / org-singleton) are always
-    // denied for a scoped token; a per-resource op needs a grant on its root type.
+    // "Own projects" scope: the create-capable project wildcard grant reaches the
+    // dedicated create routes (POST /projects, POST /apps) and the project list
+    // (which the caller filters to its self-created projects). Checked before the
+    // wildcard gate, since these are exactly the wildcard ops it can pass.
+    if (principal.canCreateProjects) {
+      if (t.perm.projectCreate) return true;
+      if (t.perm.leaf === "project" && t.perm.action === "list") return true;
+    }
+    // Restricted: org-wide ops (list / create / org-singleton with no resource
+    // param) are always denied for a scoped token; a per-resource op needs a
+    // grant on its root type (github grants matched as a family).
     if (t.perm.wildcard) return false;
-    return principal.grantedRootTypes.has(t.perm.grantRoot);
+    return principalHasGrantFor(principal.grantedRootTypes, t.perm.grantRoot);
   });
 }
 

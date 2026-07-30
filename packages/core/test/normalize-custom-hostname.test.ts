@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeCustomHostname, isValidCustomHostname } from "../src/utils";
+import { normalizeCustomHostname, isValidCustomHostname, isApexDomain } from "../src/utils";
 
 describe("normalizeCustomHostname", () => {
   it("produces one canonical form so storage and lookup always agree", () => {
@@ -29,6 +29,47 @@ describe("normalizeCustomHostname", () => {
     expect(normalizeCustomHostname("   ")).toBe("");
     expect(normalizeCustomHostname("https://")).toBe("");
   });
+
+  // Regression guard: the www-strip belongs at the apex INPUT layer only. The
+  // shared normalizer backs service-route storage AND domain lookups, and the
+  // www toggle stores `www.<apex>` as its own endpoint — stripping www here would
+  // collapse that endpoint and make www-primary hosts unroutable.
+  it("does NOT strip a www. prefix", () => {
+    expect(normalizeCustomHostname("www.example.com")).toBe("www.example.com");
+    expect(normalizeCustomHostname("HTTPS://WWW.Example.com/")).toBe("www.example.com");
+  });
+});
+
+describe("isApexDomain", () => {
+  it("is true for registrable apex domains", () => {
+    for (const h of ["example.com", "acme.io", "example.co.uk", "shop.com.au", "example.co.nz"]) {
+      expect(isApexDomain(h)).toBe(true);
+    }
+  });
+
+  it("is false for subdomains (www.<apex> makes no sense there)", () => {
+    for (const h of [
+      "www.example.com",
+      "app.example.com",
+      "api.acme.io",
+      "fresh.hekai.org",
+      "foo.example.co.uk", // subdomain under a multi-part TLD
+    ]) {
+      expect(isApexDomain(h)).toBe(false);
+    }
+  });
+
+  it("is false for a bare public suffix or invalid host", () => {
+    for (const h of ["co.uk", "com", "localhost", "", "1.2.3.4"]) {
+      expect(isApexDomain(h)).toBe(false);
+    }
+  });
+
+  it("normalizes casing / trailing dot before classifying", () => {
+    expect(isApexDomain("Example.COM")).toBe(true);
+    expect(isApexDomain("example.com.")).toBe(true);
+    expect(isApexDomain("WWW.example.com")).toBe(false);
+  });
 });
 
 describe("isValidCustomHostname", () => {
@@ -52,8 +93,13 @@ describe("isValidCustomHostname", () => {
       "example.com.", // trailing dot
       "a..b.com", // empty label
       "exa mple.com", // whitespace
+      `${"a".repeat(64)}.example.com`, // label over the 63-octet DNS limit
     ]) {
       expect(isValidCustomHostname(h)).toBe(false);
     }
+  });
+
+  it("accepts a label at exactly the 63-octet DNS limit", () => {
+    expect(isValidCustomHostname(`${"a".repeat(63)}.example.com`)).toBe(true);
   });
 });

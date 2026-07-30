@@ -39,6 +39,24 @@ interface StackCase {
 }
 
 const POSITIVE_STACK_CASES: StackCase[] = [
+  // ── #231 regression: a backend framework shipping a Vite asset frontend must
+  //    detect as the backend, NOT as a bare Vite SPA (stock `laravel new` ships
+  //    vite.config.js + package.json and previously shadowed Laravel) ──────────
+  {
+    name: "Laravel + Vite frontend (stock `laravel new`) → laravel, not vite (#231)",
+    files: files("composer.json", "artisan", "package.json", "vite.config.js", "app/", "routes/"),
+    packageJson: { devDependencies: { vite: "^5.0.0", "laravel-vite-plugin": "^1.0.0" } },
+    // Real folder/git scans always carry composer.json content — Laravel's dep
+    // gate keys on laravel/framework. Without the Vite veto, `vite` matched first.
+    fileContents: { "composer.json": '{"require":{"laravel/framework":"^11.0","php":"^8.2"}}' },
+    expectedStack: "laravel",
+  },
+  {
+    name: "Pure Vite SPA (no backend marker) still → vite (#231 guard)",
+    files: files("package.json", "vite.config.ts", "index.html", "src/"),
+    packageJson: { devDependencies: { vite: "^5.0.0" } },
+    expectedStack: "vite",
+  },
   // ── JS/TS Frontend & Fullstack ──────────────────────────────────────────
   {
     name: "Next.js - next.config.js + next dep",

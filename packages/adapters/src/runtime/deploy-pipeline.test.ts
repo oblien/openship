@@ -3,6 +3,7 @@ import {
   runDeployPipeline,
   type DeployEnvironment,
   type DeployPipelineInput,
+  type DeployRouting,
 } from "./deploy-pipeline";
 import type { BuildLogger } from "./build-pipeline";
 import type { DeployConfig } from "../types";
@@ -149,5 +150,72 @@ describe("runDeployPipeline cutover ordering", () => {
 
     expect(res.status).toBe("ready");
     expect(events).toEqual(["activate", "route"]); // old never stopped
+  });
+});
+
+// Domains are OPTIONAL — routing runs after the container is up + healthy, so a
+// routing failure must never flip the deploy to "failed". It's collected as a
+// per-domain warning on a still-"ready" result.
+describe("runDeployPipeline routing is best-effort", () => {
+  const domain = { hostname: "app.example.com", tls: false, targetPort: 3000 };
+
+  it("a failing registerRoute never fails the deploy — ready + routeWarnings, container kept", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: true,
+      healthCheck: async () => {
+        events.push("health");
+      },
+    });
+    const routing = {
+      registerRoute: async () => {
+        events.push("registerRoute");
+        throw new Error("nginx reload failed");
+      },
+      removeRoute: async () => {},
+    } as unknown as DeployRouting;
+
+    const res = await runDeployPipeline(env, makeInput({ domains: [domain], routing }), fakeLogger());
+
+    expect(res.status).toBe("ready");
+    expect(res.containerId).toBe("new-container"); // NOT destroyed
+    expect(res.routeWarnings).toEqual(["app.example.com: nginx reload failed"]);
+    expect(events).toContain("registerRoute");
+  });
+
+  it("an invalid route target is skipped with a warning, never reaching registerRoute", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, { canOverlap: true });
+    const routing = {
+      registerRoute: async () => {
+        events.push("registerRoute");
+      },
+      removeRoute: async () => {},
+    } as unknown as DeployRouting;
+    // Neither targetPort nor targetPath → INVALID_ROUTE_TARGET inside registration.
+    const badDomain = { hostname: "bad.example.com", tls: false };
+
+    const res = await runDeployPipeline(env, makeInput({ domains: [badDomain], routing }), fakeLogger());
+
+    expect(res.status).toBe("ready");
+    expect(res.routeWarnings?.[0]).toContain("bad.example.com");
+    expect(events).not.toContain("registerRoute");
+  });
+
+  it("all routes register cleanly → no routeWarnings on the result", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, { canOverlap: true });
+    const routing = {
+      registerRoute: async () => {
+        events.push("registerRoute");
+      },
+      removeRoute: async () => {},
+    } as unknown as DeployRouting;
+
+    const res = await runDeployPipeline(env, makeInput({ domains: [domain], routing }), fakeLogger());
+
+    expect(res.status).toBe("ready");
+    expect(res.routeWarnings).toBeUndefined();
+    expect(events).toContain("registerRoute");
   });
 });

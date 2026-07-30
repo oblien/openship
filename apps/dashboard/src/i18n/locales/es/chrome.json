@@ -46,5 +46,36 @@
     "backToDashboard": "Volver al panel",
     "viewDeployments": "Ver despliegues",
     "copyId": "Copiar ID"
+  },
+  "window": {
+    "back": "Atrás",
+    "forward": "Adelante",
+    "reload": "Recargar",
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "restore": "Restaurar",
+    "close": "Cerrar",
+    "devTools": "Herramientas de desarrollo",
+    "navigation": "Navegación"
+  },
+  "apiDown": {
+    "title": "No se puede conectar con la API",
+    "description": "El panel está funcionando, pero no puede comunicarse con la API de Openship, así que todavía no hay nada que mostrar. Tus despliegues siguen funcionando igualmente.",
+    "hintStatus": "Comprueba que la API esté activa: ejecuta `openship status` en el host.",
+    "hintStart": "¿No está en ejecución? Inícialo con `openship up`.",
+    "hintRemote": "¿Gestionas un servidor remoto? Comprueba su URL y que el puerto de la API sea accesible desde aquí.",
+    "docs": "Documentación de autoalojamiento",
+    "retry": "Reintentar"
+  },
+  "error": {
+    "title": "Esta página encontró un error",
+    "description": "Algo de esta pantalla no se pudo renderizar. Reintentar suele solucionarlo; nada de lo que has desplegado se ha visto afectado.",
+    "tryAgain": "Intentar de nuevo",
+    "goToProjects": "Ir a proyectos",
+    "refCode": "Ref."
+  },
+  "errorLinks": {
+    "docs": "Documentación",
+    "github": "Informar de un problema"
   }
 }

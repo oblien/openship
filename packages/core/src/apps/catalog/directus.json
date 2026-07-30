@@ -1,0 +1,49 @@
+{
+  "available": false,
+  "id": "directus",
+  "name": "Directus",
+  "description": "Headless CMS with an instant REST + GraphQL API over your data. Create the admin on first visit.",
+  "kind": "template",
+  "logo": "directus",
+  "category": "cms",
+  "tags": [
+    "cms",
+    "headless",
+    "api"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "directus",
+      "image": "directus/directus:latest",
+      "ports": [
+        "8055:8055"
+      ],
+      "exposedPort": 8055,
+      "exposed": true,
+      "environment": {
+        "DB_CLIENT": "sqlite3",
+        "DB_FILENAME": "/directus/database/data.db",
+        "PUBLIC_URL": "{{publicUrl:directus}}"
+      },
+      "secretEnv": [
+        "SECRET"
+      ],
+      "volumes": [
+        "directus_database:/directus/database",
+        "directus_uploads:/directus/uploads"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "SECRET",
+      "service": "directus",
+      "label": "App secret",
+      "help": "Auto-generated. Signs access tokens.",
+      "generate": "secret",
+      "secret": true
+    }
+  ]
+}

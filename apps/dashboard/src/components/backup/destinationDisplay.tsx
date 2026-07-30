@@ -23,7 +23,6 @@ export const EDITABLE_KINDS = new Set<BackupDestinationSummary["kind"]>([
   "s3_compatible",
   "sftp",
   "openship_server",
-  "local",
 ]);
 
 type BackupsDict = Record<string, string>;

@@ -14,7 +14,7 @@
 import { compileVercelRouting, type RouteProxyLocation } from "@repo/adapters";
 import { isStaticService, serviceKind } from "../../../lib/deployable-service";
 import type { RouteRegister } from "../../../lib/route-apply.service";
-import type { DeploymentRewrite, RoutingConfig } from "@repo/core";
+import type { DeploymentRewrite, RoutingConfig, ProjectCompositeRoute } from "@repo/core";
 
 interface CompositeCandidate {
   id: string;
@@ -111,15 +111,30 @@ export function buildCompositeRegistration(input: {
   routingConfig?: RoutingConfig | null;
   resolveTargetUrl: (serviceId: string) => string | null | undefined;
   resolveDomain: (serviceId: string) => { hostname: string; isCustomDomain: boolean } | null;
+  /**
+   * The frontend's built files on the host, when it was extracted rather than
+   * containerized (self-hosted static). Present → the domain serves `/` from disk
+   * and the frontend needs no container, no port and no upstream at all; the
+   * backend still gets its `/api/` proxy location in the SAME vhost.
+   *
+   * Absent (or null) → the previous behaviour: the frontend is an upstream. That is
+   * still the only option on cloud, where Oblien runs the workload and there is no
+   * host directory to serve.
+   */
+  resolveStaticRoot?: (serviceId: string) => string | null | undefined;
 }): CompositeRegistration | null {
   const routing = input.routingConfig ?? undefined;
   const plan = planCompositeRoute(input.services, { rewrites: routing?.rewrites });
   if (!plan) return null;
 
-  const frontendUrl = input.resolveTargetUrl(plan.frontendServiceId);
+  const frontendStaticRoot = input.resolveStaticRoot?.(plan.frontendServiceId) || null;
+  // Only resolve an upstream for the frontend when it isn't served from disk —
+  // asking for one would otherwise fail the whole composite for a static frontend
+  // that has (correctly) no port.
+  const frontendUrl = frontendStaticRoot ? null : input.resolveTargetUrl(plan.frontendServiceId);
   const backendUrl = input.resolveTargetUrl(plan.backendServiceId);
   const domain = input.resolveDomain(plan.frontendServiceId);
-  if (!frontendUrl || !backendUrl || !domain) return null;
+  if ((!frontendStaticRoot && !frontendUrl) || !backendUrl || !domain) return null;
 
   // Compile the full vercel.json routing when present (rewrites → backend proxy
   // locations, redirects, headers); otherwise fall back to the `/api` convention.
@@ -135,10 +150,44 @@ export function buildCompositeRegistration(input: {
     register: {
       hostname: domain.hostname,
       isCustomDomain: domain.isCustomDomain,
-      targetUrl: frontendUrl,
+      // Files at `/`, or an upstream at `/` — never both.
+      ...(frontendStaticRoot ? { staticRoot: frontendStaticRoot } : { targetUrl: frontendUrl! }),
       proxyLocations,
       ...(compiled?.redirects.length ? { redirects: compiled.redirects } : {}),
       ...(compiled?.headerRules.length ? { headerRules: compiled.headerRules } : {}),
     },
   };
+}
+
+/**
+ * Migration path-fan-out equivalent of {@link buildCompositeRegistration}: given
+ * the project's persisted `compositeRoutes` + a live-upstream resolver, produce
+ * one `RouteRegister` per domain (root service at `/`, each extra path prefix
+ * proxied to its service). PURE — callers supply the resolver (deploy loop from
+ * `results[].ip`, routing API from `service_deployment.ip`). A route whose ROOT
+ * upstream can't resolve is skipped; individual unresolvable path locations are
+ * dropped (best-effort, never throws). Unlike `buildCompositeRegistration` this
+ * expresses ARBITRARY multi-service fan-out, not the 1-static + 1-server shape.
+ */
+export function buildDomainFanoutRegistrations(input: {
+  routes: ProjectCompositeRoute[] | null | undefined;
+  resolveTargetUrl: (serviceId: string) => string | null | undefined;
+}): RouteRegister[] {
+  const out: RouteRegister[] = [];
+  for (const route of input.routes ?? []) {
+    const rootUrl = input.resolveTargetUrl(route.rootServiceId);
+    if (!rootUrl) continue; // can't serve the domain at all without the root
+    const proxyLocations: RouteProxyLocation[] = [];
+    for (const loc of route.locations) {
+      const url = input.resolveTargetUrl(loc.serviceId);
+      if (url) proxyLocations.push({ pathPrefix: loc.pathPrefix, targetUrl: url });
+    }
+    out.push({
+      hostname: route.hostname,
+      isCustomDomain: route.isCustomDomain,
+      targetUrl: rootUrl,
+      ...(proxyLocations.length ? { proxyLocations } : {}),
+    });
+  }
+  return out;
 }

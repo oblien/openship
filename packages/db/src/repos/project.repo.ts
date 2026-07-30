@@ -34,7 +34,10 @@ export function createProjectRepo(db: Database) {
   return {
     // ── Projects ───────────────────────────────────────────────────────
 
-    async findById(id: string) {
+    async findById(id: string | null | undefined) {
+      // Tolerate a null/undefined id (e.g. a webhook-owned domain has no
+      // projectId) → no project, which every caller already guards with `!project`.
+      if (!id) return undefined;
       return db.query.project.findFirst({
         where: and(eq(project.id, id), isNull(project.deletedAt)),
       });
@@ -48,6 +51,27 @@ export function createProjectRepo(db: Database) {
           eq(project.slug, slug),
           isNull(project.deletedAt),
         ),
+      });
+    },
+
+    /**
+     * The not-yet-deployed catalog-app draft for (org, appTemplateId), if any.
+     * A draft = an isApp project that never went live (activeDeploymentId null).
+     * Pass `slug` to require an exact-slug match so re-opening a same-named draft
+     * is reused while a differently-named install still creates a new instance
+     * (multiple apps of the same type). Omit `slug` to match any draft of the type.
+     */
+    async findDraftByAppTemplate(organizationId: string, appTemplateId: string, slug?: string) {
+      return db.query.project.findFirst({
+        where: and(
+          eq(project.organizationId, organizationId),
+          eq(project.appTemplateId, appTemplateId),
+          isNull(project.activeDeploymentId),
+          isNull(project.deletedAt),
+          eq(project.environmentSlug, "production"),
+          ...(slug ? [eq(project.slug, slug)] : []),
+        ),
+        orderBy: [desc(project.createdAt)],
       });
     },
 
@@ -149,10 +173,7 @@ export function createProjectRepo(db: Database) {
      * Membership check is enforced at the middleware layer; this just
      * scopes the rows.
      */
-    async listByOrganization(
-      organizationId: string,
-      opts?: { page?: number; perPage?: number },
-    ) {
+    async listByOrganization(organizationId: string, opts?: { page?: number; perPage?: number }) {
       const page = opts?.page ?? 1;
       const perPage = opts?.perPage ?? 20;
       const offset = (page - 1) * perPage;
@@ -170,6 +191,24 @@ export function createProjectRepo(db: Database) {
         .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt)));
 
       return { rows, total: Number(total), page, perPage };
+    },
+
+    /**
+     * Project counts for the dashboard home — total and with-an-active-
+     * deployment, in one aggregate query instead of listing every row.
+     */
+    async countByOrganization(
+      organizationId: string,
+    ): Promise<{ total: number; active: number }> {
+      const [row] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) filter (where ${project.activeDeploymentId} is not null)::int`,
+        })
+        .from(project)
+        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt)));
+
+      return { total: Number(row?.total ?? 0), active: Number(row?.active ?? 0) };
     },
 
     /**
@@ -322,11 +361,7 @@ export function createProjectRepo(db: Database) {
         .update(project)
         .set({ deletionInProgress: true, updatedAt: new Date() })
         .where(
-          and(
-            eq(project.id, id),
-            eq(project.deletionInProgress, false),
-            isNull(project.deletedAt),
-          ),
+          and(eq(project.id, id), eq(project.deletionInProgress, false), isNull(project.deletedAt)),
         )
         .returning();
       return rows.length > 0;
@@ -531,18 +566,18 @@ export function createProjectRepo(db: Database) {
       deletes: string[],
       serviceId?: string | null,
     ) {
-      const affectedKeys = Array.from(
-        new Set([...deletes, ...upserts.map((u) => u.key)]),
-      );
+      const affectedKeys = Array.from(new Set([...deletes, ...upserts.map((u) => u.key)]));
       if (affectedKeys.length === 0) return;
 
       await db.transaction(async (tx) => {
-        await tx.delete(envVar).where(
-          and(
-            ...envVarScope(projectId, environment, serviceId ?? null),
-            inArray(envVar.key, affectedKeys),
-          ),
-        );
+        await tx
+          .delete(envVar)
+          .where(
+            and(
+              ...envVarScope(projectId, environment, serviceId ?? null),
+              inArray(envVar.key, affectedKeys),
+            ),
+          );
 
         if (upserts.length > 0) {
           await tx.insert(envVar).values(
@@ -588,10 +623,7 @@ export function createProjectRepo(db: Database) {
       environment: string,
     ): Promise<Array<{ serviceId: string | null; updatedAt: Date }>> {
       const rows = await db.query.envVar.findMany({
-        where: and(
-          eq(envVar.projectId, projectId),
-          eq(envVar.environment, environment),
-        ),
+        where: and(eq(envVar.projectId, projectId), eq(envVar.environment, environment)),
         columns: { serviceId: true, updatedAt: true },
       });
       return rows.map((r) => ({ serviceId: r.serviceId, updatedAt: r.updatedAt }));

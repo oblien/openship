@@ -21,6 +21,7 @@ import { runOrphanSweep } from "../projects/orphan-gc-schedule";
 import { runRetentionSweep } from "../backups/retention-prune";
 import { pruneAuditEvents } from "../audit/audit-prune";
 import { runReconcileSweep } from "../deployments/reconcile-schedule";
+import { runImageGcSweep } from "../deployments/image-gc";
 import { verifyPendingDomains } from "../domains/domain.service";
 import { scanInstanceUpdates } from "../updates/updates.service";
 import { scanInstanceModules } from "../system/server-modules.service";
@@ -37,7 +38,7 @@ export interface SystemJobDef {
   available?: () => boolean;
 }
 
-const WEBHOOK_EVENT_RETENTION_DAYS = 7;
+const WEBHOOK_EVENT_RETENTION_DAYS = 30;
 const JOB_RUN_RETENTION_DAYS = 30;
 
 export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
@@ -57,6 +58,25 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     label: "Orphaned resource cleanup",
     defaultCron: "41 * * * *",
     run: async () => runOrphanSweep(),
+  },
+  {
+    key: "images:gc",
+    label: "Built-image garbage collection",
+    // Off-peak daily. Prunes each project's superseded build images beyond the
+    // rollback window on its deploy host. Cloud (SaaS) workloads live on Oblien,
+    // not local Docker, so there's nothing to sweep there.
+    defaultCron: "23 4 * * *",
+    available: () => platform().target !== "cloud",
+    run: async () => {
+      const r = await runImageGcSweep();
+      return {
+        scanned: r.projectsScanned,
+        removed: r.imagesRemoved,
+        bytesReclaimed: r.bytesReclaimed,
+        skipped: r.skippedInUse,
+        failed: r.errors,
+      };
+    },
   },
   {
     key: "permissions:pending-grant-prune",
@@ -82,7 +102,7 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     defaultCron: "47 3 * * *",
     run: async () => {
       const cutoff = new Date(Date.now() - WEBHOOK_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-      const deleted = await repos.githubWebhookEvent.pruneOlderThan(cutoff);
+      const deleted = await repos.webhookDelivery.pruneOlderThan(cutoff);
       return { deleted };
     },
   },
@@ -95,14 +115,25 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
   {
     key: "domains:verify-pending",
     label: "Domain DNS verification",
-    // Re-checks every pending custom domain and auto-flips it to verified once
-    // DNS propagates — the lazy half of the verify lifecycle. Off the :00/:30
-    // marks. Cloud verifies via Oblien too, so gate only desktop out.
+    // TWO phases, one sweep: (1) re-check pending custom domains and flip them to
+    // verified once DNS propagates, (2) finish TLS for domains that verified but
+    // whose first issuance failed — those sat in `provisioning` forever, needing a
+    // manual Verify + Redeploy (#289), because the verify sweep only selects
+    // unverified rows and the renewal sweep only selects certs that already exist.
+    // Off the :00/:30 marks. This also runs in Desktop: the local API resolves
+    // each project's active deployment and performs verification/cert work on
+    // that remote server over its stored SSH connection.
     defaultCron: "*/13 * * * *",
-    available: () => platform().target !== "desktop",
     run: async () => {
       const r = await verifyPendingDomains();
-      return { verified: r.verified, failed: r.failed, pending: r.stillPending, total: r.total };
+      return {
+        verified: r.verified,
+        failed: r.failed,
+        pending: r.stillPending,
+        total: r.total,
+        sslIssued: r.sslIssued ?? 0,
+        sslRetrying: r.sslRetrying ?? 0,
+      };
     },
   },
   {

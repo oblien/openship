@@ -39,12 +39,21 @@ async function resolveMcpPrincipal(token: string, headers: Headers): Promise<Mcp
   }
 
   let grantedRootTypes: ReadonlySet<string> = new Set();
+  let canCreateProjects = false;
   if (role === "restricted" && id.hasBinding) {
     const grants = await repos.patGrant.listByToken(id.tokenId);
     grantedRootTypes = new Set(grants.map((g) => g.resourceType));
+    // "Own projects" scope: a project wildcard grant carrying the create ability
+    // (mirrors the {project,"*",create} check in permission.ts).
+    canCreateProjects = grants.some(
+      (g) =>
+        g.resourceType === "project" &&
+        g.resourceId === "*" &&
+        (g.permissions ?? []).includes("create"),
+    );
   }
 
-  return { role, readOnly: id.readOnly, grantedRootTypes };
+  return { role, readOnly: id.readOnly, grantedRootTypes, canCreateProjects };
 }
 
 const PUBLIC_REASON =

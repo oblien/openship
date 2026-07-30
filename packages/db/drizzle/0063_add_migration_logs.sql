@@ -1,0 +1,1 @@
+ALTER TABLE "docker_migration_run" ADD COLUMN "logs" text;

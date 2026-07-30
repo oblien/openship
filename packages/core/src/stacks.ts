@@ -226,9 +226,7 @@ export const STACKS = {
     defaultBuildCommand: "next build",
     defaultStartCommand: "next start",
     requiredToolVersions: { node: "20.9.0" },
-    cacheDirs: [".next/cache"],
-    defaultBuildStrategy: "local",
-    detection: {
+    cacheDirs: [".next/cache"],    detection: {
       rootMarkers: ["next.config.js", "next.config.mjs", "next.config.ts"],
       deps: ["next"],
     },
@@ -241,9 +239,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "nuxt build",
     defaultStartCommand: "node .output/server/index.mjs",
-    cacheDirs: [".nuxt"],
-    defaultBuildStrategy: "local",
-    detection: {
+    cacheDirs: [".nuxt"],    detection: {
       rootMarkers: ["nuxt.config.js", "nuxt.config.ts", "nuxt.config.mjs"],
       deps: ["nuxt", "@nuxt/core"],
     },
@@ -255,9 +251,7 @@ export const STACKS = {
     outputDirectory: ".svelte-kit",
     defaultPort: 3000,
     defaultBuildCommand: "vite build",
-    defaultStartCommand: "node build/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node build/index.js",    detection: {
       rootMarkers: ["svelte.config.js", "svelte.config.mjs"],
       deps: ["svelte", "@sveltejs/kit"],
     },
@@ -269,9 +263,7 @@ export const STACKS = {
     outputDirectory: "build",
     defaultPort: 3000,
     defaultBuildCommand: "remix build",
-    defaultStartCommand: "remix-serve build/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "remix-serve build/index.js",    detection: {
       rootMarkers: ["remix.config.js", "remix.config.ts"],
       deps: ["@remix-run/react", "@remix-run/node", "remix"],
     },
@@ -283,9 +275,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 4321,
     defaultBuildCommand: "astro build",
-    defaultStartCommand: "node dist/server/entry.mjs",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node dist/server/entry.mjs",    detection: {
       rootMarkers: ["astro.config.mjs", "astro.config.js", "astro.config.ts"],
       deps: ["astro"],
     },
@@ -297,9 +287,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 5173,
     defaultBuildCommand: "vite build",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       rootMarkers: ["vite.config.js", "vite.config.ts", "vite.config.mjs"],
       deps: ["vite"],
     },
@@ -311,9 +299,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 4200,
     defaultBuildCommand: "ng build --configuration production",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       rootMarkers: ["angular.json"],
       deps: ["@angular/core"],
     },
@@ -326,9 +312,7 @@ export const STACKS = {
     defaultPort: 8000,
     defaultBuildCommand: "gatsby build",
     defaultStartCommand: "gatsby serve",
-    cacheDirs: [".cache"],
-    defaultBuildStrategy: "local",
-    detection: {
+    cacheDirs: [".cache"],    detection: {
       rootMarkers: ["gatsby-config.js", "gatsby-config.ts"],
       deps: ["gatsby"],
     },
@@ -340,9 +324,7 @@ export const STACKS = {
     outputDirectory: "build",
     defaultPort: 3000,
     defaultBuildCommand: "react-scripts build",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       // CRA's only durable signal is the react-scripts dep; the public+src
       // layout is shared with many other React setups.
       deps: ["react-scripts"],
@@ -355,9 +337,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 8080,
     defaultBuildCommand: "vue-cli-service build",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       rootMarkers: ["vue.config.js", "vue.config.ts"],
       // Note: deps gate is the disambiguator vs. Nuxt - checked in stack-detector.
       deps: ["vue"],
@@ -370,9 +350,7 @@ export const STACKS = {
     outputDirectory: "build",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-  },
+    defaultStartCommand: "",  },
 
   // ── JavaScript / TypeScript - Backend ──────────────────────────────────────
 
@@ -383,9 +361,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node index.js",    detection: {
       deps: ["express"],
     },
   },
@@ -396,9 +372,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node dist/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node dist/index.js",    detection: {
       deps: ["fastify"],
     },
   },
@@ -409,9 +383,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node dist/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node dist/index.js",    detection: {
       deps: ["hono"],
     },
   },
@@ -422,9 +394,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "nest build",
-    defaultStartCommand: "node dist/main.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node dist/main.js",    detection: {
       rootMarkers: ["nest-cli.json"],
       deps: ["@nestjs/core"],
     },
@@ -436,9 +406,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node index.js",    detection: {
       deps: ["koa"],
     },
   },
@@ -449,9 +417,7 @@ export const STACKS = {
     outputDirectory: "build",
     defaultPort: 3333,
     defaultBuildCommand: "node ace build --production",
-    defaultStartCommand: "node build/server.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node build/server.js",    detection: {
       rootMarkers: ["ace.js", ".adonisrc.json", "adonisrc.ts"],
       deps: ["@adonisjs/core"],
     },
@@ -463,9 +429,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "bun dist/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "bun dist/index.js",    detection: {
       deps: ["elysia"],
     },
   },
@@ -714,9 +678,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "mvn clean package -DskipTests",
     defaultStartCommand: "java -jar target/*.jar",
-    productionPaths: ["target"],
-    defaultBuildStrategy: "local",
-    // Predominantly a Maven stack; bare-metal builds need `mvn` ensured. Gradle
+    productionPaths: ["target"],    // Predominantly a Maven stack; bare-metal builds need `mvn` ensured. Gradle
     // Spring Boot projects still build via their `./gradlew` wrapper (JDK-only).
     requiredTools: ["java", "javac", "maven"],
     detection: {
@@ -737,9 +699,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "mvn clean package -DskipTests",
     defaultStartCommand: "java -jar target/quarkus-app/quarkus-run.jar",
-    productionPaths: ["target"],
-    defaultBuildStrategy: "local",
-    requiredTools: ["java", "javac", "maven"],
+    productionPaths: ["target"],    requiredTools: ["java", "javac", "maven"],
     detection: {
       rootMarkers: ["pom.xml", "build.gradle", "build.gradle.kts"],
       deps: ["io.quarkus:quarkus-core", "quarkus"],
@@ -764,9 +724,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "gradle build -x test",
     defaultStartCommand: "java -jar build/libs/*.jar",
-    productionPaths: ["build/libs"],
-    defaultBuildStrategy: "local",
-    // Gradle-based; bare-metal builds need `gradle` ensured (or the `./gradlew`
+    productionPaths: ["build/libs"],    // Gradle-based; bare-metal builds need `gradle` ensured (or the `./gradlew`
     // wrapper, which the detector prefers when present).
     requiredTools: ["java", "javac", "gradle"],
     detection: {
@@ -840,9 +798,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node index.js",    detection: {
       rootMarkers: ["package.json"],
     },
   },
@@ -854,9 +810,7 @@ export const STACKS = {
     outputDirectory: ".",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       rootMarkers: ["index.html"],
     },
   },

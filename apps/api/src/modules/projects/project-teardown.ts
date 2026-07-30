@@ -17,7 +17,10 @@
  *      still returns 207 with that step marked `failed` in the response.
  *
  * The teardown sequence is INTENTIONALLY ordered:
- *   webhook → runtime resources → webmail → DB row.
+ *   webhook → runtime resources → webmail → unlink consumers → DB row.
+ * Unlinking the projects that CONSUME this app is the last thing before the row
+ * drops: a runtime cleanup that fails (unreachable server → row kept) must not
+ * strip another project's env var while the app it points at is still alive.
  * GitHub first because once the row is gone we lose `webhookId`. Runtime
  * resources next because the existing manifest reads container/volume
  * metadata from `deployment`+`service` rows that the FK CASCADE will
@@ -38,6 +41,7 @@ import { removeProjectFromServerManifests } from "../../lib/openship-manifest-sy
 import { cancelBuildSession } from "../deployments/build.service";
 import { deleteWebhook as deleteGitHubWebhook } from "../github/github.service";
 import type { RequestContext } from "../../lib/request-context";
+import { env } from "../../config";
 import {
   cleanupWebmailInstall,
   mailServerIdFromWebmailSlug,
@@ -79,6 +83,16 @@ export interface OrphanedResourceSummary {
   serverId: string | null;
 }
 
+/** A project we unlinked from this app on the way out: it keeps running, minus
+ *  `envKey`. Its live container still holds the (now dead) value until its next
+ *  deploy — which is what the caller reports back to the user. */
+export interface UnlinkedConsumerSummary {
+  linkId: string;
+  projectId: string;
+  projectName: string;
+  envKey: string;
+}
+
 export interface TeardownResult {
   /** True only when EVERY step is `ok` or `skipped`. */
   ok: boolean;
@@ -95,6 +109,9 @@ export interface TeardownResult {
    *  not a failure. Drives the "will be cleaned up when the server is back"
    *  message. */
   orphaned: OrphanedResourceSummary[];
+  /** Projects unlinked from this app as part of the delete. Empty for a project
+   *  nothing was wired into. */
+  unlinked: UnlinkedConsumerSummary[];
   /** Set when teardown short-circuited before the step sequence; absent
    *  on the normal "ran to completion" path. */
   rejection?: TeardownRejectionKind;
@@ -127,6 +144,13 @@ export interface TeardownOptions {
    * runtime + rows but must NOT delete the webhook.
    */
   preserveWebhook?: boolean;
+  /**
+   * Record-only ("soft") delete: drop just the Openship DB record and LEAVE the
+   * server workload + data + on-server manifest intact, so the project can be
+   * re-imported later. Self-hosted only — IGNORED for a cloud project (its
+   * resources live on Oblien and must be reclaimed). Enforced in teardownProject.
+   */
+  recordOnly?: boolean;
   /**
    * Orphan-and-drop even when a resource on a REACHABLE server fails to
    * destroy (a persistent real error). Records the leaked resources for GC and
@@ -290,9 +314,37 @@ export async function teardownProject(
       return finalize(steps, false, "org_mismatch");
     }
 
+    // ── Step 0: find the projects this app is linked INTO. ───────────────
+    // `project_connection.sourceProjectId` is ON DELETE RESTRICT, so those links
+    // have to go before the row can drop — we unlink them near the END (see
+    // stepUnlinkConsumers), but read them here so the list is captured while the
+    // graph is still whole.
+    //
+    // try/catch, not `.catch()`: the repo lookup can throw SYNCHRONOUSLY (a
+    // partially-stubbed `repos` in a unit test), which a promise `.catch` never
+    // sees — and a read that explodes must not take the delete down. Unreadable
+    // → the FK still protects the row (stepDeleteRow fails loudly instead).
+    let consumerLinks: ConsumerLink[] = [];
+    try {
+      consumerLinks = (await repos.projectConnection.listBySource(projectId)) as ConsumerLink[];
+    } catch {
+      /* unreadable — stepDeleteRow surfaces the FK error if it mattered */
+    }
+
+    // Record-only ("soft") delete: keep the server workload + data, drop just
+    // the Openship record. NEVER honored for a cloud project — its resources
+    // live on Oblien and must be reclaimed; this is the security boundary, not
+    // the UI toggle. (CLOUD_MODE = the SaaS itself, where nothing is "kept".)
+    const recordOnly = !!opts.recordOnly && !project.cloudWorkspaceId && !env.CLOUD_MODE;
+
     // ── Step 1: Cancel in-flight work (force=true only). ────────────────
+    // `keepProvisioned` for record-only: the cancel aborts the build and marks
+    // the row cancelled but must NOT destroy what the deploy already
+    // provisioned — otherwise the dashboard's automatic force-escalation on
+    // "active work" would tear down containers/images the user was promised
+    // stay on the server.
     if (opts.force) {
-      await stepCancelInFlight(projectId, ctx.userId, push);
+      await stepCancelInFlight(projectId, push, recordOnly);
     } else {
       push({ step: "cancel_in_flight", status: "skipped", details: "force=false" });
     }
@@ -306,61 +358,80 @@ export async function teardownProject(
       await stepDeleteWebhook(ctx, project, push);
     }
 
-    // ── Step 3: Tear down runtime + edge + pages + routes + volumes via
-    //   the existing manifest executor. Cloud workspaces destroy through
-    //   the same path because the cloud runtime adapter implements destroy().
-    //   Resources on an unreachable server are orphaned (not destroyed inline)
-    //   and returned here so we can record them for GC before the row drops.
-    const orphanCandidates = await stepRuntimeCleanup(
-      project,
-      opts.wipeVolumes ?? false,
-      opts.forceOrphan ?? false,
-      push,
-    );
+    // ── Steps 3+4: server-resource teardown — SKIPPED for record-only. ──
+    // Record-only keeps the workload, data, AND the on-server .openship manifest
+    // (so a later Docker re-scan can re-import the project); it drops only the DB
+    // row below. Otherwise: tear down runtime + edge + pages + routes + volumes
+    // (cloud workspaces destroy through the same path — the cloud adapter
+    // implements destroy()), webmail, and the server manifest entry.
+    let orphaned: OrphanedResourceSummary[] = [];
+    if (recordOnly) {
+      push({ step: "runtime_cleanup", status: "skipped", details: "record-only: kept on server" });
+      push({ step: "webmail", status: "skipped", details: "record-only: kept on server" });
+    } else {
+      // Resources on an unreachable server are orphaned (not destroyed inline)
+      // and returned here so we can record them for GC before the row drops.
+      const orphanCandidates = await stepRuntimeCleanup(
+        project,
+        opts.wipeVolumes ?? false,
+        opts.forceOrphan ?? false,
+        push,
+      );
 
-    // ── Step 4: Webmail filesystem + mail-state. ─────────────────────────
-    await stepWebmailTeardown(project, push);
+      await stepWebmailTeardown(project, push);
 
-    // Best-effort: drop this project from each server's .openship manifest so a
-    // later recover-from-server scan doesn't re-list it. Desktop-only inside;
-    // never gates the delete (reconcile's running-container check is the guard).
-    await removeProjectFromServerManifests(project).catch(() => {});
+      // Best-effort: drop this project from each server's .openship manifest so a
+      // later recover-from-server scan doesn't re-list it. Desktop-only inside;
+      // never gates the delete (reconcile's running-container check is the guard).
+      await removeProjectFromServerManifests(project).catch(() => {});
 
-    // ── ATOMICITY GATE: never drop the DB row while the SOURCE is dirty. ──
-    // If runtime cleanup (containers / images / volumes / cloud workspace /
-    // routes) or webmail teardown FAILED, KEEP the project row so the leaked
-    // resources still have a record to retry against. The `finally` below
-    // releases the lock (rowDeleted stays false), so the next delete attempt
-    // re-runs cleanup. The returned result carries the failed steps
-    // (finalize → ok:false, unrecoverable) so the UI shows what blocked it.
-    // GitHub-webhook unregister is best-effort (external state, not a host
-    // resource leak) and deliberately does NOT gate the delete.
-    const sourceClean = steps.every(
-      (s) =>
-        (s.step !== "runtime_cleanup" && s.step !== "webmail") ||
-        s.status === "ok" ||
-        s.status === "skipped",
-    );
-    if (!sourceClean) {
-      push({
-        step: "delete_db_row",
-        status: "skipped",
-        details: "kept: source cleanup incomplete — retry once the runtime is reachable",
-      });
-      return finalize(steps, false);
+      // ── ATOMICITY GATE: never drop the DB row while the SOURCE is dirty. ──
+      // If runtime cleanup (containers / images / volumes / cloud workspace /
+      // routes) or webmail teardown FAILED, KEEP the project row so the leaked
+      // resources still have a record to retry against. The `finally` below
+      // releases the lock (rowDeleted stays false), so the next delete attempt
+      // re-runs cleanup. The returned result carries the failed steps
+      // (finalize → ok:false, unrecoverable) so the UI shows what blocked it.
+      // GitHub-webhook unregister is best-effort (external state, not a host
+      // resource leak) and deliberately does NOT gate the delete.
+      const sourceClean = steps.every(
+        (s) =>
+          (s.step !== "runtime_cleanup" && s.step !== "webmail") ||
+          s.status === "ok" ||
+          s.status === "skipped",
+      );
+      if (!sourceClean) {
+        push({
+          step: "delete_db_row",
+          status: "skipped",
+          details: "kept: source cleanup incomplete — retry once the runtime is reachable",
+        });
+        return finalize(steps, false);
+      }
+
+      // About to drop the row — persist any orphaned resources FIRST so the GC
+      // sweep can still find + reclaim them after the project row (their only
+      // record) is gone. Only happens on the row-dropping path: a kept row keeps
+      // the resources tracked via the project itself, so no orphan record needed.
+      orphaned = await persistOrphans(ctx.organizationId, projectId, orphanCandidates);
     }
 
-    // About to drop the row — persist any orphaned resources FIRST so the GC
-    // sweep can still find + reclaim them after the project row (their only
-    // record) is gone. Only happens on the row-dropping path: a kept row keeps
-    // the resources tracked via the project itself, so no orphan record needed.
-    const orphaned = await persistOrphans(ctx.organizationId, projectId, orphanCandidates);
+    // ── Step 4b: unlink this app from every project it was wired into. ───
+    // The LAST thing before the row drops, deliberately: the atomicity gate above
+    // can still keep the row (unreachable server), and a project stripped of its
+    // env var while the app it points at is still alive is the one outcome nobody
+    // asked for. A failure here keeps the row too — the RESTRICT FK would refuse
+    // the drop anyway.
+    const unlink = await stepUnlinkConsumers(consumerLinks, push);
+    if (!unlink.ok) {
+      return finalize(steps, false, undefined, { orphaned, unlinked: unlink.unlinked });
+    }
 
     // ── Step 5: Drop the DB row. FK CASCADE on project.id sweeps
     //   deployment, service, env_var, domain, backup_policy.
     rowDeleted = await stepDeleteRow(projectId, project.groupId, push);
 
-    return finalize(steps, rowDeleted, undefined, orphaned);
+    return finalize(steps, rowDeleted, undefined, { orphaned, unlinked: unlink.unlinked });
   } finally {
     // Lock released on every non-deleting exit so a retry is always possible.
     if (!rowDeleted) {
@@ -373,7 +444,10 @@ function finalize(
   steps: TeardownStep[],
   rowDeleted: boolean,
   rejection?: TeardownRejectionKind,
-  orphaned: OrphanedResourceSummary[] = [],
+  extra: {
+    orphaned?: OrphanedResourceSummary[];
+    unlinked?: UnlinkedConsumerSummary[];
+  } = {},
 ): TeardownResult {
   const unrecoverable = steps.filter((s) => s.status === "failed");
   return {
@@ -381,17 +455,67 @@ function finalize(
     rowDeleted,
     steps,
     unrecoverable,
-    orphaned,
+    orphaned: extra.orphaned ?? [],
+    unlinked: extra.unlinked ?? [],
     ...(rejection !== undefined ? { rejection } : {}),
   };
 }
 
+// ─── Linked projects ──────────────────────────────────────────────────────────
+
+/** A `project_connection` row seen from the SOURCE side — one project this app
+ *  was linked into. */
+interface ConsumerLink {
+  id: string;
+  targetProjectId: string;
+  envKey: string;
+  mode: string;
+}
+
 // ─── Step implementations ─────────────────────────────────────────────────────
+
+/**
+ * Unlink this app from every project it was wired into.
+ *
+ * Deleting a linked app is allowed to break the link — that IS the delete. The
+ * consuming projects keep running (their containers, data and services are never
+ * touched); they just lose the injected connection env var, so the caller tells
+ * the user which ones to redeploy.
+ */
+async function stepUnlinkConsumers(
+  links: ConsumerLink[],
+  push: (s: TeardownStep) => void,
+): Promise<{ ok: boolean; unlinked: UnlinkedConsumerSummary[] }> {
+  const unlinked: UnlinkedConsumerSummary[] = [];
+  if (links.length === 0) return { ok: true, unlinked };
+
+  // Dynamic import keeps the connection service's deploy-pipeline imports out of
+  // this module's static graph — same reason applyConnectionToTarget does it.
+  const { unlinkConsumersOfSource } = await import("./project-connection.service");
+  const result = await unlinkConsumersOfSource(links);
+  unlinked.push(...result.unlinked);
+
+  if (result.errors.length > 0) {
+    push({
+      step: "unlink_consumers",
+      status: "failed",
+      details: `${unlinked.length}/${links.length} unlinked`,
+      error: result.errors.join("; "),
+    });
+    return { ok: false, unlinked };
+  }
+  push({
+    step: "unlink_consumers",
+    status: "ok",
+    details: `${unlinked.length} project link(s) removed`,
+  });
+  return { ok: true, unlinked };
+}
 
 async function stepCancelInFlight(
   projectId: string,
-  actorUserId: string,
   push: (s: TeardownStep) => void,
+  keepProvisioned: boolean,
 ): Promise<void> {
   const before = await getActiveProjectState(projectId);
   if (!before.blocking) {
@@ -403,12 +527,13 @@ async function stepCancelInFlight(
 
   // Cancel each active deployment — cancelBuildSession aborts the build,
   // tears down half-provisioned containers/images, and marks the row
-  // cancelled. Best-effort: a deployment that has already finished
-  // between listing and cancelling will throw ForbiddenError, which we
-  // ignore — the next quiesce poll will pick that up.
+  // cancelled. `keepProvisioned` (record-only delete) skips that teardown so
+  // the cancel stays non-destructive on the server. Best-effort: a deployment
+  // that has already finished between listing and cancelling will throw
+  // ForbiddenError, which we ignore — the next quiesce poll will pick that up.
   for (const depId of before.activeDeploymentIds) {
     try {
-      await cancelBuildSession(depId);
+      await cancelBuildSession(depId, { keepProvisioned });
     } catch (err) {
       cancelErrors.push(`deployment ${depId}: ${safeErrorMessage(err)}`);
     }

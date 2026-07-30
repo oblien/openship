@@ -35,6 +35,10 @@
         "backToDashboard": "ダッシュボードに戻る",
         "createNewProject": "新しいプロジェクトを作成"
       },
+      "loadFailed": {
+        "title": "このプロジェクトを読み込めませんでした",
+        "subtitle": "このプロジェクトへの接続で問題が発生しました。接続を確認して再試行してください。"
+      },
       "accessDenied": {
         "title": "アクセスが拒否されました",
         "subtitle": "このリソースにアクセスする権限がありません。",

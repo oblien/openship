@@ -3,10 +3,10 @@ title: Notifications API
 description: Manage delivery channels, per-event subscriptions, org defaults, and the in-app alert feed.
 ---
 
-import { TypeTable } from 'fumadocs-ui/components/type-table';
+import { TypeTable } from "fumadocs-ui/components/type-table";
 
 The Notifications API decides who hears about events like a failed deploy or an expiring SSL cert, and how.
-You register **channels** (where alerts go — email, webhook, Slack, or the in-app bell), toggle
+You register **channels** (where alerts go — email, webhook, Slack, Discord, Microsoft Teams, or the in-app bell), toggle
 **subscriptions** (which event categories reach each channel), set org-wide **defaults** for new members, and
 read **deliveries** (the alert feed behind the bell icon). In the dashboard this is the **Settings →
 Notifications** page. Channels, subscriptions, and deliveries are per-user; defaults are per-org.
@@ -19,32 +19,32 @@ Send a personal access token as a bearer header (`Authorization: Bearer <token>`
 </Callout>
 
 <Callout title="Available on every instance" type="info">
-This module ships on both self-hosted and cloud instances. There is no dedicated `openship` CLI command —
-manage notifications from the dashboard or these endpoints directly.
+  This module ships on both self-hosted and cloud instances. There is no dedicated `openship` CLI
+  command — manage notifications from the dashboard or these endpoints directly.
 </Callout>
 
 ## Endpoints
 
-| Method & path | Permission | What it does |
-|---|---|---|
-| `GET /api/notifications/categories` | `notifications:read` | List notification categories (the registry of event types). |
-| `GET /api/notifications/channels` | `notifications:read` | List the caller's notification channels (email, webhook, etc.). |
-| `POST /api/notifications/channels` | `notifications:write` | Create a notification channel. |
-| `PATCH /api/notifications/channels/:id` | `notifications:write` | Update a notification channel. |
-| `DELETE /api/notifications/channels/:id` | `notifications:write` | Delete a notification channel. |
-| `GET /api/notifications/subscriptions` | `notifications:read` | List the caller's notification subscriptions. |
-| `PUT /api/notifications/subscriptions` | `notifications:write` | Create or update a notification subscription. |
-| `DELETE /api/notifications/subscriptions/:id` | `notifications:write` | Delete a notification subscription. |
-| `GET /api/notifications/defaults` | `notifications:read` | List org default notification settings. |
-| `PUT /api/notifications/defaults` | `notifications:admin` | Upsert one org default. |
-| `GET /api/notifications/deliveries` | `notifications:read` | List notification deliveries (the in-app alert feed). |
-| `GET /api/notifications/deliveries/unseen-count` | `notifications:read` | Count unseen notifications (for the bell badge). |
-| `POST /api/notifications/deliveries/:id/seen` | `notifications:write` | Mark one delivery as seen. |
+| Method & path                                    | Permission            | What it does                                                    |
+| ------------------------------------------------ | --------------------- | --------------------------------------------------------------- |
+| `GET /api/notifications/categories`              | `notifications:read`  | List notification categories (the registry of event types).     |
+| `GET /api/notifications/channels`                | `notifications:read`  | List the caller's notification channels (email, webhook, etc.). |
+| `POST /api/notifications/channels`               | `notifications:write` | Create a notification channel.                                  |
+| `PATCH /api/notifications/channels/:id`          | `notifications:write` | Update a notification channel.                                  |
+| `DELETE /api/notifications/channels/:id`         | `notifications:write` | Delete a notification channel.                                  |
+| `GET /api/notifications/subscriptions`           | `notifications:read`  | List the caller's notification subscriptions.                   |
+| `PUT /api/notifications/subscriptions`           | `notifications:write` | Create or update a notification subscription.                   |
+| `DELETE /api/notifications/subscriptions/:id`    | `notifications:write` | Delete a notification subscription.                             |
+| `GET /api/notifications/defaults`                | `notifications:read`  | List org default notification settings.                         |
+| `PUT /api/notifications/defaults`                | `notifications:admin` | Upsert one org default.                                         |
+| `GET /api/notifications/deliveries`              | `notifications:read`  | List notification deliveries (the in-app alert feed).           |
+| `GET /api/notifications/deliveries/unseen-count` | `notifications:read`  | Count unseen notifications (for the bell badge).                |
+| `POST /api/notifications/deliveries/:id/seen`    | `notifications:write` | Mark one delivery as seen.                                      |
 
 <Callout title="Ownership is enforced inside the handlers" type="info">
-The `notifications:*` tags only check that you're a member of the active org. Beyond that, channels,
-subscriptions, and deliveries are scoped to **your** user — you can't read or modify another member's. A
-per-user route for an id you don't own returns `404`.
+  The `notifications:*` tags only check that you're a member of the active org. Beyond that,
+  channels, subscriptions, and deliveries are scoped to **your** user — you can't read or modify
+  another member's. A per-user route for an id you don't own returns `404`.
 </Callout>
 
 ## Categories
@@ -70,9 +70,17 @@ POST /api/notifications/channels
 
 <TypeTable
   type={{
-    kind: { type: '"email" | "webhook" | "in_app" | "slack"', description: 'The channel type. Any other value is rejected.', required: true },
-    label: { type: 'string', description: 'Human-readable name for the channel.', required: true },
-    config: { type: 'object', description: 'Kind-specific settings — see below. in_app takes an empty object.', required: true },
+    kind: {
+      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams"',
+      description: "The channel type. Any other value is rejected.",
+      required: true,
+    },
+    label: { type: "string", description: "Human-readable name for the channel.", required: true },
+    config: {
+      type: "object",
+      description: "Kind-specific settings — see below. in_app takes an empty object.",
+      required: true,
+    },
   }}
 />
 
@@ -80,13 +88,44 @@ The `config` shape depends on `kind`:
 
 <TypeTable
   type={{
-    'email.address': { type: 'string', description: 'A valid email address. Required for kind "email".' },
-    'webhook.url': { type: 'string', description: 'An http(s) URL to POST alerts to. Required for kind "webhook".' },
-    'webhook.hmacSecret': { type: 'string', description: 'Signing secret for the payload HMAC. Auto-generated if omitted, then surfaced via the verification flow.' },
-    'slack.webhookUrl': { type: 'string', description: 'A https://hooks.slack.com/... incoming-webhook URL. Required for kind "slack".' },
-    'slack.channelName': { type: 'string', description: 'Optional display label for the Slack channel.' },
+    "email.address": {
+      type: "string",
+      description: 'A valid email address. Required for kind "email".',
+    },
+    "webhook.url": {
+      type: "string",
+      description: 'An http(s) URL to POST alerts to. Required for kind "webhook".',
+    },
+    "webhook.hmacSecret": {
+      type: "string",
+      description:
+        "Signing secret for the payload HMAC. Auto-generated if omitted, then surfaced via the verification flow.",
+    },
+    "slack.webhookUrl": {
+      type: "string",
+      description: 'A https://hooks.slack.com/... incoming-webhook URL. Required for kind "slack".',
+    },
+    "slack.channelName": {
+      type: "string",
+      description: "Optional display label for the Slack channel.",
+    },
+    "discord.webhookUrl": {
+      type: "string",
+      description:
+        'A https://discord.com/api/webhooks/... incoming-webhook URL. Required for kind "discord".',
+    },
+    "msteams.webhookUrl": {
+      type: "string",
+      description: 'A Microsoft Teams incoming-webhook URL. Required for kind "msteams".',
+    },
   }}
 />
+
+<Callout title="Getting a Teams webhook URL" type="info">
+  In Teams, create a **Workflow** with the **"When a Teams webhook request is received"** trigger
+  and use the URL it generates. Legacy `webhook.office.com` connector URLs are also accepted. The
+  URL is stored encrypted and comes back as `webhookUrlConfigured` in responses, never in full.
+</Callout>
 
 ```bash
 curl -X POST https://your-host/api/notifications/channels \
@@ -109,10 +148,16 @@ PATCH /api/notifications/channels/:id
 
 <TypeTable
   type={{
-    label: { type: 'string', description: 'Rename the channel.' },
-    enabled: { type: 'boolean', description: 'Turn the channel on or off.' },
-    verified: { type: 'boolean', description: 'Mark the channel verified (e.g. after a successful test send).' },
-    config: { type: 'object', description: 'Replace the kind-specific config. Re-validated against the existing kind.' },
+    label: { type: "string", description: "Rename the channel." },
+    enabled: { type: "boolean", description: "Turn the channel on or off." },
+    verified: {
+      type: "boolean",
+      description: "Mark the channel verified (e.g. after a successful test send).",
+    },
+    config: {
+      type: "object",
+      description: "Replace the kind-specific config. Re-validated against the existing kind.",
+    },
   }}
 />
 
@@ -127,9 +172,21 @@ PUT /api/notifications/subscriptions
 
 <TypeTable
   type={{
-    category: { type: 'string', description: 'A category id from GET /categories (e.g. "deploy.failed").', required: true },
-    channelId: { type: 'string', description: 'The channel to route this category to. Must belong to you.', required: true },
-    enabled: { type: 'boolean', description: 'Whether this category delivers to this channel.', required: true },
+    category: {
+      type: "string",
+      description: 'A category id from GET /categories (e.g. "deploy.failed").',
+      required: true,
+    },
+    channelId: {
+      type: "string",
+      description: "The channel to route this category to. Must belong to you.",
+      required: true,
+    },
+    enabled: {
+      type: "boolean",
+      description: "Whether this category delivers to this channel.",
+      required: true,
+    },
   }}
 />
 
@@ -151,9 +208,21 @@ PUT /api/notifications/defaults
 
 <TypeTable
   type={{
-    category: { type: 'string', description: 'A category id from GET /categories.', required: true },
-    defaultEnabled: { type: 'boolean', description: 'Whether new members get this category enabled by default.', required: true },
-    defaultChannelKind: { type: '"email" | "webhook" | "in_app" | "slack"', description: 'Which channel kind the default routes to.', default: '"email"' },
+    category: {
+      type: "string",
+      description: "A category id from GET /categories.",
+      required: true,
+    },
+    defaultEnabled: {
+      type: "boolean",
+      description: "Whether new members get this category enabled by default.",
+      required: true,
+    },
+    defaultChannelKind: {
+      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams"',
+      description: "Which channel kind the default routes to.",
+      default: '"email"',
+    },
   }}
 />
 
@@ -169,8 +238,16 @@ GET /api/notifications/deliveries
 
 <TypeTable
   type={{
-    unseen: { type: 'boolean', description: 'Pass ?unseen=true to return only unseen deliveries.', default: 'false' },
-    limit: { type: 'integer', description: 'Max deliveries to return. Capped at 500.', default: '100' },
+    unseen: {
+      type: "boolean",
+      description: "Pass ?unseen=true to return only unseen deliveries.",
+      default: "false",
+    },
+    limit: {
+      type: "integer",
+      description: "Max deliveries to return. Capped at 500.",
+      default: "100",
+    },
   }}
 />
 
@@ -182,13 +259,15 @@ curl "https://your-host/api/notifications/deliveries?unseen=true&limit=20" \
 ## Errors you might see
 
 <Callout title="400 — invalid channel or missing fields" type="warn">
-The `kind` isn't one of `email`/`webhook`/`in_app`/`slack`, `label` is missing, or the `config` failed its
-per-kind check (a malformed email, a non-`http(s)` webhook URL, or a Slack URL that isn't
-`https://hooks.slack.com/...`). Subscriptions need `category`, `channelId`, and a boolean `enabled`; defaults
-need `category` and a boolean `defaultEnabled`.
+  The `kind` isn't one of `email`/`webhook`/`in_app`/`slack`/`discord`/`msteams`, `label` is
+  missing, or the `config` failed its per-kind check (a malformed email, a non-`http(s)` webhook
+  URL, a Slack URL that isn't `https://hooks.slack.com/...`, a Discord URL that isn't
+  `https://discord.com/api/webhooks/...`, or a Teams URL that isn't an https Workflow or
+  `webhook.office.com` URL). Subscriptions need `category`, `channelId`, and a boolean `enabled`;
+  defaults need `category` and a boolean `defaultEnabled`.
 </Callout>
 
 <Callout title="404 on a per-user route" type="error">
-The channel, subscription, or delivery `:id` doesn't belong to you (or was deleted). List your own with the
-matching `GET` route to get valid ids.
+  The channel, subscription, or delivery `:id` doesn't belong to you (or was deleted). List your own
+  with the matching `GET` route to get valid ids.
 </Callout>

@@ -85,6 +85,7 @@ export interface CloudClient {
       slug: string;
       target: string;
     }): Promise<{ ok: true; hostname: string } | null>;
+    deregister(slug: string): Promise<{ ok: true; removed: boolean } | null>;
   };
   analytics: {
     timeseries<T>(domain: string, params?: Record<string, unknown>): Promise<T | null>;

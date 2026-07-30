@@ -19,6 +19,8 @@ import { repos, type NotificationChannel, type NotificationDelivery } from "@rep
 import { sendMail } from "./mail";
 import { decrypt } from "./encryption";
 import { findCategory } from "./notification-categories";
+import { env } from "../config/env";
+import { safeFetch } from "./safe-fetch";
 import { safeErrorMessage } from "@repo/core";
 
 /* ─── Render helpers ─────────────────────────────────────────────────────── */
@@ -48,6 +50,7 @@ function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   const lines: string[] = [];
 
   if (cat?.description) lines.push(cat.description);
+  if (payload.message) lines.push(String(payload.message));
 
   if (payload.branch) lines.push(`Branch: ${payload.branch}`);
   if (payload.commitSha) {
@@ -72,6 +75,71 @@ function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   };
 }
 
+/* ─── Chat-webhook payload builders ───────────────────────────────────────── */
+
+// Slack Block Kit caps a `section` text object at 3000 characters and a
+// `header` plain_text at 150; a Discord embed caps `title` at 256 and
+// `description` at 4096.
+const SLACK_HEADER_LIMIT = 150;
+const SLACK_SECTION_LIMIT = 3000;
+const DISCORD_TITLE_LIMIT = 256;
+const DISCORD_DESCRIPTION_LIMIT = 4096;
+
+// The Slack section body is wrapped in a ```…``` code fence — reserve its width
+// so the wrapped text still fits SLACK_SECTION_LIMIT.
+const SLACK_CODE_FENCE_OVERHEAD = "```\n".length + "\n```".length;
+
+/** Clamp `text` to `max` characters, marking a cut with a trailing ellipsis. */
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+interface SlackMessage {
+  text: string;
+  blocks: Array<Record<string, unknown>>;
+}
+
+/** Slack incoming-webhook payload for a rendered message, clamped to Slack's
+ *  block-text limits. */
+export function buildSlackMessage(input: { title: string; body: string }): SlackMessage {
+  const title = truncate(input.title, SLACK_HEADER_LIMIT);
+  const body = truncate(input.body, SLACK_SECTION_LIMIT - SLACK_CODE_FENCE_OVERHEAD);
+  return {
+    text: title,
+    blocks: [
+      { type: "header", text: { type: "plain_text", text: title } },
+      { type: "section", text: { type: "mrkdwn", text: "```\n" + body + "\n```" } },
+    ],
+  };
+}
+
+interface DiscordMessage {
+  username: string;
+  avatar_url: string;
+  embeds: Array<Record<string, unknown>>;
+}
+
+/** Discord webhook payload (single embed) for a rendered message, clamped to
+ *  Discord's embed title/description limits. */
+export function buildDiscordMessage(input: {
+  title: string;
+  body: string;
+  timestamp: string;
+}): DiscordMessage {
+  return {
+    username: "Openship",
+    avatar_url: "https://openship.io/favicon.ico",
+    embeds: [
+      {
+        title: truncate(input.title, DISCORD_TITLE_LIMIT),
+        description: truncate(input.body, DISCORD_DESCRIPTION_LIMIT),
+        color: 0x3b82f6,
+        timestamp: input.timestamp,
+      },
+    ],
+  };
+}
+
 /* ─── Channel workers ─────────────────────────────────────────────────────── */
 
 async function sendEmail(
@@ -92,6 +160,36 @@ async function sendEmail(
   });
 }
 
+/** Validate a webhook URL to prevent SSRF. */
+function assertPublicWebhookUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Webhook URL is malformed");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error("Webhook URL must use HTTPS");
+  }
+  const host = parsed.hostname.toLowerCase();
+  const blocked =
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host === "127.0.0.1" ||
+    host.endsWith(".local") ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^0\./.test(host) ||
+    host === "[::1]";
+  if (blocked) {
+    throw new Error(`Webhook URL targets a private or loopback host: ${host}`);
+  }
+}
+
 async function sendWebhook(
   delivery: NotificationDelivery,
   channel: NotificationChannel,
@@ -100,6 +198,7 @@ async function sendWebhook(
   if (!config?.url) {
     throw new Error("Webhook channel has no URL configured");
   }
+  assertPublicWebhookUrl(config.url);
 
   const payload = (delivery.payload ?? {}) as Record<string, unknown>;
   const body = JSON.stringify({
@@ -129,21 +228,24 @@ async function sendWebhook(
     headers["X-Openship-Signature-256"] = `sha256=${sig}`;
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(config.url, {
-      method: "POST",
-      headers,
-      body,
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Webhook returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timer);
+  // SSRF-safe delivery: safeFetch resolves once, pins the validated IP (closes
+  // the DNS-rebind window a validate-then-fetch leaves open), preserves SNI/Host,
+  // and never follows a 3xx into the internal network (maxRedirects defaults to 0,
+  // so a 3xx is non-2xx → thrown). Multi-tenant (CLOUD_MODE) always rejects
+  // internal targets; a single-tenant box can opt into its own LAN with
+  // NOTIFY_WEBHOOK_ALLOW_INTERNAL.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(config.url, {
+    method: "POST",
+    headers,
+    body,
+    timeoutMs: 10_000,
+    allowHttp: true,
+    allowPrivate,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Webhook returned ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -151,6 +253,46 @@ async function sendInApp(_delivery: NotificationDelivery): Promise<void> {
   // In-app delivery is "done" the moment the delivery row exists — the
   // dashboard reads notification_delivery directly for the bell-icon
   // inbox. The runner will mark this as sent immediately on return.
+}
+
+async function sendDiscord(
+  delivery: NotificationDelivery,
+  channel: NotificationChannel,
+): Promise<void> {
+  const config = channel.config as { webhookUrl?: string };
+  if (!config?.webhookUrl) {
+    throw new Error("Discord channel has no webhook URL configured");
+  }
+
+  // Webhook URL is encrypted at storage time.
+  const webhookUrl = decrypt(config.webhookUrl);
+
+  const { title, body } = renderMessage(delivery);
+  // Guard the embed timestamp: a missing/invalid createdAt (e.g. a synthetic test
+  // delivery) makes `new Date(...).toISOString()` throw "Invalid time value" — the
+  // reported Discord "invalid time" error. Fall back to now.
+  const at = delivery.createdAt ? new Date(delivery.createdAt) : new Date();
+  const discordPayload = buildDiscordMessage({
+    title,
+    body,
+    timestamp: (Number.isNaN(at.getTime()) ? new Date() : at).toISOString(),
+  });
+
+  // SSRF-safe: pin the resolved IP and never follow a redirect, like the other
+  // webhook workers. Discord's host is fixed so this is defense-in-depth, but it
+  // removes the last raw-fetch redirect-follower on the delivery path.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(discordPayload),
+    timeoutMs: 10_000,
+    allowPrivate,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Discord webhook returned ${res.status}: ${text.slice(0, 200)}`);
+  }
 }
 
 async function sendSlack(
@@ -167,35 +309,79 @@ async function sendSlack(
   const webhookUrl = decrypt(config.webhookUrl);
 
   const { title, body } = renderMessage(delivery);
-  const slackPayload = {
-    text: title,
-    blocks: [
+  const slackPayload = buildSlackMessage({ title, body });
+
+  // SSRF-safe: the Slack (or compatible) webhook URL is user-configured, so pin
+  // the resolved IP just like the generic webhook path.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(slackPayload),
+    timeoutMs: 10_000,
+    allowPrivate,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Slack webhook returned ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+
+async function sendMSTeams(
+  delivery: NotificationDelivery,
+  channel: NotificationChannel,
+): Promise<void> {
+  const config = channel.config as { webhookUrl?: string };
+  if (!config?.webhookUrl) {
+    throw new Error("Microsoft Teams channel has no webhook URL configured");
+  }
+
+  // Webhook URL is encrypted at storage time.
+  const webhookUrl = decrypt(config.webhookUrl);
+
+  const { title, body } = renderMessage(delivery);
+  // Adaptive Card in the "message" envelope — the shape accepted by both
+  // Power Automate Workflows and legacy Office 365 connectors.
+  const teamsPayload = {
+    type: "message",
+    attachments: [
       {
-        type: "header",
-        text: { type: "plain_text", text: title },
-      },
-      {
-        type: "section",
-        text: { type: "mrkdwn", text: "```\n" + body + "\n```" },
+        contentType: "application/vnd.microsoft.card.adaptive",
+        contentUrl: null,
+        content: {
+          $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+          type: "AdaptiveCard",
+          // 1.2 is the highest card version legacy connectors render; the
+          // card only uses 1.0-level elements so nothing is lost.
+          version: "1.2",
+          body: [
+            { type: "TextBlock", text: title, weight: "Bolder", size: "Medium", wrap: true },
+            { type: "TextBlock", text: body, wrap: true },
+          ],
+        },
       },
     ],
   };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(slackPayload),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Slack webhook returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timer);
+  // SSRF-safe: the Teams webhook URL is user-configured. Creation-time
+  // validation restricts the host to *.logic.azure.com / *.webhook.office.com,
+  // but an attacker-provisioned Azure Logic App passes that suffix check and can
+  // 302-redirect the server-side POST into the internal network / metadata IP.
+  // So pin the resolved IP and never follow a redirect (maxRedirects defaults to
+  // 0 → a 3xx is non-2xx → thrown), exactly like the Slack/webhook workers.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(teamsPayload),
+    timeoutMs: 10_000,
+    allowPrivate,
+  });
+  // Note: Power Automate Workflows respond 202 even when the flow fails
+  // downstream — a 2xx means "accepted", not "delivered".
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Microsoft Teams webhook returned ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -209,7 +395,28 @@ const WORKERS: Record<
   webhook: sendWebhook,
   in_app: sendInApp,
   slack: sendSlack,
+  discord: sendDiscord,
+  msteams: sendMSTeams,
 };
+
+/**
+ * Send a one-off TEST notification to a channel, reusing the exact per-kind
+ * worker — so a passing test proves real delivery works. The verify endpoint
+ * gates channel `verified` on this. Throws on failure (the caller surfaces it).
+ */
+export async function sendTestToChannel(channel: NotificationChannel): Promise<void> {
+  const worker = WORKERS[channel.kind];
+  if (!worker) throw new Error(`No worker for channel kind "${channel.kind}"`);
+  const testDelivery = {
+    id: "test",
+    category: "test",
+    createdAt: new Date(),
+    payload: {
+      message: "Openship test notification — this channel is configured correctly.",
+    },
+  } as unknown as NotificationDelivery;
+  await worker(testDelivery, channel);
+}
 
 /* ─── Runner loop ─────────────────────────────────────────────────────────── */
 
@@ -238,22 +445,14 @@ export async function processQueuedNotifications(): Promise<void> {
       // Resolve channel — null channelId means the subscription pointed
       // at a now-deleted channel. Mark failed permanently.
       if (!delivery.channelId) {
-        await repos.notificationDelivery.markFailed(
-          delivery.id,
-          "Channel deleted",
-          false,
-        );
+        await repos.notificationDelivery.markFailed(delivery.id, "Channel deleted", false);
         return;
       }
       const channel = await repos.notificationChannel
         .findById(delivery.channelId)
         .catch(() => undefined);
       if (!channel) {
-        await repos.notificationDelivery.markFailed(
-          delivery.id,
-          "Channel not found",
-          false,
-        );
+        await repos.notificationDelivery.markFailed(delivery.id, "Channel not found", false);
         return;
       }
 

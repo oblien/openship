@@ -1,0 +1,130 @@
+---
+title: Move your setup to another install
+description: Take your whole Openship control plane — servers, projects, services, domains, env vars and secrets — from one install to another. The classic case is a local desktop → an always-on self-hosted server.
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+You started on the **desktop app** on your laptop, and now you want Openship itself to run on an
+**always-on Linux server** so deploys keep working when your laptop is closed. You don't want to
+recreate every project, server connection, domain and secret by hand.
+
+Openship has a first-class **data transfer** for exactly this: export your entire instance to a single
+encrypted file on the old machine, import it on the new one. It carries the whole control plane —
+server/SSH connections, projects (including local-folder source settings), services, domains and
+routes, environment variables, deployment history and backup destinations — and your **secrets travel
+re-encrypted under a passphrase you choose**, never in the clear.
+
+<Callout title="Desktop → server works">
+The desktop app stores its data in an embedded database (PGlite) and a server uses Postgres. The export
+records which it came from and the import adapts, so a **desktop → server** move imports cleanly — you do
+not convert anything by hand.
+</Callout>
+
+## What travels (and what to check after)
+
+**Carried:** servers/SSH connections · projects · services · domains & routes · environment variables ·
+deployment settings · backup destinations · git installations. **Secrets** (env values, SSH
+keys/passwords, clone tokens, backup credentials) are lifted into a passphrase-sealed AES-256-GCM bundle
+on export and re-encrypted under the *destination's* key on import.
+
+**Check after import:** projects that deploy from a **local folder** (no git — the “Deploy a local
+folder” flow) store the folder's path *on the source machine*. That path won't exist on the new machine,
+so Openship flags those projects on import. Re-point them, or just re-deploy each from a folder that lives
+on the new machine (see the last step).
+
+## Move it
+
+<Steps>
+
+<Step>
+
+### Export on the old machine
+
+**CLI:**
+
+```bash
+openship system data-transfer export --passphrase "a-strong-passphrase" --out openship-export.osx
+```
+
+**Or the dashboard:** **Settings → Instance → Data Transfer → Export**, set a passphrase, download the file.
+
+The passphrase encrypts the secrets inside the file. Anyone with the file but not the passphrase gets your
+projects/domains/config but **no** secret values. Keep the passphrase safe — it's required to import.
+
+</Step>
+
+<Step>
+
+### Copy the file to the new server
+
+Any transport works — `scp`, `rsync`, a USB drive. The file is self-contained.
+
+```bash
+scp openship-export.osx you@your-server:/tmp/
+```
+
+</Step>
+
+<Step>
+
+### Import on the new server
+
+Install and start Openship on the server first (see [Installation](/docs/getting-started/installation)),
+then:
+
+```bash
+openship system data-transfer import --file /tmp/openship-export.osx \
+  --passphrase "a-strong-passphrase" --mode wipe
+```
+
+**Or the dashboard:** **Settings → Instance → Data Transfer → Import**, choose the file, enter the
+passphrase, pick a mode.
+
+- **`wipe`** (default) — replace the destination's data with the file. Use this for a fresh server. It
+  also replaces the login/session, so you'll re-authenticate as the imported owner afterward.
+- **`merge`** — insert only rows that don't already exist; the destination's own account/settings are
+  kept. Use this to fold one install into another without clobbering it.
+
+</Step>
+
+<Step>
+
+### Re-point local-folder projects
+
+If the import warned about **local-folder projects**, their source path pointed at the old machine. For
+each one, put the source on the new server and re-deploy it from there — no git required:
+
+```bash
+cd /path/to/your/app/on/this/server
+openship deploy
+```
+
+Run from a non-git folder, `openship deploy` packages the folder on the spot, uploads it to this install,
+detects the stack, and deploys — the headless equivalent of the desktop “Deploy a local folder” flow. That
+re-binds the project to a path that exists here.
+
+</Step>
+
+</Steps>
+
+## Deploy only what changed (don't restart your databases)
+
+Once you're running on the server, a multi-service (Compose) project can deploy a **subset** of services
+so a backend-only change doesn't recreate your MySQL/Redis/Qdrant containers:
+
+```bash
+openship deploy --service-ids web,api
+```
+
+Services you don't name carry forward on their existing containers, untouched. Omit `--service-ids` on the
+first deploy to bring the whole stack up. For stateful services this is the difference between a quick app
+update and needless database downtime.
+
+<Callout title="Related">
+- [Deploy a local folder](/docs/guides/deploy-local-folder) — the no-git deploy this guide re-points to.
+- [Server-to-server migration](/docs/guides/server-to-server-migration) — moving a *running app + its
+  volumes* between servers (different from moving the control plane).
+- [Database migrations](/docs/guides/database-migrations) — backing up and migrating a stateful volume
+  safely around a deploy.
+</Callout>

@@ -84,6 +84,48 @@ export const OPENRESTY_DEFAULT_PATHS: OpenRestyPaths = {
   pidPath: "/usr/local/openresty/nginx/logs/nginx.pid",
 };
 
+// ── Containerized edge ───────────────────────────────────────────────────────
+
+/** Root for edge state that isn't already at a well-known host location. */
+export const EDGE_HOST_STATE_DIR = "/var/lib/openship/edge";
+
+/**
+ * Where the edge container's state lives ON THE HOST, and where it's mounted
+ * inside the container.
+ *
+ * Certs and static docroots keep the SAME path on both sides deliberately: every
+ * host-side reader we already have (the migrate proxy scan, `carrySourceCerts`,
+ * cert reuse, the mail server's cert symlinks) then keeps working with no
+ * translation, and a bare→container conversion inherits the box's existing certs
+ * instead of orphaning them. Bind mounts, never named volumes — Docker-managed
+ * volumes make edge state invisible to host tooling, which is what silently broke
+ * domain/SSL detection in the migrate wizard.
+ */
+export const EDGE_CONTAINER_MOUNTS: ReadonlyArray<{ host: string; container: string }> = [
+  { host: `${EDGE_HOST_STATE_DIR}/sites-enabled`, container: OPENRESTY_DEFAULT_PATHS.sitesDir },
+  { host: "/etc/letsencrypt", container: "/etc/letsencrypt" },
+  { host: `${EDGE_HOST_STATE_DIR}/acme`, container: "/var/www/acme" },
+  { host: "/opt/openship/static", container: "/opt/openship/static" },
+];
+
+/**
+ * Paths for driving a containerized edge from OUTSIDE the container — i.e. over
+ * SSH to the box it runs on.
+ *
+ * Deliberately mixed, and the split is the whole point: `sitesDir` is the HOST
+ * path (vhost files are written straight to the bind-mounted directory), while
+ * `bin` and `pidPath` are CONTAINER paths (commands run via `docker exec`).
+ * `confPath` is baked into the image and must never be written — the container
+ * edge skips `ensureOpenRestyConfig` entirely.
+ */
+export const EDGE_HOST_PATHS: OpenRestyPaths = {
+  bin: OPENRESTY_DEFAULT_PATHS.bin,
+  confPath: OPENRESTY_DEFAULT_PATHS.confPath,
+  confDir: OPENRESTY_DEFAULT_PATHS.confDir,
+  sitesDir: `${EDGE_HOST_STATE_DIR}/sites-enabled`,
+  pidPath: OPENRESTY_DEFAULT_PATHS.pidPath,
+};
+
 /** Well-known nginx.conf locations across OpenResty packages. */
 const KNOWN_CONF_PATHS = [
   "/usr/local/openresty/nginx/conf/nginx.conf",
@@ -145,19 +187,53 @@ export async function detectOpenRestyPaths(
 /**
  * Build the OpenResty reload command from detected paths.
  *
- * Primary: `openresty -t` then `openresty -s reload` (graceful, zero-downtime).
- * Fallback: if reload fails (e.g. not running), kill everything and start fresh.
+ * Primary (both modes): `openresty -t` then `-s reload` — graceful, zero-downtime.
+ *
+ * What happens when reload FAILS is where this gets dangerous, because the wrong
+ * recovery takes every site on the box down. Three layers, in order:
+ *
+ *   1. `opts.containerEdge` — set by the two container-edge providers, so for the
+ *      paths we control the command CONTAINS no kill at all. Nothing to reason
+ *      about at runtime.
+ *   2. `/proc/1/comm` — a runtime backstop for any path that reaches the bare
+ *      command while actually running inside the edge container (a caller that
+ *      forgot the flag, `ensureLuaScripts` on a containerized box). The master IS
+ *      pid 1 there, so `pkill` kills the container's init: the `docker exec`
+ *      returns non-zero, registerRoute's self-rollback restores the PREVIOUS
+ *      vhost, and the deploy reports "Routing failed" while every site blips.
+ *      Restarting a dead master is the supervisor's job in that mode — fail
+ *      loudly, surfacing the reload's real stderr.
+ *   3. BARE host — a failed reload usually does mean "not running", so starting it
+ *      is right. But recover WITHOUT a pattern kill: `pkill -f openresty` also
+ *      matches a host-networked edge CONTAINER's master (see edge-check.test.ts),
+ *      so the blind kill could take down the very edge it was recovering. Only
+ *      start when no live master holds the pid file; otherwise report it rather
+ *      than killing a process we can't identify.
  */
-export function buildReloadCommand(paths: OpenRestyPaths): string {
+export function buildReloadCommand(
+  paths: OpenRestyPaths,
+  opts: { containerEdge?: boolean } = {},
+): string {
+  if (opts.containerEdge) {
+    return `${paths.bin} -t 2>&1 || exit 1
+${paths.bin} -s reload 2>&1 || exit 1`;
+  }
+
   return `${paths.bin} -t 2>&1 || exit 1
 
-if ${paths.bin} -s reload 2>/dev/null; then
-  exit 0
+reload_err=$(${paths.bin} -s reload 2>&1) && exit 0
+
+if [ "$(cat /proc/1/comm 2>/dev/null)" = "openresty" ] || [ "$(cat /proc/1/comm 2>/dev/null)" = "nginx" ]; then
+  echo "openresty reload failed and openresty is PID 1 (containerized edge) — not killing it; the container supervisor owns restarts." >&2
+  echo "$reload_err" >&2
+  exit 1
 fi
 
-pkill -f '[o]penresty' >/dev/null 2>&1 || true
-pkill -f '[n]ginx' >/dev/null 2>&1 || true
-sleep 1
+if [ -f ${paths.pidPath} ] && kill -0 "$(cat ${paths.pidPath} 2>/dev/null)" 2>/dev/null; then
+  echo "openresty (pid $(cat ${paths.pidPath})) is running but refused -s reload" >&2
+  exit 1
+fi
+
 rm -f ${paths.pidPath}
 ${paths.bin}`;
 }
@@ -180,6 +256,14 @@ export async function ensureOpenRestyConfig(
   // Ensure the logs/PID directory exists - OpenResty refuses to start without it.
   const pidDir = paths.pidPath.replace(/\/[^/]+$/, "");
   await executor.mkdir(pidDir);
+
+  // Base server blocks: the loopback management API and the default catch-all
+  // (incl. the 443 unknown-SNI reject). Written here - not just at install - so
+  // an already-deployed box self-heals the catch-all on its next deploy and no
+  // longer cross-serves an unrouted HTTPS host. Idempotent overwrite of static
+  // content; a stale copy is replaced. The deploy's route reload applies it.
+  await executor.writeFile(`${paths.sitesDir}/_management.conf`, MANAGEMENT_BLOCK);
+  await executor.writeFile(`${paths.sitesDir}/_default.conf`, DEFAULT_BLOCK);
 
   // Bootstrap: if nginx.conf doesn't exist (e.g. after a reinstall that
   // removed the old config), write a minimal working config.
@@ -231,6 +315,11 @@ http {
     default_type  application/octet-stream;
     sendfile      on;
     keepalive_timeout 65;
+    # See apps/edge/nginx.conf: the 64-byte default fails \`nginx -t\` outright
+    # ("could not build server_names_hash") for any server_name past ~63 chars,
+    # which refuses the reload and wedges every route on the box, not just the
+    # long one. Keep this in step with the containerized edge's value.
+    server_names_hash_bucket_size 128;
     include ${sitesDir}/*.conf;
 }
 `;
@@ -238,7 +327,7 @@ http {
 const GEOIP_DIR = "/usr/share/GeoIP";
 const GEOIP_DB_PATH = `${GEOIP_DIR}/GeoLite2-Country.mmdb`;
 const GEOIP_DB_URL =
-  "https://github.com/P3TERX/GeoLite.mmdb/releases/download/2026.04.07/GeoLite2-Country.mmdb";
+  "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-Country.mmdb";
 
 // ── Local Lua source directory ───────────────────────────────────────────────
 
@@ -313,20 +402,53 @@ server {
 }
 `;
 
+/**
+ * Loopback port certbot's `--standalone` authenticator listens on during
+ * issuance. The edge proxies `/.well-known/acme-challenge/` to it, so HTTP-01
+ * works with ZERO downtime — no port-80 fight with the edge, no webroot
+ * dependency, no DNS-01. Fixed high port, outside the usual app/user range.
+ * Certbot binds it only transiently; it just needs to be reachable from the
+ * edge on loopback. Identical for bare (host netns) and docker-edge (container
+ * netns), since certbot runs on the same executor/netns as the edge.
+ */
+export const ACME_HTTP01_PORT = 49180;
+
+/**
+ * The `/.well-known/acme-challenge/` location block — proxies the HTTP-01
+ * challenge to certbot's transient standalone server. SHARED by the default
+ * catch-all here and the per-vhost templates in nginx.ts so all three agree.
+ */
+export const ACME_CHALLENGE_LOCATION = `\
+    location /.well-known/acme-challenge/ {
+        proxy_pass http://127.0.0.1:${ACME_HTTP01_PORT};
+        proxy_set_header Host $host;
+    }`;
+
 const DEFAULT_BLOCK = `\
-# Openship default catch-all - prevents the stock OpenResty welcome page
+# Openship default catch-all - prevents the stock OpenResty welcome page AND
+# stops an unmatched Host/SNI from being served the first real vhost by default.
 # Auto-generated - do not edit manually
 server {
     listen 80 default_server;
     server_name _;
 
-    location /.well-known/acme-challenge/ {
-        root /var/www/acme;
-    }
+${ACME_CHALLENGE_LOCATION}
 
     location / {
         return 404;
     }
+}
+
+# HTTPS catch-all. WITHOUT a 443 default_server, nginx serves the first-loaded
+# 443 vhost to any request whose SNI matches no server_name - so a domain we do
+# NOT route (removed / never-added / just pointed at this IP) silently gets some
+# other app's cert + backend. That is cross-serving, a security hole. Owning the
+# 443 default and rejecting unknown SNI closes it: an unrouted host gets a TLS
+# handshake failure, never a fallthrough. ssl_reject_handshake (OpenResty/nginx
+# >= 1.19.4; our installer pulls the newest LTS) needs no certificate.
+server {
+    listen 443 ssl default_server;
+    ssl_reject_handshake on;
 }
 `;
 
@@ -567,9 +689,8 @@ export async function deployLuaScripts(
       `sed -i '/http *{/a \\    lua_package_path "/usr/local/openresty/site/lualib/?.lua;;";' ${paths.confPath}`,
   );
 
-  // ── Management server block ──────────────────────────────────────────
-  await executor.writeFile(`${paths.sitesDir}/_management.conf`, MANAGEMENT_BLOCK);
-  await executor.writeFile(`${paths.sitesDir}/_default.conf`, DEFAULT_BLOCK);
+  // Base server blocks (_management.conf + _default.conf) are written by
+  // ensureOpenRestyConfig above - single writer, so they self-heal every deploy.
 
   // ── Validate + reload ────────────────────────────────────────────────
   await executor.exec(buildReloadCommand(paths));

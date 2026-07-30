@@ -175,6 +175,22 @@ function staticNginxTemplateLines(port: number): string[] {
 }
 
 /**
+ * Where the built files land INSIDE the builder stage.
+ *
+ * Exported because the extract-only path has to read exactly the directory the
+ * recipe wrote. Deriving it twice is how the extractor silently ends up copying an
+ * empty or wrong dir when `rootDirectory` / `outputDirectory` handling shifts, so
+ * both the Dockerfile and `buildStaticToHost` call this.
+ */
+export function staticBuilderOutputPath(config: BuildConfig): string {
+  const sourceDir = builderSourceDir(
+    normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
+  );
+  const output = normalizeRelativePath(config.outputDirectory);
+  return output ? `${sourceDir}/${output}` : sourceDir;
+}
+
+/**
  * Static build → served as files by a minimal nginx image with SPA fallback,
  * matching how Vercel serves a static output directory. A builder stage runs the
  * app's install+build (and any monorepo workspace prepare), then the built
@@ -186,8 +202,7 @@ function generateStaticDockerfile(config: BuildConfig): string {
   );
   const envPrefix = buildEnvPrefix(config.envVars);
   const workspacePrepare = config.workspacePrepareCommand?.trim();
-  const output = normalizeRelativePath(config.outputDirectory);
-  const outputPath = output ? `${sourceDir}/${output}` : sourceDir;
+  const outputPath = staticBuilderOutputPath(config);
   const nginxTemplate = staticNginxTemplateLines(config.port)
     .map((line) => `'${line}'`)
     .join(" ");
@@ -203,6 +218,13 @@ function generateStaticDockerfile(config: BuildConfig): string {
   lines.push(`WORKDIR ${sourceDir}`);
   const stepsLine = installBuildRunLine(config, envPrefix);
   if (stepsLine) lines.push(stepsLine);
+
+  // Extract-only: the caller lifts the built files out and deletes the image, so
+  // the recipe STOPS at the builder. No second base image is pulled and nothing is
+  // copied twice — the extractor reads `staticBuilderOutputPath(config)` (this same
+  // `outputPath`) straight out of the builder. The nginx stage, its six steps, and
+  // a server config nothing ever reads were all discarded work on every deploy.
+  if (config.staticExtractOnly) return lines.join("\n");
 
   lines.push(
     `FROM nginx:alpine AS runtime`,

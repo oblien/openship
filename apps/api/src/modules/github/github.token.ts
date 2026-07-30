@@ -38,14 +38,20 @@
  *   workspace. Used for:
  *     - Remote-build clones (cloud workspace clones the repo)
  *
- *   Safest tokens only. **gh CLI is REFUSED** — it's a long-lived,
- *   broad-scope user PAT; shipping it off the host is a real security
- *   hole. Same priority on SaaS + self-hosted:
+ *   Safest tokens only. **gh CLI is REFUSED** — it's the instance operator's
+ *   long-lived, account-wide credential, and shipping it to a box they may not
+ *   solely control is a real security hole.
  *
+ *   Self-hosted:
  *     1. Project clone token
  *     2. User-global clone token
  *     3. Openship App installation (short-lived, repo-scoped)
  *     4. null  ← caller throws "install App or set per-project token"
+ *
+ *   SaaS: same, plus a `user-oauth` tail. That token is scoped to the one user
+ *   and the worker is Openship's own cloud workspace, so the boundary the gh-cli
+ *   refusal protects doesn't apply. (This paragraph used to claim SaaS remote
+ *   ended at null; `tokenFor.test.ts` has always asserted otherwise.)
  *
  * The dispatcher returns `{ token, source }` so callers (logging,
  * audit, metrics) know exactly which step in the chain matched. The
@@ -114,20 +120,211 @@ export interface TokenContext {
  * Returns null when every chain step came up empty; callers decide
  * whether to throw or proceed (use `requireTokenFor` for the throw).
  */
-export async function tokenFor(
+/* ─── The chain, as data ──────────────────────────────────────────────────────
+ *
+ * Every credential is ONE spec, and every platform×purpose is ONE ordered list of
+ * spec names. Both `tokenFor` (which mints) and `canResolveTokenFor` (which only
+ * probes) walk the SAME list.
+ *
+ * That sameness is the point. The two used to be hand-mirrored chains in separate
+ * functions, and keeping them in step was enforced only by a drift-guard test —
+ * i.e. drift was possible by construction and merely detected afterwards. Adding
+ * a credential kind meant editing four inline chains and hoping. Now a new kind is
+ * one spec plus its place in the table, and preflight cannot disagree with the
+ * real resolution because there is only one order to disagree with.
+ */
+
+/** What a chain step needs. Assembled once per call so specs stay pure reads. */
+interface ChainCtx {
+  ctx: RequestContext;
+  userId: string;
+  organizationId?: string;
+  purpose: GitHubPurpose;
+  tokenCtx: TokenContext;
+  /**
+   * The 0-bypass permission verdict for the App branch, resolved ONCE up front.
+   * Both the mint and the probe consume the same value, so preflight can never
+   * report "App available" for a repo the real mint will refuse.
+   */
+  installationAllowed: boolean;
+}
+
+interface CredentialSpec {
+  kind: GitHubTokenSource;
+  /**
+   * May this credential's material LEAVE this host?
+   *
+   * A property of the credential, not of the caller. `gh-cli` is a long-lived
+   * broad-scope user token, so shipping it to a build worker is a real hole — it
+   * is therefore absent from every "remote" chain below rather than special-cased
+   * mid-resolution. Encoding it here means a future credential kind cannot be
+   * added to a remote chain without someone stating this explicitly.
+   */
+  shippable: boolean;
+  /** Mint or read the real token. */
+  resolve(c: ChainCtx): Promise<string | null>;
+  /** Cheap "would this match?" — no mint, no JWT exchange. */
+  probe(c: ChainCtx): Promise<boolean>;
+}
+
+export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
+  "gh-cli": {
+    kind: "gh-cli",
+    shippable: false,
+    resolve: async (c) => {
+      // HIGH #7 — the whole "may this caller use the operator's broad token here"
+      // policy lives in mayUseOperatorCliToken; this step is just "take it if so".
+      if (!(await mayUseOperatorCliToken(c.userId, c.organizationId, c.purpose))) return null;
+      // Dynamic import: only ever reached off the SaaS (no gh-cli in any cloud
+      // chain), so the gh module never loads there.
+      const { getLocalGhToken } = await import("./github.local-auth");
+      return getLocalGhToken();
+    },
+    probe: async (c) => Boolean(await SPECS["gh-cli"].resolve(c).catch(() => null)),
+  },
+
+  "app-installation": {
+    kind: "app-installation",
+    shippable: true, // short-lived + repo-scoped: safe to hand to a build worker
+    resolve: async (c) => {
+      if (!c.tokenCtx.owner || !c.installationAllowed) return null;
+      return tryInstallationToken(c.ctx, c.tokenCtx.owner, c.tokenCtx.installationId);
+    },
+    probe: async (c) => {
+      if (!c.tokenCtx.owner || !c.installationAllowed) return false;
+      // Existence of the installation ROW only — skips the ~200-500ms JWT +
+      // token exchange that resolve() pays.
+      let installId: number | null = null;
+      if (c.organizationId) {
+        installId = await getInstallationIdByOrg(c.organizationId, c.tokenCtx.owner).catch(
+          () => null,
+        );
+      }
+      if (!installId) {
+        installId = await getInstallationId(c.ctx, c.tokenCtx.owner).catch(() => null);
+      }
+      return Boolean(installId);
+    },
+  },
+
+  project: {
+    kind: "project",
+    shippable: true, // the user opted in by pasting it
+    resolve: async (c) =>
+      c.tokenCtx.projectId ? readProjectToken(c.tokenCtx.projectId) : null,
+    probe: async (c) => {
+      if (!c.tokenCtx.projectId) return false;
+      const project = await repos.project.findById(c.tokenCtx.projectId).catch(() => null);
+      return Boolean(project?.cloneTokenEncrypted);
+    },
+  },
+
+  "user-pat": {
+    kind: "user-pat",
+    shippable: true, // same reasoning as `project`
+    resolve: async (c) => readUserGlobalToken(c.userId),
+    probe: async (c) => {
+      const settings = await repos.settings.findByUser(c.userId).catch(() => null);
+      return Boolean(settings?.cloneTokenEncrypted && settings.cloneTokenAsDefault);
+    },
+  },
+
+  "user-oauth": {
+    kind: "user-oauth",
+    /**
+     * Shippable, and the distinction from `gh-cli` is the interesting part:
+     * `shippable` is really "may this go to a build worker WE hand it to". A user
+     * OAuth token is scoped to that one user and is only ever shipped to Openship's
+     * own cloud workspace (SaaS remote — asserted by tokenFor.test.ts). The gh-cli
+     * token is the INSTANCE OPERATOR's account-wide credential travelling to a box
+     * the operator may not solely control; that is the hole. Same word, genuinely
+     * different blast radius.
+     */
+    shippable: true,
+    resolve: async (c) => getUserToken(c.userId),
+    probe: async (c) => Boolean(await getUserToken(c.userId).catch(() => null)),
+  },
+};
+
+/**
+ * WHAT IS AVAILABLE WHERE — the whole platform policy, in one readable table.
+ *
+ * This replaces mode checks (`env.CLOUD_MODE`, `isSelfHostedLocal`,
+ * `getGitHubAuthMode`) interleaved through four inline branches. A dead gate hid
+ * inside one of those branches for a long time precisely because "what applies on
+ * this platform" was not stated anywhere you could read it.
+ *
+ *   saas       — the App is the only auto-resolved source; there is no `gh` on a
+ *                multi-tenant host, ever. Explicit PATs still win at the top:
+ *                they are user provisioning, and the SaaS has no other way into a
+ *                repo the App isn't installed on. Purpose is irrelevant here —
+ *                every SaaS credential is already shippable.
+ *   selfhosted — purpose matters. For a LOCAL clone prefer auto-resolved
+ *                credentials (tighter scope, less maintenance) over pasted PATs.
+ *                For a REMOTE clone the chain contains only `shippable` kinds.
+ */
+type GitHubPlatform = "saas" | "selfhosted";
+
+export const CHAINS: Record<GitHubPlatform, Record<GitHubPurpose, GitHubTokenSource[]>> = {
+  saas: {
+    local: ["project", "user-pat", "app-installation", "user-oauth"],
+    remote: ["project", "user-pat", "app-installation", "user-oauth"],
+  },
+  selfhosted: {
+    // gh-cli first: least configuration, and it reaches any repo the operator's
+    // account can see, whereas the App needs an install on that owner.
+    local: ["gh-cli", "app-installation", "project", "user-pat", "user-oauth"],
+    // No gh-cli (not shippable) and deliberately no OAuth tail either.
+    remote: ["project", "user-pat", "app-installation"],
+  },
+};
+
+/**
+ * STRUCTURAL INVARIANT, asserted at module load: no "remote" chain may contain a
+ * credential whose material must not leave this host.
+ *
+ * "Remote refuses gh-cli" used to be an `if` buried in the resolution path. As a
+ * check over the table it now covers credentials that don't exist yet: adding a
+ * non-shippable kind to a remote chain fails at import, not in production after
+ * someone ships an operator's broad-scope token to a build worker.
+ */
+for (const [platform, byPurpose] of Object.entries(CHAINS)) {
+  for (const kind of byPurpose.remote) {
+    if (!SPECS[kind].shippable) {
+      throw new Error(
+        `GitHub credential chain misconfigured: "${kind}" is not shippable but appears ` +
+          `in the ${platform}/remote chain. A remote build ships the credential off ` +
+          `this host — only shippable kinds belong there.`,
+      );
+    }
+  }
+}
+
+function platformFor(): GitHubPlatform {
+  return env.CLOUD_MODE ? "saas" : "selfhosted";
+}
+
+/** The ordered specs for this platform + purpose. */
+function chainFor(purpose: GitHubPurpose): CredentialSpec[] {
+  return CHAINS[platformFor()][purpose].map((kind) => SPECS[kind]);
+}
+
+/**
+ * Build the shared context once — notably the single `canUseGitHubRepo` call, so
+ * the mint and the probe are answering the same permission question.
+ */
+async function chainCtx(
   ctx: RequestContext,
   purpose: GitHubPurpose,
-  tokenCtx: TokenContext = {},
-): Promise<TokenResult | null> {
-  const userId = ctx.userId;
-  const organizationId = ctx.organizationId || undefined;
-  // ── 0-bypass permission gate: GitHub access is default-DENY for
-  //    everyone but the org OWNER. Admins/members/restricted can use the
-  //    org's App installation only when the owner granted them this repo
-  //    (or its installation, or all-GitHub). Denied → the App branch is
-  //    skipped; the flow falls through to the caller's OWN PAT/OAuth (or
-  //    null → "connect your GitHub"). This is THE funnel: every token
-  //    mint passes here, so there is no door around it.
+  tokenCtx: TokenContext,
+): Promise<ChainCtx> {
+  // ── 0-bypass permission gate: GitHub access is default-DENY for everyone but
+  //    the org OWNER. Admins/members/restricted can use the org's App
+  //    installation only when the owner granted them this repo (or its
+  //    installation, or all-GitHub). Denied → the App step yields nothing and the
+  //    chain falls through to the caller's OWN PAT/OAuth (or null → "connect your
+  //    GitHub"). This is THE funnel: every mint passes here, so there is no door
+  //    around it.
   const installationAllowed = tokenCtx.owner
     ? await canUseGitHubRepo(
         ctx,
@@ -139,97 +336,31 @@ export async function tokenFor(
         "read",
       )
     : false;
+  return {
+    ctx,
+    userId: ctx.userId,
+    organizationId: ctx.organizationId || undefined,
+    purpose,
+    tokenCtx,
+    installationAllowed,
+  };
+}
 
-  // ── SaaS: no gh CLI on this machine ever; the App is the only
-  //    auto-resolved source. PATs (project / user) still win at the
-  //    top — they're explicit user provisioning and the SaaS host has
-  //    no other way to access a repo the App isn't installed on.
-  if (env.CLOUD_MODE) {
-    if (tokenCtx.projectId) {
-      const t = await readProjectToken(tokenCtx.projectId);
-      if (t) return { token: t, source: "project" };
-    }
-    const userPat = await readUserGlobalToken(userId);
-    if (userPat) return { token: userPat, source: "user-pat" };
-
-    if (tokenCtx.owner && installationAllowed) {
-      const t = await tryInstallationToken(ctx, tokenCtx.owner, tokenCtx.installationId);
-      if (t) return { token: t, source: "app-installation" };
-    }
-    // For non-owner-scoped calls (e.g. /user/repos in OAuth fallback)
-    const oauth = await getUserToken(userId);
-    if (oauth) return { token: oauth, source: "user-oauth" };
-    return null;
-  }
-
-  // ── SELF-HOSTED — purpose actually matters here ───────────────────
-  if (purpose === "local") {
-    // ─── Ordering rationale (deliberate) ────────────────────────────
-    // For local-build clones, prefer auto-resolved credentials over
-    // explicit user-provisioned PATs because they're scoped tighter
-    // and require less ongoing maintenance:
-    //
-    //   1. gh-cli           — least configuration: just the operator's
-    //                         CLI present (opt-in gated for multi-user
-    //                         to prevent privilege escalation, HIGH #7).
-    //   2. app-installation — short-lived, repo-scoped, org-bound.
-    //   3. project PAT      — explicit per-project user override.
-    //   4. user-pat         — explicit user-global PAT.
-    //   5. user-oauth       — last-resort fallback.
-    //
-    // gh-cli is preferred over the App because the App requires the
-    // owner to have installed it on the repo; gh-cli works against any
-    // repo the operator's GitHub account can see, which is exactly
-    // what we want for a local-build clone on this host. For REMOTE
-    // builds, gh-cli is refused entirely — see the remote branch below.
-    //
-    // HIGH #7: gh CLI is the OPERATOR's long-lived broad-scope PAT. The
-    // whole "may this caller use it here" policy (remote → never, no-org →
-    // yes, org → opt-in) is centralized in mayUseOperatorCliToken so this
-    // resolution step is just "pick the token if authorized".
-    if (await mayUseOperatorCliToken(userId, organizationId, purpose)) {
-      // Dynamic import: reached only on the self-hosted "local" purpose
-      // (the CLOUD_MODE branch returned above), so gh never loads on the SaaS.
-      const { getLocalGhToken } = await import("./github.local-auth");
-      const cli = await getLocalGhToken();
-      if (cli) return { token: cli, source: "gh-cli" };
-    }
-    // Non-operators (multi-user org, not opted in) fall through to App / PAT / OAuth.
-
-    if (tokenCtx.owner && installationAllowed) {
-      const t = await tryInstallationToken(ctx, tokenCtx.owner, tokenCtx.installationId);
-      if (t) return { token: t, source: "app-installation" };
-    }
-
-    // User-provisioned PATs come after auto-resolved sources for local.
-    if (tokenCtx.projectId) {
-      const t = await readProjectToken(tokenCtx.projectId);
-      if (t) return { token: t, source: "project" };
-    }
-    const userPat = await readUserGlobalToken(userId);
-    if (userPat) return { token: userPat, source: "user-pat" };
-
-    const oauth = await getUserToken(userId);
-    if (oauth) return { token: oauth, source: "user-oauth" };
-    return null;
-  }
-
-  // ── purpose === "remote" in self-hosted ───────────────────────────
-  // gh CLI is REFUSED — it's a long-lived broad-scope user PAT and the
-  // cloud workspace doesn't have gh-cli installed anyway. App
-  // installation is the only auto-resolved token safe to ship off-host
-  // (short-lived, repo-scoped); explicit user PATs are also safe
-  // because the user opted in by pasting them.
-  if (tokenCtx.projectId) {
-    const t = await readProjectToken(tokenCtx.projectId);
-    if (t) return { token: t, source: "project" };
-  }
-  const userPat = await readUserGlobalToken(userId);
-  if (userPat) return { token: userPat, source: "user-pat" };
-
-  if (tokenCtx.owner && installationAllowed) {
-    const t = await tryInstallationToken(ctx, tokenCtx.owner, tokenCtx.installationId);
-    if (t) return { token: t, source: "app-installation" };
+/**
+ * Resolve a GitHub token for the given purpose. Side-effect free —
+ * only DB reads + decrypt + (optionally) an installation token mint.
+ * Returns null when every chain step came up empty; callers decide
+ * whether to throw or proceed (use `requireTokenFor` for the throw).
+ */
+export async function tokenFor(
+  ctx: RequestContext,
+  purpose: GitHubPurpose,
+  tokenCtx: TokenContext = {},
+): Promise<TokenResult | null> {
+  const c = await chainCtx(ctx, purpose, tokenCtx);
+  for (const spec of chainFor(purpose)) {
+    const token = await spec.resolve(c);
+    if (token) return { token, source: spec.kind };
   }
   return null;
 }
@@ -237,99 +368,24 @@ export async function tokenFor(
 /**
  * Fast existence check — "could `tokenFor` resolve a token if we asked
  * it to?". Skips the actual installation-token mint (JWT + GitHub API
- * exchange, ~200–500ms) which `tokenFor` does for the App branch; this
+ * exchange, ~200-500ms) which `tokenFor` does for the App branch; this
  * version only confirms the installation ROW exists in our DB.
  *
  * Use this in preflight where minting is wasteful — the real mint
  * happens later in the build pipeline when we actually need the token.
  *
- * Returns the source that WOULD be matched, or null if none would.
- * The returned source is enough for callers that want to log which
- * credential type was used; an actual token value is NOT exposed.
+ * Returns the source that WOULD be matched, or null if none would. Walks the
+ * SAME chain as `tokenFor`, so the two cannot report different sources.
  */
 export async function canResolveTokenFor(
   ctx: RequestContext,
   purpose: GitHubPurpose,
   tokenCtx: TokenContext = {},
 ): Promise<GitHubTokenSource | null> {
-  const userId = ctx.userId;
-  const organizationId = ctx.organizationId || undefined;
-  // Mirror the dispatch order in `tokenFor` so preflight reports the
-  // SAME source that the real resolution will mint later.
-  // Self-hosted local: cli → app → project PAT → user PAT → oauth
-  // SaaS / self-hosted remote: project PAT → user PAT → app → (oauth in SaaS)
-
-  const isSelfHostedLocal = !env.CLOUD_MODE && purpose === "local";
-
-  // Helper closures — keep the read order auditable.
-  const checkProjectPat = async (): Promise<GitHubTokenSource | null> => {
-    if (!tokenCtx.projectId) return null;
-    const project = await repos.project.findById(tokenCtx.projectId).catch(() => null);
-    return project?.cloneTokenEncrypted ? "project" : null;
-  };
-  const checkUserPat = async (): Promise<GitHubTokenSource | null> => {
-    const settings = await repos.settings.findByUser(userId).catch(() => null);
-    return settings?.cloneTokenEncrypted && settings.cloneTokenAsDefault ? "user-pat" : null;
-  };
-  const checkAppInstallation = async (): Promise<GitHubTokenSource | null> => {
-    if (!tokenCtx.owner) return null;
-    // Same 0-bypass gate as tokenFor — so preflight reports the SAME
-    // verdict the real mint will reach (a member without a grant for this
-    // repo doesn't get told "app available" then blocked at build time).
-    const allowed = await canUseGitHubRepo(
-      ctx,
-      {
-        owner: tokenCtx.owner,
-        repo: tokenCtx.repo,
-        installationId: tokenCtx.installationId,
-      },
-      "read",
-    );
-    if (!allowed) return null;
-    let installId: number | null = null;
-    if (organizationId) {
-      installId = await getInstallationIdByOrg(organizationId, tokenCtx.owner).catch(
-        () => null,
-      );
-    }
-    if (!installId) {
-      installId = await getInstallationId(ctx, tokenCtx.owner).catch(() => null);
-    }
-    return installId ? "app-installation" : null;
-  };
-  const checkOauth = async (): Promise<GitHubTokenSource | null> => {
-    const oauth = await getUserToken(userId).catch(() => null);
-    return oauth ? "user-oauth" : null;
-  };
-
-  if (isSelfHostedLocal) {
-    // HIGH #7 — same gh-cli gate as `tokenFor` (isSelfHostedLocal implies
-    // purpose "local"), so the existence check can't drift from the real
-    // resolution policy.
-    if (await mayUseOperatorCliToken(userId, organizationId, "local")) {
-      // Dynamic import (self-hosted local only) — gh never loads on the SaaS.
-      const { getLocalGhToken } = await import("./github.local-auth");
-      const cli = await getLocalGhToken();
-      if (cli) return "gh-cli";
-    }
-    const app = await checkAppInstallation();
-    if (app) return app;
-    const proj = await checkProjectPat();
-    if (proj) return proj;
-    const usr = await checkUserPat();
-    if (usr) return usr;
-    return await checkOauth();
+  const c = await chainCtx(ctx, purpose, tokenCtx);
+  for (const spec of chainFor(purpose)) {
+    if (await spec.probe(c)) return spec.kind;
   }
-
-  // SaaS (both purposes) and self-hosted "remote": PATs first, then App.
-  const proj = await checkProjectPat();
-  if (proj) return proj;
-  const usr = await checkUserPat();
-  if (usr) return usr;
-  const app = await checkAppInstallation();
-  if (app) return app;
-  // OAuth fallback: SaaS only. Self-hosted remote does NOT fall through.
-  if (env.CLOUD_MODE) return await checkOauth();
   return null;
 }
 

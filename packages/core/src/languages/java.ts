@@ -24,10 +24,48 @@ function clampPort(raw: string): number | null {
   return port > 0 && port <= 65535 ? port : null;
 }
 
+const YAML_PORT_RE = /^port:\s*["']?(\d{2,5})/;
+
+/**
+ * `server.port` from a YAML document: the `port:` scalar that is a direct child
+ * of a top-level `server:` mapping, in block or flow form. Returns null when the
+ * document has no such key.
+ */
+function springYamlPort(yml: string): string | null {
+  const inline = yml.match(/^server:\s*\{[^}]*\bport:\s*["']?(\d{2,5})/m);
+  if (inline) return inline[1]!;
+
+  let inServer = false;
+  let childIndent: number | null = null;
+  for (const raw of yml.split("\n")) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const indent = raw.length - raw.trimStart().length;
+
+    if (inServer) {
+      if (indent > 0) {
+        if (childIndent === null) childIndent = indent;
+        if (indent === childIndent) {
+          const m = trimmed.match(YAML_PORT_RE);
+          if (m) return m[1]!;
+        }
+        continue;
+      }
+      inServer = false;
+    }
+
+    if (indent === 0 && /^server:$/.test(trimmed)) {
+      inServer = true;
+      childIndent = null;
+    }
+  }
+  return null;
+}
+
 /**
  * Recover the port from Spring-style config. `server.port=9090` in
- * application.properties, or a `server:\n  port: 9090` block (or a bare
- * `port:`) in application.yml/yaml.
+ * application.properties, or a `server:\n  port: 9090` block (or a top-level
+ * bare `port:`) in application.yml/yaml.
  *
  * Deliberately does NOT match `server.port=${PORT:8080}` — when the app reads
  * the port from an env var the runtime already injects `PORT`, so the stack's
@@ -46,8 +84,8 @@ function detectJavaPort(context: PortDetectionContext): number | null {
   for (const name of ["application.yml", "application.yaml"]) {
     const yml = fc[name];
     if (!yml) continue;
-    const m = yml.match(/server:[\s\S]*?\bport:\s*["']?(\d{2,5})/) ?? yml.match(/^\s*port:\s*["']?(\d{2,5})/m);
-    if (m) return clampPort(m[1]);
+    const port = springYamlPort(yml) ?? yml.match(/^port:\s*["']?(\d{2,5})/m)?.[1];
+    if (port) return clampPort(port);
   }
 
   return null;

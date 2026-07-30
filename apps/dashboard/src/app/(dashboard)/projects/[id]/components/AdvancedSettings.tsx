@@ -2,26 +2,33 @@ import React, { useState } from "react";
 import {
   AlertTriangle,
   ArrowRightLeft,
+  Check,
+  ChevronDown,
   Cloud,
   Copy,
   HardDrive,
   Hammer,
   Loader2,
+  Network,
   Package,
   Pause,
   Play,
   Server,
   Settings2,
+  ShieldCheck,
   Trash2,
+  Waypoints,
+  Zap,
 } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeletionModal } from "./DeletionModal";
 import { useToast } from "@/context/ToastContext";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { projectsApi } from "@/lib/api";
+import type { RouteStrategy } from "@/lib/api/settings";
 
 interface Props {
-  onDeleteProject: (deleteApp?: boolean) => void;
+  onDeleteProject: (deleteApp?: boolean, wipeVolumes?: boolean, recordOnly?: boolean) => void;
 }
 
 const ICON_TONES = {
@@ -40,25 +47,54 @@ function SectionCard({
   icon: Icon,
   iconTone,
   children,
+  collapsible = false,
+  defaultOpen = false,
 }: {
   title: string;
   description: string;
   icon: React.ComponentType<{ className?: string }>;
   iconTone: keyof typeof ICON_TONES;
   children: React.ReactNode;
+  /** Render collapsed behind an expand toggle (header stays visible), matching
+   *  the collapsible settings sections. */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const expanded = collapsible ? open : true;
+
+  const header = (
+    <>
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}>
+        <Icon className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
+        <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
+      </div>
+      {collapsible && (
+        <ChevronDown
+          className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      )}
+    </>
+  );
+
   return (
     <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
-      <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}>
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
-        </div>
-      </div>
-      <div className="space-y-4 px-5 py-4">{children}</div>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={`flex w-full items-start gap-3 px-5 py-4 text-start ${expanded ? "border-b border-border/40" : ""}`}
+        >
+          {header}
+        </button>
+      ) : (
+        <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">{header}</div>
+      )}
+      {expanded && <div className="space-y-4 px-5 py-4">{children}</div>}
     </div>
   );
 }
@@ -184,6 +220,23 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
           </div>
         </SectionCard>
 
+        {/* Routing (edge → app upstream) — self-hosted only; cloud handles its
+            own ingress. Advanced opt-in; loopback-port is the safe default. */}
+        {projectData?.deployTarget !== "cloud" && (
+          <SectionCard
+            title={t.projectSettings.advanced.routing.title}
+            description={t.projectSettings.advanced.routing.description}
+            icon={Waypoints}
+            iconTone="primary"
+            collapsible
+          >
+            <RoutingStrategyCard
+              projectId={projectData.id}
+              initial={(projectData?.routeStrategy as RouteStrategy) ?? "auto"}
+            />
+          </SectionCard>
+        )}
+
         {/* Cache Management (mock — hidden until wired) */}
         {SHOW_MOCK_ADVANCED && (
         <SectionCard
@@ -272,10 +325,101 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
         onConfirm={onDeleteProject}
         projectName={projectData?.name || projectData?.domain}
         projectId={projectData?.id}
+        selfHosted={projectData?.deployTarget !== "cloud"}
       />
     </div>
   );
 };
+
+/* ── Routing strategy (edge → app upstream) ───────────────────────── */
+
+const ROUTE_MODES: {
+  value: RouteStrategy;
+  key: "auto" | "loopbackPort" | "containerIp";
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { value: "auto", key: "auto", icon: Zap },
+  { value: "loopback-port", key: "loopbackPort", icon: ShieldCheck },
+  { value: "container-ip", key: "containerIp", icon: Network },
+];
+
+function RoutingStrategyCard({
+  projectId,
+  initial,
+}: {
+  projectId: string;
+  initial: RouteStrategy;
+}) {
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const [strategy, setStrategy] = useState<RouteStrategy>(initial);
+  const [saving, setSaving] = useState(false);
+
+  async function handleChange(mode: RouteStrategy) {
+    if (mode === strategy || saving) return;
+    const prev = strategy;
+    setStrategy(mode);
+    setSaving(true);
+    try {
+      const res = await projectsApi.update(projectId, { routeStrategy: mode });
+      if ((res as { success?: boolean })?.success === false) throw new Error("update failed");
+      const label = t.projectSettings.advanced.routing.modes[ROUTE_MODES.find((m) => m.value === mode)!.key].label;
+      showToast(
+        interpolate(t.projectSettings.advanced.routing.toast.saved, { mode: label }),
+        "success",
+        t.projectSettings.advanced.routing.title,
+      );
+    } catch {
+      setStrategy(prev);
+      showToast(
+        t.projectSettings.advanced.routing.toast.failed,
+        "error",
+        t.projectSettings.advanced.routing.title,
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="text-[12px] text-muted-foreground">{t.projectSettings.advanced.routing.intro}</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {ROUTE_MODES.map(({ value, key, icon: ModeIcon }) => {
+          const active = strategy === value;
+          return (
+            <button
+              key={value}
+              onClick={() => handleChange(value)}
+              disabled={saving}
+              className={`relative text-start rounded-xl border p-4 transition-all ${
+                active
+                  ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
+                  : "border-border/50 bg-card hover:bg-muted/40 hover:border-border"
+              } disabled:opacity-50`}
+            >
+              <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
+                <ModeIcon className="size-4 text-muted-foreground" />
+              </div>
+              <p className="text-[13px] font-medium text-foreground">
+                {t.projectSettings.advanced.routing.modes[key].label}
+              </p>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">
+                {t.projectSettings.advanced.routing.modes[key].desc}
+              </p>
+              {active && (
+                <div className="absolute top-3 end-3">
+                  <Check className="size-4 text-primary" />
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[12px] text-muted-foreground">{t.projectSettings.advanced.routing.note}</p>
+    </>
+  );
+}
 
 function MetricRow({ label, value }: { label: string; value: string }) {
   return (

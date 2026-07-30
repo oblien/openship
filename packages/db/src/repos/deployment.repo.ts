@@ -1,7 +1,7 @@
 import { eq, and, desc, gte, lte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { deployment, buildSession } from "../schema";
+import { deployment, buildSession, project } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -89,6 +89,32 @@ export function createDeploymentRepo(db: Database) {
     },
 
     /**
+     * Deployment counts grouped by status across every non-deleted project
+     * in an organization. One aggregate query — powers the dashboard home
+     * stats without walking projects one by one. Joins through `project`
+     * (rather than using deployment.organizationId directly) so deployments
+     * of soft-deleted projects stay out of the counts, matching what the
+     * org-scoped project listings show.
+     */
+    async countByStatusForOrganization(
+      organizationId: string,
+    ): Promise<Record<string, number>> {
+      const rows = await db
+        .select({
+          status: deployment.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(deployment)
+        .innerJoin(project, eq(deployment.projectId, project.id))
+        .where(and(eq(project.organizationId, organizationId), isNull(project.deletedAt)))
+        .groupBy(deployment.status);
+
+      const out: Record<string, number> = {};
+      for (const r of rows) out[r.status] = Number(r.count);
+      return out;
+    },
+
+    /**
      * Insert a deployment, atomically honoring the one-active-per-project
      * partial unique index (`uq_deployment_one_active_per_project`). A bare
      * `ON CONFLICT DO NOTHING` (no target) covers that partial index: if another
@@ -97,11 +123,15 @@ export function createDeploymentRepo(db: Database) {
      * `undefined`. The DB decides the race — the caller surfaces "already in
      * progress" without inspecting error codes/messages.
      */
-    async create(data: Omit<NewDeployment, "id">): Promise<Deployment | undefined> {
-      const id = generateId("dep");
+    async create(data: Omit<NewDeployment, "id"> & { id?: string }): Promise<Deployment | undefined> {
+      // `id` is normally generated; re-import (live re-attach) passes the ORIGINAL
+      // deployment id so the still-running containers (labelled `openship.deployment=<id>`)
+      // stay attached and the Services-tab live query matches them.
+      const { id: providedId, ...rest } = data;
+      const id = providedId ?? generateId("dep");
       const [inserted] = await db
         .insert(deployment)
-        .values({ id, ...data })
+        .values({ id, ...rest })
         .onConflictDoNothing()
         .returning();
       return inserted as Deployment | undefined;

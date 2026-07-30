@@ -32,6 +32,7 @@ import { promisify } from "node:util";
 import { repos } from "@repo/db";
 import {
   createExecutor,
+  createHostExecutor,
   isRetryableRemoteConnectionError,
   probeTcp,
   runReliable,
@@ -41,6 +42,7 @@ import {
 import { formatDuration, systemDebug } from "@/lib/system-debug";
 import { decryptSecretField } from "@/lib/credential-encryption";
 import { resolveSafeSshKeyPath } from "@/lib/ssh-key-path";
+import { isLocalHostRow } from "@/lib/box-org";
 import { OPENSHIP_DIR } from "@/lib/openship-server-store";
 import { safeErrorMessage } from "@repo/core";
 
@@ -257,7 +259,23 @@ interface ServerConnection {
   idleTimer: ReturnType<typeof setTimeout> | null;
   /** Unsubscribe from the executor's onDisconnect, called when we drop it. */
   unsubDisconnect?: () => void;
+  /**
+   * This entry BORROWS an executor owned by another key (the host channel, shared
+   * by every local row). Dropping it must forget the entry WITHOUT disposing the
+   * executor — the owner and the other borrowers are still using it.
+   */
+  shared?: boolean;
 }
+
+/**
+ * Reserved pool key for the HOST channel — the machine Openship itself runs on.
+ *
+ * Not a server id: the host channel is needed before any server row exists
+ * (startup self-deploy, `selfEdgePreflight`) and is the same connection no matter
+ * which local row asks for it. A reserved key keeps it in the one cache that has
+ * idle cleanup, instead of a second lifecycle nobody remembers to close.
+ */
+const HOST_CHANNEL_KEY = "__openship_host__";
 
 // ─── Manager ─────────────────────────────────────────────────────────────────
 
@@ -265,6 +283,14 @@ export class SshConnectionManager {
   private servers = new Map<string, ServerConnection>();
   private connecting = new Map<string, Promise<CommandExecutor>>();
   private retainCounts = new Map<string, number>();
+  /**
+   * Server-row ids we've classified as THIS host (they borrow the one host
+   * channel under {@link HOST_CHANNEL_KEY}). Lets the sync lifecycle paths
+   * (`acquire` routing, the idle-drop guard, `release` re-arm) recognise a local
+   * row without an async DB lookup. Membership tracks a live borrow marker: added
+   * on acquire, removed when the marker is dropped.
+   */
+  private localHostRows = new Set<string>();
   /** Per-server serial FIFO queue for journaled (mutating) ops — see run(). */
   private queues = new Map<string, OpQueue>();
   /** Executors whose remote journal wrapper is deployed (per-instance cache). */
@@ -290,11 +316,36 @@ export class SshConnectionManager {
     const startedAt = Date.now();
     if (this.destroyed) throw new Error("SshManager has been destroyed");
 
+    // A row we've ALREADY classified as this host resolves to the shared channel
+    // directly — BEFORE the generic cache fast-path below. That path returns the
+    // row's borrow marker (`.executor`), which goes stale the instant the owner is
+    // reclaimed and rebuilt: it would hand back a DISPOSED executor. Routing through
+    // acquireHostChannel re-validates the owner every call, and skips the DB lookup.
+    if (this.localHostRows.has(serverId)) {
+      return this.acquireLocalHost(serverId, startedAt);
+    }
+
     const cached = this.servers.get(serverId);
     if (cached) {
       this.touchIdleTimer(serverId);
       debugSsh(`acquire:reuse server=${serverId} (${formatDuration(startedAt)})`);
       return cached.executor;
+    }
+
+    // Local host row → the host executor (LocalExecutor bare / SSH→host.docker.internal
+    // containerized), NEVER a dial to the row's sshHost — for a loopback/self row that
+    // is our OWN loopback (no sshd), which would hang the SSH connect timeout. Mirrors
+    // resolveServerExecutor so probe-gated flows (Test Connection, Scan Ports) that call
+    // acquire don't hang. Placed before the cooldown gate so a row that failed dialing
+    // 127.0.0.1 before this fix isn't stuck "cooling down". Org-gated via isLocalHostRow.
+    //
+    // POOLED through the same cache as a remote server, and that matters: when the
+    // API is containerized `createHostExecutor()` builds a NEW SshExecutor to the
+    // host every call, so an unpooled path leaked one sshd session per call —
+    // 8,000+ in hours, then OOM (#291). Every local row shares the one host channel.
+    const row = await repos.server.get(serverId).catch(() => undefined);
+    if (row && (await isLocalHostRow(row))) {
+      return this.acquireLocalHost(serverId, startedAt);
     }
 
     // Circuit-breaker: a server that just failed repeatedly is in cooldown —
@@ -319,16 +370,7 @@ export class SshConnectionManager {
     this.connecting.set(serverId, promise);
     try {
       const exec = await promise;
-      const conn: ServerConnection = { executor: exec, idleTimer: null };
-      // React to a transport drop the instant it happens (L1). The executor has
-      // already rejected its own in-flight ops; here we drive manager-side
-      // recovery.
-      if (typeof exec.onDisconnect === "function") {
-        conn.unsubDisconnect = exec.onDisconnect((err) => this.onExecutorDisconnect(serverId, err));
-      }
-      this.servers.set(serverId, conn);
-      this.touchIdleTimer(serverId);
-      this.recordSuccess(serverId);
+      this.cacheConnection(serverId, exec);
       debugSsh(`acquire:executor-ready server=${serverId} (${formatDuration(startedAt)})`);
       return exec;
     } catch (err) {
@@ -353,6 +395,114 @@ export class SshConnectionManager {
    * MUTATING commands that must not double-apply, use `run()` / `execJournaled()`
    * instead (exactly-once via the remote journal).
    */
+  /**
+   * Put an executor in the cache with the full bookkeeping: disconnect wiring,
+   * idle timer, success record.
+   *
+   * One implementation on purpose. This sequence used to be inline in `acquire`,
+   * and the moment a second path needed it the copy drifted — and the copy that
+   * drifts is the one that leaks.
+   */
+  private cacheConnection(
+    serverId: string,
+    exec: CommandExecutor,
+    opts: { shared?: boolean } = {},
+  ): void {
+    const conn: ServerConnection = { executor: exec, idleTimer: null, shared: opts.shared };
+    // React to a transport drop the instant it happens (L1). The executor has
+    // already rejected its own in-flight ops; here we drive manager-side recovery.
+    // A borrowed entry doesn't subscribe — the OWNER's subscription already fires,
+    // and a second one would drop the shared executor twice.
+    if (!opts.shared && typeof exec.onDisconnect === "function") {
+      conn.unsubDisconnect = exec.onDisconnect((err) => this.onExecutorDisconnect(serverId, err));
+    }
+    this.servers.set(serverId, conn);
+    this.touchIdleTimer(serverId);
+    this.recordSuccess(serverId);
+  }
+
+  /**
+   * The pooled HOST channel — one connection to the machine Openship runs on,
+   * reused by every caller and reclaimed by the same idle timer as a server.
+   */
+  private async acquireHostChannel(): Promise<CommandExecutor> {
+    const cached = this.servers.get(HOST_CHANNEL_KEY);
+    if (cached) {
+      this.touchIdleTimer(HOST_CHANNEL_KEY);
+      return cached.executor;
+    }
+    // Dedup concurrent first-acquires: without this, N simultaneous callers each
+    // build their own SshExecutor and N-1 are orphaned — the leak in miniature.
+    const pending = this.connecting.get(HOST_CHANNEL_KEY);
+    if (pending) return pending;
+
+    // createHostExecutor throws (deliberately) when the API is containerized with
+    // no host channel provisioned. Let that propagate: callers must NOT silently
+    // treat "cannot reach the host at all" as success.
+    const promise = (async () => createHostExecutor())();
+    this.connecting.set(HOST_CHANNEL_KEY, promise);
+    try {
+      const exec = await promise;
+      this.cacheConnection(HOST_CHANNEL_KEY, exec);
+      debugSsh("acquire:host-channel ready");
+      return exec;
+    } finally {
+      this.connecting.delete(HOST_CHANNEL_KEY);
+    }
+  }
+
+  /**
+   * Resolve a LOCAL server row to the shared host channel, keeping a borrow marker
+   * under the row id so `isConnected`/`probeReachable` short-circuit and the row
+   * shows up in idle cleanup. Going through `acquireHostChannel` re-validates (and
+   * rebuilds) the owner every call, so the marker can never hand back a stale or
+   * disposed executor if the owner was reclaimed since the last acquire.
+   */
+  private async acquireLocalHost(serverId: string, startedAt: number): Promise<CommandExecutor> {
+    this.localHostRows.add(serverId);
+    const exec = await this.acquireHostChannel();
+    this.cacheSharedMarker(serverId, exec);
+    this.recordSuccess(serverId);
+    debugSsh(`acquire:local-host server=${serverId} (${formatDuration(startedAt)})`);
+    return exec;
+  }
+
+  /**
+   * (Re)point a local row's borrow marker at the CURRENT host-channel executor.
+   * Clears any prior idle timer first so a stale one can't drop the fresh marker,
+   * and — like every cached entry — arms a new one unless the row is retained.
+   * A marker never subscribes onDisconnect (the owner's subscription is the one)
+   * and is never disposed on drop (see {@link dropServer}); it only borrows.
+   */
+  private cacheSharedMarker(serverId: string, exec: CommandExecutor): void {
+    const existing = this.servers.get(serverId);
+    if (existing?.idleTimer) clearTimeout(existing.idleTimer);
+    this.servers.set(serverId, { executor: exec, idleTimer: null, shared: true });
+    this.touchIdleTimer(serverId);
+  }
+
+  /**
+   * Run `fn` against the HOST machine — the local box, over SSH when the API is
+   * containerized.
+   *
+   * Use this for every "this machine" operation. The executor is POOLED, so there
+   * is nothing to dispose and no way to leak one: the previous idiom handed out a
+   * fresh `createHostExecutor()` and relied on each caller remembering a
+   * `try/finally`, which is how #291 reached 8,000+ orphaned sshd sessions.
+   * Deliberately mirrors `withExecutor(serverId, fn)` so there is one shape for
+   * "give me an executor for X".
+   */
+  async withHostExecutor<T>(fn: (executor: CommandExecutor) => Promise<T>): Promise<T> {
+    const exec = await this.acquireHostChannel();
+    try {
+      return await fn(exec);
+    } finally {
+      // Extend the idle window from LAST USE, not from acquisition, or a long op
+      // can have the connection dropped from under its own tail.
+      this.touchIdleTimer(HOST_CHANNEL_KEY);
+    }
+  }
+
   async withExecutor<T>(
     serverId: string,
     fn: (executor: CommandExecutor) => Promise<T>,
@@ -479,7 +629,38 @@ export class SshConnectionManager {
     if (this.cooldownRemaining(serverId) > 0) return false;
 
     const server = await repos.server.get(serverId).catch(() => undefined);
-    if (!server?.sshHost) return false;
+    if (!server) return false;
+
+    // An isLocal row is THIS box (the auto-registered "This Server"). Its ssh*
+    // fields are display-only — self-server.ts writes `127.0.0.1`/SERVER_IP purely
+    // so the list reads truthfully, and every operation goes through
+    // createHostExecutor, never a dial. Probing that display value reported the
+    // control plane's own host as Offline: inside the api container `127.0.0.1:22`
+    // is the CONTAINER's loopback, where there is no sshd.
+    //
+    // Same for a plain SSH row an operator added for THIS host (loopback / the
+    // box's own address) — resolvesToLocalHost catches those too, so they don't
+    // render the "Can't reach 127.0.0.1" banner for a box that is actually up.
+    //
+    // So answer with the channel ops actually use: the host SSH bridge when we're
+    // containerized (host.docker.internal), else the same machine we're running on.
+    if (await isLocalHostRow(server)) {
+      const hostSsh = process.env.OPENSHIP_HOST_SSH_HOST?.trim();
+      if (!hostSsh) {
+        this.recordSuccess(serverId);
+        return true;
+      }
+      const hostOk = await probeTcp(
+        hostSsh,
+        Number(process.env.OPENSHIP_HOST_SSH_PORT || 22),
+        timeoutMs,
+      );
+      if (hostOk) this.recordSuccess(serverId);
+      else this.recordFailure(serverId);
+      return hostOk;
+    }
+
+    if (!server.sshHost) return false;
 
     const ok = await probeTcp(server.sshHost, server.sshPort ?? 22, timeoutMs);
     if (ok) this.recordSuccess(serverId);
@@ -538,6 +719,11 @@ export class SshConnectionManager {
     if (count === 0) {
       this.retainCounts.delete(serverId);
       this.touchIdleTimer(serverId);
+      // A local row borrows the shared host channel; when its last hold ends,
+      // re-arm the OWNER's idle timer too. The owner's own timer was consumed and
+      // skipped by the drop guard while this row was held, so without this the
+      // channel would never be reclaimed after a long local-host op.
+      if (this.localHostRows.has(serverId)) this.touchIdleTimer(HOST_CHANNEL_KEY);
     } else {
       this.retainCounts.set(serverId, count);
     }
@@ -731,16 +917,59 @@ export class SshConnectionManager {
       return;
     }
 
+    // The shared host channel outlives its own idle timer while ANY local row that
+    // borrows it is still retained by a long-lived op — the deploy/stream holds the
+    // ROW id, not this key, and its `retain` runs before the row's first `acquire`,
+    // so propagating retain counts onto the owner is racy. Guarding at drop time
+    // isn't; `release()` re-arms the timer so the channel is still reclaimed once
+    // nothing holds it. `force` (invalidate/shutdown) always drops.
+    if (!force && serverId === HOST_CHANNEL_KEY && this.anyLocalRowRetained()) {
+      debugSsh("drop-server:skip-host-channel (a borrowing row is retained)");
+      return;
+    }
+
     if (conn.idleTimer) clearTimeout(conn.idleTimer);
     if (conn.unsubDisconnect) {
       try { conn.unsubDisconnect(); } catch { /* best-effort */ }
     }
     this.retainCounts.delete(serverId);
-    if ("dispose" in conn.executor && typeof conn.executor.dispose === "function") {
+    // A BORROWED entry (a local row pointing at the shared host channel) must only
+    // be forgotten — disposing here would close the one host connection that every
+    // other local row and `withHostExecutor` caller is still using.
+    if (
+      !conn.shared &&
+      "dispose" in conn.executor &&
+      typeof conn.executor.dispose === "function"
+    ) {
       conn.executor.dispose();
     }
     this.servers.delete(serverId);
-    debugSsh(`drop-server server=${serverId}`);
+    if (conn.shared) this.localHostRows.delete(serverId);
+    // Reclaiming the shared channel strands every borrow marker pointing at it —
+    // forget them so `isConnected`/`probeReachable` don't report a dead channel and
+    // the next `acquire` rebuilds cleanly. Markers are forgotten, never disposed.
+    if (serverId === HOST_CHANNEL_KEY) this.forgetHostChannelBorrowers();
+    debugSsh(`drop-server server=${serverId}${conn.shared ? " (borrowed, not disposed)" : ""}`);
+  }
+
+  /** A local row currently held by a long-lived op — see the host-channel drop guard. */
+  private anyLocalRowRetained(): boolean {
+    for (const id of this.localHostRows) {
+      if ((this.retainCounts.get(id) ?? 0) > 0) return true;
+    }
+    return false;
+  }
+
+  /** Forget every borrow marker (never dispose — a marker doesn't own the executor)
+   *  once the shared host channel is gone; the next acquire re-points them. */
+  private forgetHostChannelBorrowers(): void {
+    for (const id of [...this.localHostRows]) {
+      const conn = this.servers.get(id);
+      if (!conn?.shared) continue;
+      if (conn.idleTimer) clearTimeout(conn.idleTimer);
+      this.servers.delete(id);
+      this.localHostRows.delete(id);
+    }
   }
 }
 

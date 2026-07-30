@@ -420,6 +420,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             placeholder="/"
             className="w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
+          <p className="text-[11px] text-muted-foreground/70 mt-1.5 leading-relaxed">{bs.staticPathHint}</p>
         </div>
       );
     });

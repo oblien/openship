@@ -8,6 +8,8 @@
  */
 
 import { compareSemver } from "./semver";
+import { findAnnouncement } from "./advisories";
+import type { Advisory, AdvisoryManifest } from "./types";
 
 /** The GitHub `releases/latest` fields we consume. */
 export interface GithubReleasePayload {
@@ -23,7 +25,19 @@ export interface DesktopUpdateAsset {
 }
 
 export type DesktopUpdateCheck =
-  | { available: true; version: string; notes: string; asset: DesktopUpdateAsset }
+  | {
+      available: true;
+      version: string;
+      notes: string;
+      asset: DesktopUpdateAsset;
+      /**
+       * The advisory that authorizes interrupting the user about this update, or
+       * null for a routine release (installable from Settings → Updates, no
+       * modal). Carries the title/message its author wrote, so a caller that
+       * prompts can say WHY without inventing copy.
+       */
+      announcement: Advisory | null;
+    }
   | { available: false };
 
 /**
@@ -42,17 +56,25 @@ export function desktopAssetName(platform: string, arch: string): string | null 
 }
 
 /**
- * Fold a `releases/latest` payload + platform/arch + current version into an
- * update decision. Available only when the release is strictly newer AND ships
- * an asset for this platform. Never throws.
+ * Fold a `releases/latest` payload + the advisory manifest + platform/arch +
+ * current version into the WHOLE update decision. Available only when the
+ * release is strictly newer AND ships an asset for this platform. Never throws.
+ *
+ * Two questions, two sources, resolved once here:
+ *   - "is there something newer to install?" → the release feed (version + asset)
+ *   - "may I interrupt the user about it?"    → the advisory manifest, and only it
+ * Callers act on `announcement`; nothing downstream re-fetches the manifest or
+ * re-decides from severity.
  */
 export function resolveDesktopUpdate(input: {
   releasePayload: GithubReleasePayload | null | undefined;
   platform: string;
   arch: string;
   currentVersion: string;
+  /** Parsed advisory manifest for the release tag. Absent/null → never prompt. */
+  manifest?: AdvisoryManifest | null;
 }): DesktopUpdateCheck {
-  const { releasePayload, platform, arch, currentVersion } = input;
+  const { releasePayload, platform, arch, currentVersion, manifest } = input;
   const latest = (releasePayload?.tag_name ?? "").replace(/^v/, "");
   if (!latest || compareSemver(latest, currentVersion) <= 0) return { available: false };
 
@@ -67,6 +89,9 @@ export function resolveDesktopUpdate(input: {
     version: latest,
     notes: releasePayload?.body ?? "",
     asset: { name: asset.name, url: asset.browser_download_url, size: asset.size },
+    // Mode "desktop": a VPS-only advisory (edge/OpenResty, compose) must never
+    // pop a modal in the desktop app, and vice versa.
+    announcement: findAnnouncement(currentVersion, manifest, "desktop"),
   };
 }
 

@@ -13,6 +13,7 @@
  */
 
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import type { CommandExecutor, LogEntry, SystemLogCallback, SystemLog } from "@repo/adapters";
 import { updatePostmasterPassword } from "./mail-credentials.service";
@@ -21,7 +22,17 @@ import {
   installRsync,
   installOpenResty,
   installCertbot,
+  foreignProxyOnEdge,
+  ourEdgeContainerRunning,
+  ACME_HTTP01_PORT,
 } from "@repo/adapters";
+
+// ─── Shell quoting helper ─────────────────────────────────────────────────────
+
+/** Single-quote a value for safe shell interpolation. */
+function sq(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
 
 // ─── Engine source-of-truth ──────────────────────────────────────────────────
 
@@ -35,15 +46,29 @@ const REMOTE_ENGINE_DIR = "/root/iRedMail-engine";
 /**
  * Absolute path to `apps/email/engine/` on the openship API host.
  *
- * `MAIL_SERVER_ENGINE_DIR` overrides for ops who pin a packaged build to a
- * fixed location; otherwise resolved relative to apps/api's cwd so the
- * monorepo dev layout works without configuration.
+ * `MAIL_SERVER_ENGINE_DIR` wins when set, and the packaged desktop app
+ * (services.ts) plus the CLI-bundled server (up.ts) both set it, pointing at the
+ * engine tree they ship — they run with a cwd that has no monorepo at all.
+ *
+ * Otherwise the cwd differs by how the API was started, so both layouts are
+ * probed rather than assuming one:
+ *   - dev (`bun dev` in apps/api)      → cwd is apps/api  → ../../apps/email/engine
+ *   - container (CMD from the WORKDIR) → cwd is /app      → apps/email/engine
+ * The container case used to resolve to `/apps/email/engine` (off the filesystem
+ * root) and step 7 died with "tar: /apps/email/engine: Cannot open". The dev path
+ * stays first so a repo checkout keeps behaving exactly as before.
  */
-function resolveLocalEngineDir(): string {
+export function resolveLocalEngineDir(): string {
   if (process.env.MAIL_SERVER_ENGINE_DIR) {
     return process.env.MAIL_SERVER_ENGINE_DIR;
   }
-  return resolve(process.cwd(), "../../apps/email/engine");
+  const candidates = [
+    resolve(process.cwd(), "../../apps/email/engine"),
+    resolve(process.cwd(), "apps/email/engine"),
+  ];
+  // Fall back to the dev path when neither exists so the failure names the
+  // location an operator expects, not the last candidate tried.
+  return candidates.find((dir) => existsSync(dir)) ?? candidates[0]!;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -253,6 +278,18 @@ export async function stepCheckPort25(
  *   - rsync     → required by `transferIn` (engine staging in step 7)
  *   - OpenResty → openship's routing layer; owns :80 / :443 from now on
  *   - certbot   → used by step 12 (request_ssl) for mail.<domain>
+ *
+ * OpenResty is skipped entirely when `openship-edge` (the containerized edge -
+ * see `createInfraProvider` in platform.ts) is already running: it holds
+ * :80/:443 via `--network host`, so a HOST OpenResty can never bind them - not
+ * a transient conflict, a structural one. Installing it anyway dead-ends: the
+ * apt postinst starts the unit, it can't bind, dpkg leaves the package
+ * unconfigured (which breaks the next `apt-get upgrade`), and an operator
+ * masking the unit to unbreak that then makes every later run fail with "Unit
+ * is masked" instead. `ourEdgeContainerRunning` is the same
+ * executor-based probe `probeEdge`/the takeover flow use to recognize our own
+ * edge - reused here rather than re-detecting via env vars, which wouldn't see
+ * a containerized edge on a server reached over SSH.
  */
 export async function stepEnsureComponents(
   exec: CommandExecutor,
@@ -261,12 +298,21 @@ export async function stepEnsureComponents(
 ): Promise<StepResult> {
   const stepId = 2;
   const sysLog = bridgeToSystemLog(stepId, log);
+  const containerEdge = await ourEdgeContainerRunning(exec);
 
   for (const [name, install] of [
     ["rsync", installRsync],
     ["OpenResty", installOpenResty],
     ["certbot", installCertbot],
   ] as const) {
+    if (name === "OpenResty" && containerEdge) {
+      log(
+        stepId,
+        "info",
+        "Skipping OpenResty - the edge is containerized (openship-edge already owns :80/:443)",
+      );
+      continue;
+    }
     log(stepId, "info", `Ensuring ${name}...`);
     const r = await install(exec, sysLog);
     if (!r.success) {
@@ -279,7 +325,13 @@ export async function stepEnsureComponents(
     log(stepId, "info", `${name} ready${r.version ? ` (${r.version})` : ""}`);
   }
 
-  return { stepId, success: true, message: "rsync, OpenResty, and certbot are installed" };
+  return {
+    stepId,
+    success: true,
+    message: containerEdge
+      ? "rsync and certbot are installed; OpenResty is provided by the containerized edge"
+      : "rsync, OpenResty, and certbot are installed",
+  };
 }
 
 /**
@@ -289,6 +341,10 @@ export async function stepEnsureComponents(
  * are bound by it (rather than by some unexpected process). If openresty
  * is down, start it. We DON'T scan for "conflicts" anymore - we expect
  * OpenResty to be the owner and treat anything else as an error.
+ *
+ * On a containerized edge there's no host `openresty.service` to check or
+ * start - step 2 already skipped installing one, for the same reason. Skip
+ * straight to confirming the edge (in whatever form it takes) isn't foreign.
  */
 export async function stepEnsureReverseProxy(
   exec: CommandExecutor,
@@ -296,36 +352,41 @@ export async function stepEnsureReverseProxy(
   log: StepLogger,
 ): Promise<StepResult> {
   const stepId = 4;
-  log(stepId, "info", "Checking OpenResty service status...");
 
-  const active = (
-    await exec.exec("systemctl is-active openresty 2>/dev/null || echo inactive")
-  ).trim();
 
-  if (active !== "active") {
-    log(stepId, "info", "OpenResty is not running - starting it...");
-    try {
-      await exec.exec("systemctl start openresty");
-    } catch (err) {
-      return {
-        stepId,
-        success: false,
-        message: `Failed to start OpenResty: ${errMsg(err)}`,
-      };
+  if (await ourEdgeContainerRunning(exec)) {
+    log(stepId, "info", "Edge is containerized (openship-edge) - no host OpenResty service to check");
+  } else {
+    log(stepId, "info", "Checking OpenResty service status...");
+
+    const active = (
+      await exec.exec("systemctl is-active openresty 2>/dev/null || echo inactive")
+    ).trim();
+
+    if (active !== "active") {
+      log(stepId, "info", "OpenResty is not running - starting it...");
+      try {
+        await exec.exec("systemctl start openresty");
+      } catch (err) {
+        return {
+          stepId,
+          success: false,
+          message: `Failed to start OpenResty: ${errMsg(err)}`,
+        };
+      }
     }
   }
 
-  // Confirm OpenResty is the listener on :80. Anything else means another
-  // service has the port - we surface it as an error rather than try to
-  // resolve in-band; the operator can stop it and rerun the step.
-  const port80 = (
-    await exec.exec("ss -ltnp 'sport = :80' 2>/dev/null | tail -n +2 || true")
-  ).trim();
-  if (port80 && !/openresty|nginx/i.test(port80)) {
+  // Confirm OUR OpenResty owns 80/443 — via the SHARED edge detector (same one
+  // the deploy pipeline / self-app use), not an ad-hoc ss/regex. A foreign proxy
+  // holding the ports is surfaced as an error; mail never blind-takes-over
+  // someone's proxy (the operator stops/migrates it via the dashboard and reruns).
+  const { blocked, owner } = await foreignProxyOnEdge(exec);
+  if (blocked) {
     return {
       stepId,
       success: false,
-      message: `Port 80 is held by an unexpected process: ${port80.slice(0, 200)}`,
+      message: `Ports 80/443 are held by another proxy (${owner}). Stop it, or migrate it from the dashboard, then rerun.`,
     };
   }
 
@@ -353,7 +414,7 @@ export async function stepSetHostname(
 
   log(stepId, "info", `Setting hostname to ${mailDomain}...`);
   try {
-    await exec.exec(`hostnamectl set-hostname ${mailDomain}`);
+    await exec.exec(`hostnamectl set-hostname ${sq(mailDomain)}`);
   } catch (err) {
     return { stepId, success: false, message: `Failed to set hostname: ${errMsg(err)}` };
   }
@@ -372,12 +433,13 @@ export async function stepUpdateHosts(
   const mailDomain = `mail.${domain}`;
   log(stepId, "info", "Checking /etc/hosts...");
 
-  const countStr = await exec.exec("grep -c '^127.0.1.1' /etc/hosts || echo 0");
+  const countStr = await exec.exec(`grep -c '^127.0.1.1' /etc/hosts || echo 0`);
   const hasEntry = parseInt(countStr.trim(), 10) > 0;
 
   if (hasEntry) {
+    const pattern = `^127\\.0\\.1\\.1.*${mailDomain}`;
     const correctStr = await exec.exec(
-      `grep -c '^127.0.1.1.*${mailDomain}' /etc/hosts || echo 0`,
+      `grep -c ${sq(pattern)} /etc/hosts || echo 0`,
     );
     if (parseInt(correctStr.trim(), 10) > 0) {
       log(stepId, "info", "/etc/hosts already configured correctly");
@@ -385,13 +447,15 @@ export async function stepUpdateHosts(
     }
 
     log(stepId, "info", "Updating existing 127.0.1.1 entry...");
+    const sedReplace = `s/^127\\.0\\.1\\.1.*/127.0.1.1 ${mailDomain} ${domain}/`;
     await exec.exec(
-      `sed -i 's/^127.0.1.1.*/127.0.1.1 ${mailDomain} ${domain}/' /etc/hosts`,
+      `sed -i ${sq(sedReplace)} /etc/hosts`,
     );
   } else {
     log(stepId, "info", "Adding 127.0.1.1 entry...");
+    const sedAppend = `/127.0.0.1/a 127.0.1.1 ${mailDomain} ${domain}`;
     await exec.exec(
-      `sed -i '/127.0.0.1/a 127.0.1.1 ${mailDomain} ${domain}' /etc/hosts`,
+      `sed -i ${sq(sedAppend)} /etc/hosts`,
     );
   }
 
@@ -722,6 +786,13 @@ export async function stepRunInstaller(
     "AUTO_CLEANUP_REPLACE_FIREWALL_RULES=n",
     "AUTO_CLEANUP_RESTART_FIREWALL=n",
     "AUTO_CLEANUP_REPLACE_MYSQL_CONFIG=n",
+    // The engine's own knob for its upstream version check (pkgs/get_all.sh),
+    // which asks l.iredmail.org whether PROG_VERSION is current and `exit 255`s
+    // when it isn't. Our engine is VENDORED and carries its own PROG_VERSION, so
+    // that check can only ever fail — it made every install die at step 9 with
+    // "Your iRedMail version (1.8.1) is out of date". What we ship is what gets
+    // installed; upstream doesn't get a veto.
+    "CHECK_NEW_IREDMAIL=NO",
   ].join(" ");
 
   const installer = await streamCmd(
@@ -765,6 +836,30 @@ export async function stepRunInstaller(
 }
 
 /** Step 10: Reboot server and wait for reconnection */
+/**
+ * Has the post-install reboot already happened?
+ *
+ * Step 10 takes the box down, so it can never record its own success: the
+ * connection (and, when openship runs ON the target, openship itself) dies
+ * mid-step. Resume therefore replays step 10 and reboots a machine that just
+ * came back — taking the control plane and every deployed app down a second
+ * time for nothing.
+ *
+ * `iRedMail.tips` is the installer's last write, so a boot NEWER than that file
+ * IS the post-install reboot. Both probes fail closed (0 → "not done"), so an
+ * unreadable /proc/stat or a missing tips file just reboots as before.
+ */
+async function rebootAlreadyDone(exec: CommandExecutor): Promise<boolean> {
+  const num = async (cmd: string) =>
+    Number((await exec.exec(cmd).catch(() => "0")).trim()) || 0;
+
+  const bootedAt = await num("awk '/^btime/{print $2}' /proc/stat 2>/dev/null || echo 0");
+  const installedAt = await num(
+    `stat -c %Y ${REMOTE_ENGINE_DIR}/iRedMail.tips 2>/dev/null || echo 0`,
+  );
+  return bootedAt > 0 && installedAt > 0 && bootedAt > installedAt;
+}
+
 export async function stepReboot(
   exec: CommandExecutor,
   _domain: string,
@@ -772,6 +867,12 @@ export async function stepReboot(
   reconnectFn: () => Promise<CommandExecutor>,
 ): Promise<StepResult> {
   const stepId = 10;
+
+  if (await rebootAlreadyDone(exec)) {
+    log(stepId, "info", "Server already rebooted since the installer finished - skipping");
+    return { stepId, success: true, message: "Server already rebooted after install" };
+  }
+
   log(stepId, "info", "Rebooting server...");
 
   // Fire-and-forget reboot (will drop connection)
@@ -1022,7 +1123,7 @@ export async function provisionDomainDkim(
   // amavisd genrsa exits non-zero if the file already exists; treat that
   // as success so re-runs are idempotent.
   await exec.exec(
-    `[ -s ${keyPath} ] || ${amavisBin} genrsa ${keyPath}`,
+    `[ -s ${sq(keyPath)} ] || ${amavisBin} genrsa ${sq(keyPath)}`,
   );
   await exec.exec(`chown -R amavis:amavis /var/lib/dkim 2>/dev/null || true`);
 
@@ -1043,7 +1144,7 @@ export async function provisionDomainDkim(
   );
 
   // ── Step 5: read the public key out ──────────────────────────────────
-  const showOutput = await exec.exec(`${amavisBin} showkeys ${newDomain} 2>&1`);
+  const showOutput = await exec.exec(`${amavisBin} showkeys ${sq(newDomain)} 2>&1`);
   const matches = showOutput.match(/"([^"]+)"/g);
   const dkimValue = matches
     ? matches.map((m: string) => m.replace(/"/g, "")).join("").replace(/\s+/g, "")
@@ -1131,11 +1232,11 @@ export function spliceAmavisConf(
 /**
  * Step 12: Request a Let's Encrypt cert for `mail.<domain>`.
  *
- * Uses certbot in standalone mode: we briefly stop OpenResty (which owns
- * :80 from step 2) so certbot can bind it for the HTTP-01 challenge, then
- * bring OpenResty back. (Future cleanup: switch to webroot mode and skip
- * the stop/start dance entirely by serving `.well-known/acme-challenge/`
- * through OpenResty.)
+ * Webroot mode through the RUNNING OpenResty: its default server already serves
+ * `/.well-known/acme-challenge/` from `/var/www/acme` (deployLuaScripts), so the
+ * HTTP-01 challenge is answered without ever stopping OpenResty. This is what
+ * keeps every app behind the shared edge UP during mail cert issuance — the old
+ * `systemctl stop openresty` + `--standalone` dance took the whole box dark.
  */
 export async function stepRequestSSL(
   exec: CommandExecutor,
@@ -1144,18 +1245,31 @@ export async function stepRequestSSL(
 ): Promise<StepResult> {
   const stepId = 12;
   const mailDomain = `mail.${domain}`;
+  // Guard before the value reaches a shell command (never interpolate an
+  // unvalidated hostname into `certbot -d …`).
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(mailDomain)) {
+    return { stepId, success: false, message: `Invalid mail domain: ${mailDomain}` };
+  }
   log(stepId, "info", `Requesting SSL certificate for ${mailDomain}...`);
 
-  log(stepId, "info", "Pausing OpenResty for standalone ACME challenge...");
-  await exec.exec("systemctl stop openresty 2>/dev/null || true");
-
+  // Same ACME mechanism the rest of openship uses (NginxProvider.provisionCert):
+  // certbot's STANDALONE authenticator on a loopback alt-port, which the edge
+  // proxies /.well-known/acme-challenge/ to (ACME_CHALLENGE_LOCATION). Webroot
+  // was wrong here: the edge's default server PROXIES that path rather than
+  // serving files, so nothing ever read /var/www/acme and every challenge 404'd
+  // — and on a containerized edge the host's /var/www/acme isn't even the
+  // volume the edge mounts. Standalone works bare (host netns) and docker-edge
+  // (host-networked container) alike, since certbot listens on the same
+  // loopback the edge proxies to. `--cert-name` pins the lineage so a stale
+  // renewal config can't push the cert to `<domain>-0001` where step 13's
+  // symlinks would never find it.
   const cert = await streamCmd(
     exec,
-    `certbot certonly --standalone --agree-tos --register-unsafely-without-email -d ${mailDomain} --non-interactive 2>&1`,
+    `certbot certonly --standalone --http-01-port ${ACME_HTTP01_PORT} ` +
+      `--cert-name ${sq(mailDomain)} -d ${sq(mailDomain)} ` +
+      `--agree-tos --register-unsafely-without-email --non-interactive 2>&1`,
     stepId, log,
   );
-
-  await exec.exec("systemctl start openresty 2>/dev/null || true");
 
   if (cert.code !== 0) {
     return {
@@ -1165,7 +1279,7 @@ export async function stepRequestSSL(
     };
   }
 
-  log(stepId, "info", "SSL certificate obtained");
+  log(stepId, "info", "SSL certificate obtained (OpenResty stayed up — apps unaffected)");
   return { stepId, success: true, message: `SSL certificate obtained for ${mailDomain}` };
 }
 

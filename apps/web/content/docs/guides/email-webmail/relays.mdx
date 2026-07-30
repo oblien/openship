@@ -1,0 +1,36 @@
+---
+title: Third-party email delivery
+description: Route your mail server's outbound mail through an external SMTP relay.
+---
+
+An SMTP relay is just a middleman that takes the mail your server wants to send and actually delivers it to the
+world — instead of your own machine talking straight to Gmail or Outlook.
+
+Relaying is worth setting up because deliverability comes down to IP reputation: a brand-new server IP has none,
+so inbox providers are quick to bounce or spam-folder anything it sends. Routing outbound mail through an
+established relay provider means it leaves from IPs receiving servers already trust. It also sidesteps port 25,
+which most cloud providers block outbound by default — relays send over port 587 instead, so there's no
+service-limit exemption to request.
+
+Openship's mail relay handles it natively — go to **Emails → Sending → "Relay via Amazon SES (or any SMTP
+relay)"** and choose provider **Custom** for any relay that doesn't have a preset. The same host, port, and
+credential fields also work under **Settings → Email**, if you'd rather relay Openship's own notification emails
+through the same provider.
+
+Whichever provider you pick, it'll ask you for roughly the same things:
+
+- **DNS records** (SPF, DKIM, sometimes DMARC) added at your domain's DNS provider, so receiving servers can
+  verify mail claiming to be from your domain actually came from the relay you authorized.
+- **Sender registration or verification** — most relays refuse to send on behalf of a From address they don't
+  recognize, so you register or verify each sender (or your whole domain) before mail flows.
+- **SMTP credentials** — a username and password (or API key used as one) scoped to sending mail.
+- **Host and port** to plug into Openship's relay form — almost always port `587`.
+
+Oracle Cloud (OCI) Email Delivery is documented next: [OCI Email Delivery](/docs/guides/email-webmail/relay-oci).
+
+## Other providers
+
+OCI is just one option — AWS SES, Resend, Mailgun, SendGrid, and similar providers all follow the same shape:
+DNS authentication (SPF/DKIM), sender or domain verification, SMTP credentials, and a host/port you plug into the
+same **Emails → Sending** form. If you've set one of these up with Openship, a PR adding a page here for your
+provider is welcome.

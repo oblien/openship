@@ -12,6 +12,7 @@ import { RefreshCw, ShieldCheck, Download, Github, CheckCircle2, Loader2 } from 
 import { changelogUrl } from "@repo/core";
 import { SettingsSection } from "./SettingsSection";
 import { useUpdates } from "@/components/updates/useUpdates";
+import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 function Toggle({
@@ -55,7 +56,7 @@ function Toggle({
 
 export function UpdatesTab() {
   const { t } = useI18n();
-  const { state, muted, desktop, setMuted, startDesktopUpdate, refresh } = useUpdates();
+  const { state, muted, desktop, mode, setMuted, startDesktopUpdate, refresh } = useUpdates();
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [checking, setChecking] = useState(false);
 
@@ -108,6 +109,11 @@ export function UpdatesTab() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Self-hosted: the upgrade runs on the host, so hand over the exact
+                command. The line above only said "re-run your install". */}
+            {state?.updateAvailable && mode === "selfhosted" && (
+              <CopyCommand command={SELF_UPDATE_COMMAND} />
+            )}
             {state?.updateAvailable && desktop && (
               <button
                 type="button"

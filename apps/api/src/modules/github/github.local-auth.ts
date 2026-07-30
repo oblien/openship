@@ -31,8 +31,10 @@ import { readFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
 import { createOAuthDeviceAuth } from "@octokit/auth-oauth-device";
+import { repos } from "@repo/db";
 import { env } from "../../config/env";
 import { cacheStore } from "../../lib/cache-store";
+import { decrypt, encrypt } from "../../lib/encryption";
 import { systemDebug } from "../../lib/system-debug";
 import { ghFetchSoft } from "./github.http";
 import { getGitHubAuthMode } from "./github.auth";
@@ -67,10 +69,92 @@ export async function getLocalGhToken(): Promise<string | null> {
   const cached = await store.get(GH_CLI_TOKEN_KEY);
   if (cached) return cached;
 
+  // Durable device-flow token BEFORE the `gh` probes. It has to be in this chain
+  // and not just in the cache: the two probes below read a `gh` binary and
+  // ~/.config/gh/hosts.yml, neither of which exists in the api container, so a
+  // cache miss there meant "signed out" for the exact install the device flow
+  // serves. Re-populates the cache so the hot path stays a single memory hit.
+  const stored = await readStoredDeviceToken();
+  if (stored) {
+    await store.set(GH_CLI_TOKEN_KEY, stored, GH_CLI_TOKEN_TTL_S);
+    return stored;
+  }
+
   let token = await ghAuthTokenViaCli();
   if (!token) token = await ghAuthTokenViaConfig();
   if (token) await store.set(GH_CLI_TOKEN_KEY, token, GH_CLI_TOKEN_TTL_S);
   return token;
+}
+
+/**
+ * The device-flow token from `instance_settings`, decrypted. Soft: a missing row,
+ * a null column or an undecryptable value all mean "no stored token" and fall
+ * through to the `gh` probes rather than failing the caller.
+ *
+ * A decrypt failure is worth a log — it means the row survived but
+ * OPENSHIP_ENCRYPTION_KEY changed, and the operator has to sign in again.
+ */
+async function readStoredDeviceToken(): Promise<string | null> {
+  try {
+    const settings = await repos.instanceSettings.get();
+    const sealed = settings?.ghDeviceTokenEncrypted;
+    if (!sealed) return null;
+    return decrypt(sealed);
+  } catch (err) {
+    systemDebug("github", `stored device token unreadable: ${safeErrorMessage(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Persist (or clear) the device-flow token. Encrypted at rest with the same key
+ * as every other stored secret, and mirrored into the short cache so the sign-in
+ * takes effect without waiting on a read-through.
+ */
+export async function setStoredDeviceToken(
+  token: string | null,
+  method: "device" | "token" = "device",
+): Promise<void> {
+  await repos.instanceSettings.upsert(
+    token
+      ? {
+          ghDeviceTokenEncrypted: encrypt(token),
+          ghDeviceTokenSetAt: new Date(),
+          ghDeviceTokenMethod: method,
+        }
+      : { ghDeviceTokenEncrypted: null, ghDeviceTokenSetAt: null, ghDeviceTokenMethod: null },
+  );
+  const store = await cacheStore<string>("gh-cli-token");
+  if (token) await store.set(GH_CLI_TOKEN_KEY, token, GH_CLI_TOKEN_TTL_S);
+  else await store.delete(GH_CLI_TOKEN_KEY);
+}
+
+/**
+ * How the instance's git identity was established, for labelling and for the
+ * consent decision. "host-cli" = probed off the host's own `gh` login (nothing
+ * the operator did inside Openship); "device"/"token" = they connected it here.
+ */
+export async function getGitIdentityMethod(): Promise<"host-cli" | "device" | "token" | null> {
+  if (env.CLOUD_MODE) return null;
+  const stored = await repos.instanceSettings.get().catch(() => null);
+  if (stored?.ghDeviceTokenEncrypted) return stored.ghDeviceTokenMethod ?? "device";
+  return (await getLocalGhToken()) ? "host-cli" : null;
+}
+
+/**
+ * Is there a local git identity this host could FORWARD (never ship) to a build
+ * host? The single definition of the relay's real precondition: the relay's
+ * remote helper vends `getLocalGhToken()`, so without one the tunnel would open
+ * and answer nothing. Shared by the deploy pipeline (clone-auth) and preflight so
+ * preflight can never predict a relay the pipeline won't take. Soft — any failure
+ * means "no".
+ */
+export async function hasLocalGitIdentity(): Promise<boolean> {
+  try {
+    return !!(await getLocalGhToken());
+  } catch {
+    return false;
+  }
 }
 
 /** Invalidate the cached gh CLI token (e.g. after the user re-authenticates). */
@@ -322,6 +406,60 @@ interface DeviceFlowState {
 const activeFlows = new Map<string, DeviceFlowState>();
 
 /**
+ * Openship's own OAuth app client id for the device flow — the shipped default
+ * so a fresh self-hosted instance can sign in to GitHub from the UI with NO
+ * setup: no app registration, no cloud account, no SSH into the box.
+ *
+ * Safe to ship in the open. The device flow exchanges a user-approved code for a
+ * token and never sends a client secret (that's the whole point of the grant), so
+ * this id grants nothing on its own — same reason `gh` can bake its own id into a
+ * public binary.
+ *
+ * EMPTY means "not provisioned yet": `resolveDeviceClientId` then returns null and
+ * the caller falls back to the `gh auth login` terminal instruction, exactly as
+ * before. To turn the in-UI flow on for everyone, register an OAuth app with
+ * "Enable Device Flow" checked and paste its client id here (operators can
+ * override per-instance with GITHUB_DEVICE_CLIENT_ID meanwhile).
+ */
+const DEVICE_FLOW_CLIENT_ID = "";
+
+/**
+ * The client id to run a device flow with, or null when none is available.
+ *
+ * Priority, most specific first:
+ *   1. GITHUB_DEVICE_CLIENT_ID — declared FOR the device flow. Wins because it is
+ *      the only one of the three whose purpose is unambiguous.
+ *   2. GITHUB_CLIENT_ID        — the operator's OAuth app. DUAL-PURPOSE: `auth.ts`
+ *      also uses it (with GITHUB_CLIENT_SECRET) for GitHub social login. It is a
+ *      fallback, not the default, precisely because "I set up GitHub sign-in for
+ *      my users" must not silently decide which app the device flow authorizes
+ *      under — and an app without "Enable Device Flow" ticked fails here with
+ *      GitHub's opaque error while an explicit override sat ignored.
+ *   3. Openship's shipped id.
+ *
+ * SaaS never reaches this: `deviceFlowAvailable()` returns false under CLOUD_MODE
+ * and `runDeviceFlow` throws there before touching any of it, so the platform's
+ * own GITHUB_CLIENT_ID/SECRET can't leak into a device grant. The secret is never
+ * read here at all — the device grant has no client-secret step.
+ */
+export function resolveDeviceClientId(): string | null {
+  return (
+    env.GITHUB_DEVICE_CLIENT_ID?.trim() ||
+    env.GITHUB_CLIENT_ID?.trim() ||
+    DEVICE_FLOW_CLIENT_ID.trim() ||
+    null
+  );
+}
+
+/** Can the browser device flow run at all? Drives which flow the API offers. */
+export function deviceFlowAvailable(): boolean {
+  if (env.CLOUD_MODE) return false;
+  const mode = getGitHubAuthMode();
+  if (mode === "app" || mode === "oauth") return false;
+  return resolveDeviceClientId() !== null;
+}
+
+/**
  * Start a GitHub OAuth device flow for a user.
  *
  * Returns the verification info (user_code, verification_uri) that the
@@ -353,9 +491,12 @@ async function runDeviceFlow(
     throw new Error("Device flow is not available in cloud/oauth mode");
   }
 
-  const clientId = env.GITHUB_CLIENT_ID;
+  const clientId = resolveDeviceClientId();
   if (!clientId) {
-    throw new Error("GITHUB_CLIENT_ID is required for the device flow");
+    throw new Error(
+      "No GitHub client id available for the device flow. Set GITHUB_DEVICE_CLIENT_ID " +
+        "(or GITHUB_CLIENT_ID) to an OAuth app with device flow enabled.",
+    );
   }
 
   // Cancel any existing flow for this key
@@ -405,10 +546,11 @@ async function runDeviceFlow(
  * up. Requires `GITHUB_CLIENT_ID`. No-op in cloud modes.
  */
 export async function startDeviceFlow(userId: string): Promise<Verification> {
-  return runDeviceFlow(userId, async (token) => {
-    const store = await cacheStore<string>("gh-cli-token");
-    await store.set(GH_CLI_TOKEN_KEY, token, 8 * 60 * 60);
-  });
+  // Persist, don't just cache. See setStoredDeviceToken / the schema note on
+  // instance_settings.ghDeviceTokenEncrypted: a cache-only token expired after 8
+  // hours into fallbacks that don't exist in a container, silently signing the
+  // operator out of a login they completed in the browser.
+  return runDeviceFlow(userId, (token) => setStoredDeviceToken(token));
 }
 
 /**

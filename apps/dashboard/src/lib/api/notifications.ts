@@ -10,7 +10,7 @@ export interface NotificationCategory {
   defaultEnabled: boolean;
 }
 
-export type ChannelKind = "email" | "webhook" | "in_app" | "slack";
+export type ChannelKind = "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams";
 export type DeliveryStatus = "queued" | "sending" | "sent" | "failed" | "seen";
 
 /* ── Channel ─────────────────────────────────────────────────────── */
@@ -24,7 +24,9 @@ export interface NotificationChannel {
    *    email   → { address }
    *    webhook → { url, hmacSecretConfigured }
    *    in_app  → {}
-   *    slack   → { webhookUrlConfigured, channelName | null } */
+   *    slack   → { webhookUrlConfigured, channelName | null }
+   *    discord → { webhookUrlConfigured }
+   *    msteams → { webhookUrlConfigured } */
   config: Record<string, unknown>;
   verified: boolean;
   enabled: boolean;
@@ -48,7 +50,9 @@ export interface NotificationDefault {
   organizationId: string;
   category: string;
   defaultEnabled: boolean;
-  defaultChannelKind: ChannelKind;
+  /** Channel kinds a new member is auto-subscribed on — one event can fan out to
+   *  several (e.g. ["email","slack"]). */
+  defaultChannelKinds: ChannelKind[];
   createdAt: string;
   updatedAt: string;
 }
@@ -80,11 +84,7 @@ export const notificationsApi = {
   listChannels: () =>
     api.get<{ channels: NotificationChannel[] }>(endpoints.notifications.channels),
 
-  createChannel: (data: {
-    kind: ChannelKind;
-    label: string;
-    config: Record<string, unknown>;
-  }) =>
+  createChannel: (data: { kind: ChannelKind; label: string; config: Record<string, unknown> }) =>
     api.post<{ channel: NotificationChannel }>(endpoints.notifications.channels, data),
 
   updateChannel: (
@@ -97,20 +97,19 @@ export const notificationsApi = {
     }>,
   ) => api.patch<{ channel: NotificationChannel }>(endpoints.notifications.channel(id), data),
 
-  deleteChannel: (id: string) =>
-    api.delete<{ ok: true }>(endpoints.notifications.channel(id)),
+  deleteChannel: (id: string) => api.delete<{ ok: true }>(endpoints.notifications.channel(id)),
+
+  // Sends a real test message through the channel's worker; on success the
+  // server flips `verified: true` (the only way to prove reachability). Throws
+  // with the provider's error message on failure.
+  testChannel: (id: string) =>
+    api.post<{ ok: boolean; verified: boolean }>(endpoints.notifications.channelTest(id), {}),
 
   // ── Subscriptions
   listSubscriptions: () =>
-    api.get<{ subscriptions: NotificationSubscription[] }>(
-      endpoints.notifications.subscriptions,
-    ),
+    api.get<{ subscriptions: NotificationSubscription[] }>(endpoints.notifications.subscriptions),
 
-  upsertSubscription: (data: {
-    category: string;
-    channelId: string;
-    enabled: boolean;
-  }) =>
+  upsertSubscription: (data: { category: string; channelId: string; enabled: boolean }) =>
     api.put<{ subscription: NotificationSubscription }>(
       endpoints.notifications.subscriptions,
       data,
@@ -126,9 +125,8 @@ export const notificationsApi = {
   upsertDefault: (data: {
     category: string;
     defaultEnabled: boolean;
-    defaultChannelKind: ChannelKind;
-  }) =>
-    api.put<{ default: NotificationDefault }>(endpoints.notifications.defaults, data),
+    defaultChannelKinds: ChannelKind[];
+  }) => api.put<{ default: NotificationDefault }>(endpoints.notifications.defaults, data),
 
   // ── Deliveries (in-app inbox)
   listDeliveries: (opts?: { unseen?: boolean; limit?: number }) => {
@@ -142,9 +140,7 @@ export const notificationsApi = {
     return api.get<{ deliveries: NotificationDelivery[] }>(url);
   },
 
-  unseenCount: () =>
-    api.get<{ count: number }>(endpoints.notifications.unseenCount),
+  unseenCount: () => api.get<{ count: number }>(endpoints.notifications.unseenCount),
 
-  markSeen: (id: string) =>
-    api.post<{ ok: true }>(endpoints.notifications.markSeen(id), {}),
+  markSeen: (id: string) => api.post<{ ok: true }>(endpoints.notifications.markSeen(id), {}),
 };

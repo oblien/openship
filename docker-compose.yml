@@ -1,25 +1,40 @@
 # ──────────────────────────────────────────────────────────
-# Openship — Docker Compose
+# Openship — Docker Compose (SaaS / from-source control plane)
 #
 #   cp .env.example .env          # then edit
 #   docker compose up -d --build
 #
-# ONE set of services. The MODE is decided entirely by .env — there are no
-# profiles and no per-mode service variants:
-#   • Default (users): self-hosted  → CLOUD_MODE=false (the .env.example default)
-#   • SaaS (our env):                 CLOUD_MODE=true + OPENSHIP_TARGET=cloud-saas
-#                                     + Oblien / GitHub App / secrets
+# This is the CONTROL PLANE: it BUILDS api + dashboard + web from source and
+# runs postgres + redis. It's what we deploy for the openship.io SaaS, and what
+# a from-source contributor runs locally. The MODE is decided entirely by .env —
+# no profiles, no per-mode service variants:
+#   • SaaS (our env):   CLOUD_MODE=true + OPENSHIP_TARGET=cloud-saas + Oblien /
+#                       GitHub App / secrets. Deployed apps run in Oblien
+#                       sandboxes — the control plane never runs them here, so
+#                       there is deliberately NO Docker socket and NO edge.
+#   • From-source dev:  CLOUD_MODE=false (the .env.example default).
+#
+# SELF-HOSTING (run your own apps as host containers with the OpenResty edge on
+# :80/:443) is a DIFFERENT stack — the pull-based images + `edge` + Docker-out-
+# of-Docker. That lives in docker/docker-compose.yml (or install it with the
+# `openship up` CLI). Don't add the edge/socket here; this stays a clean,
+# unprivileged control plane.
 #
 # Services:
 #   • postgres → private :5432   (storage)
 #   • redis    → private :6379   (queue + cache + rate-limit)
-#   • api      → :4000
-#   • dashboard→ :3001
-#   • web      → :3000
+#   • api      → :4000   (override: API_PORT)
+#   • dashboard→ :3001   (override: DASHBOARD_PORT)
+#   • web      → :3000   (override: WEB_PORT)   landing site (openship.io)
 #
 # The API + dashboard bind fixed internal ports via PORT (the API honors PORT
 # regardless of OPENSHIP_TARGET); a reverse proxy maps the public domains to
 # them. postgres/redis are internal-only. The API auto-migrates Postgres on boot.
+#
+# REMOTE ACCESS: reaching this from another machine (LAN IP or a reverse proxy)
+# requires OPENSHIP_PUBLIC_URL in .env — else the dashboard loads but login is
+# rejected (403 ORIGIN_REJECTED). Behind a proxy also set TRUST_PROXY=true. Set
+# OPENSHIP_BIND_ADDR to publish the ports on one interface instead of all.
 # ──────────────────────────────────────────────────────────
 
 services:
@@ -65,7 +80,8 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      # Publish on all interfaces by default; OPENSHIP_BIND_ADDR pins one.
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${API_PORT:-4000}:${API_PORT:-4000}"
     # Mode + secrets (CLOUD_MODE, DEPLOY_MODE, OPENSHIP_TARGET, Oblien, GitHub
     # App, auth secrets, …) all come from .env. The values below OVERRIDE it
     # with the fixed internal port + in-cluster service DNS (compose
@@ -74,7 +90,7 @@ services:
       - .env
     environment:
       NODE_ENV: production
-      PORT: "4000"
+      PORT: "${API_PORT:-4000}"
       DATABASE_URL: postgresql://${POSTGRES_USER:-openship}:${POSTGRES_PASSWORD:-openship}@postgres:5432/${POSTGRES_DB:-openship}
       REDIS_URL: redis://redis:6379
     depends_on:
@@ -83,7 +99,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \"fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "bun -e \"fetch('http://127.0.0.1:${API_PORT:-4000}/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -96,13 +112,13 @@ services:
       dockerfile: apps/dashboard/Dockerfile
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${DASHBOARD_PORT:-3001}:${DASHBOARD_PORT:-3001}"
     env_file:
       - .env
     environment:
       NODE_ENV: production
-      PORT: "3001"
-      INTERNAL_API_URL: http://api:4000
+      PORT: "${DASHBOARD_PORT:-3001}"
+      INTERNAL_API_URL: http://api:${API_PORT:-4000}
     depends_on:
       api:
         condition: service_healthy
@@ -114,10 +130,10 @@ services:
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${OPENSHIP_BIND_ADDR:-0.0.0.0}:${WEB_PORT:-3000}:${WEB_PORT:-3000}"
     environment:
       NODE_ENV: production
-      PORT: "3000"
+      PORT: "${WEB_PORT:-3000}"
 
 volumes:
   postgres_data:

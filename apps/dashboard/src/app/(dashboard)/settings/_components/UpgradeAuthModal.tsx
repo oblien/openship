@@ -22,6 +22,7 @@ import { Eye, EyeOff, Loader2, Lock, Server, X } from "lucide-react";
 import { api, getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
+import { Modal } from "@/components/ui/Modal";
 
 interface MailServerSummary {
   serverId: string;
@@ -92,14 +93,17 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-6"
-      onClick={() => !submitting && onClose()}
+    // Shared Modal (portals to document.body) rather than an inline overlay —
+    // inline, this rendered inside the settings page's stacking/filter context
+    // and came out washed with the page showing through it.
+    <Modal
+      isOpen
+      onClose={onClose}
+      closable={!submitting}
+      showCloseButton={false}
+      maxWidth="28rem"
     >
-      <div
-        className="w-full max-w-md rounded-2xl border border-border/50 bg-card p-6 space-y-5"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="space-y-5 p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="size-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
@@ -218,6 +222,6 @@ export function UpgradeAuthModal({ open, onClose, onSuccess }: Props) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }

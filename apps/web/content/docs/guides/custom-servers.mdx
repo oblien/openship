@@ -115,7 +115,7 @@ Each server gets its own page, split into tabs. From here you can see how it's d
 
 - **Overview** — live stats for the machine: CPU, memory, disk, uptime, and load, plus a quick list of which components are healthy.
 - **Components** — the health list for this server. **Re-check** re-runs the checks, **Install Missing** installs any core components the server still needs, and each installed component can be reinstalled or removed.
-- **Security** — request **rate limiting** (see below).
+- **Security** — request **rate limiting** (see below) and a **port-exposure scan** that lists which ports are listening and flags any bound to a public interface vs loopback-only.
 - **Terminal** — a live SSH shell right in the browser, so you can poke around the server without leaving Openship. Up to 3 shells at once.
 - **Ports** — port forwarding (**desktop app only**, see below).
 

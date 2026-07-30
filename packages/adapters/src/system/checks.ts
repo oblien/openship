@@ -12,7 +12,8 @@
 
 import type { CommandExecutor } from "../types";
 import type { ComponentStatus } from "./types";
-import { OPENRESTY_LUA_DIR } from "../infra/openresty-lua";
+import { containerCommand } from "./edge-container-executor";
+import { resolveOurEdgeContainer } from "./proxy/detect";
 import { systemCatalog } from "./catalog";
 import { resolveEnvironment } from "./environment";
 import { enrichAvailableVersions } from "./available-version";
@@ -152,65 +153,38 @@ export async function checkRsync(
   return healthy("rsync", parsed);
 }
 
-export async function checkOpenResty(
-  executor: CommandExecutor,
-): Promise<ComponentStatus> {
+/**
+ * The edge: is our openship-edge container up.
+ *
+ * That is the whole check. The edge is a Docker image whose serving path is
+ * host-side (host networking, host bind mounts for vhosts/certs/ACME), so there is
+ * no host binary, no unit and no Lua on the box to probe — and nothing to fall back
+ * to. A box without the container has no edge; installing one is a container pull.
+ */
+export async function checkEdge(executor: CommandExecutor): Promise<ComponentStatus> {
   const startedAt = Date.now();
-  const recipe = systemCatalog.checks.openresty;
-  const version = await tryExec(executor, recipe.versionCommand);
 
-  // OpenResty binary must be installed - a plain nginx process doesn't count
-  if (!version) {
-    systemDebug("checks", `openresty:missing (${formatDuration(startedAt)})`);
-    return unhealthy("openresty", recipe.missingMessage);
-  }
-
-  const parsed = recipe.parseVersion(version);
-
-  const runningChecks = await Promise.all(
-    recipe.runningCommands!.map((command) => tryExec(executor, command)),
-  );
-  const running = runningChecks.some(Boolean);
-
-  if (!running) {
-    systemDebug("checks", `openresty:not-running (${formatDuration(startedAt)})`);
-    return unhealthy("openresty", recipe.notRunningMessage!, {
-      version: parsed,
-      running: false,
-    });
-  }
-
-  // Binary + process OK - verify Lua analytics/streaming scripts are deployed
-  const hasLua = await tryExec(
-    executor,
-    `test -f ${OPENRESTY_LUA_DIR}/site_logger.lua && test -f ${OPENRESTY_LUA_DIR}/pipe_stream.lua && echo ok`,
-  );
-  if (!hasLua) {
-    systemDebug("checks", `openresty:missing-lua (${formatDuration(startedAt)})`);
+  const container = await resolveOurEdgeContainer(executor);
+  if (!container) {
+    systemDebug("checks", `edge:missing (${formatDuration(startedAt)})`);
     return unhealthy(
-      "openresty",
-      "OpenResty is running but analytics scripts are not deployed - reinstall to fix",
-      { version: parsed, running: true },
+      "edge",
+      "No edge on this server. The edge is the openship-edge container — install it (requires Docker).",
     );
   }
 
-  systemDebug("checks", `openresty:healthy (${formatDuration(startedAt)})`);
-  return healthy("openresty", parsed, true);
-}
-
-export async function checkCertbot(
-  executor: CommandExecutor,
-): Promise<ComponentStatus> {
-  const startedAt = Date.now();
-  const recipe = systemCatalog.checks.certbot;
-  const version = await tryExec(executor, recipe.versionCommand);
+  const version = await tryExec(executor, containerCommand(container, "openresty -v 2>&1"));
   if (!version) {
-    systemDebug("checks", `certbot:missing (${formatDuration(startedAt)})`);
-    return unhealthy("certbot", recipe.missingMessage);
+    systemDebug("checks", `edge:container-unresponsive (${formatDuration(startedAt)})`);
+    return unhealthy(
+      "edge",
+      `The edge container ${container} is running but not responding — check \`docker logs ${container}\``,
+      { running: false },
+    );
   }
-  const parsed = recipe.parseVersion(version);
-  systemDebug("checks", `certbot:healthy (${formatDuration(startedAt)})`);
-  return healthy("certbot", parsed);
+
+  systemDebug("checks", `edge:healthy (${formatDuration(startedAt)})`);
+  return healthy("edge", systemCatalog.checks.openresty.parseVersion(version), true);
 }
 
 // ─── Registry ────────────────────────────────────────────────────────────────
@@ -219,8 +193,7 @@ type CheckFn = (executor: CommandExecutor) => Promise<ComponentStatus>;
 
 export const COMPONENT_CHECKS: Record<string, CheckFn> = {
   docker: checkDocker,
-  openresty: checkOpenResty,
-  certbot: checkCertbot,
+  edge: checkEdge,
   git: checkGit,
   rsync: checkRsync,
 };

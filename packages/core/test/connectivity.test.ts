@@ -25,6 +25,30 @@ describe("classifyConnectivityError", () => {
     }
   });
 
+  it("maps filesystem permission errors to permission_denied, not auth_failed", () => {
+    // Node spells EACCES as "EACCES: permission denied, <syscall> '<path>'".
+    // The auth rule's bare "permission denied" token used to claim these, so an
+    // operator with an unwritable backup destination was told their credentials
+    // were rejected — sending them off to rotate SSH keys instead of chown'ing
+    // the path. `access denied` / `read-only` already classified correctly, so
+    // two ways of saying the same thing disagreed.
+    for (const m of [
+      "EACCES: permission denied, open '/backups/openship/db.sql'",
+      "EACCES: permission denied, mkdir '/mnt/backup/nightly'",
+      "EROFS: read-only file system, open '/srv/backups/x'",
+    ]) {
+      expect(classifyConnectivityError(m).code).toBe("permission_denied");
+    }
+  });
+
+  it("still treats SSH permission denials as auth_failed", () => {
+    // The errno rule must not swallow these — no EACCES/EROFS token present.
+    expect(classifyConnectivityError("Permission denied (publickey)").code).toBe("auth_failed");
+    expect(classifyConnectivityError("Permission denied, please try again").code).toBe(
+      "auth_failed",
+    );
+  });
+
   it("maps deadline strings to timeout", () => {
     expect(classifyConnectivityError("operation timed out").code).toBe("timeout");
     expect(classifyConnectivityError("ETIMEDOUT").code).toBe("timeout");

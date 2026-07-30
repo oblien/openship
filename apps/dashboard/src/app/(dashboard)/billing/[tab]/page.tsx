@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import type { PlanTierId } from "@repo/core";
+import { CLOUD_CAPABILITIES } from "@repo/core";
 import { BillingOverview } from "@/components/billing/BillingOverview";
 import { BillingUsage } from "@/components/billing/BillingUsage";
 import { BillingTopups } from "@/components/billing/BillingTopups";
@@ -76,7 +77,7 @@ async function fetchBillingState(): Promise<BillingFetchResult> {
       // 403 cloud_not_connected — local-mode proxy sentinel.
       if (err.status === 403) {
         const body = err.body as { code?: string } | null | undefined;
-        if (body?.code === "cloud_not_connected") {
+        if (body?.code === CLOUD_CAPABILITIES.billing.code) {
           return { kind: "unavailable", reason: "cloud-not-connected" };
         }
       }

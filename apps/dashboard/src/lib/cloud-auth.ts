@@ -1,4 +1,5 @@
 import { getCloudApiOrigin, getCloudDashboardUrl } from "@/lib/api/urls";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 export const DESKTOP_CLOUD_FLOW = "desktop-cloud";
 const DEFAULT_APP_NAME = "Openship Desktop";
@@ -61,10 +62,16 @@ export function generatePkceVerifier(): string {
 }
 
 /** RFC 7636 S256 code_challenge: base64url(SHA-256(verifier)). */
-export async function computePkceChallenge(verifier: string): Promise<string> {
+export async function computePkceChallenge(
+  verifier: string,
+  subtleCrypto: SubtleCrypto | null | undefined = globalThis.crypto?.subtle,
+): Promise<string> {
   const data = new TextEncoder().encode(verifier);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return base64UrlEncode(new Uint8Array(digest));
+  if (subtleCrypto) {
+    const digest = await subtleCrypto.digest("SHA-256", data);
+    return base64UrlEncode(new Uint8Array(digest));
+  }
+  return base64UrlEncode(sha256(data));
 }
 
 /** Random flow id, used as the storage key for the verifier and the

@@ -9,7 +9,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { RoutingConfig, ReleaseSource } from "@repo/core";
+import type { RoutingConfig, ProjectCompositeRoute, ReleaseSource } from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
 
@@ -163,8 +163,22 @@ export const project = pgTable(
     buildImage: text("build_image"),
     /** Production mode: host, static, standalone */
     productionMode: text("production_mode").default("host"),
-    /** Port the app listens on */
+    /** Port the app listens on (inside the container / the bare process). */
     port: integer("port").default(3000),
+    /**
+     * Pinned LOOPBACK host port the edge proxies to under the `loopback-port`
+     * route strategy (docker publishes `127.0.0.1:<hostPort>:<port>`). Stable
+     * across redeploys/restarts; null until first allocated. Mirrors
+     * `service.hostPort`. Unused by bare (the app owns 127.0.0.1:<port>) and by
+     * `container-ip` mode.
+     */
+    hostPort: integer("host_port"),
+    /**
+     * How the edge addresses this app's upstream: "auto" (default → loopback
+     * host port), "loopback-port", or "container-ip" (advanced, bridge IP).
+     * Snapshotted onto each deployment's config, like `runtimeMode`.
+     */
+    routeStrategy: text("route_strategy").default("auto"),
     /** Whether the project needs a running server (false = static site, deployed via Pages) */
     hasServer: boolean("has_server").notNull().default(true),
     /** Whether the project needs a build step (false = deploy source files directly) */
@@ -262,6 +276,15 @@ export const project = pgTable(
      * routing config. Widening the shape needs no migration (jsonb).
      */
     routingConfig: jsonb("routing_config").$type<RoutingConfig | null>(),
+    /**
+     * Path-fan-out domains: a domain whose paths route to DIFFERENT services
+     * (one root at `/` + extra path-prefix locations). Set by a cross-server
+     * migration that adopted a multi-upstream vhost (`api.onvo.me` `/` → web,
+     * `/v3` → api). Re-emitted from live upstreams on every deploy — the vhost
+     * model stores one domain per service, so this is where the extra path→service
+     * upstreams live. Null/[] = no fan-out. Widening needs no migration (jsonb).
+     */
+    compositeRoutes: jsonb("composite_routes").$type<ProjectCompositeRoute[] | null>(),
     /**
      * How Cloud deployments preserve their rollback artifact:
      *   - "inplace"  → Oblien `snapshots.createArchive` + `workspace.stop`.

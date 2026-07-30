@@ -6,6 +6,8 @@
  * and supports log replay for late joiners / page reloads.
  */
 
+import type { PromptPayload } from "@repo/adapters";
+import { PromptRegistry } from "../../lib/prompt-gateway";
 import { TtlCache } from "../../lib/cache";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -26,13 +28,9 @@ export interface SetupLogEntry {
   level: "info" | "warn" | "error";
 }
 
-export interface SetupPrompt {
-  promptId: string;
-  title: string;
-  message: string;
-  actions: Array<{ id: string; label: string; variant?: string }>;
-  details?: Record<string, unknown>;
-}
+// The setup prompt is the ONE shared PromptPayload from @repo/adapters — aliased
+// so this file's existing `SetupPrompt` references stay put.
+export type SetupPrompt = PromptPayload;
 
 export interface SetupSessionState {
   id: string;
@@ -171,23 +169,15 @@ export function appendSetupLog(
  * dashboard. Mirrors the deploy session manager's prompt/respond so the SAME
  * generic prompt modal drives both flows (e.g. OpenResty edge takeover).
  */
-interface PendingSetupPrompt {
-  resolve: (action: string) => void;
-  reject: (reason: Error) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-}
-
-const pendingSetupPrompts = new Map<string, PendingSetupPrompt>();
-const SETUP_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
+// The block-on-a-promise + timeout mechanic lives once in PromptRegistry; this
+// manager keeps only the session-object hold (pendingPrompt, for replay) + the
+// SSE broadcast.
+const promptRegistry = new PromptRegistry();
 
 export function rejectPendingSetupPrompt(sessionId: string, reason: string): void {
-  const pending = pendingSetupPrompts.get(sessionId);
   const session = sessions.get(sessionId);
   if (session) session.pendingPrompt = undefined;
-  if (!pending) return;
-  clearTimeout(pending.timeoutId);
-  pendingSetupPrompts.delete(sessionId);
-  pending.reject(new Error(reason));
+  promptRegistry.reject(sessionId, reason);
 }
 
 /** Is a session currently blocked on a prompt, and does anyone hold its stream? */
@@ -200,16 +190,7 @@ export function setupPromptState(sessionId: string): { pending: boolean; subscri
  * Broadcast a `prompt` SSE event and block until the user responds (or timeout).
  * Returns the chosen action id (e.g. "override", "cancel").
  */
-export function promptSetupUser(
-  sessionId: string,
-  prompt: {
-    promptId: string;
-    title: string;
-    message: string;
-    actions: Array<{ id: string; label: string; variant?: string }>;
-    details?: Record<string, unknown>;
-  },
-): Promise<string> {
+export function promptSetupUser(sessionId: string, prompt: PromptPayload): Promise<string> {
   const session = sessions.get(sessionId);
   if (!session) throw new Error("No active setup session for prompt");
 
@@ -218,25 +199,17 @@ export function promptSetupUser(
   session.pendingPrompt = prompt;
   broadcast(session, "prompt", JSON.stringify({ type: "prompt", ...prompt }));
 
-  return new Promise<string>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      pendingSetupPrompts.delete(sessionId);
-      reject(new Error("Prompt timed out - no response from user"));
-    }, SETUP_PROMPT_TIMEOUT_MS);
-    pendingSetupPrompts.set(sessionId, { resolve, reject, timeoutId });
-  });
+  return promptRegistry.wait(sessionId);
 }
 
 /** Resolve a pending prompt with the user's chosen action. */
 export function respondToSetupPrompt(sessionId: string, action: string): boolean {
-  const pending = pendingSetupPrompts.get(sessionId);
-  if (!pending) return false;
-  const session = sessions.get(sessionId);
-  if (session) session.pendingPrompt = undefined;
-  clearTimeout(pending.timeoutId);
-  pendingSetupPrompts.delete(sessionId);
-  pending.resolve(action);
-  return true;
+  const ok = promptRegistry.respond(sessionId, action);
+  if (ok) {
+    const session = sessions.get(sessionId);
+    if (session) session.pendingPrompt = undefined;
+  }
+  return ok;
 }
 
 /** Mark the session as completed or failed and notify subscribers. */

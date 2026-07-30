@@ -6,6 +6,7 @@ import {
   getBuildImage,
   parseVercelConfig,
   extractCdTargets,
+  slugify,
   type WorkspaceDetector,
 } from "@repo/core";
 import {
@@ -708,7 +709,9 @@ export interface MonorepoWorkspace {
 export interface MonorepoApp {
   /** Stable identifier for this sub-app (e.g. "apps/web"). */
   id: string;
-  /** Display name (last segment of rootDirectory, or package.json name). */
+  /** Display name AND infra identifier (container/network name) - last segment
+   *  of rootDirectory, or a Docker-safe slug of package.json name. Always
+   *  matches `[a-zA-Z0-9][a-zA-Z0-9_.-]*`; see `sanitizeAppName`. */
   name: string;
   rootDirectory: string;
   stack: StackResult["stack"];
@@ -828,18 +831,36 @@ function isIndependentlyDeployable(candidate: ProjectRootSnapshot): boolean {
   return false;
 }
 
+/**
+ * `MonorepoApp.name` isn't just a display label - it's persisted as
+ * `Service.name` and consumed verbatim as a Docker container/network name
+ * (see compose/build.service.ts, runtime/docker.ts's `createServiceContainer`),
+ * which only allows `[a-zA-Z0-9][a-zA-Z0-9_.-]*`. A `package.json` name is
+ * frequently npm-scoped ("@virtalio/saas" - the norm for pnpm/turborepo
+ * workspaces), and "@"/"/" both fail that pattern, so a raw scoped name
+ * deploys fine right up until container creation, which fails with a cryptic
+ * "Invalid container name" from the Docker daemon. Fold the scope into the
+ * name (rather than dropping it) so sibling apps under different scopes,
+ * or the same package name under different scopes, don't collide.
+ */
+function sanitizeAppName(raw: string): string {
+  return slugify(raw.replace(/^@/, "").replace(/\//g, "-"));
+}
+
 function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string; rootDirectory?: string }): MonorepoApp {
   const rootDirectory = overrides?.rootDirectory ?? snapshot.rootDirectory;
   const segments = snapshot.rootDirectory.split("/");
   const stack = snapshot.stack;
+  const packageName = (snapshot.packageJson?.name as string | undefined)?.trim();
   const name =
-    (snapshot.packageJson?.name as string | undefined)?.trim() ||
+    (packageName && sanitizeAppName(packageName)) ||
     segments.at(-1) ||
     rootDirectory ||
     "app";
 
   // Static sub-apps keep an empty start command: the monorepo build pipeline
-  // serves them as files via the generated nginx image (see isStaticService /
+  // serves them as files — via the edge on self-hosted, a generated nginx image on
+  // cloud (see isStaticService /
   // the static Dockerfile branch). Server sub-apps carry their real start command.
   return {
     id: overrides?.id ?? snapshot.rootDirectory,
@@ -927,11 +948,22 @@ export function discoverMonorepoApps(
  * not the monorepo flow). Library directories under `packages/` are still
  * filtered out by `scoreCandidate`'s segment penalty; we additionally reject
  * `unknown` stacks so we don't list every directory containing a manifest.
+ *
+ * `projectType === "docker"` (a directory with its own Dockerfile) is
+ * ALSO accepted, not just "app": a Railway/per-service-Dockerfile-style
+ * monorepo (e.g. `apps/api/Dockerfile`, `apps/web/Dockerfile`) is exactly as
+ * deployable as a buildpack-detected app - the build pipeline already builds
+ * a "docker"-stack sub-app straight from its own Dockerfile at its
+ * `rootDirectory`, same as a standalone docker-stack project (see
+ * compose/build.service.ts's monorepo build path). Excluding these dropped
+ * every sub-app to 0 candidates for any monorepo built this way, so
+ * `discoverMonorepoApps` silently returned null instead of detecting it.
  */
 function isMonorepoAppCandidate(candidate: ProjectRootSnapshot): boolean {
   if (!candidate.rootDirectory) return false;
   if (candidate.stack.stack === "unknown") return false;
-  if (candidate.stack.projectType !== "app") return false;
+  if (candidate.stack.projectType !== "app" && candidate.stack.projectType !== "docker")
+    return false;
   // A .NET class library is not a deployable app — only web/service/exe projects are.
   if (isDotnetLibraryOnly(candidate)) return false;
   // Library segments first (packages/, libs/, shared/, …) are not deployable on their own.

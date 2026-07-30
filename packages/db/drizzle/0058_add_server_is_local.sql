@@ -1,0 +1,1 @@
+ALTER TABLE "servers" ADD COLUMN "is_local" boolean DEFAULT false NOT NULL;

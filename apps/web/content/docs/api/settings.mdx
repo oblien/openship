@@ -32,6 +32,7 @@ default). Available on both self-hosted and cloud instances.
 | `PATCH /api/settings/deploy-defaults` | `settings:write` | Set or clear the default deploy target and server. |
 | `PATCH /api/settings/clone-credentials` | `settings:write` | Set, replace, or clear the git clone token. |
 | `PATCH /api/settings/clone-strategy-preference` | `settings:write` | Save the first-time-deploy clone-strategy choice. |
+| `PATCH /api/settings/forward-git` | `settings:write` | Enable/disable forwarding your local git identity to remote build servers. |
 
 ## Get settings
 
@@ -171,6 +172,31 @@ curl -X PATCH https://your-host/api/settings/clone-strategy-preference \
   -H "Authorization: Bearer $OPENSHIP_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"preference":"remote-with-token"}'
+```
+
+## Forward git identity to build servers
+
+Enables (or disables) forwarding your local `gh` identity to a remote build server for the clone. It's a
+per-operator preference — replacing the old per-deploy `forwardGitCredentials` flag — and is surfaced in
+`GET /api/settings` as `forwardGitToServer`. When on, a server clone tunnels your local git identity over
+SSH just for the clone (nothing is stored on the server). See
+[Git authentication for private repos](/docs/guides/git-authentication).
+
+```
+PATCH /api/settings/forward-git
+```
+
+<TypeTable
+  type={{
+    enabled: { type: 'boolean', description: 'Whether to forward your local git identity to remote build servers during a server clone.', required: true },
+  }}
+/>
+
+```bash
+curl -X PATCH https://your-host/api/settings/forward-git \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":true}'
 ```
 
 ## Errors you might see

@@ -18,11 +18,44 @@ import {
   type PlanTierId,
 } from "@repo/core";
 import { db, schema, eq, asc, desc } from "@repo/db";
-import { runtimeTarget } from "../../config/env";
+import { runtimeTarget, env } from "../../config/env";
 import type { RequestContext } from "../../lib/request-context";
 import { stripe } from "../../lib/stripe-client";
 import { handleStripeEvent as handleStripeWebhook } from "./billing.webhooks";
 import * as billingRepository from "./billing.repository";
+
+/* ---------- Feature gate (master switch, cloud-owned) ---------- */
+
+/**
+ * The ONE server-side gate for "is the billing feature live". Every
+ * Stripe-mutating path funnels through here so billing can be turned on by
+ * flipping `BILLING_ENABLED` on the SaaS — with no dashboard or self-hosted
+ * release. Fails CLOSED (403) when off, so a stale/racing client that still
+ * shows a buy button can't start a real Stripe session. Read paths (state,
+ * usage, plans) deliberately do NOT call this — the dashboard still renders the
+ * "coming soon" surface and live usage/capacity while billing is disabled.
+ */
+export function assertBillingEnabled(): void {
+  if (!env.BILLING_ENABLED) {
+    throw new AppError(
+      "Billing is not enabled yet. It's coming soon to Openship Cloud.",
+      403,
+      "BILLING_NOT_ENABLED",
+    );
+  }
+}
+
+/** Top-ups gate — requires the master billing switch AND the top-ups sub-switch. */
+export function assertTopupsEnabled(): void {
+  assertBillingEnabled();
+  if (!env.BILLING_TOPUPS_ENABLED) {
+    throw new AppError(
+      "One-time credit top-ups are not available yet.",
+      403,
+      "BILLING_TOPUPS_NOT_ENABLED",
+    );
+  }
+}
 
 /* ---------- Idempotency key helpers ---------- */
 
@@ -113,6 +146,7 @@ export async function createCheckoutSession(
   planTierId: PlanTierId,
   interval: "monthly" | "annual",
 ): Promise<{ checkoutUrl: string }> {
+  assertBillingEnabled();
   const organizationId = ctx.organizationId;
   const email = ctx.user.email;
   const plan = PLANS[planTierId];
@@ -186,6 +220,7 @@ export async function createTopupCheckoutSession(
   ctx: RequestContext,
   packId: string,
 ): Promise<{ checkoutUrl: string }> {
+  assertTopupsEnabled();
   const organizationId = ctx.organizationId;
   const email = ctx.user.email;
   const pack = CREDIT_PACKS.find((p) => p.id === packId);
@@ -242,6 +277,7 @@ export async function createTopupCheckoutSession(
 export async function createPortalSession(
   organizationId: string,
 ): Promise<{ portalUrl: string }> {
+  assertBillingEnabled();
   const customer = await billingRepository.getCustomerByOrg(organizationId);
   if (!customer) {
     throw new AppError(
@@ -277,6 +313,7 @@ export async function createPortalSession(
 export async function cancelSubscription(
   organizationId: string,
 ): Promise<{ cancelAt: Date | null }> {
+  assertBillingEnabled();
   const [sub] = await db
     .select()
     .from(schema.billingSubscription)

@@ -25,6 +25,7 @@
     "projectCountOne": "{count} projeto",
     "projectCountOther": "{count} projetos",
     "viewAllProjects": "Ver todos os {count} projetos →",
+    "viewAllApps": "Ver todos os {count} aplicativos →",
     "greetingName": "{greeting}, {name}",
     "importGit": "Importar do Git",
     "importGitDesc": "De um repositório",
@@ -46,7 +47,9 @@
       "hours": "há {n}h",
       "days": "há {n}d",
       "months": "há {n}mês"
-    }
+    },
+    "appsEmptyTitle": "Nenhum app ainda",
+    "appsEmptyDesc": "Um clique, totalmente auto-hospedado — bancos de dados, automação, analytics, cofres de senhas e mais, rodando nos seus servidores."
   },
   "nav": {
     "home": "Início",
@@ -59,13 +62,15 @@
     "servers": "Servidores",
     "emails": "E-mails",
     "settings": "Configurações",
-    "billing": "Faturamento",
+    "billing": "Faturamento e uso",
     "sections": {
       "main": "Principal",
       "settings": "Configurações",
       "infrastructure": "Infraestrutura",
       "account": "Conta"
-    }
+    },
+    "apps": "Apps",
+    "jobs": "Tarefas"
   },
   "sidebar": {
     "expand": "Expandir barra lateral",
@@ -78,6 +83,40 @@
     "preferences": "Preferências"
   },
   "pages": {
+    "apps": {
+      "moreApps": "+{count} mais",
+      "title": "Apps",
+      "description": "Serviços gerenciados com um clique — instale e execute Convex, WordPress, e-mail e mais.",
+      "createButton": "Instalar app",
+      "loading": "Carregando apps…",
+      "countOne": "{count} app instalado",
+      "countOther": "{count} apps instalados",
+      "emptyTitle": "Instale seu primeiro app",
+      "emptyDescription": "Suba Convex, n8n, Ghost e mais — um clique, totalmente auto-hospedado. Escolha um para começar.",
+      "popular": "Apps populares",
+      "alsoDeploy": "Você também pode implantar",
+      "browseAll": "Ver todos os apps",
+      "catalogTitle": "Instalar um app",
+      "catalogDescription": "Serviços gerenciados com um clique. Escolha um para instalá-lo como app.",
+      "catalogSearchPlaceholder": "Buscar apps…",
+      "catalogNoResults": "Nenhum app corresponde à sua busca.",
+      "cancel": "Cancelar",
+      "install": "Instalar",
+      "installing": "Instalando…",
+      "comingSoon": "Em breve",
+      "configTitle": "Configurar {app}",
+      "nameLabel": "Nome",
+      "categories": {
+        "all": "Todos",
+        "backend": "Backend",
+        "database": "Banco de dados",
+        "cms": "CMS",
+        "analytics": "Analytics",
+        "automation": "Automação",
+        "mail": "E-mail",
+        "other": "Ferramentas"
+      }
+    },
     "projects": {
       "title": "Projetos",
       "description": "Implante e gerencie suas aplicações com facilidade",
@@ -107,6 +146,11 @@
         "rollbacks": "Reversões",
         "rollbacksDesc": "Reverter com um clique",
         "commandPalette": "Ou pressione {key} para abrir a paleta de comandos"
+      },
+      "view": {
+        "label": "Visualização",
+        "list": "Lista",
+        "grid": "Grade"
       }
     },
     "deployments": {
@@ -130,7 +174,7 @@
       "description": "Configurações de conta, equipe e plataforma."
     },
     "billing": {
-      "title": "Faturamento",
+      "title": "Faturamento e uso",
       "description": "Gerencie sua assinatura, uso e formas de pagamento."
     }
   },
@@ -158,7 +202,7 @@
       "description": "Domínios personalizados"
     },
     "billing": {
-      "title": "Faturamento",
+      "title": "Faturamento e uso",
       "description": "Uso e planos"
     }
   }

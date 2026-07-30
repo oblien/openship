@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { BlurIp } from "@/components/BlurIp";
 import {
   Server,
   Plus,
@@ -44,15 +46,19 @@ interface ServerEntry {
   user: string;
   auth: "key" | "password" | null;
   country: string | null;
+  /** The auto-registered host row ("This Server") — deploys run locally, not SSH. */
+  isLocal: boolean;
   /** Projects currently deployed to this server (active deployment → this host). */
   projectCount: number;
 }
 
 /** Per-state colors: an ambient presence dot on the avatar + a word on the right. */
+/** `dot` is a RING, not a filled pip — same treatment as the scanned-component
+ *  circles (components-tab), which reads calmer than a solid dot at 6px. */
 const STATUS: Record<Reachability, { dot: string; text: string }> = {
-  online: { dot: "bg-success-solid", text: "text-success" },
-  offline: { dot: "bg-danger-solid", text: "text-danger" },
-  checking: { dot: "bg-warning-solid animate-pulse", text: "text-muted-foreground/70" },
+  online: { dot: "border-success-solid", text: "text-success" },
+  offline: { dot: "border-danger-solid", text: "text-danger" },
+  checking: { dot: "border-warning-solid animate-pulse", text: "text-muted-foreground/70" },
 };
 
 export default function ServersPage() {
@@ -82,6 +88,7 @@ export default function ServersPage() {
           user: s.sshUser ?? "root",
           auth: (s.sshAuthMethod as "key" | "password" | null) ?? null,
           country: s.country ?? null,
+          isLocal: s.isLocal ?? false,
           projectCount: s.projectCount ?? 0,
         })),
       );
@@ -159,8 +166,10 @@ export default function ServersPage() {
 
   return (
     <PageContainer>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      {/* Header — mb-6 to match the server DETAIL page's header gap exactly, so
+          the tab strip sits at the same y on both pages (this was mb-5, which put
+          the list's tabs 4px higher than the detail's). */}
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
             {t.servers.list.title}
@@ -223,9 +232,9 @@ export default function ServersPage() {
                   const AuthIcon = server.auth === "password" ? Lock : KeyRound;
                   const fwd = forwardCounts[server.id] ?? 0;
                   return (
-                    <button
+                    <Link
                       key={server.id}
-                      onClick={() => router.push(`/servers/${server.id}`)}
+                      href={`/servers/${server.id}`}
                       className="group flex w-full items-center gap-3.5 px-5 py-3 text-start transition-colors hover:bg-muted/40"
                     >
                       {/* Avatar — full country flag when we can geolocate the IP, else glyph.
@@ -248,23 +257,35 @@ export default function ServersPage() {
 
                       {/* Name + host (fixed column — keeps meta aligned, no dead gap) */}
                       <div className="w-44 min-w-0 shrink-0 text-start lg:w-56">
-                        <p className="truncate text-sm font-medium text-foreground">{server.name}</p>
-                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{server.host}</p>
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {server.name}
+                          {server.isLocal && (
+                            <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
+                              {t.servers.list.thisServer}
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                          {server.isLocal ? t.servers.list.currentHost : <BlurIp>{server.host}</BlurIp>}
+                        </p>
                       </div>
 
                       {/* Meta chips */}
                       <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-                        <span
-                          title={t.servers.list.projects}
-                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs ${
-                            server.projectCount > 0
-                              ? "bg-muted/60 text-foreground/80"
-                              : "text-muted-foreground/60"
-                          }`}
-                        >
-                          <Layers className="size-3.5" />
-                          {server.projectCount}
-                        </span>
+                        {/* Nothing deployed → no chip at all. A greyed-out "0" beside
+                            a layers glyph is noise that reads as an error. With
+                            projects, the count is spelled out ("1 project") instead
+                            of leaving an icon to carry the meaning. */}
+                        {server.projectCount > 0 && (
+                          <span className="inline-flex shrink-0 items-center rounded-md bg-muted/60 px-2 py-0.5 text-xs text-foreground/80">
+                            {interpolate(
+                              server.projectCount === 1
+                                ? t.servers.list.projectCountOne
+                                : t.servers.list.projectCountMany,
+                              { n: String(server.projectCount) },
+                            )}
+                          </span>
+                        )}
                         {authLabel && (
                           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
                             <AuthIcon className="size-3.5" />
@@ -285,12 +306,12 @@ export default function ServersPage() {
                           title={t.servers.list[state]}
                           className={`inline-flex items-center gap-1.5 text-xs font-medium ${sm.text}`}
                         >
-                          <span className={`size-1.5 rounded-full ${sm.dot}`} />
+                          <span className={`size-2.5 rounded-full border-2 ${sm.dot}`} />
                           {t.servers.list[state]}
                         </span>
                         <ArrowRight className="size-4 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
                       </div>
-                    </button>
+                    </Link>
                   );
                 })}
               </div>

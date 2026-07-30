@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowUpCircle, Loader2, RefreshCw } from "lucide-react";
 
 import { updatesApi, type UpdateStatusItem } from "@/lib/api/updates";
+import { getApiErrorMessage } from "@/lib/api/client";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useToast } from "@/components/toast";
+import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
 import HomeTipCard from "./HomeTipCard";
 
 interface UpdatesBlockProps {
@@ -52,8 +54,11 @@ export default function UpdatesBlock({ projectCount, loading }: UpdatesBlockProp
             i.projectId === item.projectId ? { ...i, latestInProgress: true } : i,
           ) ?? null,
       );
-    } catch {
-      toast("error", c.failed);
+    } catch (e) {
+      // Prefer the server's own reason — several refusals are actionable
+      // ("deploy this project first", "the control plane updates itself") and
+      // a flat "try again" told the operator to repeat something that can't work.
+      toast("error", getApiErrorMessage(e, c.failed));
       setApplying((prev) => {
         const next = new Set(prev);
         next.delete(item.projectId);
@@ -82,25 +87,34 @@ export default function UpdatesBlock({ projectCount, loading }: UpdatesBlockProp
             item.currentLabel && item.latestLabel
               ? `${item.currentLabel} → ${item.latestLabel}`
               : item.latestLabel ?? c.newVersion;
+          // The Openship control plane is listed here (the scan reports its
+          // version drift) but the API refuses to redeploy it on purpose — it
+          // upgrades itself through the CLI. Offer the command, not a button
+          // that is guaranteed to 403.
+          const viaCli = item.appTemplateId === "openship";
           return (
             <li key={item.projectId} className="flex items-center gap-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
                 <p className="truncate font-mono text-xs text-muted-foreground">{versionLabel}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => void apply(item)}
-                disabled={busy}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-warning-border px-2.5 py-1 text-xs font-medium text-warning transition-colors hover:bg-warning-bg disabled:opacity-60"
-              >
-                {busy ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="size-3" />
-                )}
-                {busy ? c.updating : c.updateAction}
-              </button>
+              {viaCli ? (
+                <CopyCommand command={SELF_UPDATE_COMMAND} className="shrink-0" />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void apply(item)}
+                  disabled={busy}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-warning-border px-2.5 py-1 text-xs font-medium text-warning transition-colors hover:bg-warning-bg disabled:opacity-60"
+                >
+                  {busy ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3" />
+                  )}
+                  {busy ? c.updating : c.updateAction}
+                </button>
+              )}
             </li>
           );
         })}

@@ -20,6 +20,8 @@ import * as ctrl from "./project.controller";
 import * as folder from "./folder/folder.controller";
 import * as transfer from "./transfer.controller";
 import * as routeRules from "../route-rules/route-rule.controller";
+import * as ensureEdgeCtrl from "../domains/ensure-edge.controller";
+import * as incomingWebhooks from "../incoming-webhooks/incoming.controller";
 import {
   CreateProjectBody,
   EnsureProjectBody,
@@ -28,7 +30,16 @@ import {
   CreateProjectEnvironmentBody,
   MergeEnvVarsBody,
   UpdateResourcesBody,
+  LinkRepoBody,
+  SetAutoDeployBody,
+  SetBranchBody,
+  SetSleepModeBody,
+  SetOptionsBody,
 } from "./project.schema";
+import {
+  CreateIncomingWebhookBody,
+  UpdateIncomingWebhookBody,
+} from "../incoming-webhooks/incoming.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -67,10 +78,10 @@ r.post(
   {
     tag: "project:write",
     collection: true,
+    body: FolderSessionBody,
     mcp: {
       description:
         "Folder-upload deploy — STEP 1/4. Opens an upload session for a local source folder and returns `upload` = { url, method, headers }. NEXT, upload the gzipped tarball yourself: POST it to `upload.url` with the returned headers and Content-Type: application/gzip. That byte upload is NOT an MCP tool (raw binary can't cross JSON-RPC) — use an HTTP client. Then call folder/scan. Sequence: session → (out-of-band tarball upload) → folder/scan → projects/ensure → deployments/build/access.",
-      body: FolderSessionBody,
     },
   },
   folder.createSession,
@@ -109,10 +120,10 @@ r.post(
   {
     tag: "project:write",
     collection: true,
+    body: EnsureProjectBody,
     mcp: {
       description:
         "Folder-upload deploy — STEP 3/4. Create or update the project that carries the build config — deployments/build/access reads config from the PROJECT ROW, not the upload session, so this must run first. Map the folder/scan fields in (framework = the scan's stack id) and set gitProvider:'upload'. Pass projectId to update an existing project. Returns the project id for STEP 4.",
-      body: EnsureProjectBody,
     },
   },
   ctrl.ensure,
@@ -128,10 +139,10 @@ r.post(
     tag: "project:write",
     collection: true,
     projectCreate: true,
+    body: CreateProjectBody,
     mcp: {
       description:
         "Create a project from a git or local source (build config baked into the project). For a folder-upload deploy use projects/ensure instead (it accepts the folder/scan config and gitProvider:'upload').",
-      body: CreateProjectBody,
     },
   },
   ctrl.create,
@@ -148,7 +159,8 @@ r.patch(
   "/:id",
   {
     tag: "project:write",
-    mcp: { description: "Update a project's configuration (build config, source, options).", body: UpdateProjectBody },
+    body: UpdateProjectBody,
+    mcp: { description: "Update a project's configuration (build config, source, options)." },
   },
   cloudProjectProxy,
   ctrl.update,
@@ -160,7 +172,8 @@ r.post(
   "/:id/environments",
   {
     tag: "project:write",
-    mcp: { description: "Create a project environment (e.g. a preview).", body: CreateProjectEnvironmentBody },
+    body: CreateProjectEnvironmentBody,
+    mcp: { description: "Create a project environment (e.g. a preview)." },
   },
   cloudProjectProxy,
   ctrl.createEnvironment,
@@ -168,7 +181,7 @@ r.post(
 r.get("/:id/deletion-preview", { tag: "project:read", mcp: { description: "Preview what deleting this project would remove (read-only)." } }, cloudProjectProxy, ctrl.deletionPreview);
 
 /* ─── Build options ────────────────────────────────────────────────────── */
-r.post("/:id/options", { tag: "project:write", mcp: { description: "Set build/deploy options for a project." } }, cloudProjectProxy, ctrl.setOptions);
+r.post("/:id/options", { tag: "project:write", body: SetOptionsBody, mcp: { description: "Set build/deploy options for a project." } }, cloudProjectProxy, ctrl.setOptions);
 r.post("/:id/port-check", { tag: "project:read", readOnly: true, mcp: { description: "Live port-reachability check for the project's active deployment (advisory)." } }, cloudProjectProxy, ctrl.portCheck);
 r.post("/:id/output-check", { tag: "project:read", readOnly: true, mcp: { description: "Live static-output check for the project's active deployment (advisory; static apps)." } }, cloudProjectProxy, ctrl.outputCheck);
 
@@ -178,6 +191,13 @@ r.post("/:id/disable", { tag: "project:write", mcp: { description: "Disable a pr
 
 /* ─── Retry free-domain edge routing (no rebuild) ──────────────────────── */
 r.post("/:id/routing/retry", { tag: "project:write", mcp: { description: "Retry syncing the project's free .opsh.io edge route (no rebuild); clears the routing 'Action Required' warning on success." } }, cloudProjectProxy, ctrl.retryRouting);
+
+/* ─── Set up / take over the self-hosted edge (OpenResty on 80/443) + apply
+      the project's routes, WITHOUT a container redeploy. SSE so the port-80/443
+      takeover consent can be prompted mid-flight (answered via .../respond). ── */
+r.get("/:id/routing/edge-status", { tag: "project:read", mcp: { description: "Check whether the project's server edge (OpenResty on 80/443) is already set up." } }, ensureEdgeCtrl.edgeStatus);
+r.post("/:id/routing/ensure-edge/stream", { tag: "project:write" }, ensureEdgeCtrl.ensureEdgeStream);
+r.post("/:id/routing/ensure-edge/respond", { tag: "project:write" }, ensureEdgeCtrl.ensureEdgeRespond);
 
 /* ─── Environment variables ────────────────────────────────────────────── */
 // Project-scoped bulk routes (no per-env_var id in the URL) → gate on the
@@ -194,7 +214,10 @@ r.patch(
   "/:id/env",
   {
     tag: "project:write",
-    mcp: { description: "Merge env var changes (upserts + deletes); untouched vars are preserved.", body: MergeEnvVarsBody },
+    // Validated by the auto-wired tbValidator (spec.body) → a wrong-shape body
+    // is a 400, not a 500 in the service's data.upserts.map. #231
+    body: MergeEnvVarsBody,
+    mcp: { description: "Merge env var changes (upserts + deletes); untouched vars are preserved." },
   },
   cloudProjectProxy,
   ctrl.mergeEnvVars,
@@ -207,11 +230,20 @@ r.patch("/:id/clone-token", { tag: "project:admin" }, cloudProjectProxy, ctrl.up
 /* ─── Git ──────────────────────────────────────────────────────────────── */
 r.get("/:id/git", { tag: "project:read", mcp: { description: "Get the project's linked git repository info." } }, cloudProjectProxy, ctrl.getGitInfo);
 r.get("/:id/commit-status", { tag: "project:read", mcp: { description: "Compare the deployed commit against the remote HEAD." } }, cloudProjectProxy, ctrl.getCommitStatus);
-r.post("/:id/git/link", { tag: "project:write", mcp: { description: "Link a git repository to the project." } }, cloudProjectProxy, ctrl.linkRepo);
+r.post("/:id/git/link", { tag: "project:write", body: LinkRepoBody, mcp: { description: "Link a git repository to the project." } }, cloudProjectProxy, ctrl.linkRepo);
 r.get("/:id/branches", { tag: "project:read", mcp: { description: "List the linked repository's branches." } }, cloudProjectProxy, ctrl.listBranches);
-r.post("/:id/auto-deploy", { tag: "project:write", mcp: { description: "Enable/disable auto-deploy on push." } }, cloudProjectProxy, ctrl.setAutoDeploy);
+r.post("/:id/auto-deploy", { tag: "project:write", body: SetAutoDeployBody, mcp: { description: "Enable/disable auto-deploy on push." } }, cloudProjectProxy, ctrl.setAutoDeploy);
 r.post("/:id/webhook-domain", { tag: "project:write" }, cloudProjectProxy, ctrl.setWebhookDomain);
-r.post("/:id/branch", { tag: "project:write", mcp: { description: "Set the project's deploy branch." } }, cloudProjectProxy, ctrl.setBranch);
+r.post("/:id/branch", { tag: "project:write", body: SetBranchBody, mcp: { description: "Set the project's deploy branch." } }, cloudProjectProxy, ctrl.setBranch);
+
+/* ─── Incoming webhooks (generic per-project trigger hooks) ─────────────── */
+r.get("/:id/incoming-webhooks", { tag: "project:read", mcp: { description: "List a project's incoming webhooks (dynamic trigger URLs)." } }, cloudProjectProxy, incomingWebhooks.list);
+r.post("/:id/incoming-webhooks", { tag: "project:write", body: CreateIncomingWebhookBody, mcp: { description: "Create an incoming webhook that fires a deploy or job when its URL is called." } }, cloudProjectProxy, incomingWebhooks.create);
+r.patch("/:id/incoming-webhooks/:hookId", { tag: "project:write", body: UpdateIncomingWebhookBody, mcp: { description: "Update an incoming webhook (name/enabled/action/auth)." } }, cloudProjectProxy, incomingWebhooks.update);
+r.post("/:id/incoming-webhooks/:hookId/rotate", { tag: "project:write", mcp: { description: "Rotate an incoming webhook's token / HMAC secret." } }, cloudProjectProxy, incomingWebhooks.rotate);
+r.delete("/:id/incoming-webhooks/:hookId", { tag: "project:write", mcp: { description: "Delete an incoming webhook." } }, cloudProjectProxy, incomingWebhooks.remove);
+r.get("/:id/incoming-webhooks/:hookId/deliveries", { tag: "project:read", mcp: { description: "List one incoming webhook's recent deliveries (paginated)." } }, cloudProjectProxy, incomingWebhooks.hookDeliveries);
+r.get("/:id/webhook-deliveries", { tag: "project:read", mcp: { description: "List a project's webhook delivery feed — GitHub pushes + custom hooks (paginated)." } }, cloudProjectProxy, incomingWebhooks.deliveries);
 
 /* ─── Resources ────────────────────────────────────────────────────────── */
 r.get("/:id/resources", { tag: "project:read", mcp: { description: "Get the project's CPU/RAM/disk resource config." } }, cloudProjectProxy, ctrl.getResources);
@@ -219,7 +251,8 @@ r.patch(
   "/:id/resources",
   {
     tag: "project:write",
-    mcp: { description: "Update the project's CPU/RAM/disk, sleep mode, or port.", body: UpdateResourcesBody },
+    body: UpdateResourcesBody,
+    mcp: { description: "Update the project's CPU/RAM/disk, sleep mode, or port." },
   },
   cloudProjectProxy,
   ctrl.updateResources,
@@ -227,7 +260,7 @@ r.patch(
 r.post("/:id/resources", { tag: "project:write" }, cloudProjectProxy, ctrl.updateResources);
 
 /* ─── Sleep mode ───────────────────────────────────────────────────────── */
-r.post("/:id/sleep-mode", { tag: "project:write", mcp: { description: "Set the project's sleep mode (auto_sleep / always_on)." } }, cloudProjectProxy, ctrl.setSleepMode);
+r.post("/:id/sleep-mode", { tag: "project:write", body: SetSleepModeBody, mcp: { description: "Set the project's sleep mode (auto_sleep / always_on)." } }, cloudProjectProxy, ctrl.setSleepMode);
 
 /* ─── Deployments ──────────────────────────────────────────────────────── */
 r.get("/:id/deployments", { tag: "project:deployment:list", mcp: { description: "List a project's deployments (history, statuses)." } }, cloudProjectProxy, ctrl.listDeployments);

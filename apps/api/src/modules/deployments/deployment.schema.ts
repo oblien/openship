@@ -117,6 +117,23 @@ export const BuildAccessBody = Type.Object({
   services: Type.Optional(
     Type.Array(BuildServiceInput, { description: "Compose / multi-service definitions (services mode)." }),
   ),
+  serviceIds: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Subset of service ids to (re)build; every other service carries forward on its existing container, untouched. Omit to build the whole stack (first deploy). Use this on a scoped redeploy so stateful services (MySQL/Redis/Qdrant) are NOT recreated for an unrelated code change.",
+    }),
+  ),
+  refreshServiceIds: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Subset of serviceIds to recreate WITHOUT rebuilding (env-only refresh).",
+    }),
+  ),
+  handoverImages: Type.Optional(
+    Type.Record(Type.String(), Type.String(), {
+      description:
+        "ONE-TIME migration image handover: serviceName → an already-present image ref. Those services deploy from that image with no build/pull; used only on a migration's first deploy.",
+    }),
+  ),
   cloudResourceTier: Type.Optional(
     Type.Union([
       Type.Literal("micro"),
@@ -132,8 +149,27 @@ export const BuildAccessBody = Type.Object({
       { description: "CPU/RAM/disk when cloudResourceTier='custom'." },
     ),
   ),
-  forwardGitCredentials: Type.Optional(Type.Boolean()),
   cloneStrategy: Type.Optional(Type.Union([Type.Literal("api-host"), Type.Literal("server")])),
+});
+
+// POST /prepare — detect stack/build config before deploying. All optional:
+// the controller resolves source from (owner,repo) vs path and enforces the
+// conditional requireds (owner+repo for github, path for local).
+export const PrepareDeployBody = Type.Object({
+  source: Type.Optional(
+    Type.Union([Type.Literal("github"), Type.Literal("local")], {
+      description: "Source kind; inferred from owner/repo vs path when omitted.",
+    }),
+  ),
+  owner: Type.Optional(Type.String({ description: "GitHub repo owner (github source)." })),
+  repo: Type.Optional(Type.String({ description: "GitHub repo name (github source)." })),
+  branch: Type.Optional(Type.String({ description: "Git branch (github source)." })),
+  path: Type.Optional(Type.String({ description: "Local filesystem path (local source; self-hosted only)." })),
+});
+
+// POST /:id/build/respond — answer a build gate/prompt.
+export const BuildRespondBody = Type.Object({
+  action: Type.String({ description: "The gate response (e.g. approve / continue / cancel)." }),
 });
 
 // ─── Inferred types ──────────────────────────────────────────────────────────

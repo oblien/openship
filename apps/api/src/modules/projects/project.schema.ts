@@ -254,6 +254,21 @@ export const CreateProjectBody = Type.Object({
     Type.Union([Type.Literal("git"), Type.Literal("snapshot")]),
   ),
   /**
+   * Edge → app upstream addressing for this project (self-hosted).
+   *   - "auto"          → resolved to loopback-port (the safe default)
+   *   - "loopback-port" → route via a pinned `127.0.0.1:<hostPort>`
+   *   - "container-ip"  → advanced: route via the container bridge IP
+   *     (zero-downtime swaps; needs the edge on the docker bridge; not
+   *     supported on Docker Desktop). Ignored by bare + cloud runtimes.
+   */
+  routeStrategy: Type.Optional(
+    Type.Union([
+      Type.Literal("auto"),
+      Type.Literal("loopback-port"),
+      Type.Literal("container-ip"),
+    ]),
+  ),
+  /**
    * Apps-catalog marker. Set by the Create-App instantiator when a project is
    * installed from the Apps catalog (Convex, WordPress, webmail, …). Moves the
    * project to the Apps tab; `appTemplateId` records which catalog entry it came
@@ -341,6 +356,57 @@ export const UpdateResourcesBody = Type.Object({
   sleepMode: Type.Optional(Type.Union([Type.Literal("auto_sleep"), Type.Literal("always_on")])),
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
 });
+
+/** POST /:id/git/link — link a git repository to the project. */
+export const LinkRepoBody = Type.Object({
+  owner: Type.String({ minLength: 1, description: "GitHub repo owner." }),
+  repo: Type.String({ minLength: 1, description: "GitHub repo name." }),
+  branch: Type.Optional(Type.String({ description: "Deploy branch (defaults to the repo default)." })),
+  installationId: Type.Optional(Type.Number({ description: "GitHub App installation id, when known." })),
+});
+
+/** POST /:id/auto-deploy — enable/disable auto-deploy on push. */
+export const SetAutoDeployBody = Type.Object({
+  enabled: Type.Boolean({ description: "Whether a push to the deploy branch triggers a redeploy." }),
+});
+
+/** POST /:id/branch — set the deploy branch. */
+export const SetBranchBody = Type.Object({
+  branch: Type.String({ minLength: 1, description: "Branch to deploy from." }),
+});
+
+/** POST /:id/sleep-mode — set sleep behaviour. Note the snake_case key. */
+export const SetSleepModeBody = Type.Object({
+  sleep_mode: Type.Union([Type.Literal("auto_sleep"), Type.Literal("always_on")], {
+    description: "auto_sleep = idle-sleep; always_on = never sleep.",
+  }),
+});
+
+/**
+ * POST /:id/options — build/deploy options. Free-form: the service applies each
+ * field only when present (`additionalProperties: true` keeps it forward-
+ * compatible). Enum-ish fields are typed loosely (string) to match the service,
+ * which ignores unrecognised values rather than rejecting them.
+ */
+export const SetOptionsBody = Type.Object(
+  {
+    buildCommand: Type.Optional(Type.String()),
+    installCommand: Type.Optional(Type.String()),
+    outputDirectory: Type.Optional(Type.String()),
+    productionPaths: Type.Optional(Type.String()),
+    rootDirectory: Type.Optional(Type.String()),
+    startCommand: Type.Optional(Type.String()),
+    productionPort: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+    packageManager: Type.Optional(Type.String()),
+    buildImage: Type.Optional(Type.String()),
+    framework: Type.Optional(Type.String()),
+    productionMode: Type.Optional(Type.String({ description: "host | static | standalone." })),
+    hasServer: Type.Optional(Type.Boolean()),
+    hasBuild: Type.Optional(Type.Boolean()),
+    runtimeMode: Type.Optional(Type.String({ description: "bare | docker." })),
+  },
+  { additionalProperties: true },
+);
 
 // ─── Inferred types ──────────────────────────────────────────────────────────
 

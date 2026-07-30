@@ -15,7 +15,7 @@
  */
 
 import { repos } from "@repo/db";
-import { NotFoundError } from "@repo/core";
+import { NotFoundError, AppError, safeErrorMessage } from "@repo/core";
 import type { ResourceUsage } from "@repo/adapters";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import {
@@ -68,6 +68,37 @@ async function fetchLiveBuckets(
   return getBucketArray(result?.buckets);
 }
 
+/**
+ * The live OpenResty tail is only the last few UNFLUSHED minutes — the DB
+ * already holds every flushed minute (the real snapshot). The tail is fetched
+ * over an SSH tunnel to the edge, which is slow/unreachable when the server is
+ * remote (desktop mode) — and letting it block times out the WHOLE overview
+ * (the "analytics request timed out, works after a huge time" symptom). Cap it
+ * hard and fall back to the DB archive; a few missing seconds of live data is a
+ * fair trade for an overview that always returns fast. Best-effort, never throws.
+ */
+const LIVE_TAIL_TIMEOUT_MS = 3500;
+
+async function fetchLiveBucketsBounded(
+  serverId: string,
+  domain: string,
+  fromMinute: number,
+  toMinute: number,
+): Promise<MgmtAnalyticsBucket[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const capped = new Promise<MgmtAnalyticsBucket[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), LIVE_TAIL_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      fetchLiveBuckets(serverId, domain, fromMinute, toMinute).catch(() => []),
+      capped,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Convert a DB row to the unified bucket shape. */
 function toMgmtBucket(b: {
   minute: number;
@@ -88,18 +119,21 @@ function toMgmtBucket(b: {
 }
 
 /** Reduce an array of buckets into a summary. */
-function summariseBuckets(buckets: MgmtAnalyticsBucket[], lastUpdated: string): AnalyticsSummary {
+export function summariseBuckets(
+  buckets: MgmtAnalyticsBucket[],
+  lastUpdated: string,
+): AnalyticsSummary {
   const totalReqs = buckets.reduce((s, b) => s + b.requests, 0);
   const totalUnique = buckets.reduce((s, b) => s + b.unique_requests, 0);
   const totalIn = buckets.reduce((s, b) => s + b.bandwidth_in, 0);
   const totalOut = buckets.reduce((s, b) => s + b.bandwidth_out, 0);
-  const avgRt = buckets.reduce((s, b) => s + b.response_time, 0) / buckets.length;
+  const weightedRt = buckets.reduce((s, b) => s + b.response_time * b.requests, 0);
   return {
     totalRequests: totalReqs,
     uniqueVisitors: totalUnique,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
-    avgResponseTimeMs: Math.round(avgRt * 1000),
+    avgResponseTimeMs: totalReqs > 0 ? Math.round((weightedRt / totalReqs) * 1000) : 0,
     lastUpdated,
   };
 }
@@ -124,7 +158,7 @@ function summariseCloudBuckets(
   };
 }
 
-function buildHourlyPeriods(
+export function buildHourlyPeriods(
   buckets: MgmtAnalyticsBucket[],
   fromMinute: number,
   toMinute: number,
@@ -136,8 +170,7 @@ function buildHourlyPeriods(
       uniqueVisitors: number;
       bandwidthIn: number;
       bandwidthOut: number;
-      responseTimeTotal: number;
-      bucketCount: number;
+      responseTimeWeighted: number;
     }
   >();
 
@@ -148,16 +181,14 @@ function buildHourlyPeriods(
       uniqueVisitors: 0,
       bandwidthIn: 0,
       bandwidthOut: 0,
-      responseTimeTotal: 0,
-      bucketCount: 0,
+      responseTimeWeighted: 0,
     };
 
     current.requests += bucket.requests;
     current.uniqueVisitors += bucket.unique_requests;
     current.bandwidthIn += bucket.bandwidth_in;
     current.bandwidthOut += bucket.bandwidth_out;
-    current.responseTimeTotal += bucket.response_time;
-    current.bucketCount += 1;
+    current.responseTimeWeighted += bucket.response_time * bucket.requests;
     hourly.set(hourKey, current);
   }
 
@@ -178,8 +209,8 @@ function buildHourlyPeriods(
       bandwidthIn: current?.bandwidthIn ?? 0,
       bandwidthOut: current?.bandwidthOut ?? 0,
       avgResponseTimeMs:
-        current && current.bucketCount > 0
-          ? Math.round((current.responseTimeTotal / current.bucketCount) * 1000)
+        current && current.requests > 0
+          ? Math.round((current.responseTimeWeighted / current.requests) * 1000)
           : 0,
       topPaths: [],
       trafficByHour: {},
@@ -262,6 +293,36 @@ function extractCloudBuckets(result: unknown): CloudAnalyticsBucket[] {
   return Array.isArray(result) ? (result as CloudAnalyticsBucket[]) : [];
 }
 
+/**
+ * Surface an EXPLICIT Oblien failure envelope (`{ success: false, … }`) as a
+ * thrown error so the caller returns a clean upstream error instead of parsing
+ * it to an empty bucket list and rendering a misleading 0/0/0 summary.
+ *
+ * Deliberately conservative: it throws ONLY on an explicit `success: false`.
+ * A genuine success (empty `data` = no traffic) OR any shape without that flag
+ * falls through to `extractCloudBuckets` exactly as before — so this can never
+ * turn a benign/empty response into a false error, only unmask a declared one.
+ * (Thrown transport errors are already handled by the caller's all-failed 502.)
+ *
+ * Envelope: `{ success, data, meta }`, sometimes wrapped again as `{ data: … }`
+ * on the proxied path (same nesting extractCloudBuckets walks).
+ */
+function assertCloudTimeseriesOk(raw: unknown): void {
+  let node: unknown = raw;
+  for (let depth = 0; depth < 4 && node && typeof node === "object"; depth++) {
+    const obj = node as Record<string, unknown>;
+    if (obj.success === false) {
+      const detail =
+        (typeof obj.error === "string" && obj.error) ||
+        (typeof obj.message === "string" && obj.message) ||
+        "request rejected";
+      throw new Error(`Openship Cloud analytics: ${detail}`);
+    }
+    if (Array.isArray(obj.data)) return; // reached the bucket array — done
+    node = obj.data ?? obj.result;
+  }
+}
+
 async function fetchCloudTimeseries(
   organizationId: string,
   domain: string,
@@ -273,8 +334,9 @@ async function fetchCloudTimeseries(
   const raw = client
     ? await client.analytics.timeseries(domain, params)
     : await cloudClient({ organizationId }).analytics.timeseries(domain, params);
-  // extractCloudBuckets is response PARSING (unwrap the SaaS envelope), not a
-  // cache — it just turns the wire shape into { data: bucket[] }.
+  // Surface a failed fetch as an error (caller → 502) instead of masking it as
+  // an empty summary; only a genuine no-traffic success falls through to [].
+  assertCloudTimeseriesOk(raw);
   return { data: extractCloudBuckets(raw) };
 }
 
@@ -358,18 +420,35 @@ export async function getAnalyticsOverview(
   // when untracked — never fetches an arbitrary cross-tenant host). Without it,
   // aggregate every tracked domain. Both handled by the one resolver.
   const sources = await resolveProjectTrafficSources(projectId, { domain });
+  // No resolvable traffic source (no tracked domain / no primary / no server) is
+  // a legitimate "nothing to show", NOT an error — keep the honest empty summary
+  // so a fresh or domain-less project renders a clean 0-state, not an error.
   if (sources.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
 
   if (sources.every((source) => source.kind === "cloud")) {
     const toMs = to ? new Date(to).getTime() : Date.now();
     const fromMs = from ? new Date(from).getTime() : toMs - 24 * 60 * 60 * 1000;
     const params = { from: fromMs, to: toMs, interval: "hour" as const };
-    const responses = await Promise.all(
-      sources.map((source) =>
-        fetchCloudTimeseries(ctx.organizationId, source.domain, params).catch(() => null),
-      ),
+    // Do NOT swallow a cloud fetch failure into an empty summary — that made an
+    // upstream outage look identical to "no traffic" (zeros with a 200). Settle
+    // per-domain: use whatever succeeded, but if EVERY cloud fetch failed,
+    // surface a real upstream error so the client can tell "broken" from "idle".
+    const settled = await Promise.allSettled(
+      sources.map((source) => fetchCloudTimeseries(ctx.organizationId, source.domain, params)),
     );
-    const buckets = responses.flatMap((response) => response?.data ?? []);
+    const ok = settled.filter(
+      (r): r is PromiseFulfilledResult<CloudTimeseriesResponse | null> => r.status === "fulfilled",
+    );
+    if (ok.length === 0) {
+      const reason = settled.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+      throw new AppError(
+        `Analytics upstream (Openship Cloud) is unavailable${reason ? `: ${safeErrorMessage(reason.reason)}` : ""}`,
+        502,
+        "ANALYTICS_UPSTREAM_UNAVAILABLE",
+      );
+    }
+    const buckets = ok.flatMap((r) => r.value?.data ?? []);
+    // Reached the cloud, but it reported no traffic → genuine empty (200).
     if (buckets.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
     return {
       summary: summariseCloudBuckets(buckets, new Date(toMs).toISOString()),
@@ -390,7 +469,7 @@ export async function getAnalyticsOverview(
         dbBuckets.length > 0 ? Math.max(...dbBuckets.map((b) => b.minute)) : fromMinute - 1;
       const liveFrom = Math.max(lastDbMinute + 1, fromMinute);
       const liveBuckets =
-        liveFrom <= toMinute ? await fetchLiveBuckets(serverId, domain, liveFrom, toMinute) : [];
+        liveFrom <= toMinute ? await fetchLiveBucketsBounded(serverId, domain, liveFrom, toMinute) : [];
       return [...dbBuckets.map(toMgmtBucket), ...liveBuckets];
     }),
   );
@@ -519,28 +598,18 @@ export async function getContainerInfo(ctx: RequestContext, projectId: string) {
  * the active org only (not cross-org).
  */
 export async function getDashboardStats(ctx: RequestContext) {
-  const { rows: projects, total: totalProjects } = await repos.project.listByOrganization(
-    ctx.organizationId,
-    { page: 1, perPage: 10_000 },
-  );
+  const [projectCounts, deploymentsByStatus] = await Promise.all([
+    repos.project.countByOrganization(ctx.organizationId),
+    repos.deployment.countByStatusForOrganization(ctx.organizationId),
+  ]);
 
-  const activeProjects = projects.filter((p) => p.activeDeploymentId).length;
-
-  // Aggregate deployment counts across all projects
   let totalDeployments = 0;
-  let failedDeployments = 0;
-  let successDeployments = 0;
-
-  for (const p of projects.slice(0, 50)) {
-    // Limit to 50 projects for perf
-    const { rows } = await repos.deployment.listByProject(p.id, { page: 1, perPage: 100 });
-    totalDeployments += rows.length;
-    failedDeployments += rows.filter((d) => d.status === "failed").length;
-    successDeployments += rows.filter((d) => d.status === "ready").length;
-  }
+  for (const count of Object.values(deploymentsByStatus)) totalDeployments += count;
+  const successDeployments = deploymentsByStatus["ready"] ?? 0;
+  const failedDeployments = deploymentsByStatus["failed"] ?? 0;
 
   return {
-    projects: { total: totalProjects, active: activeProjects },
+    projects: { total: projectCounts.total, active: projectCounts.active },
     deployments: {
       total: totalDeployments,
       success: successDeployments,

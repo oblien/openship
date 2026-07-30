@@ -18,11 +18,12 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-const OS_DIR = join(homedir(), ".openship");
-const DEFAULT_REPO = "https://github.com/oblien/openship.git";
+import { OS_DIR } from "./paths";
+
+export { OS_DIR };
+export const DEFAULT_REPO = "https://github.com/oblien/openship.git";
 
 export interface FromSourceRun {
   /** release-dist/api — the API runs here via `bun run src/index.ts`. */
@@ -38,7 +39,7 @@ export interface FromSourceRun {
 }
 
 /** True when `cmd --version` exits 0 — used to gate on bun/git presence. */
-function has(cmd: string): boolean {
+export function has(cmd: string): boolean {
   try {
     return spawnSync(cmd, ["--version"], { stdio: "ignore" }).status === 0;
   } catch {
@@ -48,11 +49,13 @@ function has(cmd: string): boolean {
 
 /** Run a command attached (stdio inherited so the operator sees build output),
  *  rejecting on a non-zero exit. */
-function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>): Promise<void> {
+export function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>): Promise<void> {
   return new Promise((res, rej) => {
     const child = spawn(cmd, args, {
       cwd,
       stdio: "inherit",
+      // Windows resolves the bun/git shims (.cmd/.exe) only through a shell.
+      shell: process.platform === "win32",
       env: env ? { ...process.env, ...env } : process.env,
     });
     child.on("error", rej);
@@ -64,12 +67,12 @@ function run(cmd: string, args: string[], cwd: string, env?: Record<string, stri
   });
 }
 
-function shortSha(cwd: string): string {
+export function shortSha(cwd: string): string {
   const r = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd, encoding: "utf8" });
   return r.status === 0 ? (r.stdout ?? "").trim() || "unknown" : "unknown";
 }
 
-function isMonorepo(dir: string): boolean {
+export function isMonorepo(dir: string): boolean {
   return (
     existsSync(join(dir, "package.json")) &&
     existsSync(join(dir, "apps/api/package.json")) &&

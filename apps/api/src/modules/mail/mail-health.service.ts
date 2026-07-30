@@ -58,7 +58,14 @@ export const MAIL_COMPONENTS: MailComponentDef[] = [
     key: "spamassassin",
     label: "SpamAssassin",
     description: "Spam scoring",
-    unit: "spamassassin",
+    // The Debian/Ubuntu spamassassin package (>=4.0) ships its systemd unit
+    // as `spamd.service`, not `spamassassin.service` — checking the latter
+    // always returned LoadState=not-found ("Missing") even on a fully
+    // installed, correctly-configured host. Note Amavis scores spam via its
+    // own in-process Mail::SpamAssassin integration regardless of this
+    // daemon's state; spamd is the standalone network-facing scorer other
+    // tools (spamc) can talk to — this check is about ITS state specifically.
+    unit: "spamd",
   },
   {
     key: "iredapd",

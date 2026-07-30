@@ -280,7 +280,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                     return (
                       <div key={index} className="flex flex-col items-center gap-2.5 z-10">
                         <div
-                          style={{ boxShadow: "0 0 0 6px var(--th-card-bg-solid)" }}
+                          style={{ boxShadow: "0 0 0 6px var(--th-card-on-page)" }}
                           className={`rounded-full flex items-center justify-center w-10 h-10 transition-all duration-300 ${
                             hasFailed
                               ? "bg-destructive"
@@ -290,9 +290,12 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                                   ? "bg-foreground"
                                   : // Pending: SOLID fill (the `bg-muted` token is a
                                     // translucent surface tint, so the connector line
-                                    // showed through). Use the solid card color so the
-                                    // line is fully occluded under the circle.
-                                    "bg-[var(--th-card-bg-solid)] border border-border"
+                                    // showed through). --th-card-on-page is the OPAQUE
+                                    // composite of this card over the page, so the dot
+                                    // and its ring match the card exactly. NOT the modal
+                                    // token --th-card-bg-solid: that is darker than a
+                                    // real card in dark (#060606 vs #0d0d0d).
+                                    "bg-[var(--th-card-on-page)] border border-border"
                           }`}
                         >
                           {hasFailed ? (

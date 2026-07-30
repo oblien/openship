@@ -51,8 +51,12 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
  * Resolve prerequisite rules for a given runtime mode.
  *
  * The runtime mode deterministically implies everything:
- *   - docker → Docker + Git + OpenResty + certbot
- *   - bare   → Git + OpenResty + certbot
+ *   - docker → Docker + Git + Edge
+ *   - bare   → Git + Edge
+ *
+ * "Edge" is ONE component (the openship-edge container: OpenResty + Lua +
+ * certbot). It used to be two rows, `openresty` and `certbot`, for one artifact
+ * that is installed, checked and removed as a unit.
  *
  * Note: Node.js / Go / Python / etc. are NOT system prerequisites.
  * They are installed on-demand by the toolchain layer (ensureToolchain)
@@ -63,24 +67,24 @@ function resolveRules(mode: RuntimeMode): PrerequisiteRule[] {
     return [
       { feature: "build", requires: ["git", "docker"], message: "Build requires Git and Docker" },
       { feature: "deploy", requires: ["docker"], message: "Deploy requires Docker" },
-      { feature: "routing", requires: ["openresty"], message: "Routing requires OpenResty" },
-      { feature: "ssl", requires: ["openresty", "certbot"], message: "SSL requires OpenResty and certbot" },
+      { feature: "routing", requires: ["edge"], message: "Routing requires the edge" },
+      { feature: "ssl", requires: ["edge"], message: "SSL requires the edge" },
     ];
   }
 
   // bare mode - language runtimes handled per-stack by toolchain layer
   return [
     { feature: "build", requires: ["git"], message: "Build requires Git" },
-    { feature: "routing", requires: ["openresty"], message: "Routing requires OpenResty" },
-    { feature: "ssl", requires: ["openresty", "certbot"], message: "SSL requires OpenResty and certbot" },
+    // Even in bare RUNTIME mode (apps run as host processes) the edge itself is a
+    // container — its installer needs Docker and says so.
+    { feature: "routing", requires: ["edge"], message: "Routing requires the edge" },
+    { feature: "ssl", requires: ["edge"], message: "SSL requires the edge" },
   ];
 }
 
 /** Resolve which system components must be installed for a given runtime mode. */
 function resolveRequired(mode: RuntimeMode): string[] {
-  return mode === "docker"
-    ? ["docker", "git", "openresty", "certbot"]
-    : ["git", "openresty", "certbot"];
+  return mode === "docker" ? ["docker", "git", "edge"] : ["git", "edge"];
 }
 
 // ─── SystemManager ───────────────────────────────────────────────────────────
@@ -100,6 +104,13 @@ export interface SystemManagerOptions {
    * on the same server. Omitted → runs unlocked (single-deploy / tests).
    */
   provisionLock?: ProvisionLock;
+  /**
+   * Treat every feature as already provisioned — `ensureFeature`/`ensureComponents`
+   * become no-ops. Used when openship runs containerized (compose): docker is the
+   * mounted socket and the edge is the `openship-edge` image, so the api must NOT
+   * try to install anything on its own container/host.
+   */
+  assumeInstalled?: boolean;
 }
 
 export class SystemManager {
@@ -111,6 +122,7 @@ export class SystemManager {
   private readonly stateStore: SetupStateStore;
   private readonly installerConfig: InstallerConfig;
   private readonly provisionLock?: ProvisionLock;
+  private readonly assumeInstalled: boolean;
 
   /** In-memory cache to avoid even reading from disk/DB on hot paths. */
   private cachedState: SetupState | null = null;
@@ -123,6 +135,7 @@ export class SystemManager {
     this.stateStore = opts.stateStore ?? new FileStateStore(opts.executor);
     this.installerConfig = opts.installerConfig ?? {};
     this.provisionLock = opts.provisionLock;
+    this.assumeInstalled = opts.assumeInstalled ?? false;
   }
 
   // ── Fast-path state queries (cached) ─────────────────────────────────
@@ -197,6 +210,13 @@ export class SystemManager {
    * returns immediately without running system commands.
    */
   async checkFeature(feature: Feature): Promise<FeatureReadiness> {
+    // Docker-edge / assume-installed mode: the edge's binaries live in the edge
+    // container, not this api image. Treat every feature as ready —
+    // mirroring ensureFeature's short-circuit — so requireFeature() doesn't
+    // hard-fail a docker-edge deploy probing this image for a binary it never has.
+    if (this.assumeInstalled) {
+      return { feature, ready: true, missing: [], message: `${feature} assumed installed` };
+    }
     const rule = this.rules.find((r) => r.feature === feature);
     if (!rule) {
       return { feature, ready: true, missing: [], message: `No prerequisites for "${feature}"` };
@@ -252,6 +272,10 @@ export class SystemManager {
     onLog?: SystemLogCallback,
     config?: InstallerConfig,
   ): Promise<void> {
+    // Containerized (compose): prerequisites are provided by the stack (docker
+    // socket + the openship-edge image), not installable from inside the api — skip.
+    if (this.assumeInstalled) return;
+
     const logFn = onLog ?? (() => {});
     const installerConfig = config ?? this.installerConfig;
 
@@ -272,6 +296,7 @@ export class SystemManager {
     onLog?: SystemLogCallback,
     config?: InstallerConfig,
   ): Promise<void> {
+    if (this.assumeInstalled) return;
     const logFn = onLog ?? (() => {});
     const installerConfig = config ?? this.installerConfig;
     await this.ensureNamedComponents(

@@ -56,30 +56,30 @@ export const DeploymentsFilters: React.FC<DeploymentsFiltersProps> = React.memo(
   }, []);
 
   return (
-    <div className="space-y-3">
-      {/* Row 1: Search + Project filter */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
-          <input
-            type="text"
-            placeholder={t.deployments.filters.searchPlaceholder}
-            value={localSearchQuery}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            className="h-10 w-full rounded-xl border border-border/50 bg-card ps-10 pe-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all"
-          />
-        </div>
-        {!isProject && (
-          <ProjectFilter
-            projects={projects}
-            selectedProjectId={selectedProjectId}
-            onProjectChange={onProjectChange}
-          />
-        )}
+    // ONE row from `sm` up: search grows, the status switch sits beside it instead
+    // of below. Wraps (rather than squashing) when a project filter is also present
+    // and the viewport is tight; stacks on mobile.
+    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="relative w-full sm:flex-1 sm:min-w-[220px]">
+        <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          placeholder={t.deployments.filters.searchPlaceholder}
+          value={localSearchQuery}
+          onChange={(e) => handleSearchChange(e.target.value)}
+          className="h-10 w-full rounded-xl border border-border/50 bg-card ps-10 pe-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/20 transition-all"
+        />
       </div>
+      {!isProject && (
+        <ProjectFilter
+          projects={projects}
+          selectedProjectId={selectedProjectId}
+          onProjectChange={onProjectChange}
+        />
+      )}
 
-      {/* Row 2: Status filters */}
-      <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-xl bg-muted/35 p-1">
+      {/* Status switch — same line as the search (shrink-0 so the input yields). */}
+      <div className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-1 rounded-xl bg-muted/35 p-1">
         {FILTERS.map((f) => (
           <button
             key={f.value}

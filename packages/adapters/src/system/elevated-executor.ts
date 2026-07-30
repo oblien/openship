@@ -26,7 +26,7 @@ function dirOf(path: string): string {
  * sudo (environment.ts `canSudo`) — it elevates unconditionally.
  *
  * Overrides just the mutating methods the component install/remove path uses
- * (exec, streamExec, writeFile, mkdir, rm). Reads and transfers pass straight
+ * (exec, streamExec, writeFile, rename, mkdir, rm). Reads and transfers pass straight
  * through to the inner executor — files under /etc are world-readable and the
  * install path never transfers into a privileged path — keeping the sudo
  * surface minimal. A Proxy forwards every other (optional) executor method
@@ -49,6 +49,12 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
     streamExec: (command: string, onLog: (log: LogEntry) => void) =>
       inner.streamExec(elevateCommand(command), onLog),
     writeFile: writeFileElevated,
+    // Elevated for the same reason as writeFile: the vhost/conf dirs are root-owned,
+    // and the Proxy would otherwise forward this to the inner executor unelevated —
+    // EACCES immediately after an elevated write succeeded.
+    rename: async (from: string, to: string) => {
+      await inner.exec(elevateCommand(`mv -f ${sq(from)} ${sq(to)}`));
+    },
     mkdir: async (path: string) => {
       await inner.exec(elevateCommand(`mkdir -p ${sq(path)}`));
     },

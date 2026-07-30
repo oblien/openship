@@ -92,8 +92,16 @@ export default function HomeContent() {
           transition={{ duration: 0.5, delay: 0.4 }}
           className="mx-auto mb-4 max-w-2xl text-center text-base font-medium text-[#B7B7B7] md:text-lg"
         >
-          Run your own email - domains, mailboxes, and a modern webmail - provisioned from a single panel.
-          No SaaS, no per-seat pricing, no third party reading your inbox.
+          Domains, mailboxes, and a modern webmail from one panel - no SaaS, no per-seat pricing, no third
+          party in your inbox.
+        </motion.p>
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
+          className="mx-auto mb-4 max-w-2xl text-center text-sm text-[#B7B7B7]/70 md:text-[15px]"
+        >
+          Sends through a trusted relay (Amazon SES or any SMTP) so mail lands - every byte stays on your server.
         </motion.p>
         <p className="mb-4 ml-0.5 text-xs text-[#B7B7B7]/60">Open source. Self-hosted. Yours.</p>
         <motion.div
@@ -1412,8 +1420,6 @@ export default function HomeContent() {
                 { name: 'mail.openship.com',  mailboxes: 412, when: 'live',       live: true,  pct: 62 },
                 { name: 'acme.io',            mailboxes: 83,  when: '1 hr ago',   live: true,  pct: 18 },
                 { name: 'team.acme.io',       mailboxes: 45,  when: '8 min ago',  live: true,  pct: 12 },
-                { name: 'shop.acme.io',       mailboxes: 12,  when: '3 hr ago',   live: false, pct: 4 },
-                { name: 'staging.dev',        mailboxes: 5,   when: 'yesterday',  live: false, pct: 2 },
               ].map((d, i) => (
                 <div
                   key={d.name}

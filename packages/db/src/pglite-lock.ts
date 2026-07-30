@@ -102,6 +102,32 @@ interface LockRecord {
 let heldLockPath: string | null = null;
 let exitHookRegistered = false;
 
+/**
+ * How long a dev `--watch` successor waits for the previous holder to exit on
+ * SIGTERM before escalating to SIGKILL.
+ *
+ * Exported because it is a CONTRACT, not a local constant: the outgoing
+ * process's shutdown must release the lock (closeDb → PGlite checkpoint) INSIDE
+ * this window, or every hot reload hard-kills the database mid-close and the
+ * next boot pays for WAL replay / recovery. Shutdown budgets are derived from
+ * this (see the API's shutdown path) so the two can't drift apart.
+ */
+export const DEV_LOCK_TAKEOVER_GRACE_MS = 3000;
+
+/** Extra window after SIGKILL for the pid to actually disappear. */
+const DEV_LOCK_HARD_KILL_MS = 1500;
+
+/**
+ * Is this process a dev hot-reload (so a lingering predecessor may be taken
+ * over)? The single definition of that condition — the lock uses it to decide
+ * whether to take over, and shutdown uses it to decide how fast it must be.
+ */
+export function isDevWatchReload(): boolean {
+  return (
+    process.execArgv.includes("--watch") || process.env.OPENSHIP_DEV_LOCK_TAKEOVER === "true"
+  );
+}
+
 export interface AcquireLockOptions {
   /** Max time to wait for a live holder to release before failing (ms). */
   waitMs?: number;
@@ -205,9 +231,7 @@ export async function acquirePgliteLock(
   const deadline = Date.now() + Math.max(0, waitMs);
   // Dev hot-reload takes over a lingering predecessor; production/desktop never
   // does (no `--watch`, flag unset) → they keep the safe wait-then-error path.
-  const canTakeover =
-    takeover ??
-    (process.execArgv.includes("--watch") || process.env.OPENSHIP_DEV_LOCK_TAKEOVER === "true");
+  const canTakeover = takeover ?? isDevWatchReload();
   let warnedWaiting = false;
   let takeoverAttempted = false;
 
@@ -279,7 +303,7 @@ export async function acquirePgliteLock(
       } catch {
         /* already gone / not ours — the loop below re-evaluates */
       }
-      const graceUntil = Date.now() + 3000;
+      const graceUntil = Date.now() + DEV_LOCK_TAKEOVER_GRACE_MS;
       while (isProcessAlive(holder.pid) && Date.now() < graceUntil) await sleep(150);
       if (isProcessAlive(holder.pid)) {
         try {
@@ -287,7 +311,7 @@ export async function acquirePgliteLock(
         } catch {
           /* already gone */
         }
-        const hardUntil = Date.now() + 1500;
+        const hardUntil = Date.now() + DEV_LOCK_HARD_KILL_MS;
         while (isProcessAlive(holder.pid) && Date.now() < hardUntil) await sleep(100);
       }
       // Re-loop: a clean SIGTERM exit already removed the lock (its exit hook),

@@ -1,16 +1,33 @@
 import { repos, type Domain, type Project, type Service } from "@repo/db";
 import type { RoutedDomainInput, SslProvider, SslResult } from "@repo/adapters";
-import { SYSTEM, ConflictError, resolveServiceHostnameLabel, normalizeCustomHostname } from "@repo/core";
+import { SYSTEM, ConflictError, resolveServiceHostnameLabel, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
 import { env } from "../config/env";
 import { serviceKind } from "./deployable-service";
 import { resolveServicePublicEndpoints } from "./public-endpoints";
-import { resolveSslPatch } from "./domain-ssl";
+import { resolveSslPatch, sslIssueLockKey } from "./domain-ssl";
+import { createProvisionLock } from "./provision-lock";
 import { generateToken } from "./domain-token";
 
 export interface PlannedRouteDomain {
   hostname: string;
   tls: boolean;
+  /**
+   * The serving host must have the local TLS toolchain ready for this route.
+   * This is intentionally broader than `provisionSsl`: pending custom domains
+   * need certbot installed during their first deploy even though issuance waits
+   * for verification.
+   */
+  requiresSslTooling: boolean;
   provisionSsl: boolean;
+  /**
+   * TLS for this host terminates on the serving box, so the edge must keep a :443
+   * listener up for it from the moment the route exists (a temporary self-signed
+   * cert until the real one lands). Broader than `provisionSsl`/`requiresSslTooling`:
+   * it also covers a manual-SSL host whose cert hasn't been uploaded yet, and it
+   * stays true after a failed issuance — both are states where a missing listener
+   * means the origin refuses the handshake and Cloudflare reports 525 (#308).
+   */
+  terminatesTlsLocally: boolean;
   isCloud: boolean;
   targetPort?: number;
   targetPath?: string;
@@ -54,6 +71,26 @@ export function resolveManagedHostname(hostname: string): { isManaged: boolean; 
     isManaged: subdomain.length > 0,
     subdomain: subdomain || undefined,
   };
+}
+
+/**
+ * Does TLS for `hostname` terminate on THIS box? See
+ * {@link PlannedRouteDomain.terminatesTlsLocally}.
+ *
+ * For the callers that reach `registerRoute` WITHOUT going through the route
+ * planner — route reconcile, compose single-domain composition, migration path
+ * fan-out. They have to agree with the planner: a route registered without this
+ * flag gets no :443 listener until its cert exists, and a routed domain with no
+ * TLS listener refuses the handshake outright (Cloudflare reports 525, #308).
+ */
+export function hostTerminatesTlsLocally(
+  hostname: string,
+  domain?: { externalIngress?: boolean | null } | null,
+): boolean {
+  // A managed *.opsh.io host is fronted by Openship Cloud's edge, which
+  // terminates TLS and forwards to plain :80 here.
+  if (resolveManagedHostname(hostname).isManaged) return false;
+  return !domain?.externalIngress;
 }
 
 export function buildProjectRouteDomains(opts: {
@@ -113,11 +150,27 @@ export function buildProjectRouteDomains(opts: {
     // uploaded cert and never run certbot, even behind an external edge.
     const manualSsl = !!domainRow?.manualSsl;
 
+    const requiresSslTooling =
+      usesCertbotSsl(runtimeName) &&
+      !managed.isManaged &&
+      !route.skipSsl &&
+      !external &&
+      !manualSsl;
+
     planned.push({
       hostname: normalized,
       tls: !external || manualSsl,
-      provisionSsl:
-        usesCertbotSsl(runtimeName) && !managed.isManaged && !route.skipSsl && !external && !manualSsl && isVerified,
+      requiresSslTooling,
+      // Ours to terminate unless an upstream ingress owns it (externalIngress) or
+      // it's a managed *.opsh.io host fronted by Openship Cloud's edge.
+      terminatesTlsLocally: !external && !managed.isManaged,
+      // Attempt issuance on the FIRST deploy of an unverified custom domain
+      // (sslStatus still "none" = no attempt yet, by any path) — issuing IS the
+      // verification on self-hosted, so this makes the domain Live at end-of-deploy
+      // instead of waiting on the 13-min cron or a manual Verify. A domain whose
+      // first attempt already ran (error/provisioning/active) is NOT re-attempted
+      // here; a verified domain issues as before. [#291/#304 follow-up]
+      provisionSsl: requiresSslTooling && (isVerified || domainRow?.sslStatus === "none"),
       isCloud: managed.isManaged,
       ...(route.destination?.targetPort !== undefined
         ? { targetPort: route.destination.targetPort }
@@ -247,11 +300,22 @@ export function buildServiceRouteDomains(opts: {
     // When the domain map isn't supplied (edit/delete reconcile, which doesn't
     // provision SSL), this stays false and no cert work is attempted.
     const isVerified = managed.isManaged ? true : (domainRow?.verified ?? false);
+    const requiresSslTooling =
+      usesCertbotSsl(runtimeName) &&
+      endpoint.domainType === "custom" &&
+      !external &&
+      !manualSsl;
+
     planned.push({
       hostname,
       tls: !external || manualSsl,
-      provisionSsl:
-        usesCertbotSsl(runtimeName) && endpoint.domainType === "custom" && !external && !manualSsl && isVerified,
+      requiresSslTooling,
+      // Same rule as the single-app path: a custom host on this box is ours to
+      // terminate; a managed free host is Cloud's.
+      terminatesTlsLocally: endpoint.domainType === "custom" && !external,
+      // First-deploy issuance for an unverified custom service route — see the
+      // single-app add() gate above for the rationale. [#291/#304 follow-up]
+      provisionSsl: requiresSslTooling && (isVerified || domainRow?.sslStatus === "none"),
       isCloud: managed.isManaged,
       targetPort: endpoint.port,
       domainType: endpoint.domainType,
@@ -259,6 +323,7 @@ export function buildServiceRouteDomains(opts: {
       serviceId: service.id,
       isPrimary: false,
       createIfMissing: true,
+      verified: isVerified,
     });
   }
 
@@ -311,6 +376,7 @@ export function buildServiceRouteDomain(opts: {
 export function createTrackedSslProvider(
   ssl: SslProvider,
   domainByHostname: Map<string, Domain>,
+  log?: (message: string) => void,
 ): SslProvider {
   // Persist via the shared no-clobber resolver: a verified cert → "active"; a
   // genuinely missing cert → "provisioning"; a transient read failure leaves the
@@ -325,8 +391,85 @@ export function createTrackedSslProvider(
     return result;
   };
 
+  // Deploy-time issuance. Unlike renew/verify this can be the FIRST attempt for a
+  // still-unverified custom domain, so it carries extra obligations:
+  //   • serialize on the SAME per-host lock the verify-pending cron uses, or a
+  //     first deploy can race a concurrent cron issuance → duplicate ACME orders /
+  //     HTTP-01 collision / rate-limit burn.
+  //   • CATCH internally: `runDeployPipeline` discards this return value, so a
+  //     thrown ACME error would persist nothing and leave sslStatus at "none" —
+  //     re-firing the attempt on EVERY subsequent deploy (the rate-limit loop).
+  //   • on success for an unverified row, flip verified+active (issuing IS
+  //     verifying on self-hosted) so it's Live with no manual Verify. No promote —
+  //     never steal an existing primary.
+  //   • on a FIRST-attempt failure, mark sslStatus="error" + reason (the
+  //     Action-Required dot); the domain's own `status` stays pending so the
+  //     verify-pending cron keeps retrying. A VERIFIED row keeps resolveSslPatch
+  //     (→ "provisioning") so the auto-heal sweep still covers it.
+  const provisionCert = async (hostname: string): Promise<SslResult> => {
+    const host = hostname.toLowerCase();
+    const domainRecord = domainByHostname.get(host);
+    const wasVerified = !!domainRecord?.verified;
+    return createProvisionLock(sslIssueLockKey(host)).run(async () => {
+      log?.(`Requesting SSL certificate for ${host}…`);
+      let result: SslResult;
+      let errorReason: string | null = null;
+      try {
+        result = await ssl.provisionCert(host);
+      } catch (err) {
+        errorReason = safeErrorMessage(err);
+        result = { domain: host, expiresAt: "", issuer: "", verified: false, reason: "missing" };
+      }
+
+      // No row in the map (route-minted after the map was built) — nothing to
+      // persist; the verify-pending cron / next deploy picks it up.
+      if (!domainRecord) return result;
+
+      // TLS handled elsewhere (desktop no-op / external ingress): not a failure,
+      // never write "error".
+      if (result.reason === "not_local") {
+        log?.(`SSL for ${host} is handled elsewhere — no certificate issued here.`);
+        return result;
+      }
+
+      if (result.verified && result.expiresAt) {
+        if (wasVerified) {
+          const patch = resolveSslPatch(domainRecord.sslStatus, result);
+          if (patch) await repos.domain.updateSsl(domainRecord.id, patch);
+        } else {
+          await repos.domain.markVerifiedActive(domainRecord.id, {
+            sslStatus: "active",
+            sslIssuer: result.issuer,
+            sslExpiresAt: new Date(result.expiresAt),
+          });
+        }
+        log?.(`SSL certificate active — ${host} is Live.`);
+        return result;
+      }
+
+      // Failure.
+      if (wasVerified) {
+        // Verified domain, transient issuance failure → keep it in the auto-heal
+        // sweep (findPendingSsl covers provisioning, not error).
+        const patch = resolveSslPatch(domainRecord.sslStatus, result);
+        if (patch) await repos.domain.updateSsl(domainRecord.id, patch);
+        log?.(`SSL for ${host} not renewed this deploy — will retry in the background.`);
+      } else {
+        const reason = errorReason ?? "certificate was not issued";
+        await repos.domain.updateSsl(domainRecord.id, {
+          sslStatus: "error",
+          lastVerifyError: reason,
+        });
+        log?.(
+          `SSL not issued for ${host} — marked Action Required (verify from the Domains tab once DNS points here). Reason: ${reason}`,
+        );
+      }
+      return result;
+    });
+  };
+
   return {
-    provisionCert: async (hostname: string) => persist(hostname, await ssl.provisionCert(hostname)),
+    provisionCert,
     renewCert: async (hostname: string) => persist(hostname, await ssl.renewCert(hostname)),
     verifyCert: async (hostname: string) => persist(hostname, await ssl.verifyCert(hostname)),
     installCert: async (hostname, cert) => persist(hostname, await ssl.installCert(hostname, cert)),
@@ -425,6 +568,7 @@ export function toRoutedDomainInputs(domains: PlannedRouteDomain[]): RoutedDomai
     hostname: domain.hostname,
     tls: domain.tls,
     provisionSsl: domain.provisionSsl,
+    terminatesTlsLocally: domain.terminatesTlsLocally,
     targetPort: domain.targetPort,
     targetPath: domain.targetPath,
   }));

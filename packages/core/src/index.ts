@@ -1,6 +1,7 @@
 export * from "./types";
 export * from "./stacks";
 export * from "./constants";
+export * from "./edge-image-ref";
 export * from "./system";
 export * from "./utils";
 export * from "./errors";
@@ -9,11 +10,20 @@ export * from "./service-status";
 export * from "./runtime-config";
 export * from "./workspaces";
 export * from "./connectivity";
+export * from "./cloud-capability";
 export * from "./languages";
 export * from "./metadata";
 export * from "./openship-config";
 export * from "./mail-server";
 export * from "./app-templates";
+export {
+  appTemplateSchema,
+  isValidAppTemplate,
+  parseAppTemplate,
+  templateEngineOk,
+  MAX_SUPPORTED_SCHEMA,
+  type AppTemplateRejection,
+} from "./apps/schema";
 export * from "./app-settings";
 export * from "./project-source";
 export * from "./updates";

@@ -3,6 +3,7 @@ import {
   access,
   mkdir as fsMkdir,
   readFile as fsReadFile,
+  rename as fsRename,
   rm as fsRm,
   writeFile as fsWriteFile,
 } from "node:fs/promises";
@@ -33,8 +34,13 @@ export class LocalExecutor implements CommandExecutor {
           env: getLocalExecEnv(),
         },
         (err, stdout, stderr) => {
-          if (err) reject(new Error(stderr.trim() || err.message));
-          else resolve(stdout.trim());
+          // Fold BOTH streams into the failure error. Many CLIs (certbot in
+          // particular) print the real cause to stdout while stderr only carries
+          // boilerplate ("Saving debug log to …"); dropping stdout hid the reason.
+          if (err) {
+            const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+            reject(new Error(detail || err.message));
+          } else resolve(stdout.trim());
         },
       );
     });
@@ -83,6 +89,10 @@ export class LocalExecutor implements CommandExecutor {
   async writeFile(path: string, content: string): Promise<void> {
     await fsMkdir(dirname(path), { recursive: true });
     await fsWriteFile(path, content, "utf-8");
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    await fsRename(from, to);
   }
 
   async readFile(path: string): Promise<string> {

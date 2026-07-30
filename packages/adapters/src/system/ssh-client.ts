@@ -103,6 +103,30 @@ export async function openSshUnixSocket(
   });
 }
 
+/**
+ * Open a raw exec channel for `command` and return the ssh2 ClientChannel
+ * (a Duplex: writes → remote stdin, reads ← remote stdout). No PTY is
+ * requested, so the byte stream is clean — used to carry
+ * `docker system dial-stdio`, which proxies the Docker daemon socket over an
+ * exec channel (the same transport `DOCKER_HOST=ssh://` uses). Unlike
+ * streamlocal forwarding, exec channels work on every sshd (no
+ * `AllowStreamLocalForwarding`) and under the Bun-compiled desktop runtime.
+ */
+export async function openSshExecChannel(
+  client: Client,
+  command: string,
+): Promise<ClientChannel> {
+  return new Promise((resolve, reject) => {
+    client.exec(command, (err, stream) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(stream);
+    });
+  });
+}
+
 export async function execSshCommand(
   client: Client,
   command: string,

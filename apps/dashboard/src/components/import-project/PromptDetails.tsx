@@ -42,6 +42,25 @@ function asWarnings(details: Record<string, unknown>): string[] {
   return Array.isArray(raw) ? raw.filter((w): w is string => typeof w === "string") : [];
 }
 
+type EdgeOccupant = {
+  port: number;
+  command?: string;
+  systemdUnit?: string;
+  containerName?: string;
+  pid?: number;
+  proxy?: string;
+};
+
+/** What's currently holding ports 80/443, carried in `details.edge.occupants`. */
+function asOccupants(details: Record<string, unknown>): EdgeOccupant[] {
+  const edge = details.edge as { occupants?: unknown } | undefined;
+  const raw = edge?.occupants;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (o): o is EdgeOccupant => !!o && typeof o === "object" && typeof (o as { port?: unknown }).port === "number",
+  );
+}
+
 function targetLabel(site: EdgeSite, staticLabel: string): string {
   return site.target.kind === "proxy" ? site.target.url : `${staticLabel} ${site.target.root}`;
 }
@@ -52,13 +71,33 @@ export const PromptDetails: React.FC<{ details?: Record<string, unknown> }> = ({
 
   if (!details) return null;
 
+  const occupants = asOccupants(details);
   const sites = asEdgeSites(details);
   const warnings = asWarnings(details);
 
-  // ── Edge conflict: detected sites + un-migratable warnings ──────────────
-  if (sites.length > 0 || warnings.length > 0) {
+  // ── Edge conflict: what's on the ports + detected sites + warnings ──────
+  if (occupants.length > 0 || sites.length > 0 || warnings.length > 0) {
     return (
       <div className="space-y-3">
+        {occupants.length > 0 && (
+          <div className="rounded-xl border border-border bg-muted/40 p-3 space-y-2">
+            {occupants.map((o, i) => (
+              <div key={`${o.port}-${i}`} className="flex items-center gap-2 text-sm">
+                <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-warning/10 text-warning">
+                  :{o.port}
+                </span>
+                <span className="text-foreground/90 break-all flex-1">
+                  {o.containerName ?? o.systemdUnit ?? o.command ?? `PID ${o.pid ?? "?"}`}
+                </span>
+                {o.proxy && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                    {o.proxy}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {sites.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">

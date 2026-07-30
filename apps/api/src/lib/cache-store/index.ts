@@ -18,6 +18,7 @@
 
 import IORedis from "ioredis";
 import { env, REDIS_REQUIRED } from "../../config/env";
+import { isRedisReachable } from "../../lib/redis";
 import { MemoryCacheStore } from "./memory";
 import { RedisCacheStore } from "./redis";
 import type { CacheStore, CacheStoreOptions } from "./types";
@@ -39,31 +40,6 @@ const trackedStores = new Set<CacheStore<unknown>>();
  * makes the await-at-use-site pattern correct.
  */
 const storesByNamespace = new Map<string, Promise<CacheStore<unknown>>>();
-
-async function isRedisReachable(timeoutMs = 2000): Promise<boolean> {
-  const probe = new IORedis(env.REDIS_URL, {
-    lazyConnect: true,
-    maxRetriesPerRequest: 0,
-    enableReadyCheck: false,
-    connectTimeout: timeoutMs,
-  });
-  try {
-    await Promise.race([
-      probe.connect(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), timeoutMs)),
-    ]);
-    await probe.ping();
-    return true;
-  } catch {
-    return false;
-  } finally {
-    try {
-      probe.disconnect();
-    } catch {
-      // best-effort
-    }
-  }
-}
 
 async function pickBackend(): Promise<Backend> {
   const override = (process.env.OPENSHIP_CACHE_STORE ?? "").toLowerCase().trim();

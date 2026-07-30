@@ -16,16 +16,14 @@ export const SYSTEM_COMPONENTS: SystemComponentDefinition[] = [
     category: "core",
   },
   {
-    name: "openresty",
-    label: "OpenResty",
-    description: "Reverse proxy with Lua scripting for routing and traffic control",
-    installable: true,
-    category: "infrastructure",
-  },
-  {
-    name: "certbot",
-    label: "Certbot",
-    description: "Let's Encrypt certificate provisioning",
+    // ONE component for the edge, because it is ONE artifact: the openship-edge
+    // image. OpenResty, its Lua, and certbot all ship inside it — they were three
+    // rows in this list for a thing that is installed, checked, and removed as a
+    // unit, and neither "openresty" nor "certbot" was independently installable
+    // on a converted box.
+    name: "edge",
+    label: "Edge",
+    description: "Routing + TLS — the openship-edge container (OpenResty, Lua, certbot)",
     installable: true,
     category: "infrastructure",
   },
@@ -41,6 +39,7 @@ export const SYSTEM_COMPONENTS: SystemComponentDefinition[] = [
 export const SYSTEM_COMPONENTS_BY_NAME = new Map(
   SYSTEM_COMPONENTS.map((component) => [component.name, component]),
 );
+
 
 export function getSystemComponentDefinition(
   name: string,

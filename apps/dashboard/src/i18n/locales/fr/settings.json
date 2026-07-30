@@ -273,7 +273,7 @@
   },
   "team": {
     "heading": "Équipe",
-    "descPersonal": "Personnes ayant accès à votre espace de travail personnel. Invitez des collaborateurs directement, ou créez une organisation d'équipe distincte.",
+    "descPersonal": "Les personnes ayant accès à votre espace de travail personnel.",
     "descTeam": "Personnes ayant accès aux projets, déploiements et serveurs de cette organisation.",
     "inviteMember": "Inviter un membre",
     "createTeamCard": {
@@ -302,6 +302,14 @@
     "memberPanel": {
       "subtitle": "Les octrois s'appliquent aux membres restreints. Les propriétaires/administrateurs/membres ont par défaut un accès à toute l'organisation.",
       "saveLabel": "Enregistrer l'accès"
+    },
+    "serverAccessWarning": {
+      "title": "Accorder un accès complet au serveur ?",
+      "body": "{member} obtiendra le contrôle total de {scope} — chaque déploiement et ses données, toutes les applications qui y tournent, les secrets et variables d'environnement stockés, l'accès au terminal, et toute intégration connectée (par ex. les jetons GitHub et clés de déploiement qui y sont stockés). Il pourra gérer ou supprimer ces ressources.",
+      "scopeAllServers": "tous les serveurs de cette organisation",
+      "scopeThisServer": "ce serveur",
+      "scopeCount": "{count} serveurs",
+      "confirm": "Accorder l'accès"
     },
     "confirmRemove": "Supprimer ce membre de l'organisation ?",
     "workspace": {
@@ -450,6 +458,8 @@
       "empty": "Aucun canal pour l'instant. Ajoutez-en un pour commencer à recevoir des notifications.",
       "verified": "Vérifié",
       "unverified": "Non vérifié",
+      "sendTest": "Envoyer un test",
+      "testSent": "Test envoyé",
       "deleteChannel": "Supprimer le canal",
       "addChannel": "Ajouter un canal",
       "confirmDelete": "Supprimer ce canal ? Les abonnements qui l'utilisent seront arrêtés.",
@@ -458,12 +468,16 @@
     },
     "describe": {
       "slackWebhook": "Webhook Slack",
+      "discordWebhook": "Webhook Discord",
+      "msteamsWebhook": "Webhook Microsoft Teams",
       "inApp": "Icône cloche du tableau de bord"
     },
     "kinds": {
       "email": "E-mail",
       "webhook": "Webhook",
       "slack": "Slack",
+      "discord": "Discord",
+      "msteams": "Microsoft Teams",
       "in_app": "Dans l'application"
     },
     "form": {
@@ -471,6 +485,8 @@
       "emailPlaceholder": "vous@exemple.com",
       "webhookPlaceholder": "https://example.com/openship-hook",
       "slackPlaceholder": "https://hooks.slack.com/services/...",
+      "discordPlaceholder": "https://discord.com/api/webhooks/...",
+      "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
       "adding": "Ajout…",
       "addChannel": "Ajouter un canal",
       "labelRequired": "Le libellé est requis"
@@ -480,12 +496,14 @@
       "description": "Choisissez quels événements vont vers quel canal. Chaque cellule est un abonnement.",
       "empty": "Ajoutez d'abord un canal pour vous abonner aux événements.",
       "eventHeader": "Événement",
-      "cellAria": "{category} via {channel}"
+      "cellAria": "{category} via {channel}",
+      "notifyMe": "Me notifier"
     },
     "orgDefaults": {
       "title": "Valeurs par défaut de l'organisation",
       "description": "Valeurs par défaut appliquées lorsqu'un nouveau membre rejoint cette organisation. Les membres peuvent les remplacer par canal.",
-      "notifyAria": "Notifier pour {category}"
+      "notifyAria": "Notifier pour {category}",
+      "nChannels": "{n} canaux"
     }
   },
   "audit": {
@@ -699,5 +717,29 @@
     "toastLoadStateFailed": "Échec du chargement de l'état",
     "toastRemoteUnreachable": "Distant injoignable. Cochez « ne pas récupérer les données distantes » pour revenir en arrière quand même.",
     "toastSwitchBackFailed": "Échec du retour en arrière"
+  },
+  "routePreferences": {
+    "title": "Routage",
+    "description": "Comment l'edge atteint les upstreams de vos apps",
+    "loading": "Chargement des préférences…",
+    "intro": "Choisissez l'adressage upstream par défaut pour les nouveaux projets auto-hébergés. Les remplacements par projet se trouvent dans les paramètres du projet.",
+    "modes": {
+      "auto": {
+        "label": "Auto",
+        "desc": "Recommandé (port loopback)"
+      },
+      "loopbackPort": {
+        "label": "Port loopback",
+        "desc": "Port hôte privé 127.0.0.1"
+      },
+      "containerIp": {
+        "label": "IP du conteneur",
+        "desc": "Avancé — IP du bridge"
+      }
+    },
+    "toast": {
+      "setTo": "Stratégie de routage définie sur {mode}",
+      "failed": "Échec de la mise à jour de la stratégie de routage"
+    }
   }
 }

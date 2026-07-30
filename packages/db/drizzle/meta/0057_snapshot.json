@@ -1,5 +1,5 @@
 {
-  "id": "a734bf2d-9f8e-4d6d-b773-e0da3b85938a",
+  "id": "013f12a4-3f52-4c0c-93f2-a072524ea51d",
   "prevId": "7c0a8a4d-676c-4e18-a173-d95c76e557a5",
   "version": "7",
   "dialect": "postgresql",
@@ -2828,11 +2828,24 @@
           "primaryKey": true,
           "notNull": true
         },
+        "owner_type": {
+          "name": "owner_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'project'"
+        },
         "project_id": {
           "name": "project_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "webhook_source_id": {
+          "name": "webhook_source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "service_id": {
           "name": "service_id",
@@ -3000,6 +3013,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_domain_webhook_source": {
+          "name": "idx_domain_webhook_source",
+          "columns": [
+            {
+              "expression": "webhook_source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -3009,6 +3037,19 @@
           "tableTo": "project",
           "columnsFrom": [
             "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "domain_webhook_source_id_webhook_source_id_fk": {
+          "name": "domain_webhook_source_id_webhook_source_id_fk",
+          "tableFrom": "domain",
+          "tableTo": "webhook_source",
+          "columnsFrom": [
+            "webhook_source_id"
           ],
           "columnsTo": [
             "id"
@@ -9093,18 +9134,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "gitlab_clone_token_encrypted": {
-          "name": "gitlab_clone_token_encrypted",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gitlab_clone_token_set_at": {
-          "name": "gitlab_clone_token_set_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -9188,38 +9217,94 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.gitlab_webhook_event": {
-      "name": "gitlab_webhook_event",
+    "public.webhook_source": {
+      "name": "webhook_source",
       "schema": "",
       "columns": {
-        "delivery_id": {
-          "name": "delivery_id",
+        "id": {
+          "name": "id",
           "type": "text",
           "primaryKey": true,
           "notNull": true
         },
-        "event_type": {
-          "name": "event_type",
+        "organization_id": {
+          "name": "organization_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "received_at": {
-          "name": "received_at",
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret": {
+          "name": "secret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         },
-        "processed_at": {
-          "name": "processed_at",
+        "updated_at": {
+          "name": "updated_at",
           "type": "timestamp",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "now()"
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
+      "indexes": {
+        "idx_webhook_source_org": {
+          "name": "idx_webhook_source_org",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "webhook_source_organization_id_organization_id_fk": {
+          "name": "webhook_source_organization_id_organization_id_fk",
+          "tableFrom": "webhook_source",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

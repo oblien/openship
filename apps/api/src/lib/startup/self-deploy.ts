@@ -32,6 +32,7 @@ import { safeErrorMessage } from "@repo/core";
 import { env } from "../../config/env";
 import { registerStartupHook } from "./index";
 import { ensureSelfEdgeInfra, type SelfEdgeOptions } from "./self-edge";
+import { linkSelfAppServices } from "./self-services";
 import {
   createQueuedDeployment,
   type DeploymentConfigSnapshot,
@@ -39,7 +40,7 @@ import {
 import { onSuccess } from "../../modules/deployments/deployment-lifecycle";
 import type { DeploymentMeta } from "../deployment-runtime";
 import { reapplyProjectLiveRoutes } from "../../modules/domains/project-route.service";
-import { manageDomainSsl } from "../domain-ssl";
+import { describeTlsIssuedElsewhere, manageDomainSsl, tlsIssuedElsewhere } from "../domain-ssl";
 import { refreshSelfAppPublicUrl } from "../public-url";
 
 const APP_SLUG = "openship";
@@ -159,16 +160,56 @@ export async function ensureAdoptDeployment(
     { containerId, durationMs: 0 },
   );
 
+  // A containerized install (`openship up` on Linux) runs Openship as a compose
+  // stack; link those containers to this project so its Apps & Services tab shows
+  // the real thing instead of "No apps or services yet". Best-effort + idempotent
+  // — a bare install has nothing to link and this no-ops.
+  await linkSelfAppServices(projectId, dep.id).catch((err) =>
+    console.warn(`[self-deploy] service linking skipped: ${safeErrorMessage(err)}`),
+  );
+
   return dep;
 }
 
 export interface SelfEdgeStepProgress {
   onLog?: (message: string, level?: "info" | "warn" | "error") => void;
   onStep?: (
-    step: "openresty" | "route" | "ssl",
+    step: "edge" | "route" | "ssl",
     status: "installing" | "installed" | "failed",
   ) => void;
   backoffs?: number[];
+}
+
+/**
+ * Are ports 80/443 ours (or free) to serve TLS on? A FOREIGN proxy still holding
+ * them means an ACME HTTP-01 fetch would hit IT, not us → the cert 404s with an
+ * opaque "challenge failed", and we must never blind-kill it. So both the initial
+ * provision AND the every-boot reconcile gate on this: if blocked, skip routing +
+ * cert and tell the operator to migrate via the wizard/dashboard. Read-only,
+ * best-effort (a probe failure does NOT block — never a false stop).
+ */
+async function foreignProxyBlocksEdge(
+  log?: (message: string, level?: "info" | "warn" | "error") => void,
+): Promise<{ blocked: boolean; owner?: string }> {
+  try {
+    const { foreignProxyOnEdge } = await import("@repo/adapters");
+    const { sshManager } = await import("../ssh-manager");
+    // Probe the HOST's :80/:443, not the api container's netns — the host channel is
+    // LocalExecutor bare, SSH→host when containerized (OPENSHIP_HOST_SSH_*). Pooled,
+    // so there's nothing to dispose (see withHostExecutor).
+    const { blocked, owner } = await sshManager.withHostExecutor((exec) =>
+      foreignProxyOnEdge(exec),
+    );
+    if (!blocked) return { blocked: false };
+    log?.(
+      `Not issuing TLS: ${owner} still owns ports 80/443, so Openship isn't the reverse proxy yet — ` +
+        `an ACME challenge would hit it, not us. Re-run setup (or Domains → migrate) to take over.`,
+      "error",
+    );
+    return { blocked: true, owner };
+  } catch {
+    return { blocked: false };
+  }
 }
 
 /**
@@ -189,13 +230,20 @@ export async function provisionSelfAppEdge(
   const log = progress.onLog;
 
   // 1. Toolchain install + optional 80/443 takeover/migrate (no route/cert).
-  progress.onStep?.("openresty", "installing");
+  progress.onStep?.("edge", "installing");
   const infra = await ensureSelfEdgeInfra({ onLog: log }, options);
   if (!infra.ok) {
-    progress.onStep?.("openresty", "failed");
+    progress.onStep?.("edge", "failed");
     return { verified: false, reason: infra.reason };
   }
-  progress.onStep?.("openresty", "installed");
+  progress.onStep?.("edge", "installed");
+
+  // Hard gate: never touch routing/cert unless OUR OpenResty owns 80/443 (takeover
+  // skipped / partial / respawned would otherwise 404 the ACME challenge opaquely).
+  if ((await foreignProxyBlocksEdge(log)).blocked) {
+    progress.onStep?.("route", "failed");
+    return { verified: false, reason: "edge_not_owned" };
+  }
 
   // 2. Route hostname → 127.0.0.1:dashPort via the pipeline (owns the vhost +
   //    the ACME-challenge location).
@@ -206,7 +254,7 @@ export async function provisionSelfAppEdge(
     return { verified: false, reason: "no_project" };
   }
   try {
-    await reapplyProjectLiveRoutes(project, []);
+    await reapplyProjectLiveRoutes(project, [], { isSelfApp: true });
   } catch (err) {
     log?.(safeErrorMessage(err), "error");
     progress.onStep?.("route", "failed");
@@ -215,11 +263,31 @@ export async function provisionSelfAppEdge(
   progress.onStep?.("route", "installed");
   log?.(`routing ${hostname} → http://127.0.0.1:${dashPort}`);
 
+  // Does this hostname's TLS come from somewhere else — Cloud's *.opsh.io edge, the
+  // operator's own ingress, an uploaded cert? Asked of the DOMAIN ROW, which is
+  // where that fact already lives, rather than taken as a boolean from the caller:
+  // the free-domain registration writes `domainType: "free"` before calling us, so
+  // the row already says so and can't disagree with the argument.
+  //
+  // Stopping here is an optimization and an honest log line, not the safety net —
+  // `manageDomainSsl` refuses the same domains on its own (see tlsIssuedElsewhere).
+  // Without it we'd announce an "Issue SSL certificate" step that is never going to
+  // issue one.
+  const domainRow = await repos.domain.findByHostname(hostname).catch(() => null);
+  const elsewhere = domainRow ? tlsIssuedElsewhere(domainRow) : null;
+  if (elsewhere) {
+    log?.(describeTlsIssuedElsewhere(elsewhere, hostname));
+    return { verified: true };
+  }
+
   // 3. Issue the cert via the pipeline (ACME HTTP-01 through the resolved local
   //    provider). Retry so a not-yet-propagated A record doesn't hard-fail —
   //    the HTTP vhost keeps answering ACME between tries.
   progress.onStep?.("ssl", "installing");
   const backoffs = progress.backoffs ?? BOOT_BACKOFFS;
+  // Remember the last real failure so the FINAL line reports WHY (not just
+  // "retry on next boot") — it's the line the CLI/dashboard surfaces.
+  let lastError: string | undefined;
   for (let attempt = 0; attempt <= backoffs.length; attempt++) {
     try {
       const res = await manageDomainSsl(hostname, { action: "provision", projectId });
@@ -228,17 +296,24 @@ export async function provisionSelfAppEdge(
         progress.onStep?.("ssl", "installed");
         return { verified: true, expiresAt: res.expiresAt };
       }
+      lastError = res.reason ?? lastError;
       log?.(
         `certificate not ready (${res.reason ?? "pending"})${attempt < backoffs.length ? " — retrying" : ""}`,
         "warn",
       );
     } catch (err) {
-      log?.(`cert error: ${safeErrorMessage(err)}`, "error");
+      lastError = safeErrorMessage(err);
+      log?.(`cert error: ${lastError}`, "error");
     }
     if (attempt < backoffs.length) await sleep(backoffs[attempt]);
   }
   progress.onStep?.("ssl", "failed");
-  log?.(`could not issue TLS for ${hostname} yet — will retry on next boot (site still serves over HTTP).`, "warn");
+  log?.(
+    lastError
+      ? `Couldn't issue TLS for ${hostname}: ${lastError} — it serves over HTTP and retries on next boot.`
+      : `could not issue TLS for ${hostname} yet — will retry on next boot (site still serves over HTTP).`,
+    "warn",
+  );
   return { verified: false, reason: "cert_pending" };
 }
 
@@ -268,6 +343,74 @@ async function findSelfAppProject(): Promise<Project | null> {
  * Self-hosted only (register.ts modes). NOT gated on OPENSHIP_PUBLIC_URL so
  * free/byo boxes reconcile too. First boot (no self-app) is a clean no-op.
  */
+/**
+ * Reconcile the self-app's domain ROWS with the hostname this box is actually
+ * reached on (`OPENSHIP_PUBLIC_URL`, set by the CLI at install time).
+ *
+ * Two jobs:
+ *
+ * 1. CREATE the row when the env hostname has none. An install that set
+ *    OPENSHIP_PUBLIC_URL but never completed a self-register (the compose wizard
+ *    used to skip the custom-domain call entirely) ends up reachable on that
+ *    hostname with ZERO domain rows — so Domains & Routes reads "No domains yet"
+ *    on a box that is plainly serving that domain, and none of the per-domain UI
+ *    (routes, rules, SSL state) has anything to attach to. The env var IS an
+ *    operator-expressed preference: they typed it in the wizard or passed
+ *    --public-url. Recording it is reconciliation, not invention.
+ *
+ *    The row is created BYO-shaped (`externalIngress`, `sslStatus: "external"`):
+ *    if OUR edge had provisioned this domain, self-register would already have
+ *    written the row, so reaching here means TLS is terminated by something we
+ *    don't manage. Claiming otherwise would show a cert lifecycle we don't own.
+ *
+ * 2. Promote it to PRIMARY. Domain rows accumulate — a free `*.opsh.io` from one
+ *    run, a custom domain from the next — and whichever was written last used to
+ *    keep the primary flag, which is how a never-verified subdomain came to be
+ *    displayed as the project's address.
+ *
+ * No-ops when the env URL is unset or unparseable.
+ */
+async function reconcileSelfAppPrimaryDomain(projectId: string): Promise<void> {
+  const raw = env.OPENSHIP_PUBLIC_URL?.trim();
+  if (!raw) return;
+  let host: string;
+  try {
+    host = new URL(raw.includes("://") ? raw : `https://${raw}`).hostname.toLowerCase();
+  } catch {
+    return;
+  }
+  if (!host) return;
+
+  const rows = await repos.domain.listByProject(projectId);
+  let wanted = rows.find((d) => d.hostname.toLowerCase() === host);
+
+  if (!wanted) {
+    // findOrCreate (not create) so a concurrent boot/self-register can't produce
+    // a duplicate row for the same hostname.
+    wanted = await repos.domain.findOrCreate({
+      projectId,
+      hostname: host,
+      domainType: "custom",
+      isPrimary: true,
+      externalIngress: true,
+      verified: true,
+      verifiedAt: new Date(),
+      status: "active",
+      sslStatus: "external",
+    });
+    console.log(
+      `[self-deploy] recorded self-app domain ${host} from OPENSHIP_PUBLIC_URL ` +
+        `(no row existed — install did not register it)`,
+    );
+  }
+
+  if (wanted.isPrimary) return;
+  // The repo owns the promote+demote pair (one primary per project) — don't
+  // re-implement the flag juggling here.
+  await repos.domain.setPrimary(projectId, wanted.id);
+  console.log(`[self-deploy] primary domain set to ${wanted.hostname} (from OPENSHIP_PUBLIC_URL)`);
+}
+
 export function registerSelfAdoptReconcile(): void {
   registerStartupHook({
     id: "self-app:reconcile",
@@ -280,8 +423,12 @@ export function registerSelfAdoptReconcile(): void {
       // left dark. Best-effort; root Linux only.
       if (isLinuxRoot()) {
         try {
-          const { createExecutor, recoverInterruptedTakeover } = await import("@repo/adapters");
-          await recoverInterruptedTakeover(createExecutor(), (e) => console.log(`[self-deploy] ${e.message}`));
+          const { recoverInterruptedTakeover } = await import("@repo/adapters");
+          const { sshManager } = await import("../ssh-manager");
+          // Recover takeover on the HOST (local bare, SSH→host containerized).
+          await sshManager.withHostExecutor((exec) =>
+            recoverInterruptedTakeover(exec, (e) => console.log(`[self-deploy] ${e.message}`)),
+          );
         } catch {}
       }
 
@@ -292,6 +439,29 @@ export function registerSelfAdoptReconcile(): void {
         console.warn(`[self-deploy] ensureAdoptDeployment failed: ${safeErrorMessage(err)}`),
       );
 
+      // (a2) Link the stack's own containers as this project's services. Runs on
+      //      EVERY boot, not just when the adopt deployment is created:
+      //      ensureAdoptDeployment early-returns for an install that already has
+      //      one, so an existing install would otherwise never get its services —
+      //      which is exactly the "No apps or services yet" a CLI-installed box
+      //      showed while five Openship containers were running. Also keeps the
+      //      image tags current after an upgrade.
+      const activeDeploymentId = (await repos.project.findById(project.id))?.activeDeploymentId ?? null;
+      await linkSelfAppServices(project.id, activeDeploymentId).catch((err) =>
+        console.warn(`[self-deploy] service linking failed: ${safeErrorMessage(err)}`),
+      );
+
+      // (a3) Make the domain the operator actually reaches this box on the PRIMARY
+      //      one. An install that registered a free `*.opsh.io` and later attached
+      //      a real domain ended up with the stale free row still flagged primary,
+      //      so the Domains tab presented a "Pending" subdomain as the project's
+      //      address while the box was being served on the custom one. The env
+      //      public URL is the unambiguous signal (it's what the CLI configured
+      //      the box with), so trust it over insertion order.
+      await reconcileSelfAppPrimaryDomain(project.id).catch((err) =>
+        console.warn(`[self-deploy] primary-domain reconcile failed: ${safeErrorMessage(err)}`),
+      );
+
       // (b) Sync project.port to the live dashboard port (it can change across
       //     restarts). reapply targets domain.targetPort ?? project.port.
       if (project.port !== dashPort) {
@@ -300,22 +470,33 @@ export function registerSelfAdoptReconcile(): void {
           .catch((err) => console.warn(`[self-deploy] port sync failed: ${safeErrorMessage(err)}`));
       }
 
-      // (c) Self-heal the custom local-edge route + cert (Linux + root only).
+      // (c) Self-heal the local-edge route + cert (Linux + root only).
+      //
+      // FREE domains are included: Cloud terminates their TLS and forwards to :80
+      // on this box, so the local edge still needs the vhost. Gating this on
+      // "custom" meant an install whose edge was down during registration could
+      // never recover — the domain resolved and 404'd forever. Cert re-issue below
+      // is skipped for free (Cloud owns that cert), route repair is not.
       const primary = await repos.domain.getPrimaryByProject(project.id);
       if (
         primary &&
-        primary.domainType === "custom" &&
+        (primary.domainType === "custom" || primary.domainType === "free") &&
         !primary.externalIngress &&
         isLinuxRoot()
       ) {
         const fresh = await repos.project.findById(project.id);
-        if (fresh) {
+        // Don't retry the route+cert against a foreign proxy on every boot — that's
+        // the loop that spun forever on a box where the takeover never completed.
+        const blocked = (await foreignProxyBlocksEdge((m) => console.warn(`[self-deploy] ${m}`))).blocked;
+        if (fresh && !blocked) {
           try {
-            await reapplyProjectLiveRoutes(fresh, []);
+            await reapplyProjectLiveRoutes(fresh, [], { isSelfApp: true });
           } catch (err) {
             console.warn(`[self-deploy] route reapply failed: ${safeErrorMessage(err)}`);
           }
-          if (primary.sslStatus !== "active") {
+          // Same question as everywhere else, same answer: free (Cloud terminates),
+          // external ingress, and uploaded certs are not certbot's to re-issue.
+          if (!tlsIssuedElsewhere(primary) && primary.sslStatus !== "active") {
             try {
               await manageDomainSsl(primary.hostname, { action: "provision", projectId: project.id });
             } catch (err) {

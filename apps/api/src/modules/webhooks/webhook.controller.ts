@@ -40,14 +40,9 @@ async function dispatchProvider(c: Context, providerName: WebhookProviderName) {
     return c.json({ error: `Webhook provider '${providerName}' is not configured` }, 404);
   }
 
-  /* Read the raw body once - needed for signature verification */
-  const rawBody = await c.req.text();
-
-  /* Flatten headers into a plain object */
-  const headers: Record<string, string> = {};
-  c.req.raw.headers.forEach((value, key) => {
-    headers[key.toLowerCase()] = value;
-  });
+  /* Raw body + headers captured once by the shared `webhookRawBody` middleware. */
+  const rawBody = c.var.webhookRawBody;
+  const headers = c.var.webhookHeaders;
 
   /* Step 1: Verify signature */
   const verification = await provider.verify(rawBody, headers);
@@ -58,7 +53,7 @@ async function dispatchProvider(c: Context, providerName: WebhookProviderName) {
   /* Step 2: Parse and handle */
   let payload: unknown;
   try {
-    payload = JSON.parse(rawBody);
+    payload = JSON.parse(rawBody.toString("utf8"));
   } catch {
     return c.json({ error: "Invalid JSON body" }, 400);
   }

@@ -242,6 +242,59 @@ export function BackupSettings(): React.JSX.Element {
           </button>
         }
       >
+        {servicesData.services.length > 0 &&
+          (() => {
+            // Project-level policy — one policy that fans out to EVERY service.
+            const projectPolicy = policyByService.get(null) ?? null;
+            return (
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    {t.widgets.backup.policyEditor.projectLevel}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {projectPolicy
+                      ? `${t.projectSettings.backup.services.policyLabel} ${projectPolicy.payloadKind}${projectPolicy.cronExpression ? ` · cron ${projectPolicy.cronExpression}` : ` · ${t.projectSettings.backup.services.manualOnly}`}`
+                      : t.projectSettings.backup.services.noPolicy}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {projectPolicy ? (
+                    <>
+                      <button
+                        onClick={() => void handleRunNow(projectPolicy.id)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                      >
+                        <PlayCircle className="size-3" />
+                        {t.projectSettings.backup.services.backupNow}
+                      </button>
+                      <button
+                        onClick={() => setEditingPolicy({ existing: projectPolicy, serviceId: null })}
+                        className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2 py-1.5 text-xs font-medium hover:bg-muted"
+                        title={t.projectSettings.backup.services.editPolicy}
+                      >
+                        <Settings className="size-3" />
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setEditingPolicy({ existing: null, serviceId: null })}
+                      disabled={destinations.length === 0}
+                      title={
+                        destinations.length === 0
+                          ? t.projectSettings.backup.services.addDestinationFirst
+                          : t.projectSettings.backup.services.createPolicyHint
+                      }
+                      className="inline-flex items-center gap-1 rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="size-3" />
+                      {t.projectSettings.backup.services.createPolicy}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         {servicesData.services.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {t.projectSettings.backup.services.empty}

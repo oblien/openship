@@ -18,14 +18,30 @@
  * resolved in parallel). The Health tab refreshes on demand.
  */
 
-import {
-  resolve4,
-  resolve6,
-  resolveCname,
-  resolveMx,
-  resolveTxt,
-  reverse,
-} from "node:dns/promises";
+import { Resolver } from "node:dns/promises";
+
+/**
+ * PUBLIC resolvers, not the system stub.
+ *
+ * This scan answers "what does the rest of the internet see?", and the system
+ * resolver can't: on the mail host itself `/etc/hosts` carries the
+ * `127.0.1.1 mail.<domain>` line our own hostname step writes, and glibc/
+ * systemd-resolved synthesize an A record from it — so every install reported
+ * "A record resolves to 127.0.1.1 instead of <public ip>" against perfectly
+ * correct DNS. Querying public resolvers directly is the only way to see the
+ * published zone. Two, so one being unreachable isn't a scan failure.
+ */
+const PUBLIC_DNS_SERVERS = ["1.1.1.1", "8.8.8.8"];
+
+const publicResolver = new Resolver();
+publicResolver.setServers(PUBLIC_DNS_SERVERS);
+
+const resolve4 = publicResolver.resolve4.bind(publicResolver);
+const resolve6 = publicResolver.resolve6.bind(publicResolver);
+const resolveCname = publicResolver.resolveCname.bind(publicResolver);
+const resolveMx = publicResolver.resolveMx.bind(publicResolver);
+const resolveTxt = publicResolver.resolveTxt.bind(publicResolver);
+const reverse = publicResolver.reverse.bind(publicResolver);
 import { sshManager } from "../../../lib/ssh-manager";
 import { readState } from "../mail-state";
 import { safeErrorMessage } from "@repo/core";
@@ -337,7 +353,16 @@ async function checkDkim(domain: string, exp?: ExpectedRecord): Promise<DnsCheck
       };
     }
     const wantedStripped = exp.value.replace(/\s+/g, "");
-    const matched = txt.some((t) => t.replace(/\s+/g, "") === wantedStripped);
+    // A 2048-bit key is ~400 chars, past the 255-byte cap on a single DNS
+    // string, so the record is ALWAYS chunked. Node normally returns those
+    // chunks as one record (`[[a, b]]`, joined above), but some resolvers —
+    // Docker's embedded DNS among them — hand each chunk back as a separate
+    // record. Comparing entry-by-entry then matches neither half and reports a
+    // mismatch against a byte-identical published key. Concatenating in order
+    // covers that shape; the per-entry check still handles the normal one.
+    const matched =
+      txt.some((t) => t.replace(/\s+/g, "") === wantedStripped) ||
+      txt.join("").replace(/\s+/g, "") === wantedStripped;
     return {
       key: "dkim",
       label: "DKIM key",

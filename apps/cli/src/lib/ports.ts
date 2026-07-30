@@ -1,24 +1,45 @@
 /**
- * Dynamic port allocation for the CLI-run API + dashboard.
+ * The CLI's port STORAGE + operator-facing messaging.
  *
- * There is NO permanent port: the defaults (API 4000, dashboard 3001) are only a
- * PREFERENCE. If a preferred port is already taken (a second instance, another
- * app, a leftover process), we switch to a free one — the same behaviour the
- * desktop app uses. Resolution happens BEFORE the env is injected / the service
- * unit is written, so the chosen ports are baked into the launchd/systemd args,
- * threaded to the edge-proxy target, and shown in the summary.
+ * The resolution algorithm itself lives in `@repo/core/ports` (`resolvePortPair`),
+ * shared with the desktop app so the two launchers can't drift — that divergence is
+ * why the desktop one lacked the restart grace period. What's CLI-specific and
+ * stays here: remembering the pair in `~/.openship/ports.json` (OS_DIR), the
+ * documented 4000/3001 defaults, and the lines we print when a port moves.
  *
- * Chosen ports are persisted to ~/.openship/ports.json so a restart REUSES the
- * same origin when it's still free — session cookies are bound to
- * `localhost:<port>`, so a stable port is what keeps you logged in across
- * restarts. We only move off a remembered port when it's actually occupied.
+ * Ports are persisted so a restart REUSES the same origin when it's still free —
+ * session cookies are bound to `localhost:<port>`, so a stable port is what keeps
+ * you logged in across restarts. ports.json is also how `openship status`,
+ * `doctor`, `reset-admin` and the control panel find the running instance, which is
+ * why EVERY install mode (bare + compose) resolves through here.
  */
-import { createServer } from "node:net";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
-const OS_DIR = join(homedir(), ".openship");
+import {
+  DEFAULT_API_PORT,
+  DEFAULT_DASHBOARD_PORT,
+  resolvePortPair,
+  type PortPrefs as CorePortPrefs,
+  type ResolvedPorts,
+  type StoredPorts,
+} from "@repo/core/ports";
+
+import { OS_DIR } from "./paths";
+
+// One import site for anything port-related, even though the primitives are now
+// shared code rather than local functions.
+export {
+  DEFAULT_API_PORT,
+  DEFAULT_DASHBOARD_PORT,
+  findPortNear,
+  getFreePort,
+  isPortFree,
+  waitPortFree,
+  type ResolvedPorts,
+  type StoredPorts,
+} from "@repo/core/ports";
+
 const PORTS_FILE = join(OS_DIR, "ports.json");
 const INSTANCE_FILE = join(OS_DIR, "instance.json");
 
@@ -45,67 +66,31 @@ export function readInstanceUrl(): string | null {
   }
 }
 
-const DEFAULT_API = 4000;
-const DEFAULT_DASHBOARD = 3001;
-
-/** True if a specific TCP port is bindable on loopback right now. */
-export function isPortFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const srv = createServer();
-    srv.once("error", () => resolve(false));
-    srv.listen(port, "127.0.0.1", () => srv.close(() => resolve(true)));
-  });
-}
-
 /**
- * Wait (bounded) for a specific port to become bindable. On a service restart
- * the supervisor stops the old process then starts the new one; the new process
- * often probes the remembered port BEFORE the old one has released it. Without
- * this wait, `resolvePorts` would immediately fall back to a random free port —
- * changing the origin, logging every user out (cookies are bound to
- * `localhost:<port>`), and stranding the edge upstream on the old port. Since a
- * restart's own dying process frees the port within a second or two, a short
- * wait reclaims the canonical port in the common case. A genuinely-held port
- * (another service) still times out and moves.
+ * The ports the running instance last resolved to — the ONE reader.
+ *
+ * Every command that has to reach the local instance (`status`, `doctor`,
+ * `reset-admin`, the control panel, the orphan-port sweep in lib/service.ts) needs
+ * this, and each used to inline its own `JSON.parse(readFileSync(...))`. One of
+ * those copies pointed at `~/.openship` instead of OS_DIR, which under
+ * OPENSHIP_HOME (a from-source install) read the OTHER install's ports.
  */
-export async function waitPortFree(
-  port: number,
-  opts: { timeoutMs?: number; intervalMs?: number } = {},
-): Promise<boolean> {
-  const timeoutMs = opts.timeoutMs ?? 6000;
-  const intervalMs = opts.intervalMs ?? 250;
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (await isPortFree(port)) return true;
-    if (Date.now() >= deadline) return false;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-}
-
-/** Reserve a free TCP port on loopback (bind :0, read it, release). */
-export function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      const port = addr && typeof addr === "object" ? addr.port : 0;
-      srv.close(() => (port ? resolve(port) : reject(new Error("no free port"))));
-    });
-  });
-}
-
-interface StoredPorts {
-  api?: number;
-  dashboard?: number;
-}
-
-function loadStoredPorts(): StoredPorts {
+export function readStoredPorts(): StoredPorts {
   try {
     return JSON.parse(readFileSync(PORTS_FILE, "utf-8")) as StoredPorts;
   } catch {
     return {};
   }
+}
+
+/** Remembered API port, falling back to the default preference. */
+export function storedApiPort(): number {
+  return readStoredPorts().api ?? DEFAULT_API_PORT;
+}
+
+/** Remembered dashboard port, falling back to the default preference. */
+export function storedDashboardPort(): number {
+  return readStoredPorts().dashboard ?? DEFAULT_DASHBOARD_PORT;
 }
 
 function saveStoredPorts(api: number, dashboard: number): void {
@@ -117,49 +102,85 @@ function saveStoredPorts(api: number, dashboard: number): void {
   }
 }
 
-export interface ResolvedPorts {
-  api: number;
-  dashboard: number;
-  /** Whether each port had to move off its preference (default/stored/flag). */
-  switched: { api: boolean; dashboard: boolean };
+/**
+ * The operator-facing lines for a port that MOVED — empty when nothing moved.
+ *
+ * One builder, three printers: `openship up` (compose), `openship up` (bare) and
+ * the wizard all have to say this, and the wizard prints through clack rather than
+ * console.log. Returning lines instead of printing keeps the wording identical
+ * without forcing one output style on all three.
+ */
+export function portMoveNotice(
+  resolved: ResolvedPorts,
+  trustedOriginUrls: Array<string | undefined | null> = [],
+): string[] {
+  if (!resolved.switched.api && !resolved.switched.dashboard) return [];
+  const lines = [
+    `A preferred port was busy — using API ${resolved.api}, dashboard ${resolved.dashboard}.`,
+  ];
+  const stale = [...new Set(stalePortOrigins(resolved.preferred.dashboard, trustedOriginUrls))];
+  if (stale.length) {
+    lines.push(
+      `Heads up: ${stale.join(", ")} still names port ${resolved.preferred.dashboard}, so logins`,
+      `from that origin will be rejected. Point it at :${resolved.dashboard} (or free port`,
+      `${resolved.preferred.dashboard} and re-run to move back).`,
+    );
+  }
+  return lines;
 }
+
+/**
+ * URLs that still name the port the dashboard just moved OFF.
+ *
+ * `OPENSHIP_PUBLIC_URL` and `OPENSHIP_EXTRA_TRUSTED_ORIGINS` are the API's
+ * `trustedOrigins` allowlist. If one names `:3001` and the dashboard is now on
+ * `:3002`, the browser's origin no longer matches: the install serves reads and
+ * 403s every login with `ORIGIN_REJECTED` — an error that names neither the cause
+ * nor the fix. Matched against the ABANDONED port specifically, so a URL naming a
+ * reverse proxy's own port (`https://ops.example.com:8443`) is left alone.
+ */
+export function stalePortOrigins(
+  movedFrom: number,
+  urls: Array<string | undefined | null>,
+): string[] {
+  const stale: string[] = [];
+  for (const raw of urls) {
+    for (const candidate of (raw ?? "").split(",")) {
+      const value = candidate.trim();
+      if (!value) continue;
+      try {
+        if (new URL(value).port === String(movedFrom)) stale.push(value);
+      } catch {
+        // Not a parseable URL — nothing to reason about.
+      }
+    }
+  }
+  return stale;
+}
+
+/**
+ * What a CLI caller may ask for. `stored` + `defaults` are filled in by
+ * `resolvePorts` itself — the file and the documented defaults are this module's
+ * business, not the caller's.
+ */
+export type PortPrefs = Omit<CorePortPrefs, "stored" | "defaults">;
 
 /**
  * Resolve the API + dashboard ports, switching off any that are occupied.
  *
- * Preference order per port: explicit flag → last-used (ports.json) → default.
- * A preferred port that's free is kept (stable origin); otherwise a free port is
- * picked. API and dashboard are guaranteed distinct. The result is persisted.
+ * Preference order per port: explicit flag → the install's current config →
+ * last-used (ports.json) → default. A preferred port that's free (or held by us)
+ * is kept, so the origin stays stable; otherwise the nearest free neighbour is
+ * taken. API and dashboard are guaranteed distinct. The result is persisted to
+ * ports.json for every install mode, since that is what `openship doctor`,
+ * `reset-admin` and the control panel read to find the running instance.
  */
-export async function resolvePorts(prefs: { api?: number; dashboard?: number }): Promise<ResolvedPorts> {
-  const stored = loadStoredPorts();
-  const apiPref = prefs.api ?? stored.api ?? DEFAULT_API;
-  const dashPref = prefs.dashboard ?? stored.dashboard ?? DEFAULT_DASHBOARD;
-
-  // A "remembered" port (came from ports.json, not an explicit flag) is one we
-  // previously ran on, so a restart should RECLAIM it — briefly wait for our own
-  // dying process to release it instead of instantly grabbing a random port
-  // (which would break session cookies + the edge upstream bound to the old
-  // port). Genuinely-held ports still time out and move.
-  const apiRemembered = prefs.api === undefined && stored.api === apiPref;
-  const dashRemembered = prefs.dashboard === undefined && stored.dashboard === dashPref;
-
-  let api: number;
-  if (await isPortFree(apiPref)) api = apiPref;
-  else if (apiRemembered && (await waitPortFree(apiPref))) api = apiPref;
-  else api = await getFreePort();
-
-  let dashboard: number;
-  if (dashPref !== api && (await isPortFree(dashPref))) dashboard = dashPref;
-  else if (dashPref !== api && dashRemembered && (await waitPortFree(dashPref))) dashboard = dashPref;
-  else dashboard = await getFreePort();
-  // Defend against getFreePort() handing back the API port between reservations.
-  if (dashboard === api) dashboard = await getFreePort();
-
-  saveStoredPorts(api, dashboard);
-  return {
-    api,
-    dashboard,
-    switched: { api: api !== apiPref, dashboard: dashboard !== dashPref },
-  };
+export async function resolvePorts(prefs: PortPrefs): Promise<ResolvedPorts> {
+  const resolved = await resolvePortPair({
+    ...prefs,
+    stored: readStoredPorts(),
+    defaults: { api: DEFAULT_API_PORT, dashboard: DEFAULT_DASHBOARD_PORT },
+  });
+  saveStoredPorts(resolved.api, resolved.dashboard);
+  return resolved;
 }

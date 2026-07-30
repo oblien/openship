@@ -24,6 +24,14 @@ export interface SSEMessage {
   timestamp: string;
 }
 
+function formatElapsedTime(timestamp: string, startTime: number): string {
+  const currentTime = Math.max(0, Math.floor((new Date(timestamp).getTime() - startTime) / 1000));
+  const mins = Math.floor(currentTime / 60);
+  const secs = currentTime % 60;
+
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
 /**
  * Analyzes a log message and determines the current deployment phase and progress
  */
@@ -172,10 +180,7 @@ export function parseLogEntry(text: string, timestamp: string, startTime: number
   // Skip phase markers in the log display
   if (text.match(/---PHASE:\s*\w+---/i)) {
     // Return a special marker that can be filtered out if needed
-    const currentTime = Math.floor((new Date(timestamp).getTime() - startTime) / 1000);
-    const mins = Math.floor(currentTime / 60);
-    const secs = currentTime % 60;
-    const time = `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    const time = formatElapsedTime(timestamp, startTime);
 
     return { type: "info", text: "", time }; // Empty text to hide phase markers
   }
@@ -202,10 +207,7 @@ export function parseLogEntry(text: string, timestamp: string, startTime: number
   }
 
   // Calculate time from timestamp
-  const currentTime = Math.floor((new Date(timestamp).getTime() - startTime) / 1000);
-  const mins = Math.floor(currentTime / 60);
-  const secs = currentTime % 60;
-  const time = `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  const time = formatElapsedTime(timestamp, startTime);
 
   // Clean up the text (remove extra whitespace, line breaks)
   const cleanText = text.trim();

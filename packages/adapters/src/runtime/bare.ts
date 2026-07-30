@@ -40,7 +40,7 @@ import type {
   RollbackInput,
   MakeActiveResult,
 } from "./types";
-import { BuildLogger, detectBuildKillHint, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
+import { BuildCancelledError, BuildLogger, detectBuildKillHint, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
 import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
@@ -73,6 +73,17 @@ export interface BareRuntimeOptions {
 
 const DEFAULT_WORK_DIR = "/opt/openship";
 const DEFAULT_BUILD_TIMEOUT = 10 * 60 * 1000;
+
+/**
+ * Dedicated base for static doc-roots — deliberately separate from
+ * DEFAULT_WORK_DIR. Static sites build in a Docker sandbox and serve their
+ * extracted files from here; this is the ONE directory shared into the edge
+ * container (bind-mounted at the same path) in docker-edge mode, so it must
+ * NOT contain server bundles, node_modules, or release secrets. A static-serve
+ * BareRuntime is constructed with `workDir = STATIC_RELEASE_BASE` so its
+ * releases/.builds subdirs confine here and promote stays same-FS.
+ */
+export const STATIC_RELEASE_BASE = "/opt/openship/static";
 
 
 
@@ -420,12 +431,12 @@ export class BareRuntime implements RuntimeAdapter {
     const buildEnv: BuildEnvironment = {
       projectDir: dir,
       exec: async (command, logCb) => {
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         const effectiveCommand = this.executor instanceof LocalExecutor
           ? wrapLocalBuildCommand(command)
           : command;
         const { code, output } = await this.executor.streamExec(effectiveCommand, logCb);
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         if (code !== 0) {
           const hint = detectBuildKillHint(output);
           throw new Error(
@@ -434,7 +445,7 @@ export class BareRuntime implements RuntimeAdapter {
         }
       },
       preflight: async (cfg, plog) => {
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         await this.ensureToolchain(this.executor, cfg.stack, plog);
         if (cfg.localPath) {
           await this.transferFiles(cfg.localPath, dir, plog);
@@ -498,6 +509,16 @@ export class BareRuntime implements RuntimeAdapter {
       abort.abort();
       this.activeBuilds.delete(sessionId);
     }
+    // Aborting only gates the API BETWEEN commands — the in-flight remote
+    // command (git/npm/vite) keeps running on the target until killed. Kill every
+    // process whose CWD is (under) this build's dir — SIGTERM, then SIGKILL the
+    // survivors. Killing it closes the streamExec channel so the pipeline unwinds
+    // to a cancelled result. Best-effort; a no-op for local builds / non-Linux
+    // targets (nothing runs under this dir there).
+    const dir = sq(this.buildDir(sessionId));
+    const scan = (sig: string) =>
+      `for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null); case "$c" in ${dir}|${dir}/*) kill -${sig} "\${p##*/}" 2>/dev/null || true;; esac; done`;
+    await this.executor.exec(`${scan("TERM")}; sleep 2; ${scan("KILL")}`).catch(() => {});
   }
 
   async getBuildLogs(sessionId: string): Promise<LogEntry[]> {
@@ -582,13 +603,32 @@ export class BareRuntime implements RuntimeAdapter {
           config.previousDeploymentId,
         )
       : stagedDir;
-    const staticRoot = this.resolveStaticRoot(workDir, config.outputDirectory);
+    const staticRoot = resolveStaticOutputPath(workDir, config.outputDirectory);
 
-    if (!(await this.executor.exists(staticRoot))) {
+    const abort = async (message: string): Promise<never> => {
       if (workDir !== stagedDir) {
         await this.executor.rm(workDir).catch(() => {});
       }
-      throw new Error(missingOutputDirectoryMessage(config.outputDirectory));
+      throw new Error(message);
+    };
+
+    if (!(await this.executor.exists(staticRoot))) {
+      return abort(missingOutputDirectoryMessage(config.outputDirectory));
+    }
+
+    // Present but EMPTY is unambiguously broken — no path under an empty root can
+    // serve anything, so unlike a missing index.html (which is legitimate when the
+    // site is routed only at a subpath) this needs no knowledge of the routes to
+    // call. Catches the common "build wrote nothing" / "wrong output directory"
+    // case at deploy time, where the error can still name the cause, instead of
+    // deploying green and 404ing. Index presence is left to the route-aware
+    // post-deploy audit, which is advisory by design.
+    if (await this.isEmptyDir(staticRoot)) {
+      return abort(
+        `The output directory "${config.outputDirectory || "."}" is empty — the build produced ` +
+          `no files to serve, so every request would 404. Check the build command and the ` +
+          `Output Directory setting.`,
+      );
     }
 
     return {
@@ -598,8 +638,22 @@ export class BareRuntime implements RuntimeAdapter {
     };
   }
 
-  resolveStaticRoot(containerId: string, outputDirectory: string): string {
-    return resolveStaticOutputPath(containerId, outputDirectory);
+  /**
+   * Is this an existing directory with no entries? Any inconclusive answer (not a
+   * directory, unreadable, exec failed) returns false — a probe that can't read
+   * must never be the thing that fails a deploy.
+   */
+  private async isEmptyDir(path: string): Promise<boolean> {
+    // Explicit tokens + forced exit 0, same discipline as probeStaticOutput: absence
+    // is an ANSWER here, not a command failure. A plain file (legitimately its own
+    // index) prints no DIR and is therefore never reported empty.
+    const p = sq(path);
+    const out = await this.executor
+      .exec(`if [ -d ${p} ]; then echo DIR; ls -A ${p} 2>/dev/null | head -1; fi; true`)
+      .catch(() => null);
+    if (out === null) return false; // inconclusive → never fail the deploy
+    const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
+    return lines.length === 1 && lines[0] === "DIR";
   }
 
   async stop(containerId: string): Promise<void> {

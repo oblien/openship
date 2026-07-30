@@ -146,9 +146,13 @@ For attaching and verifying domains themselves, see [Custom domains](/docs/guide
 
 ## `openship logs`
 
-View or stream a deployment's logs.
+View or stream a deployment's logs. The deployment ID is optional — leave it out and the CLI resolves the
+latest deployment of the linked project.
 
 ```bash
+# Latest deployment of the linked project
+openship logs
+
 # Print the last 100 lines and exit
 openship logs dep_123 --tail 100
 

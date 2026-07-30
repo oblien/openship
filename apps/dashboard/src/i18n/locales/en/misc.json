@@ -163,7 +163,9 @@
     "close": "Close {label}",
     "serverLimit": "Server limit: {max} concurrent shells.",
     "newShell": "New shell",
-    "noTerminals": "No open terminals."
+    "noTerminals": "No open terminals.",
+    "expand": "Expand",
+    "collapse": "Collapse"
   },
   "buildPage": {
     "thisRepo": "this repo",

@@ -195,6 +195,30 @@ async function ensureDeployKey(
 
 // ─── Resolver (called by clone-auth.ts) ───────────────────────────────────────
 
+/** The auth row shape these predicates need (a subset of `serverGithubAuth`). */
+type ServerAuthRow = {
+  mode: string;
+  tokenEncrypted?: string | null;
+  serverKeyPrivateEncrypted?: string | null;
+};
+
+/**
+ * Does this row carry usable credential material? The ONE place that maps a mode
+ * to the field it requires — the resolver, the preflight probe and the status
+ * serializer all read it here, so adding a mode is a single edit rather than
+ * three that can silently disagree.
+ *
+ * Deploy-key mode is "present" with no material: keys are minted lazily per repo
+ * at deploy time (`ensureDeployKey`), so the GitHub call that could fail surfaces
+ * there, not here.
+ */
+function hasStoredCredential(row: ServerAuthRow): boolean {
+  if (row.mode === "token") return !!row.tokenEncrypted;
+  if (row.mode === "ssh-server-key") return !!row.serverKeyPrivateEncrypted;
+  if (row.mode === "ssh-deploy-key") return true;
+  return false;
+}
+
 /**
  * Resolve a per-server GitHub credential for a clone that runs on `serverId`.
  * Returns null when the server has no config (fall through to the shared chain)
@@ -209,7 +233,7 @@ export async function resolveServerGitCredential(opts: {
 }): Promise<BuildGitCredential | null> {
   if (env.CLOUD_MODE) return null;
   const row = await repos.serverGithubAuth.getByServer(opts.serverId);
-  if (!row) return null;
+  if (!row || !hasStoredCredential(row)) return null;
 
   if (row.mode === "token") {
     if (!row.tokenEncrypted) return null;
@@ -252,19 +276,13 @@ export async function resolveServerGitCredential(opts: {
 
 /**
  * Cheap existence check — "does this server have a usable GitHub credential?".
- * Mirrors `resolveServerGitCredential` without decrypting or minting, so
- * preflight reports the SAME verdict the build will reach. Deploy-key mode
- * returns true (the key is minted lazily at deploy — the GitHub API call that
- * could 403 surfaces there, not here).
+ * Same `hasStoredCredential` predicate the resolver gates on, without decrypting
+ * or minting, so preflight reports the verdict the build will reach.
  */
 export async function canResolveServerGitCredential(serverId: string): Promise<boolean> {
   if (env.CLOUD_MODE) return false;
   const row = await repos.serverGithubAuth.getByServer(serverId).catch(() => null);
-  if (!row) return false;
-  if (row.mode === "token") return !!row.tokenEncrypted;
-  if (row.mode === "ssh-server-key") return !!row.serverKeyPrivateEncrypted;
-  if (row.mode === "ssh-deploy-key") return true;
-  return false;
+  return !!row && hasStoredCredential(row);
 }
 
 // ─── Status + disconnect ──────────────────────────────────────────────────────
@@ -278,10 +296,11 @@ export async function getServerGithubStatus(serverId: string) {
   }
   return {
     mode: row.mode,
+    // Same predicate the resolver uses, plus the display-only requirement that
+    // deploy-key mode has actually minted a key (the resolver counts it earlier,
+    // since it mints on demand).
     connected:
-      (row.mode === "token" && !!row.tokenEncrypted) ||
-      (row.mode === "ssh-server-key" && !!row.serverKeyPrivateEncrypted) ||
-      (row.mode === "ssh-deploy-key" && deployKeys.length > 0),
+      hasStoredCredential(row) && (row.mode !== "ssh-deploy-key" || deployKeys.length > 0),
     tokenSource: row.tokenSource ?? null,
     tokenLogin: row.tokenLogin ?? null,
     serverKeyPublic: row.serverKeyPublic ?? null,

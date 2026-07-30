@@ -11,25 +11,12 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { intro, outro, password as passwordPrompt, isCancel, cancel, log } from "@clack/prompts";
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
+import { storedApiPort } from "../lib/ports";
 import { ensureInternalToken } from "./up";
-
-/** The API port the running service resolved to (ports are dynamic; 4000 is only
- *  a preference). Read the remembered port so the reset targets the right one. */
-function resolvedApiPort(): number | undefined {
-  try {
-    return JSON.parse(readFileSync(join(homedir(), ".openship", "ports.json"), "utf8")).api;
-  } catch {
-    return undefined;
-  }
-}
 
 export const resetAdminCommand = new Command("reset-admin-password")
   .description("Reset the local admin login on THIS machine (no sign-in required)")
-  .option("--port <port>", "API port of the running service (default: the resolved port from ~/.openship/ports.json, else 4000)")
+  .option("--port <port>", "API port of the running service (default: the port this install resolved to, else 4000)")
   .option("--email <email>", "Also set the admin email")
   .option("--name <name>", "Also set the admin display name")
   .option("--password <password>", "New password (prompted if omitted)")
@@ -61,7 +48,9 @@ export const resetAdminCommand = new Command("reset-admin-password")
       pw = entered;
     }
 
-    const port = String(opts.port || resolvedApiPort() || 4000);
+    // Ports are dynamic; storedApiPort() is the remembered one (4000 only as the
+    // last-resort default), so the reset targets whichever port this box resolved to.
+    const port = String(opts.port || storedApiPort());
     let res: Response;
     try {
       res = await fetch(`http://127.0.0.1:${port}/api/system/reset-admin-password`, {

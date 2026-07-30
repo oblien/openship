@@ -282,16 +282,17 @@ export type RateLimitPolicyId =
 /**
  * MCP exposure for a route. Presence of this block is the MCP allowlist:
  * routes without `mcp` are never exposed as tools (see modules/mcp/mcp-tools).
- * Co-locating it with the route keeps the description and the body-param schema
- * next to the handler instead of in a detached map.
+ * Co-locating it with the route keeps the description next to the handler
+ * instead of in a detached map.
  */
 export interface McpRouteMeta {
   /** Agent-facing tool description. */
   description: string;
   /**
-   * TypeBox schema for the request body — emitted verbatim as the tool's body
-   * params. TypeBox *is* JSON Schema, so there's no second contract to keep in
-   * sync; reuse the same schema the controller types against.
+   * @deprecated Declare the body schema ONCE via the top-level `spec.body`
+   * field instead — secureRouter auto-wires `tbValidator` from it AND the MCP
+   * layer reads it as the tool's body params, so there is a single source. This
+   * field is kept only as a fallback for the (now migrated) legacy call sites.
    */
   body?: TSchema;
 }
@@ -361,6 +362,16 @@ export interface PermissionSpec {
   localOnly?: boolean;
   /** Opt this route into the MCP tool surface. See {@link McpRouteMeta}. */
   mcp?: McpRouteMeta;
+  /**
+   * TypeBox schema for the JSON request body. Declared ONCE here and consumed
+   * in two places — no duplication:
+   *   1. secureRouter auto-mounts `tbValidator("json", body)` ahead of the
+   *      handlers (so every body-carrying route validates by construction).
+   *   2. The MCP layer emits it verbatim as the tool's `body` params (TypeBox
+   *      *is* JSON Schema, so there's no second contract to keep in sync).
+   * Prefer this over the deprecated `mcp.body`.
+   */
+  body?: TSchema;
 }
 
 export interface PublicSpec {

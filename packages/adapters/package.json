@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./proxy": {
+      "types": "./src/system/proxy/cli.ts",
+      "import": "./src/system/proxy/cli.ts"
     }
   },
   "scripts": {

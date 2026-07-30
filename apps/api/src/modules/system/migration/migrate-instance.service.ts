@@ -27,7 +27,8 @@
 
 import { ensureOpenshipProject } from "./openship-project.service";
 import { runPreflight, type DomainChoice } from "./preflight.service";
-import { dumpRemoteRestore } from "./db-migrate-remote.service";
+import { sealedRemoteImport } from "./db-migrate-remote.service";
+import { probeTarget, TargetIsCloudError } from "./target-probe";
 import { withMigration } from "./with-migration";
 import type { Context } from "hono";
 
@@ -81,6 +82,10 @@ export async function migrateInstanceToServer(
       input,
     },
     async (ctx) => {
+      // (Source is guaranteed non-cloud: exportInstance inside sealedRemoteImport
+      // carries GATE 1 — refuses in CLOUD_MODE — and this route is unmounted on
+      // the SaaS anyway, so no separate source guard is needed here.)
+
       // ── 1. Preflight ──────────────────────────────────────────────────────
       const preflight = await runPreflight({
         serverId: ctx.input.serverId,
@@ -112,8 +117,19 @@ export async function migrateInstanceToServer(
       //       (GET /api/system/migration/probe) that hits
       //       `${migrationTargetUrl}/api/health` and reports up/down.
 
-      // ── 5. Data migration — dump local, scp to remote, restore. ──────────
-      await dumpRemoteRestore({
+      // GATE 3 (target): if the target's API is already reachable and reports
+      // itself as a multi-tenant SaaS, refuse the destructive restore. Non-fatal
+      // when unreachable — the SSH server row is definitionally a self-hosted box
+      // and the target API often isn't up until the deploy (step 3) finishes.
+      const targetProbe = await probeTarget(migrationTargetUrl);
+      if (targetProbe.reachable && targetProbe.cloudMode) {
+        throw new TargetIsCloudError(migrationTargetUrl);
+      }
+
+      // ── 5. Data migration — SEALED export → transfer → import on the target,
+      //       which re-encrypts secrets under its own key (vs the old unsealed
+      //       path that stripped them and made the operator re-link). ──────────
+      await sealedRemoteImport({
         serverId: ctx.input.serverId,
         projectSlug: project.slug,
       });

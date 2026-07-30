@@ -1,7 +1,35 @@
 import { createPlatform, type CloudRuntime } from "@repo/adapters";
-import { getOblienClient, issueNamespaceToken } from "./openship-cloud";
+import { getOblienClient, getNamespaceClient, issueNamespaceToken } from "./openship-cloud";
 import { getRoutingBaseDomain } from "./routing-domains";
 import { safeErrorMessage } from "@repo/core";
+
+/** Normalize a slug the SAME way `syncCloudEdgeProxy` does, so an ownership
+ *  look-up matches the value Oblien actually stored. */
+function normalizeSlug(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/**
+ * Does the caller's OWN Oblien namespace already own `<slug>`? `edgeProxy.list`
+ * is namespace-scoped (see cloud-edge-proxy.service.ts), so a hit means a
+ * redeploy / re-add of a slug this org already holds — available to YOU, not a
+ * cross-namespace conflict. Fail-closed (false) when it can't be confirmed.
+ */
+async function ownsManagedSlug(organizationId: string, rawSlug: string): Promise<boolean> {
+  try {
+    const slug = normalizeSlug(rawSlug);
+    if (!slug) return false;
+    const { client } = await getNamespaceClient(organizationId);
+    const { proxies } = await client.edgeProxy.list();
+    return proxies.some((p) => p.slug === slug);
+  } catch {
+    return false;
+  }
+}
 
 /** DNS verification state + required records for a custom domain. */
 export interface CustomDomainCheck {
@@ -79,12 +107,16 @@ export async function runCloudPreflight(
     try {
       const master = getOblienClient();
       const slug = await master.domain.checkSlug({ slug: opts.slug, domain: baseDomain });
-      result.slug = slug.available
-        ? { available: true }
-        : {
-            available: false,
-            message: `"${opts.slug}.${baseDomain}" is already taken. Choose a different subdomain.`,
-          };
+      // `checkSlug` is OWNER-BLIND (global zone read, no namespace), so a slug
+      // this org ALREADY owns reads as "taken". Before failing, confirm it isn't
+      // ours — a redeploy / re-add of your own slug must NOT be blocked.
+      result.slug =
+        slug.available || (await ownsManagedSlug(organizationId, opts.slug))
+          ? { available: true }
+          : {
+              available: false,
+              message: `"${opts.slug}.${baseDomain}" is already taken by another account. Choose a different subdomain.`,
+            };
     } catch (err) {
       const message = safeErrorMessage(err);
       console.error("[CLOUD] Preflight slug check failed", { slug: opts.slug, error: message });

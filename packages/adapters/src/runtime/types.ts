@@ -82,6 +82,15 @@ export type RuntimeCapability =
    */
   | "deploymentContainerQuery"
   /**
+   * Runtime can enumerate EVERY container on its host, label-agnostic, with
+   * live state — `docker ps -a`. Unlike `deploymentContainerQuery` this is not
+   * scoped by an `openship.*` label, which is exactly why the live service-state
+   * read needs it: a migration-attached container keeps its ORIGINAL labels
+   * (immutable in place), so a label-filtered query can never see it. Docker
+   * implements this; Cloud/Bare don't (no host container set).
+   */
+  | "hostContainerQuery"
+  /**
    * Runtime can hand back a command runner that executes INSIDE a running
    * deployment (not on the build/daemon host). Powers the advisory post-deploy
    * port probe (`cat /proc/net/tcp*`). Docker exec (Tty:false), Oblien workspace
@@ -156,6 +165,16 @@ export interface RuntimeAdapter {
     deploymentId: string,
   ): Promise<Array<{ containerId: string; status: ContainerStatus; serviceName?: string }>>;
 
+  /**
+   * Every container on this runtime's host (running or not), label-agnostic —
+   * the raw `docker ps -a` view. The live service-state read matches these
+   * against the project's service rows by identity (labels, container name,
+   * tracked id), so a container Openship adopted in place — carrying another
+   * project's labels — still reports its true state. Only present when
+   * `supports("hostContainerQuery")`.
+   */
+  listAllContainers?(): Promise<DockerContainerSummary[]>;
+
   // ── Observability ────────────────────────────────────────────────────
 
   /** Get the current status and metadata */
@@ -194,6 +213,26 @@ export interface RuntimeAdapter {
    * this port?" but not proof it's this specific process.
    */
   inContainerExecutor?(containerId: string): Promise<PortProbeExecutor>;
+
+  /**
+   * Attach this project's containers to additional networks (by name) — for
+   * cross-project service links, so a consumer joins a linked database app's
+   * `openship-<slug>` network and resolves its service alias with no public
+   * port. Best-effort + idempotent. Optional (docker only; cloud/bare skip —
+   * cloud uses public host:port, its private-link mesh is group-scoped).
+   */
+  attachToExternalNetworks?(projectId: string, networkNames: string[]): Promise<void>;
+
+  /**
+   * Join already-running containers (migration attach-live reuse) to a project's
+   * `openship-<slug>` network with a DNS alias each, so a natively-deployed
+   * service in the SAME project resolves them by name (reused `postgres` reachable
+   * from a freshly-built `web`). Additive network-connect — no restart, no volume
+   * touch. Best-effort + idempotent. Optional (docker only). */
+  joinServiceGroupContainers?(
+    slug: string,
+    members: Array<{ containerId: string; alias: string }>,
+  ): Promise<void>;
 
   // ── Rollback primitives ──────────────────────────────────────────────
   //
@@ -524,6 +563,9 @@ export interface DockerContainerSummary {
   labels: Record<string, string>;
   ports: DockerPortBinding[];
   mounts: DockerMount[];
+  /** First network IP the list view reports — the internal address siblings
+   *  reach this container on. Absent for a non-running container. */
+  ip?: string;
   /** com.docker.compose.project label, if the container is compose-managed. */
   composeProject?: string;
   /** com.docker.compose.service label, if the container is compose-managed. */

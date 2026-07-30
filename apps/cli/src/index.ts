@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { Command } from "commander";
 import { setJsonMode } from "./lib/output";
 
@@ -11,6 +9,7 @@ import { openCommand } from "./commands/open";
 // Run & workspace
 import { upCommand } from "./commands/up";
 import { stopCommand } from "./commands/stop";
+import { uninstallCommand } from "./commands/uninstall";
 import { initCommand } from "./commands/init";
 import { configCommand } from "./commands/config";
 import { contextCommand } from "./commands/context";
@@ -44,8 +43,9 @@ import { updateCommand } from "./commands/update";
 import { cacheCommand } from "./commands/cache";
 
 // Interactive setup / control (bare `openship`)
-import { runWizard, runControl } from "./commands/wizard";
+import { runWizard, runControl, isSetupInProgress } from "./commands/wizard";
 import { serviceStatus } from "./lib/service";
+import { readInstallMethod } from "./lib/compose";
 
 // Injected at build time by tsup (define). Always present in the built binary.
 declare const __CLI_VERSION__: string;
@@ -63,13 +63,24 @@ program
   // Bare `openship` (no subcommand): setup wizard on a fresh box, or the control
   // panel once a service is already installed (manage instead of starting over).
   .action(async () => {
-    if (serviceStatus().installed) await runControl();
+    // A service is installed AND setup finished → manage it. If a prior setup
+    // was interrupted (service installed but never completed), resume the wizard
+    // instead of showing the control panel as if the install were done.
+    //
+    // "installed" must cover a Docker Compose install too: that path installs NO
+    // systemd/launchd unit (the stack restarts via Docker's own policy), so
+    // serviceStatus().installed is false for it. Without the readInstallMethod
+    // check, re-running `openship` after a finished compose install (the Linux
+    // default) drops back into the full setup wizard instead of the control panel.
+    const installed = serviceStatus().installed || readInstallMethod() === "compose";
+    if (installed && !isSetupInProgress()) await runControl();
     else await runWizard();
   });
 
 // Run the platform / auth / workspace
 program.addCommand(upCommand);
 program.addCommand(stopCommand);
+program.addCommand(uninstallCommand);
 program.addCommand(installCommand);
 program.addCommand(updateCommand);
 program.addCommand(openCommand);

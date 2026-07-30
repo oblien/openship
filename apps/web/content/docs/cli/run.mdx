@@ -9,8 +9,9 @@ your deployed apps. Start the server, keep it up to date, and check that it's he
 <Callout title="Two different things called “install”" type="info">
 There are two ways to run Openship, and they don't overlap:
 
-- **`openship up`** runs the self-hosted **server** (API + dashboard) from the globally-installed CLI. This is
-  what most self-hosters want. `openship update` keeps it current.
+- **`openship`** (no arguments) is how most self-hosters run the **server** (API + dashboard) — a guided setup
+  that creates your admin and installs it as a service. `openship up` is the same install *without* the prompts
+  (headless / CI); `openship update` keeps either current.
 - **`openship install`** downloads the desktop **app** (a `.dmg` / `.AppImage` / `.zip`) — a packaged,
   double-click version for a single machine. It's a separate artifact from the CLI.
 </Callout>
@@ -84,9 +85,12 @@ openship up --dry-run
 
 | Flag | Purpose | Default |
 |---|---|---|
+| `--compose` | Install via Docker Compose (published images: postgres + redis + api + dashboard + edge on `:80/:443`). | default when Docker is present on Linux |
+| `--bare` | Install as the bare process service (embedded DB, no Docker). Required today for a fully headless **custom**-domain install. | default off Linux / without Docker |
 | `--port <port>` | API port to listen on. | `4000` |
 | `--data-dir <dir>` | Directory for the embedded database. | `~/.openship/data` |
 | `--dashboard-port <port>` | Dashboard port. | `3001` |
+| `--host <addr>` | Bind the dashboard to this interface so an upstream reverse proxy or another LAN host can reach it (e.g. `0.0.0.0` or a LAN IP). The API stays on loopback. A concrete IP auto-trusts that browser origin for login; for `0.0.0.0` or a domain also pass `--public-url` (or set `OPENSHIP_EXTRA_TRUSTED_ORIGINS`). | `127.0.0.1` |
 | `--no-ui` | Run the API only — don't download or serve the dashboard. | — |
 | `--ui-version <tag>` | Dashboard release tag to run. | this CLI's version |
 | `-f`, `--foreground` | Run attached in this terminal instead of as a background service. | — |
@@ -95,6 +99,14 @@ openship up --dry-run
 | `--trust-proxy` | Trust the `X-Real-IP` set by a reverse proxy in front (the proxy MUST overwrite it with the real client IP, e.g. `proxy_set_header X-Real-IP $remote_addr`) — enables per-client rate limiting. | — |
 | `--managed-edge` | Install OpenResty + a free Let's Encrypt cert on this box and route `--public-url`'s domain to the dashboard — no separate reverse proxy needed. | — |
 | `--acme-email <email>` | Contact email for the Let's Encrypt certificates (managed edge). | — |
+| `--non-interactive`, `--yes` | Headless install: after the service starts, create the admin + register the domain from the flags below — no prompts. Missing/invalid flags exit non-zero. | — |
+| `--admin-email <email>` | Admin email — **required** for a headless install. | — |
+| `--admin-name <name>` | Admin display name. | email local-part |
+| `--admin-password <pw>` | Admin password (min 8). Prefer the `OPENSHIP_ADMIN_PASSWORD` env var (keeps it out of shell history). | — |
+| `--domain-kind <kind>` | Headless domain: `byo` · `custom` · `free` · `none`. | `byo` if `--public-url`, else `none` |
+| `--hostname <host>` | Hostname for `byo`/`custom` (or derived from `--public-url`). | — |
+| `--slug <slug>` | Free `.opsh.io` subdomain for `--domain-kind free` (box must already be Cloud-connected). | — |
+| `--edge <action>` | `migrate` · `takeover` · `cancel` — pre-answer the `:80/:443` takeover (custom domain / Compose). | prompt, else cancel |
 
 <Callout title="The dashboard is downloaded on first run">
 Unless you pass `--no-ui`, the dashboard bundle is lazy-downloaded from GitHub releases the first time you run
@@ -107,6 +119,14 @@ retry `openship up`, pass `--no-ui`, or use `openship install` for the desktop a
 bound to loopback (only the dashboard's same-origin proxy reaches it — nothing but the dashboard is exposed).
 Put an HTTPS reverse proxy (Caddy, nginx, Cloudflare) in front of the dashboard port and add `--trust-proxy`.
 The guided `openship` setup walks you through all of this.
+</Callout>
+
+<Callout title="Login rejected after binding remotely?" type="warn">
+Openship checks the browser's `Origin` against a trusted list. When you bind to `0.0.0.0` or a domain **without**
+`--public-url`, the login `POST` is rejected (403) because that origin isn't trusted. Fix it by passing
+`--public-url` (its origin is trusted automatically), binding `--host` to a **concrete** LAN IP (that exact
+`http://IP:port` origin is trusted automatically), or setting `OPENSHIP_EXTRA_TRUSTED_ORIGINS` to the exact
+browser origin(s) you use, comma-separated.
 </Callout>
 
 ## `openship stop`

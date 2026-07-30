@@ -24,7 +24,7 @@
 
 import crypto from "node:crypto";
 import { repos, type BackupRun, type BackupRestoreStatus } from "@repo/db";
-import { containerIdForService } from "../services/service-container";
+import { liveContainerIdForService } from "../services/service-container";
 import {
   resolveDestination,
   resolveExecutor,
@@ -41,6 +41,7 @@ import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { toAdapterRow } from "../backup-destinations/hydrate-server";
 import { restoreRunBus } from "./restore.sse";
+import { notification } from "../../lib/notification-dispatcher";
 
 const TRUNCATE_ERROR = 4096;
 
@@ -70,6 +71,15 @@ export class RestoreOrchestrator {
     if (sourceRun.deletedAt) {
       throw new Error("This backup has been purged — nothing to restore");
     }
+
+    // Cross-tenant guard (fail fast): the run's destination MUST belong to the
+    // run's own org. A run whose destinationId was planted (e.g. via a crafted
+    // ingest dump) to point at another tenant's backup_destination would
+    // otherwise cause us to load + decrypt that victim's storage credentials.
+    // Re-checked at every credential-load site below (assertDestinationOrg).
+    const destForOrgCheck = await repos.backupDestination.findById(sourceRun.destinationId!);
+    if (!destForOrgCheck) throw new Error("Backup destination not found");
+    this.assertDestinationOrg(destForOrgCheck, sourceRun.organizationId);
 
     const mode = opts.mode ?? "in_place";
     if (mode === "to_fork" && !opts.forkMailServerId) {
@@ -174,6 +184,25 @@ export class RestoreOrchestrator {
 
   // ── Internal phases ──────────────────────────────────────────────
 
+  /**
+   * Defense-in-depth cross-tenant guard: a backup destination may only be used
+   * by a run/restore in the SAME org. Mirrors the backup orchestrator's
+   * project.org === destination.org invariant (backup.orchestrator.ts). Throws
+   * a generic "not found" so a foreign destinationId can't be probed. Guards the
+   * credential-decrypt sites (toAdapterRow → resolveDestination) against a
+   * planted cross-tenant destinationId that the dump self-containment check
+   * (assertDumpSelfContained) would already reject at ingest — this is the
+   * runtime backstop.
+   */
+  private assertDestinationOrg(
+    destinationRow: { organizationId: string },
+    expectedOrgId: string,
+  ): void {
+    if (destinationRow.organizationId !== expectedOrgId) {
+      throw new Error("Backup destination not found");
+    }
+  }
+
   private async runPrepare(restoreId: string): Promise<void> {
     try {
       const restore = await repos.backupRestore.findById(restoreId);
@@ -188,6 +217,7 @@ export class RestoreOrchestrator {
         restore.destinationId,
       );
       if (!destinationRow) throw new Error("Destination disappeared");
+      this.assertDestinationOrg(destinationRow, restore.organizationId);
 
       const adapterRow = await toAdapterRow(destinationRow);
       const destination = resolveDestination(adapterRow);
@@ -251,6 +281,7 @@ export class RestoreOrchestrator {
 
       const destinationRow = await repos.backupDestination.findById(restore.destinationId);
       if (!destinationRow) throw new Error("Destination disappeared");
+      this.assertDestinationOrg(destinationRow, restore.organizationId);
 
       const adapterRow = await toAdapterRow(destinationRow);
       const destination = resolveDestination(adapterRow);
@@ -375,6 +406,32 @@ export class RestoreOrchestrator {
     } catch {
       // bus failures never block the FSM
     }
+
+    // Notify on the terminal restore outcome (best-effort; never blocks the
+    // FSM). `cancelled` is user-initiated — no notification. succeeded/failed
+    // both map to the "Restore completed" category via the dispatcher.
+    if (status === "succeeded" || status === "failed" || status === "server_error") {
+      try {
+        const row = await repos.backupRestore.findById(restoreId);
+        if (row) {
+          const project = await repos.project.findById(row.projectId).catch(() => null);
+          notification.emit({
+            organizationId: row.organizationId,
+            eventType: status === "succeeded" ? "backup_restore.completed" : "backup_restore.failed",
+            resourceType: "backup_restore",
+            resourceId: restoreId,
+            payload: {
+              projectName: project?.name ?? null,
+              status,
+              bytesRestored: typeof patch?.bytesRestored === "number" ? patch.bytesRestored : null,
+              errorMessage: typeof patch?.errorMessage === "string" ? patch.errorMessage : null,
+            },
+          });
+        }
+      } catch (err) {
+        console.error(`[restore-orchestrator] notify failed for ${restoreId}: ${safeErrorMessage(err)}`);
+      }
+    }
   }
 
   /**
@@ -447,7 +504,13 @@ export class RestoreOrchestrator {
     let containerId: string | null = null;
     if (project.activeDeploymentId) {
       const dep = await repos.deployment.findById(project.activeDeploymentId);
-      if (dep) containerId = await containerIdForService(dep, serviceRow);
+      // Verified against the host — a restore into a container a redeploy has
+      // since replaced would write into nothing (or the wrong thing).
+      if (dep) {
+        containerId = await liveContainerIdForService(project, dep, serviceRow, {
+          projectId: project.id,
+        });
+      }
     }
 
     return {

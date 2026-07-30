@@ -24,6 +24,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { advisoryManifestUrl, parseManifest, type Advisory, type AdvisoryManifest } from "@repo/core";
 
 const RELEASES_API = "https://api.github.com/repos/oblien/openship/releases/latest";
 
@@ -37,16 +38,25 @@ export interface UpdateInfo {
   version: string;
   notes: string;
   asset: UpdateAsset;
+  /**
+   * The RELEASE ADVISORY that authorizes interrupting the user at launch, or
+   * null for a routine release: installable from Settings → Updates, but no
+   * modal, no notification. Comes straight from the advisory manifest via
+   * `resolveDesktopUpdate` — this process never decides it for itself.
+   */
+  announcement: Advisory | null;
 }
 export type UpdateCheck = UpdateInfo | { available: false };
 
 /**
- * Ask GitHub for the latest release; return update info if it's newer than
- * the running version and has an installer for this platform. Never throws —
- * a failed check (offline, rate-limited) resolves to "no update". The asset
- * selection + version gate live in @repo/core (`resolveDesktopUpdate`) so they
- * are unit-tested against synthetic release payloads — that is the single
- * source of truth for which asset each platform pulls.
+ * Ask GitHub for the latest release + the advisory manifest pinned to its tag,
+ * and hand both to `resolveDesktopUpdate`. Never throws — a failed check
+ * (offline, rate-limited) resolves to "no update".
+ *
+ * This function is I/O only. The whole decision — which asset this platform
+ * pulls, whether the release is newer, and whether an advisory authorizes
+ * interrupting the user — lives in @repo/core, unit-tested against synthetic
+ * payloads. Nothing here re-checks or re-derives any of it.
  */
 export async function checkForUpdate(): Promise<UpdateCheck> {
   try {
@@ -64,9 +74,32 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
       platform: process.platform,
       arch: process.arch,
       currentVersion: app.getVersion(),
+      manifest: await fetchManifest((data?.tag_name ?? "").trim()),
     });
   } catch {
     return { available: false };
+  }
+}
+
+/**
+ * The advisory manifest for a release tag, validated through the same
+ * `parseManifest` the dashboard uses (it's untrusted third-party JSON as far as
+ * any client is concerned).
+ *
+ * Fails CLOSED: no tag, unreachable, or malformed → null → no announcement → we
+ * stay quiet. A broken manifest must never become an unexpected modal on launch.
+ */
+async function fetchManifest(tag: string): Promise<AdvisoryManifest | null> {
+  if (!tag) return null;
+  try {
+    const res = await net.fetch(advisoryManifestUrl(tag), {
+      headers: { Accept: "application/json", "User-Agent": "Openship-Desktop" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    return parseManifest(await res.json());
+  } catch {
+    return null;
   }
 }
 

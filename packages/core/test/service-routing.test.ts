@@ -4,6 +4,8 @@ import {
   firstServicePort,
   internalServiceAddress,
   resolvePublicUrlPlaceholders,
+  resolveServiceHostnameLabel,
+  MAX_SERVICE_LABEL_LENGTH,
 } from "../src/service-routing";
 
 describe("firstServicePort", () => {
@@ -77,5 +79,36 @@ describe("resolvePublicUrlPlaceholders", () => {
     );
     expect(out.A).toBe("");
     expect(out.B).toBe("");
+  });
+});
+
+describe("free-subdomain length limit", () => {
+  // The cloud rejects a slug past 48 chars with `invalid_slug`, and the box's
+  // own edge fails `nginx -t` on a server_name past ~63 — so a generated label
+  // that long never routes anywhere. Real case: webmail projects carry a full
+  // server UUID in their slug.
+  const longProject = "webmail-46f32461-4438-4a61-b54d-2408d0f76d62";
+
+  it("clamps a generated label to the namespace limit", () => {
+    const label = resolveServiceHostnameLabel(longProject, "zero-server");
+    expect(label.length).toBeLessThanOrEqual(MAX_SERVICE_LABEL_LENGTH);
+    expect(label).toMatch(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/);
+  });
+
+  it("is stable across calls and distinct for labels sharing a prefix", () => {
+    const a = resolveServiceHostnameLabel(longProject, "zero-server");
+    const b = resolveServiceHostnameLabel(longProject, "zero-server");
+    const other = resolveServiceHostnameLabel(`${longProject}-two`, "zero-server");
+    expect(a).toBe(b);
+    expect(a).not.toBe(other);
+  });
+
+  it("leaves short labels untouched", () => {
+    expect(resolveServiceHostnameLabel("shop", "api")).toBe("shop-api");
+  });
+
+  it("does not silently rewrite an explicit subdomain", () => {
+    const explicit = "a".repeat(60);
+    expect(resolveServiceHostnameLabel(longProject, "zero-server", explicit)).toBe(explicit);
   });
 });

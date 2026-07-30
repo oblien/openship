@@ -1,13 +1,30 @@
 import "./_setup-env";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-const dns = vi.hoisted(() => ({
-  resolve4: vi.fn(),
-  resolve6: vi.fn(),
-  resolveMx: vi.fn(),
-  resolveTxt: vi.fn(),
-  reverse: vi.fn(),
-}));
+const dns = vi.hoisted(() => {
+  const fns = {
+    resolve4: vi.fn(),
+    resolve6: vi.fn(),
+    resolveCname: vi.fn(),
+    resolveMx: vi.fn(),
+    resolveTxt: vi.fn(),
+    reverse: vi.fn(),
+    setServers: vi.fn(),
+  };
+  // The scan queries PUBLIC resolvers explicitly rather than the system stub
+  // (which honours the mail host's own /etc/hosts). The class hands back the
+  // same spies so every existing expectation still applies.
+  class Resolver {
+    setServers = fns.setServers;
+    resolve4 = fns.resolve4;
+    resolve6 = fns.resolve6;
+    resolveCname = fns.resolveCname;
+    resolveMx = fns.resolveMx;
+    resolveTxt = fns.resolveTxt;
+    reverse = fns.reverse;
+  }
+  return { ...fns, Resolver };
+});
 
 vi.mock("node:dns/promises", () => dns);
 
@@ -35,6 +52,13 @@ const state = {
       type: "TXT",
       name: "_dmarc.example.com",
       value: "v=DMARC1; p=reject",
+      required: true,
+    },
+    dkim: {
+      type: "TXT",
+      name: "dkim._domainkey.example.com",
+      // Long enough to be chunked in DNS, like a real 2048-bit key.
+      value: `v=DKIM1;p=${"A".repeat(300)}`,
       required: true,
     },
   },
@@ -218,5 +242,52 @@ describe("scanDns DMARC checks", () => {
 
     expect(dmarc?.status).toBe("pass");
     expect(dmarc?.actual).toBe("v=DMARC1; p=reject");
+  });
+});
+
+describe("DKIM key comparison", () => {
+  const expected = `v=DKIM1;p=${"A".repeat(300)}`;
+  const dkimOf = async () =>
+    (await scanDns("srv_test")).checks.find((c) => c.key === "dkim");
+
+  beforeEach(() => {
+    dns.resolve4.mockRejectedValue(Object.assign(new Error("x"), { code: "ENOTFOUND" }));
+    dns.resolve6.mockRejectedValue(Object.assign(new Error("x"), { code: "ENOTFOUND" }));
+    dns.resolveMx.mockRejectedValue(Object.assign(new Error("x"), { code: "ENOTFOUND" }));
+    dns.reverse.mockRejectedValue(Object.assign(new Error("x"), { code: "ENOTFOUND" }));
+  });
+
+  test("matches a key returned as one record split into DNS strings", async () => {
+    // Node's normal shape: one record, two 255-byte strings.
+    dns.resolveTxt.mockResolvedValue([[expected.slice(0, 255), expected.slice(255)]]);
+    expect((await dkimOf())?.status).toBe("pass");
+  });
+
+  test("matches a key the resolver splits across separate records", async () => {
+    // Docker's embedded DNS shape — the case that produced a false mismatch
+    // against a byte-identical published key.
+    dns.resolveTxt.mockResolvedValue([[expected.slice(0, 255)], [expected.slice(255)]]);
+    expect((await dkimOf())?.status).toBe("pass");
+  });
+
+  test("still flags a genuinely different key", async () => {
+    dns.resolveTxt.mockResolvedValue([[`v=DKIM1;p=${"B".repeat(300)}`]]);
+    expect((await dkimOf())?.status).toBe("warn");
+  });
+});
+
+describe("resolver selection", () => {
+  test("scans public resolvers, not the host's stub", async () => {
+    // The mail host's /etc/hosts carries `127.0.1.1 mail.<domain>` (written by
+    // the hostname step), which the system stub would synthesize into an A
+    // record and report as a mismatch on correct DNS.
+    //
+    // setServers runs once at module load, so re-import on a fresh registry
+    // rather than depending on a spy the other suites' clearAllMocks wiped.
+    vi.resetModules();
+    dns.setServers.mockClear();
+    await import("../../../src/modules/mail/admin/dns-scan.service");
+
+    expect(dns.setServers).toHaveBeenCalledWith(expect.arrayContaining(["1.1.1.1"]));
   });
 });

@@ -194,6 +194,14 @@ export class DockerBackupExecutor implements BackupExecutor {
     const hostConfig: Dockerode.HostConfig = {
       Binds: [`${source.source}:/mnt:ro`],
       AutoRemove: true,
+      // The archive streams over `attach()` below — the daemon's default
+      // json-file driver would ALSO write every byte of it to
+      // /var/lib/docker/containers as a log. That's a second copy of the whole
+      // backup, and worse than a copy: json-file escapes binary, so a 4.6 GB
+      // volume ballooned to a 12 GB log file here. Backups then spike the
+      // host's disk by more than the data they read and only release it when
+      // the helper exits. Nothing ever reads these logs.
+      LogConfig: { Type: "none", Config: {} },
     };
 
     const helper = await this.dockerode.createContainer({

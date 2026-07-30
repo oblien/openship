@@ -136,7 +136,6 @@ POST /api/deployments/build/access
     services: { type: 'BuildService[]', description: 'Compose / multi-service definitions (services mode).' },
     cloudResourceTier: { type: '"micro" | "low" | "medium" | "high" | "custom"', description: 'Cloud resource tier.' },
     cloudResourceCustom: { type: '{ cpuCores; memoryMb; diskMb }', description: "CPU/RAM/disk when cloudResourceTier = 'custom'." },
-    forwardGitCredentials: { type: 'boolean', description: 'Forward the caller git credentials to the build.' },
     cloneStrategy: { type: '"api-host" | "server"', description: 'Where the repo clone happens.' },
   }}
 />

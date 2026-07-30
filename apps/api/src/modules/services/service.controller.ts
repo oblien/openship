@@ -54,6 +54,24 @@ export async function getById(c: Context) {
   }
 }
 
+// ─── Volume disk usage ───────────────────────────────────────────────────────
+
+export async function volumeSizes(c: Context) {
+  const ctx = getRequestContext(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+
+  try {
+    const result = await serviceService.getServiceVolumeSizes(ctx, projectId, serviceId);
+    return c.json({ success: true, ...result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to measure volume sizes";
+    const status =
+      (err instanceof AppError && err.statusCode === 404) || message === "service-not-found" ? 404 : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+}
+
 // ─── Create / update / delete service config ─────────────────────────────────
 
 export async function create(c: Context) {
