@@ -530,6 +530,9 @@ export async function linkProjectRepo(
     gitRepo: repo,
     gitBranch: defaultBranch,
     gitUrl,
+    // Linking a local project changes its source of truth. Keeping the old
+    // path would make the runtime transfer local files and skip the Git clone.
+    localPath: null,
   };
 
   const strategy = await resolveWebhookStrategy(project!);
@@ -565,6 +568,7 @@ export async function linkProjectRepo(
       gitOwner: owner,
       gitRepo: repo,
       gitUrl,
+      localPath: null,
       installationId: (gitFields.installationId as number | undefined) ?? input.installationId,
       ...(typeof gitFields.webhookId === "number" ? { webhookId: gitFields.webhookId } : {}),
     };
@@ -1596,4 +1600,3 @@ export async function getLatestDeploymentSession(
       : null,
   };
 }
-

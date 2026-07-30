@@ -458,6 +458,7 @@ async function reconcileComposeDrift(
       repo: project.gitRepo,
       branch,
       ctx,
+      rootDirectory: project.rootDirectory || undefined,
     });
     const services = info.services ?? [];
     if (services.length === 0) return;

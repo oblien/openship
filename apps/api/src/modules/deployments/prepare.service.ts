@@ -56,13 +56,15 @@ export type Source =
       owner: string;
       repo: string;
       branch?: string;
+      /** Select a configured project root instead of running repository-wide detection. */
+      rootDirectory?: string;
       /** Request-scoped context — required when source === "github" so
        *  getRepository can resolve org-scoped install + cache keys.
        *  Optional in the type for back-compat with old callers; the
        *  github resolver throws when it's missing. */
       ctx?: RequestContext;
     }
-  | { source: "local"; path: string };
+  | { source: "local"; path: string; rootDirectory?: string };
 
 export interface ProjectInfo {
   repository: {
@@ -395,6 +397,7 @@ interface SelectedProjectSnapshot {
 async function selectProjectSnapshot(
   reader: ProjectReader,
   rootSnapshot: ProjectRootSnapshotInput,
+  requestedRootDirectory?: string,
 ): Promise<SelectedProjectSnapshot> {
   const treeEntries = await reader.listTree().catch(() => [] as RepoTreeEntry[]);
   const hints = discoverProjectRootHints(
@@ -407,11 +410,38 @@ async function selectProjectSnapshot(
     hints.map((hint) => loadCandidateSnapshot(reader, hint.rootDirectory, hint.source)),
   )).filter((candidate): candidate is ProjectRootSnapshotInput => Boolean(candidate));
 
+  const normalizedRequestedRoot = normalizeProjectRootDirectory(requestedRootDirectory);
+  let requestedSnapshot: ProjectRootSnapshotInput | null | undefined;
+
+  if (requestedRootDirectory !== undefined) {
+    requestedSnapshot = normalizedRequestedRoot
+      ? candidates.find(
+          (candidate) =>
+            normalizeProjectRootDirectory(candidate.rootDirectory) === normalizedRequestedRoot,
+        ) ?? await loadCandidateSnapshot(reader, normalizedRequestedRoot, "discovered")
+      : rootSnapshot;
+
+    if (!requestedSnapshot) {
+      throw new Error(`Configured root directory "${requestedRootDirectory}" was not found`);
+    }
+  }
+
+  const selectionCandidates =
+    requestedSnapshot &&
+    !candidates.some(
+      (candidate) =>
+        normalizeProjectRootDirectory(candidate.rootDirectory) ===
+        normalizeProjectRootDirectory(requestedSnapshot.rootDirectory),
+    )
+      ? [...candidates, requestedSnapshot]
+      : candidates;
   const selected = applyWorkspaceContext(
     rootSnapshot,
-    selectPreferredProjectRoot(rootSnapshot, candidates),
+    requestedSnapshot
+      ? selectPreferredProjectRoot(requestedSnapshot, [])
+      : selectPreferredProjectRoot(rootSnapshot, candidates),
   );
-  const monorepo = discoverMonorepoApps(rootSnapshot, candidates);
+  const monorepo = discoverMonorepoApps(rootSnapshot, selectionCandidates);
 
   return { selected, monorepo };
 }
@@ -453,7 +483,13 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     if (!input.ctx) {
       throw new Error("resolveProjectInfo(github): ctx is required");
     }
-    return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch);
+    return resolveFromGitHub(
+      input.ctx,
+      input.owner,
+      input.repo,
+      input.branch,
+      input.rootDirectory,
+    );
   }
 
   if (env.CLOUD_MODE) {
@@ -462,7 +498,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
 
   // Dynamic import keeps local-source (node:fs) out of the cloud module graph.
   const { resolveFromLocal } = await import("./local-source");
-  return resolveFromLocal(input.path);
+  return resolveFromLocal(input.path, input.rootDirectory);
 }
 
 type RepoMeta = Parameters<typeof toProjectInfo>[0];
@@ -475,9 +511,14 @@ export async function resolveFromReader(
   reader: ProjectReader,
   repoMeta: RepoMeta,
   selectedBranch: string,
+  requestedRootDirectory?: string,
 ): Promise<ProjectInfo> {
   const rootSnapshot = await readProjectSnapshot(reader);
-  const { selected, monorepo } = await selectProjectSnapshot(reader, rootSnapshot);
+  const { selected, monorepo } = await selectProjectSnapshot(
+    reader,
+    rootSnapshot,
+    requestedRootDirectory,
+  );
   const [composeContent, composeEnvContent] = await Promise.all([
     readComposeText(reader, selected.rootDirectory, selected.files),
     readProjectText(reader, selected.rootDirectory, ".env"),
@@ -494,6 +535,7 @@ async function resolveFromGitHub(
   owner: string,
   repo: string,
   branch?: string,
+  rootDirectory?: string,
 ): Promise<ProjectInfo> {
   const repository = await githubService.getRepository(ctx, owner, repo, {
     withBranches: true,
@@ -512,6 +554,7 @@ async function resolveFromGitHub(
     createGitHubReader(ctx, owner, repo, selectedBranch),
     repository,
     selectedBranch,
+    rootDirectory,
   );
 }
 
