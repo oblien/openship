@@ -91,6 +91,14 @@ export {
   type SwarmEdgeStatus,
   type EnsureSwarmEdgeInput,
 } from "./runtime/swarm/edge";
+export {
+  SwarmEdgeRouteManager,
+  SwarmEdgeRouteError,
+  renderSwarmEdgeRoute,
+  swarmEdgeRouteConfigTarget,
+  type SwarmEdgeRouteInput,
+  type SwarmEdgeCertificateStatus,
+} from "./runtime/swarm/edge-routes";
 export { SwarmProbeError, normalizeSwarmManagerInfo } from "./runtime/swarm/normalize";
 export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./runtime/swarm/health";
 export type {

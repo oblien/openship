@@ -1,11 +1,12 @@
 import type { Project } from "@repo/db";
 import type { ManualCert, SslProvider, SslResult } from "@repo/adapters";
 import { ForbiddenError, NotFoundError, SYSTEM } from "@repo/core";
-import { repos } from "@repo/db";
+import { repos, type Domain } from "@repo/db";
 import { env } from "../config/env";
 import { platform } from "./controller-helpers";
 import { createProvisionLock } from "./provision-lock";
 import { resolveDeploymentPlatform, type DeploymentMeta } from "./deployment-runtime";
+import { resolveSwarmEdgeSslProvider } from "../modules/swarm/swarm-edge-ssl";
 
 /**
  * The per-domain issuance lock key. EVERY path that can open an ACME order
@@ -184,7 +185,10 @@ async function persistSslResult(
  * Falls back to the global platform when the project has no active deployment
  * yet (single-box installs resolve to the same local provider either way).
  */
-async function resolveSslProvider(project: Project): Promise<SslProvider> {
+async function resolveSslProvider(project: Project, domainRecord?: Domain): Promise<SslProvider> {
+  if (project.orchestratorMode === "swarm" && domainRecord) {
+    return resolveSwarmEdgeSslProvider(project, domainRecord);
+  }
   const depId = project.activeDeploymentId;
   if (depId) {
     const dep = await repos.deployment.findById(depId);
@@ -269,7 +273,7 @@ export async function manageDomainSsl(
     return notLocalResult(domainRecord.hostname);
   }
 
-  const ssl = await resolveSslProvider(project);
+  const ssl = await resolveSslProvider(project, domainRecord);
   // `verify` is a read-only cert inspection (no ACME) → no lock. `provision`/
   // `renew` can open an ACME order, so serialize them per-hostname on the shared
   // issue lock — this is what stops the ssl:renew scheduler (which calls us with
@@ -290,8 +294,17 @@ export async function manageDomainSsl(
       // The www row carries its own flags — a bare domain we issue for can have an
       // externally-terminated or manually-certed www — so it gets the same gate.
       if (!tlsIssuedElsewhere(wwwRecord)) {
-        // Same project → same host → reuse the resolved provider.
-        const wwwResult = await runAction(wwwRecord.hostname, opts.action);
+      // Same project → same host → reuse the resolved provider.
+        // A Swarm Edge provider is intentionally bound to one validated
+        // service/domain pair, unlike the host-wide OpenResty provider.
+        const wwwSsl = project.orchestratorMode === "swarm"
+          ? await resolveSslProvider(project, wwwRecord)
+          : ssl;
+        const wwwResult = opts.action === "verify"
+          ? await executeSslAction(wwwSsl, wwwRecord.hostname, opts.action)
+          : await createProvisionLock(sslIssueLockKey(wwwRecord.hostname)).run(
+              () => executeSslAction(wwwSsl, wwwRecord.hostname, opts.action),
+            );
         await persistSslResult(wwwRecord.id, wwwRecord.sslStatus, wwwResult);
       }
     }
@@ -320,7 +333,7 @@ export async function provisionDomainCertForVerify(
     projectId: opts.projectId,
     allowUnverified: true,
   });
-  const ssl = await resolveSslProvider(project);
+  const ssl = await resolveSslProvider(project, domainRecord);
 
   // Serialize issuance per-hostname, and re-check the cert INSIDE the lock.
   // This closes the TOCTOU: two concurrent Verify hits (or Verify racing the
@@ -367,7 +380,7 @@ export async function installDomainCert(
     projectId: opts.projectId,
     allowUnverified: opts.allowUnverified,
   });
-  const ssl = await resolveSslProvider(project);
+  const ssl = await resolveSslProvider(project, domainRecord);
   return ssl.installCert(domainRecord.hostname, cert);
 }
 
@@ -388,7 +401,7 @@ export async function verifyExistingCert(
     projectId: opts.projectId,
     allowUnverified: true,
   });
-  const ssl = await resolveSslProvider(project);
+  const ssl = await resolveSslProvider(project, domainRecord);
   const result = await ssl.verifyCert(domainRecord.hostname);
   await persistSslResult(domainRecord.id, domainRecord.sslStatus, result);
   return result;

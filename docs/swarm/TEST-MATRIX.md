@@ -14,6 +14,7 @@ approximately 4 GB free RAM, and outbound access to pull public fixture images.
 | Prove observe-mode coexistence                   | `scripts/swarm-lab.sh observe-proof` | runs repeated probe/discover/import/refresh plus Docker-native source validation while recording manager events; exits non-zero for any workload mutation                                                                                                       |
 | Prove managed prebuilt deploy and recovery       | `scripts/swarm-lab.sh managed-proof` | deploys a two-service inline stack through the production manager adapter twice; verifies revisions, stack/service refs, ownership labels, unchanged task IDs, then withholds an accepted Docker response and proves observation-only reconciliation settles it |
 | Prove managed service and stack operations       | `scripts/swarm-lab.sh operations-proof` | after `managed-proof`, scales the owned replicated `web` service to 2, then 0, then 1; force-restarts it; reads/follows service and task logs; and removes only the managed stack while confirming its external config and secret remain |
+| Prove Edge route config update                   | `scripts/swarm-lab.sh edge-proof`       | labelled Edge reaches a worker over the overlay, retains its certificate volume across a task replacement, then receives a second vhost through immutable Docker config + `docker service update` |
 | Resolve a linked repository source safely        | `bun --cwd apps/api vitest run src/modules/swarm/swarm-source.service.test.ts` | fetches only the configured project repository's compose/config source at its selected ref; unsafe persisted paths fail before any source read |
 | Capture mutations                                | `scripts/swarm-lab.sh events`        | Docker events filtered to `com.openship.swarm.fixture=true`                                                                                                                                                                                                     |
 | Remove fixtures only                             | `scripts/swarm-lab.sh cleanup`       | only the fixed observe and managed fixture stacks are removed                                                                                                                                                                                                   |
@@ -93,3 +94,20 @@ Verified locally on July 30, 2026: the scale sequence converged, a force update
 changed the web task ID without changing its service ID, service/task log reads
 and a cancelled follow stream saw the worker heartbeat, and removal retained
 the external config and secret.
+
+## Edge route config proof
+
+Run `up`, then `edge-proof`. It labels only the disposable nested manager,
+creates a disposable Edge/backend overlay, and starts an ingress-pinned Edge
+task plus a worker-pinned nginx backend. The proof first forces the Edge task
+to replace and verifies its certificate-volume marker remains. It then creates
+an immutable Docker config for a second hostname and adds that config through
+`docker service update --config-add`; it never uses task-container exec for the
+configuration mutation. Both hostnames must proxy to the worker and manager
+service inspection must show the config target. `cleanup && down` removes only
+the fixed lab resources.
+
+Verified locally on July 30, 2026: both hostnames reached the worker after the
+config update and manager inspection reported the vhost mount. The command
+wrapper omitted its final nested-Docker line, so those direct manager checks
+are retained as the test evidence.

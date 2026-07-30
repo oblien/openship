@@ -45,6 +45,8 @@ import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
 import { resolveStackSourceFiles, type ResolvedSwarmStackSource } from "../../swarm/swarm-source.service";
 import { planSwarmEdgeAttachments } from "../../swarm/swarm-edge-routing";
+import { planSwarmEdgeRoutes, reconcileSwarmEdgeRoutes } from "../../swarm/swarm-edge-routes";
+import { ensurePendingServiceDomain } from "../../domains/domain.service";
 import { swarmConvergence } from "./convergence.service";
 
 type SwarmPlatform = Pick<Platform, "runtime" | "stackRuntime" | "executor">;
@@ -77,6 +79,15 @@ interface Dependencies {
   ) => Promise<SwarmStack | undefined>;
   loadSource: (stack: SwarmStack, project: Project, organizationId: string) => Promise<ResolvedSwarmStackSource>;
   syncProjections: (projectId: string, projections: SwarmServiceProjection[]) => Promise<Service[]>;
+  listServices: (projectId: string) => Promise<Service[]>;
+  listDomains: (projectId: string) => ReturnType<typeof repos.domain.listByProject>;
+  ensurePendingDomain: (input: {
+    projectId: string;
+    serviceId: string;
+    hostname: string;
+    targetPort?: number;
+  }) => ReturnType<typeof ensurePendingServiceDomain>;
+  markDomainTlsActive: (domainId: string, certificate: { expiresAt: string }) => Promise<unknown>;
   createServiceDeployments: (
     rows: Array<{
       deploymentId: string;
@@ -532,6 +543,15 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
     },
     syncProjections: (projectId, projections) =>
       repos.service.syncSwarmProjections(projectId, projections),
+    listServices: (projectId) => repos.service.listByProject(projectId),
+    listDomains: (projectId) => repos.domain.listByProject(projectId),
+    ensurePendingDomain: (input) => ensurePendingServiceDomain(input),
+    markDomainTlsActive: (domainId, certificate) =>
+      repos.domain.markVerifiedActive(domainId, {
+        sslStatus: "active",
+        sslIssuer: "letsencrypt",
+        sslExpiresAt: new Date(certificate.expiresAt),
+      }),
     createServiceDeployments: (rows) => repos.serviceDeployment.bulkCreate(rows),
     upsertServiceDeployment: (row) => repos.service.upsertServiceDeployment(row),
     waitForConvergence: (input) => swarmConvergence.wait(input),
@@ -940,6 +960,75 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           sourceDigest: rendered.renderedDigest,
         })),
       );
+      const routingWarnings: string[] = [];
+      if (stack.routingMode === "openship-edge") {
+        // Service rows retain operator-controlled exposed/domain fields while
+        // projections update manager facts. Re-read all rows so a source service
+        // removed by this apply can have its old vhost removed too.
+        const allServiceRows = await deps.listServices(project.id);
+        let domainRows = await deps.listDomains(project.id);
+        let routePlan = planSwarmEdgeRoutes({
+          project,
+          stack,
+          services: allServiceRows,
+          domains: domainRows,
+        });
+        const blockedDomains = new Set<string>();
+        for (const route of routePlan.desired) {
+          if (route.domainType !== "custom" || route.domainId) continue;
+          try {
+            await deps.ensurePendingDomain({
+              projectId: project.id,
+              serviceId: route.serviceId,
+              hostname: route.input.domain,
+              targetPort: route.input.port,
+            });
+          } catch (error) {
+            blockedDomains.add(route.input.domain.toLowerCase());
+            routingWarnings.push(
+              `${route.input.domain}: ${safeDeployError(error, environment)}`,
+            );
+          }
+        }
+        if (routePlan.desired.some((route) => route.domainType === "custom" && !route.domainId)) {
+          domainRows = await deps.listDomains(project.id);
+          routePlan = planSwarmEdgeRoutes({
+            project,
+            stack,
+            services: allServiceRows,
+            domains: domainRows,
+          });
+        }
+        if (!platform.executor) {
+          if (routePlan.desired.length > 0 || routePlan.retiredDomains.length > 0) {
+            routingWarnings.push("OpenShip Edge route reconciliation requires a manager command transport.");
+          }
+        } else {
+          const reconciliation = await reconcileSwarmEdgeRoutes({
+            executor: platform.executor,
+            plan: {
+              ...routePlan,
+              desired: routePlan.desired.filter((route) => !blockedDomains.has(route.input.domain.toLowerCase())),
+            },
+          });
+          routingWarnings.push(...reconciliation.warnings);
+          for (const issued of reconciliation.issued) {
+            try {
+              await deps.markDomainTlsActive(issued.domainId, issued.certificate);
+            } catch (error) {
+              routingWarnings.push(
+                `${issued.certificate.domain}: certificate was issued but OpenShip could not persist its domain status: ${safeDeployError(error, environment)}`,
+              );
+            }
+          }
+        }
+        if (routingWarnings.length > 0) {
+          logger.log(
+            `→ Swarm Edge routes need attention: ${routingWarnings.join("; ")}\n`,
+            "warn",
+          );
+        }
+      }
       const finishedAt = deps.now();
       const ready = convergence.status === "ready" && health.state === "ready";
       const serviceDeploymentRows = serviceRows.flatMap((service) => {
@@ -982,6 +1071,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           prune,
           pruneRemovals: prunePlan.removals,
           health,
+          ...(routingWarnings.length ? { routingWarnings } : {}),
         },
         serviceRefs: refs,
         ...(ready ? { convergedAt: finishedAt } : {}),
@@ -1007,7 +1097,17 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         };
       }
       logger.step("swarm-deploy", "completed", `Stack ${stack.stackName} converged on the manager`);
-      return { runtimeRef, revisionId: revision.id, state: "ready" };
+      return {
+        runtimeRef,
+        revisionId: revision.id,
+        state: "ready",
+        ...(routingWarnings.length
+          ? {
+              warningMessage:
+                `Some domains aren't routed yet — the stack is running; fix DNS/routing and retry: ${routingWarnings.join("; ")}`,
+            }
+          : {}),
+      };
     },
   };
 }

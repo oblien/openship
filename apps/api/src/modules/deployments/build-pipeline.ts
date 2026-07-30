@@ -524,10 +524,15 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
           durationMs,
         });
       } else {
+        const routingWarning = outcome.warningMessage;
         await onSuccess(ctx, {
           runtimeRef: outcome.runtimeRef,
           durationMs,
-          metaPatch: { swarmStackRevisionId: outcome.revisionId },
+          ...(routingWarning ? { warningMessage: routingWarning } : {}),
+          metaPatch: {
+            swarmStackRevisionId: outcome.revisionId,
+            ...(routingWarning ? { edgeUnsynced: true, deployWarning: routingWarning } : {}),
+          },
         });
       }
       return;

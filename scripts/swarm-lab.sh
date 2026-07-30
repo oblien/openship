@@ -28,6 +28,7 @@ edge_service="openship-swarm-edge-proof"
 edge_backend_service="openship-swarm-edge-backend"
 edge_network="openship-swarm-edge-proof-net"
 edge_config="openship-swarm-edge-proof-site"
+edge_route_update_config="openship-swarm-edge-route-update-proof"
 edge_sites_volume="openship-swarm-edge-proof-sites"
 edge_certs_volume="openship-swarm-edge-proof-certs"
 edge_acme_volume="openship-swarm-edge-proof-acme"
@@ -76,6 +77,19 @@ wait_for_stack_removal() {
     attempts=$((attempts + 1))
     if [ "$attempts" -ge 30 ]; then
       echo "Timed out waiting for disposable stack $stack_name to be removed" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
+wait_for_service_removal() {
+  service_name="$1"
+  attempts=0
+  while docker -H "$manager_host" service inspect "$service_name" >/dev/null 2>&1; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 30 ]; then
+      echo "Timed out waiting for disposable service $service_name to be removed" >&2
       exit 1
     fi
     sleep 1
@@ -142,7 +156,9 @@ remove_lab_registry_objects() {
 remove_edge_proof_objects() {
   docker -H "$manager_host" service rm "$edge_service" >/dev/null 2>&1 || true
   docker -H "$manager_host" service rm "$edge_backend_service" >/dev/null 2>&1 || true
-  docker -H "$manager_host" config rm "$edge_config" >/dev/null 2>&1 || true
+  wait_for_service_removal "$edge_service"
+  wait_for_service_removal "$edge_backend_service"
+  docker -H "$manager_host" config rm "$edge_config" "$edge_route_update_config" >/dev/null 2>&1 || true
   docker -H "$manager_host" network rm "$edge_network" >/dev/null 2>&1 || true
   docker -H "$manager_host" volume rm "$edge_sites_volume" "$edge_certs_volume" "$edge_acme_volume" >/dev/null 2>&1 || true
 }
@@ -365,7 +381,28 @@ case "${1:-}" in
       sleep 1
     done
     docker -H "$manager_host" exec "$replacement" curl -fsS -H 'Host: edge-proof.invalid' http://127.0.0.1/ | grep -q 'Welcome to nginx!'
-    echo "Edge proof passed: the labelled Edge reached a worker service over the overlay and retained state after replacement."
+    # A real route mutation uses an immutable Docker config plus `service update`.
+    # This must work after a task replacement without locating or execing a task.
+    printf '%s\n' \
+      'server {' \
+      '    listen 80;' \
+      '    server_name edge-route-proof.invalid;' \
+      '    location /.well-known/acme-challenge/ {' \
+      '        root /var/www/acme;' \
+      '    }' \
+      '    location / {' \
+      "        proxy_pass http://$edge_backend_service:80;" \
+      '        proxy_set_header Host $host;' \
+      '    }' \
+      '}' | docker -H "$manager_host" config create "$edge_route_update_config" - >/dev/null
+    docker -H "$manager_host" service update --detach=false \
+      --config-add "source=$edge_route_update_config,target=/usr/local/openresty/nginx/conf/sites-enabled/edge-route-proof.conf" \
+      "$edge_service" >/dev/null
+    updated_edge_container="$(docker -H "$manager_host" ps -q --filter "label=com.docker.swarm.service.name=$edge_service")"
+    test -n "$updated_edge_container" || { echo "Edge route update produced no current task" >&2; exit 1; }
+    docker -H "$manager_host" exec "$updated_edge_container" curl -fsS -H 'Host: edge-route-proof.invalid' http://127.0.0.1/ | grep -q 'Welcome to nginx!'
+    docker -H "$manager_host" service inspect "$edge_service" --format '{{json .Spec.TaskTemplate.ContainerSpec.Configs}}' | grep -q 'edge-route-proof.conf'
+    echo "Edge proof passed: the labelled Edge reached a worker service, retained state after replacement, and accepted a task-safe immutable route config update."
     ;;
   events)
     require_docker

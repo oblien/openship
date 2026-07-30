@@ -30,7 +30,12 @@ function exposedPort(service: Service): number {
   return port;
 }
 
-function serviceDnsName(stackName: string, sourceServiceName: string): string {
+/**
+ * Full, stable DNS identity used on the cluster-scoped Edge overlay. This is
+ * deliberately shared with the vhost planner so routing can never substitute a
+ * display name or an arbitrary URL into an nginx directive.
+ */
+export function swarmEdgeServiceDnsName(stackName: string, sourceServiceName: string): string {
   // Docker composes its service name from these two user-controlled identifiers.
   // Keep the generated DNS target constrained to that exact scheduler identity,
   // never a generic URL or an arbitrary nginx directive.
@@ -57,7 +62,7 @@ export function planSwarmEdgeAttachments(
   for (const sourceServiceName of sourceServiceNames.slice().sort((a, b) => a.localeCompare(b))) {
     const service = bySource.get(sourceServiceName);
     if (!service?.enabled || !service.exposed) continue;
-    const dnsName = serviceDnsName(stack.stackName, sourceServiceName);
+    const dnsName = swarmEdgeServiceDnsName(stack.stackName, sourceServiceName);
     networkAttachments[sourceServiceName] = { networkName: SWARM_EDGE_NETWORK_NAME, aliases: [dnsName] };
     upstreams.push({ sourceServiceName, serviceDnsName: dnsName, port: exposedPort(service) });
   }

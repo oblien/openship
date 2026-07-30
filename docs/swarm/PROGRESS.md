@@ -871,3 +871,47 @@ Evidence:
   full `<stack>_<service>` Swarm DNS alias. Deployment verifies that an explicit
   Edge and its overlay exist before applying any such attachment, and rejects
   malformed/missing target ports before mutation.
+
+## S10.4: Route OpenShip domains to Swarm service DNS
+
+Status: done
+Commit: `2f74f30a`
+Tests run:
+
+- `bun --filter @repo/adapters test src/runtime/swarm/edge-routes.test.ts` —
+  passed (3 tests).
+- `bun --filter @repo/api test src/modules/swarm/swarm-edge-routes.test.ts src/modules/swarm/swarm-edge-ssl.test.ts src/modules/deployments/swarm/deploy.service.test.ts`
+  — passed (15 tests).
+- `bun run --cwd packages/adapters lint` and `bun run --cwd apps/api lint` —
+  passed.
+- `scripts/swarm-lab.sh up && scripts/swarm-lab.sh edge-proof` — passed on
+  July 30, 2026. The nested wrapper omitted its final line, so direct manager
+  checks additionally verified both worker-proxied hostnames and the immutable
+  config mount; `cleanup && down` passed afterward.
+
+Evidence:
+
+- A vhost is a bounded, immutable Docker config mounted into `openship-edge`.
+  Route updates use `docker service update --config-add/--config-rm`, never
+  `docker exec` against a scheduler-owned task. Replacement configs are
+  removed only after the service update converges; foreign config mounts are
+  refused.
+- Route targets are derived solely from the validated `<stack>_<service>` DNS
+  identity and explicit container port. Existing domain/service rows remain
+  the ownership source of truth. A source service removal removes its retained
+  route projection; a route failure leaves the healthy stack running and emits
+  the existing routing-action-required deployment warning.
+- The existing certificate workflow resolves a Swarm project/domain to that
+  fixed route. ACME runs in a short-lived, ingress-pinned certbot task sharing
+  only the Edge ACME/certificate volumes; a separate pinned inspection task
+  reads certificate metadata. Manual certificate upload stays explicitly
+  unsupported for Swarm Edge until a revision-safe secret/config transport is
+  introduced.
+- The lab additionally proves a route config update after an Edge task
+  replacement: both the original and newly mounted hostnames reach the worker,
+  while the persistent certificate marker remains available.
+
+Next:
+
+- Implement explicit reversible router cutover planning and verification
+  (S10.5), then deterministic rollback revisions (S11.1).

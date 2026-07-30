@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SwarmDiscoverySnapshot } from "@repo/adapters";
 import type { SwarmServiceProjection } from "@repo/core";
-import type { ContainerRegistry, Deployment, Project, SwarmStack } from "@repo/db";
+import type { ContainerRegistry, Deployment, Domain, Project, Service, SwarmStack } from "@repo/db";
 import { createSwarmDeployService, selectSourceBuilds, type SwarmDeployLogger } from "./deploy.service";
 import { swarmLiveStateDigest } from "../../swarm/swarm-preview";
 
@@ -152,6 +152,10 @@ function fixture(
     stackOverride?: SwarmStack;
     beforeDiscovery?: SwarmDiscoverySnapshot;
     registry?: ContainerRegistry;
+    syncProjections?: (projectId: string, projections: SwarmServiceProjection[]) => Promise<Service[]>;
+    listServices?: (projectId: string) => Promise<Service[]>;
+    listDomains?: (projectId: string) => Promise<Domain[]>;
+    executor?: { exec(command: string): Promise<string>; writeFile(path: string, content: string): Promise<void>; rm(path: string): Promise<void> };
   } = {},
 ) {
   const activeStack = options.stackOverride ?? stack;
@@ -159,7 +163,7 @@ function fixture(
   const createRevision = vi.fn(async (..._args: unknown[]) => ({ id: "revision-1", revision: 1 }));
   const updateRevision = vi.fn(async () => ({ id: "revision-1" }));
   const updateStack = vi.fn(async () => activeStack);
-  const syncProjections = vi.fn(async () => [
+  const syncProjections = options.syncProjections ?? vi.fn(async () => [
     { id: "service-web", name: "web", sourceServiceName: "web" },
     { id: "service-worker", name: "worker", sourceServiceName: "worker" },
   ]);
@@ -199,11 +203,14 @@ function fixture(
           }),
           deployStack,
         },
+        executor: options.executor ?? null,
       }) as never,
     createRevision: createRevision as never,
     updateRevision: updateRevision as never,
     updateStack,
     syncProjections: syncProjections as never,
+    listServices: options.listServices ?? (async () => []),
+    listDomains: options.listDomains ?? (async () => []),
     createServiceDeployments,
     upsertServiceDeployment,
     now: () => new Date("2026-07-30T00:00:00.000Z"),
@@ -468,5 +475,61 @@ describe("managed Swarm deploy", () => {
       test.service.deploy({ project, deployment, environment: {}, logger: test.logger }),
     ).rejects.toMatchObject({ code: "SWARM_STACK_OWNERSHIP_CONFLICT", statusCode: 409 });
     expect(test.deployStack).not.toHaveBeenCalled();
+  });
+
+  it("registers a Swarm Edge vhost by stable service DNS without touching a task container", async () => {
+    const routeService = {
+      id: "service-web",
+      kind: "swarm",
+      name: "web",
+      sourceServiceName: "web",
+      enabled: true,
+      exposed: true,
+      exposedPort: "3000",
+      domainType: "custom",
+      customDomain: "app.example.test",
+      publicEndpoints: [],
+      swarmProjection: { sourceServiceName: "web", mode: "replicated", sourceState: "present" },
+    } as unknown as Service;
+    const routeDomain = {
+      id: "domain-app",
+      hostname: "app.example.test",
+      domainType: "custom",
+      verified: false,
+      sslStatus: "error",
+      externalIngress: false,
+      manualSsl: false,
+    } as Domain;
+    const commands: string[] = [];
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        commands.push(command);
+        if (command.startsWith("docker service inspect")) return "[]";
+        if (command.startsWith("umask 077")) return "/tmp/openship-swarm-edge-route.abc123";
+        return "";
+      }),
+      writeFile: vi.fn(async () => {}),
+      rm: vi.fn(async () => {}),
+    };
+    const syncProjections = vi
+      .fn()
+      .mockResolvedValueOnce([{ ...routeService, exposed: false }])
+      .mockResolvedValueOnce([routeService]);
+    const test = fixture({
+      stackOverride: { ...stack, routingMode: "openship-edge" } as SwarmStack,
+      syncProjections,
+      listServices: async () => [routeService],
+      listDomains: async () => [routeDomain],
+      executor,
+    });
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .resolves.toMatchObject({ state: "ready" });
+    expect(executor.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining("/route.conf"),
+      expect.stringContaining("proxy_pass http://blog_web:3000;"),
+    );
+    expect(commands.join("\n")).toContain("docker service update --detach=false");
+    expect(commands.join("\n")).not.toContain("docker exec");
   });
 });
