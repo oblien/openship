@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
-import type { TClaimSwarmStackBody } from "./swarm-source.schema";
+import type { TClaimSwarmStackBody, TReleaseSwarmManagementBody } from "./swarm-source.schema";
 import { swarmManagement } from "./swarm-management.service";
 
 export async function claim(c: Context) {
@@ -24,7 +24,8 @@ export async function claim(c: Context) {
 
 export async function release(c: Context) {
   const ctx = getRequestContext(c);
-  const result = await swarmManagement.release(c.req.param("id")!, ctx.organizationId);
+  const body = await c.req.json<TReleaseSwarmManagementBody>();
+  const result = await swarmManagement.release(c.req.param("id")!, ctx.organizationId, body.confirmedStackName);
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "swarm.stack.management.released",
     resourceType: "project",

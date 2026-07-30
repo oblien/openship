@@ -1,12 +1,14 @@
 /** Authoritative source linking/editing. No operation in this file calls Docker. */
 
 import { AppError, ConflictError, NotFoundError } from "@repo/core";
-import { SwarmRenderError } from "@repo/adapters";
-import { repos } from "@repo/db";
+import { SwarmRenderError, type RenderStackInput } from "@repo/adapters";
+import { repos, type Project, type SwarmStack } from "@repo/db";
 import { swarmSupportEnabled } from "../../config";
 import { encryptSecretField } from "../../lib/credential-encryption";
 import { decryptSecretField } from "../../lib/credential-encryption";
 import { resolveTargetPlatform } from "../../lib/deployment-runtime";
+import type { RequestContext } from "../../lib/request-context";
+import * as github from "../github/github.service";
 import {
   assertSwarmStackName,
   serializeStackSource,
@@ -16,6 +18,19 @@ import {
 import { projectSwarmStackSource } from "./swarm-stack-projection";
 import { previewSwarmStack, redactRenderWarnings } from "./swarm-preview";
 import { evaluateSwarmCompatibility } from "./swarm-compatibility";
+import {
+  DEFAULT_SWARM_SOURCE_LIMITS,
+  assertSafeStagedPath,
+  collectStackSourceReferences,
+} from "./swarm-source-confinement";
+
+export interface ResolvedSwarmStackSource {
+  files: RenderStackInput["files"];
+  composePaths: string[];
+}
+
+type SwarmRenderSourceFile = RenderStackInput["files"][number];
+type RepositoryFileReader = typeof github.getFileContent;
 
 function assertEnabled(): void {
   if (!swarmSupportEnabled()) {
@@ -32,6 +47,134 @@ async function stackForProject(projectId: string, organizationId: string) {
 
 export async function getStackSource(projectId: string, organizationId: string) {
   return serializeStackSource(await stackForProject(projectId, organizationId));
+}
+
+function sourceError(message: string, code: string): AppError {
+  return new AppError(message, 409, code);
+}
+
+function repositoryRootPath(stack: SwarmStack, path: string): string {
+  const relative = assertSafeStagedPath(path, "repository source");
+  if (!stack.sourcePath) return relative;
+  const root = assertSafeStagedPath(stack.sourcePath, "sourcePath").replace(/\/$/, "");
+  return relative === root || relative.startsWith(`${root}/`) ? relative : `${root}/${relative}`;
+}
+
+/**
+ * Materialize a bounded source set as in-memory manager-stage files. GitHub is
+ * used only for the linked project's own repository; callers never supply an
+ * arbitrary URL/path and no source is persisted or logged at this boundary.
+ */
+async function repositorySourceFiles(
+  stack: SwarmStack,
+  project: Project,
+  requestContext: RequestContext,
+  readRepositoryFile: RepositoryFileReader,
+): Promise<ResolvedSwarmStackSource> {
+  if (!project.gitOwner || !project.gitRepo) {
+    throw sourceError(
+      "Link this project to the repository that owns the stack source before rendering it.",
+      "SWARM_SOURCE_REPOSITORY_REQUIRED",
+    );
+  }
+  const composePaths = stack.sourcePaths.map((path) => assertSafeStagedPath(path, "composePaths"));
+  if (composePaths.length === 0) {
+    throw sourceError("This repository stack source has no compose files.", "SWARM_SOURCE_REQUIRED");
+  }
+  const ref = stack.sourceCommitSha ?? stack.sourceBranch ?? project.gitBranch ?? undefined;
+  const files = new Map<string, SwarmRenderSourceFile>();
+  let aggregateBytes = 0;
+  const readFile = async (relativePath: string) => {
+    const path = assertSafeStagedPath(relativePath, "stack source");
+    if (files.has(path)) return;
+    let file: Awaited<ReturnType<typeof github.getFileContent>>;
+    try {
+      file = await readRepositoryFile(
+        requestContext,
+        project.gitOwner!,
+        project.gitRepo!,
+        repositoryRootPath(stack, path),
+        { branch: ref },
+      );
+    } catch {
+      throw sourceError(
+        "OpenShip could not read a linked stack source file from the configured repository.",
+        "SWARM_SOURCE_FILE_UNAVAILABLE",
+      );
+    }
+    if (file.size > DEFAULT_SWARM_SOURCE_LIMITS.maxFileBytes) {
+      throw sourceError("A linked stack source file exceeds the per-file limit.", "SWARM_SOURCE_TOO_LARGE");
+    }
+    aggregateBytes += file.size;
+    if (aggregateBytes > DEFAULT_SWARM_SOURCE_LIMITS.maxAggregateBytes) {
+      throw sourceError("Linked stack source files exceed the aggregate limit.", "SWARM_SOURCE_TOO_LARGE");
+    }
+    files.set(path, { path, content: file.content });
+  };
+
+  for (const path of composePaths) await readFile(path);
+  // Docker config/secret/env-file references must sit beside the compose files
+  // in the private manager stage. Build contexts and bind directories are not
+  // copied: source-built services are blocked until the registry workflow is
+  // enabled, and host paths are handled by the confinement preflight.
+  const references = collectStackSourceReferences([...files.values()]);
+  for (const reference of references) {
+    if (reference.kind === "file") await readFile(reference.path);
+  }
+  if (files.size > 250) {
+    throw sourceError("Linked stack source contains too many files to render safely.", "SWARM_SOURCE_TOO_LARGE");
+  }
+  return { files: [...files.values()], composePaths };
+}
+
+/** Shared source resolver used by read-only comparison and the later apply. */
+export async function resolveStackSourceFiles(
+  stack: SwarmStack,
+  project: Project,
+  requestContext: RequestContext,
+  options: { readRepositoryFile?: RepositoryFileReader } = {},
+): Promise<ResolvedSwarmStackSource> {
+  if (stack.sourceKind === "inline") {
+    const yaml = decryptSecretField(stack.sourceYamlEnc);
+    if (!yaml) throw sourceError("This stack has no inline source document.", "SWARM_SOURCE_REQUIRED");
+    return { files: [{ path: "compose.yaml", content: yaml }], composePaths: ["compose.yaml"] };
+  }
+  if (stack.sourceKind === "repository") {
+    return repositorySourceFiles(stack, project, requestContext, options.readRepositoryFile ?? github.getFileContent);
+  }
+  throw sourceError("This observed stack needs authoritative source before it can be rendered.", "SWARM_SOURCE_REQUIRED");
+}
+
+/**
+ * An admin-requested controller handoff. Inline YAML is returned only to this
+ * authenticated request, never logged or persisted again. The generated
+ * override is already redacted and contains labels/metadata only.
+ */
+export async function exportStackHandoff(projectId: string, organizationId: string) {
+  const stack = await stackForProject(projectId, organizationId);
+  const revision = stack.lastAppliedRevisionId
+    ? await repos.swarmStack.getRevisionInOrganization(stack.lastAppliedRevisionId, organizationId)
+    : undefined;
+  const source = serializeStackSource(stack);
+  return {
+    stackName: stack.stackName,
+    managementMode: stack.managementMode,
+    source: {
+      ...source,
+      ...(stack.sourceKind === "inline" && stack.sourceYamlEnc
+        ? { inlineYaml: decryptSecretField(stack.sourceYamlEnc) }
+        : {}),
+    },
+    // A generated override contains OpenShip labels but no secret payloads.
+    overrideYaml: revision?.overrideYamlRedacted ?? null,
+    revision: revision
+      ? { id: revision.id, number: revision.revision, renderedDigest: revision.renderedDigest }
+      : null,
+    notes: [
+      "External configs and secrets are references only; provide their payloads in the receiving controller.",
+      "OpenShip labels are retained by default. Removing them requires a separate explicit stack apply after handoff.",
+    ],
+  };
 }
 
 /**
@@ -104,19 +247,19 @@ export async function renderStackSource(
   projectId: string,
   organizationId: string,
   environment: Record<string, string> = {},
+  requestContext?: RequestContext,
 ) {
   const stack = await stackForProject(projectId, organizationId);
   if (stack.sourceKind === "adopted") {
     throw new AppError("This observed stack needs authoritative source before it can be rendered.", 409, "SWARM_SOURCE_REQUIRED");
   }
-  if (stack.sourceKind !== "inline") {
-    throw new AppError("Repository stack source must be staged from its linked repository before rendering.", 409, "SWARM_SOURCE_STAGING_REQUIRED");
-  }
-  const yaml = decryptSecretField(stack.sourceYamlEnc);
-  if (!yaml) throw new AppError("This stack has no inline source document.", 409, "SWARM_SOURCE_REQUIRED");
   if (!stack.managerServerId) throw new AppError("This stack no longer has a Swarm manager target.", 409, "SWARM_MANAGER_UNAVAILABLE");
+  const project = await repos.project.findByIdInOrganization(projectId, organizationId);
+  if (!project) throw new NotFoundError("Project", projectId);
+  if (!requestContext) throw new AppError("A request context is required to read repository stack source.", 500, "SWARM_SOURCE_CONTEXT_REQUIRED");
+  const resolvedSource = await resolveStackSourceFiles(stack, project, requestContext);
 
-  const sourceProjection = projectSwarmStackSource([{ path: "compose.yaml", content: yaml }]);
+  const sourceProjection = projectSwarmStackSource(resolvedSource.files);
   const ownershipLabels = Object.fromEntries(sourceProjection.services.map((service) => [
     service.sourceServiceName,
     {
@@ -129,8 +272,8 @@ export async function renderStackSource(
     const platform = await resolveTargetPlatform("server", "docker", stack.managerServerId, organizationId, "swarm");
     if (!platform.stackRuntime) throw new AppError("Docker Swarm is unavailable for this target.", 503, "SWARM_MANAGER_UNAVAILABLE");
     const rendered = await platform.stackRuntime.renderStack({
-      files: [{ path: "compose.yaml", content: yaml }],
-      composePaths: ["compose.yaml"],
+      files: resolvedSource.files,
+      composePaths: resolvedSource.composePaths,
       environment,
       ownershipLabels,
     });

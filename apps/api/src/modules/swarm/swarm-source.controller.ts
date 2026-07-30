@@ -9,6 +9,19 @@ export async function get(c: Context) {
   return c.json({ source: await source.getStackSource(c.req.param("id")!, ctx.organizationId) });
 }
 
+export async function handoff(c: Context) {
+  const ctx = getRequestContext(c);
+  const result = await source.exportStackHandoff(c.req.param("id")!, ctx.organizationId);
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "swarm.stack.handoff.exported",
+    resourceType: "project",
+    resourceId: c.req.param("id")!,
+    // Never add exported YAML, override content, or secret references to audit.
+    after: { stackName: result.stackName, managementMode: result.managementMode, revision: result.revision?.id ?? null },
+  });
+  return c.json(result);
+}
+
 export async function validate(c: Context) {
   const ctx = getRequestContext(c);
   // secureRouter already ran the TypeBox body validator; Context is kept
@@ -40,5 +53,5 @@ export async function replace(c: Context) {
 export async function render(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<TRenderSwarmStackSourceBody>();
-  return c.json(await source.renderStackSource(c.req.param("id")!, ctx.organizationId, body.environment ?? {}));
+  return c.json(await source.renderStackSource(c.req.param("id")!, ctx.organizationId, body.environment ?? {}, ctx));
 }

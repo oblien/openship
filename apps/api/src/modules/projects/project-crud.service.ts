@@ -553,16 +553,21 @@ export async function linkProjectRepo(
     gitUrl,
   };
 
-  const strategy = await resolveWebhookStrategy(project!);
+  // A linked source for an observed Swarm stack is review material, never an
+  // implicit deploy trigger. Claim remains the sole transition to a first
+  // writer, so do not register/enable a repo webhook while binding its source.
+  const isSwarmProject = resolveOrchestratorMode(project!.orchestratorMode) === "swarm";
+  const strategy = isSwarmProject ? "manual" : await resolveWebhookStrategy(project!);
+  if (isSwarmProject) gitFields.autoDeploy = false;
 
-  if (strategy === "app") {
+  if (!isSwarmProject && strategy === "app") {
     const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
     if (!resolvedInstId) {
       return { ok: false, code: "app_not_installed", owner, installUrl: getInstallUrl() };
     }
     gitFields.installationId = resolvedInstId;
     gitFields.autoDeploy = true;
-  } else if (strategy === "domain" || strategy === "repo") {
+  } else if (!isSwarmProject && (strategy === "domain" || strategy === "repo")) {
     // Register/reuse the repo webhook via the SHARED reconciler (org+repo scoped,
     // deactivates a superseded hook, fans the webhookId across same-repo projects)
     // — the exact path setAutoDeploy uses, instead of a bespoke registerWebhook.

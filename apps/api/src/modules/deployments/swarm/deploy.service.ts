@@ -27,12 +27,15 @@ import {
   type SwarmStackRevision,
 } from "@repo/db";
 import { swarmSupportEnabled } from "../../../config";
-import { decryptSecretField, encryptSecretField } from "../../../lib/credential-encryption";
+import { encryptSecretField } from "../../../lib/credential-encryption";
 import { resolveTargetPlatform } from "../../../lib/deployment-runtime";
+import { resolveOrgOwner } from "../../../lib/org-actor";
 import { isConnectionLoss } from "../../../lib/remote-state";
+import { buildBackgroundContext } from "../../../lib/request-context";
 import { evaluateSwarmCompatibility } from "../../swarm/swarm-compatibility";
 import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm-preview";
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
+import { resolveStackSourceFiles, type ResolvedSwarmStackSource } from "../../swarm/swarm-source.service";
 import { swarmConvergence } from "./convergence.service";
 
 type SwarmPlatform = Pick<Platform, "stackRuntime">;
@@ -61,6 +64,7 @@ interface Dependencies {
     organizationId: string,
     patch: Record<string, unknown>,
   ) => Promise<SwarmStack | undefined>;
+  loadSource: (stack: SwarmStack, project: Project, organizationId: string) => Promise<ResolvedSwarmStackSource>;
   syncProjections: (projectId: string, projections: SwarmServiceProjection[]) => Promise<Service[]>;
   createServiceDeployments: (
     rows: Array<{
@@ -214,6 +218,24 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       repos.swarmStack.updateRevisionInOrganization(revisionId, organizationId, patch),
     updateStack: (id, organizationId, patch) =>
       repos.swarmStack.updateInOrganization(id, organizationId, patch),
+    loadSource: async (stack, project, organizationId) => {
+      if (stack.sourceKind === "inline") {
+        return resolveStackSourceFiles(
+          stack,
+          project,
+          buildBackgroundContext({ userId: "swarm-source", organizationId, label: "swarm:inline-source" }),
+        );
+      }
+      const owner = await resolveOrgOwner(organizationId);
+      if (!owner) {
+        throw new AppError("The organization owner is unavailable to read the linked stack repository.", 503, "SWARM_SOURCE_REPOSITORY_UNAVAILABLE");
+      }
+      return resolveStackSourceFiles(
+        stack,
+        project,
+        buildBackgroundContext({ userId: owner.userId, organizationId, label: "swarm:source-read" }),
+      );
+    },
     syncProjections: (projectId, projections) =>
       repos.service.syncSwarmProjections(projectId, projections),
     createServiceDeployments: (rows) => repos.serviceDeployment.bulkCreate(rows),
@@ -258,22 +280,8 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           "SWARM_STACK_CLAIM_REQUIRED",
         );
       }
-      if (stack.sourceKind !== "inline") {
-        throw new AppError(
-          "This stack source must be staged from its linked repository before it can be deployed.",
-          409,
-          "SWARM_SOURCE_STAGING_REQUIRED",
-        );
-      }
-      const yaml = decryptSecretField(stack.sourceYamlEnc);
-      if (!yaml)
-        throw new AppError(
-          "This stack has no authoritative inline source document.",
-          409,
-          "SWARM_SOURCE_REQUIRED",
-        );
-
-      const source = projectSwarmStackSource([{ path: "compose.yaml", content: yaml }]);
+      const sourceMaterial = await deps.loadSource(stack, project, deployment.organizationId);
+      const source = projectSwarmStackSource(sourceMaterial.files);
       const ownership = Object.fromEntries(
         source.services.map((service) => [
           service.sourceServiceName,
@@ -322,8 +330,8 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         );
       }
       const rendered = await platform.stackRuntime.renderStack({
-        files: [{ path: "compose.yaml", content: yaml }],
-        composePaths: ["compose.yaml"],
+        files: sourceMaterial.files,
+        composePaths: sourceMaterial.composePaths,
         environment,
         ownershipLabels: ownership,
       });

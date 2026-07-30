@@ -54,10 +54,17 @@ describe("Swarm management ownership", () => {
 
   it("releases management without contacting or stopping the stack", async () => {
     const test = fixture();
-    await expect(test.service.release("project-blog", "org-a"))
+    await expect(test.service.release("project-blog", "org-a", "blog"))
       .resolves.toEqual({ stackName: "blog", managementMode: "observe", released: true });
     expect(test.updateStack).toHaveBeenCalledWith("swarm-blog", "org-a", expect.objectContaining({
       managementMode: "observe", claimedAt: null,
     }));
+  });
+
+  it("requires an exact name before releasing management", async () => {
+    const test = fixture();
+    await expect(test.service.release("project-blog", "org-a", "Blog"))
+      .rejects.toMatchObject({ code: "SWARM_RELEASE_CONFIRMATION_REQUIRED", statusCode: 400 });
+    expect(test.updateStack).not.toHaveBeenCalled();
   });
 });

@@ -146,6 +146,56 @@ export interface SwarmObservation {
   };
 }
 
+/** Safe descriptor only; normal reads intentionally never include inline YAML. */
+export interface SwarmStackSource {
+  kind: "repository" | "inline" | "adopted";
+  status: "missing" | "linked-unvalidated" | "valid" | "invalid";
+  composePaths: string[];
+  sourcePath: string | null;
+  branch: string | null;
+  commitSha: string | null;
+  version: number;
+  digest: string | null;
+  deployable: boolean;
+  hasInlineYaml: boolean;
+}
+
+export type SwarmPreviewChangeKind =
+  | "stack-create"
+  | "service-add"
+  | "service-remove"
+  | "image-change"
+  | "replica-mode-change"
+  | "placement-resource-change"
+  | "network-port-change"
+  | "config-secret-reference-change"
+  | "labels-routing-change";
+
+export interface SwarmSourcePreview {
+  valid: true;
+  sourceDigest: string | null;
+  renderedDigest: string;
+  redactedRenderedYaml: string;
+  changes: Array<{ kind: SwarmPreviewChangeKind; serviceName?: string; summary: string }>;
+  cannotCompareExactly: string[];
+  liveStateDigest: string;
+  noOp: boolean;
+  warnings: string[];
+  compatibility: {
+    blockers: Array<{ code: string; message: string; remediation: string; serviceName?: string }>;
+    warnings: Array<{ code: string; message: string; remediation: string; serviceName?: string }>;
+  };
+}
+
+export interface SwarmStackHandoff {
+  stackName: string;
+  managementMode: "observe" | "managed";
+  source: SwarmStackSource & { inlineYaml?: string };
+  overrideYaml: string | null;
+  revision: { id: string; number: number; renderedDigest: string } | null;
+  notes: string[];
+}
+
 export interface SwarmScaleResult {
   serviceName: string;
   replicas: number;
@@ -214,6 +264,28 @@ export const swarmApi = {
     ),
   observation: (projectId: string) =>
     api.get<SwarmObservation>(`projects/${projectId}/swarm/observation`),
+  source: (projectId: string) =>
+    api.get<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/source`).then((result) => result.source),
+  replaceSource: (
+    projectId: string,
+    input:
+      | { kind: "inline"; yaml: string; expectedVersion: number }
+      | { kind: "repository"; composePaths: string[]; sourcePath?: string; branch?: string; commitSha?: string; expectedVersion: number },
+  ) =>
+    api.put<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/source`, input).then((result) => result.source),
+  renderSource: (projectId: string, environment: Record<string, string> = {}) =>
+    api.post<SwarmSourcePreview>(`projects/${projectId}/swarm/source/render`, { environment }),
+  claimManagement: (projectId: string, input: { confirmedStackName: string; previewLiveDigest: string }) =>
+    api.post<{ stackName: string; managementMode: "observe"; claimPending: true; liveDigest: string }>(
+      `projects/${projectId}/swarm/claim`,
+      input,
+    ),
+  releaseManagement: (projectId: string, confirmedStackName: string) =>
+    api.post<{ stackName: string; managementMode: "observe"; released: true }>(
+      `projects/${projectId}/swarm/release-management`,
+      { confirmedStackName },
+    ),
+  handoff: (projectId: string) => api.get<SwarmStackHandoff>(`projects/${projectId}/swarm/handoff`),
   refreshObservation: (projectId: string) =>
     api.post<{ status: "clean" | "drifted"; digest: string; changed: boolean; details: Record<string, unknown> }>(
       `projects/${projectId}/swarm/observation/refresh`,

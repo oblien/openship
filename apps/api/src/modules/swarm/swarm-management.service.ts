@@ -96,8 +96,11 @@ export function createSwarmManagementService(overrides: Partial<ManagementDepend
     },
 
     /** Stop future writes without stopping or removing any Swarm resource. */
-    async release(projectId: string, organizationId: string) {
+    async release(projectId: string, organizationId: string, confirmedStackName: string) {
       const stack = await stackForProject(projectId, organizationId);
+      if (confirmedStackName.trim() !== stack.stackName) {
+        throw new AppError("Type the exact stack name to release management.", 400, "SWARM_RELEASE_CONFIRMATION_REQUIRED");
+      }
       const updated = await deps.updateStack(stack.id, organizationId, {
         managementMode: "observe",
         claimedAt: null,

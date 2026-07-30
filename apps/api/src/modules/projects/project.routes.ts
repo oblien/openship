@@ -45,7 +45,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
-import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, ScaleSwarmServiceBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
+import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, ScaleSwarmServiceBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -173,6 +173,7 @@ r.patch(
 );
 r.delete("/:id", { tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
 r.get("/:id/swarm/source", { tag: "project:read", localOnly: true, readOnly: true }, swarmSource.get);
+r.get("/:id/swarm/handoff", { tag: "project:admin", localOnly: true, readOnly: true }, swarmSource.handoff);
 r.post(
   "/:id/swarm/stack",
   { tag: "project:write", localOnly: true, body: CreateSwarmStackBindingBody },
@@ -202,7 +203,7 @@ r.post(
 );
 r.post(
   "/:id/swarm/release-management",
-  { tag: "project:write", localOnly: true },
+  { tag: "project:admin", localOnly: true, body: ReleaseSwarmManagementBody },
   swarmManagement.release,
 );
 r.post(

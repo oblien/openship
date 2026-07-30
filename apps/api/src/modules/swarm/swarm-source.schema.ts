@@ -58,6 +58,13 @@ export const RemoveSwarmStackBody = Type.Object({
 
 export type TRemoveSwarmStackBody = Static<typeof RemoveSwarmStackBody>;
 
+/** Typed-name confirmation before returning a stack to another controller. */
+export const ReleaseSwarmManagementBody = Type.Object({
+  confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),
+});
+
+export type TReleaseSwarmManagementBody = Static<typeof ReleaseSwarmManagementBody>;
+
 /** Bind an as-yet absent stack name to an existing OpenShip project. */
 export const CreateSwarmStackBindingBody = Type.Object({
   serverId: Type.String({ minLength: 1 }),

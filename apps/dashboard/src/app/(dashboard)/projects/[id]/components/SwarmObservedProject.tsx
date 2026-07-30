@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Boxes, Eye, Loader2, RefreshCw, ScrollText, ShieldCheck, TriangleAlert, X } from "lucide-react";
-import { getApiErrorMessage, swarmApi, type SwarmLogEntry, type SwarmNode, type SwarmObservation, type SwarmStackDetail, type SwarmTask } from "@/lib/api";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Boxes, Download, Eye, FileText, Loader2, RefreshCw, Rocket, ScrollText, ShieldCheck, TriangleAlert, X } from "lucide-react";
+import { deployApi, getApiErrorMessage, projectsApi, swarmApi, type SwarmLogEntry, type SwarmNode, type SwarmObservation, type SwarmSourcePreview, type SwarmStackDetail, type SwarmStackHandoff, type SwarmStackSource, type SwarmTask } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { HealthBadge, formatObservedAt, shortId, SwarmNodesTable, SwarmTasksTable } from "@/components/swarm/SwarmReadOnlyViews";
 
 type StackData = {
   observation: SwarmObservation;
+  source: SwarmStackSource;
   detail: SwarmStackDetail | null;
   nodes: SwarmNode[];
 };
@@ -24,6 +26,7 @@ type View = "services" | "tasks" | "nodes";
  */
 export function SwarmObservedProject({ projectId, projectName }: { projectId: string; projectName: string }) {
   const { showToast } = useToast();
+  const router = useRouter();
   const [data, setData] = useState<StackData | null>(null);
   const [view, setView] = useState<View>("services");
   const [loading, setLoading] = useState(true);
@@ -31,6 +34,19 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
   const [scalingService, setScalingService] = useState<string | null>(null);
   const [restartingService, setRestartingService] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [sourceEditor, setSourceEditor] = useState<"inline" | "repository" | null>(null);
+  const [inlineYaml, setInlineYaml] = useState("");
+  const [repositoryPaths, setRepositoryPaths] = useState("");
+  const [repositoryOwner, setRepositoryOwner] = useState("");
+  const [repositoryName, setRepositoryName] = useState("");
+  const [repositoryPath, setRepositoryPath] = useState("");
+  const [repositoryBranch, setRepositoryBranch] = useState("");
+  const [repositoryCommit, setRepositoryCommit] = useState("");
+  const [savingSource, setSavingSource] = useState(false);
+  const [renderingSource, setRenderingSource] = useState(false);
+  const [preview, setPreview] = useState<SwarmSourcePreview | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   const [inspectedService, setInspectedService] = useState<SwarmStackDetail["services"][number] | null>(null);
   const [logs, setLogs] = useState<{ serviceName: string; taskId?: string; loggingDriver: string | null; entries: SwarmLogEntry[]; following: boolean } | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -41,9 +57,12 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
     setLoading(true);
     setError(null);
     try {
-      const observation = await swarmApi.observation(projectId);
+      const [observation, source] = await Promise.all([
+        swarmApi.observation(projectId),
+        swarmApi.source(projectId),
+      ]);
       if (!observation.managerServerId) {
-        setData({ observation, detail: null, nodes: [] });
+        setData({ observation, source, detail: null, nodes: [] });
         setError("This observed stack no longer has a Swarm manager target.");
         return;
       }
@@ -51,7 +70,7 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
         swarmApi.stack(observation.managerServerId, observation.stackName),
         swarmApi.nodes(observation.managerServerId),
       ]);
-      setData({ observation, detail, nodes: nodes.nodes });
+      setData({ observation, source, detail, nodes: nodes.nodes });
     } catch (cause) {
       setData(null);
       setError(getApiErrorMessage(cause, "Unable to read this observed Swarm stack."));
@@ -139,6 +158,129 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
     }
   }, [load, projectId, showToast]);
 
+  const beginSourceEdit = useCallback((kind: "inline" | "repository") => {
+    if (kind === "repository" && data?.source.kind === "repository") {
+      setRepositoryPaths(data.source.composePaths.join(", "));
+      setRepositoryPath(data.source.sourcePath ?? "");
+      setRepositoryBranch(data.source.branch ?? "");
+      setRepositoryCommit(data.source.commitSha ?? "");
+    }
+    setSourceEditor(kind);
+    setPreview(null);
+  }, [data?.source]);
+
+  const saveSource = useCallback(async () => {
+    if (!data) return;
+    setSavingSource(true);
+    try {
+      let branch = repositoryBranch.trim() || undefined;
+      if (sourceEditor === "repository" && (repositoryOwner.trim() || repositoryName.trim())) {
+        if (!repositoryOwner.trim() || !repositoryName.trim()) {
+          throw new Error("Enter both a GitHub owner and repository, or leave both blank to use the project repository already linked to OpenShip.");
+        }
+        const linked = await projectsApi.linkRepo(projectId, {
+          owner: repositoryOwner.trim(),
+          repo: repositoryName.trim(),
+          branch,
+        });
+        if (!linked.success) throw new Error(linked.error || "Unable to link the selected GitHub repository.");
+        branch = branch ?? linked.branch;
+      }
+      const source = sourceEditor === "inline"
+        ? await swarmApi.replaceSource(projectId, { kind: "inline", yaml: inlineYaml, expectedVersion: data.source.version })
+        : await swarmApi.replaceSource(projectId, {
+          kind: "repository",
+          composePaths: repositoryPaths.split(",").map((path) => path.trim()).filter(Boolean),
+          sourcePath: repositoryPath.trim() || undefined,
+          branch,
+          commitSha: repositoryCommit.trim() || undefined,
+          expectedVersion: data.source.version,
+        });
+      setData((current) => current ? {
+        ...current,
+        source,
+        observation: { ...current.observation, source: { kind: source.kind, status: source.status, deployable: source.deployable } },
+      } : current);
+      setSourceEditor(null);
+      setPreview(null);
+      showToast("Authoritative stack source saved. Render it against the manager before claiming management.", "success", "Docker Swarm");
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "Unable to save the stack source."), "error", "Docker Swarm");
+    } finally {
+      setSavingSource(false);
+    }
+  }, [data, inlineYaml, projectId, repositoryBranch, repositoryCommit, repositoryName, repositoryOwner, repositoryPath, repositoryPaths, showToast, sourceEditor]);
+
+  const renderSource = useCallback(async () => {
+    setRenderingSource(true);
+    try {
+      const result = await swarmApi.renderSource(projectId);
+      setPreview(result);
+      await load();
+      showToast(result.changes.length ? "Source comparison is ready for review." : "Source matches the current stack state.", "success", "Docker Swarm");
+    } catch (cause) {
+      setPreview(null);
+      showToast(getApiErrorMessage(cause, "Unable to render this stack source on the manager."), "error", "Docker Swarm");
+    } finally {
+      setRenderingSource(false);
+    }
+  }, [load, projectId, showToast]);
+
+  const claimAndApply = useCallback(async () => {
+    const stackName = data?.observation.stackName;
+    if (!stackName || !preview) return;
+    const riskKinds = new Set(["service-remove", "network-port-change", "config-secret-reference-change"]);
+    const risky = preview.changes.filter((change) => riskKinds.has(change.kind));
+    if (risky.length > 0 && !window.confirm(`This first apply includes ${risky.length} storage, config/secret, network/port, or service-removal change(s). Review the rendered source below. Continue to typed confirmation?`)) return;
+    const confirmed = window.prompt(`OpenShip will apply the reviewed source to ${stackName} without pruning unlisted services on this first claim. Existing tasks are not stopped first.\n\nType the exact stack name to claim management.`);
+    if (confirmed === null) return;
+    setClaiming(true);
+    try {
+      await swarmApi.claimManagement(projectId, { confirmedStackName: confirmed, previewLiveDigest: preview.liveStateDigest });
+      const started = await deployApi.trigger({ projectId, forceAll: true });
+      const deploymentId = started?.data?.deployment?.id as string | undefined;
+      showToast("Management claim accepted. Swarm is applying the reviewed stack and will verify labels before enabling routine controls.", "success", "Docker Swarm");
+      if (deploymentId) router.push(`/build/${deploymentId}`);
+      else await load();
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "Unable to claim management for this stack."), "error", "Docker Swarm");
+    } finally {
+      setClaiming(false);
+    }
+  }, [data?.observation.stackName, load, preview, projectId, router, showToast]);
+
+  const downloadHandoff = useCallback((handoff: SwarmStackHandoff) => {
+    const blob = new Blob([JSON.stringify(handoff, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${handoff.stackName}-openship-handoff.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const releaseManagement = useCallback(async () => {
+    const stackName = data?.observation.stackName;
+    if (!stackName) return;
+    setReleasing(true);
+    try {
+      // Export first: release is deliberately reversible, but a handoff must
+      // remain available even if the operator immediately changes controllers.
+      const handoff = await swarmApi.handoff(projectId);
+      downloadHandoff(handoff);
+      const confirmed = window.prompt(`The handoff file was downloaded. Releasing ${stackName} stops future OpenShip writes but leaves all workloads and labels in place.\n\nType the exact stack name to release management.`);
+      if (confirmed === null) return;
+      await swarmApi.releaseManagement(projectId, confirmed);
+      setPreview(null);
+      showToast("Management released. OpenShip is now observing this stack only; workloads were not changed.", "success", "Docker Swarm");
+      await load();
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "Unable to release management for this stack."), "error", "Docker Swarm");
+    } finally {
+      setReleasing(false);
+    }
+  }, [data?.observation.stackName, downloadHandoff, load, projectId, showToast]);
+
   const removeStack = useCallback(async () => {
     const stackName = data?.observation.stackName;
     if (!stackName) return;
@@ -219,7 +361,7 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
           <section className="mb-6 rounded-2xl border border-primary/25 bg-primary/[0.04] p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3"><div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Eye className="size-4" /></div><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-foreground">{data?.observation.managementMode === "managed" ? "Managed Docker Swarm stack" : "Observed Docker Swarm stack"}</h2><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${data?.observation.managementMode === "managed" ? "bg-success/10 text-success" : "bg-warning/10 text-warning"}`}>{data?.observation.managementMode === "managed" ? "Managed" : "Read-only"}</span></div><p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">{data?.observation.managementMode === "managed" ? "OpenShip owns this labeled stack. Refresh is read-only; routine service operations are guarded by its authoritative source and current manager state." : "This stack remains externally controlled. OpenShip reads manager state and records drift; it will not scale, restart, redeploy, remove, route, or edit services, tasks, networks, configs, secrets, or volumes."}</p></div></div>
-          <div className="flex items-center gap-2"><button type="button" disabled={refreshing || loading || removing} onClick={() => void refresh()} className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60">{refreshing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{data?.observation.managementMode === "managed" ? "Refresh manager state" : "Refresh safely"}</button>{data?.observation.managementMode === "managed" && <button type="button" disabled={removing || loading} onClick={() => void removeStack()} className="inline-flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-bg px-3 py-2 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-60">{removing ? <Loader2 className="size-3.5 animate-spin" /> : <TriangleAlert className="size-3.5" />}Remove stack</button>}</div>
+          <div className="flex flex-wrap items-center justify-end gap-2"><button type="button" disabled={refreshing || loading || removing || releasing} onClick={() => void refresh()} className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60">{refreshing ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{data?.observation.managementMode === "managed" ? "Refresh manager state" : "Refresh safely"}</button>{data?.observation.managementMode === "managed" && <button type="button" disabled={releasing || removing || loading} onClick={() => void releaseManagement()} className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60">{releasing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}Export & release</button>}{data?.observation.managementMode === "managed" && <button type="button" disabled={removing || loading || releasing} onClick={() => void removeStack()} className="inline-flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-bg px-3 py-2 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-60">{removing ? <Loader2 className="size-3.5 animate-spin" /> : <TriangleAlert className="size-3.5" />}Remove stack</button>}</div>
         </div>
       </section>
 
@@ -234,6 +376,36 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
           {error && <p className="rounded-xl border border-warning/25 bg-warning/5 px-4 py-3 text-sm text-warning">{error}</p>}
           <section className="rounded-2xl border border-border/50 bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-4"><div><div className="flex items-center gap-2"><Boxes className="size-4 text-muted-foreground" /><h2 className="font-semibold text-foreground">{data.observation.stackName}</h2><HealthBadge state={data.observation.managementMode === "observe" ? "observed" : data.observation.managementMode} /></div><p className="mt-1 text-sm text-muted-foreground">Cluster {shortId(data.observation.clusterId)} · {data.observation.revisionId ? `Applied revision ${shortId(data.observation.revisionId)} · ` : "No applied OpenShip revision · "}Last observed {formatObservedAt(data.observation.drift.lastObservedAt)}</p></div><HealthBadge state={data.observation.drift.status} /></div><div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3"><StatusCard label="Source" value={data.observation.source.status} description={sourceDescription(data.observation.source.status)} /><StatusCard label="Live drift" value={data.observation.drift.status} description={driftDescription(data.observation.drift.status)} /><StatusCard label="Workload controls" value={data.observation.managementMode === "managed" ? "Managed" : "Unavailable"} description={data.observation.managementMode === "managed" ? "Scale is available for owned replicated services. It remains operational drift until a reviewed source deploy." : "Observe mode has no workload mutation actions."} /></div></section>
 
+          <SourceManagementPanel
+            source={data.source}
+            stackName={data.observation.stackName}
+            managementMode={data.observation.managementMode}
+            editor={sourceEditor}
+            inlineYaml={inlineYaml}
+            repositoryPaths={repositoryPaths}
+            repositoryOwner={repositoryOwner}
+            repositoryName={repositoryName}
+            repositoryPath={repositoryPath}
+            repositoryBranch={repositoryBranch}
+            repositoryCommit={repositoryCommit}
+            saving={savingSource}
+            rendering={renderingSource}
+            claiming={claiming}
+            preview={preview}
+            onEdit={beginSourceEdit}
+            onCancelEdit={() => setSourceEditor(null)}
+            onInlineYamlChange={setInlineYaml}
+            onRepositoryPathsChange={setRepositoryPaths}
+            onRepositoryOwnerChange={setRepositoryOwner}
+            onRepositoryNameChange={setRepositoryName}
+            onRepositoryPathChange={setRepositoryPath}
+            onRepositoryBranchChange={setRepositoryBranch}
+            onRepositoryCommitChange={setRepositoryCommit}
+            onSave={() => void saveSource()}
+            onRender={() => void renderSource()}
+            onClaim={() => void claimAndApply()}
+          />
+
           {data.detail && <section className="rounded-2xl border border-border/50 bg-card"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 px-5 py-4"><div><h2 className="font-semibold text-foreground">Live stack state</h2><p className="mt-0.5 text-sm text-muted-foreground">Manager read at {formatObservedAt(data.detail.observedAt)}.</p></div><HealthBadge state={data.detail.health.state} /></div><div className="flex border-b border-border/50 px-3">{(["services", "tasks", "nodes"] as View[]).map((candidate) => <button key={candidate} type="button" onClick={() => setView(candidate)} className={`relative px-4 py-3 text-sm font-medium capitalize transition-colors ${view === candidate ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{candidate}{view === candidate && <span className="absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-primary" />}</button>)}</div><div className="p-5">{view === "services" && <Services detail={data.detail} managed={data.observation.managementMode === "managed"} scalingService={scalingService} restartingService={restartingService} onScale={scale} onRestart={restart} onLogs={(service) => void openLogs(service.sourceServiceName)} onInspect={setInspectedService} loadingLogs={loadingLogs} />}{view === "tasks" && <SwarmTasksTable tasks={data.detail.tasks} onLogs={openTaskLogs} />}{view === "nodes" && <SwarmNodesTable nodes={data.nodes} />}</div></section>}
 
           {inspectedService && <ServiceInspectPanel service={inspectedService} onClose={() => setInspectedService(null)} />}
@@ -245,6 +417,84 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
       )}
     </PageContainer>
   );
+}
+
+function SourceManagementPanel({
+  source,
+  stackName,
+  managementMode,
+  editor,
+  inlineYaml,
+  repositoryPaths,
+  repositoryOwner,
+  repositoryName,
+  repositoryPath,
+  repositoryBranch,
+  repositoryCommit,
+  saving,
+  rendering,
+  claiming,
+  preview,
+  onEdit,
+  onCancelEdit,
+  onInlineYamlChange,
+  onRepositoryPathsChange,
+  onRepositoryOwnerChange,
+  onRepositoryNameChange,
+  onRepositoryPathChange,
+  onRepositoryBranchChange,
+  onRepositoryCommitChange,
+  onSave,
+  onRender,
+  onClaim,
+}: {
+  source: SwarmStackSource;
+  stackName: string;
+  managementMode: "observe" | "managed";
+  editor: "inline" | "repository" | null;
+  inlineYaml: string;
+  repositoryPaths: string;
+  repositoryOwner: string;
+  repositoryName: string;
+  repositoryPath: string;
+  repositoryBranch: string;
+  repositoryCommit: string;
+  saving: boolean;
+  rendering: boolean;
+  claiming: boolean;
+  preview: SwarmSourcePreview | null;
+  onEdit: (kind: "inline" | "repository") => void;
+  onCancelEdit: () => void;
+  onInlineYamlChange: (value: string) => void;
+  onRepositoryPathsChange: (value: string) => void;
+  onRepositoryOwnerChange: (value: string) => void;
+  onRepositoryNameChange: (value: string) => void;
+  onRepositoryPathChange: (value: string) => void;
+  onRepositoryBranchChange: (value: string) => void;
+  onRepositoryCommitChange: (value: string) => void;
+  onSave: () => void;
+  onRender: () => void;
+  onClaim: () => void;
+}) {
+  const hasRisk = preview?.changes.some((change) => ["service-remove", "network-port-change", "config-secret-reference-change"].includes(change.kind)) ?? false;
+  return <section className="rounded-2xl border border-border/50 bg-card p-5">
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex items-start gap-3"><div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><FileText className="size-4" /></div><div><h2 className="font-semibold text-foreground">Authoritative stack source</h2><p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">Docker can show the running service specs but cannot recover the original stack file losslessly. Link the repository metadata or paste the controller-owned YAML, then render it on the manager before any claim.</p></div></div>
+      {managementMode === "observe" && !editor && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => onEdit("inline")} className="rounded-xl border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted">Paste YAML</button><button type="button" onClick={() => onEdit("repository")} className="rounded-xl border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted">Link repository</button></div>}
+    </div>
+
+    <div className="mt-4 grid gap-3 sm:grid-cols-3"><StatusCard label="Linked source" value={source.kind} description={source.kind === "adopted" ? "No authoritative source is linked yet." : source.kind === "inline" ? (source.hasInlineYaml ? "An encrypted inline document is stored for this stack." : "Paste the complete YAML document to make it deployable.") : "Compose files are read from the project's configured repository only when you render or apply."} /><StatusCard label="Validation" value={source.status} description={sourceDescription(source.status)} /><StatusCard label="Source version" value={`v${source.version}`} description={source.digest ? `Digest ${shortId(source.digest)}` : "No source digest has been recorded."} /></div>
+
+    {managementMode === "observe" && !editor && <div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={rendering || saving || source.kind === "adopted" || (source.kind === "inline" && !source.hasInlineYaml)} onClick={onRender} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{rendering ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Render & compare</button>{source.kind === "inline" && !source.hasInlineYaml && <p className="self-center text-sm text-muted-foreground">Paste the complete YAML document before rendering.</p>}{source.kind === "repository" && <p className="self-center text-sm text-muted-foreground">Rendering reads only the linked compose files and referenced config, secret, or environment files from this project’s configured repository.</p>}</div>}
+
+    {editor === "inline" && <div className="mt-5 rounded-xl border border-border/50 bg-muted/[0.16] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium text-foreground">Paste authoritative YAML</h3><p className="mt-1 text-sm text-muted-foreground">{source.hasInlineYaml ? "Replace the existing encrypted document with a complete new document. The current source is never displayed in this editor." : "Store a complete stack document encrypted at rest."}</p></div><button type="button" onClick={onCancelEdit} className="text-sm text-muted-foreground hover:text-foreground">Cancel</button></div><textarea value={inlineYaml} onChange={(event) => onInlineYamlChange(event.target.value)} spellCheck={false} placeholder={'services:\n  web:\n    image: nginx:alpine'} className="mt-4 min-h-64 w-full rounded-xl border border-border bg-card p-3 font-mono text-xs text-foreground outline-none focus:border-primary" /><div className="mt-3 flex justify-end"><button type="button" disabled={saving || !inlineYaml.trim()} onClick={onSave} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{saving && <Loader2 className="size-3.5 animate-spin" />}Save source</button></div></div>}
+
+    {editor === "repository" && <div className="mt-5 rounded-xl border border-border/50 bg-muted/[0.16] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-medium text-foreground">Link repository stack files</h3><p className="mt-1 text-sm text-muted-foreground">Select a GitHub repository below, or leave owner and repository blank to use one already linked to this project. Linking source does not change the Swarm manager or enable automatic Swarm deploys.</p></div><button type="button" onClick={onCancelEdit} className="text-sm text-muted-foreground hover:text-foreground">Cancel</button></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-sm text-muted-foreground">GitHub owner (optional)<input value={repositoryOwner} onChange={(event) => onRepositoryOwnerChange(event.target.value)} placeholder="acme" className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary" /></label><label className="text-sm text-muted-foreground">GitHub repository (optional)<input value={repositoryName} onChange={(event) => onRepositoryNameChange(event.target.value)} placeholder="production-stack" className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary" /></label><label className="text-sm text-muted-foreground sm:col-span-2">Compose paths, in merge order<input value={repositoryPaths} onChange={(event) => onRepositoryPathsChange(event.target.value)} placeholder="compose.yaml, compose.production.yaml" className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary" /></label><label className="text-sm text-muted-foreground">Source subdirectory (optional)<input value={repositoryPath} onChange={(event) => onRepositoryPathChange(event.target.value)} placeholder="deploy" className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary" /></label><label className="text-sm text-muted-foreground">Branch (optional)<input value={repositoryBranch} onChange={(event) => onRepositoryBranchChange(event.target.value)} placeholder="main" className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary" /></label><label className="text-sm text-muted-foreground sm:col-span-2">Commit SHA (optional)<input value={repositoryCommit} onChange={(event) => onRepositoryCommitChange(event.target.value)} placeholder="a1b2c3d" className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 font-mono text-sm text-foreground outline-none focus:border-primary" /></label></div><div className="mt-3 flex justify-end"><button type="button" disabled={saving || !repositoryPaths.trim()} onClick={onSave} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{saving && <Loader2 className="size-3.5 animate-spin" />}Link source</button></div></div>}
+
+    {preview && <div className="mt-5 rounded-xl border border-primary/25 bg-primary/[0.035] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-medium text-foreground">Reviewed manager comparison</h3><p className="mt-1 text-sm text-muted-foreground">Rendered digest {shortId(preview.renderedDigest)} · live digest {shortId(preview.liveStateDigest)}</p></div><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${preview.noOp ? "bg-success/10 text-success" : hasRisk ? "bg-danger-bg text-danger" : "bg-warning/10 text-warning"}`}>{preview.noOp ? "No-op" : hasRisk ? "Review required" : "Changes detected"}</span></div>{preview.changes.length > 0 ? <ul className="mt-4 space-y-2">{preview.changes.map((change, index) => <li key={`${change.kind}-${change.serviceName ?? index}`} className={`rounded-lg border px-3 py-2 text-sm ${["service-remove", "network-port-change", "config-secret-reference-change"].includes(change.kind) ? "border-danger/25 bg-danger-bg/35 text-danger" : "border-border/50 bg-card text-foreground"}`}><span className="mr-2 font-mono text-xs text-muted-foreground">{change.kind}</span>{change.summary}</li>)}</ul> : <p className="mt-4 rounded-lg border border-success/20 bg-success/5 px-3 py-2 text-sm text-success">No semantic service-spec changes were detected.</p>}{preview.cannotCompareExactly.length > 0 && <div className="mt-4 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-sm text-warning"><p className="font-medium">Requires manual review</p><ul className="mt-1 list-disc space-y-1 pl-5">{preview.cannotCompareExactly.map((message) => <li key={message}>{message}</li>)}</ul></div>}{preview.compatibility.blockers.length > 0 && <div className="mt-4 rounded-lg border border-danger/25 bg-danger-bg/35 px-3 py-2 text-sm text-danger"><p className="font-medium">Apply blockers</p><ul className="mt-1 list-disc space-y-1 pl-5">{preview.compatibility.blockers.map((issue) => <li key={`${issue.code}-${issue.serviceName ?? "stack"}`}>{issue.message} {issue.remediation}</li>)}</ul></div>}{preview.compatibility.warnings.length > 0 && <div className="mt-4 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-sm text-warning"><p className="font-medium">Compatibility warnings</p><ul className="mt-1 list-disc space-y-1 pl-5">{preview.compatibility.warnings.map((issue) => <li key={`${issue.code}-${issue.serviceName ?? "stack"}`}>{issue.message} {issue.remediation}</li>)}</ul></div>}<details className="mt-4"><summary className="cursor-pointer text-sm font-medium text-foreground">View redacted rendered stack</summary><pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/50 bg-card p-3 font-mono text-xs leading-5 text-foreground">{preview.redactedRenderedYaml}</pre></details>{managementMode === "observe" && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-4"><p className="max-w-2xl text-sm text-muted-foreground">Claim applies this exact reviewed source under the same stack name. The first apply does not prune services absent from source, and Swarm uses existing update policies rather than stopping tasks first.</p><button type="button" disabled={claiming || preview.compatibility.blockers.length > 0} onClick={onClaim} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60">{claiming ? <Loader2 className="size-3.5 animate-spin" /> : <Rocket className="size-3.5" />}Claim & apply</button></div>}</div>}
+
+    {managementMode === "managed" && <p className="mt-4 rounded-xl border border-success/20 bg-success/5 px-3 py-2 text-sm text-success">OpenShip is the active stack controller. Export and release management before resuming deployments from Portainer or another controller.</p>}
+  </section>;
 }
 
 function StatusCard({ label, value, description }: { label: string; value: string; description: string }) {

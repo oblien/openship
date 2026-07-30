@@ -14,7 +14,7 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
-import { repos, type Project } from "@repo/db";
+import { repos, type Deployment, type Project } from "@repo/db";
 import {
   AppError,
   NotFoundError,
@@ -1427,6 +1427,83 @@ export async function startBuild(deploymentId: string) {
   };
 }
 
+/**
+ * A Swarm project has an authoritative stack document, not a Git checkout or
+ * ordinary local build context. It still creates the usual deployment + build
+ * session so history, SSE, immutable revisions, and reconciliation remain on
+ * the standard lifecycle; the pipeline branches to `swarmDeploy` before any
+ * clone/build/container work.
+ */
+type TriggerDeploymentResult = { deployment: Deployment; skipped?: true };
+
+async function triggerSwarmStackDeployment(
+  project: Project,
+  data: {
+    projectId: string;
+    branch?: string;
+    commitSha?: string;
+    commitMessage?: string;
+    environment?: string;
+    trigger?: string;
+    forceAll?: boolean;
+  },
+): Promise<TriggerDeploymentResult> {
+  if (!swarmSupportEnabled()) {
+    throw new AppError(
+      "Docker Swarm support is disabled. Set OPENSHIP_EXPERIMENTAL_SWARM=true to enable the experimental stack flow.",
+      403,
+      "SWARM_FEATURE_DISABLED",
+    );
+  }
+  const stack = await repos.swarmStack.getForProjectInOrganization(project.id, project.organizationId);
+  if (!stack) throw new AppError("This project has no Docker Swarm stack binding.", 409, "SWARM_STACK_REQUIRED");
+  if (!stack.managerServerId) throw new AppError("This stack no longer has a Swarm manager target.", 409, "SWARM_MANAGER_UNAVAILABLE");
+  if (stack.managementMode !== "managed" && !stack.claimedAt) {
+    throw new AppError("This observed stack must be explicitly claimed before OpenShip can apply it.", 409, "SWARM_STACK_CLAIM_REQUIRED");
+  }
+  if (stack.sourceKind === "adopted" || stack.sourceStatus !== "valid") {
+    throw new AppError("Link and validate authoritative stack source before deploying it.", 409, "SWARM_SOURCE_REQUIRED");
+  }
+  await checkNoActiveBuild(project.id);
+  const branch = data.branch ?? stack.sourceBranch ?? "swarm";
+  const snapshot = buildConfigSnapshot(project, branch);
+  // The binding is authoritative for an observed/imported project. Do not let
+  // a missing active deployment make this first apply fall back to cloud/local.
+  snapshot.deployTarget = "server";
+  snapshot.serverId = stack.managerServerId;
+  snapshot.runtimeMode = "docker";
+  snapshot.orchestratorMode = "swarm";
+  snapshot.hasServer = true;
+  snapshot.hasBuild = false;
+  assertSupportedExecutionMatrix({
+    runtimeMode: "docker",
+    orchestratorMode: "swarm",
+    deployTarget: "server",
+  });
+
+  const environment = data.environment ?? "production";
+  const rawEnvMap = await repos.project.getEnvMap(project.id, environment);
+  const dep = await createQueuedDeployment({
+    projectId: project.id,
+    organizationId: project.organizationId,
+    branch,
+    commitSha: data.commitSha ?? stack.sourceCommitSha ?? undefined,
+    commitMessage: data.commitMessage ?? `Apply Swarm stack ${stack.stackName}`,
+    trigger: data.trigger ?? "manual",
+    environment,
+    framework: snapshot.framework,
+    meta: metaWithPrevious(snapshot, project),
+    envVars: Object.keys(rawEnvMap).length > 0 ? rawEnvMap : null,
+    // Generic Git rollback cannot reconstruct a stack source. The Swarm
+    // revision is retained separately for the dedicated stack rollback path.
+    rollbackStrategy: "snapshot",
+    forceAll: data.forceAll ?? true,
+  });
+  const buildSessionId = await kickoffBuild(project, dep);
+  if (!buildSessionId) throw new Error("Build session was not created");
+  return { deployment: dep };
+}
+
 export async function triggerDeployment(
   ctx: RequestContext,
   data: {
@@ -1504,7 +1581,7 @@ export async function triggerDeployment(
      */
     releaseVersion?: string;
   },
-) {
+): Promise<TriggerDeploymentResult> {
   const project = await repos.project.findById(data.projectId);
   if (!project) {
     throw new NotFoundError("Project", data.projectId);
@@ -1516,6 +1593,9 @@ export async function triggerDeployment(
     throw new ForbiddenError(
       "The Openship control plane updates itself — run `openship update` on the host, not a redeploy.",
     );
+  }
+  if (resolveOrchestratorMode(project.orchestratorMode) === "swarm") {
+    return triggerSwarmStackDeployment(project, data);
   }
   // Org-membership verified at the route boundary. No userId equality
   // check here — that would block team members.

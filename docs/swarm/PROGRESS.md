@@ -677,3 +677,43 @@ Evidence:
 Next:
 
 - Begin observed-stack adoption and deliberate claim comparison (Phase 8).
+
+## S8.1–S8.4: Side-by-side adoption, claim, and reversible handoff
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-source.service.test.ts src/modules/swarm/swarm-management.service.test.ts src/modules/deployments/swarm/deploy.service.test.ts` — passed (12 tests).
+- `bunx tsc --noEmit -p apps/api/tsconfig.json` and
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json` — passed.
+
+Evidence:
+
+- Observed projects now have a source-and-management panel beside their live
+  health/log views. It makes Docker's lossy source limitation explicit, accepts
+  encrypted inline YAML or selects a GitHub repository plus bounded paths, and
+  renders only on an explicit review request. Linking source on a Swarm project
+  forces `autoDeploy` off and registers no deploy webhook, preserving the
+  explicit claim as the first-writer gate.
+- Repository render/apply reads only the configured project repository at the
+  selected commit or branch. Compose paths and referenced config, secret, and
+  environment files are confined to the declared source root, byte/file-count
+  bounded, copied only to the manager's private render stage, and never
+  persisted or logged as plaintext.
+- The review shows redacted rendered YAML, semantic change classes, warnings,
+  blockers, and a fresh live digest. Claim requires a typed stack name, refuses
+  a stale digest, calls out deletion/storage/network risks, and queues the
+  standard stack deployment path. First claim still suppresses prune and only
+  flips to `managed` after label and convergence verification.
+- A managed stack can export a secret-safe controller handoff before a typed
+  release action. Release stops all future OpenShip writes without stopping
+  workloads or stripping labels; the export includes inline source only in the
+  admin response, redacted override metadata, revision digest, and explicit
+  external config/secret handoff notes. Handoff export and release both audit
+  metadata only.
+
+Next:
+
+- Add encrypted OCI registry credentials and the source-build image
+  publish/digest workflow (Phase 9).
