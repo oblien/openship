@@ -138,13 +138,22 @@ export async function canUseGitHubRepo(
  * of falling through to their personal OAuth/PAT (which would bypass the
  * owner's control on a local build) or failing opaquely mid-build.
  *
- * No-op for non-GitHub projects (no owner/repo → nothing to gate).
+ * No-op for non-GitHub projects (no owner/repo, or an explicit provider
+ * other than "github"). GitLab / local / release projects must not be
+ * gated by GitHub grants — otherwise a member with gitlab access still
+ * hits GITHUB_ACCESS_DENIED because owner/repo are set on GitLab binds.
  */
 export async function assertGitHubRepoAccess(
   ctx: RequestContext,
-  target: { owner?: string | null; repo?: string | null },
+  target: {
+    owner?: string | null;
+    repo?: string | null;
+    /** When set, only `"github"` is gated; other providers are skipped. */
+    provider?: string | null;
+  },
   op: GitHubAccessOp = "read",
 ): Promise<void> {
+  if (target.provider && target.provider !== "github") return;
   if (!target.owner || !target.repo) return;
   const allowed = await canUseGitHubRepo(
     ctx,

@@ -843,6 +843,7 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   await assertGitHubRepoAccess(ctx, {
     owner: project.gitOwner,
     repo: project.gitRepo,
+    provider: project.gitProvider,
   });
 
   await checkNoActiveBuild(project.id);
@@ -1158,10 +1159,11 @@ export async function redeployBuildSession(
 ) {
   const { dep: oldDep, project } = await loadDeployment(deploymentId);
   // GitHub access gate (default-deny): a member can redeploy a
-  // GitHub-backed project only when granted this repo.
+  // GitHub-backed project only when granted this repo. Skipped for GitLab.
   await assertGitHubRepoAccess(ctx, {
     owner: project.gitOwner,
     repo: project.gitRepo,
+    provider: project.gitProvider,
   });
   const resolvedBranch = await resolveProjectBranch(ctx, project, oldDep.branch ?? undefined);
 
@@ -1418,9 +1420,11 @@ export async function triggerDeployment(
   }
   // GitHub access gate (default-deny; webhook ctx is the org owner and
   // passes). Covers manual trigger / redeploy paths routed through here.
+  // Skipped for GitLab / non-GitHub providers (see assertGitHubRepoAccess).
   await assertGitHubRepoAccess(ctx, {
     owner: project.gitOwner,
     repo: project.gitRepo,
+    provider: project.gitProvider,
   });
 
   const branch = await resolveProjectBranch(ctx, project, data.branch);
