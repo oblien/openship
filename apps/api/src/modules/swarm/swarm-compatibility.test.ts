@@ -37,6 +37,29 @@ secrets:
     expect([...report.blockers, ...report.warnings].every((issue) => issue.remediation.length > 0)).toBe(true);
   });
 
+  it("names the services consuming a missing external config or secret", () => {
+    const report = evaluateSwarmCompatibility({
+      renderedYaml: `services:
+  web:
+    image: nginx
+    configs: [shared-config]
+  worker:
+    image: busybox
+    secrets: [shared-secret]
+configs:
+  shared-config: { external: true, name: external-config }
+secrets:
+  shared-secret: { external: true, name: external-secret }
+`,
+      discovery: { networks: [], volumes: [], configs: [], secrets: [] },
+      registryConfigured: true,
+    });
+    expect(report.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "SWARM_EXTERNAL_CONFIG_MISSING", serviceName: "web", message: expect.stringContaining("Consumed by web") }),
+      expect.objectContaining({ code: "SWARM_EXTERNAL_SECRET_MISSING", serviceName: "worker", message: expect.stringContaining("Consumed by worker") }),
+    ]));
+  });
+
   it("clears external prerequisites found on the manager and respects a stateful placement constraint", () => {
     const report = evaluateSwarmCompatibility({
       renderedYaml: `services:

@@ -41,7 +41,7 @@ import { resolveOrgOwner } from "../../../lib/org-actor";
 import { isConnectionLoss } from "../../../lib/remote-state";
 import { buildBackgroundContext } from "../../../lib/request-context";
 import { resolveBuildGitToken } from "../../github/clone-auth";
-import { evaluateSwarmCompatibility } from "../../swarm/swarm-compatibility";
+import { evaluateSwarmCompatibility, externalSwarmResourceConsumers } from "../../swarm/swarm-compatibility";
 import {
   bindManagedSwarmResources,
   ensureManagedSwarmResources,
@@ -943,6 +943,9 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
                 resourceName,
                 contentDigest,
               })),
+              externalResources: externalSwarmResourceConsumers(rendered.renderedYaml).filter((resource) =>
+                !managedResources.some((managed) => managed.kind === resource.kind && managed.resourceName === resource.name),
+              ),
               routingMode,
               compatibility,
               prune,

@@ -34,6 +34,40 @@ function externalName(name: string, definition: unknown): string | null {
   return text(record(external)?.name) ?? text(value?.name);
 }
 
+export interface ExternalSwarmResourceConsumer {
+  kind: "config" | "secret";
+  name: string;
+  consumers: string[];
+}
+
+/** Safe metadata only: external object name and the services that mount it. */
+export function externalSwarmResourceConsumers(renderedYaml: string): ExternalSwarmResourceConsumer[] {
+  const document = parseDocument(renderedYaml, { prettyErrors: false });
+  if (document.errors.length > 0) return [];
+  const source = record(document.toJSON()) ?? {};
+  const services = record(source.services) ?? {};
+  const result: ExternalSwarmResourceConsumer[] = [];
+  for (const [section, kind] of [["configs", "config"], ["secrets", "secret"]] as const) {
+    const definitions = record(source[section]) ?? {};
+    const consumers = new Map<string, Set<string>>();
+    for (const [serviceName, rawService] of Object.entries(services)) {
+      const service = record(rawService);
+      if (!service) continue;
+      for (const logicalName of names(service[section])) {
+        const actualName = externalName(logicalName, definitions[logicalName]);
+        if (!actualName) continue;
+        const set = consumers.get(actualName) ?? new Set<string>();
+        set.add(serviceName);
+        consumers.set(actualName, set);
+      }
+    }
+    for (const [name, serviceNames] of consumers) {
+      result.push({ kind, name, consumers: [...serviceNames].sort() });
+    }
+  }
+  return result.sort((left, right) => left.kind.localeCompare(right.kind) || left.name.localeCompare(right.name));
+}
+
 function sourceVolumeNames(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
@@ -78,6 +112,7 @@ export function evaluateSwarmCompatibility(input: {
   }
   const source = record(document.toJSON()) ?? {};
   const services = record(source.services) ?? {};
+  const externalConsumers = externalSwarmResourceConsumers(input.renderedYaml);
   const networkNames = new Set(input.discovery.networks.map((network) => network.name));
   const volumeNames = new Set(input.discovery.volumes.map((volume) => volume.name));
   const configNames = new Set(input.discovery.configs.map((config) => config.name));
@@ -93,7 +128,14 @@ export function evaluateSwarmCompatibility(input: {
       const required = externalName(name, definition);
       if (required && !existing.has(required)) append(report, {
         severity: "blocker", code: `SWARM_EXTERNAL_${kind.toUpperCase()}_MISSING`,
-        message: `Required external ${kind} ${required} does not exist on this manager.`, remediation,
+        ...(externalConsumers.find((entry) => entry.kind === kind && entry.name === required)?.consumers.length === 1
+          ? { serviceName: externalConsumers.find((entry) => entry.kind === kind && entry.name === required)!.consumers[0] }
+          : {}),
+        message: `Required external ${kind} ${required} does not exist on this manager.${(() => {
+          const consumers = externalConsumers.find((entry) => entry.kind === kind && entry.name === required)?.consumers ?? [];
+          return consumers.length ? ` Consumed by ${consumers.join(", ")}.` : "";
+        })()}`,
+        remediation,
       });
     }
   }
