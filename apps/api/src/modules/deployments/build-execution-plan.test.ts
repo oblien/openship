@@ -31,6 +31,21 @@ describe("resolveBuildRuntimeModes (pre-resolve flip, as data)", () => {
     ).toEqual({ buildRuntimeMode: "docker", serveRuntimeMode: "docker" });
   });
 
+  it("keeps standalone Compose services on DockerRuntime with per-container deployment semantics", () => {
+    const modes = resolveBuildRuntimeModes({
+      hasServer: true,
+      serverId: "srv_1",
+      baseTarget: "selfhosted",
+      effectiveTarget: "server",
+      willRunServices: true,
+      orchestratorMode: "standalone",
+    });
+    expect(modes).toEqual({ buildRuntimeMode: "docker", serveRuntimeMode: "docker" });
+    expect(
+      resolveDeployRouting({ hasServer: true, runtimeName: "docker", outputDirectory: "dist" }),
+    ).toEqual({ buildMode: "normal", deployMode: "server", staticServeOutputDir: "" });
+  });
+
   it("Swarm pins Docker for both build and lifecycle identity", () => {
     expect(
       resolveBuildRuntimeModes({

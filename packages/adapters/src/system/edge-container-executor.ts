@@ -150,7 +150,9 @@ export function edgeContainerExecutor(
     exec: (command: string, execOpts?: { timeout?: number }) =>
       inner.exec(inContainer(command), execOpts),
     streamExec: (command: string, onLog: (log: LogEntry) => void, execOpts?: { signal?: AbortSignal }) =>
-      inner.streamExec(inContainer(command), onLog, execOpts),
+      execOpts === undefined
+        ? inner.streamExec(inContainer(command), onLog)
+        : inner.streamExec(inContainer(command), onLog, execOpts),
     // A rename is a FILE op, so it follows the files, never the commands. Stated
     // here rather than left to the Proxy's passthrough: if the inner executor has no
     // `rename`, the fallback must still be the INNER shell (the host) — routing it
