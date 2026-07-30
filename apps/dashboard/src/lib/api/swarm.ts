@@ -120,7 +120,12 @@ export interface SwarmStackDetail {
     volumes?: string[];
     configs: string[];
     secrets: string[];
-    publishedPorts: Array<{ target: number; published: number | null; protocol: string; mode: string }>;
+    publishedPorts: Array<{
+      target: number;
+      published: number | null;
+      protocol: string;
+      mode: string;
+    }>;
     updateState: string | null;
     updateMessage: string | null;
     /** Selected routing labels are informational; OpenShip does not mutate them in external mode. */
@@ -128,6 +133,13 @@ export interface SwarmStackDetail {
     routingUrls: string[];
   }>;
   tasks: SwarmTask[];
+  taskPage: {
+    offset: number;
+    limit: number;
+    total: number;
+    hasPrevious: boolean;
+    hasNext: boolean;
+  };
   observedAt: string;
   diagnostics: Array<{ resource: string; message: string }>;
 }
@@ -209,8 +221,20 @@ export interface SwarmSourcePreview {
   noOp: boolean;
   warnings: string[];
   compatibility: {
-    blockers: Array<{ code: string; message: string; remediation: string; serviceName?: string; acknowledgementKey?: string }>;
-    warnings: Array<{ code: string; message: string; remediation: string; serviceName?: string; acknowledgementKey?: string }>;
+    blockers: Array<{
+      code: string;
+      message: string;
+      remediation: string;
+      serviceName?: string;
+      acknowledgementKey?: string;
+    }>;
+    warnings: Array<{
+      code: string;
+      message: string;
+      remediation: string;
+      serviceName?: string;
+      acknowledgementKey?: string;
+    }>;
   };
 }
 
@@ -281,14 +305,23 @@ function serviceLogPath(projectId: string, serviceName: string): string {
 export const swarmApi = {
   summary: (serverId: string) => api.get<SwarmSummary>(`swarm/${serverId}/summary`),
   stacks: (serverId: string) => api.get<SwarmDiscoveryView>(`swarm/${serverId}/stacks`),
-  nodes: (serverId: string) => api.get<{ nodes: SwarmNode[]; observedAt: string }>(`swarm/${serverId}/nodes`),
-  stack: (serverId: string, stackName: string) =>
-    api.get<SwarmStackDetail>(`swarm/${serverId}/stacks/${encodeURIComponent(stackName)}`),
+  nodes: (serverId: string) =>
+    api.get<{ nodes: SwarmNode[]; observedAt: string }>(`swarm/${serverId}/nodes`),
+  stack: (
+    serverId: string,
+    stackName: string,
+    pagination: { taskOffset?: number; taskLimit?: number } = {},
+  ) =>
+    api.get<SwarmStackDetail>(`swarm/${serverId}/stacks/${encodeURIComponent(stackName)}`, {
+      params: pagination,
+    }),
   observe: (serverId: string, stackName: string) =>
-    api.post<{ projectId: string; stackId: string; created: boolean; observedDigest: string | null }>(
-      `swarm/${serverId}/stacks/${encodeURIComponent(stackName)}/observe`,
-      {},
-    ),
+    api.post<{
+      projectId: string;
+      stackId: string;
+      created: boolean;
+      observedDigest: string | null;
+    }>(`swarm/${serverId}/stacks/${encodeURIComponent(stackName)}/observe`, {}),
   observation: (projectId: string) =>
     api.get<SwarmObservation>(`projects/${projectId}/swarm/observation`),
   connection: (projectId: string) =>
@@ -299,45 +332,81 @@ export const swarmApi = {
       { serverId },
     ),
   createStackBinding: (projectId: string, input: { serverId: string; stackName: string }) =>
-    api.post<{ projectId: string; managerServerId: string; clusterId: string; stackName: string; managementMode: "observe" }>(
-      endpoints.projects.swarmStack(projectId),
-      input,
-    ),
+    api.post<{
+      projectId: string;
+      managerServerId: string;
+      clusterId: string;
+      stackName: string;
+      managementMode: "observe";
+    }>(endpoints.projects.swarmStack(projectId), input),
   source: (projectId: string) =>
-    api.get<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/source`).then((result) => result.source),
+    api
+      .get<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/source`)
+      .then((result) => result.source),
   replaceSource: (
     projectId: string,
     input:
       | { kind: "inline"; yaml: string; expectedVersion: number }
-      | { kind: "repository"; composePaths: string[]; sourcePath?: string; branch?: string; commitSha?: string; expectedVersion: number },
+      | {
+          kind: "repository";
+          composePaths: string[];
+          sourcePath?: string;
+          branch?: string;
+          commitSha?: string;
+          expectedVersion: number;
+        },
   ) =>
-    api.put<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/source`, input).then((result) => result.source),
+    api
+      .put<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/source`, input)
+      .then((result) => result.source),
   setRegistry: (projectId: string, registryId: string | null) =>
-    api.patch<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/registry`, { registryId }).then((result) => result.source),
+    api
+      .patch<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/registry`, { registryId })
+      .then((result) => result.source),
   setRoutingMode: (projectId: string, routingMode: SwarmStackSource["routingMode"]) =>
-    api.patch<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/routing`, { routingMode }).then((result) => result.source),
+    api
+      .patch<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/routing`, { routingMode })
+      .then((result) => result.source),
   setStorageAcknowledgements: (projectId: string, acknowledgements: string[]) =>
-    api.put<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/storage-acknowledgements`, { acknowledgements }).then((result) => result.source),
+    api
+      .put<{
+        source: SwarmStackSource;
+      }>(`projects/${projectId}/swarm/storage-acknowledgements`, { acknowledgements })
+      .then((result) => result.source),
   setVolumeReplacementAcknowledgements: (projectId: string, acknowledgements: string[]) =>
-    api.put<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/volume-replacement-acknowledgements`, { acknowledgements }).then((result) => result.source),
+    api
+      .put<{
+        source: SwarmStackSource;
+      }>(`projects/${projectId}/swarm/volume-replacement-acknowledgements`, { acknowledgements })
+      .then((result) => result.source),
   renderSource: (projectId: string, environment: Record<string, string> = {}) =>
     api.post<SwarmSourcePreview>(`projects/${projectId}/swarm/source/render`, { environment }),
-  claimManagement: (projectId: string, input: { confirmedStackName: string; previewLiveDigest: string; expectedSourceVersion: number }) =>
-    api.post<{ stackName: string; managementMode: "observe"; claimPending: true; liveDigest: string }>(
-      `projects/${projectId}/swarm/claim`,
-      input,
-    ),
-  releaseManagement: (projectId: string, input: { confirmedStackName: string; expectedSourceVersion: number }) =>
+  claimManagement: (
+    projectId: string,
+    input: { confirmedStackName: string; previewLiveDigest: string; expectedSourceVersion: number },
+  ) =>
+    api.post<{
+      stackName: string;
+      managementMode: "observe";
+      claimPending: true;
+      liveDigest: string;
+    }>(`projects/${projectId}/swarm/claim`, input),
+  releaseManagement: (
+    projectId: string,
+    input: { confirmedStackName: string; expectedSourceVersion: number },
+  ) =>
     api.post<{ stackName: string; managementMode: "observe"; released: true }>(
       `projects/${projectId}/swarm/release-management`,
       input,
     ),
   handoff: (projectId: string) => api.get<SwarmStackHandoff>(`projects/${projectId}/swarm/handoff`),
   refreshObservation: (projectId: string) =>
-    api.post<{ status: "clean" | "drifted"; digest: string; changed: boolean; details: Record<string, unknown> }>(
-      `projects/${projectId}/swarm/observation/refresh`,
-      {},
-    ),
+    api.post<{
+      status: "clean" | "drifted";
+      digest: string;
+      changed: boolean;
+      details: Record<string, unknown>;
+    }>(`projects/${projectId}/swarm/observation/refresh`, {}),
   scaleService: (
     projectId: string,
     serviceName: string,
@@ -352,10 +421,15 @@ export const swarmApi = {
       `projects/${projectId}/swarm/services/${encodeURIComponent(serviceName)}/restart`,
       {},
     ),
-  removeStack: (projectId: string, input: { confirmedStackName: string; expectedSourceVersion: number }) =>
-    api.post<SwarmRemoveResult>(`projects/${projectId}/swarm/remove`, input),
+  removeStack: (
+    projectId: string,
+    input: { confirmedStackName: string; expectedSourceVersion: number },
+  ) => api.post<SwarmRemoveResult>(`projects/${projectId}/swarm/remove`, input),
   serviceLogs: (projectId: string, serviceName: string, options: SwarmLogOptions = {}) =>
-    api.get<{ data: SwarmServiceLogsResult }>(serviceLogPath(projectId, serviceName), { params: options })
+    api
+      .get<{
+        data: SwarmServiceLogsResult;
+      }>(serviceLogPath(projectId, serviceName), { params: options })
       .then((response) => response.data),
   serviceLogStreamUrl: (projectId: string, serviceName: string, options: SwarmLogOptions = {}) => {
     const url = new URL(`${serviceLogPath(projectId, serviceName)}/stream`, getApiBaseUrl());

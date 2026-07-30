@@ -20,12 +20,17 @@ import { resolveTargetPlatform } from "../../lib/deployment-runtime";
 import { inferSwarmRoutingUrls, readSwarmRoutingLabels } from "./swarm-routing-labels";
 
 const DISCOVERY_CACHE_MS = 2_000;
+export const DEFAULT_SWARM_TASK_PAGE_SIZE = 100;
+export const MAX_SWARM_TASK_PAGE_SIZE = 250;
 
 type SwarmPlatform = Pick<Platform, "stackRuntime">;
 
 export interface SwarmDiscoveryDependencies {
   featureEnabled: () => boolean;
-  getServer: (serverId: string, organizationId: string) => ReturnType<typeof repos.server.getInOrganization>;
+  getServer: (
+    serverId: string,
+    organizationId: string,
+  ) => ReturnType<typeof repos.server.getInOrganization>;
   resolvePlatform: (
     target: "server",
     runtimeMode: "docker",
@@ -41,10 +46,29 @@ interface CachedSnapshot {
   snapshot: SwarmDiscoverySnapshot;
 }
 
+type PublicSwarmStackHealth = Omit<SwarmStackHealth, "services"> & {
+  services: Array<Omit<SwarmStackHealth["services"][number], "currentTasks">>;
+};
+
+function boundedPageValue(value: string | undefined, fallback: number, max: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, max) : fallback;
+}
+
+/** Current task rows are useful only while deriving health; never duplicate them in an API DTO. */
+function publicHealth(health: SwarmStackHealth): PublicSwarmStackHealth {
+  return {
+    ...health,
+    services: health.services.map(({ currentTasks: _currentTasks, ...service }) => service),
+  };
+}
+
 function toStableSwarmError(error: unknown): never {
   if (error instanceof AppError) throw error;
   if (error instanceof SwarmProbeError) {
-    const status = error.code === "SWARM_INACTIVE" || error.code === "SWARM_MANAGER_REQUIRED" ? 409 : 503;
+    const status =
+      error.code === "SWARM_INACTIVE" || error.code === "SWARM_MANAGER_REQUIRED" ? 409 : 503;
     throw new AppError(error.message, status, error.code);
   }
   throw new AppError(
@@ -64,16 +88,22 @@ export function createSwarmDiscoveryService(
 ) {
   const deps: SwarmDiscoveryDependencies = {
     featureEnabled: swarmSupportEnabled,
-    getServer: (serverId, organizationId) => repos.server.getInOrganization(serverId, organizationId),
+    getServer: (serverId, organizationId) =>
+      repos.server.getInOrganization(serverId, organizationId),
     resolvePlatform: resolveTargetPlatform,
     now: Date.now,
     ...dependencies,
   };
   const snapshots = new Map<string, CachedSnapshot>();
+  const pendingDiscoveries = new Map<string, Promise<SwarmDiscoverySnapshot>>();
 
   function assertEnabled(): void {
     if (!deps.featureEnabled()) {
-      throw new AppError("Docker Swarm support is not enabled on this OpenShip instance.", 404, "SWARM_FEATURE_DISABLED");
+      throw new AppError(
+        "Docker Swarm support is not enabled on this OpenShip instance.",
+        404,
+        "SWARM_FEATURE_DISABLED",
+      );
     }
   }
 
@@ -83,9 +113,19 @@ export function createSwarmDiscoveryService(
     if (!server) throw new NotFoundError("Server", serverId);
 
     try {
-      const platform = await deps.resolvePlatform("server", "docker", server.id, organizationId, "swarm");
+      const platform = await deps.resolvePlatform(
+        "server",
+        "docker",
+        server.id,
+        organizationId,
+        "swarm",
+      );
       if (!platform.stackRuntime) {
-        throw new AppError("Docker Swarm is unavailable for this target.", 503, "SWARM_MANAGER_UNAVAILABLE");
+        throw new AppError(
+          "Docker Swarm is unavailable for this target.",
+          503,
+          "SWARM_MANAGER_UNAVAILABLE",
+        );
       }
       return platform.stackRuntime;
     } catch (error) {
@@ -102,32 +142,48 @@ export function createSwarmDiscoveryService(
     }
   }
 
-  async function discover(serverId: string, organizationId: string): Promise<SwarmDiscoverySnapshot> {
+  async function discover(
+    serverId: string,
+    organizationId: string,
+  ): Promise<SwarmDiscoverySnapshot> {
     const cacheKey = `${organizationId}:${serverId}`;
     const cached = snapshots.get(cacheKey);
     if (cached && cached.expiresAt > deps.now()) return cached.snapshot;
+    const pending = pendingDiscoveries.get(cacheKey);
+    if (pending) return pending;
 
-    const runtime = await runtimeFor(serverId, organizationId);
-    try {
-      const snapshot = await runtime.discover();
-      snapshots.set(cacheKey, { snapshot, expiresAt: deps.now() + DISCOVERY_CACHE_MS });
-      return snapshot;
-    } catch (error) {
-      return toStableSwarmError(error);
-    }
+    const refresh = (async () => {
+      const runtime = await runtimeFor(serverId, organizationId);
+      try {
+        const snapshot = await runtime.discover();
+        snapshots.set(cacheKey, { snapshot, expiresAt: deps.now() + DISCOVERY_CACHE_MS });
+        return snapshot;
+      } catch (error) {
+        return toStableSwarmError(error);
+      } finally {
+        pendingDiscoveries.delete(cacheKey);
+      }
+    })();
+    pendingDiscoveries.set(cacheKey, refresh);
+    return refresh;
   }
 
   async function summary(serverId: string, organizationId: string) {
     const snapshot = await discover(serverId, organizationId);
     const eligibleNodeCount = snapshot.nodes.filter(
-      (node) => node.status.toLowerCase() === "ready" && node.availability.toLowerCase() === "active",
+      (node) =>
+        node.status.toLowerCase() === "ready" && node.availability.toLowerCase() === "active",
     ).length;
-    const health = snapshot.stacks.map((stack) => deriveSwarmStackHealth({
-      stackName: stack.name,
-      services: snapshot.services,
-      tasks: snapshot.tasks,
-      eligibleNodeCount,
-    }));
+    const health = snapshot.stacks.map((stack) =>
+      publicHealth(
+        deriveSwarmStackHealth({
+          stackName: stack.name,
+          services: snapshot.services,
+          tasks: snapshot.tasks,
+          eligibleNodeCount,
+        }),
+      ),
+    );
     return {
       manager: snapshot.manager,
       observedAt: snapshot.observedAt,
@@ -136,14 +192,28 @@ export function createSwarmDiscoveryService(
     };
   }
 
-  async function stack(serverId: string, organizationId: string, stackName: string): Promise<{
+  async function stack(
+    serverId: string,
+    organizationId: string,
+    stackName: string,
+    pagination: { taskOffset?: number; taskLimit?: number } = {},
+  ): Promise<{
     stack: SwarmDiscoverySnapshot["stacks"][number];
-    health: SwarmStackHealth;
-    services: Array<Omit<SwarmDiscoverySnapshot["services"][number], "labels"> & {
-      routingLabels: ReturnType<typeof readSwarmRoutingLabels>;
-      routingUrls: string[];
-    }>;
+    health: PublicSwarmStackHealth;
+    services: Array<
+      Omit<SwarmDiscoverySnapshot["services"][number], "labels"> & {
+        routingLabels: ReturnType<typeof readSwarmRoutingLabels>;
+        routingUrls: string[];
+      }
+    >;
     tasks: SwarmDiscoverySnapshot["tasks"];
+    taskPage: {
+      offset: number;
+      limit: number;
+      total: number;
+      hasPrevious: boolean;
+      hasNext: boolean;
+    };
     observedAt: string;
     diagnostics: SwarmDiscoverySnapshot["diagnostics"];
   }> {
@@ -151,21 +221,55 @@ export function createSwarmDiscoveryService(
     const found = snapshot.stacks.find((candidate) => candidate.name === stackName);
     if (!found) throw new NotFoundError("Swarm stack", stackName);
     const liveServices = snapshot.services.filter((service) => service.stackName === stackName);
-    const services = liveServices
-      .map(({ labels, ...service }) => {
-        const routingLabels = readSwarmRoutingLabels(labels);
-        return { ...service, routingLabels, routingUrls: inferSwarmRoutingUrls(routingLabels) };
-      });
+    const services = liveServices.map(({ labels, ...service }) => {
+      const routingLabels = readSwarmRoutingLabels(labels);
+      return { ...service, routingLabels, routingUrls: inferSwarmRoutingUrls(routingLabels) };
+    });
     const serviceIds = new Set(services.map((service) => service.id));
-    const tasks = snapshot.tasks.filter((task) => serviceIds.has(task.serviceId));
+    const allTasks = snapshot.tasks
+      .filter((task) => serviceIds.has(task.serviceId))
+      .sort(
+        (left, right) =>
+          left.serviceName.localeCompare(right.serviceName) ||
+          (left.slot ?? Number.MAX_SAFE_INTEGER) - (right.slot ?? Number.MAX_SAFE_INTEGER) ||
+          right.observedAt.localeCompare(left.observedAt) ||
+          left.id.localeCompare(right.id),
+      );
+    const taskLimit =
+      boundedPageValue(
+        pagination.taskLimit === undefined ? undefined : String(pagination.taskLimit),
+        DEFAULT_SWARM_TASK_PAGE_SIZE,
+        MAX_SWARM_TASK_PAGE_SIZE,
+      ) || DEFAULT_SWARM_TASK_PAGE_SIZE;
+    const taskOffset = boundedPageValue(
+      pagination.taskOffset === undefined ? undefined : String(pagination.taskOffset),
+      0,
+      Math.max(0, Math.floor((allTasks.length - 1) / taskLimit) * taskLimit),
+    );
+    const tasks = allTasks.slice(taskOffset, taskOffset + taskLimit);
     const eligibleNodeCount = snapshot.nodes.filter(
-      (node) => node.status.toLowerCase() === "ready" && node.availability.toLowerCase() === "active",
+      (node) =>
+        node.status.toLowerCase() === "ready" && node.availability.toLowerCase() === "active",
     ).length;
     return {
       stack: found,
-      health: deriveSwarmStackHealth({ stackName, services: liveServices, tasks, eligibleNodeCount }),
+      health: publicHealth(
+        deriveSwarmStackHealth({
+          stackName,
+          services: liveServices,
+          tasks: allTasks,
+          eligibleNodeCount,
+        }),
+      ),
       services,
       tasks,
+      taskPage: {
+        offset: taskOffset,
+        limit: taskLimit,
+        total: allTasks.length,
+        hasPrevious: taskOffset > 0,
+        hasNext: taskOffset + tasks.length < allTasks.length,
+      },
       observedAt: snapshot.observedAt,
       diagnostics: snapshot.diagnostics,
     };
@@ -176,7 +280,10 @@ export function createSwarmDiscoveryService(
     discover,
     summary,
     stack,
-    clearCache: () => snapshots.clear(),
+    clearCache: () => {
+      snapshots.clear();
+      pendingDiscoveries.clear();
+    },
   };
 }
 

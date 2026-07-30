@@ -18,7 +18,9 @@ const serverVersion = { Version: "29.5.3", APIVersion: "1.52" };
 function executor(info: unknown = managerInfo, server: unknown = serverVersion) {
   return {
     exec: vi.fn((command: string) =>
-      Promise.resolve(command.startsWith("docker info") ? JSON.stringify(info) : JSON.stringify(server)),
+      Promise.resolve(
+        command.startsWith("docker info") ? JSON.stringify(info) : JSON.stringify(server),
+      ),
     ),
   };
 }
@@ -36,8 +38,16 @@ describe("SwarmRuntime manager probe", () => {
   });
 
   it.each([
-    ["inactive engine", { ...managerInfo, Swarm: { ...managerInfo.Swarm, LocalNodeState: "inactive" } }, "SWARM_INACTIVE"],
-    ["worker", { ...managerInfo, Swarm: { ...managerInfo.Swarm, ControlAvailable: false } }, "SWARM_MANAGER_REQUIRED"],
+    [
+      "inactive engine",
+      { ...managerInfo, Swarm: { ...managerInfo.Swarm, LocalNodeState: "inactive" } },
+      "SWARM_INACTIVE",
+    ],
+    [
+      "worker",
+      { ...managerInfo, Swarm: { ...managerInfo.Swarm, ControlAvailable: false } },
+      "SWARM_MANAGER_REQUIRED",
+    ],
   ])("rejects a %s before any stack operation", async (_label, info, code) => {
     await expect(SwarmRuntime.create({ executor: executor(info) })).rejects.toMatchObject({ code });
   });
@@ -55,7 +65,13 @@ describe("SwarmRuntime manager probe", () => {
       commands.push(command);
       if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
       if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
-      if (command.startsWith("docker node ls")) return JSON.stringify({ ID: "node-1", Hostname: "manager", Status: "Ready", Availability: "Active" });
+      if (command.startsWith("docker node ls"))
+        return JSON.stringify({
+          ID: "node-1",
+          Hostname: "manager",
+          Status: "Ready",
+          Availability: "Active",
+        });
       if (command.startsWith("docker node inspect")) {
         return JSON.stringify({
           ID: "node-1",
@@ -78,12 +94,26 @@ describe("SwarmRuntime manager probe", () => {
         });
       }
       if (command.startsWith("docker service ps")) {
-        return JSON.stringify({ ID: "task-1", Name: "blog_web.1", DesiredState: "Running", CurrentState: "Running" });
+        return JSON.stringify({
+          ID: "task-1",
+          Name: "blog_web.1",
+          DesiredState: "Running",
+          CurrentState: "Running",
+        });
       }
-      if (command.startsWith("docker network ls")) return JSON.stringify({ ID: "net-1", Name: "blog_default", Driver: "overlay", Scope: "swarm" });
-      if (command.startsWith("docker volume ls")) return JSON.stringify({ Name: "blog_data", Driver: "local", Scope: "local" });
-      if (command.startsWith("docker config ls")) return JSON.stringify({ ID: "config-1", Name: "blog_config" });
-      if (command.startsWith("docker secret ls")) return JSON.stringify({ ID: "secret-1", Name: "blog_password" });
+      if (command.startsWith("docker network ls"))
+        return JSON.stringify({
+          ID: "net-1",
+          Name: "blog_default",
+          Driver: "overlay",
+          Scope: "swarm",
+        });
+      if (command.startsWith("docker volume ls"))
+        return JSON.stringify({ Name: "blog_data", Driver: "local", Scope: "local" });
+      if (command.startsWith("docker config ls"))
+        return JSON.stringify({ ID: "config-1", Name: "blog_config" });
+      if (command.startsWith("docker secret ls"))
+        return JSON.stringify({ ID: "secret-1", Name: "blog_password" });
       throw new Error(`unexpected command: ${command}`);
     });
     const runtime = await SwarmRuntime.create({ executor: { exec } });
@@ -100,6 +130,71 @@ describe("SwarmRuntime manager probe", () => {
     expect(commands.some((command) => command.startsWith("docker secret inspect"))).toBe(false);
   });
 
+  it("batches a generated large inventory without one manager round trip per service", async () => {
+    const commands: string[] = [];
+    const serviceIds = Array.from(
+      { length: 250 },
+      (_, index) => `service-${index.toString().padStart(3, "0")}`,
+    );
+    const idsIn = (command: string) =>
+      Array.from(command.matchAll(/'service-(\d+)'/g), ([, id]) => id!);
+    const exec = vi.fn(async (command: string) => {
+      commands.push(command);
+      if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
+      if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
+      if (command.startsWith("docker node ls")) return "";
+      if (command === "docker service ls -q") return `${serviceIds.join("\n")}\n`;
+      if (command.startsWith("docker service inspect")) {
+        return idsIn(command)
+          .map((id) =>
+            JSON.stringify({
+              ID: `service-${id}`,
+              Version: { Index: 1 },
+              Spec: {
+                Name: `bench_web_${id}`,
+                Labels: { "com.docker.stack.namespace": "bench" },
+                Mode: { Replicated: { Replicas: 1 } },
+                TaskTemplate: { ContainerSpec: { Image: "nginx:alpine" } },
+              },
+            }),
+          )
+          .join("\n");
+      }
+      if (command.startsWith("docker service ps")) {
+        return idsIn(command)
+          .flatMap((id) =>
+            Array.from({ length: 40 }, (_, slot) =>
+              JSON.stringify({
+                ID: `task-${id}-${slot}`,
+                Name: `bench_web_${id}.${slot + 1}`,
+                DesiredState: "Running",
+                CurrentState: "Running",
+              }),
+            ),
+          )
+          .join("\n");
+      }
+      if (
+        command.startsWith("docker network ls") ||
+        command.startsWith("docker volume ls") ||
+        command.startsWith("docker config ls") ||
+        command.startsWith("docker secret ls")
+      )
+        return "";
+      throw new Error(`unexpected command: ${command}`);
+    });
+    const runtime = await SwarmRuntime.create({ executor: { exec } });
+
+    const snapshot = await runtime.discover();
+
+    expect(snapshot.services).toHaveLength(250);
+    expect(snapshot.tasks).toHaveLength(10_000);
+    expect(commands.filter((command) => command.startsWith("docker service inspect"))).toHaveLength(
+      5,
+    );
+    expect(commands.filter((command) => command.startsWith("docker service ps"))).toHaveLength(5);
+  });
+
   it("renders through docker stack config with an explicit environment and always removes its private stage", async () => {
     const commands: string[] = [];
     const writes = new Map<string, string>();
@@ -109,20 +204,28 @@ describe("SwarmRuntime manager probe", () => {
       if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
       if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
       if (command.startsWith("umask 077 && mktemp")) return "/tmp/openship-swarm-render.abc123\n";
-      if (command.includes("docker stack config")) return "services:\n  web:\n    image: nginx:alpine\n";
+      if (command.includes("docker stack config"))
+        return "services:\n  web:\n    image: nginx:alpine\n";
       throw new Error(`unexpected command: ${command}`);
     });
     const runtime = await SwarmRuntime.create({
       executor: {
         exec,
-        writeFile: async (path, content) => { writes.set(path, content); },
+        writeFile: async (path, content) => {
+          writes.set(path, content);
+        },
         readFile: async () => "unsupported option warning\n",
         rm,
       },
     });
 
     const result = await runtime.renderStack({
-      files: [{ path: "compose.yaml", content: "version: \"3.9\"\nservices:\n  web:\n    image: nginx\n    command: \"$${1}\"\n" }],
+      files: [
+        {
+          path: "compose.yaml",
+          content: 'version: "3.9"\nservices:\n  web:\n    image: nginx\n    command: "$${1}"\n',
+        },
+      ],
       composePaths: ["compose.yaml"],
       environment: { IMAGE_TAG: "v1", REGEX: "$${1}" },
       ownershipLabels: { web: { "com.openship.stack-id": "swarm_a" } },
@@ -137,15 +240,29 @@ describe("SwarmRuntime manager probe", () => {
     });
     expect(result.renderedDigest).toMatch(/^sha256:/);
     expect(writes.get("/tmp/openship-swarm-render.abc123/compose.yaml")).toContain("$${1}");
-    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.env")).toContain("REGEX='$${1}'");
-    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("com.openship.stack-id");
-    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("registry.example.com/team/blog/web@sha256:deadbeef");
-    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain('"openship-edge"');
-    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain('"blog_web"');
-    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("external: true");
-    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain('version: "3.9"');
+    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.env")).toContain(
+      "REGEX='$${1}'",
+    );
+    expect(
+      writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml"),
+    ).toContain("com.openship.stack-id");
+    expect(
+      writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml"),
+    ).toContain("registry.example.com/team/blog/web@sha256:deadbeef");
+    expect(
+      writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml"),
+    ).toContain('"openship-edge"');
+    expect(
+      writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml"),
+    ).toContain('"blog_web"');
+    expect(
+      writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml"),
+    ).toContain("external: true");
+    expect(
+      writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml"),
+    ).toContain('version: "3.9"');
     const renderCommand = commands.find((command) => command.includes("docker stack config"))!;
-    expect(renderCommand).toContain("env -i PATH=\"$PATH\"");
+    expect(renderCommand).toContain('env -i PATH="$PATH"');
     expect(renderCommand).not.toContain("docker stack deploy");
     expect(rm).toHaveBeenCalledWith("/tmp/openship-swarm-render.abc123");
   });
@@ -158,7 +275,8 @@ describe("SwarmRuntime manager probe", () => {
           if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
           if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
           if (command.startsWith("umask 077 && mktemp")) return "/tmp/openship-swarm-render.def456";
-          if (command.includes("docker stack config")) throw new Error("interpolation variable SECRET_TOKEN is required");
+          if (command.includes("docker stack config"))
+            throw new Error("interpolation variable SECRET_TOKEN is required");
           throw new Error("unexpected");
         },
         writeFile: async () => {},
@@ -167,11 +285,13 @@ describe("SwarmRuntime manager probe", () => {
       },
     });
 
-    await expect(runtime.renderStack({
-      files: [{ path: "compose.yaml", content: "services: {}\n" }],
-      composePaths: ["compose.yaml"],
-      environment: { SECRET_TOKEN: "secret-canary" },
-    })).rejects.toMatchObject({
+    await expect(
+      runtime.renderStack({
+        files: [{ path: "compose.yaml", content: "services: {}\n" }],
+        composePaths: ["compose.yaml"],
+        environment: { SECRET_TOKEN: "secret-canary" },
+      }),
+    ).rejects.toMatchObject({
       name: "SwarmRenderError",
       issues: [{ code: "SWARM_STACK_INTERPOLATION_FAILED" }],
     });
@@ -185,7 +305,8 @@ describe("SwarmRuntime manager probe", () => {
         exec: async (command: string) => {
           if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
           if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
-          if (command.startsWith("umask 077 && mktemp")) return "/tmp/openship-swarm-render.large123";
+          if (command.startsWith("umask 077 && mktemp"))
+            return "/tmp/openship-swarm-render.large123";
           if (command.includes("docker stack config")) return "x".repeat(10_000_001);
           throw new Error("unexpected");
         },
@@ -195,10 +316,12 @@ describe("SwarmRuntime manager probe", () => {
       },
     });
 
-    await expect(runtime.renderStack({
-      files: [{ path: "compose.yaml", content: "services: {}\n" }],
-      composePaths: ["compose.yaml"],
-    })).rejects.toMatchObject({
+    await expect(
+      runtime.renderStack({
+        files: [{ path: "compose.yaml", content: "services: {}\n" }],
+        composePaths: ["compose.yaml"],
+      }),
+    ).rejects.toMatchObject({
       name: "SwarmRenderError",
       issues: [{ code: "SWARM_STACK_RENDER_TOO_LARGE" }],
     });
@@ -221,17 +344,23 @@ describe("SwarmRuntime manager probe", () => {
           if (command.startsWith("docker stack deploy")) return "Creating service demo_web";
           throw new Error(`unexpected command: ${command}`);
         },
-        writeFile: async (path, content) => { writes.set(path, content); },
+        writeFile: async (path, content) => {
+          writes.set(path, content);
+        },
         rm,
       },
     });
 
-    await expect(runtime.deployStack({
-      stackName: "demo",
-      renderedYaml: "services:\n  web:\n    image: nginx:1.27-alpine\n",
-    })).resolves.toEqual({ output: "Creating service demo_web" });
+    await expect(
+      runtime.deployStack({
+        stackName: "demo",
+        renderedYaml: "services:\n  web:\n    image: nginx:1.27-alpine\n",
+      }),
+    ).resolves.toEqual({ output: "Creating service demo_web" });
 
-    expect(writes.get("/tmp/openship-swarm-deploy.abc123/rendered-stack.yaml")).toContain("nginx:1.27-alpine");
+    expect(writes.get("/tmp/openship-swarm-deploy.abc123/rendered-stack.yaml")).toContain(
+      "nginx:1.27-alpine",
+    );
     const command = commands.find((entry) => entry.startsWith("docker stack deploy"))!;
     expect(command).toContain("--resolve-image always");
     expect(command).not.toContain("--prune");
@@ -241,12 +370,19 @@ describe("SwarmRuntime manager probe", () => {
 
   it("rejects invalid deploy input before invoking docker", async () => {
     const exec = vi.fn(async (command: string) =>
-      command.startsWith("docker info") ? JSON.stringify(managerInfo) : JSON.stringify(serverVersion),
+      command.startsWith("docker info")
+        ? JSON.stringify(managerInfo)
+        : JSON.stringify(serverVersion),
     );
-    const runtime = await SwarmRuntime.create({ executor: { exec, writeFile: async () => {}, rm: async () => {} } });
-    await expect(runtime.deployStack({ stackName: "Not Allowed", renderedYaml: "services: {}" }))
-      .rejects.toMatchObject({ name: "SwarmDeployError" });
-    expect(exec.mock.calls.some(([command]) => String(command).includes("docker stack deploy"))).toBe(false);
+    const runtime = await SwarmRuntime.create({
+      executor: { exec, writeFile: async () => {}, rm: async () => {} },
+    });
+    await expect(
+      runtime.deployStack({ stackName: "Not Allowed", renderedYaml: "services: {}" }),
+    ).rejects.toMatchObject({ name: "SwarmDeployError" });
+    expect(
+      exec.mock.calls.some(([command]) => String(command).includes("docker stack deploy")),
+    ).toBe(false);
   });
 
   it("uses a private temporary Docker config for registry propagation without putting credentials in a command", async () => {
@@ -259,11 +395,14 @@ describe("SwarmRuntime manager probe", () => {
           commands.push(command);
           if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
           if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
-          if (command.startsWith("umask 077 && mktemp -d /tmp/openship-swarm-deploy.")) return "/tmp/openship-swarm-deploy.auth123";
+          if (command.startsWith("umask 077 && mktemp -d /tmp/openship-swarm-deploy."))
+            return "/tmp/openship-swarm-deploy.auth123";
           if (command.startsWith("DOCKER_CONFIG='")) return "Creating service demo_web";
           throw new Error(`unexpected command: ${command}`);
         },
-        writeFile: async (path, content) => { writes.set(path, content); },
+        writeFile: async (path, content) => {
+          writes.set(path, content);
+        },
         rm,
       },
     });
@@ -272,11 +411,19 @@ describe("SwarmRuntime manager probe", () => {
       stackName: "demo",
       renderedYaml: "services:\n  web:\n    image: registry.example.com/team/web@sha256:deadbeef\n",
       withRegistryAuth: true,
-      registryAuth: { serverAddress: "registry.example.com", username: "robot", password: "not-in-command" },
+      registryAuth: {
+        serverAddress: "registry.example.com",
+        username: "robot",
+        password: "not-in-command",
+      },
     });
 
-    const config = JSON.parse(writes.get("/tmp/openship-swarm-deploy.auth123/config.json") ?? "{}") as { auths?: Record<string, { auth?: string }> };
-    expect(config.auths?.["registry.example.com"]?.auth).toBe(Buffer.from("robot:not-in-command").toString("base64"));
+    const config = JSON.parse(
+      writes.get("/tmp/openship-swarm-deploy.auth123/config.json") ?? "{}",
+    ) as { auths?: Record<string, { auth?: string }> };
+    expect(config.auths?.["registry.example.com"]?.auth).toBe(
+      Buffer.from("robot:not-in-command").toString("base64"),
+    );
     const command = commands.find((entry) => entry.startsWith("DOCKER_CONFIG='"))!;
     expect(command).toContain("--with-registry-auth");
     expect(command).not.toContain("not-in-command");
@@ -299,49 +446,95 @@ describe("SwarmRuntime manager probe", () => {
       },
     });
 
-    await expect(runtime.scaleService({ serviceId: "service-1", replicas: 0 })).resolves.toEqual({ output: "blog_web scaled to 0" });
-    await expect(runtime.restartService({ serviceId: "service-1" })).resolves.toEqual({ output: "blog_web restarted" });
-    await expect(runtime.removeStack({ stackName: "blog" })).resolves.toEqual({ output: "Removing service blog_web" });
-    expect(commands).toEqual(expect.arrayContaining([
-      expect.stringContaining("docker service scale --detach=false 'service-1=0'"),
-      expect.stringContaining("docker service update --detach=false --force 'service-1'"),
-      expect.stringContaining("docker stack rm 'blog'"),
-    ]));
-    await expect(runtime.scaleService({ serviceId: "service; rm -rf /", replicas: 1 })).rejects.toMatchObject({ name: "SwarmDeployError" });
+    await expect(runtime.scaleService({ serviceId: "service-1", replicas: 0 })).resolves.toEqual({
+      output: "blog_web scaled to 0",
+    });
+    await expect(runtime.restartService({ serviceId: "service-1" })).resolves.toEqual({
+      output: "blog_web restarted",
+    });
+    await expect(runtime.removeStack({ stackName: "blog" })).resolves.toEqual({
+      output: "Removing service blog_web",
+    });
+    expect(commands).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("docker service scale --detach=false 'service-1=0'"),
+        expect.stringContaining("docker service update --detach=false --force 'service-1'"),
+        expect.stringContaining("docker stack rm 'blog'"),
+      ]),
+    );
+    await expect(
+      runtime.scaleService({ serviceId: "service; rm -rf /", replicas: 1 }),
+    ).rejects.toMatchObject({ name: "SwarmDeployError" });
   });
 
   it("reads and follows bounded service or task logs with caller cancellation", async () => {
     const commands: string[] = [];
-    const streamExec = vi.fn((_command: string, onLog: (entry: { message: string }) => void, opts?: { signal?: AbortSignal }) => {
-      onLog({ message: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z booted\n" });
-      return new Promise<{ code: number; output: string }>((resolve) => {
-        opts?.signal?.addEventListener("abort", () => resolve({ code: 0, output: "" }), { once: true });
-      });
-    });
+    const streamExec = vi.fn(
+      (
+        _command: string,
+        onLog: (entry: { message: string }) => void,
+        opts?: { signal?: AbortSignal },
+      ) => {
+        onLog({ message: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z booted\n" });
+        return new Promise<{ code: number; output: string }>((resolve) => {
+          opts?.signal?.addEventListener("abort", () => resolve({ code: 0, output: "" }), {
+            once: true,
+          });
+        });
+      },
+    );
     const runtime = await SwarmRuntime.create({
       executor: {
         exec: async (command: string) => {
           commands.push(command);
           if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
           if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
-          if (command.startsWith("docker service logs")) return "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z ready";
+          if (command.startsWith("docker service logs"))
+            return "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z ready";
           throw new Error(`unexpected command: ${command}`);
         },
         streamExec,
       },
     });
 
-    await expect(runtime.getServiceLogs({ serviceId: "service-1", tail: 20, since: "1h" })).resolves.toEqual({
-      entries: [{ raw: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z ready", timestamp: "2026-07-30T00:00:00.000000000Z", message: "ready", serviceName: "blog_web", taskId: "task-1", nodeName: "manager" }],
+    await expect(
+      runtime.getServiceLogs({ serviceId: "service-1", tail: 20, since: "1h" }),
+    ).resolves.toEqual({
+      entries: [
+        {
+          raw: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z ready",
+          timestamp: "2026-07-30T00:00:00.000000000Z",
+          message: "ready",
+          serviceName: "blog_web",
+          taskId: "task-1",
+          nodeName: "manager",
+        },
+      ],
     });
     const entries: unknown[] = [];
-    const stream = runtime.streamServiceLogs({ serviceId: "service-1", taskId: "task-1", tail: 5 }, (entry) => entries.push(entry));
+    const stream = runtime.streamServiceLogs(
+      { serviceId: "service-1", taskId: "task-1", tail: 5 },
+      (entry) => entries.push(entry),
+    );
     stream.stop();
     await stream.done;
-    expect(entries).toEqual([{ raw: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z booted", timestamp: "2026-07-30T00:00:00.000000000Z", message: "booted", serviceName: "blog_web", taskId: "task-1", nodeName: "manager" }]);
-    expect(commands).toEqual(expect.arrayContaining([
-      expect.stringContaining("docker service logs --timestamps --tail 20 --since '1h' 'service-1'"),
-    ]));
+    expect(entries).toEqual([
+      {
+        raw: "blog_web.1.task-1@manager | 2026-07-30T00:00:00.000000000Z booted",
+        timestamp: "2026-07-30T00:00:00.000000000Z",
+        message: "booted",
+        serviceName: "blog_web",
+        taskId: "task-1",
+        nodeName: "manager",
+      },
+    ]);
+    expect(commands).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "docker service logs --timestamps --tail 20 --since '1h' 'service-1'",
+        ),
+      ]),
+    );
     expect(streamExec).toHaveBeenCalledWith(
       expect.stringContaining("docker service logs --timestamps --tail 5 --follow 'task-1'"),
       expect.any(Function),

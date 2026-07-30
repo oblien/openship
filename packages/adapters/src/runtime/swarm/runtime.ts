@@ -32,7 +32,8 @@ import type {
 } from "./types";
 
 export interface SwarmRuntimeOptions {
-  executor: Pick<CommandExecutor, "exec"> & Partial<Pick<CommandExecutor, "streamExec" | "writeFile" | "readFile" | "rm">>;
+  executor: Pick<CommandExecutor, "exec"> &
+    Partial<Pick<CommandExecutor, "streamExec" | "writeFile" | "readFile" | "rm">>;
   /** Bounded so a failed manager/SSH link cannot pin an API request. */
   timeoutMs?: number;
   /** Bound a malformed/large manager response before it reaches an API payload. */
@@ -61,6 +62,33 @@ const MAX_RENDER_SOURCE_FILES = 250;
 const STAGING_PREFIX = "/tmp/openship-swarm-render.";
 const DEPLOY_STAGING_PREFIX = "/tmp/openship-swarm-deploy.";
 const MAX_RENDERED_STACK_BYTES = 10_000_000;
+/** Keep manager CLI argv sizes safe while avoiding one remote call per object. */
+const DISCOVERY_BATCH_SIZE = 50;
+
+function batches<T>(values: T[], size = DISCOVERY_BATCH_SIZE): T[][] {
+  const result: T[][] = [];
+  for (let offset = 0; offset < values.length; offset += size) {
+    result.push(values.slice(offset, offset + size));
+  }
+  return result;
+}
+
+function serviceForTaskRow(
+  row: unknown,
+  services: Array<{ id: string; name: string }>,
+): { id: string; name: string } | null {
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const name = (row as Record<string, unknown>).Name;
+  if (typeof name !== "string") return null;
+  // `docker service ps` names a task as <service>.<slot>.<task>. Service names
+  // can contain punctuation, so prefer the longest exact prefix.
+  return (
+    services
+      .slice()
+      .sort((left, right) => right.name.length - left.name.length)
+      .find((service) => name === service.name || name.startsWith(`${service.name}.`)) ?? null
+  );
+}
 
 function assertStagingPath(path: string): string {
   const normalized = path.trim().replaceAll("\\", "/");
@@ -70,7 +98,12 @@ function assertStagingPath(path: string): string {
     /[\u0000-\u001f\u007f]/.test(normalized) ||
     normalized.split("/").some((part) => part === ".." || part === "")
   ) {
-    throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "A stack source path is unsafe for manager rendering." }]);
+    throw new SwarmRenderError([
+      {
+        code: "SWARM_STACK_RENDER_UNAVAILABLE",
+        message: "A stack source path is unsafe for manager rendering.",
+      },
+    ]);
   }
   return normalized;
 }
@@ -80,18 +113,28 @@ function shellValue(value: string): string {
 }
 
 function explicitEnvironment(environment: Record<string, string>): string {
-  return Object.entries(environment)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-        throw new SwarmRenderError([{ code: "SWARM_STACK_INTERPOLATION_FAILED", message: "An interpolation variable name is invalid." }]);
-      }
-      return `${key}=${shellValue(value)}`;
-    })
-    .join("\n") + "\n";
+  return (
+    Object.entries(environment)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+          throw new SwarmRenderError([
+            {
+              code: "SWARM_STACK_INTERPOLATION_FAILED",
+              message: "An interpolation variable name is invalid.",
+            },
+          ]);
+        }
+        return `${key}=${shellValue(value)}`;
+      })
+      .join("\n") + "\n"
+  );
 }
 
-function declaredComposeVersion(files: Array<{ path: string; content: string }>, composePaths: string[]): string | null {
+function declaredComposeVersion(
+  files: Array<{ path: string; content: string }>,
+  composePaths: string[],
+): string | null {
   for (const path of composePaths) {
     const content = files.find((file) => file.path === path)?.content;
     const match = content?.match(/^\s*version\s*:\s*(?:"([^"]+)"|'([^']+)'|([^\s#]+))/m);
@@ -108,47 +151,62 @@ function overrideYaml(
   externalNetworks: Record<string, string>,
   composeVersion: string | null,
 ): string {
-  const serviceNames = Array.from(new Set([
-    ...Object.keys(labelsByService),
-    ...Object.keys(imageOverrides),
-    ...Object.keys(networkAttachments),
-  ])).sort((a, b) => a.localeCompare(b));
+  const serviceNames = Array.from(
+    new Set([
+      ...Object.keys(labelsByService),
+      ...Object.keys(imageOverrides),
+      ...Object.keys(networkAttachments),
+    ]),
+  ).sort((a, b) => a.localeCompare(b));
   const header = composeVersion ? `version: ${JSON.stringify(composeVersion)}\n` : "";
-  if (serviceNames.length === 0 && Object.keys(externalNetworks).length === 0) return `${header}services: {}\n`;
+  if (serviceNames.length === 0 && Object.keys(externalNetworks).length === 0)
+    return `${header}services: {}\n`;
   // JSON strings are valid YAML scalars and avoid bespoke quoting rules.
-  const services = serviceNames.length === 0 ? "services: {}" : `services:\n${serviceNames.map((service) => {
-    const labels = labelsByService[service];
-    const image = imageOverrides[service];
-    const network = networkAttachments[service];
-    const lines = [`  ${JSON.stringify(service)}:`];
-    if (image) lines.push(`    image: ${JSON.stringify(image)}`);
-    if (labels && Object.keys(labels).length > 0) {
-      lines.push(
-        "    deploy:",
-        "      labels:",
-        ...Object.entries(labels)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([key, value]) => `        ${JSON.stringify(key)}: ${JSON.stringify(value)}`),
-      );
-    }
-    if (network) {
-      lines.push("    networks:", `      ${JSON.stringify(network.networkName)}:`);
-      if (network.aliases?.length) {
-        lines.push(
-          "        aliases:",
-          ...network.aliases.slice().sort((a, b) => a.localeCompare(b)).map((alias) => `          - ${JSON.stringify(alias)}`),
-        );
-      }
-    }
-    return lines.join("\n");
-  }).join("\n")}`;
+  const services =
+    serviceNames.length === 0
+      ? "services: {}"
+      : `services:\n${serviceNames
+          .map((service) => {
+            const labels = labelsByService[service];
+            const image = imageOverrides[service];
+            const network = networkAttachments[service];
+            const lines = [`  ${JSON.stringify(service)}:`];
+            if (image) lines.push(`    image: ${JSON.stringify(image)}`);
+            if (labels && Object.keys(labels).length > 0) {
+              lines.push(
+                "    deploy:",
+                "      labels:",
+                ...Object.entries(labels)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(
+                    ([key, value]) => `        ${JSON.stringify(key)}: ${JSON.stringify(value)}`,
+                  ),
+              );
+            }
+            if (network) {
+              lines.push("    networks:", `      ${JSON.stringify(network.networkName)}:`);
+              if (network.aliases?.length) {
+                lines.push(
+                  "        aliases:",
+                  ...network.aliases
+                    .slice()
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((alias) => `          - ${JSON.stringify(alias)}`),
+                );
+              }
+            }
+            return lines.join("\n");
+          })
+          .join("\n")}`;
   const networks = Object.entries(externalNetworks)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([name, actualName]) => [
-      `  ${JSON.stringify(name)}:`,
-      "    external: true",
-      `    name: ${JSON.stringify(actualName)}`,
-    ].join("\n"));
+    .map(([name, actualName]) =>
+      [
+        `  ${JSON.stringify(name)}:`,
+        "    external: true",
+        `    name: ${JSON.stringify(actualName)}`,
+      ].join("\n"),
+    );
   return `${header}${services}${networks.length ? `\nnetworks:\n${networks.join("\n")}` : ""}\n`;
 }
 
@@ -209,7 +267,10 @@ function parseServiceLogLine(line: string, timestamps: boolean): SwarmServiceLog
   return { raw, timestamp: null, message: formatted, ...metadata };
 }
 
-function logCommand(input: SwarmServiceLogsInput, follow = false): { command: string; timestamps: boolean } {
+function logCommand(
+  input: SwarmServiceLogsInput,
+  follow = false,
+): { command: string; timestamps: boolean } {
   const target = assertServiceId(input.taskId ?? input.serviceId);
   const tail = assertLogTail(input.tail);
   const since = assertLogSince(input.since);
@@ -234,19 +295,23 @@ function boundedOutput(value: string): string {
 
 function assertRenderedStack(value: string): string {
   if (!value.trim() || Buffer.byteLength(value, "utf8") > MAX_RENDERED_STACK_BYTES) {
-    throw new SwarmDeployError("The rendered stack document is missing or exceeds the deploy size limit.");
+    throw new SwarmDeployError(
+      "The rendered stack document is missing or exceeds the deploy size limit.",
+    );
   }
   return canonicalRenderedYaml(value);
 }
 
 function safeWarnings(value: string): string[] {
-  return value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 20)
-    // Docker's warnings should name features, not include source/env values.
-    .map((line) => line.length > 500 ? `${line.slice(0, 500)}…` : line);
+  return (
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 20)
+      // Docker's warnings should name features, not include source/env values.
+      .map((line) => (line.length > 500 ? `${line.slice(0, 500)}…` : line))
+  );
 }
 
 /**
@@ -314,29 +379,38 @@ export class SwarmRuntime implements StackRuntimeAdapter {
     // `docker node ls` is a deliberately compact table and never includes
     // operator labels. Fetch the full node specs so placement checks (notably
     // the deliberate Edge ingress label) are based on manager truth.
-    const nodeRows = (await this.readJsonLines("docker node ls --format '{{json .}}'", "nodes", diagnostics))
-      .slice(0, this.maxResources);
-    const nodes = [];
-    for (const row of nodeRows) {
-      const listed = normalizeSwarmNode(row);
-      if (!listed.id) continue;
-      const inspected = await this.readJsonLines(
-        `docker node inspect --format '{{json .}}' ${sq(listed.id)}`,
-        "nodes",
-        diagnostics,
+    const nodeRows = (
+      await this.readJsonLines("docker node ls --format '{{json .}}'", "nodes", diagnostics)
+    ).slice(0, this.maxResources);
+    const listedNodes = nodeRows.map(normalizeSwarmNode).filter((node) => node.id);
+    const inspectedNodes = [];
+    for (const batch of batches(listedNodes.map((node) => node.id))) {
+      inspectedNodes.push(
+        ...(
+          await this.readJsonLines(
+            `docker node inspect --format '{{json .}}' ${batch.map(sq).join(" ")}`,
+            "nodes",
+            diagnostics,
+          )
+        ).map(normalizeSwarmNode),
       );
-      const node = inspected.length > 0 ? normalizeSwarmNode(inspected[0]) : listed;
-      if (node.id) nodes.push(node);
     }
+    const nodesById = new Map(
+      inspectedNodes.filter((node) => node.id).map((node) => [node.id, node]),
+    );
+    const nodes = listedNodes.map((node) => nodesById.get(node.id) ?? node);
 
     const serviceIds = await this.readLines("docker service ls -q", "services", diagnostics);
     if (serviceIds.length > this.maxResources) {
-      diagnostics.push({ resource: "services", message: `Discovery capped at ${this.maxResources} services.` });
+      diagnostics.push({
+        resource: "services",
+        message: `Discovery capped at ${this.maxResources} services.`,
+      });
     }
     const services = [];
-    for (const serviceId of serviceIds.slice(0, this.maxResources)) {
+    for (const batch of batches(serviceIds.slice(0, this.maxResources))) {
       const rows = await this.readJsonLines(
-        `docker service inspect --format '{{json .}}' ${sq(serviceId)}`,
+        `docker service inspect --format '{{json .}}' ${batch.map(sq).join(" ")}`,
         "services",
         diagnostics,
       );
@@ -346,34 +420,71 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       }
     }
 
-    const tasks = [];
-    for (const service of services) {
+    const taskRowsByService = new Map(services.map((service) => [service.id, [] as unknown[]]));
+    let unmatchedTaskRows = false;
+    for (const batch of batches(services)) {
       const rows = await this.readJsonLines(
-        `docker service ps ${sq(service.id)} --no-trunc --format '{{json .}}'`,
+        `docker service ps --no-trunc --format '{{json .}}' ${batch.map((service) => sq(service.id)).join(" ")}`,
         "tasks",
         diagnostics,
       );
+      for (const row of rows) {
+        const service = serviceForTaskRow(row, batch);
+        if (!service) {
+          unmatchedTaskRows = true;
+          continue;
+        }
+        taskRowsByService.get(service.id)?.push(row);
+      }
+    }
+    if (unmatchedTaskRows) {
+      diagnostics.push({
+        resource: "tasks",
+        message: "Some task rows could not be matched to a discovered service.",
+      });
+    }
+    const tasks = [];
+    for (const service of services) {
+      const rows = taskRowsByService.get(service.id) ?? [];
+      if (rows.length > this.maxResources) {
+        diagnostics.push({
+          resource: "tasks",
+          message: `Task history for ${service.name} was capped at ${this.maxResources} rows.`,
+        });
+      }
       for (const row of rows.slice(0, this.maxResources)) {
         const task = normalizeSwarmTask(row, service, observedAt);
         if (task.id) tasks.push(task);
       }
     }
 
-    const networks = (await this.readJsonLines("docker network ls --filter scope=swarm --format '{{json .}}'", "networks", diagnostics))
+    const networks = (
+      await this.readJsonLines(
+        "docker network ls --filter scope=swarm --format '{{json .}}'",
+        "networks",
+        diagnostics,
+      )
+    )
       .slice(0, this.maxResources)
       .map(normalizeSwarmNetwork)
       .filter((network) => network.id);
-    const volumes = (await this.readJsonLines("docker volume ls --format '{{json .}}'", "volumes", diagnostics))
+    const volumes = (
+      await this.readJsonLines("docker volume ls --format '{{json .}}'", "volumes", diagnostics)
+    )
       .slice(0, this.maxResources)
       .map(normalizeSwarmVolume)
       .filter((volume) => volume.name);
-    const configs = (await this.readJsonLines("docker config ls --format '{{json .}}'", "configs", diagnostics))
+    const configs = (
+      await this.readJsonLines("docker config ls --format '{{json .}}'", "configs", diagnostics)
+    )
       .slice(0, this.maxResources)
       .map(normalizeSwarmNamedObject)
       .filter((config) => config.id && config.name);
     // `docker secret ls` intentionally lists metadata only. Never inspect a
     // secret: the payload is not useful for discovery and must not enter memory.
-    const secrets = (await this.readJsonLines("docker secret ls --format '{{json .}}'", "secrets", diagnostics))
+    const secrets = (
+      await this.readJsonLines("docker secret ls --format '{{json .}}'", "secrets", diagnostics)
+    )
       .slice(0, this.maxResources)
       .map(normalizeSwarmNamedObject)
       .filter((secret) => secret.id && secret.name);
@@ -400,23 +511,48 @@ export class SwarmRuntime implements StackRuntimeAdapter {
   async renderStack(input: RenderStackInput): Promise<RenderedStack> {
     const executor = this.executor;
     if (!executor.writeFile || !executor.readFile || !executor.rm) {
-      throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "This manager transport cannot safely stage a stack render." }]);
+      throw new SwarmRenderError([
+        {
+          code: "SWARM_STACK_RENDER_UNAVAILABLE",
+          message: "This manager transport cannot safely stage a stack render.",
+        },
+      ]);
     }
     if (input.files.length === 0 || input.files.length > MAX_RENDER_SOURCE_FILES) {
-      throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "Stack rendering requires a bounded non-empty source file set." }]);
+      throw new SwarmRenderError([
+        {
+          code: "SWARM_STACK_RENDER_UNAVAILABLE",
+          message: "Stack rendering requires a bounded non-empty source file set.",
+        },
+      ]);
     }
     const files = input.files.map((file) => ({ ...file, path: assertStagingPath(file.path) }));
     const composePaths = input.composePaths.map((path) => assertStagingPath(path));
-    if (composePaths.length === 0 || composePaths.some((path) => !files.some((file) => file.path === path))) {
-      throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "Every ordered compose path must be present in the staged source files." }]);
+    if (
+      composePaths.length === 0 ||
+      composePaths.some((path) => !files.some((file) => file.path === path))
+    ) {
+      throw new SwarmRenderError([
+        {
+          code: "SWARM_STACK_RENDER_UNAVAILABLE",
+          message: "Every ordered compose path must be present in the staged source files.",
+        },
+      ]);
     }
 
     let stage: string | null = null;
     try {
-      const created = await executor.exec(`umask 077 && mktemp -d ${STAGING_PREFIX}XXXXXX`, { timeout: this.timeoutMs });
+      const created = await executor.exec(`umask 077 && mktemp -d ${STAGING_PREFIX}XXXXXX`, {
+        timeout: this.timeoutMs,
+      });
       stage = created.trim();
       if (!new RegExp(`^${STAGING_PREFIX.replace(".", "\\.")}[A-Za-z0-9]+$`).test(stage)) {
-        throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "Manager returned an invalid staging directory." }]);
+        throw new SwarmRenderError([
+          {
+            code: "SWARM_STACK_RENDER_UNAVAILABLE",
+            message: "Manager returned an invalid staging directory.",
+          },
+        ]);
       }
       for (const file of files) await executor.writeFile(`${stage}/${file.path}`, file.content);
 
@@ -449,19 +585,35 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       try {
         renderedYaml = await executor.exec(command, { timeout: this.timeoutMs });
       } catch (error) {
-        const message = error instanceof Error && /variable|interpolat/i.test(error.message)
-          ? "Docker could not interpolate a required stack variable. Provide it in the explicit render environment."
-          : "Docker rejected the stack configuration. Check Compose syntax, source paths, and Swarm compatibility.";
-        throw new SwarmRenderError([{ code: /variable|interpolat/i.test(error instanceof Error ? error.message : "")
-          ? "SWARM_STACK_INTERPOLATION_FAILED"
-          : "SWARM_STACK_CONFIG_FAILED", message }]);
+        const message =
+          error instanceof Error && /variable|interpolat/i.test(error.message)
+            ? "Docker could not interpolate a required stack variable. Provide it in the explicit render environment."
+            : "Docker rejected the stack configuration. Check Compose syntax, source paths, and Swarm compatibility.";
+        throw new SwarmRenderError([
+          {
+            code: /variable|interpolat/i.test(error instanceof Error ? error.message : "")
+              ? "SWARM_STACK_INTERPOLATION_FAILED"
+              : "SWARM_STACK_CONFIG_FAILED",
+            message,
+          },
+        ]);
       }
       if (Buffer.byteLength(renderedYaml, "utf8") > MAX_RENDERED_STACK_BYTES) {
-        throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_TOO_LARGE", message: "Docker rendered a stack document larger than the safe review limit." }]);
+        throw new SwarmRenderError([
+          {
+            code: "SWARM_STACK_RENDER_TOO_LARGE",
+            message: "Docker rendered a stack document larger than the safe review limit.",
+          },
+        ]);
       }
       const warnings = safeWarnings(await executor.readFile(warningsPath).catch(() => ""));
       const canonical = canonicalRenderedYaml(renderedYaml);
-      return { renderedYaml: canonical, renderedDigest: renderedDigest(canonical), overrideYaml: override, warnings };
+      return {
+        renderedYaml: canonical,
+        renderedDigest: renderedDigest(canonical),
+        overrideYaml: override,
+        warnings,
+      };
     } finally {
       if (stage) await executor.rm(stage).catch(() => {});
     }
@@ -484,18 +636,24 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       throw new SwarmDeployError("The requested image resolution policy is invalid.");
     }
     if (input.withRegistryAuth && !input.registryAuth) {
-      throw new SwarmDeployError("Registry credential propagation requires a temporary registry login.");
+      throw new SwarmDeployError(
+        "Registry credential propagation requires a temporary registry login.",
+      );
     }
-    if (input.registryAuth && (!input.registryAuth.serverAddress.trim() || !input.registryAuth.username || !input.registryAuth.password)) {
+    if (
+      input.registryAuth &&
+      (!input.registryAuth.serverAddress.trim() ||
+        !input.registryAuth.username ||
+        !input.registryAuth.password)
+    ) {
       throw new SwarmDeployError("Registry credential propagation is incomplete.");
     }
 
     let stage: string | null = null;
     try {
-      const created = await executor.exec(
-        `umask 077 && mktemp -d ${DEPLOY_STAGING_PREFIX}XXXXXX`,
-        { timeout: Math.max(this.timeoutMs, 120_000) },
-      );
+      const created = await executor.exec(`umask 077 && mktemp -d ${DEPLOY_STAGING_PREFIX}XXXXXX`, {
+        timeout: Math.max(this.timeoutMs, 120_000),
+      });
       stage = created.trim();
       if (!new RegExp(`^${DEPLOY_STAGING_PREFIX.replace(".", "\\.")}[A-Za-z0-9]+$`).test(stage)) {
         throw new SwarmDeployError("Manager returned an invalid deployment staging directory.");
@@ -506,10 +664,15 @@ export class SwarmRuntime implements StackRuntimeAdapter {
         // Docker accepts the standard config.json auth shape. The stage was
         // created under umask 077 and is removed in finally below, including on
         // connection loss or cancellation. The base64 value is data, not a log.
-        const auth = Buffer.from(`${input.registryAuth.username}:${input.registryAuth.password}`).toString("base64");
-        await executor.writeFile(`${stage}/config.json`, JSON.stringify({
-          auths: { [input.registryAuth.serverAddress.trim()]: { auth } },
-        }));
+        const auth = Buffer.from(
+          `${input.registryAuth.username}:${input.registryAuth.password}`,
+        ).toString("base64");
+        await executor.writeFile(
+          `${stage}/config.json`,
+          JSON.stringify({
+            auths: { [input.registryAuth.serverAddress.trim()]: { auth } },
+          }),
+        );
       }
       const command = [
         ...(input.registryAuth ? [`DOCKER_CONFIG=${sq(stage)}`] : []),
@@ -538,7 +701,9 @@ export class SwarmRuntime implements StackRuntimeAdapter {
   async scaleService(input: ScaleSwarmServiceInput): Promise<SwarmServiceOperation> {
     const serviceId = assertServiceId(input.serviceId);
     if (!Number.isInteger(input.replicas) || input.replicas < 0 || input.replicas > 10_000) {
-      throw new SwarmDeployError("Replica count must be a non-negative integer no greater than 10,000.");
+      throw new SwarmDeployError(
+        "Replica count must be a non-negative integer no greater than 10,000.",
+      );
     }
     return this.runOperation(
       `docker service scale --detach=false ${sq(`${serviceId}=${input.replicas}`)}`,
@@ -557,7 +722,9 @@ export class SwarmRuntime implements StackRuntimeAdapter {
   async getServiceLogs(input: SwarmServiceLogsInput): Promise<SwarmServiceLogResult> {
     const { command, timestamps } = logCommand(input);
     try {
-      const output = await this.executor.exec(command, { timeout: Math.max(this.timeoutMs, 30_000) });
+      const output = await this.executor.exec(command, {
+        timeout: Math.max(this.timeoutMs, 30_000),
+      });
       return {
         entries: output
           .split("\n")
@@ -585,12 +752,17 @@ export class SwarmRuntime implements StackRuntimeAdapter {
     const emit = (line: string) => {
       if (line.length > 0) onEntry(parseServiceLogLine(line, timestamps));
     };
-    const done = this.executor.streamExec(command, (entry: LogEntry) => {
-      buffer += entry.message;
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() ?? "";
-      for (const line of lines) emit(line);
-    }, { signal: controller.signal })
+    const done = this.executor
+      .streamExec(
+        command,
+        (entry: LogEntry) => {
+          buffer += entry.message;
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() ?? "";
+          for (const line of lines) emit(line);
+        },
+        { signal: controller.signal },
+      )
       .then(({ code }) => {
         if (buffer) emit(buffer);
         if (code !== 0 && !controller.signal.aborted) {
@@ -615,7 +787,11 @@ export class SwarmRuntime implements StackRuntimeAdapter {
 
   private async runOperation(command: string, failure: string): Promise<SwarmServiceOperation> {
     try {
-      return { output: boundedOutput(await this.executor.exec(command, { timeout: Math.max(this.timeoutMs, 120_000) })) };
+      return {
+        output: boundedOutput(
+          await this.executor.exec(command, { timeout: Math.max(this.timeoutMs, 120_000) }),
+        ),
+      };
     } catch (error) {
       const detail = error instanceof Error ? error.message.replace(/\s+/g, " ").trim() : "";
       throw new SwarmDeployError(detail ? `${failure} ${detail.slice(0, 1_000)}` : failure);
@@ -629,9 +805,15 @@ export class SwarmRuntime implements StackRuntimeAdapter {
   ): Promise<string[]> {
     try {
       const output = await this.executor.exec(command, { timeout: this.timeoutMs });
-      return output.split("\n").map((line) => line.trim()).filter(Boolean);
+      return output
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
     } catch {
-      diagnostics.push({ resource, message: `Unable to list Swarm ${resource} from this manager.` });
+      diagnostics.push({
+        resource,
+        message: `Unable to list Swarm ${resource} from this manager.`,
+      });
       return [];
     }
   }
@@ -647,7 +829,10 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       try {
         result.push(JSON.parse(line));
       } catch {
-        diagnostics.push({ resource, message: `Manager returned an unreadable ${resource} record.` });
+        diagnostics.push({
+          resource,
+          message: `Manager returned an unreadable ${resource} record.`,
+        });
       }
     }
     return result;

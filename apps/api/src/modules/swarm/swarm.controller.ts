@@ -13,6 +13,15 @@ function target(c: Context) {
   return { serverId: c.req.param("serverId")!, organizationId: ctx.organizationId, ctx };
 }
 
+function taskPagination(c: Context) {
+  const offset = c.req.query("taskOffset");
+  const limit = c.req.query("taskLimit");
+  return {
+    ...(offset !== undefined ? { taskOffset: Number(offset) } : {}),
+    ...(limit !== undefined ? { taskLimit: Number(limit) } : {}),
+  };
+}
+
 export async function probe(c: Context) {
   const { serverId, organizationId, ctx } = target(c);
   const manager = await swarmDiscovery.probe(serverId, organizationId);
@@ -36,7 +45,11 @@ export async function summary(c: Context) {
 export async function nodes(c: Context) {
   const { serverId, organizationId } = target(c);
   const snapshot = await swarmDiscovery.discover(serverId, organizationId);
-  return c.json({ nodes: snapshot.nodes, observedAt: snapshot.observedAt, diagnostics: snapshot.diagnostics });
+  return c.json({
+    nodes: snapshot.nodes,
+    observedAt: snapshot.observedAt,
+    diagnostics: snapshot.diagnostics,
+  });
 }
 
 export async function stacks(c: Context) {
@@ -47,37 +60,70 @@ export async function stacks(c: Context) {
 
 export async function stack(c: Context) {
   const { serverId, organizationId } = target(c);
-  return c.json(await swarmDiscovery.stack(serverId, organizationId, c.req.param("stackName")!));
+  return c.json(
+    await swarmDiscovery.stack(
+      serverId,
+      organizationId,
+      c.req.param("stackName")!,
+      taskPagination(c),
+    ),
+  );
 }
 
 export async function stackServices(c: Context) {
   const { serverId, organizationId } = target(c);
   const found = await swarmDiscovery.stack(serverId, organizationId, c.req.param("stackName")!);
-  return c.json({ services: found.services, observedAt: found.observedAt, diagnostics: found.diagnostics });
+  return c.json({
+    services: found.services,
+    observedAt: found.observedAt,
+    diagnostics: found.diagnostics,
+  });
 }
 
 export async function stackTasks(c: Context) {
   const { serverId, organizationId } = target(c);
-  const found = await swarmDiscovery.stack(serverId, organizationId, c.req.param("stackName")!);
-  return c.json({ tasks: found.tasks, observedAt: found.observedAt, diagnostics: found.diagnostics });
+  const found = await swarmDiscovery.stack(
+    serverId,
+    organizationId,
+    c.req.param("stackName")!,
+    taskPagination(c),
+  );
+  return c.json({
+    tasks: found.tasks,
+    taskPage: found.taskPage,
+    observedAt: found.observedAt,
+    diagnostics: found.diagnostics,
+  });
 }
 
 export async function networks(c: Context) {
   const { serverId, organizationId } = target(c);
   const snapshot = await swarmDiscovery.discover(serverId, organizationId);
-  return c.json({ networks: snapshot.networks, observedAt: snapshot.observedAt, diagnostics: snapshot.diagnostics });
+  return c.json({
+    networks: snapshot.networks,
+    observedAt: snapshot.observedAt,
+    diagnostics: snapshot.diagnostics,
+  });
 }
 
 export async function volumes(c: Context) {
   const { serverId, organizationId } = target(c);
   const snapshot = await swarmDiscovery.discover(serverId, organizationId);
-  return c.json({ volumes: snapshot.volumes, observedAt: snapshot.observedAt, diagnostics: snapshot.diagnostics });
+  return c.json({
+    volumes: snapshot.volumes,
+    observedAt: snapshot.observedAt,
+    diagnostics: snapshot.diagnostics,
+  });
 }
 
 export async function configs(c: Context) {
   const { serverId, organizationId } = target(c);
   const snapshot = await swarmDiscovery.discover(serverId, organizationId);
-  return c.json({ configs: snapshot.configs, observedAt: snapshot.observedAt, diagnostics: snapshot.diagnostics });
+  return c.json({
+    configs: snapshot.configs,
+    observedAt: snapshot.observedAt,
+    diagnostics: snapshot.diagnostics,
+  });
 }
 
 export async function secrets(c: Context) {
@@ -85,7 +131,11 @@ export async function secrets(c: Context) {
   const snapshot = await swarmDiscovery.discover(serverId, organizationId);
   // The adapter only lists id/name/labels/createdAt. It never inspects secret
   // objects, so contents cannot reach this controller or its DTO.
-  return c.json({ secrets: snapshot.secrets, observedAt: snapshot.observedAt, diagnostics: snapshot.diagnostics });
+  return c.json({
+    secrets: snapshot.secrets,
+    observedAt: snapshot.observedAt,
+    diagnostics: snapshot.diagnostics,
+  });
 }
 
 /** Cluster singleton status; no project stack operation implicitly creates it. */
@@ -122,7 +172,11 @@ export async function cutoverEdge(c: Context) {
     eventType: "swarm.edge.cutover.completed",
     resourceType: "server",
     resourceId: serverId,
-    after: { previousServiceName: result.previousServiceName, edgeServiceId: result.edgeServiceId, servedRoutes: result.servedRoutes },
+    after: {
+      previousServiceName: result.previousServiceName,
+      edgeServiceId: result.edgeServiceId,
+      servedRoutes: result.servedRoutes,
+    },
   });
   return c.json({ cutover: result }, 201);
 }
