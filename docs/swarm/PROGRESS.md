@@ -282,7 +282,7 @@ Next:
 ## S3.2: Lossless source document projection
 
 Status: done
-Commit: pending
+Commits: `35a8c71d`, `4436eb6f`
 Tests run:
 
 - `bun run --cwd packages/core lint`, `bun run --cwd apps/api lint`, and
