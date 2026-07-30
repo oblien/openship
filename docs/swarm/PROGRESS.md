@@ -1389,3 +1389,40 @@ Evidence:
 Next:
 
 - Conduct the security hardening review (S14.1).
+
+## S14.1: Security hardening review
+
+Status: done
+Commit: `5da3dbbb`
+Tests run:
+
+- `bun --filter @repo/api test src/modules/swarm/swarm-yaml.test.ts src/modules/swarm/swarm-source.model.test.ts src/modules/swarm/swarm-source-confinement.test.ts src/modules/swarm/swarm-management.service.test.ts src/modules/swarm/swarm-operations.service.test.ts` — passed (27 tests).
+- `bun --filter @repo/adapters test src/runtime/swarm/runtime.test.ts` — passed (13 tests).
+- `bunx tsc --noEmit -p apps/api/tsconfig.json`,
+  `bunx tsc --noEmit -p packages/adapters/tsconfig.json`,
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json`,
+  `bun run --cwd apps/api lint`, and `git diff --check` — passed.
+
+Evidence:
+
+- Inline and repository Compose parsing now shares a conservative YAML 1.2
+  boundary: custom tags, duplicate keys, alias expansion, cycles, excessive
+  depth, and excessive object complexity fail with stable errors before
+  persistence, staging, or a Docker command. Existing byte/file/service/
+  config/secret limits remain in force, and manager-rendered configuration is
+  now also capped at 10 MB before it reaches an API response.
+- Claim now binds both the reviewed live digest and the current source version;
+  release and stack removal require the current source version as well as the
+  exact stack name. A stale browser tab cannot claim, release, or remove after
+  a source edit. The API validates those tokens independently of dashboard
+  controls.
+- The threat suite retains prior proofs for source realpath/symlink confinement,
+  shell identifier quoting, registry credential staging, secret-safe logs and
+  persistence, ownership checks, and organization-scoped resource lookup.
+  Manager-capable Docker/SSH access is documented as root-equivalent
+  cluster-admin authority.
+
+Next:
+
+- Execute failure and chaos cases against the controlled lab and deterministic
+  service seams (S14.2).
