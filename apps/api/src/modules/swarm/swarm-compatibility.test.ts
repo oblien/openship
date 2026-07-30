@@ -52,15 +52,15 @@ networks:
 volumes:
   db-data: { external: true }
 configs:
-  app-config: { external: true }
+  app-config: { external: true, name: shared-app-config }
 secrets:
-  db-password: { external: true }
+  db-password: { external: true, name: shared-db-password }
 `,
       discovery: {
         networks: [{ id: "n1", name: "shared-ingress", driver: "overlay", scope: "swarm", labels: {} }],
         volumes: [{ name: "db-data", driver: "local", scope: "local", labels: {}, options: {} }],
-        configs: [{ id: "c1", name: "app-config", labels: {}, createdAt: null }],
-        secrets: [{ id: "s1", name: "db-password", labels: {}, createdAt: null }],
+        configs: [{ id: "c1", name: "shared-app-config", labels: {}, createdAt: null }],
+        secrets: [{ id: "s1", name: "shared-db-password", labels: {}, createdAt: null }],
       },
       registryConfigured: true,
     });

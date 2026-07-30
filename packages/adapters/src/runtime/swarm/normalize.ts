@@ -36,6 +36,16 @@ function integer(value: unknown): number | null {
 }
 
 function labels(value: unknown): Record<string, string> {
+  // `docker <object> ls --format '{{json .}}'` serializes Labels as the
+  // comma-delimited table value, whereas inspect returns an object. Discovery
+  // consumes both forms and only needs metadata, never object payloads.
+  if (typeof value === "string") {
+    return Object.fromEntries(value.split(",").flatMap((entry) => {
+      const index = entry.indexOf("=");
+      const key = entry.slice(0, index).trim();
+      return index > 0 && key ? [[key, entry.slice(index + 1)]] : [];
+    }));
+  }
   const input = asRecord(value);
   if (!input) return {};
   return Object.fromEntries(

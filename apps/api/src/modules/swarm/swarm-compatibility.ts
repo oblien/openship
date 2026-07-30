@@ -28,9 +28,10 @@ function names(value: unknown): string[] {
 }
 
 function externalName(name: string, definition: unknown): string | null {
-  const external = record(definition)?.external;
-  if (external === true) return name;
-  return text(record(external)?.name);
+  const value = record(definition);
+  const external = value?.external;
+  if (external === true) return text(value?.name) ?? name;
+  return text(record(external)?.name) ?? text(value?.name);
 }
 
 function sourceVolumeNames(value: unknown): string[] {

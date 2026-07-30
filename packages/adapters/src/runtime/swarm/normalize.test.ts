@@ -66,10 +66,18 @@ describe("Swarm discovery normalizers", () => {
       "2026-07-30T00:00:00.000Z",
     );
     expect(task).toMatchObject({ serviceId: "service-1", slot: 2, nodeName: "worker-1" });
-    expect(normalizeSwarmNamedObject({ ID: "secret-1", Name: "db_password", Data: "must-not-leak" })).toEqual({
+    expect(normalizeSwarmNamedObject({
+      ID: "secret-1",
+      Name: "db_password",
+      Labels: "com.openship.swarm.managed-resource=true,com.openship.swarm.project-id=project-a",
+      Data: "must-not-leak",
+    })).toEqual({
       id: "secret-1",
       name: "db_password",
-      labels: {},
+      labels: {
+        "com.openship.swarm.managed-resource": "true",
+        "com.openship.swarm.project-id": "project-a",
+      },
       createdAt: null,
     });
   });

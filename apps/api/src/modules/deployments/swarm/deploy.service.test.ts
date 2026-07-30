@@ -5,6 +5,7 @@ import type { SwarmServiceProjection } from "@repo/core";
 import type { ContainerRegistry, Deployment, Domain, Service, Project, SwarmStack, SwarmStackRevision } from "@repo/db";
 import { createSwarmDeployService, selectSourceBuilds, type SwarmDeployLogger } from "./deploy.service";
 import { swarmLiveStateDigest } from "../../swarm/swarm-preview";
+import { planManagedSwarmResources } from "../../swarm/swarm-managed-resources";
 
 const stack = {
   id: "swarm-blog",
@@ -153,12 +154,14 @@ function fixture(
     deployError?: Error;
     stackOverride?: SwarmStack;
     beforeDiscovery?: SwarmDiscoverySnapshot;
+    resourceDiscovery?: SwarmDiscoverySnapshot;
     revision?: SwarmStackRevision;
     registry?: ContainerRegistry;
     syncProjections?: (projectId: string, projections: SwarmServiceProjection[]) => Promise<Service[]>;
     listServices?: (projectId: string) => Promise<Service[]>;
     listDomains?: (projectId: string) => Promise<Domain[]>;
     executor?: { exec(command: string): Promise<string>; writeFile(path: string, content: string): Promise<void>; rm(path: string): Promise<void> };
+    loadSource?: () => Promise<{ files: Array<{ path: string; content: string }>; composePaths: string[] }>;
   } = {},
 ) {
   const activeStack = options.stackOverride ?? stack;
@@ -175,7 +178,9 @@ function fixture(
   const upsertServiceDeployment = vi.fn(async () => undefined);
   const discover = vi
     .fn()
-    .mockResolvedValueOnce(options.beforeDiscovery ?? discovery(false))
+    .mockResolvedValueOnce(options.beforeDiscovery ?? discovery(false));
+  if (options.resourceDiscovery) discover.mockResolvedValueOnce(options.resourceDiscovery);
+  discover
     .mockImplementationOnce(async () => {
       if (options.postDeployError) throw options.postDeployError;
       return discovery();
@@ -201,6 +206,7 @@ function fixture(
     featureEnabled: () => true,
     getStack: async () => activeStack,
     getRegistry: async () => options.registry,
+    ...(options.loadSource ? { loadSource: options.loadSource } : {}),
     resolvePlatform: async () =>
       ({
         stackRuntime: {
@@ -262,6 +268,78 @@ describe("managed Swarm deploy", () => {
     });
     expect(result.build.map((entry) => entry.service.sourceServiceName)).toEqual(["web"]);
     expect(result.preserved).toEqual({ worker: "registry.example.com/team/blog/worker@sha256:worker" });
+  });
+
+  it("creates content-versioned manager resources and records the concrete refs on the revision", async () => {
+    const sourceFiles = [
+      {
+        path: "compose.yaml",
+        content: `services:
+  web:
+    image: nginx:1.27-alpine
+    configs: [app-config]
+    secrets: [db-password]
+configs:
+  app-config: { file: config/app.yaml }
+secrets:
+  db-password: { file: secrets/db-password }
+`,
+      },
+      { path: "config/app.yaml", content: "theme: dark\n" },
+      { path: "secrets/db-password", content: "not-logged\n" },
+    ];
+    const managed = planManagedSwarmResources({ projectId: project.id, files: sourceFiles, composePaths: ["compose.yaml"] });
+    const before = discovery(false);
+    const resourceDiscovery = {
+      ...before,
+      configs: [{ id: "config-version", name: managed[0]!.resourceName, labels: {
+        "com.openship.swarm.managed-resource": "true",
+        "com.openship.swarm.project-id": project.id,
+        "com.openship.swarm.resource-kind": "config",
+        "com.openship.swarm.logical-name": "app-config",
+        "com.openship.swarm.content-sha256": managed[0]!.contentDigest,
+      }, createdAt: null }],
+      secrets: [{ id: "secret-version", name: managed[1]!.resourceName, labels: {
+        "com.openship.swarm.managed-resource": "true",
+        "com.openship.swarm.project-id": project.id,
+        "com.openship.swarm.resource-kind": "secret",
+        "com.openship.swarm.logical-name": "db-password",
+        "com.openship.swarm.content-sha256": managed[1]!.contentDigest,
+      }, createdAt: null }],
+    };
+    const commands: string[] = [];
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        commands.push(command);
+        return command.startsWith("umask 077") ? "/tmp/openship-swarm-resource.abc123" : "";
+      }),
+      writeFile: vi.fn(async () => undefined),
+      rm: vi.fn(async () => undefined),
+    };
+    const test = fixture({
+      stackOverride: { ...stack, sourceKind: "repository" } as SwarmStack,
+      beforeDiscovery: before,
+      resourceDiscovery,
+      executor,
+      loadSource: async () => ({ files: sourceFiles, composePaths: ["compose.yaml"] }),
+    });
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .resolves.toMatchObject({ state: "ready" });
+    expect(commands.join("\n")).toContain("docker config create");
+    expect(commands.join("\n")).toContain("docker secret create");
+    expect(commands.join("\n")).not.toContain("not-logged");
+    expect(test.createRevision).toHaveBeenCalledWith(
+      stack.id,
+      deployment.organizationId,
+      expect.objectContaining({
+        configRefs: [managed[0]!.resourceName],
+        secretRefs: [managed[1]!.resourceName],
+      }),
+    );
+    expect(test.deployStack).toHaveBeenCalledWith(expect.objectContaining({
+      renderedYaml: expect.stringContaining(managed[0]!.resourceName),
+    }));
   });
 
   it("rebuilds every source service when the stack source changes or changed paths are incomplete", () => {

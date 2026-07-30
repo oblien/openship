@@ -42,6 +42,12 @@ import { isConnectionLoss } from "../../../lib/remote-state";
 import { buildBackgroundContext } from "../../../lib/request-context";
 import { resolveBuildGitToken } from "../../github/clone-auth";
 import { evaluateSwarmCompatibility } from "../../swarm/swarm-compatibility";
+import {
+  bindManagedSwarmResources,
+  ensureManagedSwarmResources,
+  planManagedSwarmResources,
+  referencedSwarmResourceRefs,
+} from "../../swarm/swarm-managed-resources";
 import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm-preview";
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
 import { resolveStackSourceFiles, type ResolvedSwarmStackSource } from "../../swarm/swarm-source.service";
@@ -174,6 +180,11 @@ function safeDeployOutput(value: string, environment: Record<string, string>): s
 function safeDeployError(error: unknown, environment: Record<string, string>): string {
   const message = error instanceof Error ? error.message : "Docker stack deploy failed.";
   return safeDeployOutput(message, environment).slice(0, 1_000);
+}
+
+function renderedYamlDigest(value: string): string {
+  const canonical = `${value.replaceAll("\r\n", "\n").replace(/\n+$/, "")}\n`;
+  return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
 }
 
 type SwarmRollbackIntent = {
@@ -654,7 +665,9 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       const sourceMaterial: ResolvedSwarmStackSource = rollbackYaml
         ? { files: [{ path: "retained-rendered-stack.yaml", content: rollbackYaml }], composePaths: ["retained-rendered-stack.yaml"] }
         : await deps.loadSource(stack, project, deployment.organizationId);
-      const source = projectSwarmStackSource(sourceMaterial.files);
+      const source = projectSwarmStackSource(
+        sourceMaterial.composePaths.map((path) => sourceMaterial.files.find((file) => file.path === path)!).filter(Boolean),
+      );
       const routingMode = rollbackRevision
         ? revisionRoutingMode(rollbackRevision, stack.routingMode)
         : stack.routingMode;
@@ -801,7 +814,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         }
         logger.log(`→ Attaching ${edgePlan.upstreams.map((upstream) => upstream.sourceServiceName).join(", ")} to the OpenShip Edge overlay\n`);
       }
-      const rendered = rollbackRevision && rollbackYaml
+      const initiallyRendered = rollbackRevision && rollbackYaml
         ? {
             renderedYaml: rollbackYaml,
             renderedDigest: rollbackRevision.renderedDigest,
@@ -817,12 +830,57 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
             networkAttachments: edgePlan?.networkAttachments,
             externalNetworks: edgePlan?.externalNetworks,
           });
+      const managedResources = rollbackRevision
+        ? []
+        : planManagedSwarmResources({
+            projectId: project.id,
+            files: sourceMaterial.files,
+            composePaths: sourceMaterial.composePaths,
+          });
+      // Check source-declared external dependencies before creating anything.
+      // The later check runs against the rewritten immutable references.
+      const sourceCompatibility = evaluateSwarmCompatibility({
+        renderedYaml: initiallyRendered.renderedYaml,
+        discovery: before,
+        registryConfigured: !!registry,
+      });
+      if (sourceCompatibility.blockers.length > 0) {
+        throw new AppError(
+          `Stack compatibility checks failed: ${sourceCompatibility.blockers.map((issue) => issue.message).join(" ")}`,
+          409,
+          "SWARM_COMPATIBILITY_BLOCKED",
+        );
+      }
+      let resourceDiscovery = before;
+      let rendered = initiallyRendered;
+      if (managedResources.length > 0) {
+        if (!platform.executor) {
+          throw new AppError("This manager transport cannot safely create immutable Swarm configs and secrets.", 503, "SWARM_MANAGED_RESOURCE_UNAVAILABLE");
+        }
+        const boundYaml = bindManagedSwarmResources(initiallyRendered.renderedYaml, managedResources);
+        const managedRefs = await ensureManagedSwarmResources({
+          executor: platform.executor,
+          discovery: before,
+          projectId: project.id,
+          resources: managedResources,
+        });
+        resourceDiscovery = await platform.stackRuntime.discover();
+        if (resourceDiscovery.manager.clusterId !== stack.clusterId) {
+          throw new AppError("The configured manager now belongs to a different Swarm cluster.", 409, "SWARM_CLUSTER_MISMATCH");
+        }
+        rendered = {
+          ...initiallyRendered,
+          renderedYaml: boundYaml,
+          renderedDigest: renderedYamlDigest(boundYaml),
+        };
+        logger.log(`→ Prepared ${managedRefs.configs.length} immutable config(s) and ${managedRefs.secrets.length} immutable secret(s)\n`);
+      }
       const resolvedSource = projectSwarmStackSource([
         { path: "rendered-stack.yaml", content: rendered.renderedYaml },
       ]);
       const compatibility = evaluateSwarmCompatibility({
         renderedYaml: rendered.renderedYaml,
-        discovery: before,
+        discovery: resourceDiscovery,
         registryConfigured: !!registry,
       });
       if (compatibility.blockers.length > 0) {
@@ -879,6 +937,12 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
               volumes: resolvedSource.volumes,
               configs: resolvedSource.configs,
               secrets: resolvedSource.secrets,
+              managedResources: managedResources.map(({ kind, logicalName, resourceName, contentDigest }) => ({
+                kind,
+                logicalName,
+                resourceName,
+                contentDigest,
+              })),
               routingMode,
               compatibility,
               prune,
@@ -891,8 +955,8 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
                 service.image ? [[service.sourceServiceName, service.image]] : [],
               ),
             ),
-        configRefs: rollbackRevision?.configRefs ?? resolvedSource.configs,
-        secretRefs: rollbackRevision?.secretRefs ?? resolvedSource.secrets,
+        configRefs: rollbackRevision?.configRefs ?? referencedSwarmResourceRefs(rendered.renderedYaml).configs,
+        secretRefs: rollbackRevision?.secretRefs ?? referencedSwarmResourceRefs(rendered.renderedYaml).secrets,
         applyStatus: "applying",
       });
       if (!revision)

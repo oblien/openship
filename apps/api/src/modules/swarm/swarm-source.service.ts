@@ -303,7 +303,9 @@ export async function renderStackSource(
   if (!requestContext) throw new AppError("A request context is required to read repository stack source.", 500, "SWARM_SOURCE_CONTEXT_REQUIRED");
   const resolvedSource = await resolveStackSourceFiles(stack, project, requestContext);
 
-  const sourceProjection = projectSwarmStackSource(resolvedSource.files);
+  const sourceProjection = projectSwarmStackSource(
+    resolvedSource.composePaths.map((path) => resolvedSource.files.find((file) => file.path === path)!).filter(Boolean),
+  );
   const ownershipLabels = Object.fromEntries(sourceProjection.services.map((service) => [
     service.sourceServiceName,
     {
