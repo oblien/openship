@@ -1,4 +1,5 @@
 import { api, getApiBaseUrl } from "./client";
+import { endpoints } from "./endpoints";
 
 export type SwarmHealthState =
   | "ready"
@@ -271,6 +272,11 @@ export const swarmApi = {
     ),
   observation: (projectId: string) =>
     api.get<SwarmObservation>(`projects/${projectId}/swarm/observation`),
+  createStackBinding: (projectId: string, input: { serverId: string; stackName: string }) =>
+    api.post<{ projectId: string; managerServerId: string; clusterId: string; stackName: string; managementMode: "observe" }>(
+      endpoints.projects.swarmStack(projectId),
+      input,
+    ),
   source: (projectId: string) =>
     api.get<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/source`).then((result) => result.source),
   replaceSource: (

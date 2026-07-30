@@ -11,6 +11,7 @@ export const endpoints = {
   /* ---------------------------------------------------------------- */
   projects: {
     home: "projects/home",
+    create: "projects",
     item: (id: string | number) => `projects/${id}`,
     local: "projects/local",
     scan: "projects/scan",
@@ -56,6 +57,7 @@ export const endpoints = {
     serverLogsStreamToken: (id: string | number) => `projects/${id}/server-logs/stream-token`,
     serverLogsStream: (id: string | number) => `projects/${id}/server-logs/stream`,
     ensure: "projects/ensure",
+    swarmStack: (id: string | number) => `projects/${id}/swarm/stack`,
     folderSession: "projects/folder/session",
     folderScan: (sessionId: string) => `projects/folder/scan/${sessionId}`,
     folderUpload: (sessionId: string) => `projects/folder/upload/${sessionId}`,

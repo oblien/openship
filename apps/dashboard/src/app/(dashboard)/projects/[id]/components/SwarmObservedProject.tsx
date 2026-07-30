@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Boxes, Download, Eye, FileText, Loader2, RefreshCw, Rocket, ScrollText, ShieldCheck, TriangleAlert, X } from "lucide-react";
-import { deployApi, getApiErrorMessage, projectsApi, registriesApi, swarmApi, type ContainerRegistry, type SwarmLogEntry, type SwarmNode, type SwarmObservation, type SwarmSourcePreview, type SwarmStackDetail, type SwarmStackHandoff, type SwarmStackSource, type SwarmTask } from "@/lib/api";
+import { ApiError, deployApi, getApiErrorMessage, projectsApi, registriesApi, swarmApi, type ContainerRegistry, type SwarmLogEntry, type SwarmNode, type SwarmObservation, type SwarmSourcePreview, type SwarmStackDetail, type SwarmStackHandoff, type SwarmStackSource, type SwarmTask } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { HealthBadge, formatObservedAt, shortId, SwarmNodesTable, SwarmTasksTable } from "@/components/swarm/SwarmReadOnlyViews";
@@ -66,11 +66,20 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
         setError("This observed stack no longer has a Swarm manager target.");
         return;
       }
-      const [detail, nodes] = await Promise.all([
-        swarmApi.stack(observation.managerServerId, observation.stackName),
-        swarmApi.nodes(observation.managerServerId),
-      ]);
-      setData({ observation, source, detail, nodes: nodes.nodes });
+      const nodes = await swarmApi.nodes(observation.managerServerId);
+      try {
+        const detail = await swarmApi.stack(observation.managerServerId, observation.stackName);
+        setData({ observation, source, detail, nodes: nodes.nodes });
+      } catch (cause) {
+        // A just-created namespace is deliberately absent until its first
+        // reviewed apply. That is a valid dry-run state, not a manager failure.
+        if (cause instanceof ApiError && cause.status === 404) {
+          setData({ observation, source, detail: null, nodes: nodes.nodes });
+          setError("This stack namespace is reserved for this project. No live services exist yet; render and review the source before its first apply.");
+          return;
+        }
+        throw cause;
+      }
     } catch (cause) {
       setData(null);
       setError(getApiErrorMessage(cause, "Unable to read this observed Swarm stack."));
@@ -425,6 +434,8 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
             managementMode={data.observation.managementMode}
             onSourceChange={(source) => setData((current) => current ? { ...current, source } : current)}
           />
+
+          {!data.detail && <section className="rounded-2xl border border-border/50 bg-card p-5"><div className="flex items-start gap-3"><div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground"><Boxes className="size-4" /></div><div><h2 className="font-semibold text-foreground">No live stack services yet</h2><p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">This namespace is reserved on the selected manager and remains read-only. Save the authoritative source, then use Render & compare to inspect its source and live configuration hashes before claiming management.</p></div></div></section>}
 
           {data.detail && <section className="rounded-2xl border border-border/50 bg-card"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 px-5 py-4"><div><h2 className="font-semibold text-foreground">Live stack state</h2><p className="mt-0.5 text-sm text-muted-foreground">Manager read at {formatObservedAt(data.detail.observedAt)}.</p></div><HealthBadge state={data.detail.health.state} /></div><div className="flex border-b border-border/50 px-3">{(["services", "tasks", "nodes"] as View[]).map((candidate) => <button key={candidate} type="button" onClick={() => setView(candidate)} className={`relative px-4 py-3 text-sm font-medium capitalize transition-colors ${view === candidate ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}>{candidate}{view === candidate && <span className="absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-primary" />}</button>)}</div><div className="p-5">{view === "services" && <Services detail={data.detail} managed={data.observation.managementMode === "managed"} scalingService={scalingService} restartingService={restartingService} onScale={scale} onRestart={restart} onLogs={(service) => void openLogs(service.sourceServiceName)} onInspect={setInspectedService} loadingLogs={loadingLogs} />}{view === "tasks" && <SwarmTasksTable tasks={data.detail.tasks} onLogs={openTaskLogs} />}{view === "nodes" && <SwarmNodesTable nodes={data.nodes} />}</div></section>}
 
