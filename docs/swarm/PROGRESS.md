@@ -1464,3 +1464,36 @@ Next:
 
 - Measure large-inventory API and dashboard behavior, then tune any bounded
   polling/pagination paths required by S14.3.
+
+## S14.3: Scale and performance bounds
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun --filter @repo/adapters test src/runtime/swarm/runtime.test.ts` — passed
+  (14 tests), including 250 generated services and 10,000 task-history rows.
+- `bun --filter @repo/api test src/modules/swarm/swarm.service.test.ts` —
+  passed (7 tests), including a 2,000-task detail response budget below 100 KB.
+- `bunx tsc --noEmit -p apps/api/tsconfig.json`,
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json`, and
+  `bunx tsc --noEmit -p packages/adapters/tsconfig.json` — passed.
+
+Evidence:
+
+- Manager discovery now batches node/service inspection and task-history reads
+  in fixed groups of 50. The 250-service generated fixture requires five
+  service-inspect and five service-task commands rather than 250 of each.
+- Detail health is calculated from the complete bounded snapshot but no longer
+  serializes its internal current-task selections. Detail responses page task
+  history at 100 records by default (250 maximum), and both dashboard stack
+  views provide Previous/Next controls without rendering the full task history.
+- The discovery cache now coalesces simultaneous summary/stacks/nodes reads
+  into one manager discovery. Existing managed refresh grouping and one-minute
+  manager-unreachable backoff remain in force; deployment progress polling
+  already stops after a terminal state.
+
+Next:
+
+- Run full product regression, migration compatibility, and feature-off checks
+  for S14.4.
