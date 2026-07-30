@@ -257,7 +257,7 @@ Next:
 ## S3.1: Authoritative repository, inline, and observed sources
 
 Status: done
-Commit: pending
+Commits: `56c5bea7`, `0c4c511b`
 Tests run:
 
 - `bun run --cwd packages/db lint`, `bun run --cwd apps/api lint`, and
