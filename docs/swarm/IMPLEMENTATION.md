@@ -40,4 +40,5 @@ Source-backed services therefore require an OCI registry and are deployed by
 digest, not mutable tags.
 
 See [TEST-MATRIX.md](TEST-MATRIX.md) for the disposable test topology and
+[FAILURE-RECOVERY.md](FAILURE-RECOVERY.md) for operator recovery decisions, and
 [PROGRESS.md](PROGRESS.md) for current implementation evidence.

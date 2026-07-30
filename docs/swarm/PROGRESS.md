@@ -1426,3 +1426,41 @@ Next:
 
 - Execute failure and chaos cases against the controlled lab and deterministic
   service seams (S14.2).
+
+## S14.2: Failure and chaos recovery coverage
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun --filter @repo/adapters test src/runtime/swarm/health.test.ts` — passed
+  (13 tests).
+- `bun --filter @repo/api test src/modules/deployments/swarm/deploy.service.test.ts src/modules/deployments/swarm/convergence.service.test.ts src/modules/deployments/swarm/reconcile.service.test.ts src/modules/swarm/swarm-compatibility.test.ts src/modules/swarm/swarm-management.service.test.ts src/modules/swarm/swarm-connection.service.test.ts src/modules/swarm/swarm-operations.service.test.ts` — passed (53 tests).
+- `bun run --cwd packages/adapters lint`, `bun run --cwd apps/api lint`,
+  `bunx tsc --noEmit -p packages/adapters/tsconfig.json`,
+  `bunx prettier --check packages/adapters/src/runtime/swarm/health.test.ts docs/swarm/FAILURE-RECOVERY.md docs/swarm/IMPLEMENTATION.md`, and
+  `git diff --check` — passed.
+
+Evidence:
+
+- Scheduler-facing health tests now use representative worker loss/drain,
+  placement, public/private image pull, unavailable registry, missing external
+  resource, and failed-task diagnostics. They retain Docker's truthful bounded
+  diagnostic instead of guessing a root cause or an automated remediation.
+  Paused updates, rollback completion, and active replacement scheduling have
+  distinct states.
+- The existing manager seams prove unavailable-before-apply behavior,
+  connection loss after acceptance, convergence loss, read-only restart
+  reconciliation, preflight external-resource blocking, stale Portainer/CLI
+  claim rejection, service/task log cancellation, and same-cluster manager
+  rebinding. Unknown outcomes stay reconciling and are never cleaned up or
+  re-applied speculatively.
+- `FAILURE-RECOVERY.md` gives operators the state, safe recovery action, and
+  test evidence for every required failure case. It explicitly excludes
+  automatic persistent-data deletion and directs fault injection to the
+  disposable lab only.
+
+Next:
+
+- Measure large-inventory API and dashboard behavior, then tune any bounded
+  polling/pagination paths required by S14.3.
