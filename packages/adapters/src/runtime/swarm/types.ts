@@ -21,8 +21,39 @@ export interface StackRuntimeAdapter {
   readonly name: "swarm";
   probe(): Promise<SwarmManagerInfo>;
   discover(): Promise<SwarmDiscoverySnapshot>;
+  renderStack(input: RenderStackInput): Promise<RenderedStack>;
   /** The platform owns any shared SSH executor; this adapter has no implicit teardown. */
   dispose?(): Promise<void>;
+}
+
+/** One source file materialized only in the manager's ephemeral render directory. */
+export interface SwarmRenderSourceFile {
+  /** Repository-relative path; absolute/traversal paths are rejected. */
+  path: string;
+  content: string;
+}
+
+export interface RenderStackInput {
+  composePaths: string[];
+  files: SwarmRenderSourceFile[];
+  /** Explicit interpolation map. The manager shell starts with `env -i`. */
+  environment?: Record<string, string>;
+  /** Minimal, generated overlay; source files are never rewritten. */
+  /** Service name → generated service labels. */
+  ownershipLabels?: Record<string, Record<string, string>>;
+}
+
+export interface SwarmRenderIssue {
+  code: "SWARM_STACK_CONFIG_FAILED" | "SWARM_STACK_INTERPOLATION_FAILED" | "SWARM_STACK_RENDER_UNAVAILABLE";
+  message: string;
+}
+
+export interface RenderedStack {
+  /** Exact Docker-produced config; callers must encrypt/redact before persistence or DTO use. */
+  renderedYaml: string;
+  renderedDigest: string;
+  overrideYaml: string;
+  warnings: string[];
 }
 
 export interface SwarmDiscoveryDiagnostic {

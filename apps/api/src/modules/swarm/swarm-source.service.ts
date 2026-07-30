@@ -1,9 +1,12 @@
 /** Authoritative source linking/editing. No operation in this file calls Docker. */
 
 import { AppError, ConflictError, NotFoundError } from "@repo/core";
+import { SwarmRenderError } from "@repo/adapters";
 import { repos } from "@repo/db";
 import { swarmSupportEnabled } from "../../config";
 import { encryptSecretField } from "../../lib/credential-encryption";
+import { decryptSecretField } from "../../lib/credential-encryption";
+import { resolveTargetPlatform } from "../../lib/deployment-runtime";
 import {
   assertSwarmStackName,
   serializeStackSource,
@@ -77,4 +80,53 @@ export async function replaceStackSource(projectId: string, organizationId: stri
     ]).services);
   }
   return serializeStackSource(updated);
+}
+
+/**
+ * Validate an inline document through the target manager's `docker stack
+ * config`. This is cluster-read-only and deliberately returns only digest and
+ * warnings; S3.5 supplies the redacted rendered-document preview.
+ */
+export async function renderStackSource(
+  projectId: string,
+  organizationId: string,
+  environment: Record<string, string> = {},
+) {
+  const stack = await stackForProject(projectId, organizationId);
+  if (stack.sourceKind === "adopted") {
+    throw new AppError("This observed stack needs authoritative source before it can be rendered.", 409, "SWARM_SOURCE_REQUIRED");
+  }
+  if (stack.sourceKind !== "inline") {
+    throw new AppError("Repository stack source must be staged from its linked repository before rendering.", 409, "SWARM_SOURCE_STAGING_REQUIRED");
+  }
+  const yaml = decryptSecretField(stack.sourceYamlEnc);
+  if (!yaml) throw new AppError("This stack has no inline source document.", 409, "SWARM_SOURCE_REQUIRED");
+  if (!stack.managerServerId) throw new AppError("This stack no longer has a Swarm manager target.", 409, "SWARM_MANAGER_UNAVAILABLE");
+
+  const sourceProjection = projectSwarmStackSource([{ path: "compose.yaml", content: yaml }]);
+  const ownershipLabels = Object.fromEntries(sourceProjection.services.map((service) => [
+    service.sourceServiceName,
+    {
+      "com.openship.stack-id": stack.id,
+      "com.openship.project-id": projectId,
+      "com.openship.source-service": service.sourceServiceName,
+    },
+  ]));
+  try {
+    const platform = await resolveTargetPlatform("server", "docker", stack.managerServerId, organizationId, "swarm");
+    if (!platform.stackRuntime) throw new AppError("Docker Swarm is unavailable for this target.", 503, "SWARM_MANAGER_UNAVAILABLE");
+    const rendered = await platform.stackRuntime.renderStack({
+      files: [{ path: "compose.yaml", content: yaml }],
+      composePaths: ["compose.yaml"],
+      environment,
+      ownershipLabels,
+    });
+    return { valid: true, renderedDigest: rendered.renderedDigest, warnings: rendered.warnings };
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    if (error instanceof SwarmRenderError) {
+      throw new AppError(error.message, 400, error.issues[0]?.code ?? "SWARM_STACK_CONFIG_FAILED");
+    }
+    throw new AppError("Unable to render this stack on its Swarm manager.", 503, "SWARM_MANAGER_UNAVAILABLE");
+  }
 }

@@ -41,7 +41,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
-import { UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
+import { RenderSwarmStackSourceBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -173,6 +173,11 @@ r.post(
   "/:id/swarm/source/validate",
   { tag: "project:read", localOnly: true, readOnly: true, body: UpdateSwarmStackSourceBody },
   swarmSource.validate,
+);
+r.post(
+  "/:id/swarm/source/render",
+  { tag: "project:read", localOnly: true, readOnly: true, body: RenderSwarmStackSourceBody },
+  swarmSource.render,
 );
 r.put(
   "/:id/swarm/source",

@@ -81,7 +81,7 @@ export {
   type SwarmTaskOwnership,
 } from "./runtime/swarm/ownership";
 export type { StackRuntimeAdapter } from "./runtime/swarm/types";
-export { SwarmRuntime } from "./runtime/swarm/runtime";
+export { SwarmRuntime, SwarmRenderError } from "./runtime/swarm/runtime";
 export { SwarmProbeError, normalizeSwarmManagerInfo } from "./runtime/swarm/normalize";
 export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./runtime/swarm/health";
 export type {
@@ -90,6 +90,9 @@ export type {
   SwarmProbeFailureCode,
   SwarmServiceHealth,
   SwarmStackHealth,
+  RenderStackInput,
+  RenderedStack,
+  SwarmRenderIssue,
 } from "./runtime/swarm/types";
 export {
   transferImage,

@@ -326,3 +326,30 @@ Next:
 
 - Render ordered documents through `docker stack config` with explicit
   interpolation controls (S3.4).
+
+## S3.4: Manager-side stack render and validation
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd packages/adapters lint`, `bun run --cwd apps/api lint`, and
+  `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/runtime.test.ts` — passed (7 tests).
+
+Evidence:
+
+- `StackRuntimeAdapter.renderStack()` stages a bounded file set in a 0700
+  manager temp directory, invokes `docker stack config` with ordered files plus
+  generated ownership labels, uses an explicit `env -i` interpolation map, and
+  removes the directory on success and failure.
+- Rendered YAML receives deterministic newline canonicalization and SHA-256
+  digesting; Docker warnings are captured separately from hard typed errors.
+- The project source render endpoint currently validates encrypted inline
+  documents and returns only digest/warnings. It does not return raw rendered
+  YAML before redaction is implemented, and repository source is safely held
+  pending full-tree staging.
+
+Next:
+
+- Redact rendered material and compute semantic live-state previews (S3.5).

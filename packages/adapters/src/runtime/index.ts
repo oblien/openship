@@ -34,7 +34,7 @@ export {
   type SwarmTaskOwnership,
 } from "./swarm/ownership";
 export type { StackRuntimeAdapter } from "./swarm/types";
-export { SwarmRuntime } from "./swarm/runtime";
+export { SwarmRuntime, SwarmRenderError } from "./swarm/runtime";
 export { SwarmProbeError, normalizeSwarmManagerInfo } from "./swarm/normalize";
 export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./swarm/health";
 export type {
@@ -43,6 +43,9 @@ export type {
   SwarmProbeFailureCode,
   SwarmServiceHealth,
   SwarmStackHealth,
+  RenderStackInput,
+  RenderedStack,
+  SwarmRenderIssue,
 } from "./swarm/types";
 
 // ─── Supervisor ──────────────────────────────────────────────────────────────

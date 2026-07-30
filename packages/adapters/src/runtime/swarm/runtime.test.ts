@@ -89,4 +89,74 @@ describe("SwarmRuntime manager probe", () => {
     });
     expect(commands.some((command) => command.startsWith("docker secret inspect"))).toBe(false);
   });
+
+  it("renders through docker stack config with an explicit environment and always removes its private stage", async () => {
+    const commands: string[] = [];
+    const writes = new Map<string, string>();
+    const rm = vi.fn().mockResolvedValue(undefined);
+    const exec = vi.fn(async (command: string) => {
+      commands.push(command);
+      if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
+      if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
+      if (command.startsWith("umask 077 && mktemp")) return "/tmp/openship-swarm-render.abc123\n";
+      if (command.includes("docker stack config")) return "services:\n  web:\n    image: nginx:alpine\n";
+      throw new Error(`unexpected command: ${command}`);
+    });
+    const runtime = await SwarmRuntime.create({
+      executor: {
+        exec,
+        writeFile: async (path, content) => { writes.set(path, content); },
+        readFile: async () => "unsupported option warning\n",
+        rm,
+      },
+    });
+
+    const result = await runtime.renderStack({
+      files: [{ path: "compose.yaml", content: "services:\n  web:\n    image: nginx\n    command: \"$${1}\"\n" }],
+      composePaths: ["compose.yaml"],
+      environment: { IMAGE_TAG: "v1", REGEX: "$${1}" },
+      ownershipLabels: { web: { "com.openship.stack-id": "swarm_a" } },
+    });
+
+    expect(result).toMatchObject({
+      renderedYaml: "services:\n  web:\n    image: nginx:alpine\n",
+      warnings: ["unsupported option warning"],
+    });
+    expect(result.renderedDigest).toMatch(/^sha256:/);
+    expect(writes.get("/tmp/openship-swarm-render.abc123/compose.yaml")).toContain("$${1}");
+    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.env")).toContain("REGEX='$${1}'");
+    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("com.openship.stack-id");
+    const renderCommand = commands.find((command) => command.includes("docker stack config"))!;
+    expect(renderCommand).toContain("env -i PATH=\"$PATH\"");
+    expect(renderCommand).not.toContain("docker stack deploy");
+    expect(rm).toHaveBeenCalledWith("/tmp/openship-swarm-render.abc123");
+  });
+
+  it("returns a typed safe validation error and cleans staging on docker stack config failure", async () => {
+    const rm = vi.fn().mockResolvedValue(undefined);
+    const runtime = await SwarmRuntime.create({
+      executor: {
+        exec: async (command: string) => {
+          if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
+          if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
+          if (command.startsWith("umask 077 && mktemp")) return "/tmp/openship-swarm-render.def456";
+          if (command.includes("docker stack config")) throw new Error("interpolation variable SECRET_TOKEN is required");
+          throw new Error("unexpected");
+        },
+        writeFile: async () => {},
+        readFile: async () => "",
+        rm,
+      },
+    });
+
+    await expect(runtime.renderStack({
+      files: [{ path: "compose.yaml", content: "services: {}\n" }],
+      composePaths: ["compose.yaml"],
+      environment: { SECRET_TOKEN: "secret-canary" },
+    })).rejects.toMatchObject({
+      name: "SwarmRenderError",
+      issues: [{ code: "SWARM_STACK_INTERPOLATION_FAILED" }],
+    });
+    expect(rm).toHaveBeenCalledWith("/tmp/openship-swarm-render.def456");
+  });
 });

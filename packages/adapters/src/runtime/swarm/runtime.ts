@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CommandExecutor } from "../../types";
 import { sq } from "../git-clone";
 import {
@@ -16,14 +17,88 @@ import type {
   SwarmDiscoveryDiagnostic,
   SwarmDiscoverySnapshot,
   SwarmManagerInfo,
+  RenderStackInput,
+  RenderedStack,
 } from "./types";
 
 export interface SwarmRuntimeOptions {
-  executor: Pick<CommandExecutor, "exec">;
+  executor: Pick<CommandExecutor, "exec"> & Partial<Pick<CommandExecutor, "writeFile" | "readFile" | "rm">>;
   /** Bounded so a failed manager/SSH link cannot pin an API request. */
   timeoutMs?: number;
   /** Bound a malformed/large manager response before it reaches an API payload. */
   maxResources?: number;
+}
+
+export class SwarmRenderError extends Error {
+  constructor(
+    readonly issues: import("./types").SwarmRenderIssue[],
+    message = "Docker rejected the stack configuration.",
+  ) {
+    super(message);
+    this.name = "SwarmRenderError";
+  }
+}
+
+const MAX_RENDER_SOURCE_FILES = 250;
+const STAGING_PREFIX = "/tmp/openship-swarm-render.";
+
+function assertStagingPath(path: string): string {
+  const normalized = path.trim().replaceAll("\\", "/");
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    /[\u0000-\u001f\u007f]/.test(normalized) ||
+    normalized.split("/").some((part) => part === ".." || part === "")
+  ) {
+    throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "A stack source path is unsafe for manager rendering." }]);
+  }
+  return normalized;
+}
+
+function shellValue(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function explicitEnvironment(environment: Record<string, string>): string {
+  return Object.entries(environment)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+        throw new SwarmRenderError([{ code: "SWARM_STACK_INTERPOLATION_FAILED", message: "An interpolation variable name is invalid." }]);
+      }
+      return `${key}=${shellValue(value)}`;
+    })
+    .join("\n") + "\n";
+}
+
+function overrideYaml(labelsByService: Record<string, Record<string, string>>): string {
+  const services = Object.entries(labelsByService).sort(([a], [b]) => a.localeCompare(b));
+  if (services.length === 0) return "services: {}\n";
+  // JSON strings are valid YAML scalars and avoid bespoke quoting rules.
+  return `services:\n${services.map(([service, labels]) =>
+    `  ${JSON.stringify(service)}:\n    deploy:\n      labels:\n${Object.entries(labels)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `        ${JSON.stringify(key)}: ${JSON.stringify(value)}`)
+      .join("\n")}`,
+  ).join("\n")}\n`;
+}
+
+function canonicalRenderedYaml(value: string): string {
+  return `${value.replaceAll("\r\n", "\n").replace(/\n+$/, "")}\n`;
+}
+
+function renderedDigest(value: string): string {
+  return `sha256:${createHash("sha256").update(canonicalRenderedYaml(value)).digest("hex")}`;
+}
+
+function safeWarnings(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 20)
+    // Docker's warnings should name features, not include source/env values.
+    .map((line) => line.length > 500 ? `${line.slice(0, 500)}…` : line);
 }
 
 /**
@@ -36,7 +111,10 @@ export class SwarmRuntime implements StackRuntimeAdapter {
   private readonly timeoutMs: number;
   private readonly maxResources: number;
 
-  private constructor(private readonly executor: Pick<CommandExecutor, "exec">, options: SwarmRuntimeOptions) {
+  private constructor(
+    private readonly executor: SwarmRuntimeOptions["executor"],
+    options: SwarmRuntimeOptions,
+  ) {
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.maxResources = options.maxResources ?? 250;
   }
@@ -152,6 +230,67 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       diagnostics,
       observedAt,
     };
+  }
+
+  /**
+   * Render exactly through Docker's Swarm-aware Compose implementation. This
+   * writes only an ephemeral 0700 manager directory and runs no stack apply.
+   */
+  async renderStack(input: RenderStackInput): Promise<RenderedStack> {
+    const executor = this.executor;
+    if (!executor.writeFile || !executor.readFile || !executor.rm) {
+      throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "This manager transport cannot safely stage a stack render." }]);
+    }
+    if (input.files.length === 0 || input.files.length > MAX_RENDER_SOURCE_FILES) {
+      throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "Stack rendering requires a bounded non-empty source file set." }]);
+    }
+    const files = input.files.map((file) => ({ ...file, path: assertStagingPath(file.path) }));
+    const composePaths = input.composePaths.map((path) => assertStagingPath(path));
+    if (composePaths.length === 0 || composePaths.some((path) => !files.some((file) => file.path === path))) {
+      throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "Every ordered compose path must be present in the staged source files." }]);
+    }
+
+    let stage: string | null = null;
+    try {
+      const created = await executor.exec(`umask 077 && mktemp -d ${STAGING_PREFIX}XXXXXX`, { timeout: this.timeoutMs });
+      stage = created.trim();
+      if (!new RegExp(`^${STAGING_PREFIX.replace(".", "\\.")}[A-Za-z0-9]+$`).test(stage)) {
+        throw new SwarmRenderError([{ code: "SWARM_STACK_RENDER_UNAVAILABLE", message: "Manager returned an invalid staging directory." }]);
+      }
+      for (const file of files) await executor.writeFile(`${stage}/${file.path}`, file.content);
+
+      const environmentPath = `${stage}/.openship-render.env`;
+      const overridePath = `${stage}/.openship-render.override.yaml`;
+      const warningsPath = `${stage}/.openship-render.warnings`;
+      const override = overrideYaml(input.ownershipLabels ?? {});
+      await executor.writeFile(environmentPath, explicitEnvironment(input.environment ?? {}));
+      await executor.writeFile(overridePath, override);
+      const command = [
+        `cd ${sq(stage)} &&`,
+        `env -i PATH="$PATH" sh -c ${sq('set -a; . "$1"; shift; exec "$@"')} sh ${sq(environmentPath)}`,
+        "docker stack config",
+        ...composePaths.flatMap((path) => ["--compose-file", sq(`${stage}/${path}`)]),
+        "--compose-file",
+        sq(overridePath),
+        `2>${sq(warningsPath)}`,
+      ].join(" ");
+      let renderedYaml: string;
+      try {
+        renderedYaml = await executor.exec(command, { timeout: this.timeoutMs });
+      } catch (error) {
+        const message = error instanceof Error && /variable|interpolat/i.test(error.message)
+          ? "Docker could not interpolate a required stack variable. Provide it in the explicit render environment."
+          : "Docker rejected the stack configuration. Check Compose syntax, source paths, and Swarm compatibility.";
+        throw new SwarmRenderError([{ code: /variable|interpolat/i.test(error instanceof Error ? error.message : "")
+          ? "SWARM_STACK_INTERPOLATION_FAILED"
+          : "SWARM_STACK_CONFIG_FAILED", message }]);
+      }
+      const warnings = safeWarnings(await executor.readFile(warningsPath).catch(() => ""));
+      const canonical = canonicalRenderedYaml(renderedYaml);
+      return { renderedYaml: canonical, renderedDigest: renderedDigest(canonical), overrideYaml: override, warnings };
+    } finally {
+      if (stage) await executor.rm(stage).catch(() => {});
+    }
   }
 
   private async readLines(

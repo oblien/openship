@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
-import type { TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
+import type { TRenderSwarmStackSourceBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
 import * as source from "./swarm-source.service";
 
 export async function get(c: Context) {
@@ -35,4 +35,10 @@ export async function replace(c: Context) {
     },
   });
   return c.json({ source: result });
+}
+
+export async function render(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<TRenderSwarmStackSourceBody>();
+  return c.json(await source.renderStackSource(c.req.param("id")!, ctx.organizationId, body.environment ?? {}));
 }

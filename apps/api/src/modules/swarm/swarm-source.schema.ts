@@ -23,3 +23,14 @@ export const UpdateSwarmStackSourceBody = Type.Union([
 ]);
 
 export type TUpdateSwarmStackSourceBody = Static<typeof UpdateSwarmStackSourceBody>;
+
+/** Explicit render interpolation only; values are never persisted or echoed. */
+export const RenderSwarmStackSourceBody = Type.Object({
+  environment: Type.Optional(Type.Record(
+    Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 128 }),
+    Type.String({ maxLength: 16_384 }),
+    { maxProperties: 100 },
+  )),
+});
+
+export type TRenderSwarmStackSourceBody = Static<typeof RenderSwarmStackSourceBody>;
