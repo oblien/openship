@@ -101,6 +101,13 @@ export const CreateSwarmStackBindingBody = Type.Object({
 
 export type TCreateSwarmStackBindingBody = Static<typeof CreateSwarmStackBindingBody>;
 
+/** Rebinding proves manager access and the existing cluster identity before saving. */
+export const RebindSwarmManagerBody = Type.Object({
+  serverId: Type.String({ minLength: 1, maxLength: 128 }),
+});
+
+export type TRebindSwarmManagerBody = Static<typeof RebindSwarmManagerBody>;
+
 export const SaveSwarmManagedInputBody = Type.Object({
   kind: Type.Union([Type.Literal("config"), Type.Literal("secret")]),
   logicalName: Type.String({ minLength: 1, maxLength: 128 }),

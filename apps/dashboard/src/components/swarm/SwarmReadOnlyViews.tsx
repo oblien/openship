@@ -43,6 +43,7 @@ export function SwarmNodesTable({ nodes }: { nodes: SwarmNode[] }) {
             <th className="px-4 py-3">Status</th>
             <th className="px-4 py-3">Availability</th>
             <th className="px-4 py-3">Role</th>
+            <th className="px-4 py-3">Labels</th>
             <th className="px-4 py-3">Engine</th>
           </tr>
         </thead>
@@ -56,6 +57,11 @@ export function SwarmNodesTable({ nodes }: { nodes: SwarmNode[] }) {
               <td className="px-4 py-3"><HealthBadge state={node.status.toLowerCase()} /></td>
               <td className="px-4 py-3 text-muted-foreground capitalize">{node.availability}</td>
               <td className="px-4 py-3 text-muted-foreground">{node.managerStatus || "Worker"}</td>
+              <td className="max-w-72 px-4 py-3">
+                {Object.keys(node.labels).length === 0
+                  ? <span className="text-muted-foreground">—</span>
+                  : <div className="flex flex-wrap gap-1">{Object.entries(node.labels).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => <span key={key} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{key}={value}</span>)}</div>}
+              </td>
               <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{node.engineVersion || "—"}</td>
             </tr>
           ))}

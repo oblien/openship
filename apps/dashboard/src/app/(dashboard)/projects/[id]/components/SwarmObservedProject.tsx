@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Boxes, Download, Eye, FileText, Loader2, RefreshCw, Rocket, ScrollText, ShieldCheck, TriangleAlert, X } from "lucide-react";
-import { ApiError, deployApi, getApiErrorMessage, projectsApi, registriesApi, swarmApi, type ContainerRegistry, type SwarmLogEntry, type SwarmNode, type SwarmObservation, type SwarmSourcePreview, type SwarmStackDetail, type SwarmStackHandoff, type SwarmStackSource, type SwarmTask } from "@/lib/api";
+import { ApiError, deployApi, getApiErrorMessage, projectsApi, registriesApi, swarmApi, type ContainerRegistry, type SwarmLogEntry, type SwarmManagerConnection, type SwarmNode, type SwarmObservation, type SwarmSourcePreview, type SwarmStackDetail, type SwarmStackHandoff, type SwarmStackSource, type SwarmTask } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { HealthBadge, formatObservedAt, shortId, SwarmNodesTable, SwarmTasksTable } from "@/components/swarm/SwarmReadOnlyViews";
@@ -61,6 +61,11 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
         swarmApi.observation(projectId),
         swarmApi.source(projectId),
       ]);
+      // Keep the project-scoped binding visible if its manager is currently
+      // unreachable: the connection card below is how an operator can inspect
+      // that distinction and safely rebind it, rather than being trapped on an
+      // error-only screen.
+      setData({ observation, source, detail: null, nodes: [] });
       if (!observation.managerServerId) {
         setData({ observation, source, detail: null, nodes: [] });
         setError("This observed stack no longer has a Swarm manager target.");
@@ -81,7 +86,7 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
         throw cause;
       }
     } catch (cause) {
-      setData(null);
+      setData((current) => current);
       setError(getApiErrorMessage(cause, "Unable to read this observed Swarm stack."));
     } finally {
       setLoading(false);
@@ -385,6 +390,8 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
           {error && <p className="rounded-xl border border-warning/25 bg-warning/5 px-4 py-3 text-sm text-warning">{error}</p>}
           <section className="rounded-2xl border border-border/50 bg-card p-5"><div className="flex flex-wrap items-center justify-between gap-4"><div><div className="flex items-center gap-2"><Boxes className="size-4 text-muted-foreground" /><h2 className="font-semibold text-foreground">{data.observation.stackName}</h2><HealthBadge state={data.observation.managementMode === "observe" ? "observed" : data.observation.managementMode} /></div><p className="mt-1 text-sm text-muted-foreground">Cluster {shortId(data.observation.clusterId)} · {data.observation.revisionId ? `Applied revision ${shortId(data.observation.revisionId)} · ` : "No applied OpenShip revision · "}Last observed {formatObservedAt(data.observation.drift.lastObservedAt)}</p></div><HealthBadge state={data.observation.drift.status} /></div><div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-4"><StatusCard label="Source" value={data.observation.source.status} description={sourceDescription(data.observation.source.status)} /><StatusCard label="Live drift" value={data.observation.drift.status} description={driftDescription(data.observation.drift.status)} /><StatusCard label="Routing" value={data.source.routingMode === "external" ? "External" : "OpenShip Edge"} description={data.source.routingMode === "external" ? "Domains, TLS, ports 80/443, and router labels remain externally managed." : "OpenShip Edge is configured for this stack."} /><StatusCard label="Workload controls" value={data.observation.managementMode === "managed" ? "Managed" : "Unavailable"} description={data.observation.managementMode === "managed" ? "Scale is available for owned replicated services. It remains operational drift until a reviewed source deploy." : "Observe mode has no workload mutation actions."} /></div></section>
 
+          <ManagerConnectionPanel projectId={projectId} onRebound={load} />
+
           <SourceManagementPanel
             source={data.source}
             stackName={data.observation.stackName}
@@ -448,6 +455,108 @@ export function SwarmObservedProject({ projectId, projectName }: { projectId: st
       )}
     </PageContainer>
   );
+}
+
+function ManagerConnectionPanel({ projectId, onRebound }: {
+  projectId: string;
+  onRebound: () => void | Promise<void>;
+}) {
+  const { showToast } = useToast();
+  const [connection, setConnection] = useState<SwarmManagerConnection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [rebinding, setRebinding] = useState(false);
+  const [selectedServerId, setSelectedServerId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const loadConnection = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await swarmApi.connection(projectId);
+      setConnection(next);
+      setSelectedServerId((current) =>
+        current && next.candidates.some((candidate) => candidate.id === current)
+          ? current
+          : next.candidates.find((candidate) => !candidate.isCurrent)?.id ?? "",
+      );
+    } catch (cause) {
+      setError(getApiErrorMessage(cause, "Unable to inspect the Swarm manager binding."));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadConnection();
+  }, [loadConnection]);
+
+  const rebind = async () => {
+    if (!connection || !selectedServerId || rebinding) return;
+    const candidate = connection.candidates.find((item) => item.id === selectedServerId);
+    if (!candidate || candidate.isCurrent) return;
+    if (!window.confirm("Rebind this project to " + (candidate.name || candidate.endpoint) + "? OpenShip will prove manager access and the same cluster ID before saving.")) return;
+    setRebinding(true);
+    try {
+      const result = await swarmApi.rebindManager(projectId, selectedServerId);
+      showToast("Manager binding updated to " + result.endpoint + ".", "success", "Docker Swarm");
+      await Promise.all([loadConnection(), onRebound()]);
+    } catch (cause) {
+      showToast(getApiErrorMessage(cause, "The selected target could not be used as this stack's manager."), "error", "Docker Swarm");
+    } finally {
+      setRebinding(false);
+    }
+  };
+
+  const manager = connection?.manager;
+  const healthy = manager?.health === "healthy";
+  const stateClass = healthy
+    ? "bg-success/10 text-success"
+    : manager?.health === "unreachable" || manager?.health === "missing"
+      ? "bg-danger-bg text-danger"
+      : "bg-warning/10 text-warning";
+
+  return <section className="rounded-2xl border border-border/50 bg-card p-5">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 className="font-semibold text-foreground">Cluster connection</h2>
+        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">This project uses one explicitly selected manager. OpenShip does not automatically fail over or route commands through multiple managers.</p>
+      </div>
+      <button type="button" disabled={loading} onClick={() => void loadConnection()} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-60">{loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}Probe manager</button>
+    </div>
+    {error && <p role="alert" className="mt-4 rounded-xl border border-danger/25 bg-danger-bg/35 px-3 py-2 text-sm text-danger">{error}</p>}
+    {manager && <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <ConnectionValue label="Configured endpoint" value={manager.server ? (manager.server.name || manager.server.endpoint) + " · " + manager.server.endpoint : "Missing server target"} />
+      <ConnectionValue label="Manager health" value={manager.health.replaceAll("-", " ")} valueClass={stateClass} />
+      <ConnectionValue label="Control availability" value={manager.controlAvailable === null ? "Unknown" : manager.controlAvailable ? "Available" : "Unavailable"} />
+      <ConnectionValue label="Expected cluster" value={shortId(connection?.expectedClusterId)} mono />
+      <ConnectionValue label="Reported cluster" value={shortId(manager.clusterId)} mono />
+      <ConnectionValue label="Manager node" value={manager.nodeId ? shortId(manager.nodeId) : "Not reported"} mono />
+      <ConnectionValue label="Last successful probe" value={formatObservedAt(manager.lastSuccessfulProbeAt)} />
+      <ConnectionValue label="Last error" value={manager.lastError || "None"} valueClass={manager.lastError ? "text-danger" : undefined} />
+    </div>}
+    {connection && <div className="mt-5 rounded-xl border border-border/50 bg-muted/[0.16] p-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="min-w-0 flex-1 text-sm font-medium text-foreground">Rebind manager
+          <select value={selectedServerId} onChange={(event) => setSelectedServerId(event.target.value)} disabled={loading || rebinding} className="mt-1.5 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary disabled:opacity-60">
+            <option value="">Choose an existing OpenShip server</option>
+            {connection.candidates.map((candidate) => <option key={candidate.id} value={candidate.id} disabled={candidate.isCurrent}>{candidate.name || candidate.endpoint}{candidate.isCurrent ? " (current)" : ""}</option>)}
+          </select>
+        </label>
+        <button type="button" disabled={!selectedServerId || rebinding || loading || connection.candidates.find((candidate) => candidate.id === selectedServerId)?.isCurrent} onClick={() => void rebind()} className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-60">{rebinding && <Loader2 className="size-3.5 animate-spin" />}Rebind manager</button>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">The selected server is probed before this project is changed. It must report active manager control and the same cluster ID. Worker targets and other clusters are rejected without saving.</p>
+    </div>}
+    {manager && <div className="mt-5">
+      <h3 className="text-sm font-semibold text-foreground">Read-only node inventory</h3>
+      {manager.nodes.length === 0
+        ? <p className="mt-2 text-sm text-muted-foreground">No node inventory is available while the manager is unreachable.</p>
+        : <div className="mt-3 grid gap-2 lg:grid-cols-2">{manager.nodes.map((node) => <div key={node.id} className="rounded-xl border border-border/50 p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-medium text-foreground">{node.hostname}</p><p className="mt-0.5 font-mono text-xs text-muted-foreground">{shortId(node.id)}</p></div><p className="text-xs text-muted-foreground">{node.status} · {node.availability}</p></div><p className="mt-2 text-xs text-muted-foreground">{node.managerStatus || "Worker"} · {node.engineVersion || "Engine unknown"}</p>{Object.keys(node.labels).length > 0 && <div className="mt-2 flex flex-wrap gap-1">{Object.entries(node.labels).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => <span key={key} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{key}={value}</span>)}</div>}</div>)}</div>}
+    </div>}
+  </section>;
+}
+
+function ConnectionValue({ label, value, mono = false, valueClass }: { label: string; value: string; mono?: boolean; valueClass?: string }) {
+  return <div className="rounded-xl border border-border/50 bg-muted/[0.16] p-3"><p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p><p className={"mt-1.5 break-words text-sm text-foreground " + (mono ? "font-mono text-xs " : "") + (valueClass || "")}>{value}</p></div>;
 }
 
 type RegistryDraft = {

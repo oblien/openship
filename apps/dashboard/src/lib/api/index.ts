@@ -113,6 +113,7 @@ export type {
   SwarmLogOptions,
   SwarmNode,
   SwarmObservation,
+  SwarmManagerConnection,
   SwarmSourcePreview,
   SwarmServiceLogsResult,
   SwarmStackHandoff,

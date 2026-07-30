@@ -26,6 +26,7 @@ export interface SwarmNode {
   availability: string;
   managerStatus: string | null;
   engineVersion: string | null;
+  labels: Record<string, string>;
 }
 
 export interface SwarmTask {
@@ -150,6 +151,24 @@ export interface SwarmObservation {
   };
 }
 
+export interface SwarmManagerConnection {
+  expectedClusterId: string;
+  manager: {
+    server: { id: string; name: string | null; endpoint: string; isLocal: boolean } | null;
+    health: "healthy" | "unreachable" | "wrong-cluster" | "missing";
+    managerState: "active-manager" | "manager-required" | "unreachable" | "missing";
+    controlAvailable: boolean | null;
+    clusterId: string | null;
+    nodeId: string | null;
+    nodeAddress: string | null;
+    managerAddress: string | null;
+    lastSuccessfulProbeAt: string | null;
+    lastError: string | null;
+    nodes: SwarmNode[];
+  };
+  candidates: Array<{ id: string; name: string | null; endpoint: string; isCurrent: boolean }>;
+}
+
 /** Safe descriptor only; normal reads intentionally never include inline YAML. */
 export interface SwarmStackSource {
   kind: "repository" | "inline" | "adopted";
@@ -272,6 +291,13 @@ export const swarmApi = {
     ),
   observation: (projectId: string) =>
     api.get<SwarmObservation>(`projects/${projectId}/swarm/observation`),
+  connection: (projectId: string) =>
+    api.get<SwarmManagerConnection>(`projects/${projectId}/swarm/connection`),
+  rebindManager: (projectId: string, serverId: string) =>
+    api.post<{ managerServerId: string; clusterId: string; endpoint: string }>(
+      `projects/${projectId}/swarm/connection/rebind`,
+      { serverId },
+    ),
   createStackBinding: (projectId: string, input: { serverId: string; stackName: string }) =>
     api.post<{ projectId: string; managerServerId: string; clusterId: string; stackName: string; managementMode: "observe" }>(
       endpoints.projects.swarmStack(projectId),

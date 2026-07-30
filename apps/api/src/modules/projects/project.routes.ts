@@ -27,6 +27,7 @@ import * as swarmManagedInput from "../swarm/swarm-managed-input.controller";
 import * as swarmObservation from "../swarm/swarm-observation.controller";
 import * as swarmManagement from "../swarm/swarm-management.controller";
 import * as swarmStack from "../swarm/swarm-stack.controller";
+import * as swarmConnection from "../swarm/swarm-connection.controller";
 import * as swarmOperations from "../swarm/swarm-operations.controller";
 import {
   CreateProjectBody,
@@ -46,7 +47,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
-import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, SaveSwarmManagedInputBody, ScaleSwarmServiceBody, SetSwarmRoutingModeBody, SetSwarmStackRegistryBody, SetSwarmStorageAcknowledgementsBody, SetSwarmVolumeReplacementAcknowledgementsBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
+import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, RebindSwarmManagerBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, SaveSwarmManagedInputBody, ScaleSwarmServiceBody, SetSwarmRoutingModeBody, SetSwarmStackRegistryBody, SetSwarmStorageAcknowledgementsBody, SetSwarmVolumeReplacementAcknowledgementsBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -185,6 +186,12 @@ r.post(
 );
 r.get("/:id/swarm/observation", { tag: "project:read", localOnly: true, readOnly: true }, swarmObservation.status);
 r.post("/:id/swarm/observation/refresh", { tag: "project:read", localOnly: true, readOnly: true }, swarmObservation.refresh);
+r.get("/:id/swarm/connection", { tag: "project:read", localOnly: true, readOnly: true }, swarmConnection.status);
+r.post(
+  "/:id/swarm/connection/rebind",
+  { tag: "project:write", localOnly: true, body: RebindSwarmManagerBody },
+  swarmConnection.rebind,
+);
 r.post(
   "/:id/swarm/source/validate",
   { tag: "project:read", localOnly: true, readOnly: true, body: UpdateSwarmStackSourceBody },
