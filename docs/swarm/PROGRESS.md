@@ -1269,3 +1269,45 @@ Evidence:
 Next:
 
 - Complete Swarm deployment history and detail UX (S13.2).
+
+## S13.2: Deployment detail UX
+
+Status: done
+Commit: `6676db8f`
+Tests run:
+
+- `bun --filter @repo/api test src/modules/deployments/swarm/deploy.service.test.ts src/modules/deployments/swarm/reconcile.service.test.ts src/modules/deployments/build-execution-plan.test.ts`
+  — passed.
+- `bunx tsc --noEmit -p packages/adapters/tsconfig.json`,
+  `bunx tsc --noEmit -p apps/api/tsconfig.json`, and
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json` — passed.
+- `bun run --cwd apps/api lint`, `bun run --cwd packages/adapters lint`,
+  `bun run --cwd apps/dashboard build`, and `git diff --check` — passed.
+- `bun run --cwd apps/dashboard lint` still cannot run: the checked-in
+  `next lint` script is not supported by Next.js 16.1.6 (it treats
+  `lint` as a project directory). This remains pre-existing tooling, not a
+  feature regression.
+
+Evidence:
+
+- A Swarm deployment now writes durable, stack-native phase events for source
+  resolution, validation/rendering, image build, registry push, stack apply,
+  manager convergence, routing, and any required reconciliation. The build
+  status projection reloads those persisted states and settles a previously
+  interrupted reconciliation from durable deployment/revision state.
+- The dedicated deployment page preserves phase progress after SSE loss or a
+  refresh, shows immutable source/rendered and live digests, safe effective
+  volume/network identities, revision differences, and a rollback action for
+  retained revisions.
+- Live manager detail reports task-backed service placement and node names.
+  Durable per-service rows preserve build/push errors even before a task
+  exists. Task errors are labeled as image-pull, placement, or generic task
+  failures so reviewers can distinguish the failure boundary.
+- A reconciling deployment triggers its existing manager read on both
+  deployment and build-status reload paths; the page continues polling while
+  reconciliation is pending and makes no speculative removal or rollback.
+
+Next:
+
+- Complete cluster health, manager selection, and safe same-cluster rebinding
+  UX (S13.3).
