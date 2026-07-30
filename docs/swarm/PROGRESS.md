@@ -303,3 +303,26 @@ Evidence:
 Next:
 
 - Constrain every source-side file reference to a staging root (S3.3).
+
+## S3.3: Confined stack source file access
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd apps/api lint` and `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-source-confinement.test.ts` — passed (3 tests).
+
+Evidence:
+
+- One reviewed helper resolves compose documents, build contexts/Dockerfiles,
+  env files, config/secret files, and permitted bind sources below a realpath
+  staging root. Traversal, absolute paths, control characters, missing files,
+  and symlink escapes fail before any Docker operation.
+- Per-file, aggregate, YAML, and resource-count limits bound parsing and source
+  reads. Errors identify only the bad field/path class, never file contents.
+
+Next:
+
+- Render ordered documents through `docker stack config` with explicit
+  interpolation controls (S3.4).
