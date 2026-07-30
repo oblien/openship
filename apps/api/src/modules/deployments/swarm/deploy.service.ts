@@ -6,6 +6,7 @@
  * none of the container lifecycle calls are valid here.
  */
 
+import { createHash } from "node:crypto";
 import {
   BuildLogger,
   DEFAULT_BUILD_RESOURCE_CONFIG,
@@ -173,6 +174,50 @@ function safeDeployOutput(value: string, environment: Record<string, string>): s
 function safeDeployError(error: unknown, environment: Record<string, string>): string {
   const message = error instanceof Error ? error.message : "Docker stack deploy failed.";
   return safeDeployOutput(message, environment).slice(0, 1_000);
+}
+
+type SwarmRollbackIntent = {
+  sourceDeploymentId: string;
+  sourceRevisionId: string;
+};
+
+function rollbackIntent(deployment: Deployment): SwarmRollbackIntent | null {
+  const meta = deployment.meta;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+  const value = (meta as Record<string, unknown>).swarmRollback;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.sourceDeploymentId === "string" && record.sourceDeploymentId &&
+    typeof record.sourceRevisionId === "string" && record.sourceRevisionId
+    ? { sourceDeploymentId: record.sourceDeploymentId, sourceRevisionId: record.sourceRevisionId }
+    : null;
+}
+
+function retainedRevisionYaml(revision: SwarmStackRevision): string {
+  if (revision.applyStatus !== "ready") {
+    throw new AppError("The selected Swarm revision did not finish successfully and cannot be rolled back.", 409, "SWARM_ROLLBACK_REVISION_UNAVAILABLE");
+  }
+  let renderedYaml: string | undefined;
+  try {
+    renderedYaml = decryptSecretField(revision.renderedYamlEnc);
+  } catch {
+    throw new AppError("The selected Swarm revision could not be decrypted and cannot be rolled back before mutation.", 409, "SWARM_ROLLBACK_ARTIFACT_MISSING");
+  }
+  if (!renderedYaml) {
+    throw new AppError("The selected Swarm revision has no retained rendered stack document.", 409, "SWARM_ROLLBACK_ARTIFACT_MISSING");
+  }
+  const digest = `sha256:${createHash("sha256").update(renderedYaml).digest("hex")}`;
+  if (digest !== revision.renderedDigest) {
+    throw new AppError("The selected Swarm revision failed its immutable rendered-document integrity check.", 409, "SWARM_ROLLBACK_ARTIFACT_MISSING");
+  }
+  return renderedYaml;
+}
+
+function revisionRoutingMode(revision: SwarmStackRevision, fallback: SwarmStack["routingMode"]): SwarmStack["routingMode"] {
+  const mode = revision.manifest && typeof revision.manifest === "object"
+    ? (revision.manifest as Record<string, unknown>).routingMode
+    : undefined;
+  return mode === "external" || mode === "openship-edge" ? mode : fallback;
 }
 
 function safePrunePlan(
@@ -595,8 +640,25 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           "SWARM_STACK_CLAIM_REQUIRED",
         );
       }
-      const sourceMaterial = await deps.loadSource(stack, project, deployment.organizationId);
+      const rollback = rollbackIntent(deployment);
+      const rollbackRevision = rollback
+        ? await deps.getRevision(rollback.sourceRevisionId, deployment.organizationId)
+        : undefined;
+      if (rollback && (!rollbackRevision || rollbackRevision.stackId !== stack.id)) {
+        throw new AppError("The selected Swarm rollback revision is unavailable for this stack.", 409, "SWARM_ROLLBACK_REVISION_UNAVAILABLE");
+      }
+      const rollbackYaml = rollbackRevision ? retainedRevisionYaml(rollbackRevision) : undefined;
+      // A rollback starts from the encrypted immutable rendered document, never
+      // the current editable source or a mutable image tag. It is still parsed
+      // locally to retain the normal ownership/convergence checks below.
+      const sourceMaterial: ResolvedSwarmStackSource = rollbackYaml
+        ? { files: [{ path: "retained-rendered-stack.yaml", content: rollbackYaml }], composePaths: ["retained-rendered-stack.yaml"] }
+        : await deps.loadSource(stack, project, deployment.organizationId);
       const source = projectSwarmStackSource(sourceMaterial.files);
+      const routingMode = rollbackRevision
+        ? revisionRoutingMode(rollbackRevision, stack.routingMode)
+        : stack.routingMode;
+      const routeStack = routingMode === stack.routingMode ? stack : { ...stack, routingMode };
       const ownership = Object.fromEntries(
         source.services.map((service) => [
           service.sourceServiceName,
@@ -643,6 +705,25 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         );
       }
       const current = stackServices(before, stack.stackName);
+      if (rollbackRevision) {
+        const missingConfigs = rollbackRevision.configRefs.filter(
+          (name) => !before.configs.some((config) => config.name === name),
+        );
+        const missingSecrets = rollbackRevision.secretRefs.filter(
+          (name) => !before.secrets.some((secret) => secret.name === name),
+        );
+        if (missingConfigs.length > 0 || missingSecrets.length > 0) {
+          const missing = [
+            ...missingConfigs.map((name) => `config ${name}`),
+            ...missingSecrets.map((name) => `secret ${name}`),
+          ];
+          throw new AppError(
+            `The selected Swarm rollback revision references unavailable retained resources: ${missing.join(", ")}.`,
+            409,
+            "SWARM_ROLLBACK_DEPENDENCY_MISSING",
+          );
+        }
+      }
       if (claimPending) {
         const claimedDigest = pendingClaimDigest(stack);
         if (!claimedDigest || claimedDigest !== swarmLiveStateDigest(current)) {
@@ -659,10 +740,10 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           "SWARM_STACK_OWNERSHIP_CONFLICT",
         );
       }
-      const sourceBuiltServiceNames = new Set(
-        source.services.filter((service) => !!service.build).map((service) => service.sourceServiceName),
-      );
-      const needsServiceRows = sourceBuiltServiceNames.size > 0 || stack.routingMode === "openship-edge";
+      const sourceBuiltServiceNames = rollbackRevision
+        ? new Set<string>()
+        : new Set(source.services.filter((service) => !!service.build).map((service) => service.sourceServiceName));
+      const needsServiceRows = sourceBuiltServiceNames.size > 0 || routingMode === "openship-edge";
       const sourceRows = needsServiceRows
         ? new Map((await deps.syncProjections(project.id, source.services)).map((service) => [service.sourceServiceName, service]))
         : new Map<string, Service>();
@@ -691,19 +772,21 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           ...(detail.errorMessage ? { errorMessage: detail.errorMessage, error: detail.errorMessage } : {}),
         });
       };
-      const imageOverrides = await publishSourceBuilds({
-        stack,
-        project,
-        deployment,
-        services: source.services,
-        registry,
-        registryAuth,
-        previousImages: previousRevision?.serviceImages ?? {},
-        runtime: platform.runtime,
-        logger,
-        onBuildStatus: persistSourceBuildStatus,
-      });
-      const edgePlan = planSwarmEdgeAttachments(stack, source.services.map((service) => service.sourceServiceName), [...sourceRows.values()]);
+      const imageOverrides = rollbackRevision
+        ? {}
+        : await publishSourceBuilds({
+            stack,
+            project,
+            deployment,
+            services: source.services,
+            registry,
+            registryAuth,
+            previousImages: previousRevision?.serviceImages ?? {},
+            runtime: platform.runtime,
+            logger,
+            onBuildStatus: persistSourceBuildStatus,
+          });
+      const edgePlan = planSwarmEdgeAttachments(routeStack, source.services.map((service) => service.sourceServiceName), [...sourceRows.values()]);
       if (edgePlan && edgePlan.upstreams.length > 0) {
         if (!platform.executor) {
           throw new AppError("OpenShip Edge requires a manager command transport.", 503, "SWARM_EDGE_UNAVAILABLE");
@@ -718,15 +801,22 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         }
         logger.log(`→ Attaching ${edgePlan.upstreams.map((upstream) => upstream.sourceServiceName).join(", ")} to the OpenShip Edge overlay\n`);
       }
-      const rendered = await platform.stackRuntime.renderStack({
-        files: sourceMaterial.files,
-        composePaths: sourceMaterial.composePaths,
-        environment,
-        ownershipLabels: ownership,
-        imageOverrides,
-        networkAttachments: edgePlan?.networkAttachments,
-        externalNetworks: edgePlan?.externalNetworks,
-      });
+      const rendered = rollbackRevision && rollbackYaml
+        ? {
+            renderedYaml: rollbackYaml,
+            renderedDigest: rollbackRevision.renderedDigest,
+            overrideYaml: rollbackRevision.overrideYamlRedacted ?? "",
+            warnings: [],
+          }
+        : await platform.stackRuntime.renderStack({
+            files: sourceMaterial.files,
+            composePaths: sourceMaterial.composePaths,
+            environment,
+            ownershipLabels: ownership,
+            imageOverrides,
+            networkAttachments: edgePlan?.networkAttachments,
+            externalNetworks: edgePlan?.externalNetworks,
+          });
       const resolvedSource = projectSwarmStackSource([
         { path: "rendered-stack.yaml", content: rendered.renderedYaml },
       ]);
@@ -744,7 +834,12 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       }
       // A first claim never prunes: deletion consent belongs to a later,
       // separately reviewed managed deployment after labels are verified.
-      const prunePlan = claimPending
+      const prunePlan = rollbackRevision
+        ? {
+            prune: (rollbackRevision.manifest as Record<string, unknown>)?.prune === true,
+            removals: [] as string[],
+          }
+        : claimPending
         ? { prune: false, removals: [] }
         : safePrunePlan(
             stack,
@@ -763,29 +858,41 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
 
       const startedAt = deps.now();
       const revision = await deps.createRevision(stack.id, deployment.organizationId, {
-        sourceDigest: stack.sourceDigest,
-        sourceCommitSha: stack.sourceCommitSha,
+        sourceDigest: rollbackRevision?.sourceDigest ?? stack.sourceDigest,
+        sourceCommitSha: rollbackRevision?.sourceCommitSha ?? stack.sourceCommitSha,
         renderedYamlEnc: encryptSecretField(rendered.renderedYaml)!,
         renderedDigest: rendered.renderedDigest,
         renderedYamlRedacted: redactRenderedStackYaml(rendered.renderedYaml),
-        overrideYamlRedacted: redactRenderedStackYaml(rendered.overrideYaml),
-        manifest: {
-          services: resolvedSource.services,
-          networks: resolvedSource.networks,
-          volumes: resolvedSource.volumes,
-          configs: resolvedSource.configs,
-          secrets: resolvedSource.secrets,
-          compatibility,
-          prune,
-          pruneRemovals: prunePlan.removals,
-        },
-        serviceImages: Object.fromEntries(
-          resolvedSource.services.flatMap((service) =>
-            service.image ? [[service.sourceServiceName, service.image]] : [],
-          ),
-        ),
-        configRefs: resolvedSource.configs,
-        secretRefs: resolvedSource.secrets,
+        overrideYamlRedacted: rollbackRevision?.overrideYamlRedacted ?? redactRenderedStackYaml(rendered.overrideYaml),
+        manifest: rollbackRevision
+          ? {
+              ...rollbackRevision.manifest,
+              routingMode,
+              rollback: {
+                sourceRevisionId: rollbackRevision.id,
+                sourceDeploymentId: rollback!.sourceDeploymentId,
+              },
+            }
+          : {
+              services: resolvedSource.services,
+              networks: resolvedSource.networks,
+              volumes: resolvedSource.volumes,
+              configs: resolvedSource.configs,
+              secrets: resolvedSource.secrets,
+              routingMode,
+              compatibility,
+              prune,
+              pruneRemovals: prunePlan.removals,
+            },
+        serviceImages: rollbackRevision
+          ? rollbackRevision.serviceImages
+          : Object.fromEntries(
+              resolvedSource.services.flatMap((service) =>
+                service.image ? [[service.sourceServiceName, service.image]] : [],
+              ),
+            ),
+        configRefs: rollbackRevision?.configRefs ?? resolvedSource.configs,
+        secretRefs: rollbackRevision?.secretRefs ?? resolvedSource.secrets,
         applyStatus: "applying",
       });
       if (!revision)
@@ -961,7 +1068,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         })),
       );
       const routingWarnings: string[] = [];
-      if (stack.routingMode === "openship-edge") {
+      if (routingMode === "openship-edge") {
         // Service rows retain operator-controlled exposed/domain fields while
         // projections update manager facts. Re-read all rows so a source service
         // removed by this apply can have its old vhost removed too.
@@ -969,7 +1076,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         let domainRows = await deps.listDomains(project.id);
         let routePlan = planSwarmEdgeRoutes({
           project,
-          stack,
+          stack: routeStack,
           services: allServiceRows,
           domains: domainRows,
         });
@@ -994,7 +1101,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           domainRows = await deps.listDomains(project.id);
           routePlan = planSwarmEdgeRoutes({
             project,
-            stack,
+        stack: routeStack,
             services: allServiceRows,
             domains: domainRows,
           });
@@ -1079,6 +1186,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       await deps.updateStack(stack.id, deployment.organizationId, {
         managementMode: "managed",
         sourceStatus: "valid",
+        routingMode,
         lastAppliedRevisionId: revision.id,
         lastObservedDigest: swarmLiveStateDigest(live),
         lastObservedAt: finishedAt,

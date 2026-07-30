@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { SwarmDiscoverySnapshot } from "@repo/adapters";
 import type { SwarmServiceProjection } from "@repo/core";
-import type { ContainerRegistry, Deployment, Domain, Project, Service, SwarmStack } from "@repo/db";
+import type { ContainerRegistry, Deployment, Domain, Service, Project, SwarmStack, SwarmStackRevision } from "@repo/db";
 import { createSwarmDeployService, selectSourceBuilds, type SwarmDeployLogger } from "./deploy.service";
 import { swarmLiveStateDigest } from "../../swarm/swarm-preview";
 
@@ -19,6 +20,7 @@ const stack = {
     "services:\n  web:\n    image: nginx:1.27-alpine\n  worker:\n    image: busybox:1.36\n",
   sourceDigest: "sha256:source",
   sourceCommitSha: null,
+  routingMode: "external",
   registryId: null,
   prune: false,
   withRegistryAuth: false,
@@ -151,6 +153,7 @@ function fixture(
     deployError?: Error;
     stackOverride?: SwarmStack;
     beforeDiscovery?: SwarmDiscoverySnapshot;
+    revision?: SwarmStackRevision;
     registry?: ContainerRegistry;
     syncProjections?: (projectId: string, projections: SwarmServiceProjection[]) => Promise<Service[]>;
     listServices?: (projectId: string) => Promise<Service[]>;
@@ -163,6 +166,7 @@ function fixture(
   const createRevision = vi.fn(async (..._args: unknown[]) => ({ id: "revision-1", revision: 1 }));
   const updateRevision = vi.fn(async () => ({ id: "revision-1" }));
   const updateStack = vi.fn(async () => activeStack);
+  const getRevision = vi.fn(async () => options.revision);
   const syncProjections = options.syncProjections ?? vi.fn(async () => [
     { id: "service-web", name: "web", sourceServiceName: "web" },
     { id: "service-worker", name: "worker", sourceServiceName: "worker" },
@@ -181,6 +185,13 @@ function fixture(
     if (options.deployError) throw options.deployError;
     return { output: "Creating service blog_web\nCreating service blog_worker" };
   });
+  const renderStack = vi.fn(async () => ({
+    renderedYaml:
+      "services:\n  web:\n    image: nginx:1.27-alpine\n  worker:\n    image: busybox:1.36\n",
+    renderedDigest: "sha256:rendered",
+    overrideYaml: "services: {}\n",
+    warnings: [],
+  }));
   const log = vi.fn((message: string) => events.push(`log:${message}`));
   const logger = {
     log,
@@ -194,17 +205,12 @@ function fixture(
       ({
         stackRuntime: {
           discover,
-          renderStack: async () => ({
-            renderedYaml:
-              "services:\n  web:\n    image: nginx:1.27-alpine\n  worker:\n    image: busybox:1.36\n",
-            renderedDigest: "sha256:rendered",
-            overrideYaml: "services: {}\n",
-            warnings: [],
-          }),
+          renderStack,
           deployStack,
         },
         executor: options.executor ?? null,
       }) as never,
+    getRevision,
     createRevision: createRevision as never,
     updateRevision: updateRevision as never,
     updateStack,
@@ -221,10 +227,12 @@ function fixture(
     createRevision,
     updateRevision,
     updateStack,
+    getRevision,
     syncProjections,
     createServiceDeployments,
     upsertServiceDeployment,
     deployStack,
+    renderStack,
     log,
     logger,
   };
@@ -335,6 +343,94 @@ describe("managed Swarm deploy", () => {
       ]),
     );
     expect(test.log.mock.calls.flat().join("\n")).not.toContain("top-secret");
+  });
+
+  it("reapplies a retained revision verbatim as a new rollback revision without rebuilding source images", async () => {
+    const retainedYaml = [
+      "services:",
+      "  web:",
+      "    image: registry.example.com/blog/web@sha256:aaaaaaaa",
+      "    deploy:",
+      "      replicas: 2",
+      "  worker:",
+      "    image: registry.example.com/blog/worker@sha256:bbbbbbbb",
+      "    deploy:",
+      "      replicas: 3",
+      "",
+    ].join("\n");
+    const retainedRevision = {
+      id: "revision-retained",
+      stackId: "swarm-blog",
+      revision: 4,
+      sourceDigest: "sha256:source-retained",
+      sourceCommitSha: "deadbeef",
+      renderedYamlEnc: retainedYaml,
+      renderedDigest: `sha256:${createHash("sha256").update(retainedYaml).digest("hex")}`,
+      renderedYamlRedacted: retainedYaml,
+      overrideYamlRedacted: null,
+      manifest: { routingMode: "external", prune: false },
+      serviceImages: {
+        web: "registry.example.com/blog/web@sha256:aaaaaaaa",
+        worker: "registry.example.com/blog/worker@sha256:bbbbbbbb",
+      },
+      configRefs: [],
+      secretRefs: [],
+      applyStatus: "ready",
+    } as unknown as SwarmStackRevision;
+    const test = fixture({ revision: retainedRevision });
+    const rollbackDeployment = {
+      ...deployment,
+      meta: { swarmRollback: { sourceDeploymentId: "deployment-old", sourceRevisionId: retainedRevision.id } },
+    } as Deployment;
+
+    await expect(test.service.deploy({ project, deployment: rollbackDeployment, environment: {}, logger: test.logger }))
+      .resolves.toMatchObject({ state: "ready", revisionId: "revision-1" });
+
+    expect(test.renderStack).not.toHaveBeenCalled();
+    expect(test.deployStack).toHaveBeenCalledWith(expect.objectContaining({ renderedYaml: retainedYaml, prune: false }));
+    expect(test.createRevision).toHaveBeenCalledWith(
+      "swarm-blog",
+      "org-a",
+      expect.objectContaining({
+        sourceDigest: "sha256:source-retained",
+        sourceCommitSha: "deadbeef",
+        renderedDigest: retainedRevision.renderedDigest,
+        serviceImages: retainedRevision.serviceImages,
+        manifest: expect.objectContaining({
+          rollback: { sourceDeploymentId: "deployment-old", sourceRevisionId: "revision-retained" },
+        }),
+      }),
+    );
+  });
+
+  it("blocks a retained revision with a missing config or secret before creating a revision or mutating Swarm", async () => {
+    const retainedYaml = "services:\n  web:\n    image: nginx@sha256:aaaaaaaa\n";
+    const retainedRevision = {
+      id: "revision-retained",
+      stackId: "swarm-blog",
+      revision: 4,
+      sourceDigest: "sha256:source-retained",
+      sourceCommitSha: null,
+      renderedYamlEnc: retainedYaml,
+      renderedDigest: `sha256:${createHash("sha256").update(retainedYaml).digest("hex")}`,
+      renderedYamlRedacted: retainedYaml,
+      overrideYamlRedacted: null,
+      manifest: { routingMode: "external", prune: false },
+      serviceImages: { web: "nginx@sha256:aaaaaaaa" },
+      configRefs: ["retained-config"],
+      secretRefs: ["retained-secret"],
+      applyStatus: "ready",
+    } as unknown as SwarmStackRevision;
+    const test = fixture({ revision: retainedRevision });
+    const rollbackDeployment = {
+      ...deployment,
+      meta: { swarmRollback: { sourceDeploymentId: "deployment-old", sourceRevisionId: retainedRevision.id } },
+    } as Deployment;
+
+    await expect(test.service.deploy({ project, deployment: rollbackDeployment, environment: {}, logger: test.logger }))
+      .rejects.toMatchObject({ code: "SWARM_ROLLBACK_DEPENDENCY_MISSING" });
+    expect(test.createRevision).not.toHaveBeenCalled();
+    expect(test.deployStack).not.toHaveBeenCalled();
   });
 
   it("keeps a possibly accepted apply reconciling when manager access drops after docker stack deploy", async () => {

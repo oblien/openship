@@ -199,6 +199,17 @@ export interface DeploymentConfigSnapshot {
   /** Separate stack/service orchestration strategy. Legacy rows default standalone. */
   orchestratorMode?: OrchestratorMode;
   /**
+   * Internal immutable-revision restore intent for a Swarm rollback. The
+   * deployment pipeline validates the referenced revision before any manager
+   * mutation, then records a new applied revision rather than reusing a task
+   * or mutable image tag.
+   */
+  swarmRollback?: {
+    sourceDeploymentId: string;
+    sourceRevisionId: string;
+    environmentSnapshot: Record<string, string> | null;
+  };
+  /**
    * Adopt an already-running process instead of building + starting one. Set
    * for the self-deployed control plane so it becomes a real deployment without
    * a second process binding the port. Threaded onto DeployConfig.adopt.
@@ -1446,6 +1457,7 @@ async function triggerSwarmStackDeployment(
     environment?: string;
     trigger?: string;
     forceAll?: boolean;
+    swarmRollback?: DeploymentConfigSnapshot["swarmRollback"];
   },
 ): Promise<TriggerDeploymentResult> {
   if (!swarmSupportEnabled()) {
@@ -1461,7 +1473,7 @@ async function triggerSwarmStackDeployment(
   if (stack.managementMode !== "managed" && !stack.claimedAt) {
     throw new AppError("This observed stack must be explicitly claimed before OpenShip can apply it.", 409, "SWARM_STACK_CLAIM_REQUIRED");
   }
-  if (stack.sourceKind === "adopted" || stack.sourceStatus !== "valid") {
+  if (!data.swarmRollback && (stack.sourceKind === "adopted" || stack.sourceStatus !== "valid")) {
     throw new AppError("Link and validate authoritative stack source before deploying it.", 409, "SWARM_SOURCE_REQUIRED");
   }
   await checkNoActiveBuild(project.id);
@@ -1475,6 +1487,7 @@ async function triggerSwarmStackDeployment(
   snapshot.orchestratorMode = "swarm";
   snapshot.hasServer = true;
   snapshot.hasBuild = false;
+  if (data.swarmRollback) snapshot.swarmRollback = data.swarmRollback;
   assertSupportedExecutionMatrix({
     runtimeMode: "docker",
     orchestratorMode: "swarm",
@@ -1482,7 +1495,7 @@ async function triggerSwarmStackDeployment(
   });
 
   const environment = data.environment ?? "production";
-  const rawEnvMap = await repos.project.getEnvMap(project.id, environment);
+  const rawEnvMap = data.swarmRollback?.environmentSnapshot ?? await repos.project.getEnvMap(project.id, environment);
   const dep = await createQueuedDeployment({
     projectId: project.id,
     organizationId: project.organizationId,
@@ -1539,6 +1552,8 @@ export async function triggerDeployment(
      * `[redeploy-all]`), and by config-touch detection.
      */
     forceAll?: boolean;
+    /** Internal Swarm-only restore intent, accepted only by the stack path. */
+    swarmRollback?: DeploymentConfigSnapshot["swarmRollback"];
     /**
      * Repo-root-relative paths changed in this push (webhook only). Passed to
      * the compose-drift reconciler so it can skip the repo scan when the compose

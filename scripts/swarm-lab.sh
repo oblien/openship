@@ -40,9 +40,10 @@ managed_edge_network="openship-edge"
 managed_edge_sites_volume="openship-edge-sites"
 managed_edge_certs_volume="openship-edge-certs"
 managed_edge_acme_volume="openship-edge-acme"
+rollback_proof_stack="openship-swarm-rollback-proof"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|edge-proof|cutover-proof|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|edge-proof|cutover-proof|rollback-proof|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -177,6 +178,11 @@ remove_cutover_proof_objects() {
   docker -H "$manager_host" network rm "$managed_edge_network" >/dev/null 2>&1 || true
   docker -H "$manager_host" volume rm "$managed_edge_sites_volume" "$managed_edge_certs_volume" "$managed_edge_acme_volume" >/dev/null 2>&1 || true
   docker -H "$manager_host" config ls --filter 'label=com.openship.edge.cutover=true' -q | xargs -r docker -H "$manager_host" config rm >/dev/null 2>&1 || true
+}
+
+remove_rollback_proof_objects() {
+  docker -H "$manager_host" stack rm "$rollback_proof_stack" >/dev/null 2>&1 || true
+  wait_for_stack_removal "$rollback_proof_stack"
 }
 
 start_lab() {
@@ -443,6 +449,14 @@ case "${1:-}" in
     done
     INTERNAL_TOKEN="openship-swarm-cutover-proof-internal-token-0001" DOCKER_HOST="$manager_host" OPENSHIP_SWARM_CUTOVER_ROUTER="$cutover_router_service" bun "$repo_root/scripts/swarm-edge-cutover-harness.ts"
     ;;
+  rollback-proof)
+    require_docker
+    require_lab
+    command -v bun >/dev/null 2>&1 || { echo "bun is required for the rollback proof" >&2; exit 1; }
+    remove_rollback_proof_objects
+    DOCKER_HOST="$manager_host" bun "$repo_root/scripts/swarm-revision-rollback-harness.ts"
+    remove_rollback_proof_objects
+    ;;
   events)
     require_docker
     require_lab
@@ -466,6 +480,7 @@ case "${1:-}" in
     remove_lab_registry_objects
     remove_edge_proof_objects
     remove_cutover_proof_objects
+    remove_rollback_proof_objects
     ;;
   down)
     require_docker

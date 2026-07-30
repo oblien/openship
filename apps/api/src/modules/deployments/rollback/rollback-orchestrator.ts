@@ -27,7 +27,7 @@
 
 import { repos, type Deployment } from "@repo/db";
 import type { DeploymentRef } from "@repo/adapters";
-import { AppError } from "@repo/core";
+import { AppError, deploymentWorkloadRef, isSwarmStackRef } from "@repo/core";
 import { resolveDeploymentRuntime } from "../../../lib/deployment-runtime";
 import { resolveRollbackWindow } from "../release-retention";
 import { checkNoActiveBuild, triggerDeployment, type DeploymentConfigSnapshot } from "../build.service";
@@ -133,7 +133,7 @@ export async function onDeploymentReady(opts: {
  * Both branches share the same eligibility checks (deployment must
  * have ended in a success-state and not already be the active one).
  */
-export async function rollback(targetDeploymentId: string): Promise<void> {
+export async function rollback(targetDeploymentId: string): Promise<Deployment | void> {
   const target = await repos.deployment.findById(targetDeploymentId);
   if (!target) {
     throw new AppError("Deployment not found", 404, "DEPLOYMENT_NOT_FOUND");
@@ -161,11 +161,57 @@ export async function rollback(targetDeploymentId: string): Promise<void> {
     );
   }
 
+  const workload = deploymentWorkloadRef(target);
+  if (isSwarmStackRef(workload)) {
+    return rollbackSwarmRevision(target, project, workload);
+  }
+
   if (target.rollbackStrategy === "git") {
     await rollbackViaGit(target, project);
     return;
   }
   await rollbackViaSnapshot(target, project);
+}
+
+/**
+ * Swarm has no task/container artifact to swap. A rollback is deliberately a
+ * new standard deployment whose pipeline reapplies the target's encrypted
+ * rendered revision. This keeps history, SSE, convergence, and audit state in
+ * the ordinary deployment lifecycle while avoiding any mutable tag/source read.
+ */
+async function rollbackSwarmRevision(
+  target: Deployment,
+  project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>,
+  workload: Extract<NonNullable<ReturnType<typeof deploymentWorkloadRef>>, { kind: "swarm-stack" }>,
+): Promise<Deployment> {
+  const revision = await repos.swarmStack.getRevisionInOrganization(workload.revisionId, target.organizationId);
+  if (!revision || revision.applyStatus !== "ready" || !revision.renderedYamlEnc) {
+    throw new AppError(
+      "The selected Swarm revision is no longer retained and cannot be rolled back before mutation.",
+      409,
+      ROLLBACK_ERROR_CODES.ARTIFACT_GONE,
+    );
+  }
+  const rollbackCtx = buildBackgroundContext({
+    userId: "",
+    organizationId: target.organizationId,
+    label: "swarm:rollback",
+  });
+  const triggered = await triggerDeployment(rollbackCtx, {
+    projectId: target.projectId,
+    branch: target.branch,
+    commitSha: revision.sourceCommitSha ?? target.commitSha ?? undefined,
+    commitMessage: `Rollback to Swarm revision ${revision.revision}`,
+    environment: target.environment,
+    trigger: "rollback",
+    forceAll: true,
+    swarmRollback: {
+      sourceDeploymentId: target.id,
+      sourceRevisionId: revision.id,
+      environmentSnapshot: (target.envVars as Record<string, string> | null) ?? null,
+    },
+  });
+  return triggered.deployment;
 }
 
 /**
