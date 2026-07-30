@@ -113,6 +113,7 @@ export const BuildAccessBody = Type.Object({
   ),
   serverId: Type.Optional(Type.String({ description: "Target server id when deployTarget='server'." })),
   runtimeMode: Type.Optional(Type.Union([Type.Literal("bare"), Type.Literal("docker")])),
+  orchestratorMode: Type.Optional(Type.Union([Type.Literal("standalone"), Type.Literal("swarm")])),
   serviceDeploymentMode: Type.Optional(Type.Union([Type.Literal("services"), Type.Literal("single")])),
   services: Type.Optional(
     Type.Array(BuildServiceInput, { description: "Compose / multi-service definitions (services mode)." }),

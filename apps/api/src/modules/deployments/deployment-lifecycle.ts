@@ -16,7 +16,7 @@
 import { repos, type Project, type Deployment, type NewDeployment } from "@repo/db";
 import { DockerRuntime, type LogEntry } from "@repo/adapters";
 import type { RuntimeAdapter } from "@repo/adapters";
-import { SYSTEM, safeErrorMessage } from "@repo/core";
+import { SYSTEM, safeErrorMessage, type RuntimeWorkloadRef } from "@repo/core";
 import { env } from "../../config";
 import type { DeploymentMeta } from "../../lib/deployment-runtime";
 import { notification } from "../../lib/notification-dispatcher";
@@ -122,12 +122,20 @@ export async function setDeploymentStatus(
  */
 export async function onReconciling(
   ctx: LifecycleContext,
-  result: { containerId?: string; warningMessage?: string; durationMs?: number },
+  result: {
+    containerId?: string;
+    runtimeRef?: RuntimeWorkloadRef;
+    warningMessage?: string;
+    durationMs?: number;
+  },
 ): Promise<void> {
   const { dep, buildSessionId, persistLogs } = ctx;
 
   if (result.containerId) {
     await repos.deployment.setContainerId(dep.id, result.containerId).catch(() => {});
+  }
+  if (result.runtimeRef) {
+    await repos.deployment.setRuntimeRef(dep.id, result.runtimeRef).catch(() => {});
   }
 
   const collapsed = persistLogs();
@@ -309,8 +317,13 @@ export async function onCancelled(
 
 export async function onSuccess(
   ctx: LifecycleContext,
-  result: {
+  result: ({
     containerId: string;
+    runtimeRef?: never;
+  } | {
+    containerId?: never;
+    runtimeRef: RuntimeWorkloadRef;
+  }) & {
     url?: string;
     durationMs: number;
     warningMessage?: string;
@@ -319,7 +332,11 @@ export async function onSuccess(
 ): Promise<void> {
   const { project, dep, buildSessionId, persistLogs } = ctx;
 
-  await repos.deployment.setContainerId(dep.id, result.containerId, result.url);
+  if ("runtimeRef" in result) {
+    await repos.deployment.setRuntimeRef(dep.id, result.runtimeRef);
+  } else {
+    await repos.deployment.setContainerId(dep.id, result.containerId, result.url);
+  }
   const mergedMeta = result.metaPatch ? { ...((dep.meta as DeploymentMeta | null) ?? {}), ...result.metaPatch } : ((dep.meta as DeploymentMeta | null) ?? null);
 
   // Assign the human-friendly version NOW, on success — not at create. A version
@@ -415,6 +432,7 @@ export async function onSuccess(
         branch: dep.branch,
         commitSha: dep.commitSha,
         url: result.url,
+        runtimeRef: "runtimeRef" in result ? result.runtimeRef : undefined,
         durationMs: result.durationMs,
       },
     },

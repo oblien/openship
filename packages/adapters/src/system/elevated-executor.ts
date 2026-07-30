@@ -46,8 +46,8 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
   const overrides: Partial<CommandExecutor> = {
     exec: (command: string, opts?: { timeout?: number }) =>
       inner.exec(elevateCommand(command), opts),
-    streamExec: (command: string, onLog: (log: LogEntry) => void) =>
-      inner.streamExec(elevateCommand(command), onLog),
+    streamExec: (command: string, onLog: (log: LogEntry) => void, opts?: { signal?: AbortSignal }) =>
+      inner.streamExec(elevateCommand(command), onLog, opts),
     writeFile: writeFileElevated,
     // Elevated for the same reason as writeFile: the vhost/conf dirs are root-owned,
     // and the Proxy would otherwise forward this to the inner executor unelevated —

@@ -9,7 +9,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { RoutingConfig, ProjectCompositeRoute, ReleaseSource } from "@repo/core";
+import type { OrchestratorMode, RoutingConfig, ProjectCompositeRoute, ReleaseSource } from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
 
@@ -215,6 +215,11 @@ export const project = pgTable(
      * deploy time (the prior wizard-only behavior).
      */
     runtimeMode: text("runtime_mode"),
+    /** Docker workload strategy. Existing projects remain standalone. */
+    orchestratorMode: text("orchestrator_mode")
+      .$type<OrchestratorMode>()
+      .notNull()
+      .default("standalone"),
     /** Number of previous successful releases to retain for rollback (null = use instance default) */
     rollbackWindow: integer("rollback_window"),
     /**

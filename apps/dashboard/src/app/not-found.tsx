@@ -38,6 +38,7 @@ export default async function NotFound() {
       initialUser={session.user}
       selfHosted={deploymentInfo.selfHosted}
       deployMode={deploymentInfo.deployMode}
+      swarmSupportEnabled={deploymentInfo.swarmSupportEnabled}
       authMode={deploymentInfo.authMode}
       cloudAuthUrl={deploymentInfo.cloudAuthUrl}
       cloudApiUrl={deploymentInfo.cloudApiUrl}

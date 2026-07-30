@@ -666,6 +666,7 @@ export function useDeploymentBuild(
             ...(config.runtimeMode === "bare" || config.runtimeMode === "docker"
               ? { runtimeMode: config.runtimeMode }
               : {}),
+            ...(config.orchestratorMode ? { orchestratorMode: config.orchestratorMode } : {}),
           });
           showToast("Configuration saved", "success", "Saved");
           return projectId;
@@ -803,6 +804,7 @@ export function useDeploymentBuild(
           config.projectType === "docker" || isServiceDeployment
             ? "docker"
             : (overrides?.runtimeMode ?? config.runtimeMode),
+        ...(config.orchestratorMode ? { orchestratorMode: config.orchestratorMode } : {}),
         // Send the mode for BOTH multi-app shapes so the operator's per-app vs
         // single choice reaches the backend. Monorepo was previously omitted,
         // leaving the backend to guess via shouldUseProjectServicePipeline.
@@ -1062,6 +1064,11 @@ export function useDeploymentBuild(
             // so the target step's clone picker + summary reflect reality rather
             // than the "bare" default.
             runtimeMode: apiConfig.runtimeMode || prev.runtimeMode,
+            // A Swarm deployment has a dedicated detail surface. This comes
+            // from the immutable deployment snapshot so a historical refresh
+            // cannot be mis-rendered as a standalone Docker deployment.
+            orchestratorMode:
+              apiConfig.orchestratorMode === "swarm" ? "swarm" : "standalone",
             serverId: apiConfig.serverId ?? prev.serverId,
             serverName: apiConfig.serverName ?? prev.serverName,
             envVars: apiConfig.envVars || prev.envVars,

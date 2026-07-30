@@ -3,7 +3,7 @@
  */
 import { Hono } from "hono";
 import { hostname, userInfo } from "node:os";
-import { cloudRuntimeTarget, env } from "../../config/env";
+import { cloudRuntimeTarget, env, swarmSupportEnabled } from "../../config/env";
 import { rateLimiterFor } from "../../middleware/rate-limiter";
 import { APP_VERSION } from "../../lib/app-version";
 import { getAuthMode } from "../../lib/auth-mode";
@@ -96,6 +96,9 @@ healthRoutes.get("/env", rateLimiterFor("default-anon"), async (c) => {
   return c.json({
     selfHosted: !env.CLOUD_MODE,
     deployMode: env.DEPLOY_MODE,
+    // This is the public, resolved feature capability consumed by the
+    // dashboard. Do not make clients infer it from an environment variable.
+    swarmSupportEnabled: swarmSupportEnabled(),
     // Server-host ("VPS") mode: OpenShip is installed ON a server (docker/bare
     // self-host, not the desktop app, not cloud SaaS). In this mode the host is
     // itself a deployable target and is auto-registered as an isLocal server.

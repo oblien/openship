@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { UpdateProjectBody } from "./project.schema";
+import { Value } from "@sinclair/typebox/value";
+import { CreateProjectBody, UpdateProjectBody } from "./project.schema";
 
 /**
  * Mass-assignment guard: `updateProject` builds its DB patch ONLY from the keys
@@ -33,5 +34,14 @@ describe("UpdateProjectBody — mass-assignment allow-list", () => {
     for (const allowed of ["name", "gitBranch", "port", "publicEndpoints", "routingConfig"]) {
       expect(keys).toContain(allowed);
     }
+  });
+});
+
+describe("CreateProjectBody — explicit private routing", () => {
+  it("accepts an empty endpoint list without changing the omitted-route default", () => {
+    expect(Value.Check(CreateProjectBody, {
+      name: "private-swarm-stack",
+      publicEndpoints: [],
+    })).toBe(true);
   });
 });

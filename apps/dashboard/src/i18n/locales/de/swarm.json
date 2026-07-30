@@ -1,0 +1,35 @@
+{
+  "deployment": {
+    "phases": {
+      "source": "Quelle auflösen",
+      "validate": "Validieren",
+      "build": "Erstellen",
+      "push": "Image übertragen",
+      "apply": "Stack anwenden",
+      "converge": "Konvergenz prüfen",
+      "route": "Routing",
+      "reconcile": "Abgleichen"
+    },
+    "rollbackConfirm": "Zu Swarm-Revision {revision} zurücksetzen? OpenShip stellt die unveränderliche gerenderte Konfiguration bereit und prüft die Konvergenz.",
+    "rollback": "Zu dieser Revision zurücksetzen",
+    "redeploy": "Aktuelle Quelle erneut bereitstellen"
+  },
+  "connection": {
+    "title": "Clusterverbindung",
+    "probe": "Manager prüfen",
+    "rebind": "Manager neu zuordnen",
+    "rebindLabel": "Manager neu zuordnen",
+    "chooseServer": "Bestehenden OpenShip-Server wählen",
+    "confirmRebind": "Dieses Projekt an {target} neu zuordnen? OpenShip prüft vor dem Speichern den Managerzugriff und dieselbe Cluster-ID.",
+    "rebindSuccess": "Managerbindung auf {endpoint} aktualisiert.",
+    "configuredEndpoint": "Konfigurierter Endpunkt",
+    "managerHealth": "Managerzustand",
+    "controlAvailability": "Steuerungsverfügbarkeit",
+    "expectedCluster": "Erwarteter Cluster",
+    "reportedCluster": "Gemeldeter Cluster",
+    "managerNode": "Manager-Knoten",
+    "lastSuccessfulProbe": "Letzte erfolgreiche Prüfung",
+    "lastError": "Letzter Fehler",
+    "nodeInventory": "Schreibgeschütztes Knotenverzeichnis"
+  }
+}

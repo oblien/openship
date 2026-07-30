@@ -22,6 +22,13 @@ import * as transfer from "./transfer.controller";
 import * as routeRules from "../route-rules/route-rule.controller";
 import * as ensureEdgeCtrl from "../domains/ensure-edge.controller";
 import * as incomingWebhooks from "../incoming-webhooks/incoming.controller";
+import * as swarmSource from "../swarm/swarm-source.controller";
+import * as swarmManagedInput from "../swarm/swarm-managed-input.controller";
+import * as swarmObservation from "../swarm/swarm-observation.controller";
+import * as swarmManagement from "../swarm/swarm-management.controller";
+import * as swarmStack from "../swarm/swarm-stack.controller";
+import * as swarmConnection from "../swarm/swarm-connection.controller";
+import * as swarmOperations from "../swarm/swarm-operations.controller";
 import {
   CreateProjectBody,
   EnsureProjectBody,
@@ -40,6 +47,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
+import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, RebindSwarmManagerBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, SaveSwarmManagedInputBody, ScaleSwarmServiceBody, SetSwarmRoutingModeBody, SetSwarmStackRegistryBody, SetSwarmStorageAcknowledgementsBody, SetSwarmVolumeReplacementAcknowledgementsBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -166,6 +174,94 @@ r.patch(
   ctrl.update,
 );
 r.delete("/:id", { tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
+r.get("/:id/swarm/source", { tag: "project:read", localOnly: true, readOnly: true }, swarmSource.get);
+r.get("/:id/swarm/managed-inputs", { tag: "project:read", localOnly: true, readOnly: true }, swarmManagedInput.list);
+r.post("/:id/swarm/managed-inputs", { tag: "project:write", localOnly: true, body: SaveSwarmManagedInputBody }, swarmManagedInput.save);
+r.delete("/:id/swarm/managed-inputs/:inputId", { tag: "project:write", localOnly: true }, swarmManagedInput.remove);
+r.get("/:id/swarm/handoff", { tag: "project:admin", localOnly: true, readOnly: true }, swarmSource.handoff);
+r.post(
+  "/:id/swarm/stack",
+  { tag: "project:write", localOnly: true, body: CreateSwarmStackBindingBody },
+  swarmStack.create,
+);
+r.get("/:id/swarm/observation", { tag: "project:read", localOnly: true, readOnly: true }, swarmObservation.status);
+r.post("/:id/swarm/observation/refresh", { tag: "project:read", localOnly: true, readOnly: true }, swarmObservation.refresh);
+r.get("/:id/swarm/connection", { tag: "project:read", localOnly: true, readOnly: true }, swarmConnection.status);
+r.post(
+  "/:id/swarm/connection/rebind",
+  { tag: "project:write", localOnly: true, body: RebindSwarmManagerBody },
+  swarmConnection.rebind,
+);
+r.post(
+  "/:id/swarm/source/validate",
+  { tag: "project:read", localOnly: true, readOnly: true, body: UpdateSwarmStackSourceBody },
+  swarmSource.validate,
+);
+r.post(
+  "/:id/swarm/source/render",
+  { tag: "project:read", localOnly: true, readOnly: true, body: RenderSwarmStackSourceBody },
+  swarmSource.render,
+);
+r.put(
+  "/:id/swarm/source",
+  { tag: "project:write", localOnly: true, body: UpdateSwarmStackSourceBody },
+  swarmSource.replace,
+);
+r.patch(
+  "/:id/swarm/registry",
+  { tag: "project:write", localOnly: true, body: SetSwarmStackRegistryBody },
+  swarmSource.setRegistry,
+);
+r.patch(
+  "/:id/swarm/routing",
+  { tag: "project:write", localOnly: true, body: SetSwarmRoutingModeBody },
+  swarmSource.setRoutingMode,
+);
+r.put(
+  "/:id/swarm/storage-acknowledgements",
+  { tag: "project:write", localOnly: true, body: SetSwarmStorageAcknowledgementsBody },
+  swarmSource.setStorageAcknowledgements,
+);
+r.put(
+  "/:id/swarm/volume-replacement-acknowledgements",
+  { tag: "project:write", localOnly: true, body: SetSwarmVolumeReplacementAcknowledgementsBody },
+  swarmSource.setVolumeReplacementAcknowledgements,
+);
+r.post(
+  "/:id/swarm/claim",
+  { tag: "project:write", localOnly: true, body: ClaimSwarmStackBody },
+  swarmManagement.claim,
+);
+r.post(
+  "/:id/swarm/release-management",
+  { tag: "project:admin", localOnly: true, body: ReleaseSwarmManagementBody },
+  swarmManagement.release,
+);
+r.post(
+  "/:id/swarm/services/:serviceName/scale",
+  { tag: "project:write", localOnly: true, body: ScaleSwarmServiceBody },
+  swarmOperations.scale,
+);
+r.post(
+  "/:id/swarm/services/:serviceName/restart",
+  { tag: "project:write", localOnly: true },
+  swarmOperations.restart,
+);
+r.get(
+  "/:id/swarm/services/:serviceName/logs",
+  { tag: "project:read", localOnly: true, readOnly: true },
+  swarmOperations.logs,
+);
+r.get(
+  "/:id/swarm/services/:serviceName/logs/stream",
+  { tag: "project:read", localOnly: true, readOnly: true },
+  swarmOperations.logStream,
+);
+r.post(
+  "/:id/swarm/remove",
+  { tag: "project:admin", localOnly: true, body: RemoveSwarmStackBody },
+  swarmOperations.remove,
+);
 r.get("/:id/info", { tag: "project:read", mcp: { description: "Get a project's detailed info (runtime, build, source)." } }, cloudProjectProxy, ctrl.getInfo);
 r.get("/:id/environments", { tag: "project:read", mcp: { description: "List a project's environments (production / previews)." } }, cloudProjectProxy, ctrl.listEnvironments);
 r.post(

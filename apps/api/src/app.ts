@@ -42,6 +42,7 @@ import { backupRoutes } from "./modules/backups/backup.routes";
 import { auditRoutes } from "./modules/audit/audit.routes";
 import { permissionsRoutes } from "./modules/permissions/permissions.routes";
 import { backupDestinationRoutes } from "./modules/backup-destinations/destination.routes";
+import { containerRegistryRoutes } from "./modules/registries/registry.routes";
 import { reconcileAllSchedules } from "./modules/backups/triggers/cron";
 import { reconcileJobs } from "./modules/jobs/job.service";
 import { scheduleBillingAnniversary } from "./modules/billing/billing-anniversary.cron";
@@ -134,6 +135,7 @@ app.route("/api/billing", billingPlansRoutes);
 app.route("/api/images", imageRoutes);
 app.route("/api", backupRoutes);
 app.route("/api/backup-destinations", backupDestinationRoutes);
+app.route("/api/registries", containerRegistryRoutes);
 app.route("/api/audit", auditRoutes);
 app.route("/api/permissions", permissionsRoutes);
 app.route("/api/notifications", notificationsRoutes);
@@ -212,6 +214,11 @@ if (env.CLOUD_MODE) {
   /** Docker migration - inspect a server's Docker and adopt it as a project */
   const { migrationRoutes } = await import("./modules/migration/migration.routes");
   app.route("/api/migration", migrationRoutes);
+
+  // Experimental Swarm discovery is self-hosted only. Its own route module
+  // feature-gates every request, so disabled instances expose no usable API.
+  const { swarmRoutes } = await import("./modules/swarm/swarm.routes");
+  app.route("/api/swarm", swarmRoutes);
 
   /**
    * Interactive SERVER terminal (xterm.js ↔ WebSocket ↔ ssh2 PTY).

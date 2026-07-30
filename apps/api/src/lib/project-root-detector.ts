@@ -857,6 +857,11 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     segments.at(-1) ||
     rootDirectory ||
     "app";
+  // A per-app Dockerfile owns its own dependency, build, and startup commands.
+  // Supplying detected package-manager commands as well makes the normal app
+  // pipeline run them before Docker builds the image, which is both redundant and
+  // wrong for Dockerfile-first monorepos.
+  const dockerfileOwned = stack.projectType === "docker";
 
   // Static sub-apps keep an empty start command: the monorepo build pipeline
   // serves them as files — via the edge on self-hosted, a generated nginx image on
@@ -869,9 +874,9 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     stack: stack.stack,
     category: stack.category,
     packageManager: stack.packageManager,
-    buildCommand: stack.buildCommand,
-    installCommand: stack.installCommand,
-    startCommand: stack.startCommand,
+    buildCommand: dockerfileOwned ? "" : stack.buildCommand,
+    installCommand: dockerfileOwned ? "" : stack.installCommand,
+    startCommand: dockerfileOwned ? "" : stack.startCommand,
     buildImage: stack.buildImage,
     outputDirectory: stack.outputDirectory,
     productionPaths: stack.productionPaths,

@@ -129,6 +129,25 @@ const envSchema = z.object({
   /* ---------- Mode ---------- */
   CLOUD_MODE: envBool("false"),
   /**
+   * Enables the experimental Docker Swarm surfaces. This deliberately defaults
+   * off so an upgrade cannot expose a second writer for an existing Swarm until
+   * the operator explicitly opts in.
+   */
+  OPENSHIP_EXPERIMENTAL_SWARM: envBool("false"),
+  /**
+   * Bound one managed-stack apply's post-command observation window.  A
+   * timeout is deliberately an uncertain outcome, not permission to undo an
+   * operation that the manager may already have accepted.
+   */
+  SWARM_CONVERGENCE_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(30 * 60_000)
+    .default(45_000),
+  /** Poll cadence for the bounded Swarm convergence window. */
+  SWARM_CONVERGENCE_POLL_MS: z.coerce.number().int().min(100).max(60_000).default(2_000),
+  /**
    * MASTER switch for the whole Openship Cloud billing feature (subscriptions,
    * top-ups, Stripe portal). OFF by default → the billing state reports
    * `billing.status = "coming_soon"` and every Stripe-mutating endpoint fails
@@ -155,8 +174,8 @@ const envSchema = z.object({
   CLOUD_MAX_PROJECTS_PER_USER: z.coerce.number().int().min(1).default(2),
   /**
    * Deployment mode - determines the runtime + infrastructure combination:
-    *   - "docker"  (default) → Docker runtime + OpenResty routing/SSL (self-hosted)
-    *   - "bare"              → Process runtime + OpenResty routing/SSL (self-hosted)
+   *   - "docker"  (default) → Docker runtime + OpenResty routing/SSL (self-hosted)
+   *   - "bare"              → Process runtime + OpenResty routing/SSL (self-hosted)
    *   - "cloud"             → Oblien cloud API for everything (auto-set when CLOUD_MODE=true)
    *   - "desktop"           → Bare runtime, no routing/SSL (desktop app)
    */
@@ -190,9 +209,7 @@ const envSchema = z.object({
    *                        Higher security, may break legit users that
    *                        change network/device.
    */
-  CLOUD_SESSION_PINNING: z
-    .enum(["off", "warn", "strict"])
-    .default("warn"),
+  CLOUD_SESSION_PINNING: z.enum(["off", "warn", "strict"]).default("warn"),
 
   /* ---------- OAuth Providers ---------- */
   GITHUB_CLIENT_ID: z.string().optional(),
@@ -359,7 +376,11 @@ const envSchema = z.object({
    * regardless of activity. Defaults to 1 hour. Limits long-lived
    * sessions from accumulating across operator forgetting to close tabs.
    */
-  TERMINAL_HARD_CAP_MS: z.coerce.number().int().min(60_000).default(60 * 60_000),
+  TERMINAL_HARD_CAP_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .default(60 * 60_000),
   /**
    * Maximum concurrent terminal sessions per user across all servers.
    * Enforced at handshake against the audit table (rows with endedAt IS
@@ -399,6 +420,17 @@ type Env = z.infer<typeof envSchema>;
 
 export const env: Env = envSchema.parse(process.env);
 
+/**
+ * The single feature gate for Docker Swarm support.
+ *
+ * Keep callers behind this helper rather than reading process.env themselves:
+ * the value is parsed once by the typed environment schema and is also exposed
+ * to the dashboard through GET /api/health/env.
+ */
+export function swarmSupportEnabled(): boolean {
+  return env.OPENSHIP_EXPERIMENTAL_SWARM === true;
+}
+
 // Print resolution at MODULE LOAD, before any handler runs. If
 // boot crashes (e.g. EADDRINUSE on listen), this still shows. The
 // runtime-target row is resolved in @repo/core/runtime-config from
@@ -429,10 +461,7 @@ export const REDIS_REQUIRED =
 // Safety guard — never boot on a deployable target with the placeholder
 // auth secret. `local` is allowed because that's pure-dev / desktop.
 // The secret is a real secret in every saas-shaped deployment.
-if (
-  runtimeTargetId !== "local" &&
-  env.BETTER_AUTH_SECRET === DEFAULT_BETTER_AUTH_SECRET
-) {
+if (runtimeTargetId !== "local" && env.BETTER_AUTH_SECRET === DEFAULT_BETTER_AUTH_SECRET) {
   throw new Error(
     `BETTER_AUTH_SECRET must be set to a secure value when OPENSHIP_TARGET="${runtimeTargetId}".`,
   );
@@ -487,11 +516,7 @@ if (env.DEPLOY_MODE === "desktop" && !env.OPENSHIP_AUTH_MODE && env.NODE_ENV !==
 // loudly rather than refuse, since a refusal here would brick the desktop app if
 // that pairing ever changes, and zeroAuthAllowed() still independently requires a
 // kernel-reported loopback peer.
-if (
-  env.DEPLOY_MODE === "desktop" &&
-  !env.OPENSHIP_LOCAL_DASHBOARD_URL &&
-  env.NODE_ENV !== "test"
-) {
+if (env.DEPLOY_MODE === "desktop" && !env.OPENSHIP_LOCAL_DASHBOARD_URL && env.NODE_ENV !== "test") {
   console.warn(
     `[env] DEPLOY_MODE="desktop" but OPENSHIP_LOCAL_DASHBOARD_URL is unset — ` +
       `"desktop" is for the Electron app only. A server install should declare ` +
@@ -523,11 +548,7 @@ if (env.CLOUD_MODE && (env.GITHUB_AUTH_MODE === "cli" || env.GITHUB_AUTH_MODE ==
 // unless the flag is true (desktop is exempt — zero-auth is default
 // there). Logging here surfaces the misconfiguration in the boot
 // banner so the operator sees it.
-if (
-  env.DEPLOY_MODE !== "desktop" &&
-  !env.OPENSHIP_ALLOW_ZERO_AUTH &&
-  env.NODE_ENV !== "test"
-) {
+if (env.DEPLOY_MODE !== "desktop" && !env.OPENSHIP_ALLOW_ZERO_AUTH && env.NODE_ENV !== "test") {
   console.log(
     `[env] OPENSHIP_ALLOW_ZERO_AUTH=false (default) — zero-auth fallback disabled on this non-desktop instance.`,
   );
@@ -589,9 +610,7 @@ if (env.OPENSHIP_ADVERTISED_ORIGIN) {
 function validateCookieDomain(raw: string): void {
   const value = raw.trim();
   if (!value.startsWith(".")) {
-    throw new Error(
-      `BETTER_AUTH_COOKIE_DOMAIN must start with "." (got "${raw}").`,
-    );
+    throw new Error(`BETTER_AUTH_COOKIE_DOMAIN must start with "." (got "${raw}").`);
   }
   const labels = value.slice(1).split(".").filter(Boolean);
   if (labels.length < 2) {
@@ -649,8 +668,8 @@ if (!env.CLOUD_MODE) {
   if (stale.length > 0) {
     console.warn(
       `[env] Self-hosted instances no longer use local GitHub App credentials. ` +
-      `These env vars are ignored: ${stale.join(", ")}. ` +
-      `Connect to Openship Cloud in Settings to enable App-scoped GitHub access.`,
+        `These env vars are ignored: ${stale.join(", ")}. ` +
+        `Connect to Openship Cloud in Settings to enable App-scoped GitHub access.`,
     );
   }
 }
@@ -674,9 +693,7 @@ export const trustedOrigins = [
     // and Better Auth's login CSRF check — otherwise remote login is rejected.
     ...(env.OPENSHIP_PUBLIC_URL ? [env.OPENSHIP_PUBLIC_URL.replace(/\/+$/, "")] : []),
     ...extraTrustedOrigins,
-    ...(env.NODE_ENV === "production"
-      ? []
-      : [LOCAL_WEB_URL, ...dashboardRuntimeOrigins]),
+    ...(env.NODE_ENV === "production" ? [] : [LOCAL_WEB_URL, ...dashboardRuntimeOrigins]),
   ]),
 ];
 

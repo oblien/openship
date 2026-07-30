@@ -18,6 +18,7 @@ import type {
   DockerPortBinding,
   DockerVolumeInfo,
   ProxyKind,
+  SwarmTaskOwnership,
 } from "@repo/adapters";
 import { classifyProxy } from "@repo/adapters";
 import type { ComposeHealthcheck } from "@repo/core";
@@ -152,6 +153,18 @@ export interface DiscoveredStack {
    *  wizard SHOW each detected domain/path + its guessed service, so a fan-out
    *  path isn't silently dropped; unmatched ones also appear in `warnings`. */
   proxyRoutes: ExistingRoute[];
+  /** Scheduler-owned task containers discovered on the daemon. They are shown
+   * separately for diagnosis and are deliberately absent from `services`. */
+  swarmTasks: DiscoveredSwarmTask[];
+}
+
+export interface DiscoveredSwarmTask {
+  containerId: string;
+  containerName?: string;
+  image: string;
+  state: string;
+  status: string;
+  ownership: SwarmTaskOwnership;
 }
 
 // Docker-injected / shell env that should never be imported as app config.
@@ -436,6 +449,9 @@ export function reconcileStack(opts: {
   /** published host port → route the foreign proxy already serves (from the
    *  IO-shell proxy scan). Attached per-service by matching published ports. */
   proxyRoutesByPort?: Map<number, ExistingRoute[]>;
+  /** Swarm task containers are observed separately and never projected as
+   * standalone/Compose candidates. */
+  swarmTasks?: DiscoveredSwarmTask[];
 }): DiscoveredStack {
   const { serverId, details, volumes, networks, declared, alreadyManaged, imageDefaults, imageCmds, proxyRoutesByPort } = opts;
 
@@ -508,6 +524,12 @@ export function reconcileStack(opts: {
       "Imported environment is read from the running containers and may include image defaults — review before adopting.",
     );
   }
+  const swarmTasks = opts.swarmTasks ?? [];
+  if (swarmTasks.length > 0) {
+    warnings.push(
+      `Detected ${swarmTasks.length} Docker Swarm task container(s). They are scheduler-owned and excluded from container adoption; manage their stack or service instead.`,
+    );
+  }
 
   // Every route the foreign proxy serves, flattened for the wizard's route review
   // (so a domain/path can be seen + reassigned, not silently dropped). A route
@@ -537,6 +559,7 @@ export function reconcileStack(opts: {
     alreadyManaged,
     openshipProjects: opts.openshipProjects ?? [],
     proxyRoutes,
+    swarmTasks,
   };
 }
 

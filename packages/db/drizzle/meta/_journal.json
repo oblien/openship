@@ -512,6 +512,55 @@
       "when": 1785358400651,
       "tag": "0072_gh_device_token_method",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1785358401651,
+      "tag": "0073_add_swarm_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1785358402651,
+      "tag": "0074_add_swarm_source_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1785358403651,
+      "tag": "0075_add_swarm_cluster_binding_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1785358404651,
+      "tag": "0076_add_swarm_source_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1785358405651,
+      "tag": "0077_add_swarm_managed_input",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1785358406651,
+      "tag": "0078_add_swarm_storage_acknowledgements",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1785358407651,
+      "tag": "0079_add_swarm_volume_replacement_acknowledgements",
+      "breakpoints": true
     }
   ]
 }

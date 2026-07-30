@@ -207,7 +207,11 @@ export const CreateProjectBody = Type.Object({
     Type.Union([Type.Literal("host"), Type.Literal("static"), Type.Literal("standalone")]),
   ),
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
-  publicEndpoints: Type.Optional(Type.Array(PublicEndpointSchema, { minItems: 1, maxItems: 20 })),
+  // An explicit empty list is meaningful: it creates a project with no
+  // OpenShip-managed route. Docker Swarm stacks use this while routing remains
+  // with an external controller, and regular projects use it for private-only
+  // workloads. Omission still keeps the existing default-route behavior.
+  publicEndpoints: Type.Optional(Type.Array(PublicEndpointSchema, { maxItems: 20 })),
   hasServer: Type.Optional(Type.Boolean({ default: true })),
   hasBuild: Type.Optional(Type.Boolean({ default: true })),
   rollbackWindow: Type.Optional(Type.Number({ minimum: 0, maximum: 20 })),
@@ -219,6 +223,12 @@ export const CreateProjectBody = Type.Object({
    */
   cloudArchiveStrategy: Type.Optional(
     Type.Union([Type.Literal("inplace"), Type.Literal("offload")]),
+  ),
+  /** Runtime isolation for an ordinary workload. Swarm always requires docker. */
+  runtimeMode: Type.Optional(Type.Union([Type.Literal("bare"), Type.Literal("docker")])),
+  /** Stack-level orchestration. Kept separate from the build/runtime engine. */
+  orchestratorMode: Type.Optional(
+    Type.Union([Type.Literal("standalone"), Type.Literal("swarm")]),
   ),
 
   /** Project flavor - "monorepo" wires the request through the multi-app path below. */

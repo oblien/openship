@@ -145,6 +145,18 @@ export {
   type NewDockerMigrationRun,
   type DockerMigrationStatus,
 } from "./docker-migration.repo";
+export {
+  createSwarmStackRepo,
+  type SwarmStack,
+  type NewSwarmStack,
+  type SwarmStackRevision,
+  type NewSwarmStackRevision,
+} from "./swarm-stack.repo";
+export {
+  createContainerRegistryRepo,
+  type ContainerRegistry,
+  type NewContainerRegistry,
+} from "./container-registry.repo";
 export { createMemberRepo, type Member, type MemberRole } from "./member.repo";
 export { createInvitationRepo, type Invitation } from "./invitation.repo";
 export { createAuditEventRepo, type AuditEvent, type NewAuditEvent } from "./audit-event.repo";
@@ -239,6 +251,8 @@ import {
   createBackupRestoreRepo,
 } from "./backup.repo";
 import { createDockerMigrationRunRepo } from "./docker-migration.repo";
+import { createSwarmStackRepo } from "./swarm-stack.repo";
+import { createContainerRegistryRepo } from "./container-registry.repo";
 import { createMemberRepo } from "./member.repo";
 import { createInvitationRepo } from "./invitation.repo";
 import { createAuditEventRepo } from "./audit-event.repo";
@@ -308,6 +322,8 @@ export const repos = {
   backupRun: createBackupRunRepo(db),
   backupRestore: createBackupRestoreRepo(db),
   dockerMigrationRun: createDockerMigrationRunRepo(db),
+  swarmStack: createSwarmStackRepo(db),
+  containerRegistry: createContainerRegistryRepo(db),
   member: createMemberRepo(db),
   invitation: createInvitationRepo(db),
   auditEvent: createAuditEventRepo(db),

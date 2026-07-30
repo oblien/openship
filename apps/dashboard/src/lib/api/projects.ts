@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { PrepareComposeService, PrepareProjectResponse } from "./deploy";
-import type { RoutingConfig, RouteRuleSpec } from "@repo/core";
+import type { OrchestratorMode, RoutingConfig, RouteRuleSpec } from "@repo/core";
 import { endpoints } from "./endpoints";
 
 /* ------------------------------------------------------------------ */
@@ -24,6 +24,25 @@ export interface ProjectOptionsBody {
   hasServer?: boolean;
   hasBuild?: boolean;
   runtimeMode?: "bare" | "docker";
+  orchestratorMode?: OrchestratorMode;
+}
+
+/** Narrow create contract used by the Docker Swarm project wizard. */
+export interface CreateSwarmProjectBody {
+  name: string;
+  gitProvider?: "github";
+  gitOwner?: string;
+  gitRepo?: string;
+  gitBranch?: string;
+  framework: "docker-compose";
+  projectType: "docker";
+  runtimeMode: "docker";
+  /** Kept standalone until the server confirms the stack namespace binding. */
+  orchestratorMode: "standalone";
+  hasServer: true;
+  hasBuild: boolean;
+  /** Empty deliberately means no normal project route is provisioned. */
+  publicEndpoints: [];
 }
 
 export interface ScanProjectResponse {
@@ -68,6 +87,13 @@ export const projectsApi = {
   getHome: () =>
     api.get<{ success: boolean; projects: any[]; numbers: Record<string, number> }>(
       endpoints.projects.home,
+    ),
+
+  /** Create the neutral project record before safely binding its Swarm namespace. */
+  create: (body: CreateSwarmProjectBody) =>
+    api.post<{ data: { id: string; name: string; orchestratorMode: "standalone" | "swarm" } }>(
+      endpoints.projects.create,
+      body,
     ),
 
   /** Create or update a project (mandatory before build access) */

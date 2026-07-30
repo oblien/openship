@@ -49,8 +49,13 @@ export class LocalExecutor implements CommandExecutor {
   streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
     return new Promise((resolve) => {
+      if (opts?.signal?.aborted) {
+        resolve({ code: 0, output: "" });
+        return;
+      }
       const child = spawn(getLocalShellPath(), getLocalShellArgs(command), {
         stdio: ["ignore", "pipe", "pipe"],
         env: getLocalExecEnv(),
@@ -64,6 +69,12 @@ export class LocalExecutor implements CommandExecutor {
       // Do NOT split on "\n" or trim here — that is exactly what destroyed the
       // "\r" carriage returns and made every progress tick its own line.
       const chunks: string[] = [];
+      let aborted = false;
+      const abort = () => {
+        aborted = true;
+        child.kill("SIGTERM");
+      };
+      opts?.signal?.addEventListener("abort", abort, { once: true });
 
       const onChunk = (data: Buffer, level: LogEntry["level"]) => {
         const text = data.toString();
@@ -76,12 +87,14 @@ export class LocalExecutor implements CommandExecutor {
       child.stderr.on("data", (data: Buffer) => onChunk(data, "warn"));
 
       child.on("close", (code) => {
-        resolve({ code: code ?? 1, output: chunks.join("") });
+        opts?.signal?.removeEventListener("abort", abort);
+        resolve({ code: aborted ? 0 : code ?? 1, output: chunks.join("") });
       });
 
       child.on("error", (err) => {
+        opts?.signal?.removeEventListener("abort", abort);
         onLog(logEntry(`Process error: ${err.message}`, "error"));
-        resolve({ code: 1, output: err.message });
+        resolve({ code: aborted ? 0 : 1, output: err.message });
       });
     });
   }

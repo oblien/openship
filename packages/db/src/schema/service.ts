@@ -9,9 +9,10 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { project } from "./project";
 import { deployment } from "./deployment";
-import type { ComposeAdvanced } from "@repo/core";
+import type { ComposeAdvanced, RuntimeServiceRef, SwarmServiceProjection } from "@repo/core";
 
 /**
  * The compose-owned fields of a service — the shape stored in `importedSpec`
@@ -74,8 +75,13 @@ export const service = pgTable("service", {
     .notNull()
     .references(() => project.id, { onDelete: "cascade" }),
 
-  /** Discriminator: "compose" (docker-compose service) | "monorepo" (sub-app in a workspace) */
+  /** Discriminator: compose | monorepo | swarm. Swarm rows are source/observed projections. */
   kind: text("kind").notNull().default("compose"),
+
+  /** Stable source key for a Swarm service. IDs are observed state and can change on recreate. */
+  sourceServiceName: text("source_service_name"),
+  /** Derived Swarm read model; never replaces the source stack document. */
+  swarmProjection: jsonb("swarm_projection").$type<SwarmServiceProjection | null>(),
 
   /** Service name (from compose, e.g. "web", "db", "redis") - also used as hostname on the network */
   name: text("name").notNull(),
@@ -185,6 +191,9 @@ export const service = pgTable("service", {
 }, (t) => [
   // Build pipeline + deployment setup iterate services per project.
   index("idx_service_project_id").on(t.projectId),
+  uniqueIndex("uq_service_project_swarm_source")
+    .on(t.projectId, t.sourceServiceName)
+    .where(sql`${t.sourceServiceName} IS NOT NULL`),
 ]);
 
 // ─── Service deployments ─────────────────────────────────────────────────────
@@ -223,6 +232,8 @@ export const serviceDeployment = pgTable(
 
     /** Docker container ID */
     containerId: text("container_id"),
+    /** Typed durable runtime identity. A Swarm service is never written to containerId. */
+    runtimeRef: jsonb("runtime_ref").$type<RuntimeServiceRef | null>(),
     /** Per-service status — see table-level doc for allowed values. */
     status: text("status").notNull().default("pending"),
     /**

@@ -29,6 +29,7 @@ export type { RouteRuleRow, RouteRuleInput } from "./projects";
 export { appsApi } from "./apps";
 export type { AppCatalogEntry, AppCatalogField, InstallAppResult } from "./apps";
 export { deployApi } from "./deploy";
+export type { SwarmBuildStatus, SwarmBuildPhaseStatus } from "./deploy";
 export { domainsApi } from "./domains";
 export {
   jobsApi,
@@ -48,6 +49,8 @@ export { githubApi } from "./github";
 export { iconsApi } from "./icons";
 export { imagesApi } from "./images";
 export type { ImageCatalogEntry, ListImagesResponse } from "./images";
+export { registriesApi } from "./registries";
+export type { ContainerRegistry, ContainerRegistryInput } from "./registries";
 export { aiApi } from "./ai";
 export { sandboxApi } from "./sandbox";
 export { systemApi } from "./system";
@@ -102,6 +105,24 @@ export { cloudApi } from "./cloud";
 export type { CloudStatus } from "./cloud";
 export { servicesApi, serviceKind } from "./services";
 export type { Service, ServiceContainer, ServiceEnvVar, ServiceInput } from "./services";
+export { swarmApi } from "./swarm";
+export type {
+  SwarmDiscoveryView,
+  SwarmManager,
+  SwarmLogEntry,
+  SwarmLogOptions,
+  SwarmNode,
+  SwarmObservation,
+  SwarmManagerConnection,
+  SwarmSourcePreview,
+  SwarmServiceLogsResult,
+  SwarmStackHandoff,
+  SwarmStackDetail,
+  SwarmStackSource,
+  SwarmStackView,
+  SwarmSummary,
+  SwarmTask,
+} from "./swarm";
 export { mailApi } from "./mail";
 export { mailAdminApi } from "./mail-admin";
 export type {

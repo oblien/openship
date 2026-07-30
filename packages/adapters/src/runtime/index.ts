@@ -27,6 +27,29 @@ export { runBuildPipeline, BuildLogger, parseLogLevel, type BuildEnvironment } f
 export { DockerRuntime, type DockerConnectionOptions } from "./docker";
 export { BareRuntime, type BareRuntimeOptions } from "./bare";
 export { CloudRuntime } from "./cloud";
+export {
+  describeSwarmTaskOwnership,
+  isSwarmTaskContainer,
+  swarmTaskOwnership,
+  type SwarmTaskOwnership,
+} from "./swarm/ownership";
+export type { StackRuntimeAdapter } from "./swarm/types";
+export { SwarmRuntime, SwarmRenderError, SwarmDeployError } from "./swarm/runtime";
+export { SwarmProbeError, normalizeSwarmManagerInfo } from "./swarm/normalize";
+export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./swarm/health";
+export type {
+  SwarmDiscoverySnapshot,
+  SwarmManagerInfo,
+  SwarmProbeFailureCode,
+  SwarmServiceState,
+  SwarmServiceHealth,
+  SwarmStackHealth,
+  RenderStackInput,
+  RenderedStack,
+  SwarmRenderIssue,
+  DeployStackInput,
+  DeployedStack,
+} from "./swarm/types";
 
 // ─── Supervisor ──────────────────────────────────────────────────────────────
 export type { ProcessSupervisor, SupervisorDeployOpts } from "./supervisor/types";
