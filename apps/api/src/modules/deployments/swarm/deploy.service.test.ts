@@ -206,6 +206,7 @@ function fixture(
     featureEnabled: () => true,
     getStack: async () => activeStack,
     getRegistry: async () => options.registry,
+    loadManagedInputs: async () => [],
     ...(options.loadSource ? { loadSource: options.loadSource } : {}),
     resolvePlatform: async () =>
       ({

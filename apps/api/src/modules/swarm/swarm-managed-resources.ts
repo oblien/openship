@@ -141,6 +141,27 @@ export function planManagedSwarmResources(input: {
     .sort((left, right) => left.kind.localeCompare(right.kind) || left.logicalName.localeCompare(right.logicalName));
 }
 
+/** Plans encrypted operator-entered input without putting its value in Compose source. */
+export function planManagedInputResources(input: {
+  projectId: string;
+  inputs: Array<{ kind: ManagedSwarmResourceKind; logicalName: string; content: string }>;
+}): ManagedSwarmResource[] {
+  const seen = new Set<string>();
+  return input.inputs.map((entry) => {
+    const key = `${entry.kind}:${entry.logicalName}`;
+    if (seen.has(key)) throw sourceError(`Managed ${entry.kind} ${entry.logicalName} is duplicated.`, "SWARM_MANAGED_RESOURCE_DUPLICATE");
+    seen.add(key);
+    const contentDigest = `sha256:${createHash("sha256").update(entry.content).digest("hex")}`;
+    return {
+      kind: entry.kind,
+      logicalName: entry.logicalName,
+      resourceName: versionedSwarmResourceName(input.projectId, entry.logicalName, contentDigest),
+      contentDigest,
+      content: entry.content,
+    };
+  }).sort((left, right) => left.kind.localeCompare(right.kind) || left.logicalName.localeCompare(right.logicalName));
+}
+
 /** Replaces only top-level resource definitions; service mount target/source keys remain untouched. */
 export function bindManagedSwarmResources(renderedYaml: string, resources: ManagedSwarmResource[]): string {
   if (resources.length === 0) return renderedYaml;

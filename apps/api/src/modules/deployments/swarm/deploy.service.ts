@@ -46,8 +46,10 @@ import {
   bindManagedSwarmResources,
   ensureManagedSwarmResources,
   planManagedSwarmResources,
+  planManagedInputResources,
   referencedSwarmResourceRefs,
 } from "../../swarm/swarm-managed-resources";
+import { resolveManagedInputPayloads } from "../../swarm/swarm-managed-input.service";
 import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm-preview";
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
 import { resolveStackSourceFiles, type ResolvedSwarmStackSource } from "../../swarm/swarm-source.service";
@@ -85,6 +87,7 @@ interface Dependencies {
     patch: Record<string, unknown>,
   ) => Promise<SwarmStack | undefined>;
   loadSource: (stack: SwarmStack, project: Project, organizationId: string) => Promise<ResolvedSwarmStackSource>;
+  loadManagedInputs: (projectId: string, organizationId: string) => ReturnType<typeof resolveManagedInputPayloads>;
   syncProjections: (projectId: string, projections: SwarmServiceProjection[]) => Promise<Service[]>;
   listServices: (projectId: string) => Promise<Service[]>;
   listDomains: (projectId: string) => ReturnType<typeof repos.domain.listByProject>;
@@ -597,6 +600,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         buildBackgroundContext({ userId: owner.userId, organizationId, label: "swarm:source-read" }),
       );
     },
+    loadManagedInputs: resolveManagedInputPayloads,
     syncProjections: (projectId, projections) =>
       repos.service.syncSwarmProjections(projectId, projections),
     listServices: (projectId) => repos.service.listByProject(projectId),
@@ -830,13 +834,26 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
             networkAttachments: edgePlan?.networkAttachments,
             externalNetworks: edgePlan?.externalNetworks,
           });
-      const managedResources = rollbackRevision
+      const sourceManagedResources = rollbackRevision
         ? []
         : planManagedSwarmResources({
             projectId: project.id,
             files: sourceMaterial.files,
             composePaths: sourceMaterial.composePaths,
           });
+      const inputManagedResources = rollbackRevision
+        ? []
+        : planManagedInputResources({
+            projectId: project.id,
+            inputs: await deps.loadManagedInputs(project.id, deployment.organizationId),
+          });
+      // Operator-entered values deliberately win their matching logical
+      // declaration; the source-backed variant is not created unnecessarily.
+      const inputKeys = new Set(inputManagedResources.map((resource) => `${resource.kind}:${resource.logicalName}`));
+      const managedResources = [
+        ...sourceManagedResources.filter((resource) => !inputKeys.has(`${resource.kind}:${resource.logicalName}`)),
+        ...inputManagedResources,
+      ];
       // Check source-declared external dependencies before creating anything.
       // The later check runs against the rewritten immutable references.
       const sourceCompatibility = evaluateSwarmCompatibility({
