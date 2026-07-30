@@ -534,6 +534,9 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
             ...(routingWarning ? { edgeUnsynced: true, deployWarning: routingWarning } : {}),
           },
         });
+        // A Swarm artifact is the immutable revision, not a container. Feed it
+        // into the same active/pinned/rollback-window policy after success.
+        await archivePreviousDeployment(dep, project, logger);
       }
       return;
     }

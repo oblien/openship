@@ -24,6 +24,7 @@ import { pruneAuditEvents } from "../audit/audit-prune";
 import { runReconcileSweep } from "../deployments/reconcile-schedule";
 import { swarmObservation } from "../swarm/swarm-observation.service";
 import { runImageGcSweep } from "../deployments/image-gc";
+import { runSwarmManagedResourceGcSweep } from "../deployments/swarm/resource-retention.service";
 import { verifyPendingDomains } from "../domains/domain.service";
 import { scanInstanceUpdates } from "../updates/updates.service";
 import { scanInstanceModules } from "../system/server-modules.service";
@@ -77,6 +78,21 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
         bytesReclaimed: r.bytesReclaimed,
         skipped: r.skippedInUse,
         failed: r.errors,
+      };
+    },
+  },
+  {
+    key: "swarm:resource-gc",
+    label: "Swarm managed resource cleanup",
+    defaultCron: "41 4 * * *",
+    available: swarmSupportEnabled,
+    run: async () => {
+      const result = await runSwarmManagedResourceGcSweep();
+      return {
+        scanned: result.stacksScanned,
+        configsRemoved: result.configsRemoved,
+        secretsRemoved: result.secretsRemoved,
+        failed: result.errors,
       };
     },
   },

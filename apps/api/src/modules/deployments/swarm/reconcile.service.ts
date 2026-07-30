@@ -65,6 +65,7 @@ interface Dependencies {
   getProject: (id: string) => Promise<Project | undefined>;
   getDeployment: (id: string) => Promise<Deployment | undefined>;
   setActiveDeployment: (projectId: string, deploymentId: string) => Promise<unknown>;
+  retainDeployment: (newDeployment: Deployment, previousActive: Deployment | null) => Promise<void>;
   now: () => Date;
 }
 
@@ -182,19 +183,25 @@ export function createSwarmDeploymentReconciler(overrides: Partial<Dependencies>
     getDeployment: (id) => repos.deployment.findById(id),
     setActiveDeployment: (projectId, deploymentId) =>
       repos.project.setActiveDeployment(projectId, deploymentId),
+    retainDeployment: async (newDeployment, previousActive) => {
+      const { onDeploymentReady } = await import("../rollback");
+      await onDeploymentReady({ newDeployment, previousActive });
+    },
     now: () => new Date(),
     ...overrides,
   };
 
-  async function advanceProject(dep: Deployment) {
+  async function advanceProject(dep: Deployment): Promise<Deployment | null> {
     const project = await deps.getProject(dep.projectId);
-    if (!project) return;
+    if (!project) return null;
     const active = project.activeDeploymentId
       ? await deps.getDeployment(project.activeDeploymentId)
       : undefined;
     if (!active || active.id === dep.id || active.createdAt.getTime() < dep.createdAt.getTime()) {
       await deps.setActiveDeployment(project.id, dep.id);
+      return active ?? null;
     }
+    return null;
   }
 
   return {
@@ -382,7 +389,14 @@ export function createSwarmDeploymentReconciler(overrides: Partial<Dependencies>
             : health.diagnostics.join("; ") || "Swarm services did not reach a healthy state.",
         meta: metaWithOutcome(deployment, { state: terminal, health }),
       });
-      if (terminal !== "failed") await advanceProject(deployment);
+      if (terminal !== "failed") {
+        const previousActive = await advanceProject(deployment);
+        try {
+          await deps.retainDeployment(deployment, previousActive);
+        } catch (error) {
+          console.error(`[swarm-reconcile] Failed to retain deployment ${deployment.id}:`, error);
+        }
+      }
       return "finalized";
     },
   };

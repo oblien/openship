@@ -21,6 +21,7 @@ const PROJECT_LABEL = "com.openship.swarm.project-id";
 const KIND_LABEL = "com.openship.swarm.resource-kind";
 const LOGICAL_NAME_LABEL = "com.openship.swarm.logical-name";
 const DIGEST_LABEL = "com.openship.swarm.content-sha256";
+export const MANAGED_RESOURCE_CREATED_AT_LABEL = "com.openship.swarm.created-at";
 
 type ManagedResourceExecutor = Pick<CommandExecutor, "exec" | "writeFile" | "rm">;
 
@@ -149,7 +150,10 @@ export function bindManagedSwarmResources(renderedYaml: string, resources: Manag
   }
   for (const resource of resources) {
     const section = resource.kind === "config" ? "configs" : "secrets";
-    document.setIn([section, resource.logicalName], { external: { name: resource.resourceName } });
+    // Docker Swarm's stack deploy accepts the canonical Compose form below.
+    // The superficially similar nested `external: { name: ... }` form is not
+    // treated as external by every Docker stack implementation.
+    document.setIn([section, resource.logicalName], { external: true, name: resource.resourceName });
   }
   return document.toString();
 }
@@ -240,9 +244,16 @@ export async function ensureManagedSwarmResources(input: {
       }
       const payloadPath = stagePath(stage, created.length);
       await input.executor.writeFile(payloadPath, resource.content);
+      // Docker's list view reports a human-relative CreatedAt value. Keep the
+      // exact creation instant as safe metadata so later GC stays list-only
+      // and never needs to inspect a secret object.
+      const createLabels = {
+        ...expectedLabels,
+        [MANAGED_RESOURCE_CREATED_AT_LABEL]: new Date().toISOString(),
+      };
       const command = [
         `docker ${resource.kind} create`,
-        ...Object.entries(expectedLabels).map(([key, value]) => `--label ${shellQuote(`${key}=${value}`)}`),
+        ...Object.entries(createLabels).map(([key, value]) => `--label ${shellQuote(`${key}=${value}`)}`),
         shellQuote(resource.resourceName),
         shellQuote(payloadPath),
       ].join(" ");

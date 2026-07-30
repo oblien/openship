@@ -147,6 +147,22 @@ export function createSwarmStackRepo(db: Database) {
       return row[0]?.revision;
     },
 
+    /** Retention-only removal of an expired artifact; never removes the active revision. */
+    async removeRevisionInOrganization(
+      revisionId: string,
+      organizationId: string,
+    ): Promise<boolean> {
+      const revision = await this.getRevisionInOrganization(revisionId, organizationId);
+      if (!revision) return false;
+      const stack = await this.getInOrganization(revision.stackId, organizationId);
+      if (!stack || stack.lastAppliedRevisionId === revision.id) return false;
+      const removed = await db
+        .delete(swarmStackRevision)
+        .where(eq(swarmStackRevision.id, revision.id))
+        .returning();
+      return removed.length === 1;
+    },
+
     /**
      * Finalize an already-persisted revision without ever accepting a stack ID
      * from an unscoped request. The source/rendered document stays immutable;

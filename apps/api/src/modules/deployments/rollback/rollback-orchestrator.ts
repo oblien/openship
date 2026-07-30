@@ -81,17 +81,25 @@ export async function onDeploymentReady(opts: {
   const { newDeployment, previousActive } = opts;
 
   if (previousActive && previousActive.id !== newDeployment.id) {
-    try {
-      const { runtime } = await resolveDeploymentRuntime(previousActive);
-      if (runtime.supports("rollback")) {
-        await runtime.archive(toRef(previousActive));
-      }
+    const previousWorkload = deploymentWorkloadRef(previousActive);
+    if (isSwarmStackRef(previousWorkload)) {
+      // A stack revision is already its rollback artifact. Never route it
+      // through container primitives; this timestamp protects its revision and
+      // immutable config/secret refs through the normal policy.
       await repos.deployment.setArtifactRetainedAt(previousActive.id, new Date());
-    } catch (err) {
-      console.error(
-        `[rollback-orchestrator] Failed to archive previous deployment ${previousActive.id}:`,
-        err,
-      );
+    } else {
+      try {
+        const { runtime } = await resolveDeploymentRuntime(previousActive);
+        if (runtime.supports("rollback")) {
+          await runtime.archive(toRef(previousActive));
+        }
+        await repos.deployment.setArtifactRetainedAt(previousActive.id, new Date());
+      } catch (err) {
+        console.error(
+          `[rollback-orchestrator] Failed to archive previous deployment ${previousActive.id}:`,
+          err,
+        );
+      }
     }
   }
 
@@ -107,6 +115,10 @@ export async function onDeploymentReady(opts: {
       err,
     );
   }
+
+  // Swarm service images live in a registry and are protected by immutable
+  // revisions, not the local Docker image cache handled below.
+  if (isSwarmStackRef(deploymentWorkloadRef(newDeployment))) return;
 
   // Reclaim this project's superseded BUILT IMAGES now (the immediate "remove the
   // old image on redeploy" cleanup), keeping the rollback-window keep-set so
@@ -163,6 +175,13 @@ export async function rollback(targetDeploymentId: string): Promise<Deployment |
 
   const workload = deploymentWorkloadRef(target);
   if (isSwarmStackRef(workload)) {
+    if (!target.artifactRetainedAt) {
+      throw new AppError(
+        "The selected Swarm revision is outside this project's retained rollback window.",
+        409,
+        ROLLBACK_ERROR_CODES.ARTIFACT_GONE,
+      );
+    }
     return rollbackSwarmRevision(target, project, workload);
   }
 
@@ -428,9 +447,18 @@ export async function prune(projectId: string): Promise<{ purged: number }> {
     // Overflow: purge.
     if (dep.artifactRetainedAt) {
       try {
-        const { runtime } = await resolveDeploymentRuntime(dep);
-        if (runtime.supports("rollback")) {
-          await runtime.purge(toRef(dep));
+        const workload = deploymentWorkloadRef(dep);
+        if (isSwarmStackRef(workload)) {
+          const removed = await repos.swarmStack.removeRevisionInOrganization(
+            workload.revisionId,
+            dep.organizationId,
+          );
+          if (!removed) throw new Error("The active or unavailable Swarm revision cannot be purged.");
+        } else {
+          const { runtime } = await resolveDeploymentRuntime(dep);
+          if (runtime.supports("rollback")) {
+            await runtime.purge(toRef(dep));
+          }
         }
         await repos.deployment.setArtifactRetainedAt(dep.id, null);
         purged += 1;
@@ -441,6 +469,18 @@ export async function prune(projectId: string): Promise<{ purged: number }> {
         );
       }
     }
+  }
+
+  // Run only after obsolete revision rows are gone, so every still-retained
+  // revision's refs remain a hard GC keep-set. Manager errors are advisory.
+  try {
+    const stack = await repos.swarmStack.getForProjectInOrganization(project.id, project.organizationId);
+    if (stack) {
+      const { reapExpiredSwarmManagedResources } = await import("../swarm/resource-retention.service");
+      await reapExpiredSwarmManagedResources({ stack });
+    }
+  } catch (err) {
+    console.error(`[rollback-orchestrator] Failed to reap expired Swarm managed resources for ${project.id}:`, err);
   }
 
   return { purged };

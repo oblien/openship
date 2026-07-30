@@ -5,13 +5,26 @@ const mocks = vi.hoisted(() => ({
   findProject: vi.fn(),
   getRevision: vi.fn(),
   triggerDeployment: vi.fn(),
+  setArtifactRetainedAt: vi.fn(),
+  listReadyOrderedDesc: vi.fn(),
+  removeRevision: vi.fn(),
+  getStack: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
   repos: {
-    deployment: { findById: mocks.findDeployment },
+    deployment: {
+      findById: mocks.findDeployment,
+      setArtifactRetainedAt: mocks.setArtifactRetainedAt,
+      listReadyOrderedDesc: mocks.listReadyOrderedDesc,
+    },
     project: { findById: mocks.findProject },
-    swarmStack: { getRevisionInOrganization: mocks.getRevision },
+    instanceSettings: { get: vi.fn() },
+    swarmStack: {
+      getRevisionInOrganization: mocks.getRevision,
+      removeRevisionInOrganization: mocks.removeRevision,
+      getForProjectInOrganization: mocks.getStack,
+    },
   },
 }));
 
@@ -20,7 +33,7 @@ vi.mock("../build.service", () => ({
   triggerDeployment: mocks.triggerDeployment,
 }));
 
-import { rollback } from "./rollback-orchestrator";
+import { onDeploymentReady, prune, rollback } from "./rollback-orchestrator";
 
 const target = {
   id: "dep-target",
@@ -32,6 +45,7 @@ const target = {
   environment: "production",
   status: "ready",
   rollbackStrategy: "snapshot",
+  artifactRetainedAt: new Date("2026-07-30T00:00:00.000Z"),
   envVars: { API_TOKEN: "enc1:snapshot" },
   runtimeRef: {
     kind: "swarm-stack",
@@ -55,6 +69,10 @@ describe("Swarm rollback orchestration", () => {
       sourceCommitSha: "older-commit",
     });
     mocks.triggerDeployment.mockResolvedValue({ deployment: { id: "dep-rollback", trigger: "rollback" } });
+    mocks.setArtifactRetainedAt.mockResolvedValue(undefined);
+    mocks.listReadyOrderedDesc.mockResolvedValue([]);
+    mocks.removeRevision.mockResolvedValue(true);
+    mocks.getStack.mockResolvedValue(undefined);
   });
 
   it("creates a new standard deployment bound to the selected immutable Swarm revision", async () => {
@@ -80,5 +98,35 @@ describe("Swarm rollback orchestration", () => {
     mocks.getRevision.mockResolvedValue(undefined);
     await expect(rollback("dep-target")).rejects.toMatchObject({ code: "ROLLBACK_ARTIFACT_GONE" });
     expect(mocks.triggerDeployment).not.toHaveBeenCalled();
+  });
+
+  it("blocks an expired Swarm deployment even when its old revision row still exists", async () => {
+    mocks.findDeployment.mockResolvedValue({ ...target, artifactRetainedAt: null });
+    await expect(rollback("dep-target")).rejects.toMatchObject({ code: "ROLLBACK_ARTIFACT_GONE" });
+    expect(mocks.getRevision).not.toHaveBeenCalled();
+    expect(mocks.triggerDeployment).not.toHaveBeenCalled();
+  });
+
+  it("retains a stack revision without invoking a container archive", async () => {
+    await onDeploymentReady({
+      newDeployment: { ...target, id: "dep-new", runtimeRef: { ...target.runtimeRef, revisionId: "swr-new" } } as never,
+      previousActive: target as never,
+    });
+    expect(mocks.setArtifactRetainedAt).toHaveBeenCalledWith("dep-target", expect.any(Date));
+    expect(mocks.setArtifactRetainedAt).toHaveBeenCalledWith("dep-new", expect.any(Date));
+  });
+
+  it("purges an expired unpinned Swarm revision record before clearing rollbackability", async () => {
+    const newest = { ...target, id: "dep-new", runtimeRef: { ...target.runtimeRef, revisionId: "swr-new" } };
+    mocks.findProject.mockResolvedValue({
+      id: "project-a",
+      organizationId: "org-a",
+      activeDeploymentId: "dep-new",
+      rollbackWindow: 0,
+    });
+    mocks.listReadyOrderedDesc.mockResolvedValue([newest, target]);
+    await expect(prune("project-a")).resolves.toEqual({ purged: 1 });
+    expect(mocks.removeRevision).toHaveBeenCalledWith("swr-target", "org-a");
+    expect(mocks.setArtifactRetainedAt).toHaveBeenCalledWith("dep-target", null);
   });
 });

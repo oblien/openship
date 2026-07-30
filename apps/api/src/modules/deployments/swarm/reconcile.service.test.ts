@@ -137,6 +137,7 @@ function fixture(discovery: () => Promise<SwarmDiscoverySnapshot>) {
   const updateDeployment = vi.fn();
   const createServiceDeployments = vi.fn();
   const setActiveDeployment = vi.fn();
+  const retainDeployment = vi.fn();
   const service = createSwarmDeploymentReconciler({
     getStack: async () => stack,
     getRevision: async () => revision,
@@ -151,6 +152,7 @@ function fixture(discovery: () => Promise<SwarmDiscoverySnapshot>) {
     getProject: async () => ({ id: "project-blog", activeDeploymentId: null }) as Project,
     getDeployment: async () => undefined,
     setActiveDeployment,
+    retainDeployment,
     now: () => new Date("2026-07-30T00:01:00.000Z"),
   });
   return {
@@ -160,6 +162,7 @@ function fixture(discovery: () => Promise<SwarmDiscoverySnapshot>) {
     updateDeployment,
     createServiceDeployments,
     setActiveDeployment,
+    retainDeployment,
   };
 }
 
@@ -181,6 +184,7 @@ describe("uncertain Swarm deployment reconciliation", () => {
       }),
     ]);
     expect(test.setActiveDeployment).toHaveBeenCalledWith("project-blog", "deployment-1");
+    expect(test.retainDeployment).toHaveBeenCalledWith(deployment, null);
   });
 
   it("records externally changed service specs as drift rather than reapplying the source", async () => {
