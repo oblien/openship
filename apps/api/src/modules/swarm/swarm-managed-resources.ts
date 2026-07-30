@@ -45,6 +45,11 @@ export interface ManagedSwarmResourceRefs {
   manifest: Array<Pick<ManagedSwarmResource, "kind" | "logicalName" | "resourceName" | "contentDigest">>;
 }
 
+/** Result metadata deliberately distinguishes newly-created objects from reused immutable versions. */
+export interface EnsuredManagedSwarmResources extends ManagedSwarmResourceRefs {
+  createdResources: ManagedSwarmResource[];
+}
+
 function record(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
 }
@@ -67,14 +72,21 @@ function safeNameSegment(value: string, field: string): string {
   return normalized;
 }
 
-/** Docker accepts longer names, but bounded names make object references ergonomic and portable. */
+/** Docker Swarm config and secret names are limited to 64 characters. */
 export function versionedSwarmResourceName(projectId: string, logicalName: string, contentDigest: string): string {
   const project = safeNameSegment(projectId, "Project ID");
   const logical = safeNameSegment(logicalName, "Compose resource name");
   const hash = contentDigest.replace(/^sha256:/, "");
   if (!/^[a-f0-9]{64}$/.test(hash)) throw sourceError("Managed resource digest is invalid.", "SWARM_MANAGED_RESOURCE_DIGEST_INVALID");
   const suffix = `_${hash.slice(0, 16)}`;
-  return `openship_${project}_${logical}`.slice(0, 128 - suffix.length) + suffix;
+  const base = `openship_${project}_${logical}`;
+  if (base.length <= 64 - suffix.length) return base + suffix;
+  // Truncation cannot turn two long Compose keys with equal content into the
+  // same manager object. The content digest remains the immutable-version ID;
+  // this additional marker preserves logical-resource identity within 64 chars.
+  const logicalMarker = createHash("sha256").update(logical).digest("hex").slice(0, 8);
+  const boundedSuffix = `_${logicalMarker}${suffix}`;
+  return base.slice(0, 64 - boundedSuffix.length) + boundedSuffix;
 }
 
 function normalizedSourcePath(value: string): string {
@@ -205,6 +217,21 @@ function refs(resources: ManagedSwarmResource[]): ManagedSwarmResourceRefs {
   };
 }
 
+/**
+ * Removes only resource versions created by the current pre-apply attempt.
+ * Callers must use this before `docker stack deploy`; after an apply starts,
+ * the resource may already be referenced by a Swarm service and is retained
+ * for the revision/GC lifecycle instead.
+ */
+export async function removeNewManagedSwarmResources(
+  executor: Pick<ManagedResourceExecutor, "exec">,
+  resources: ManagedSwarmResource[],
+): Promise<void> {
+  await Promise.all(resources.map((resource) =>
+    executor.exec(`docker ${resource.kind} rm ${shellQuote(resource.resourceName)} >/dev/null 2>&1 || true`).catch(() => undefined),
+  ));
+}
+
 function referencedName(logicalName: string, definition: unknown): string {
   const value = record(definition);
   const external = value?.external;
@@ -236,8 +263,8 @@ export async function ensureManagedSwarmResources(input: {
   discovery: Pick<SwarmDiscoverySnapshot, "configs" | "secrets">;
   projectId: string;
   resources: ManagedSwarmResource[];
-}): Promise<ManagedSwarmResourceRefs> {
-  if (input.resources.length === 0) return refs([]);
+}): Promise<EnsuredManagedSwarmResources> {
+  if (input.resources.length === 0) return { ...refs([]), createdResources: [] };
   const existing = {
     config: new Map(input.discovery.configs.map((resource) => [resource.name, resource])),
     secret: new Map(input.discovery.secrets.map((resource) => [resource.name, resource])),
@@ -281,11 +308,9 @@ export async function ensureManagedSwarmResources(input: {
       await input.executor.exec(command);
       created.push(resource);
     }
-    return refs(input.resources);
+    return { ...refs(input.resources), createdResources: created };
   } catch (error) {
-    await Promise.all(created.map((resource) =>
-      input.executor.exec(`docker ${resource.kind} rm ${shellQuote(resource.resourceName)} >/dev/null 2>&1 || true`).catch(() => undefined),
-    ));
+    await removeNewManagedSwarmResources(input.executor, created);
     throw error;
   } finally {
     if (stage) await input.executor.rm(stage).catch(() => undefined);

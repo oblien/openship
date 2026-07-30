@@ -45,6 +45,7 @@ import { evaluateSwarmCompatibility, externalSwarmResourceConsumers } from "../.
 import {
   bindManagedSwarmResources,
   ensureManagedSwarmResources,
+  removeNewManagedSwarmResources,
   planManagedSwarmResources,
   planManagedInputResources,
   referencedSwarmResourceRefs,
@@ -870,6 +871,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       }
       let resourceDiscovery = before;
       let rendered = initiallyRendered;
+      let newlyCreatedManagedResources: ReturnType<typeof planManagedSwarmResources> = [];
       if (managedResources.length > 0) {
         if (!platform.executor) {
           throw new AppError("This manager transport cannot safely create immutable Swarm configs and secrets.", 503, "SWARM_MANAGED_RESOURCE_UNAVAILABLE");
@@ -881,9 +883,15 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           projectId: project.id,
           resources: managedResources,
         });
-        resourceDiscovery = await platform.stackRuntime.discover();
-        if (resourceDiscovery.manager.clusterId !== stack.clusterId) {
-          throw new AppError("The configured manager now belongs to a different Swarm cluster.", 409, "SWARM_CLUSTER_MISMATCH");
+        newlyCreatedManagedResources = managedRefs.createdResources;
+        try {
+          resourceDiscovery = await platform.stackRuntime.discover();
+          if (resourceDiscovery.manager.clusterId !== stack.clusterId) {
+            throw new AppError("The configured manager now belongs to a different Swarm cluster.", 409, "SWARM_CLUSTER_MISMATCH");
+          }
+        } catch (error) {
+          await removeNewManagedSwarmResources(platform.executor, newlyCreatedManagedResources);
+          throw error;
         }
         rendered = {
           ...initiallyRendered,
@@ -892,99 +900,111 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         };
         logger.log(`→ Prepared ${managedRefs.configs.length} immutable config(s) and ${managedRefs.secrets.length} immutable secret(s)\n`);
       }
-      const resolvedSource = projectSwarmStackSource([
-        { path: "rendered-stack.yaml", content: rendered.renderedYaml },
-      ]);
-      const compatibility = evaluateSwarmCompatibility({
-        renderedYaml: rendered.renderedYaml,
-        discovery: resourceDiscovery,
-        registryConfigured: !!registry,
-      });
-      if (compatibility.blockers.length > 0) {
-        throw new AppError(
-          `Stack compatibility checks failed: ${compatibility.blockers.map((issue) => issue.message).join(" ")}`,
-          409,
-          "SWARM_COMPATIBILITY_BLOCKED",
-        );
-      }
-      // A first claim never prunes: deletion consent belongs to a later,
-      // separately reviewed managed deployment after labels are verified.
-      const prunePlan = rollbackRevision
-        ? {
-            prune: (rollbackRevision.manifest as Record<string, unknown>)?.prune === true,
-            removals: [] as string[],
-          }
-        : claimPending
-        ? { prune: false, removals: [] }
-        : safePrunePlan(
-            stack,
-            current,
-            new Set(resolvedSource.services.map((service) => service.sourceServiceName)),
+      let revision: SwarmStackRevision;
+      let prune: boolean;
+      let prunePlan: { prune: boolean; removals: string[] };
+      let resolvedSource!: ReturnType<typeof projectSwarmStackSource>;
+      let startedAt: Date;
+      try {
+        resolvedSource = projectSwarmStackSource([
+          { path: "rendered-stack.yaml", content: rendered.renderedYaml },
+        ]);
+        const compatibility = evaluateSwarmCompatibility({
+          renderedYaml: rendered.renderedYaml,
+          discovery: resourceDiscovery,
+          registryConfigured: !!registry,
+        });
+        if (compatibility.blockers.length > 0) {
+          throw new AppError(
+            `Stack compatibility checks failed: ${compatibility.blockers.map((issue) => issue.message).join(" ")}`,
+            409,
+            "SWARM_COMPATIBILITY_BLOCKED",
           );
-      const prune = prunePlan.prune;
-      if (prunePlan.removals.length > 0) {
-        logger.log(`→ Confirmed managed-service prune: ${prunePlan.removals.join(", ")}\n`, "warn");
-      }
-      logger.step(
-        "swarm-render",
-        "completed",
-        "Rendered and validated the authoritative Swarm stack configuration",
-      );
-
-      const startedAt = deps.now();
-      const revision = await deps.createRevision(stack.id, deployment.organizationId, {
-        sourceDigest: rollbackRevision?.sourceDigest ?? stack.sourceDigest,
-        sourceCommitSha: rollbackRevision?.sourceCommitSha ?? stack.sourceCommitSha,
-        renderedYamlEnc: encryptSecretField(rendered.renderedYaml)!,
-        renderedDigest: rendered.renderedDigest,
-        renderedYamlRedacted: redactRenderedStackYaml(rendered.renderedYaml),
-        overrideYamlRedacted: rollbackRevision?.overrideYamlRedacted ?? redactRenderedStackYaml(rendered.overrideYaml),
-        manifest: rollbackRevision
+        }
+        // A first claim never prunes: deletion consent belongs to a later,
+        // separately reviewed managed deployment after labels are verified.
+        prunePlan = rollbackRevision
           ? {
-              ...rollbackRevision.manifest,
-              routingMode,
-              rollback: {
-                sourceRevisionId: rollbackRevision.id,
-                sourceDeploymentId: rollback!.sourceDeploymentId,
-              },
+              prune: (rollbackRevision.manifest as Record<string, unknown>)?.prune === true,
+              removals: [] as string[],
             }
-          : {
-              services: resolvedSource.services,
-              networks: resolvedSource.networks,
-              volumes: resolvedSource.volumes,
-              configs: resolvedSource.configs,
-              secrets: resolvedSource.secrets,
-              managedResources: managedResources.map(({ kind, logicalName, resourceName, contentDigest }) => ({
-                kind,
-                logicalName,
-                resourceName,
-                contentDigest,
-              })),
-              externalResources: externalSwarmResourceConsumers(rendered.renderedYaml).filter((resource) =>
-                !managedResources.some((managed) => managed.kind === resource.kind && managed.resourceName === resource.name),
-              ),
-              routingMode,
-              compatibility,
-              prune,
-              pruneRemovals: prunePlan.removals,
-            },
-        serviceImages: rollbackRevision
-          ? rollbackRevision.serviceImages
-          : Object.fromEntries(
-              resolvedSource.services.flatMap((service) =>
-                service.image ? [[service.sourceServiceName, service.image]] : [],
-              ),
-            ),
-        configRefs: rollbackRevision?.configRefs ?? referencedSwarmResourceRefs(rendered.renderedYaml).configs,
-        secretRefs: rollbackRevision?.secretRefs ?? referencedSwarmResourceRefs(rendered.renderedYaml).secrets,
-        applyStatus: "applying",
-      });
-      if (!revision)
-        throw new AppError(
-          "The Swarm stack binding is no longer available.",
-          409,
-          "SWARM_STACK_REQUIRED",
+          : claimPending
+          ? { prune: false, removals: [] }
+          : safePrunePlan(
+              stack,
+              current,
+              new Set(resolvedSource.services.map((service) => service.sourceServiceName)),
+            );
+        prune = prunePlan.prune;
+        if (prunePlan.removals.length > 0) {
+          logger.log(`→ Confirmed managed-service prune: ${prunePlan.removals.join(", ")}\n`, "warn");
+        }
+        logger.step(
+          "swarm-render",
+          "completed",
+          "Rendered and validated the authoritative Swarm stack configuration",
         );
+
+        startedAt = deps.now();
+        const createdRevision = await deps.createRevision(stack.id, deployment.organizationId, {
+          sourceDigest: rollbackRevision?.sourceDigest ?? stack.sourceDigest,
+          sourceCommitSha: rollbackRevision?.sourceCommitSha ?? stack.sourceCommitSha,
+          renderedYamlEnc: encryptSecretField(rendered.renderedYaml)!,
+          renderedDigest: rendered.renderedDigest,
+          renderedYamlRedacted: redactRenderedStackYaml(rendered.renderedYaml),
+          overrideYamlRedacted: rollbackRevision?.overrideYamlRedacted ?? redactRenderedStackYaml(rendered.overrideYaml),
+          manifest: rollbackRevision
+            ? {
+                ...rollbackRevision.manifest,
+                routingMode,
+                rollback: {
+                  sourceRevisionId: rollbackRevision.id,
+                  sourceDeploymentId: rollback!.sourceDeploymentId,
+                },
+              }
+            : {
+                services: resolvedSource.services,
+                networks: resolvedSource.networks,
+                volumes: resolvedSource.volumes,
+                configs: resolvedSource.configs,
+                secrets: resolvedSource.secrets,
+                managedResources: managedResources.map(({ kind, logicalName, resourceName, contentDigest }) => ({
+                  kind,
+                  logicalName,
+                  resourceName,
+                  contentDigest,
+                })),
+                externalResources: externalSwarmResourceConsumers(rendered.renderedYaml).filter((resource) =>
+                  !managedResources.some((managed) => managed.kind === resource.kind && managed.resourceName === resource.name),
+                ),
+                routingMode,
+                compatibility,
+                prune,
+                pruneRemovals: prunePlan.removals,
+              },
+          serviceImages: rollbackRevision
+            ? rollbackRevision.serviceImages
+            : Object.fromEntries(
+                resolvedSource.services.flatMap((service) =>
+                  service.image ? [[service.sourceServiceName, service.image]] : [],
+                ),
+              ),
+          configRefs: rollbackRevision?.configRefs ?? referencedSwarmResourceRefs(rendered.renderedYaml).configs,
+          secretRefs: rollbackRevision?.secretRefs ?? referencedSwarmResourceRefs(rendered.renderedYaml).secrets,
+          applyStatus: "applying",
+        });
+        if (!createdRevision) {
+          throw new AppError(
+            "The Swarm stack binding is no longer available.",
+            409,
+            "SWARM_STACK_REQUIRED",
+          );
+        }
+        revision = createdRevision;
+      } catch (error) {
+        if (platform.executor) await removeNewManagedSwarmResources(platform.executor, newlyCreatedManagedResources);
+        throw error;
+      }
 
       const runtimeRef: RuntimeWorkloadRef = {
         kind: "swarm-stack",

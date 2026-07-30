@@ -38,8 +38,9 @@ export async function saveManagedInput(input: {
   return { ...safe, hasValue: true };
 }
 
-export async function removeManagedInput(id: string, organizationId: string): Promise<void> {
-  if (!await repos.swarmStack.removeManagedInputInOrganization(id, organizationId)) {
+export async function removeManagedInput(id: string, projectId: string, organizationId: string): Promise<void> {
+  const input = await repos.swarmStack.getManagedInputInOrganization(id, organizationId);
+  if (!input || input.projectId !== projectId || !await repos.swarmStack.removeManagedInputInOrganization(id, organizationId)) {
     throw new NotFoundError("Managed Swarm resource", id);
   }
 }

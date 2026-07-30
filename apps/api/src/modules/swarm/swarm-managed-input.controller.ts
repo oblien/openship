@@ -20,7 +20,7 @@ export async function save(c: Context) {
 }
 export async function remove(c: Context) {
   const ctx = getRequestContext(c);
-  await removeManagedInput(c.req.param("inputId")!, ctx.organizationId);
+  await removeManagedInput(c.req.param("inputId")!, c.req.param("id")!, ctx.organizationId);
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "swarm.managed-input.removed", resourceType: "project", resourceId: c.req.param("id")!,
     after: { inputId: c.req.param("inputId")! },

@@ -5,7 +5,7 @@ import type { SwarmServiceProjection } from "@repo/core";
 import type { ContainerRegistry, Deployment, Domain, Service, Project, SwarmStack, SwarmStackRevision } from "@repo/db";
 import { createSwarmDeployService, selectSourceBuilds, type SwarmDeployLogger } from "./deploy.service";
 import { swarmLiveStateDigest } from "../../swarm/swarm-preview";
-import { planManagedSwarmResources } from "../../swarm/swarm-managed-resources";
+import { planManagedInputResources, planManagedSwarmResources } from "../../swarm/swarm-managed-resources";
 
 const stack = {
   id: "swarm-blog",
@@ -155,6 +155,7 @@ function fixture(
     stackOverride?: SwarmStack;
     beforeDiscovery?: SwarmDiscoverySnapshot;
     resourceDiscovery?: SwarmDiscoverySnapshot;
+    resourceDiscoveryError?: Error;
     revision?: SwarmStackRevision;
     registry?: ContainerRegistry;
     syncProjections?: (projectId: string, projections: SwarmServiceProjection[]) => Promise<Service[]>;
@@ -162,6 +163,8 @@ function fixture(
     listDomains?: (projectId: string) => Promise<Domain[]>;
     executor?: { exec(command: string): Promise<string>; writeFile(path: string, content: string): Promise<void>; rm(path: string): Promise<void> };
     loadSource?: () => Promise<{ files: Array<{ path: string; content: string }>; composePaths: string[] }>;
+    managedInputs?: Array<{ kind: "config" | "secret"; logicalName: string; content: string }>;
+    renderedYaml?: string;
   } = {},
 ) {
   const activeStack = options.stackOverride ?? stack;
@@ -179,7 +182,8 @@ function fixture(
   const discover = vi
     .fn()
     .mockResolvedValueOnce(options.beforeDiscovery ?? discovery(false));
-  if (options.resourceDiscovery) discover.mockResolvedValueOnce(options.resourceDiscovery);
+  if (options.resourceDiscoveryError) discover.mockRejectedValueOnce(options.resourceDiscoveryError);
+  else if (options.resourceDiscovery) discover.mockResolvedValueOnce(options.resourceDiscovery);
   discover
     .mockImplementationOnce(async () => {
       if (options.postDeployError) throw options.postDeployError;
@@ -191,7 +195,7 @@ function fixture(
     return { output: "Creating service blog_web\nCreating service blog_worker" };
   });
   const renderStack = vi.fn(async () => ({
-    renderedYaml:
+    renderedYaml: options.renderedYaml ??
       "services:\n  web:\n    image: nginx:1.27-alpine\n  worker:\n    image: busybox:1.36\n",
     renderedDigest: "sha256:rendered",
     overrideYaml: "services: {}\n",
@@ -206,7 +210,7 @@ function fixture(
     featureEnabled: () => true,
     getStack: async () => activeStack,
     getRegistry: async () => options.registry,
-    loadManagedInputs: async () => [],
+    loadManagedInputs: async () => options.managedInputs ?? [],
     ...(options.loadSource ? { loadSource: options.loadSource } : {}),
     resolvePlatform: async () =>
       ({
@@ -341,6 +345,160 @@ secrets:
     expect(test.deployStack).toHaveBeenCalledWith(expect.objectContaining({
       renderedYaml: expect.stringContaining(managed[0]!.resourceName),
     }));
+  });
+
+  it("mounts encrypted operator-managed inputs without exposing their values in the rendered stack", async () => {
+    const managedInputs = [
+      { kind: "config" as const, logicalName: "operator-config", content: "region: internal\n" },
+      { kind: "secret" as const, logicalName: "operator-token", content: "do-not-render-this" },
+    ];
+    const managed = planManagedInputResources({ projectId: project.id, inputs: managedInputs });
+    const before = discovery(false);
+    const resourceDiscovery = {
+      ...before,
+      configs: managed.filter((resource) => resource.kind === "config").map((resource) => ({
+        id: `config-${resource.logicalName}`,
+        name: resource.resourceName,
+        labels: {
+          "com.openship.swarm.managed-resource": "true",
+          "com.openship.swarm.project-id": project.id,
+          "com.openship.swarm.resource-kind": resource.kind,
+          "com.openship.swarm.logical-name": resource.logicalName,
+          "com.openship.swarm.content-sha256": resource.contentDigest,
+        },
+        createdAt: null,
+      })),
+      secrets: managed.filter((resource) => resource.kind === "secret").map((resource) => ({
+        id: `secret-${resource.logicalName}`,
+        name: resource.resourceName,
+        labels: {
+          "com.openship.swarm.managed-resource": "true",
+          "com.openship.swarm.project-id": project.id,
+          "com.openship.swarm.resource-kind": resource.kind,
+          "com.openship.swarm.logical-name": resource.logicalName,
+          "com.openship.swarm.content-sha256": resource.contentDigest,
+        },
+        createdAt: null,
+      })),
+    };
+    const commands: string[] = [];
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        commands.push(command);
+        return command.startsWith("umask 077") ? "/tmp/openship-swarm-resource.abc123" : "";
+      }),
+      writeFile: vi.fn(async () => undefined),
+      rm: vi.fn(async () => undefined),
+    };
+    const test = fixture({
+      beforeDiscovery: before,
+      resourceDiscovery,
+      executor,
+      managedInputs,
+      renderedYaml: `services:
+  web:
+    image: nginx:1.27-alpine
+    configs: [operator-config]
+    secrets: [operator-token]
+configs:
+  operator-config: {}
+secrets:
+  operator-token: {}
+`,
+    });
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .resolves.toMatchObject({ state: "ready" });
+    expect(test.createRevision).toHaveBeenCalledWith(stack.id, deployment.organizationId, expect.objectContaining({
+      configRefs: [managed.find((resource) => resource.kind === "config")!.resourceName],
+      secretRefs: [managed.find((resource) => resource.kind === "secret")!.resourceName],
+    }));
+    const rendered = test.deployStack.mock.calls[0]?.[0] as { renderedYaml: string };
+    expect(rendered.renderedYaml).toContain(managed[0]!.resourceName);
+    expect(rendered.renderedYaml).toContain(managed[1]!.resourceName);
+    expect(rendered.renderedYaml).not.toContain("region: internal");
+    expect(rendered.renderedYaml).not.toContain("do-not-render-this");
+    expect(commands.join("\n")).not.toContain("do-not-render-this");
+  });
+
+  it("removes only newly-created operator resources when revision recording fails before apply", async () => {
+    const managedInputs = [{ kind: "secret" as const, logicalName: "operator-token", content: "do-not-render-this" }];
+    const [managed] = planManagedInputResources({ projectId: project.id, inputs: managedInputs });
+    const before = discovery(false);
+    const resourceDiscovery = {
+      ...before,
+      secrets: [{
+        id: "secret-operator-token",
+        name: managed!.resourceName,
+        labels: {
+          "com.openship.swarm.managed-resource": "true",
+          "com.openship.swarm.project-id": project.id,
+          "com.openship.swarm.resource-kind": "secret",
+          "com.openship.swarm.logical-name": "operator-token",
+          "com.openship.swarm.content-sha256": managed!.contentDigest,
+        },
+        createdAt: null,
+      }],
+    };
+    const commands: string[] = [];
+    const test = fixture({
+      beforeDiscovery: before,
+      resourceDiscovery,
+      managedInputs,
+      executor: {
+        exec: vi.fn(async (command: string) => {
+          commands.push(command);
+          return command.startsWith("umask 077") ? "/tmp/openship-swarm-resource.abc123" : "";
+        }),
+        writeFile: vi.fn(async () => undefined),
+        rm: vi.fn(async () => undefined),
+      },
+      renderedYaml: `services:
+  web:
+    image: nginx:1.27-alpine
+    secrets: [operator-token]
+secrets:
+  operator-token: {}
+`,
+    });
+    test.createRevision.mockImplementationOnce(async () => undefined as never);
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .rejects.toMatchObject({ code: "SWARM_STACK_REQUIRED" });
+    expect(test.deployStack).not.toHaveBeenCalled();
+    expect(commands.join("\n")).toContain(`docker secret create`);
+    expect(commands.join("\n")).toContain(`docker secret rm '${managed!.resourceName}'`);
+  });
+
+  it("removes newly-created operator resources if the post-create manager discovery fails", async () => {
+    const managedInputs = [{ kind: "secret" as const, logicalName: "operator-token", content: "do-not-render-this" }];
+    const [managed] = planManagedInputResources({ projectId: project.id, inputs: managedInputs });
+    const commands: string[] = [];
+    const test = fixture({
+      beforeDiscovery: discovery(false),
+      resourceDiscoveryError: new Error("manager unavailable"),
+      managedInputs,
+      executor: {
+        exec: vi.fn(async (command: string) => {
+          commands.push(command);
+          return command.startsWith("umask 077") ? "/tmp/openship-swarm-resource.abc123" : "";
+        }),
+        writeFile: vi.fn(async () => undefined),
+        rm: vi.fn(async () => undefined),
+      },
+      renderedYaml: `services:
+  web:
+    image: nginx:1.27-alpine
+    secrets: [operator-token]
+secrets:
+  operator-token: {}
+`,
+    });
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .rejects.toThrow("manager unavailable");
+    expect(test.deployStack).not.toHaveBeenCalled();
+    expect(commands.join("\n")).toContain(`docker secret rm '${managed!.resourceName}'`);
   });
 
   it("rebuilds every source service when the stack source changes or changed paths are incomplete", () => {

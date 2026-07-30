@@ -64,7 +64,9 @@ secrets:
   it("uses deterministic bounded version names", () => {
     const digest = `sha256:${"a".repeat(64)}`;
     expect(versionedSwarmResourceName("project-blog", "app-config", digest)).toBe("openship_project-blog_app-config_aaaaaaaaaaaaaaaa");
-    expect(versionedSwarmResourceName("project", "x".repeat(200), digest)).toHaveLength(128);
+    expect(versionedSwarmResourceName("project", "x".repeat(200), digest)).toHaveLength(64);
+    expect(versionedSwarmResourceName("project", `x${"a".repeat(199)}`, digest))
+      .not.toBe(versionedSwarmResourceName("project", `x${"b".repeat(199)}`, digest));
   });
 
   it("creates only missing metadata-matched resources and never inspects secret payloads", async () => {
