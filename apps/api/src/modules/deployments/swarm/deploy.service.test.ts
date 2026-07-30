@@ -164,6 +164,7 @@ function fixture(
     { id: "service-worker", name: "worker", sourceServiceName: "worker" },
   ]);
   const createServiceDeployments = vi.fn(async () => []);
+  const upsertServiceDeployment = vi.fn(async () => undefined);
   const discover = vi
     .fn()
     .mockResolvedValueOnce(options.beforeDiscovery ?? discovery(false))
@@ -204,6 +205,7 @@ function fixture(
     updateStack,
     syncProjections: syncProjections as never,
     createServiceDeployments,
+    upsertServiceDeployment,
     now: () => new Date("2026-07-30T00:00:00.000Z"),
   });
   return {
@@ -214,6 +216,7 @@ function fixture(
     updateStack,
     syncProjections,
     createServiceDeployments,
+    upsertServiceDeployment,
     deployStack,
     log,
     logger,
@@ -362,6 +365,26 @@ describe("managed Swarm deploy", () => {
       registryAuth: { serverAddress: "registry.example.com", username: "robot", password: "write-only-secret" },
     }));
     expect(test.log.mock.calls.flat().join("\n")).not.toContain("write-only-secret");
+  });
+
+  it("persists a source-build failure before refusing a stack with no registry", async () => {
+    const sourceBuildStack = {
+      ...stack,
+      sourceYamlEnc: "services:\n  web:\n    build: .\n",
+      registryId: null,
+    } as SwarmStack;
+    const test = fixture({ stackOverride: sourceBuildStack });
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .rejects.toMatchObject({ code: "SWARM_BUILD_REGISTRY_REQUIRED" });
+
+    expect(test.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({
+      deploymentId: "deployment-1",
+      status: "failure",
+      runtimeRef: null,
+      errorMessage: expect.stringContaining("No OCI registry"),
+    }));
+    expect(test.deployStack).not.toHaveBeenCalled();
   });
 
   it("treats a lost deploy command response as indeterminate instead of running container cleanup", async () => {

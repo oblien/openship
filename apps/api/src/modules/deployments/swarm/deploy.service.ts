@@ -11,6 +11,7 @@ import {
   DEFAULT_BUILD_RESOURCE_CONFIG,
   DockerRuntime,
   deriveSwarmStackHealth,
+  type BuildConfig,
   type Platform,
   type SwarmDiscoverySnapshot,
   type SwarmServiceState,
@@ -86,6 +87,7 @@ interface Dependencies {
       durationMs?: number;
     }>,
   ) => Promise<unknown>;
+  upsertServiceDeployment: (row: Parameters<typeof repos.service.upsertServiceDeployment>[0]) => Promise<unknown>;
   waitForConvergence: typeof swarmConvergence.wait;
   now: () => Date;
 }
@@ -327,13 +329,30 @@ async function publishSourceBuilds(input: {
   previousImages: Record<string, string>;
   runtime: Platform["runtime"];
   logger: SwarmDeployLogger;
+  onBuildStatus?: (
+    serviceName: string,
+    status: "building" | "deploying" | "failure" | "skipped",
+    detail?: { imageRef?: string; errorMessage?: string },
+  ) => Promise<void>;
 }): Promise<Record<string, string>> {
   const buildable = input.services.flatMap((service) => {
     const build = sourceBuildDefinition(service);
     return build ? [{ service, build }] : [];
   });
   if (buildable.length === 0) return {};
+  const selected = selectSourceBuilds({
+    stack: input.stack,
+    deployment: input.deployment,
+    buildable,
+    previousImages: input.previousImages,
+  });
+  const markBuildsFailed = async (errorMessage: string) => {
+    await Promise.all(selected.build.map(({ service }) =>
+      input.onBuildStatus?.(service.sourceServiceName, "failure", { errorMessage }),
+    ));
+  };
   if (!input.registry) {
+    await markBuildsFailed("No OCI registry is configured for this source build.");
     throw new AppError(
       "This stack has source-built services. Select an OCI registry before applying it.",
       409,
@@ -341,6 +360,7 @@ async function publishSourceBuilds(input: {
     );
   }
   if (!(input.runtime instanceof DockerRuntime)) {
+    await markBuildsFailed("The selected manager cannot build source services through Docker.");
     throw new AppError(
       "The selected Swarm manager cannot build and publish source services through Docker.",
       503,
@@ -348,48 +368,51 @@ async function publishSourceBuilds(input: {
     );
   }
   if (input.stack.sourceKind !== "repository" || !input.project.gitOwner || !input.project.gitRepo) {
+    await markBuildsFailed("Source builds require a linked repository source.");
     throw new AppError(
       "Source-built services require a linked repository stack source so OpenShip can use its bounded build context.",
       409,
       "SWARM_BUILD_REPOSITORY_REQUIRED",
     );
   }
-  const owner = await resolveOrgOwner(input.deployment.organizationId);
-  if (!owner) {
-    throw new AppError("The organization owner is unavailable to prepare the source build.", 503, "SWARM_SOURCE_REPOSITORY_UNAVAILABLE");
+  let git: Awaited<ReturnType<typeof resolveBuildGitToken>>;
+  try {
+    const owner = await resolveOrgOwner(input.deployment.organizationId);
+    if (!owner) {
+      throw new AppError("The organization owner is unavailable to prepare the source build.", 503, "SWARM_SOURCE_REPOSITORY_UNAVAILABLE");
+    }
+    git = await resolveBuildGitToken({
+      ctx: buildBackgroundContext({ userId: owner.userId, organizationId: input.deployment.organizationId, label: "swarm:source-build" }),
+      projectId: input.project.id,
+      owner: input.project.gitOwner,
+      repo: input.project.gitRepo,
+      buildStrategy: "local",
+    });
+  } catch {
+    await markBuildsFailed("Source repository credentials could not be prepared.");
+    throw new AppError("OpenShip could not prepare source repository credentials for this build.", 502, "SWARM_BUILD_SOURCE_UNAVAILABLE");
   }
-  const git = await resolveBuildGitToken({
-    ctx: buildBackgroundContext({ userId: owner.userId, organizationId: input.deployment.organizationId, label: "swarm:source-build" }),
-    projectId: input.project.id,
-    owner: input.project.gitOwner,
-    repo: input.project.gitRepo,
-    buildStrategy: "local",
-  });
   const repository = [
     input.registry.registryUrl,
     ...(input.registry.repositoryPrefix ? [input.registry.repositoryPrefix] : []),
     imageSegment(input.project.slug, "project"),
   ].join("/");
-  const selected = selectSourceBuilds({
-    stack: input.stack,
-    deployment: input.deployment,
-    buildable,
-    previousImages: input.previousImages,
-  });
   const overrides: Record<string, string> = { ...selected.preserved };
   for (const serviceName of Object.keys(selected.preserved)) {
     input.logger.log(`Reusing immutable registry digest for unchanged service ${serviceName}\n`);
+    await input.onBuildStatus?.(serviceName, "skipped", { imageRef: selected.preserved[serviceName] });
   }
-  for (const { service, build } of selected.build) {
+  const buildSpecs = selected.build.map(({ service, build }) => {
     const serviceName = imageSegment(service.sourceServiceName, "service");
     const target = `${repository}/${serviceName}:${imageSegment(input.deployment.id, "deployment")}`;
-    input.logger.step("swarm-build", "started", `Building and publishing ${service.sourceServiceName}`);
     const buildLogger = new BuildLogger((entry) => {
       input.logger.log(entry.message, entry.level === "error" ? "error" : entry.level === "warn" ? "warn" : "info");
     });
-    let result: Awaited<ReturnType<DockerRuntime["build"]>>;
-    try {
-      result = await input.runtime.build({
+    return {
+      service,
+      target,
+      buildLogger,
+      config: {
         sessionId: `${input.deployment.id}-${serviceName}`,
         projectId: input.project.id,
         slug: `swarm-${imageSegment(input.project.slug, "project")}-${serviceName}`,
@@ -410,27 +433,52 @@ async function publishSourceBuilds(input: {
         envVars: {},
         resources: DEFAULT_BUILD_RESOURCE_CONFIG,
         gitToken: git.token,
-      }, buildLogger);
-    } catch {
-      input.logger.step("swarm-build", "failed", `Could not build ${service.sourceServiceName}`);
-      throw new AppError(`Could not build source service ${service.sourceServiceName}.`, 502, "SWARM_BUILD_FAILED");
-    }
-    if (result.status !== "deploying" || !result.imageRef) {
-      input.logger.step("swarm-build", "failed", `Could not build ${service.sourceServiceName}`);
-      throw new AppError(`Could not build source service ${service.sourceServiceName}.`, 502, "SWARM_BUILD_FAILED");
-    }
+      } satisfies BuildConfig,
+    };
+  });
+  for (const spec of buildSpecs) {
+    input.logger.step("swarm-build", "started", `Building and publishing ${spec.service.sourceServiceName}`);
+    await input.onBuildStatus?.(spec.service.sourceServiceName, "building");
+  }
+  let buildResults: Array<{ serviceName: string; result: Awaited<ReturnType<DockerRuntime["build"]>> }>;
+  try {
+    buildResults = await input.runtime.buildImages(
+      buildSpecs.map((spec) => ({
+        config: spec.config,
+        serviceName: spec.service.sourceServiceName,
+        logger: spec.buildLogger,
+        requireRepositoryDockerfile: true,
+      })),
+      new BuildLogger((entry) => input.logger.log(entry.message, entry.level === "error" ? "error" : entry.level === "warn" ? "warn" : "info")),
+    );
+  } catch {
+    await markBuildsFailed("Source image build failed.");
+    throw new AppError("Could not prepare the shared source build context.", 502, "SWARM_BUILD_FAILED");
+  }
+  const resultsByService = new Map(buildResults.map(({ serviceName, result }) => [serviceName, result]));
+  for (const spec of buildSpecs) {
+    const result = resultsByService.get(spec.service.sourceServiceName);
+    if (result?.status === "deploying" && result.imageRef) continue;
+    input.logger.step("swarm-build", "failed", `Could not build ${spec.service.sourceServiceName}`);
+    await input.onBuildStatus?.(spec.service.sourceServiceName, "failure", { errorMessage: "Source image build failed." });
+    throw new AppError(`Could not build source service ${spec.service.sourceServiceName}.`, 502, "SWARM_BUILD_FAILED");
+  }
+  for (const spec of buildSpecs) {
+    const result = resultsByService.get(spec.service.sourceServiceName)!;
     try {
       const published = await input.runtime.publishImage({
-        source: result.imageRef,
-        target,
+        source: result.imageRef!,
+        target: spec.target,
         ...(input.registryAuth ? { auth: input.registryAuth } : {}),
         onProgress: (message) => input.logger.log(message),
       });
-      overrides[service.sourceServiceName] = published.digestRef;
-      input.logger.step("swarm-build", "completed", `Published ${service.sourceServiceName} as an immutable registry digest`);
+      overrides[spec.service.sourceServiceName] = published.digestRef;
+      await input.onBuildStatus?.(spec.service.sourceServiceName, "deploying", { imageRef: published.digestRef });
+      input.logger.step("swarm-build", "completed", `Published ${spec.service.sourceServiceName} as an immutable registry digest`);
     } catch {
-      input.logger.step("swarm-build", "failed", `Could not publish ${service.sourceServiceName}`);
-      throw new AppError(`Could not publish source service ${service.sourceServiceName} to the configured registry.`, 502, "SWARM_IMAGE_PUBLISH_FAILED");
+      input.logger.step("swarm-build", "failed", `Could not publish ${spec.service.sourceServiceName}`);
+      await input.onBuildStatus?.(spec.service.sourceServiceName, "failure", { errorMessage: "Registry image publication failed." });
+      throw new AppError(`Could not publish source service ${spec.service.sourceServiceName} to the configured registry.`, 502, "SWARM_IMAGE_PUBLISH_FAILED");
     }
   }
   return overrides;
@@ -482,6 +530,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
     syncProjections: (projectId, projections) =>
       repos.service.syncSwarmProjections(projectId, projections),
     createServiceDeployments: (rows) => repos.serviceDeployment.bulkCreate(rows),
+    upsertServiceDeployment: (row) => repos.service.upsertServiceDeployment(row),
     waitForConvergence: (input) => swarmConvergence.wait(input),
     now: () => new Date(),
     ...overrides,
@@ -587,6 +636,36 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           "SWARM_STACK_OWNERSHIP_CONFLICT",
         );
       }
+      const sourceBuiltServiceNames = new Set(
+        source.services.filter((service) => !!service.build).map((service) => service.sourceServiceName),
+      );
+      const sourceRowsByName = sourceBuiltServiceNames.size > 0
+        ? new Map((await deps.syncProjections(project.id, source.services)).map((service) => [service.sourceServiceName, service]))
+        : new Map<string, Service>();
+      const sourceBuildStartedAt = new Map<string, Date>();
+      const persistSourceBuildStatus = async (
+        serviceName: string,
+        status: "building" | "deploying" | "failure" | "skipped",
+        detail: { imageRef?: string; errorMessage?: string } = {},
+      ) => {
+        const service = sourceRowsByName.get(serviceName);
+        if (!service) return;
+        const now = deps.now();
+        const startedAt = sourceBuildStartedAt.get(serviceName) ?? now;
+        if (status === "building") sourceBuildStartedAt.set(serviceName, startedAt);
+        const terminal = status === "failure" || status === "skipped";
+        await deps.upsertServiceDeployment({
+          deploymentId: deployment.id,
+          serviceId: service.id,
+          serviceName: service.name,
+          runtimeRef: null,
+          status,
+          ...(detail.imageRef ? { imageRef: detail.imageRef, imageDigest: detail.imageRef.includes("@sha256:") ? detail.imageRef : null } : {}),
+          startedAt,
+          ...(terminal ? { finishedAt: now, durationMs: Math.max(0, now.getTime() - startedAt.getTime()) } : {}),
+          ...(detail.errorMessage ? { errorMessage: detail.errorMessage, error: detail.errorMessage } : {}),
+        });
+      };
       const imageOverrides = await publishSourceBuilds({
         stack,
         project,
@@ -597,6 +676,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         previousImages: previousRevision?.serviceImages ?? {},
         runtime: platform.runtime,
         logger,
+        onBuildStatus: persistSourceBuildStatus,
       });
       const rendered = await platform.stackRuntime.renderStack({
         files: sourceMaterial.files,
@@ -840,8 +920,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       );
       const finishedAt = deps.now();
       const ready = convergence.status === "ready" && health.state === "ready";
-      await deps.createServiceDeployments(
-        serviceRows.flatMap((service) => {
+      const serviceDeploymentRows = serviceRows.flatMap((service) => {
           const ref = refs[service.sourceServiceName ?? ""];
           return ref
             ? [
@@ -865,7 +944,14 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
                 },
               ]
             : [];
-        }),
+        });
+      await deps.createServiceDeployments(
+        serviceDeploymentRows.filter((row) => !sourceBuiltServiceNames.has(row.serviceName)),
+      );
+      await Promise.all(
+        serviceDeploymentRows
+          .filter((row) => sourceBuiltServiceNames.has(row.serviceName))
+          .map((row) => deps.upsertServiceDeployment(row)),
       );
       await deps.updateRevision(revision.id, deployment.organizationId, {
         applyStatus: ready ? "ready" : "converging",

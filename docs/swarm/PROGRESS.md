@@ -747,18 +747,20 @@ Next:
 
 ## S9.2–S9.5: Digest publication, manager auth, source builds, and smart selection
 
-Status: in progress
+Status: done
 Commit: pending registry/source-build milestone
 Tests run:
 
 - `bun --cwd packages/adapters vitest run src/runtime/swarm/runtime.test.ts src/runtime/docker-registry.test.ts` — passed (13 tests).
-- `bun --cwd apps/api vitest run src/modules/deployments/swarm/deploy.service.test.ts src/modules/swarm/swarm-source.service.test.ts` — passed (11 tests).
-- TypeScript checks for `packages/adapters`, `apps/api`, and `apps/dashboard` — passed.
+- `bun --cwd apps/api vitest run src/modules/deployments/swarm/deploy.service.test.ts src/modules/swarm/swarm-source.service.test.ts` — passed (12 tests).
+- `bun --cwd packages/db vitest run src/repos/swarm-persistence.repo.test.ts src/migrations-additive.test.ts` — passed (7 tests).
+- TypeScript checks for `packages/adapters`, `packages/db`, `apps/api`, and `apps/dashboard` — passed.
 - `scripts/swarm-lab.sh up`, `scripts/swarm-lab.sh registry-proof`,
   `scripts/swarm-lab.sh cleanup`, and `scripts/swarm-lab.sh down` — the proof
-  worker was observed running the manager-published digest on July 30, 2026;
-  the command-stream wrapper dropped its final nested-BuildKit cell, so this is
-  retained as manual task-state evidence rather than a clean shell transcript.
+  worker was observed running the manager-published private-registry digest on
+  July 30, 2026. The command-stream wrapper dropped its final nested-BuildKit
+  cell, so this is retained as task-state evidence rather than a clean shell
+  transcript.
 
 Evidence:
 
@@ -774,10 +776,12 @@ Evidence:
   login, and removes the stage on success or failure. No permanent manager
   Docker config is changed.
 - Repository-backed `build:` services are built on the selected manager’s
-  Docker runtime, published, and supplied to `docker stack config` through a
-  generated digest-image override. Prebuilt services are retained unchanged.
-  Inline source with `build:` is refused because it cannot supply a bounded
-  cloneable build context.
+  Docker runtime through its shared clone/transfer batch, published, and
+  supplied to `docker stack config` through a generated digest-image override.
+  Per-service rows record building, skipped, publication failure, and eventual
+  live Swarm runtime states without duplicate inserts. Prebuilt services are
+  retained unchanged. Inline source with `build:` is refused because it cannot
+  supply a bounded cloneable build context.
 - Webhook deployments with an exact, non-truncated changed-path set reuse a
   previous digest only for source-built services whose independent contexts are
   unchanged. Compose edits, shared/unknown paths, missing digests, force-all,
@@ -785,5 +789,4 @@ Evidence:
 
 Next:
 
-- Persist source-build start/failure status into per-service deployment rows
-  before the stack apply, then promote this milestone to complete.
+- Begin external-routing preservation and explicit OpenShip Edge work (Phase 10).

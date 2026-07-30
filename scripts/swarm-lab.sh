@@ -21,6 +21,9 @@ managed_secret="openship_lab_secret"
 registry_service="openship-swarm-lab-registry"
 registry_proof_service="openship-swarm-registry-proof"
 registry_proof_image="openship-swarm-registry-proof:build"
+registry_auth_secret="openship_lab_registry_auth"
+registry_test_username="openship-lab"
+registry_test_password="registry-proof-only"
 manager_host="tcp://127.0.0.1:23750"
 
 usage() {
@@ -95,10 +98,20 @@ ensure_lab_registry() {
   if docker -H "$manager_host" service inspect "$registry_service" >/dev/null 2>&1; then
     return
   fi
+  if ! docker -H "$manager_host" secret inspect "$registry_auth_secret" >/dev/null 2>&1; then
+    # A disposable fixed credential proves Docker's Swarm auth propagation. It
+    # is created as a Swarm secret, never printed, and removed by cleanup.
+    docker -H "$manager_host" run --rm --entrypoint htpasswd httpd:2.4-alpine -Bbn "$registry_test_username" "$registry_test_password" | \
+      docker -H "$manager_host" secret create "$registry_auth_secret" - >/dev/null
+  fi
   docker -H "$manager_host" service create \
     --name "$registry_service" \
     --constraint 'node.role == manager' \
     --publish published=5000,target=5000,protocol=tcp,mode=host \
+    --secret source="$registry_auth_secret",target=htpasswd \
+    --env REGISTRY_AUTH=htpasswd \
+    --env 'REGISTRY_AUTH_HTPASSWD_REALM=OpenShip Swarm lab' \
+    --env REGISTRY_AUTH_HTPASSWD_PATH=/run/secrets/htpasswd \
     registry:2 >/dev/null
   attempts=0
   until docker -H "$manager_host" service ps --filter desired-state=running --format '{{.CurrentState}}' "$registry_service" | grep -q '^Running'; do
@@ -115,6 +128,7 @@ remove_lab_registry_objects() {
   docker -H "$manager_host" service rm "$registry_proof_service" >/dev/null 2>&1 || true
   docker -H "$manager_host" service rm "$registry_service" >/dev/null 2>&1 || true
   docker -H "$manager_host" image rm "$registry_proof_image" >/dev/null 2>&1 || true
+  docker -H "$manager_host" secret rm "$registry_auth_secret" >/dev/null 2>&1 || true
 }
 
 start_lab() {
@@ -226,12 +240,21 @@ case "${1:-}" in
     registry_address="$(manager_node_address):5000"
     test -n "$registry_address" || { echo "Could not resolve nested registry address" >&2; exit 1; }
     target="$registry_address/openship/registry-proof:deployment-1"
+    registry_auth_dir=$(mktemp -d "${TMPDIR:-/tmp}/openship-swarm-registry-auth.XXXXXX")
+    cleanup_registry_auth() {
+      rm -f "$registry_auth_dir/config.json" || true
+      rmdir "$registry_auth_dir" || true
+    }
+    trap cleanup_registry_auth EXIT INT TERM
+    chmod 700 "$registry_auth_dir"
+    registry_auth=$(printf '%s:%s' "$registry_test_username" "$registry_test_password" | base64 | tr -d '\n')
+    printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$registry_address" "$registry_auth" >"$registry_auth_dir/config.json"
     # Build only on the manager daemon, publish under a deterministic tag, and
     # deploy the digest to an explicitly worker-constrained service. The worker
     # has no pre-existing login and must pull from the manager-published registry.
     printf '%s\n' 'FROM busybox:1.36' 'CMD ["sh", "-c", "echo registry-proof; sleep 3600"]' | docker -H "$manager_host" build -t "$registry_proof_image" - >/dev/null
     docker -H "$manager_host" tag "$registry_proof_image" "$target"
-    docker -H "$manager_host" image push "$target" >/dev/null
+    DOCKER_CONFIG="$registry_auth_dir" docker -H "$manager_host" image push "$target" >/dev/null
     digest="$(docker -H "$manager_host" image inspect --format '{{index .RepoDigests 0}}' "$target")"
     case "$digest" in
       "$registry_address"/*@sha256:*) ;;
@@ -239,7 +262,7 @@ case "${1:-}" in
     esac
     docker -H "$manager_host" service rm "$registry_proof_service" >/dev/null 2>&1 || true
     worker_hostname="$(docker exec "$worker" hostname)"
-    docker -H "$manager_host" service create \
+    DOCKER_CONFIG="$registry_auth_dir" docker -H "$manager_host" service create \
       --name "$registry_proof_service" \
       --constraint "node.hostname == $worker_hostname" \
       --with-registry-auth \
@@ -255,6 +278,8 @@ case "${1:-}" in
       sleep 1
     done
     echo "Registry proof passed: worker pulled and ran $digest"
+    cleanup_registry_auth
+    trap - EXIT INT TERM
     ;;
   events)
     require_docker

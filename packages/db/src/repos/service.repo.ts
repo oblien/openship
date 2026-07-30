@@ -726,6 +726,11 @@ export function createServiceRepo(db: Database) {
             ip: data.ip ?? null,
             reason: data.reason ?? null,
             reasonSkipped: data.reasonSkipped ?? null,
+            ...(data.startedAt !== undefined ? { startedAt: data.startedAt } : {}),
+            ...(data.finishedAt !== undefined ? { finishedAt: data.finishedAt } : {}),
+            ...(data.durationMs !== undefined ? { durationMs: data.durationMs } : {}),
+            ...(data.errorMessage !== undefined ? { errorMessage: data.errorMessage } : {}),
+            ...(data.error !== undefined ? { error: data.error } : {}),
             updatedAt: new Date(),
           },
         });
