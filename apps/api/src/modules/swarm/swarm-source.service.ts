@@ -14,6 +14,7 @@ import {
   type StackSourceInput,
 } from "./swarm-source.model";
 import { projectSwarmStackSource } from "./swarm-stack-projection";
+import { previewSwarmStack, redactRenderWarnings } from "./swarm-preview";
 
 function assertEnabled(): void {
   if (!swarmSupportEnabled()) {
@@ -121,7 +122,20 @@ export async function renderStackSource(
       environment,
       ownershipLabels,
     });
-    return { valid: true, renderedDigest: rendered.renderedDigest, warnings: rendered.warnings };
+    const observed = await platform.stackRuntime.discover();
+    const preview = previewSwarmStack({
+      renderedYaml: rendered.renderedYaml,
+      renderedDigest: rendered.renderedDigest,
+      sourceDigest: stack.sourceDigest,
+      liveServices: observed.services.filter((service) => service.stackName === stack.stackName),
+      lastObservedLiveDigest: stack.lastObservedDigest,
+      interpolationValues: environment,
+    });
+    return {
+      valid: true,
+      ...preview,
+      warnings: redactRenderWarnings(rendered.warnings, environment),
+    };
   } catch (error) {
     if (error instanceof AppError) throw error;
     if (error instanceof SwarmRenderError) {

@@ -41,6 +41,7 @@ export type {
   SwarmDiscoverySnapshot,
   SwarmManagerInfo,
   SwarmProbeFailureCode,
+  SwarmServiceState,
   SwarmServiceHealth,
   SwarmStackHealth,
   RenderStackInput,

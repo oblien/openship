@@ -353,3 +353,30 @@ Evidence:
 Next:
 
 - Redact rendered material and compute semantic live-state previews (S3.5).
+
+## S3.5: Redacted semantic stack previews
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd packages/adapters lint`, `bun run --cwd apps/api lint`, and
+  `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-preview.test.ts` — passed (3 tests).
+
+Evidence:
+
+- Render previews structurally redact sensitive environment values, token/key
+  labels, inline config/secret content, private-key material, and interpolation
+  values in warnings while retaining safe reference names.
+- Desired projections compare to live service state and classify stack create,
+  service add/remove, image, mode/replica, placement/resource, network/port,
+  config/secret reference, and label/routing changes.
+- A preview emits redacted rendered YAML, stable digest metadata, explicit
+  non-comparable notices, and a deterministic no-op only when both desired and
+  observed state digests are unchanged.
+
+Next:
+
+- Expand compatibility and storage preflight into hard blockers and
+  remediation-bearing warnings (S3.6).
