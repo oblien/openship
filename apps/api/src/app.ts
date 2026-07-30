@@ -213,6 +213,11 @@ if (env.CLOUD_MODE) {
   const { migrationRoutes } = await import("./modules/migration/migration.routes");
   app.route("/api/migration", migrationRoutes);
 
+  // Experimental Swarm discovery is self-hosted only. Its own route module
+  // feature-gates every request, so disabled instances expose no usable API.
+  const { swarmRoutes } = await import("./modules/swarm/swarm.routes");
+  app.route("/api/swarm", swarmRoutes);
+
   /**
    * Interactive SERVER terminal (xterm.js ↔ WebSocket ↔ ssh2 PTY).
    * Self-hosted only — exposes the host's SSH-managed servers.

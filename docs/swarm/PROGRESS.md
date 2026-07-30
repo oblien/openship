@@ -141,8 +141,8 @@ Next:
 
 ## S1.3: Compatibility-safe runtime reference usage
 
-Status: in-progress
-Commit: pending
+Status: done
+Commit: `4142f26c`
 Tests run:
 
 - `bun --cwd apps/api vitest run src/lib/deployment-runtime-read.test.ts` — passed (8 tests).
@@ -157,4 +157,99 @@ Evidence:
 
 Next:
 
-- Complete day-two container-only guards while introducing the stack adapter.
+- Complete Swarm service projections, then begin the manager adapter probe.
+
+## S1.4: Swarm service projections
+
+Status: done
+Commit: `32448914`
+Tests run:
+
+- `bun --cwd packages/db vitest run src/repos/swarm-persistence.repo.test.ts` — passed (3 tests).
+
+Evidence:
+
+- A Swarm service is keyed by its source service name, not an observed Docker
+  service ID. Recreate updates that observed state in place, while source
+  removal marks the projection removed without erasing history.
+
+Next:
+
+- Implement the manager adapter probe and discovery read models (S2.1–S2.4).
+
+## S2.1: Swarm manager adapter probe
+
+Status: done
+Commit: `4ab7fdd7`
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/runtime.test.ts` — passed.
+
+Evidence:
+
+- `SwarmRuntime` verifies Engine/cluster identity through bounded manager probes
+  and returns stable inactive, worker-required, invalid-info, and unavailable
+  failures without leaking connection credentials.
+
+## S2.2: Resolve a manager-backed Swarm platform
+
+Status: done
+Commit: `d701da3b`
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/platform.swarm.test.ts` — passed.
+
+Evidence:
+
+- Local and SSH targets retain Docker for image builds while exposing a verified
+  `stackRuntime`; Swarm status avoids Edge/system provisioning by default.
+
+## S2.3: Read-only normalized manager discovery
+
+Status: done
+Commit: `404175f0`
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/normalize.test.ts src/runtime/swarm/runtime.test.ts` — passed.
+
+Evidence:
+
+- Discovery returns bounded nodes, stacks, services, tasks, overlay networks,
+  volumes, config metadata, and secret metadata. It intentionally never runs
+  `docker secret inspect` or otherwise reads secret contents.
+
+## S2.4: Service and stack convergence semantics
+
+Status: done
+Commit: `cc720896`
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/health.test.ts` — passed.
+
+Evidence:
+
+- Health picks current tasks rather than historical attempts, handles global
+  services and zero replicas, and distinguishes scheduler failures from an
+  unreachable manager.
+
+## S2.5: Authorized read-only Swarm API
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd apps/api lint` and `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm.service.test.ts` — passed (4 tests).
+
+Evidence:
+
+- Self-hosted `/api/swarm/:serverId/*` routes require `server:read`, resolve the
+  server within the caller organization, are unavailable when the experimental
+  flag is off, and return stable manager failure codes.
+- The endpoints expose only probe/discovery views, cache repeated dashboard
+  polling briefly, avoid MCP registration, and never fetch secret payloads or
+  expose a generic Docker command endpoint.
+
+Next:
+
+- Model authoritative repository, inline, and observed stack sources (S3.1).
