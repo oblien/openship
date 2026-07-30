@@ -85,7 +85,9 @@
   },
   "sidebar": {
     "expand": "Expand sidebar",
-    "collapse": "Collapse sidebar"
+    "collapse": "Collapse sidebar",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
   },
   "user": {
     "logout": "Log out",

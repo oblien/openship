@@ -3,6 +3,8 @@ import { getSession, getDeploymentInfoOrNull } from "@/lib/server/session";
 import { resolveRequestProductView } from "@/lib/server/product-view";
 import { ApiUnavailable } from "@/components/api-unavailable";
 import { Sidebar } from "@/components/sidebar";
+import { MobileTopBar } from "@/components/mobile-topbar";
+import { MobileSidebarProvider } from "@/context/MobileSidebarContext";
 import { UpdateCenter } from "@/components/updates/UpdateCenter";
 import { MigratedLauncher } from "@/components/migrated-launcher";
 import { MigrationInProgress } from "@/components/migration-in-progress";
@@ -163,18 +165,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
       machineName={deploymentInfo.machineName}
       hostDomain={deploymentInfo.hostDomain}
     >
-      <div className="flex flex-col h-dvh">
-        {/* Update + platform-status surface — full app width, ABOVE the sidebar.
-            Renders nothing unless there's an advisory / platform notice (SaaS:
-            partial outage, maintenance) / available update / what's-new, so it
-            adds no chrome when idle. */}
-        <UpdateCenter />
-        <div className="flex flex-1 min-h-0">
-          <Sidebar />
-          {/* Main content */}
-          <main className="flex-1 overflow-y-auto">{children}</main>
+      <MobileSidebarProvider>
+        <div className="flex flex-col h-dvh">
+          {/* Update + platform-status surface — full app width, ABOVE the sidebar.
+              Renders nothing unless there's an advisory / platform notice (SaaS:
+              partial outage, maintenance) / available update / what's-new, so it
+              adds no chrome when idle. */}
+          <UpdateCenter />
+          {/* Hamburger + logo + theme toggle, <lg only. The sidebar itself
+              renders as an overlay drawer below lg (see sidebar.tsx). */}
+          <MobileTopBar />
+          <div className="flex flex-1 min-h-0">
+            <Sidebar />
+            {/* Main content */}
+            <main className="flex-1 min-w-0 overflow-y-auto">{children}</main>
+          </div>
         </div>
-      </div>
+      </MobileSidebarProvider>
     </DashboardProviders>
   );
 }
