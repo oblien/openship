@@ -1311,3 +1311,39 @@ Next:
 
 - Complete cluster health, manager selection, and safe same-cluster rebinding
   UX (S13.3).
+
+## S13.3: Cluster connection and manual manager rebinding UX
+
+Status: done
+Commit: `5d7ade9b`
+Tests run:
+
+- `bun --filter @repo/api test src/modules/swarm/swarm-connection.service.test.ts src/modules/swarm/swarm-stack.service.test.ts src/modules/swarm/swarm-observation.service.test.ts`
+  — passed.
+- `bunx tsc --noEmit -p apps/api/tsconfig.json` and
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json` — passed.
+- `bun run --cwd apps/api lint`, `bun run --cwd apps/dashboard build`,
+  and `git diff --check` — passed.
+
+Evidence:
+
+- The project Swarm page now has a project-scoped Cluster connection card. It
+  reports the configured safe endpoint, active-manager/control availability,
+  expected and reported cluster IDs, manager node, the last successful manager
+  discovery, and the current safe error when that target cannot be reached.
+  An unreachable binding remains visible and actionable rather than replacing
+  the project page with an error-only view.
+- The card exposes node status, availability, manager role, engine version,
+  and labels as read-only inventory. It offers no join token, promotion,
+  demotion, removal, or automatic failover control.
+- Rebinding selects an existing organization server and proves the target is an
+  active manager for the bound cluster before writing its ID. The unit/integration
+  seam covers an unreachable old manager becoming healthy after rebinding, while
+  worker/non-manager, wrong-cluster, same-target, and cross-organization inputs
+  are refused before any stack update. SSH authentication material remains
+  inside the existing server resolver and is never returned by this API.
+
+Next:
+
+- Complete locale, accessibility, confirmation, and authorization coverage
+  across the Swarm surface (S13.4).
