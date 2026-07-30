@@ -1106,3 +1106,42 @@ Next:
 
 - Add permission-scoped, encrypted OpenShip-managed config and secret inputs
   (S12.2).
+
+## S12.2: OpenShip-managed configs and secrets
+
+Status: done
+Commit: pending managed-input completion slice
+Tests run:
+
+- `bun --filter @repo/api test src/modules/swarm/swarm-managed-input.service.test.ts src/modules/swarm/swarm-managed-resources.test.ts src/modules/deployments/swarm/deploy.service.test.ts`
+  — passed (25 tests).
+- `bun run --cwd apps/api lint`, `sh -n scripts/swarm-lab.sh`, and
+  `git diff --check` — passed.
+- `scripts/swarm-lab.sh up`, `scripts/swarm-lab.sh managed-input-proof`,
+  `scripts/swarm-lab.sh cleanup`, and `scripts/swarm-lab.sh down` — passed on
+  July 30, 2026. The proof mounted v1 config/secret values, updated to v2,
+  reapplied retained v1 references, removed a simulated failed-pre-apply pair,
+  and finally left zero resources with the proof project label.
+
+Evidence:
+
+- Project-scoped APIs create, list, replace, and remove operator-managed
+  config/secret inputs. Values are encrypted at rest, never returned by the
+  read API, and audit records contain only the input ID, kind, logical name,
+  project, and actor.
+- Deploy resolves encrypted values only immediately before manager resource
+  creation. Their content is passed through the protected staging file, while
+  rendered YAML, revision metadata, previews, logs, and API responses contain
+  only immutable resource names and SHA-256 digests.
+- The pre-apply boundary records exactly which immutable resources this attempt
+  created. A final validation, cluster check, or revision-recording failure
+  removes only those unreferenced versions; once `docker stack deploy` begins,
+  normal revision retention and GC own their lifecycle.
+- Docker limits config and secret names to 64 characters. Version names now
+  respect that limit while adding a logical-name marker when truncation occurs,
+  avoiding a collision between distinct long Compose keys with equal content.
+
+Next:
+
+- Detect and clearly explain node-local storage risk before a stateful Swarm
+  service is allowed to reschedule freely (S12.3).
