@@ -39,6 +39,7 @@ export type SwarmServiceProjection = {
   mode: "replicated" | "global" | "replicated-job" | "global-job" | "unknown";
   replicas?: { desired?: number; running?: number; completed?: number };
   image?: string;
+  build?: string | Record<string, unknown>;
   endpointMode?: string;
   placement?: Record<string, unknown>;
   resources?: Record<string, unknown>;
@@ -48,6 +49,7 @@ export type SwarmServiceProjection = {
   labels?: Record<string, string>;
   publishedPorts?: Array<Record<string, unknown>>;
   networks?: string[];
+  volumes?: string[];
   configs?: string[];
   secrets?: string[];
   observedAt?: string;

@@ -10,6 +10,7 @@ import {
   validateStackSource,
   type StackSourceInput,
 } from "./swarm-source.model";
+import { projectSwarmStackSource } from "./swarm-stack-projection";
 
 function assertEnabled(): void {
   if (!swarmSupportEnabled()) {
@@ -66,6 +67,14 @@ export async function replaceStackSource(projectId: string, organizationId: stri
   });
   if (!updated) {
     throw new ConflictError("This stack source changed while you were editing it. Refresh and try again.");
+  }
+  // Inline source is available at this boundary, so immediately refresh only
+  // the derived service projection. Repository source is projected after its
+  // files are staged; adopted stacks retain their observed service projection.
+  if (source.kind === "inline" && source.inlineYaml) {
+    await repos.service.syncSwarmProjections(projectId, projectSwarmStackSource([
+      { path: "inline.yaml", content: source.inlineYaml },
+    ]).services);
   }
   return serializeStackSource(updated);
 }

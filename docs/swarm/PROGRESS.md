@@ -278,3 +278,28 @@ Evidence:
 Next:
 
 - Build a lossless source projection and Swarm compatibility parser (S3.2).
+
+## S3.2: Lossless source document projection
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd packages/core lint`, `bun run --cwd apps/api lint`, and
+  `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run test/lib/compose-parser.test.ts src/modules/swarm/swarm-stack-projection.test.ts` — passed (44 tests).
+
+Evidence:
+
+- The Swarm projection extracts service image/build, deploy mode/replicas,
+  placement/resources/update/restart policy, endpoint, labels, ports,
+  networks, volumes, configs, and secret references from ordered source files.
+- It is a read-only derived view; extensions and all other original YAML remain
+  in the untouched source document. Inline edits synchronize projection rows
+  by source service name without regenerating source YAML.
+- The compatibility report identifies build/registry requirements and Compose
+  settings whose behavior does not carry into Swarm, with remediation text.
+
+Next:
+
+- Constrain every source-side file reference to a staging root (S3.3).
