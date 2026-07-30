@@ -23,6 +23,13 @@ export function createSwarmStackRepo(db: Database) {
       });
     },
 
+    /** Internal conflict guard: never return this row directly to a caller from another org. */
+    async findByClusterName(clusterId: string, stackName: string): Promise<SwarmStack | undefined> {
+      return db.query.swarmStack.findFirst({
+        where: and(eq(swarmStack.clusterId, clusterId), eq(swarmStack.stackName, stackName)),
+      });
+    },
+
     async listByOrganization(organizationId: string): Promise<SwarmStack[]> {
       return db.query.swarmStack.findMany({
         where: eq(swarmStack.organizationId, organizationId),

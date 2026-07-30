@@ -72,6 +72,8 @@ export const swarmStack = pgTable(
   (t) => [
     uniqueIndex("uq_swarm_stack_project").on(t.projectId),
     uniqueIndex("uq_swarm_stack_cluster_name").on(t.organizationId, t.clusterId, t.stackName),
+    /** One live stack binding may belong to only one OpenShip organization. */
+    uniqueIndex("uq_swarm_stack_cluster_name_global").on(t.clusterId, t.stackName),
     index("idx_swarm_stack_org_manager").on(t.organizationId, t.managerServerId),
     index("idx_swarm_stack_observe")
       .on(t.organizationId, t.managementMode)

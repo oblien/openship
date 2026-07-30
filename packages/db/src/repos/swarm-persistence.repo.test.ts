@@ -53,6 +53,13 @@ describe("Swarm persistence repositories", () => {
     expect(await repos.registry.getInOrganization("registry_a", "org_b")).toBeUndefined();
     expect((await repos.stack.getInOrganization(stack.id, "org_a"))?.sourceYamlEnc).toBe("enc1:source");
     expect((await repos.registry.getInOrganization("registry_a", "org_a"))?.credentialsEnc).toBe("enc1:credentials");
+    await expect(repos.stack.create({
+      id: "swarm_foreign",
+      organizationId: "org_b",
+      projectId: "project_b",
+      clusterId: "cluster_a",
+      stackName: "blog",
+    })).rejects.toThrow();
   });
 
   it("creates monotonic immutable revisions inside the owning organization", async () => {

@@ -425,3 +425,29 @@ Evidence:
 Next:
 
 - Import live stacks as organization-scoped observe-only projects (S4.2).
+
+## S4.2: Observe-only live stack import
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd packages/db lint`, `bun run --cwd apps/api lint`, and
+  `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd packages/db vitest run src/repos/swarm-persistence.repo.test.ts src/migrations-additive.test.ts` — passed (6 tests).
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-observe.service.test.ts` — passed (3 tests).
+
+Evidence:
+
+- `POST /api/swarm/:serverId/stacks/:stackName/observe` re-discovers manager
+  truth, then records a Docker-runtime/Swarm-orchestrator project, `observe`
+  stack binding, redacted live-state digest, and service projections only.
+- Repeating import is idempotent. A global cluster/name uniqueness constraint
+  and an IDOR-safe conflict prevent a different organization from binding the
+  same live stack.
+- The import has no source revision or stack apply path, writes an audit event
+  only for OpenShip metadata, and exposes no Swarm mutation capability.
+
+Next:
+
+- Refresh observed bindings and surface source-link/drift status (S4.3).

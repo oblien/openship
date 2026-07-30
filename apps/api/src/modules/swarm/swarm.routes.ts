@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { localOnly } from "../../middleware";
 import { secureRouter } from "../../lib/secure-router";
 import * as ctrl from "./swarm.controller";
+import * as observe from "./swarm-observe.controller";
 
 const r = secureRouter(new Hono(), {
   module: "swarm",
@@ -22,6 +23,7 @@ r.get("/:serverId/stacks", { tag: "server:read", readOnly: true }, ctrl.stacks);
 r.get("/:serverId/stacks/:stackName", { tag: "server:read", readOnly: true }, ctrl.stack);
 r.get("/:serverId/stacks/:stackName/services", { tag: "server:read", readOnly: true }, ctrl.stackServices);
 r.get("/:serverId/stacks/:stackName/tasks", { tag: "server:read", readOnly: true }, ctrl.stackTasks);
+r.post("/:serverId/stacks/:stackName/observe", { tag: "server:write" }, observe.observe);
 r.get("/:serverId/networks", { tag: "server:read", readOnly: true }, ctrl.networks);
 r.get("/:serverId/volumes", { tag: "server:read", readOnly: true }, ctrl.volumes);
 r.get("/:serverId/configs", { tag: "server:read", readOnly: true }, ctrl.configs);
