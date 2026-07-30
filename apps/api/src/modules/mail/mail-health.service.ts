@@ -118,16 +118,57 @@ export interface MailComponentHealth {
  * with `systemctl show <unit1> <unit2> …` but the result parsing gets
  * fiddly - keep it simple and parallel-friendly via Promise.all.
  */
-export async function checkMailHealth(
-  exec: CommandExecutor,
-): Promise<MailComponentHealth[]> {
-  const results = await Promise.all(
-    MAIL_COMPONENTS.map(async (comp) => probeUnit(exec, comp)),
-  );
+export async function checkMailHealth(exec: CommandExecutor): Promise<MailComponentHealth[]> {
+  const results = await Promise.all(MAIL_COMPONENTS.map(async (comp) => probeUnit(exec, comp)));
   return results;
 }
 
 async function probeUnit(
+  exec: CommandExecutor,
+  comp: MailComponentDef,
+): Promise<MailComponentHealth> {
+  if (comp.key === "spamassassin") {
+    return probeSpamAssassin(exec, comp);
+  }
+  return probeSystemdUnit(exec, comp);
+}
+
+/**
+ * iRedMail installs SpamAssassin but disables the standalone systemd unit —
+ * scoring runs inside amavisd-new. When the standalone unit is missing or
+ * inactive, fall back to "binary present + amavis active".
+ */
+async function probeSpamAssassin(
+  exec: CommandExecutor,
+  comp: MailComponentDef,
+): Promise<MailComponentHealth> {
+  const standalone = await probeSystemdUnit(exec, comp);
+  if (standalone.status === "active") {
+    return standalone;
+  }
+
+  try {
+    const raw = await exec.exec(
+      `command -v spamassassin >/dev/null 2>&1 && systemctl is-active amavis 2>/dev/null || echo inactive`,
+    );
+    if (raw.trim() === "active") {
+      return {
+        key: comp.key,
+        label: comp.label,
+        description: comp.description,
+        unit: comp.unit,
+        status: "active",
+        subState: "integrated",
+      };
+    }
+  } catch {
+    // fall through to standalone result
+  }
+
+  return standalone;
+}
+
+async function probeSystemdUnit(
   exec: CommandExecutor,
   comp: MailComponentDef,
 ): Promise<MailComponentHealth> {
