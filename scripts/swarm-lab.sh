@@ -24,10 +24,18 @@ registry_proof_image="openship-swarm-registry-proof:build"
 registry_auth_secret="openship_lab_registry_auth"
 registry_test_username="openship-lab"
 registry_test_password="registry-proof-only"
+edge_service="openship-swarm-edge-proof"
+edge_backend_service="openship-swarm-edge-backend"
+edge_network="openship-swarm-edge-proof-net"
+edge_config="openship-swarm-edge-proof-site"
+edge_sites_volume="openship-swarm-edge-proof-sites"
+edge_certs_volume="openship-swarm-edge-proof-certs"
+edge_acme_volume="openship-swarm-edge-proof-acme"
+edge_image="${OPENSHIP_EDGE_IMAGE:-ghcr.io/oblien/openship-edge:latest}"
 manager_host="tcp://127.0.0.1:23750"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|edge-proof|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -129,6 +137,14 @@ remove_lab_registry_objects() {
   docker -H "$manager_host" service rm "$registry_service" >/dev/null 2>&1 || true
   docker -H "$manager_host" image rm "$registry_proof_image" >/dev/null 2>&1 || true
   docker -H "$manager_host" secret rm "$registry_auth_secret" >/dev/null 2>&1 || true
+}
+
+remove_edge_proof_objects() {
+  docker -H "$manager_host" service rm "$edge_service" >/dev/null 2>&1 || true
+  docker -H "$manager_host" service rm "$edge_backend_service" >/dev/null 2>&1 || true
+  docker -H "$manager_host" config rm "$edge_config" >/dev/null 2>&1 || true
+  docker -H "$manager_host" network rm "$edge_network" >/dev/null 2>&1 || true
+  docker -H "$manager_host" volume rm "$edge_sites_volume" "$edge_certs_volume" "$edge_acme_volume" >/dev/null 2>&1 || true
 }
 
 start_lab() {
@@ -281,6 +297,76 @@ case "${1:-}" in
     cleanup_registry_auth
     trap - EXIT INT TERM
     ;;
+  edge-proof)
+    require_docker
+    require_lab
+    # The proof intentionally runs without the fixture stack: its Traefik
+    # service owns port 80, exactly the external-router state that production
+    # Edge enablement must refuse rather than take over.
+    if docker -H "$manager_host" service ls --format '{{.Name}} {{.Ports}}' | grep -Eq '(^|_)swarm-traefik .*:(80|443)->'; then
+      echo "Edge proof requires the fixture router to be absent; run cleanup first." >&2
+      exit 1
+    fi
+    remove_edge_proof_objects
+    manager_hostname="$(docker exec "$manager" hostname)"
+    worker_hostname="$(docker exec "$worker" hostname)"
+    docker -H "$manager_host" node update --label-add openship.edge.ingress=true "$manager_hostname" >/dev/null
+    docker -H "$manager_host" network create --driver overlay --attachable=false \
+      --label com.openship.edge.network=true --label com.openship.managed=true "$edge_network" >/dev/null
+    docker -H "$manager_host" service create --name "$edge_backend_service" \
+      --constraint "node.hostname == $worker_hostname" --network "$edge_network" nginx:1.27-alpine >/dev/null
+    attempts=0
+    until docker -H "$manager_host" service ps --format '{{.Node}} {{.CurrentState}}' "$edge_backend_service" | grep -q "^$worker_hostname Running"; do
+      attempts=$((attempts + 1))
+      [ "$attempts" -lt 45 ] || { echo "Edge backend did not run on the worker" >&2; exit 1; }
+      sleep 1
+    done
+    # Swarm configs are immutable data and cause a task replacement on change;
+    # this is the task-safe configuration transport, not a manager docker exec.
+    printf '%s\n' \
+      'server {' \
+      '    listen 80;' \
+      '    server_name edge-proof.invalid;' \
+      '    location / {' \
+      "        proxy_pass http://$edge_backend_service:80;" \
+      '        proxy_set_header Host $host;' \
+      '    }' \
+      '}' | docker -H "$manager_host" config create "$edge_config" - >/dev/null
+    docker -H "$manager_host" service create --name "$edge_service" --replicas 1 \
+      --constraint 'node.labels.openship.edge.ingress == true' \
+      --publish published=80,target=80,protocol=tcp,mode=host \
+      --publish published=443,target=443,protocol=tcp,mode=host \
+      --network "$edge_network" \
+      --label com.openship.edge=swarm --label com.openship.managed=true \
+      --mount "type=volume,source=$edge_sites_volume,target=/usr/local/openresty/nginx/conf/sites-enabled" \
+      --mount "type=volume,source=$edge_certs_volume,target=/etc/letsencrypt" \
+      --mount "type=volume,source=$edge_acme_volume,target=/var/www/acme" \
+      --config "source=$edge_config,target=/usr/local/openresty/nginx/conf/sites-enabled/edge-proof.conf" \
+      "$edge_image" >/dev/null
+    attempts=0
+    until docker -H "$manager_host" service ps --format '{{.Node}} {{.CurrentState}}' "$edge_service" | grep -q "^$manager_hostname Running"; do
+      attempts=$((attempts + 1))
+      [ "$attempts" -lt 60 ] || { docker -H "$manager_host" service ps --no-trunc "$edge_service" >&2 || true; echo "OpenShip Edge did not become ready" >&2; exit 1; }
+      sleep 1
+    done
+    edge_container="$(docker -H "$manager_host" ps -q --filter "label=com.docker.swarm.service.name=$edge_service")"
+    test -n "$edge_container" || { echo "Could not find the current Edge task container" >&2; exit 1; }
+    docker -H "$manager_host" exec "$edge_container" sh -c 'touch /etc/letsencrypt/.openship-edge-proof-state'
+    docker -H "$manager_host" exec "$edge_container" curl -fsS -H 'Host: edge-proof.invalid' http://127.0.0.1/ | grep -q 'Welcome to nginx!'
+    docker -H "$manager_host" service update --force --detach=false "$edge_service" >/dev/null
+    attempts=0
+    while :; do
+      replacement="$(docker -H "$manager_host" ps -q --filter "label=com.docker.swarm.service.name=$edge_service")"
+      if [ -n "$replacement" ] && [ "$replacement" != "$edge_container" ] && docker -H "$manager_host" exec "$replacement" sh -c 'test -f /etc/letsencrypt/.openship-edge-proof-state' >/dev/null 2>&1; then
+        break
+      fi
+      attempts=$((attempts + 1))
+      [ "$attempts" -lt 60 ] || { docker -H "$manager_host" service ps --no-trunc "$edge_service" >&2 || true; echo "Edge replacement did not retain certificate state" >&2; exit 1; }
+      sleep 1
+    done
+    docker -H "$manager_host" exec "$replacement" curl -fsS -H 'Host: edge-proof.invalid' http://127.0.0.1/ | grep -q 'Welcome to nginx!'
+    echo "Edge proof passed: the labelled Edge reached a worker service over the overlay and retained state after replacement."
+    ;;
   events)
     require_docker
     require_lab
@@ -302,6 +388,7 @@ case "${1:-}" in
     wait_for_stack_removal "$managed_stack"
     remove_managed_persistent_objects
     remove_lab_registry_objects
+    remove_edge_proof_objects
     ;;
   down)
     require_docker

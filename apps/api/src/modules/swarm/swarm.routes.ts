@@ -17,6 +17,8 @@ r.use("*", localOnly);
 // No MCP metadata: these targets expose live infrastructure topology and the
 // experimental API has not been reviewed as an MCP capability.
 r.get("/:serverId/probe", { tag: "server:read", readOnly: true }, ctrl.probe);
+r.get("/:serverId/edge", { tag: "server:read", readOnly: true }, ctrl.edgeStatus);
+r.post("/:serverId/edge", { tag: "server:write" }, ctrl.ensureEdge);
 r.get("/:serverId/summary", { tag: "server:read", readOnly: true }, ctrl.summary);
 r.get("/:serverId/nodes", { tag: "server:read", readOnly: true }, ctrl.nodes);
 r.get("/:serverId/stacks", { tag: "server:read", readOnly: true }, ctrl.stacks);

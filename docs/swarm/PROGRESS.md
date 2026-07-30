@@ -812,3 +812,38 @@ Evidence:
   router labels, with credential-shaped values redacted and bounded. The
   dashboard identifies external routing, shows those labels as read-only
   inspection metadata, and offers only syntactically safe inferred HTTPS URLs.
+
+## S10.2: Explicit OpenShip Swarm Edge topology
+
+Status: done
+Commit: pending Phase 10.2 milestone
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/edge.test.ts src/platform.swarm.test.ts` — passed (7 tests).
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-edge.service.test.ts src/modules/swarm/swarm.service.test.ts` — passed (7 tests).
+- TypeScript checks for `packages/adapters` and `apps/api`, plus `sh -n scripts/swarm-lab.sh` — passed.
+- `scripts/swarm-lab.sh up && scripts/swarm-lab.sh edge-proof` — the shell
+  wrapper again omitted its final nested-Docker output, but direct manager
+  inspection confirmed the Edge task running on the labelled manager, proxying
+  through its overlay to the worker backend, and retaining a certificate-volume
+  marker across a forced task replacement. `cleanup && down` then passed.
+
+Evidence:
+
+- `SwarmEdgeManager` creates a labelled, non-attachable cluster overlay and a
+  one-replica Edge service with deliberate host 80/443 publication, an explicit
+  `openship.edge.ingress=true` placement constraint, and persistent sites,
+  ACME, and certificate volumes. It discovers current task IDs from manager
+  truth after rescheduling rather than retaining a task container identity.
+- Edge enablement is an explicit `server:write` API action, separate from every
+  stack claim/deploy operation; its read endpoint exposes current service/task
+  state. It rejects a missing ingress label, a foreign `openship-edge` service,
+  and any other Swarm service already owning 80/443.
+- [ADR-001](ADR-001-openship-swarm-edge.md) records the one-ingress-node
+  persistence and failure behavior, plus the path to HA without app-stack
+  rewrites.
+
+Next:
+
+- Attach only explicitly exposed managed services to the Edge overlay and
+  compile their stable Swarm service-DNS routes (S10.3–S10.4).

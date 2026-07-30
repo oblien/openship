@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
 import { swarmDiscovery } from "./swarm.service";
+import { swarmEdge } from "./swarm-edge.service";
 import { buildSwarmDiscoveryView } from "./swarm-discovery-view";
 
 function target(c: Context) {
@@ -84,4 +85,23 @@ export async function secrets(c: Context) {
   // The adapter only lists id/name/labels/createdAt. It never inspects secret
   // objects, so contents cannot reach this controller or its DTO.
   return c.json({ secrets: snapshot.secrets, observedAt: snapshot.observedAt, diagnostics: snapshot.diagnostics });
+}
+
+/** Cluster singleton status; no project stack operation implicitly creates it. */
+export async function edgeStatus(c: Context) {
+  const { serverId, organizationId } = target(c);
+  return c.json({ edge: await swarmEdge.status(serverId, organizationId) });
+}
+
+/** Explicit operator action only. Normal stack claim/deploy never calls this. */
+export async function ensureEdge(c: Context) {
+  const { serverId, organizationId, ctx } = target(c);
+  const edge = await swarmEdge.ensure(serverId, organizationId);
+  audit.recordAsync(auditContextFrom(c, organizationId, ctx.userId), {
+    eventType: "swarm.edge.enabled",
+    resourceType: "server",
+    resourceId: serverId,
+    after: { serviceId: edge.serviceId, networkName: edge.networkName, nodeIds: edge.nodeIds },
+  });
+  return c.json({ edge }, 201);
 }

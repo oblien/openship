@@ -82,6 +82,15 @@ export {
 } from "./runtime/swarm/ownership";
 export type { StackRuntimeAdapter } from "./runtime/swarm/types";
 export { SwarmRuntime, SwarmRenderError, SwarmDeployError } from "./runtime/swarm/runtime";
+export {
+  SwarmEdgeManager,
+  SwarmEdgeError,
+  SWARM_EDGE_SERVICE_NAME,
+  SWARM_EDGE_NETWORK_NAME,
+  SWARM_EDGE_INGRESS_LABEL,
+  type SwarmEdgeStatus,
+  type EnsureSwarmEdgeInput,
+} from "./runtime/swarm/edge";
 export { SwarmProbeError, normalizeSwarmManagerInfo } from "./runtime/swarm/normalize";
 export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./runtime/swarm/health";
 export type {
