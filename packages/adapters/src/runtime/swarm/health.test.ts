@@ -108,6 +108,52 @@ describe("Swarm service and stack health", () => {
     ).toBe("failed");
   });
 
+  it.each([
+    ["a worker that is down or drained", "no suitable node (node is not available)"],
+    [
+      "an impossible placement constraint",
+      "no suitable node (scheduling constraints not satisfied)",
+    ],
+    ["a missing public image", "No such image: example.invalid/app@sha256:missing"],
+    [
+      "private registry authentication failure",
+      "pull access denied for registry.example.com/team/app",
+    ],
+    [
+      "an unavailable registry",
+      "failed to resolve reference registry.example.com/team/app: unavailable",
+    ],
+    ["a missing external resource", "config external-settings not found"],
+    ["a failed health check", "task: non-zero exit (1)"],
+  ])(
+    "keeps the manager diagnostic for %s visible without inventing a recovery",
+    (_scenario, error) => {
+      const health = deriveSwarmServiceHealth(service, [task({ currentState: "Rejected", error })]);
+      expect(health).toMatchObject({ state: "failed", failed: 1, diagnostics: [error] });
+    },
+  );
+
+  it("reports a drained or lost worker as updating while a replacement is pending", () => {
+    const health = deriveSwarmServiceHealth({ ...service, desiredReplicas: 2 }, [
+      task({ id: "surviving", slot: 1 }),
+      task({ id: "replacement", slot: 2, currentState: "Preparing" }),
+    ]);
+    expect(health).toMatchObject({ state: "updating", running: 1, pending: 1 });
+  });
+
+  it("distinguishes a paused update from an automatic rollback", () => {
+    expect(
+      deriveSwarmServiceHealth({ ...service, updateState: "paused" }, [
+        task({ currentState: "Running" }),
+      ]),
+    ).toMatchObject({ state: "paused" });
+    expect(
+      deriveSwarmServiceHealth({ ...service, updateState: "rollback_completed" }, [
+        task({ currentState: "Running" }),
+      ]),
+    ).toMatchObject({ state: "failed" });
+  });
+
   it("derives aggregate stack states without treating manager loss as a scheduler failure", () => {
     expect(
       deriveSwarmStackHealth({
