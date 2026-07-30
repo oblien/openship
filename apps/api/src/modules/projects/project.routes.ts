@@ -45,7 +45,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
-import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, ScaleSwarmServiceBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
+import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, ScaleSwarmServiceBody, SetSwarmStackRegistryBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -195,6 +195,11 @@ r.put(
   "/:id/swarm/source",
   { tag: "project:write", localOnly: true, body: UpdateSwarmStackSourceBody },
   swarmSource.replace,
+);
+r.patch(
+  "/:id/swarm/registry",
+  { tag: "project:write", localOnly: true, body: SetSwarmStackRegistryBody },
+  swarmSource.setRegistry,
 );
 r.post(
   "/:id/swarm/claim",

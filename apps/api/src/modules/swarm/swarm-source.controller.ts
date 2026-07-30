@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
-import type { TRenderSwarmStackSourceBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
+import type { TRenderSwarmStackSourceBody, TSetSwarmStackRegistryBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
 import * as source from "./swarm-source.service";
 
 export async function get(c: Context) {
@@ -46,6 +46,19 @@ export async function replace(c: Context) {
       version: result.version,
       digest: result.digest,
     },
+  });
+  return c.json({ source: result });
+}
+
+export async function setRegistry(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<TSetSwarmStackRegistryBody>();
+  const result = await source.setStackRegistry(c.req.param("id")!, ctx.organizationId, body.registryId);
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "swarm.stack.registry.set",
+    resourceType: "project",
+    resourceId: c.req.param("id")!,
+    after: { registryId: result.registryId },
   });
   return c.json({ source: result });
 }

@@ -46,7 +46,23 @@ async function stackForProject(projectId: string, organizationId: string) {
 }
 
 export async function getStackSource(projectId: string, organizationId: string) {
-  return serializeStackSource(await stackForProject(projectId, organizationId));
+  const stack = await stackForProject(projectId, organizationId);
+  return serializeStackSource(stack);
+}
+
+/** Changes metadata only; no image, service, or manager mutation occurs here. */
+export async function setStackRegistry(projectId: string, organizationId: string, registryId: string | null) {
+  const stack = await stackForProject(projectId, organizationId);
+  if (registryId) {
+    const registry = await repos.containerRegistry.getInOrganization(registryId, organizationId);
+    if (!registry) throw new NotFoundError("Container registry", registryId);
+  }
+  const updated = await repos.swarmStack.updateInOrganization(stack.id, organizationId, {
+    registryId,
+    withRegistryAuth: !!registryId,
+  });
+  if (!updated) throw new NotFoundError("Swarm stack", stack.id);
+  return serializeStackSource(updated);
 }
 
 function sourceError(message: string, code: string): AppError {

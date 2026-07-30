@@ -58,6 +58,13 @@ export const RemoveSwarmStackBody = Type.Object({
 
 export type TRemoveSwarmStackBody = Static<typeof RemoveSwarmStackBody>;
 
+/** Attach an organization-scoped OCI registry to this authoritative stack. */
+export const SetSwarmStackRegistryBody = Type.Object({
+  registryId: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+});
+
+export type TSetSwarmStackRegistryBody = Static<typeof SetSwarmStackRegistryBody>;
+
 /** Typed-name confirmation before returning a stack to another controller. */
 export const ReleaseSwarmManagementBody = Type.Object({
   confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),
