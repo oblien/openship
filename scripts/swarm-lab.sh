@@ -17,7 +17,7 @@ fixture_stack="openship-swarm-fixture"
 manager_host="tcp://127.0.0.1:23750"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -94,6 +94,45 @@ case "${1:-}" in
     require_lab
     docker -H "$manager_host" stack services "$fixture_stack"
     docker -H "$manager_host" stack ps --no-trunc "$fixture_stack"
+    ;;
+  observe-proof)
+    require_docker
+    require_lab
+    command -v bun >/dev/null 2>&1 || { echo "bun is required for the observe proof" >&2; exit 1; }
+    event_file=$(mktemp "${TMPDIR:-/tmp}/openship-swarm-observe-events.XXXXXX")
+    event_pid=""
+    stop_events() {
+      if [ -n "$event_pid" ]; then
+        kill "$event_pid" >/dev/null 2>&1 || true
+        wait "$event_pid" 2>/dev/null || true
+      fi
+    }
+    trap stop_events EXIT INT TERM
+    # Capture all workload-relevant resource classes on the nested manager.
+    # The fixture must already be stable before this command is run.
+    docker -H "$manager_host" events --since "$(date +%s)" --format '{{json .}}' >"$event_file" 2>&1 &
+    event_pid=$!
+    sleep 1
+    # The harness imports the API's service factories. Supply an isolated,
+    # disposable internal token solely to satisfy normal API configuration
+    # validation; it is never sent to Docker or persisted.
+    INTERNAL_TOKEN="openship-swarm-observe-proof-internal-token-0001" DOCKER_HOST="$manager_host" OPENSHIP_SWARM_FIXTURE_STACK="$fixture_stack" bun "$repo_root/scripts/swarm-observe-harness.ts"
+    sleep 1
+    stop_events
+    event_pid=""
+    trap - EXIT INT TERM
+    # Swarm task lifecycle appears as Docker container events. A stable fixture
+    # should produce no event at all for this sequence; fail closed on every
+    # lifecycle action that changes a service/task/resource.
+    mutations=$(grep -E '"Type":"(service|network|config|secret|volume|container)".*"Action":"(create|update|remove|destroy|start|stop|die|kill|restart|pause|unpause)"' "$event_file" || true)
+    if [ -n "$mutations" ]; then
+      echo "Observe-only proof detected Docker workload mutation events:" >&2
+      echo "$mutations" >&2
+      echo "Full event capture: $event_file" >&2
+      exit 1
+    fi
+    echo "Observe-only proof passed: no service, task, network, config, secret, or volume mutation events."
+    echo "Event capture: $event_file"
     ;;
   events)
     require_docker

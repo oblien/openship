@@ -482,7 +482,7 @@ Next:
 ## S4.4: Observe-mode dashboard flow
 
 Status: done
-Commit: pending
+Commit: 12a1a682
 Tests run:
 
 - `bunx tsc --noEmit -p apps/api/tsconfig.json` and
@@ -512,3 +512,32 @@ Next:
 
 - Record reproducible Docker-event evidence for repeated observe-mode polling,
   import, refresh, and source validation (S4.5).
+
+## S4.5: Zero-mutation coexistence proof
+
+Status: done
+Commit: pending
+Tests run:
+
+- `sh -n scripts/swarm-lab.sh` and TypeScript checks for `apps/api` and
+  `packages/adapters` — passed.
+- `scripts/swarm-lab.sh up`, `scripts/swarm-lab.sh deploy`, and
+  `scripts/swarm-lab.sh observe-proof` — passed against the disposable nested
+  manager and worker on July 30, 2026.
+
+Evidence:
+
+- `observe-proof` records manager Docker events around two probe/discovery
+  passes, initial and idempotent observe import, two observation refreshes,
+  inline source validation, and Docker-native `stack config` rendering.
+- The run completed with no create, update, remove, or task lifecycle event
+  for services, task containers, networks, configs, secrets, or volumes. Its
+  JSON event capture was retained in the system temporary directory by the
+  harness for immediate inspection.
+- The proof uses the labelled Docker-in-Docker fixture and in-memory OpenShip
+  persistence only. It does not contact a non-lab manager or a developer DB.
+
+Next:
+
+- Complete Gate A review, then begin the prebuilt-image managed stack apply
+  path (Phase 5).
