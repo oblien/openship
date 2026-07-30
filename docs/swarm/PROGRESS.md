@@ -1145,3 +1145,42 @@ Next:
 
 - Detect and clearly explain node-local storage risk before a stateful Swarm
   service is allowed to reschedule freely (S12.3).
+
+## S12.3: Node-local storage risk detection
+
+Status: done
+Commit: pending storage-risk completion slice
+Tests run:
+
+- `bun --filter @repo/db test src/migrations-additive.test.ts src/repos/swarm-persistence.repo.test.ts`
+  — passed (8 tests).
+- `bun --filter @repo/api test src/modules/swarm/swarm-compatibility.test.ts src/modules/swarm/swarm-source.model.test.ts src/modules/deployments/swarm/deploy.service.test.ts`
+  — passed (25 tests).
+- `bun run --cwd packages/db lint`, `bun run --cwd apps/api lint`,
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json`, and `git diff --check`
+  — passed.
+
+Evidence:
+
+- Render and deploy preflight classify every declared storage mount as bind,
+  local named volume, shared/distributed volume, tmpfs, or unknown driver.
+  The classification uses only rendered Compose and manager metadata; it never
+  reads application data or secret payloads.
+- An unconstrained local Postgres-style volume raises a high-severity warning.
+  A node-label constraint selecting exactly one ready node changes that to a
+  non-portable/pinned warning rather than implying availability. Unverifiable
+  bind paths are likewise high-severity, while tmpfs and shared NFS-like
+  driver options describe their limits without claiming that storage is HA.
+- A project-scoped acknowledgement API persists only the exact reviewed
+  service/mount finding. Suppressed findings are non-blocking by design; a
+  source or mount change produces a different key and must be reviewed again.
+  Preview responses expose this key and the dashboard styles unacknowledged
+  bind/unpinned-local risks as high severity.
+- Migration journal entries now register both managed-input persistence and
+  storage acknowledgement migrations; the repository migration test executes
+  them successfully on a fresh database.
+
+Next:
+
+- Preserve effective volume and network identities during claim, deploy,
+  rollback, and release (S12.4).
