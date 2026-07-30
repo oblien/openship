@@ -194,13 +194,23 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
           </span>
         )}
 
-        {/* Hosting target. max-w widened - 120px truncated real server
-            names (e.g. "Unknown" from an unnamed/auto-detected server)
-            mid-word even on desktop, where the row has room to spare. */}
+        {/* Hosting target. A fixed max-w on the label truncated real server
+            names mid-word once several badges shared this row (the row's
+            overflow-hidden hard-clips at the box edge - it doesn't ellipsize
+            per item), and did so differently depending on how many sibling
+            badges were visible at a given width. Icon is always shown (with
+            a native title tooltip for the icon-only sizes); the label text
+            only renders as a DOM node from md up - `hidden` removes it from
+            layout entirely rather than shrinking it, so it never contributes
+            partial-width overflow, and once it does render it's unclamped
+            (whitespace-nowrap, no max-w) so it can never cut mid-word. */}
         {hosting && (
-          <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+          <span
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0"
+            title={hosting.label}
+          >
             {hosting.icon}
-            <span className="truncate max-w-[160px] lg:max-w-[220px]">{hosting.label}</span>
+            <span className="hidden whitespace-nowrap md:inline">{hosting.label}</span>
           </span>
         )}
 
