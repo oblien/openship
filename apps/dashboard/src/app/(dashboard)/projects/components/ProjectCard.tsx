@@ -154,8 +154,11 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
         )}
       </div>
 
-      {/* Name + domain */}
-      <div className="min-w-0 flex-shrink-0 w-44 lg:w-56 text-start">
+      {/* Name + domain. Narrower on mobile - the fixed desktop column width
+          (w-44/w-56) left no room for the rest of the row on a phone-width
+          viewport, forcing the row wider than the screen so the domain line
+          rendered past the visible edge instead of actually truncating. */}
+      <div className="min-w-0 w-32 flex-shrink-0 sm:w-44 lg:w-56 text-start">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-medium text-foreground truncate">{project.name}</p>
           {project.activeVersion != null && (
@@ -191,11 +194,13 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
           </span>
         )}
 
-        {/* Hosting target */}
+        {/* Hosting target. max-w widened - 120px truncated real server
+            names (e.g. "Unknown" from an unnamed/auto-detected server)
+            mid-word even on desktop, where the row has room to spare. */}
         {hosting && (
           <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
             {hosting.icon}
-            <span className="truncate max-w-[120px]">{hosting.label}</span>
+            <span className="truncate max-w-[160px] lg:max-w-[220px]">{hosting.label}</span>
           </span>
         )}
 
