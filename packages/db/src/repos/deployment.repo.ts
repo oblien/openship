@@ -22,6 +22,23 @@ export function createDeploymentRepo(db: Database) {
       });
     },
 
+    /**
+     * How many projects have their CURRENTLY-ACTIVE deployment running on this
+     * server. Used to gate server deletion: hard-deleting a server with active
+     * deployments orphans their running containers (server delete doesn't enqueue
+     * orphaned-resource GC — that's project-teardown only). The server binding
+     * lives in the deployment's snapshot meta (`meta->>'serverId'`); joining on
+     * `project.activeDeploymentId` counts only what's live, not stale history.
+     */
+    async countActiveOnServer(serverId: string): Promise<number> {
+      const rows = await db
+        .select({ id: project.id })
+        .from(project)
+        .innerJoin(deployment, eq(project.activeDeploymentId, deployment.id))
+        .where(sql`${deployment.meta} ->> 'serverId' = ${serverId}`);
+      return rows.length;
+    },
+
     /** All deployments in a given status (e.g. "reconciling") — drives the
      *  reconcile sweep. Bounded to avoid pulling an unbounded history. */
     async listByStatus(status: string, limit = 200) {
