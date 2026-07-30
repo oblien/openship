@@ -12,6 +12,9 @@
   },
   "connect": {
     "connectGithub": "Connect GitHub",
+    "connectGitlab": "Connect GitLab",
+    "connectGitlabDesc": "Connect a GitLab account to browse namespaces and deploy your projects directly from GitLab.",
+    "connectWithPat": "Connect with a personal access token",
     "manageInSettings": "Manage in Settings",
     "terminal": {
       "title": "Connect GitHub",

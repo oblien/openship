@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Gitlab, Loader2, Settings, Key } from "lucide-react";
+import { useI18n } from "@/components/i18n-provider";
 
 /**
  * Connect-GitLab prompt for the Library page. Simpler than the GitHub
@@ -19,6 +20,9 @@ export function GitLabConnectPrompt({
   onConnect: () => void;
   oauthConfigured: boolean;
 }) {
+  const { t } = useI18n();
+  const c = t.library.connect;
+
   return (
     <div className="bg-card rounded-2xl border border-border/50">
       <div className="px-6 py-10 text-center">
@@ -26,9 +30,9 @@ export function GitLabConnectPrompt({
           <Gitlab className="size-8 text-orange-500" />
         </div>
 
-        <h3 className="text-lg font-medium text-foreground/85 mb-1.5">Connect GitLab</h3>
+        <h3 className="text-lg font-medium text-foreground/85 mb-1.5">{c.connectGitlab}</h3>
         <p className="text-sm text-muted-foreground max-w-md mx-auto mb-7 leading-relaxed">
-          Connect a GitLab account to browse namespaces and deploy your projects directly from GitLab.
+          {c.connectGitlabDesc}
         </p>
 
         <div className="flex flex-col items-center gap-3">
@@ -41,12 +45,12 @@ export function GitLabConnectPrompt({
               {connecting ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  Connecting…
+                  {c.default.connecting}
                 </>
               ) : (
                 <>
                   <Gitlab className="size-4" />
-                  Connect GitLab
+                  {c.connectGitlab}
                 </>
               )}
             </button>
@@ -56,7 +60,7 @@ export function GitLabConnectPrompt({
               className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all"
             >
               <Key className="size-4" />
-              Connect with a personal access token
+              {c.connectWithPat}
             </Link>
           )}
         </div>
@@ -67,7 +71,7 @@ export function GitLabConnectPrompt({
             className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
           >
             <Settings className="size-3.5" />
-            Manage in Settings
+            {c.manageInSettings}
           </Link>
         </div>
       </div>

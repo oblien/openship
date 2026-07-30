@@ -299,7 +299,7 @@ export const GitSettings = () => {
               className="inline-flex items-center gap-2 rounded-xl bg-foreground/[0.06] px-4 py-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.1] disabled:opacity-50"
             >
               {gitlab.connecting ? <Loader2 className="size-4 animate-spin" /> : <Gitlab className="size-4" />}
-              {gitlab.connecting ? t.projectSettings.git.connectFirst.connecting : "Connect GitLab"}
+              {gitlab.connecting ? t.projectSettings.git.connectFirst.connecting : t.projectSettings.git.connectFirst.connectGitlab}
             </button>
           </div>
         </div>

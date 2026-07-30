@@ -5,6 +5,7 @@ import { Gitlab, Unplug, RefreshCw, Key, ExternalLink } from "lucide-react";
 import { useGitLab } from "@/context/GitLabContext";
 import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { SettingsSection } from "./SettingsSection";
 
 /**
@@ -26,6 +27,8 @@ export function GitLabConnection() {
   } = useGitLab();
   const { showModal, hideModal } = useModal();
   const { showToast } = useToast();
+  const { t } = useI18n();
+  const g = t.settings.gitlab;
 
   const [showPatForm, setShowPatForm] = useState(false);
   const [pat, setPat] = useState("");
@@ -37,13 +40,12 @@ export function GitLabConnection() {
 
   const promptDisconnect = () => {
     const modalId = showModal({
-      title: "Disconnect GitLab?",
-      message:
-        "This removes your GitLab connection from Openship. Projects already linked to a GitLab repo keep their link, but you'll need to reconnect to browse or bind new ones.",
+      title: g.disconnectTitle,
+      message: g.disconnectBody,
       buttons: [
-        { label: "Cancel", variant: "secondary", onClick: () => hideModal(modalId) },
+        { label: t.settings.common.cancel, variant: "secondary", onClick: () => hideModal(modalId) },
         {
-          label: "Disconnect",
+          label: g.disconnect,
           variant: "danger",
           onClick: async () => {
             hideModal(modalId);
@@ -70,9 +72,9 @@ export function GitLabConnection() {
       if (res.success) {
         setPat("");
         setShowPatForm(false);
-        showToast("GitLab connected", "success", "GitLab");
+        showToast(g.toastConnected, "success", g.toastTitle);
       } else if (res.error) {
-        showToast(res.error, "error", "GitLab");
+        showToast(res.error, "error", g.toastTitle);
       }
     } finally {
       setSubmittingPat(false);
@@ -82,13 +84,17 @@ export function GitLabConnection() {
   return (
     <SettingsSection
       icon={Gitlab}
-      title={connected && state.login ? `GitLab — @${state.login}` : "GitLab"}
+      title={
+        connected && state.login
+          ? interpolate(g.titleWithLogin, { login: state.login })
+          : g.title
+      }
       description={
         connected
           ? state.mode === "pat"
-            ? `Connected via personal access token · ${state.baseUrl}`
-            : "Connected via OAuth"
-          : "Connect GitLab to browse and deploy your projects"
+            ? interpolate(g.connectedPat, { baseUrl: state.baseUrl })
+            : g.connectedOauth
+          : g.connectPrompt
       }
       iconBg="bg-orange-500/10"
       iconColor="text-orange-500"
@@ -96,7 +102,7 @@ export function GitLabConnection() {
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
           <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-          Checking connection…
+          {g.checkingConnection}
         </div>
       ) : connected ? (
         <div className="space-y-4">
@@ -112,7 +118,7 @@ export function GitLabConnection() {
               <p className="text-sm font-medium text-foreground truncate">@{state.login}</p>
             </div>
             <span className="text-[10px] font-medium text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">
-              {state.mode === "pat" ? "PAT" : "OAuth"}
+              {state.mode === "pat" ? g.patBadge : g.oauthBadge}
             </span>
           </div>
 
@@ -123,7 +129,7 @@ export function GitLabConnection() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-muted/60 rounded-lg border border-border/50 transition-colors"
             >
-              Manage on GitLab
+              {g.manageOnGitlab}
               <ExternalLink className="size-3" />
             </a>
             <button
@@ -131,16 +137,13 @@ export function GitLabConnection() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-danger bg-danger-bg hover:bg-danger-bg rounded-lg border border-danger-border transition-colors"
             >
               <Unplug className="size-3.5" />
-              Disconnect
+              {g.disconnect}
             </button>
           </div>
         </div>
       ) : (
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Connect a GitLab account to browse namespaces, deploy projects, and
-            bind existing projects to a GitLab repo.
-          </p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{g.intro}</p>
 
           <div className="flex flex-wrap items-center gap-2">
             {state.oauthConfigured && (
@@ -152,12 +155,12 @@ export function GitLabConnection() {
                 {connecting ? (
                   <>
                     <RefreshCw className="size-4 animate-spin" />
-                    Connecting…
+                    {g.connecting}
                   </>
                 ) : (
                   <>
                     <Gitlab className="size-4" />
-                    Connect GitLab
+                    {g.connect}
                   </>
                 )}
               </button>
@@ -167,25 +170,26 @@ export function GitLabConnection() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-foreground bg-muted/40 hover:bg-muted/60 rounded-lg border border-border/50 transition-colors"
             >
               <Key className="size-3.5" />
-              {showPatForm ? "Cancel" : "Use a personal access token"}
+              {showPatForm ? g.cancelPat : g.usePat}
             </button>
           </div>
 
           {showPatForm && (
             <div className="space-y-2 pt-1">
               <label className="block space-y-1">
-                <span className="text-xs text-muted-foreground">GitLab URL</span>
+                <span className="text-xs text-muted-foreground">{g.urlLabel}</span>
                 <input
                   type="url"
                   value={patBaseUrl}
                   onChange={(e) => setPatBaseUrl(e.target.value)}
-                  placeholder="https://gitlab.com"
+                  placeholder={g.urlPlaceholder}
                   className="w-full px-3 py-1.5 text-sm rounded-lg border border-border/50 bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </label>
               <p className="text-xs text-muted-foreground/70">
-                Create a token with the <code className="px-1 py-0.5 rounded bg-muted/60 font-mono">api</code>{" "}
-                scope at{" "}
+                {g.patHintPrefix}{" "}
+                <code className="px-1 py-0.5 rounded bg-muted/60 font-mono">{g.patHintScope}</code>{" "}
+                {g.patHintMid}{" "}
                 <a
                   href={`${effectivePatBase}/-/user_settings/personal_access_tokens`}
                   target="_blank"
@@ -204,7 +208,7 @@ export function GitLabConnection() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") void handlePatSubmit();
                   }}
-                  placeholder="glpat-xxxxxxxxxxxxxxxxxxxx"
+                  placeholder={g.patPlaceholder}
                   className="flex-1 min-w-0 px-3 py-1.5 text-sm rounded-lg border border-border/50 bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
                 <button
@@ -212,7 +216,7 @@ export function GitLabConnection() {
                   disabled={!pat.trim() || submittingPat}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {submittingPat ? <RefreshCw className="size-3.5 animate-spin" /> : "Connect"}
+                  {submittingPat ? <RefreshCw className="size-3.5 animate-spin" /> : g.patSubmit}
                 </button>
               </div>
             </div>
