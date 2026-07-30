@@ -79,3 +79,15 @@ Next:
 
 - Publish the tracker and draft review slice (S0.3), then begin the durable
   orchestration domain model.
+
+## S0.3: Publish implementation intent
+
+Status: in progress
+
+- Tracking issue: [#316 — Docker Swarm stack-native deployment support](https://github.com/oblien/openship/issues/316)
+- Related operator safety issue: [#311](https://github.com/oblien/openship/issues/311)
+- Related clustering/storage roadmap context: [#163](https://github.com/oblien/openship/issues/163)
+
+Next:
+
+- Push S0.1–S0.2 and open the linked draft PR.
