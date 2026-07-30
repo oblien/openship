@@ -81,6 +81,11 @@ export const SetSwarmStorageAcknowledgementsBody = Type.Object({
 });
 export type TSetSwarmStorageAcknowledgementsBody = Static<typeof SetSwarmStorageAcknowledgementsBody>;
 
+export const SetSwarmVolumeReplacementAcknowledgementsBody = Type.Object({
+  acknowledgements: Type.Array(Type.String({ minLength: 5, maxLength: 512 }), { maxItems: 100, uniqueItems: true }),
+});
+export type TSetSwarmVolumeReplacementAcknowledgementsBody = Static<typeof SetSwarmVolumeReplacementAcknowledgementsBody>;
+
 /** Typed-name confirmation before returning a stack to another controller. */
 export const ReleaseSwarmManagementBody = Type.Object({
   confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),

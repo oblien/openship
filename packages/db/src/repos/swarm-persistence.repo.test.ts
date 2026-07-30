@@ -149,4 +149,10 @@ describe("Swarm persistence repositories", () => {
     expect(await repos.stack.updateInOrganization("swarm_a", "org_b", { storageAcknowledgements: [] })).toBeUndefined();
     expect((await repos.stack.getInOrganization("swarm_a", "org_a"))?.storageAcknowledgements).toEqual(acknowledgements);
   });
+
+  it("persists explicit stateful-volume replacement acknowledgements", async () => {
+    const acknowledgements = ["database:production-db:replacement-db"];
+    const updated = await repos.stack.updateInOrganization("swarm_a", "org_a", { volumeReplacementAcknowledgements: acknowledgements });
+    expect(updated?.volumeReplacementAcknowledgements).toEqual(acknowledgements);
+  });
 });

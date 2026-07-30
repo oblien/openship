@@ -45,9 +45,12 @@ resource_proof_stack="openship-swarm-resource-proof"
 resource_proof_project="openship-resource-proof"
 managed_input_proof_stack="openship-swarm-managed-input-proof"
 managed_input_proof_project="openship-managed-input-proof"
+resource_identity_proof_stack="openship-swarm-resource-identity-proof"
+resource_identity_proof_volume="openship-resource-identity-proof-data"
+resource_identity_proof_network="openship-resource-identity-proof-net"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|edge-proof|cutover-proof|rollback-proof|resource-proof|managed-input-proof|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|edge-proof|cutover-proof|rollback-proof|resource-proof|managed-input-proof|resource-identity-proof|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -201,6 +204,13 @@ remove_managed_input_proof_objects() {
   wait_for_stack_removal "$managed_input_proof_stack"
   docker -H "$manager_host" config ls --filter "label=com.openship.swarm.project-id=$managed_input_proof_project" -q | xargs -r docker -H "$manager_host" config rm >/dev/null 2>&1 || true
   docker -H "$manager_host" secret ls --filter "label=com.openship.swarm.project-id=$managed_input_proof_project" -q | xargs -r docker -H "$manager_host" secret rm >/dev/null 2>&1 || true
+}
+
+remove_resource_identity_proof_objects() {
+  docker -H "$manager_host" stack rm "$resource_identity_proof_stack" >/dev/null 2>&1 || true
+  wait_for_stack_removal "$resource_identity_proof_stack"
+  docker -H "$manager_host" volume rm "$resource_identity_proof_volume" >/dev/null 2>&1 || true
+  docker -H "$manager_host" network rm "$resource_identity_proof_network" >/dev/null 2>&1 || true
 }
 
 start_lab() {
@@ -491,6 +501,14 @@ case "${1:-}" in
     DOCKER_HOST="$manager_host" bun "$repo_root/scripts/swarm-managed-input-harness.ts"
     remove_managed_input_proof_objects
     ;;
+  resource-identity-proof)
+    require_docker
+    require_lab
+    command -v bun >/dev/null 2>&1 || { echo "bun is required for the resource identity proof" >&2; exit 1; }
+    remove_resource_identity_proof_objects
+    DOCKER_HOST="$manager_host" bun "$repo_root/scripts/swarm-resource-identity-harness.ts"
+    remove_resource_identity_proof_objects
+    ;;
   events)
     require_docker
     require_lab
@@ -517,6 +535,7 @@ case "${1:-}" in
     remove_rollback_proof_objects
     remove_resource_proof_objects
     remove_managed_input_proof_objects
+    remove_resource_identity_proof_objects
     ;;
   down)
     require_docker

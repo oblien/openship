@@ -108,6 +108,19 @@ export async function setStorageAcknowledgements(
   return serializeStackSource(updated);
 }
 
+export async function setVolumeReplacementAcknowledgements(
+  projectId: string,
+  organizationId: string,
+  acknowledgements: string[],
+) {
+  const stack = await stackForProject(projectId, organizationId);
+  const updated = await repos.swarmStack.updateInOrganization(stack.id, organizationId, {
+    volumeReplacementAcknowledgements: [...new Set(acknowledgements.map((value) => value.trim()).filter(Boolean))].sort(),
+  });
+  if (!updated) throw new NotFoundError("Swarm stack", stack.id);
+  return serializeStackSource(updated);
+}
+
 function sourceError(message: string, code: string): AppError {
   return new AppError(message, 409, code);
 }

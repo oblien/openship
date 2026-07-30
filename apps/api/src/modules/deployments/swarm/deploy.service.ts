@@ -55,6 +55,7 @@ import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
 import { resolveStackSourceFiles, type ResolvedSwarmStackSource } from "../../swarm/swarm-source.service";
 import { planSwarmEdgeAttachments } from "../../swarm/swarm-edge-routing";
+import { changedSwarmVolumeIdentities, claimVolumeIdentityMismatches, swarmResourceIdentities, swarmVolumeReplacementAcknowledgementKey } from "../../swarm/swarm-resource-identities";
 import { planSwarmEdgeRoutes, reconcileSwarmEdgeRoutes } from "../../swarm/swarm-edge-routes";
 import { ensurePendingServiceDomain } from "../../domains/domain.service";
 import { swarmConvergence } from "./convergence.service";
@@ -855,6 +856,34 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         ...sourceManagedResources.filter((resource) => !inputKeys.has(`${resource.kind}:${resource.logicalName}`)),
         ...inputManagedResources,
       ];
+      if (claimPending) {
+        const replacements = claimVolumeIdentityMismatches(initiallyRendered.renderedYaml, stack.stackName, current);
+        const acknowledged = new Set(stack.volumeReplacementAcknowledgements);
+        const unacknowledged = replacements.filter((change) => !acknowledged.has(swarmVolumeReplacementAcknowledgementKey(change)));
+        if (unacknowledged.length > 0) {
+          throw new AppError(
+            `Refusing first claim because it would redirect attached stateful volumes: ${unacknowledged.map((change) => `${change.serviceName}.${change.logicalName} (${change.previousName} → ${change.nextName})`).join(", ")}. Review and explicitly acknowledge this replacement before applying.`,
+            409,
+            "SWARM_CLAIM_VOLUME_IDENTITY_MISMATCH",
+          );
+        }
+      }
+      if (!rollbackRevision && previousRevision?.applyStatus === "ready") {
+        const replacements = changedSwarmVolumeIdentities(
+          retainedRevisionYaml(previousRevision),
+          initiallyRendered.renderedYaml,
+          stack.stackName,
+        );
+        const acknowledged = new Set(stack.volumeReplacementAcknowledgements);
+        const unacknowledged = replacements.filter((change) => !acknowledged.has(swarmVolumeReplacementAcknowledgementKey(change)));
+        if (unacknowledged.length > 0) {
+          throw new AppError(
+            `Refusing to replace stateful Swarm volume identities: ${unacknowledged.map((change) => `${change.logicalName} (${change.previousName} → ${change.nextName})`).join(", ")}. Review and explicitly acknowledge this replacement before applying.`,
+            409,
+            "SWARM_VOLUME_REPLACEMENT_ACK_REQUIRED",
+          );
+        }
+      }
       // Check source-declared external dependencies before creating anything.
       // The later check runs against the rewritten immutable references.
       const sourceCompatibility = evaluateSwarmCompatibility({
@@ -970,6 +999,13 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
                 volumes: resolvedSource.volumes,
                 configs: resolvedSource.configs,
                 secrets: resolvedSource.secrets,
+                resourceIdentities: swarmResourceIdentities(rendered.renderedYaml, stack.stackName).map((resource) => ({
+                  kind: resource.kind,
+                  logicalName: resource.logicalName,
+                  effectiveName: resource.effectiveName,
+                  external: resource.external,
+                  driver: resource.driver,
+                })),
                 managedResources: managedResources.map(({ kind, logicalName, resourceName, contentDigest }) => ({
                   kind,
                   logicalName,

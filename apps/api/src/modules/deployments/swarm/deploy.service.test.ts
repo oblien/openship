@@ -501,6 +501,67 @@ secrets:
     expect(commands.join("\n")).toContain(`docker secret rm '${managed!.resourceName}'`);
   });
 
+  it("blocks a managed source change that would replace an existing stateful volume without acknowledgement", async () => {
+    const retainedYaml = `services:
+  web:
+    image: nginx:1.27-alpine
+    volumes: [database:/var/lib/postgresql/data]
+volumes:
+  database: { name: production-db, external: true }
+`;
+    const retainedRevision = {
+      id: "revision-previous",
+      stackId: stack.id,
+      revision: 2,
+      renderedYamlEnc: retainedYaml,
+      renderedDigest: `sha256:${createHash("sha256").update(retainedYaml).digest("hex")}`,
+      applyStatus: "ready",
+    } as SwarmStackRevision;
+    const test = fixture({
+      stackOverride: { ...stack, lastAppliedRevisionId: retainedRevision.id } as SwarmStack,
+      revision: retainedRevision,
+      renderedYaml: `services:
+  web:
+    image: nginx:1.27-alpine
+    volumes: [database:/var/lib/postgresql/data]
+volumes:
+  database: { name: replacement-db, external: true }
+`,
+    });
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .rejects.toMatchObject({ code: "SWARM_VOLUME_REPLACEMENT_ACK_REQUIRED", statusCode: 409 });
+    expect(test.createRevision).not.toHaveBeenCalled();
+    expect(test.deployStack).not.toHaveBeenCalled();
+  });
+
+  it("blocks a first claim that redirects a live stateful volume before it can apply", async () => {
+    const current = discovery();
+    current.services[0]!.volumes = ["production-db"];
+    const pendingClaim = {
+      ...stack,
+      managementMode: "observe",
+      claimedAt: new Date("2026-07-30T00:00:00.000Z"),
+      driftDetails: { claimLiveDigest: swarmLiveStateDigest(current.services) },
+    } as SwarmStack;
+    const test = fixture({
+      stackOverride: pendingClaim,
+      beforeDiscovery: current,
+      renderedYaml: `services:
+  web:
+    image: nginx:1.27-alpine
+    volumes: [database:/var/lib/postgresql/data]
+volumes:
+  database: { name: replacement-db, external: true }
+`,
+    });
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .rejects.toMatchObject({ code: "SWARM_CLAIM_VOLUME_IDENTITY_MISMATCH", statusCode: 409 });
+    expect(test.createRevision).not.toHaveBeenCalled();
+    expect(test.deployStack).not.toHaveBeenCalled();
+  });
+
   it("rebuilds every source service when the stack source changes or changed paths are incomplete", () => {
     const buildable: Array<{ service: SwarmServiceProjection; build: { context: string } }> = [
       { service: { sourceServiceName: "web", mode: "replicated", build: "web", sourceState: "present" }, build: { context: "web" } },

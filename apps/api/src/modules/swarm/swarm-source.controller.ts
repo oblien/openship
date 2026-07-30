@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
-import type { TRenderSwarmStackSourceBody, TSetSwarmRoutingModeBody, TSetSwarmStackRegistryBody, TSetSwarmStorageAcknowledgementsBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
+import type { TRenderSwarmStackSourceBody, TSetSwarmRoutingModeBody, TSetSwarmStackRegistryBody, TSetSwarmStorageAcknowledgementsBody, TSetSwarmVolumeReplacementAcknowledgementsBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
 import * as source from "./swarm-source.service";
 
 export async function get(c: Context) {
@@ -85,6 +85,19 @@ export async function setStorageAcknowledgements(c: Context) {
     resourceType: "project",
     resourceId: c.req.param("id")!,
     after: { count: result.storageAcknowledgements.length },
+  });
+  return c.json({ source: result });
+}
+
+export async function setVolumeReplacementAcknowledgements(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<TSetSwarmVolumeReplacementAcknowledgementsBody>();
+  const result = await source.setVolumeReplacementAcknowledgements(c.req.param("id")!, ctx.organizationId, body.acknowledgements);
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "swarm.stack.volume-replacement-acknowledgements.set",
+    resourceType: "project",
+    resourceId: c.req.param("id")!,
+    after: { count: result.volumeReplacementAcknowledgements.length },
   });
   return c.json({ source: result });
 }

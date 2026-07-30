@@ -61,6 +61,8 @@ export const swarmStack = pgTable(
     withRegistryAuth: boolean("with_registry_auth").notNull().default(false),
     /** Exact storage-risk findings an operator has explicitly reviewed as safe. */
     storageAcknowledgements: jsonb("storage_acknowledgements").$type<string[]>().notNull().default([]),
+    /** Explicit approval for replacing a previously attached stateful volume identity. */
+    volumeReplacementAcknowledgements: jsonb("volume_replacement_acknowledgements").$type<string[]>().notNull().default([]),
     lastObservedDigest: text("last_observed_digest"),
     /** Kept as an ID rather than a cyclic FK; revision ownership is enforced through stackId. */
     lastAppliedRevisionId: text("last_applied_revision_id"),
