@@ -234,6 +234,14 @@
   display: none;
 }
 
+/* `scrollbar-hide` is referenced by Tabs.tsx and ProjectMobileTabs but was
+ * never actually defined - the global ::-webkit-scrollbar rule above already
+ * hides WebKit scrollbars everywhere, so it went unnoticed there, but Firefox
+ * doesn't honor that rule and needs `scrollbar-width` instead. */
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+
 button {
   cursor: pointer;
 }

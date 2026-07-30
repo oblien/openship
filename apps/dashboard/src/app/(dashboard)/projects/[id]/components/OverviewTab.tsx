@@ -227,7 +227,7 @@ export const OverviewTab = () => {
           )}
           {/* Which self-hosted server this runs on — links to the server page. */}
           {deployTarget === "server" && (showProjectInfoSkeleton || projectData.serverName) && (
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <span className="text-[13px] text-muted-foreground">
                 {t.projects.overview.server}
               </span>
@@ -236,13 +236,13 @@ export const OverviewTab = () => {
               ) : projectData.serverId ? (
                 <Link
                   href={`/servers/${projectData.serverId}`}
-                  className="inline-flex max-w-[180px] items-center gap-1.5 truncate text-[13px] font-medium text-foreground transition-colors hover:text-primary"
+                  className="inline-flex min-w-0 items-center gap-1.5 truncate text-[13px] font-medium text-foreground transition-colors hover:text-primary sm:max-w-[180px]"
                 >
                   {projectData.serverName}
                   <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
                 </Link>
               ) : (
-                <span className="max-w-[180px] truncate text-[13px] font-medium text-foreground">
+                <span className="min-w-0 truncate text-[13px] font-medium text-foreground sm:max-w-[180px]">
                   {projectData.serverName}
                 </span>
               )}
@@ -252,7 +252,7 @@ export const OverviewTab = () => {
 
         {/* Source & CI/CD */}
         <Card title={t.projects.overview.sourceCicd} icon={GitBranch} iconColor="orange">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-[13px] text-muted-foreground">
               {t.projects.overview.repository}
             </span>
@@ -263,7 +263,7 @@ export const OverviewTab = () => {
                 href={`https://github.com/${projectData.gitOwner}/${projectData.gitRepo}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5 truncate max-w-[180px]"
+                className="text-[13px] font-medium text-foreground hover:text-primary transition-colors inline-flex min-w-0 items-center gap-1.5 truncate sm:max-w-[180px]"
               >
                 {projectData.gitOwner}/{projectData.gitRepo}
                 <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
@@ -543,12 +543,12 @@ function Card({
 
 function Item({ label, value, loading }: { label: string; value: string; loading?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <span className="text-[13px] text-muted-foreground">{label}</span>
       {loading ? (
         <div className="h-[14px] w-24 rounded bg-muted-foreground/20 animate-pulse" />
       ) : (
-        <span className="text-[13px] font-medium text-foreground truncate max-w-[200px]">
+        <span className="min-w-0 truncate text-[13px] font-medium text-foreground sm:max-w-[200px]">
           {value}
         </span>
       )}
