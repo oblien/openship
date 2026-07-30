@@ -132,7 +132,8 @@ function desiredSummary(service: SwarmServiceProjection) {
   };
 }
 
-function liveDigest(services: SwarmServiceState[]): string {
+/** Stable, secret-free live-state fingerprint used to guard a claim/apply. */
+export function swarmLiveStateDigest(services: SwarmServiceState[]): string {
   return sha256(stable(services.map((service) => ({
     sourceServiceName: service.sourceServiceName,
     id: service.id,
@@ -200,7 +201,7 @@ export function previewSwarmStack(input: SwarmPreviewInput): SwarmStackPreview {
   for (const issue of projection.compatibility) {
     if (issue.code === "SWARM_BUILD_REQUIRES_REGISTRY") cannotCompareExactly.push(`${issue.serviceName}: ${issue.message}`);
   }
-  const currentLiveDigest = liveDigest(input.liveServices);
+  const currentLiveDigest = swarmLiveStateDigest(input.liveServices);
   return {
     sourceDigest: input.sourceDigest,
     renderedDigest: input.renderedDigest,

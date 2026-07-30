@@ -74,6 +74,16 @@ export async function replaceStackSource(projectId: string, organizationId: stri
   if (!updated) {
     throw new ConflictError("This stack source changed while you were editing it. Refresh and try again.");
   }
+  // A pending claim binds a reviewed source + live digest. Replacing source
+  // while still observing invalidates that pair; require a fresh confirmation
+  // rather than carrying write authority across an edit.
+  if (updated.managementMode === "observe" && updated.claimedAt) {
+    await repos.swarmStack.updateInOrganization(updated.id, organizationId, {
+      claimedAt: null,
+      driftStatus: "unknown",
+      driftDetails: { summary: "Stack source changed; management claim must be reviewed again." },
+    });
+  }
   // Inline source is available at this boundary, so immediately refresh only
   // the derived service projection. Repository source is projected after its
   // files are staged; adopted stacks retain their observed service projection.

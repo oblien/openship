@@ -34,3 +34,19 @@ export const RenderSwarmStackSourceBody = Type.Object({
 });
 
 export type TRenderSwarmStackSourceBody = Static<typeof RenderSwarmStackSourceBody>;
+
+/** Strong confirmation for the first write to an observed Swarm stack. */
+export const ClaimSwarmStackBody = Type.Object({
+  confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),
+  previewLiveDigest: Type.String({ pattern: "^sha256:[a-f0-9]{64}$" }),
+});
+
+export type TClaimSwarmStackBody = Static<typeof ClaimSwarmStackBody>;
+
+/** Bind an as-yet absent stack name to an existing OpenShip project. */
+export const CreateSwarmStackBindingBody = Type.Object({
+  serverId: Type.String({ minLength: 1 }),
+  stackName: Type.String({ minLength: 1, maxLength: 63 }),
+});
+
+export type TCreateSwarmStackBindingBody = Static<typeof CreateSwarmStackBindingBody>;

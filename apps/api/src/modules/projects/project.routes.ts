@@ -24,6 +24,8 @@ import * as ensureEdgeCtrl from "../domains/ensure-edge.controller";
 import * as incomingWebhooks from "../incoming-webhooks/incoming.controller";
 import * as swarmSource from "../swarm/swarm-source.controller";
 import * as swarmObservation from "../swarm/swarm-observation.controller";
+import * as swarmManagement from "../swarm/swarm-management.controller";
+import * as swarmStack from "../swarm/swarm-stack.controller";
 import {
   CreateProjectBody,
   EnsureProjectBody,
@@ -42,7 +44,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
-import { RenderSwarmStackSourceBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
+import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, RenderSwarmStackSourceBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -170,6 +172,11 @@ r.patch(
 );
 r.delete("/:id", { tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
 r.get("/:id/swarm/source", { tag: "project:read", localOnly: true, readOnly: true }, swarmSource.get);
+r.post(
+  "/:id/swarm/stack",
+  { tag: "project:write", localOnly: true, body: CreateSwarmStackBindingBody },
+  swarmStack.create,
+);
 r.get("/:id/swarm/observation", { tag: "project:read", localOnly: true, readOnly: true }, swarmObservation.status);
 r.post("/:id/swarm/observation/refresh", { tag: "project:read", localOnly: true, readOnly: true }, swarmObservation.refresh);
 r.post(
@@ -186,6 +193,16 @@ r.put(
   "/:id/swarm/source",
   { tag: "project:write", localOnly: true, body: UpdateSwarmStackSourceBody },
   swarmSource.replace,
+);
+r.post(
+  "/:id/swarm/claim",
+  { tag: "project:write", localOnly: true, body: ClaimSwarmStackBody },
+  swarmManagement.claim,
+);
+r.post(
+  "/:id/swarm/release-management",
+  { tag: "project:write", localOnly: true },
+  swarmManagement.release,
 );
 r.get("/:id/info", { tag: "project:read", mcp: { description: "Get a project's detailed info (runtime, build, source)." } }, cloudProjectProxy, ctrl.getInfo);
 r.get("/:id/environments", { tag: "project:read", mcp: { description: "List a project's environments (production / previews)." } }, cloudProjectProxy, ctrl.listEnvironments);

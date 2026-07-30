@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SwarmDiscoverySnapshot } from "@repo/adapters";
 import type { Deployment, Project, SwarmStack } from "@repo/db";
 import { createSwarmDeployService, type SwarmDeployLogger } from "./deploy.service";
+import { swarmLiveStateDigest } from "../../swarm/swarm-preview";
 
 const stack = {
   id: "swarm-blog",
@@ -42,11 +43,12 @@ function discovery(services = true): SwarmDiscoverySnapshot {
   };
 }
 
-function fixture(options: { postDeployError?: Error; deployError?: Error } = {}) {
+function fixture(options: { postDeployError?: Error; deployError?: Error; stackOverride?: SwarmStack } = {}) {
+  const activeStack = options.stackOverride ?? stack;
   const events: string[] = [];
   const createRevision = vi.fn(async () => ({ id: "revision-1", revision: 1 }));
   const updateRevision = vi.fn(async () => ({ id: "revision-1" }));
-  const updateStack = vi.fn(async () => stack);
+  const updateStack = vi.fn(async () => activeStack);
   const syncProjections = vi.fn(async () => [
     { id: "service-web", name: "web", sourceServiceName: "web" },
     { id: "service-worker", name: "worker", sourceServiceName: "worker" },
@@ -70,7 +72,7 @@ function fixture(options: { postDeployError?: Error; deployError?: Error } = {})
   } as unknown as SwarmDeployLogger;
   const service = createSwarmDeployService({
     featureEnabled: () => true,
-    getStack: async () => stack,
+    getStack: async () => activeStack,
     resolvePlatform: async () => ({
       stackRuntime: {
         discover,
@@ -136,5 +138,20 @@ describe("managed Swarm deploy", () => {
       .resolves.toMatchObject({ state: "reconciling", warningMessage: expect.stringContaining("during stack deploy") });
     expect(test.updateRevision).toHaveBeenLastCalledWith("revision-1", "org-a", expect.objectContaining({ applyStatus: "converging" }));
     expect(test.createServiceDeployments).not.toHaveBeenCalled();
+  });
+
+  it("permits exactly the current pending claim, disables first-claim prune, and only then marks the stack managed", async () => {
+    const pendingClaim = {
+      ...stack,
+      managementMode: "observe",
+      claimedAt: new Date("2026-07-30T00:00:00.000Z"),
+      driftDetails: { claimLiveDigest: swarmLiveStateDigest([]) },
+      prune: true,
+    } as SwarmStack;
+    const test = fixture({ stackOverride: pendingClaim });
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .resolves.toMatchObject({ state: "ready" });
+    expect(test.deployStack).toHaveBeenCalledWith(expect.objectContaining({ prune: false }));
+    expect(test.updateStack).toHaveBeenCalledWith("swarm-blog", "org-a", expect.objectContaining({ managementMode: "managed" }));
   });
 });

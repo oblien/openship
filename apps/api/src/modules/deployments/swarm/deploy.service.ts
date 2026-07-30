@@ -31,7 +31,7 @@ import { decryptSecretField, encryptSecretField } from "../../../lib/credential-
 import { resolveTargetPlatform } from "../../../lib/deployment-runtime";
 import { isConnectionLoss } from "../../../lib/remote-state";
 import { evaluateSwarmCompatibility } from "../../swarm/swarm-compatibility";
-import { redactRenderedStackYaml } from "../../swarm/swarm-preview";
+import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm-preview";
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
 
 type SwarmPlatform = Pick<Platform, "stackRuntime">;
@@ -163,6 +163,11 @@ function serviceRefs(stack: SwarmStack, services: SwarmServiceState[]): Record<s
   }]));
 }
 
+function pendingClaimDigest(stack: SwarmStack): string | null {
+  const value = stack.driftDetails?.claimLiveDigest;
+  return typeof value === "string" && value ? value : null;
+}
+
 export type SwarmDeployOutcome = {
   runtimeRef: RuntimeWorkloadRef;
   revisionId: string;
@@ -199,7 +204,8 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       const stack = await deps.getStack(project.id, deployment.organizationId);
       if (!stack) throw new AppError("This project has no Docker Swarm stack binding.", 409, "SWARM_STACK_REQUIRED");
       if (!stack.managerServerId) throw new AppError("This stack no longer has a Swarm manager target.", 409, "SWARM_MANAGER_UNAVAILABLE");
-      if (stack.managementMode !== "managed") {
+      const claimPending = stack.managementMode === "observe" && !!stack.claimedAt;
+      if (stack.managementMode !== "managed" && !claimPending) {
         throw new AppError(
           "This observed stack must be explicitly claimed before OpenShip can apply it.",
           409,
@@ -230,7 +236,16 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         throw new AppError("The configured manager now belongs to a different Swarm cluster.", 409, "SWARM_CLUSTER_MISMATCH");
       }
       const current = stackServices(before, stack.stackName);
-      if (current.some((service) => !isOwnedService(service, stack))) {
+      if (claimPending) {
+        const claimedDigest = pendingClaimDigest(stack);
+        if (!claimedDigest || claimedDigest !== swarmLiveStateDigest(current)) {
+          throw new AppError(
+            "The stack changed after the management claim was reviewed. Refresh the live diff and confirm it again.",
+            409,
+            "SWARM_STACK_CLAIM_STALE",
+          );
+        }
+      } else if (current.some((service) => !isOwnedService(service, stack))) {
         throw new AppError(
           "The target stack contains services that are not labeled as managed by this OpenShip project. Claim it again from a current review before applying.",
           409,
@@ -256,7 +271,11 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           "SWARM_COMPATIBILITY_BLOCKED",
         );
       }
-      const prune = assertSafePrune(stack, current, new Set(resolvedSource.services.map((service) => service.sourceServiceName)));
+      // A first claim never prunes: deletion consent belongs to a later,
+      // separately reviewed managed deployment after labels are verified.
+      const prune = claimPending
+        ? false
+        : assertSafePrune(stack, current, new Set(resolvedSource.services.map((service) => service.sourceServiceName)));
       logger.step("swarm-render", "completed", "Rendered and validated the authoritative Swarm stack configuration");
 
       const startedAt = deps.now();
@@ -394,8 +413,10 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         ...(ready ? { convergedAt: finishedAt } : {}),
       });
       await deps.updateStack(stack.id, deployment.organizationId, {
+        managementMode: "managed",
         sourceStatus: "valid",
         lastAppliedRevisionId: revision.id,
+        lastObservedDigest: swarmLiveStateDigest(live),
         lastObservedAt: finishedAt,
         observedState: observedState(live),
         driftStatus: ready ? "clean" : "unknown",
