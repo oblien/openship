@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
-import type { TRenderSwarmStackSourceBody, TSetSwarmStackRegistryBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
+import type { TRenderSwarmStackSourceBody, TSetSwarmRoutingModeBody, TSetSwarmStackRegistryBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
 import * as source from "./swarm-source.service";
 
 export async function get(c: Context) {
@@ -59,6 +59,19 @@ export async function setRegistry(c: Context) {
     resourceType: "project",
     resourceId: c.req.param("id")!,
     after: { registryId: result.registryId },
+  });
+  return c.json({ source: result });
+}
+
+export async function setRoutingMode(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<TSetSwarmRoutingModeBody>();
+  const result = await source.setStackRoutingMode(c.req.param("id")!, ctx.organizationId, body.routingMode);
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "swarm.stack.routing-mode.set",
+    resourceType: "project",
+    resourceId: c.req.param("id")!,
+    after: { routingMode: result.routingMode },
   });
   return c.json({ source: result });
 }

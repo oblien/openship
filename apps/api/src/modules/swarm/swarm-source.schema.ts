@@ -65,6 +65,13 @@ export const SetSwarmStackRegistryBody = Type.Object({
 
 export type TSetSwarmStackRegistryBody = Static<typeof SetSwarmStackRegistryBody>;
 
+/** Selecting Edge changes desired routing only; it never creates/takes over an Edge. */
+export const SetSwarmRoutingModeBody = Type.Object({
+  routingMode: Type.Union([Type.Literal("external"), Type.Literal("openship-edge")]),
+});
+
+export type TSetSwarmRoutingModeBody = Static<typeof SetSwarmRoutingModeBody>;
+
 /** Typed-name confirmation before returning a stack to another controller. */
 export const ReleaseSwarmManagementBody = Type.Object({
   confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),

@@ -117,6 +117,8 @@ describe("SwarmRuntime manager probe", () => {
       environment: { IMAGE_TAG: "v1", REGEX: "$${1}" },
       ownershipLabels: { web: { "com.openship.stack-id": "swarm_a" } },
       imageOverrides: { web: "registry.example.com/team/blog/web@sha256:deadbeef" },
+      networkAttachments: { web: { networkName: "openship-edge", aliases: ["blog_web"] } },
+      externalNetworks: { "openship-edge": "openship-edge" },
     });
 
     expect(result).toMatchObject({
@@ -128,6 +130,9 @@ describe("SwarmRuntime manager probe", () => {
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.env")).toContain("REGEX='$${1}'");
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("com.openship.stack-id");
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("registry.example.com/team/blog/web@sha256:deadbeef");
+    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain('"openship-edge"');
+    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain('"blog_web"');
+    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("external: true");
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain('version: "3.9"');
     const renderCommand = commands.find((command) => command.includes("docker stack config"))!;
     expect(renderCommand).toContain("env -i PATH=\"$PATH\"");

@@ -847,3 +847,27 @@ Next:
 
 - Attach only explicitly exposed managed services to the Edge overlay and
   compile their stable Swarm service-DNS routes (S10.3–S10.4).
+
+## S10.3: Opt-in routing overlay attachments
+
+Status: done
+Commit: pending Phase 10.3 milestone
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/runtime.test.ts src/runtime/swarm/edge.test.ts` — passed (18 tests).
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-edge-routing.test.ts src/modules/swarm/swarm-source.service.test.ts src/modules/deployments/swarm/deploy.service.test.ts` — passed (14 tests).
+- TypeScript checks for `packages/adapters`, `apps/api`, and `apps/dashboard` — passed.
+
+Evidence:
+
+- `openship-edge` mode is a claim-gated, metadata-only project setting. Selecting
+  it neither creates an Edge nor mutates another router; the dashboard makes
+  the separate Edge-enable requirement clear.
+- Stack rendering accepts generated network attachments and external network
+  declarations in its immutable override. It leaves source files untouched and
+  emits attachments only for enabled Swarm service rows explicitly marked
+  exposed.
+- Each exposed service gets the cluster-owned `openship-edge` network and its
+  full `<stack>_<service>` Swarm DNS alias. Deployment verifies that an explicit
+  Edge and its overlay exist before applying any such attachment, and rejects
+  malformed/missing target ports before mutation.

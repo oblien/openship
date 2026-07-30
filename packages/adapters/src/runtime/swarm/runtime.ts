@@ -104,18 +104,22 @@ function declaredComposeVersion(files: Array<{ path: string; content: string }>,
 function overrideYaml(
   labelsByService: Record<string, Record<string, string>>,
   imageOverrides: Record<string, string>,
+  networkAttachments: Record<string, { networkName: string; aliases?: string[] }>,
+  externalNetworks: Record<string, string>,
   composeVersion: string | null,
 ): string {
   const serviceNames = Array.from(new Set([
     ...Object.keys(labelsByService),
     ...Object.keys(imageOverrides),
+    ...Object.keys(networkAttachments),
   ])).sort((a, b) => a.localeCompare(b));
   const header = composeVersion ? `version: ${JSON.stringify(composeVersion)}\n` : "";
-  if (serviceNames.length === 0) return `${header}services: {}\n`;
+  if (serviceNames.length === 0 && Object.keys(externalNetworks).length === 0) return `${header}services: {}\n`;
   // JSON strings are valid YAML scalars and avoid bespoke quoting rules.
-  return `${header}services:\n${serviceNames.map((service) => {
+  const services = serviceNames.length === 0 ? "services: {}" : `services:\n${serviceNames.map((service) => {
     const labels = labelsByService[service];
     const image = imageOverrides[service];
+    const network = networkAttachments[service];
     const lines = [`  ${JSON.stringify(service)}:`];
     if (image) lines.push(`    image: ${JSON.stringify(image)}`);
     if (labels && Object.keys(labels).length > 0) {
@@ -127,8 +131,25 @@ function overrideYaml(
           .map(([key, value]) => `        ${JSON.stringify(key)}: ${JSON.stringify(value)}`),
       );
     }
+    if (network) {
+      lines.push("    networks:", `      ${JSON.stringify(network.networkName)}:`);
+      if (network.aliases?.length) {
+        lines.push(
+          "        aliases:",
+          ...network.aliases.slice().sort((a, b) => a.localeCompare(b)).map((alias) => `          - ${JSON.stringify(alias)}`),
+        );
+      }
+    }
     return lines.join("\n");
-  }).join("\n")}\n`;
+  }).join("\n")}`;
+  const networks = Object.entries(externalNetworks)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, actualName]) => [
+      `  ${JSON.stringify(name)}:`,
+      "    external: true",
+      `    name: ${JSON.stringify(actualName)}`,
+    ].join("\n"));
+  return `${header}${services}${networks.length ? `\nnetworks:\n${networks.join("\n")}` : ""}\n`;
 }
 
 function canonicalRenderedYaml(value: string): string {
@@ -392,6 +413,8 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       const override = overrideYaml(
         input.ownershipLabels ?? {},
         input.imageOverrides ?? {},
+        input.networkAttachments ?? {},
+        input.externalNetworks ?? {},
         declaredComposeVersion(files, composePaths),
       );
       await executor.writeFile(environmentPath, explicitEnvironment(input.environment ?? {}));

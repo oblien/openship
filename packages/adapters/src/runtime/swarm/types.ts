@@ -55,6 +55,14 @@ export interface RenderStackInput {
   ownershipLabels?: Record<string, Record<string, string>>;
   /** Service name → immutable image reference produced by a source build. */
   imageOverrides?: Record<string, string>;
+  /**
+   * Opt-in generated network attachments. They are merged as an override and
+   * never rewrite source files; callers provide only services deliberately
+   * exposed through OpenShip Edge.
+   */
+  networkAttachments?: Record<string, { networkName: string; aliases?: string[] }>;
+  /** Cluster-owned external network declarations required by attachments. */
+  externalNetworks?: Record<string, string>;
 }
 
 export interface SwarmRenderIssue {

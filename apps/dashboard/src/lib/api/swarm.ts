@@ -280,6 +280,8 @@ export const swarmApi = {
     api.put<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/source`, input).then((result) => result.source),
   setRegistry: (projectId: string, registryId: string | null) =>
     api.patch<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/registry`, { registryId }).then((result) => result.source),
+  setRoutingMode: (projectId: string, routingMode: SwarmStackSource["routingMode"]) =>
+    api.patch<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/routing`, { routingMode }).then((result) => result.source),
   renderSource: (projectId: string, environment: Record<string, string> = {}) =>
     api.post<SwarmSourcePreview>(`projects/${projectId}/swarm/source/render`, { environment }),
   claimManagement: (projectId: string, input: { confirmedStackName: string; previewLiveDigest: string }) =>

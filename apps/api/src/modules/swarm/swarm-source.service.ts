@@ -74,6 +74,25 @@ export async function setStackRegistry(projectId: string, organizationId: string
   return serializeStackSource(updated);
 }
 
+/** Metadata-only opt-in. The cluster Edge itself needs a separate explicit action. */
+export async function setStackRoutingMode(
+  projectId: string,
+  organizationId: string,
+  routingMode: "external" | "openship-edge",
+) {
+  const stack = await stackForProject(projectId, organizationId);
+  if (routingMode === "openship-edge" && stack.managementMode !== "managed") {
+    throw new AppError(
+      "Claim this stack before opting services into OpenShip Edge routing.",
+      409,
+      "SWARM_EDGE_CLAIM_REQUIRED",
+    );
+  }
+  const updated = await repos.swarmStack.updateInOrganization(stack.id, organizationId, { routingMode });
+  if (!updated) throw new NotFoundError("Swarm stack", stack.id);
+  return serializeStackSource(updated);
+}
+
 function sourceError(message: string, code: string): AppError {
   return new AppError(message, 409, code);
 }

@@ -11,6 +11,8 @@ import {
   DEFAULT_BUILD_RESOURCE_CONFIG,
   DockerRuntime,
   deriveSwarmStackHealth,
+  SwarmEdgeManager,
+  SWARM_EDGE_NETWORK_NAME,
   type BuildConfig,
   type Platform,
   type SwarmDiscoverySnapshot,
@@ -42,9 +44,10 @@ import { evaluateSwarmCompatibility } from "../../swarm/swarm-compatibility";
 import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm-preview";
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
 import { resolveStackSourceFiles, type ResolvedSwarmStackSource } from "../../swarm/swarm-source.service";
+import { planSwarmEdgeAttachments } from "../../swarm/swarm-edge-routing";
 import { swarmConvergence } from "./convergence.service";
 
-type SwarmPlatform = Pick<Platform, "runtime" | "stackRuntime">;
+type SwarmPlatform = Pick<Platform, "runtime" | "stackRuntime" | "executor">;
 
 export interface SwarmDeployLogger {
   log(message: string, level?: "info" | "warn" | "error"): void;
@@ -639,9 +642,11 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       const sourceBuiltServiceNames = new Set(
         source.services.filter((service) => !!service.build).map((service) => service.sourceServiceName),
       );
-      const sourceRowsByName = sourceBuiltServiceNames.size > 0
+      const needsServiceRows = sourceBuiltServiceNames.size > 0 || stack.routingMode === "openship-edge";
+      const sourceRows = needsServiceRows
         ? new Map((await deps.syncProjections(project.id, source.services)).map((service) => [service.sourceServiceName, service]))
         : new Map<string, Service>();
+      const sourceRowsByName = sourceRows;
       const sourceBuildStartedAt = new Map<string, Date>();
       const persistSourceBuildStatus = async (
         serviceName: string,
@@ -678,12 +683,29 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         logger,
         onBuildStatus: persistSourceBuildStatus,
       });
+      const edgePlan = planSwarmEdgeAttachments(stack, source.services.map((service) => service.sourceServiceName), [...sourceRows.values()]);
+      if (edgePlan && edgePlan.upstreams.length > 0) {
+        if (!platform.executor) {
+          throw new AppError("OpenShip Edge requires a manager command transport.", 503, "SWARM_EDGE_UNAVAILABLE");
+        }
+        const edge = await new SwarmEdgeManager(platform.stackRuntime, platform.executor).status();
+        if (!edge) {
+          throw new AppError("OpenShip Edge is not enabled on this manager. Enable it explicitly before deploying routed services.", 409, "SWARM_EDGE_REQUIRED");
+        }
+        const edgeNetwork = before.networks.find((network) => network.name === SWARM_EDGE_NETWORK_NAME);
+        if (!edgeNetwork || edgeNetwork.driver !== "overlay" || edgeNetwork.scope !== "swarm") {
+          throw new AppError("OpenShip Edge overlay is unavailable on this manager. Check the Edge network before deploying routed services.", 503, "SWARM_EDGE_NETWORK_UNAVAILABLE");
+        }
+        logger.log(`→ Attaching ${edgePlan.upstreams.map((upstream) => upstream.sourceServiceName).join(", ")} to the OpenShip Edge overlay\n`);
+      }
       const rendered = await platform.stackRuntime.renderStack({
         files: sourceMaterial.files,
         composePaths: sourceMaterial.composePaths,
         environment,
         ownershipLabels: ownership,
         imageOverrides,
+        networkAttachments: edgePlan?.networkAttachments,
+        externalNetworks: edgePlan?.externalNetworks,
       });
       const resolvedSource = projectSwarmStackSource([
         { path: "rendered-stack.yaml", content: rendered.renderedYaml },
