@@ -39,6 +39,7 @@ Swarm manager. Workers must be able to pull any image deployed by OpenShip.
 Source-backed services therefore require an OCI registry and are deployed by
 digest, not mutable tags.
 
-See [TEST-MATRIX.md](TEST-MATRIX.md) for the disposable test topology and
+See [OPERATOR-GUIDE.md](OPERATOR-GUIDE.md) for a production operating runbook,
+[TEST-MATRIX.md](TEST-MATRIX.md) for the disposable test topology,
 [FAILURE-RECOVERY.md](FAILURE-RECOVERY.md) for operator recovery decisions, and
 [PROGRESS.md](PROGRESS.md) for current implementation evidence.

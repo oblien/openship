@@ -1540,3 +1540,28 @@ Evidence:
 Next:
 
 - Publish an operator-facing guide and release/runbook notes (S14.5).
+
+## S14.5: Operator documentation and release notes
+
+Status: done
+Commit: pending
+Checks run:
+
+- `bunx prettier --check docs/swarm/OPERATOR-GUIDE.md docs/swarm/IMPLEMENTATION.md`
+  and `git diff --check` — passed.
+
+Evidence:
+
+- `OPERATOR-GUIDE.md` provides a production-first sequence for manager
+  connection/rebinding, observe-before-claim, Portainer dual-writer handoff,
+  repository or inline desired state, registry-backed source builds, external
+  routing/explicit Edge cutover, config/secret ownership, storage risks,
+  operations, reconciliation, rollback, release, disaster recovery, and
+  standalone Docker/bare/cloud compatibility.
+- The guide links the deterministic failure-recovery matrix and clearly
+  confines the manager/worker fixture commands to a disposable lab.
+
+Next:
+
+- Prepare upstream review units, compatibility matrix, and handoff material
+  (S14.6).
