@@ -102,6 +102,49 @@ export function createSwarmStackRepo(db: Database) {
       return rows.map((row) => row.revision);
     },
 
+    /** Read one immutable revision through its owning stack's organization. */
+    async getRevisionInOrganization(
+      revisionId: string,
+      organizationId: string,
+    ): Promise<SwarmStackRevision | undefined> {
+      const row = await db
+        .select({ revision: swarmStackRevision })
+        .from(swarmStackRevision)
+        .innerJoin(swarmStack, eq(swarmStack.id, swarmStackRevision.stackId))
+        .where(and(
+          eq(swarmStackRevision.id, revisionId),
+          eq(swarmStack.organizationId, organizationId),
+        ))
+        .limit(1);
+      return row[0]?.revision;
+    },
+
+    /**
+     * Finalize an already-persisted revision without ever accepting a stack ID
+     * from an unscoped request. The source/rendered document stays immutable;
+     * only apply and convergence facts may change.
+     */
+    async updateRevisionInOrganization(
+      revisionId: string,
+      organizationId: string,
+      patch: Partial<Pick<NewSwarmStackRevision,
+        | "applyStatus"
+        | "applyOutput"
+        | "serviceRefs"
+        | "appliedAt"
+        | "convergedAt"
+      >>,
+    ): Promise<SwarmStackRevision | undefined> {
+      const revision = await this.getRevisionInOrganization(revisionId, organizationId);
+      if (!revision) return undefined;
+      const [updated] = await db
+        .update(swarmStackRevision)
+        .set(patch)
+        .where(eq(swarmStackRevision.id, revisionId))
+        .returning();
+      return updated;
+    },
+
     async createRevisionInOrganization(
       stackId: string,
       organizationId: string,

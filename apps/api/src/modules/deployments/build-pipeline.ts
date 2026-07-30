@@ -72,7 +72,7 @@ import {
 import { firePreDeployBackups } from "../backups/triggers/pre-deploy";
 import { buildBackgroundContext } from "../../lib/request-context";
 import * as sessionManager from "./session-manager";
-import { onFailure, onSuccess, onCancelled, setDeploymentStatus, type LifecycleContext } from "./deployment-lifecycle";
+import { onFailure, onSuccess, onReconciling, onCancelled, setDeploymentStatus, type LifecycleContext } from "./deployment-lifecycle";
 import { auditPorts } from "./port-audit.service";
 import { auditStaticOutput, staticOutputTargets } from "./output-audit.service";
 import { createBuildConfig } from "./build-config";
@@ -88,6 +88,7 @@ import {
   resolveProjectRouteState,
 } from "../domains/project-route.service";
 import { type DeploymentConfigSnapshot } from "./build.service";
+import { swarmDeploy } from "./swarm/deploy.service";
 import * as settingsService from "../settings/settings.service";
 
 // Build env = CI/telemetry defaults (BUILD_ENV_VARS) + the customer's own env
@@ -446,16 +447,6 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     ssl = resolved.platform.ssl;
     system = resolved.platform.system;
     ctx.runtime = runtime;
-    if (resolved.orchestratorMode === "swarm") {
-      // The typed identity is intentionally in place before the stack runtime
-      // ships. Do not let a requested Swarm deploy reach the ordinary container
-      // pipeline while it has no stack-level apply implementation.
-      throw new AppError(
-        "Docker Swarm deployment is not enabled on this target yet. Configure a Swarm manager and use the stack deployment flow.",
-        409,
-        "SWARM_STACK_RUNTIME_UNAVAILABLE",
-      );
-    }
     // Persist the serve/lifecycle identity ONCE (no undo): bare for static
     // file-serve, docker for services, unchanged otherwise.
     if (runtimeModes.serveRuntimeMode !== undefined) {
@@ -493,6 +484,54 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       startedAt: new Date(),
     });
     await setDeploymentStatus(dep.id, "building");
+
+    if (resolved.orchestratorMode === "swarm") {
+      // A Swarm deployment is a stack-level operation. It has no build image,
+      // container ID, compose fan-out, or routing mutation in this pipeline.
+      // Keep it before those container-specific stages so a failure can never
+      // accidentally clean up scheduler-owned tasks.
+      const failedEnvKeys: string[] = [];
+      const envMap = decryptEnvMap(
+        (dep.envVars ?? {}) as Record<string, string>,
+        (key, error) => {
+          failedEnvKeys.push(key);
+          console.warn(`[swarm-deploy] failed to decrypt env var ${key}: ${safeErrorMessage(error)}`);
+        },
+      );
+      if (failedEnvKeys.length > 0) {
+        logger.log(
+          `⚠ ${failedEnvKeys.length} environment variable(s) could not be decrypted and were skipped: ${failedEnvKeys.join(", ")}.`,
+          "warn",
+        );
+      }
+      logger.log(
+        `→ Swarm target: manager ${resolved.serverId?.slice(0, 8) ?? "local"}; stack lifecycle is reconciled from manager state.\n`,
+      );
+      const outcome = await swarmDeploy.deploy({
+        project,
+        deployment: dep,
+        environment: envMap,
+        logger: {
+          log: (message, level) => logger.log(message, level),
+          step: (_phase, state, message) => logger.step("deploy", state === "started" ? "running" : state, message),
+        },
+      });
+      const durationMs = Date.now() - (dep.createdAt?.getTime?.() ?? Date.now());
+      if (outcome.state === "reconciling") {
+        await onReconciling(ctx, {
+          runtimeRef: outcome.runtimeRef,
+          warningMessage: outcome.warningMessage,
+          durationMs,
+        });
+      } else {
+        await onSuccess(ctx, {
+          runtimeRef: outcome.runtimeRef,
+          durationMs,
+          metaPatch: { swarmStackRevisionId: outcome.revisionId },
+        });
+      }
+      return;
+    }
 
     // Pre-create service_deployment rows so the dashboard sees a
     // complete fan-out even before any service starts building. Rows
