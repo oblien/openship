@@ -473,15 +473,20 @@ export function detectStack(
     }
   }
 
+  // Dockerfile / compose own install/build/start — don't synthesize buildpack
+  // commands from a co-located package.json (or the runtime would both build
+  // the image AND try to run npm install outside it).
+  const dockerfileOwned = matched === "docker" || matched === "docker-compose";
+
   const result: StackResult = {
     stack: matched,
     projectType: getProjectType(matched),
     category: stackDef.category,
     dependencies: deps,
     packageManager: pm,
-    installCommand: getInstallCommand(pm),
-    buildCommand: getBuildCommand(pm, matched, packageJson, files),
-    startCommand,
+    installCommand: dockerfileOwned ? "" : getInstallCommand(pm),
+    buildCommand: dockerfileOwned ? "" : getBuildCommand(pm, matched, packageJson, files),
+    startCommand: dockerfileOwned ? "" : startCommand,
     buildImage: getBuildImage(matched, pm),
     outputDirectory: OUTPUT_DIRECTORIES[matched] ?? "dist",
     productionPaths,

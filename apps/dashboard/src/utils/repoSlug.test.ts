@@ -25,12 +25,11 @@ describe("encodeRepoSlug / decodeSlug round trip", () => {
     expect(slug).not.toMatch(/[+/=]/);
   });
 
-  it("drops everything after the first '/' in the repo name on round trip", () => {
-    // The legacy encoding just joins "owner/repo" and decodes by splitting
-    // on the first two '/'-separated segments, so a repo name that itself
-    // contains a slash does not survive the round trip intact.
+  it("treats a slash in the repo arg as a nested GitLab-style owner path", () => {
+    // Encoding joins "owner/repo"; decoding takes the LAST segment as the
+    // repo and everything before it as the owner (GitLab nested namespaces).
     const slug = encodeRepoSlug("acme", "widgets/extra");
-    expect(decodeSlug(slug)).toEqual({ kind: "repo", owner: "acme", repo: "widgets" });
+    expect(decodeSlug(slug)).toEqual({ kind: "repo", owner: "acme/widgets", repo: "extra" });
   });
 });
 
@@ -89,11 +88,11 @@ describe("decodeSlug legacy owner/repo format", () => {
     });
   });
 
-  it("silently discards everything past the second segment", () => {
+  it("keeps nested path segments as the owner (GitLab namespaces)", () => {
     expect(decodeSlug(b64url("owner/repo/extra"))).toEqual({
       kind: "repo",
-      owner: "owner",
-      repo: "repo",
+      owner: "owner/repo",
+      repo: "extra",
     });
   });
 
@@ -162,10 +161,11 @@ describe("decodeSlug invalid input", () => {
 });
 
 describe("extractOwnerRepoFromUrl", () => {
-  it("parses a plain HTTPS URL", () => {
+  it("parses a plain HTTPS GitHub URL", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets")).toEqual({
       owner: "acme",
       repo: "widgets",
+      provider: "github",
     });
   });
 
@@ -173,13 +173,15 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets.git")).toEqual({
       owner: "acme",
       repo: "widgets",
+      provider: "github",
     });
   });
 
-  it("parses an SSH URL", () => {
+  it("parses an SSH GitHub URL", () => {
     expect(extractOwnerRepoFromUrl("git@github.com:acme/widgets.git")).toEqual({
       owner: "acme",
       repo: "widgets",
+      provider: "github",
     });
   });
 
@@ -187,11 +189,36 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets.js")).toEqual({
       owner: "acme",
       repo: "widgets.js",
+      provider: "github",
     });
   });
 
-  it("returns null for a non-GitHub host", () => {
-    expect(extractOwnerRepoFromUrl("https://gitlab.com/acme/widgets")).toBeNull();
+  it("parses a GitLab HTTPS URL", () => {
+    expect(extractOwnerRepoFromUrl("https://gitlab.com/acme/widgets")).toEqual({
+      owner: "acme",
+      repo: "widgets",
+      provider: "gitlab",
+    });
+  });
+
+  it("parses a nested GitLab namespace", () => {
+    expect(extractOwnerRepoFromUrl("https://gitlab.com/group/sub/widgets.git")).toEqual({
+      owner: "group/sub",
+      repo: "widgets",
+      provider: "gitlab",
+    });
+  });
+
+  it("treats a non-GitHub HTTPS forge URL as GitLab (self-hosted)", () => {
+    expect(extractOwnerRepoFromUrl("https://git.example.com/acme/widgets")).toEqual({
+      owner: "acme",
+      repo: "widgets",
+      provider: "gitlab",
+    });
+  });
+
+  it("returns null when the path has no owner/repo pair", () => {
+    expect(extractOwnerRepoFromUrl("https://gitlab.com/only-owner")).toBeNull();
   });
 
   it("bug: a trailing slash after the repo name is captured as part of the repo", () => {
@@ -201,6 +228,7 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets/")).toEqual({
       owner: "acme",
       repo: "widgets/",
+      provider: "github",
     });
   });
 
@@ -210,6 +238,7 @@ describe("extractOwnerRepoFromUrl", () => {
     expect(extractOwnerRepoFromUrl("https://github.com/acme/widgets/tree/main")).toEqual({
       owner: "acme",
       repo: "widgets/tree/main",
+      provider: "github",
     });
   });
 });
