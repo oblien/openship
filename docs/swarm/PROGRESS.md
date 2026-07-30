@@ -451,3 +451,30 @@ Evidence:
 Next:
 
 - Refresh observed bindings and surface source-link/drift status (S4.3).
+
+## S4.3: Observed drift and source-link status
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run --cwd packages/core lint`, `bun run --cwd packages/db lint`,
+  `bun run --cwd apps/api lint`, and `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-observation.service.test.ts` — passed (3 tests).
+- `bun --cwd packages/db vitest run src/repos/swarm-persistence.repo.test.ts src/migrations-additive.test.ts` — passed (6 tests).
+
+Evidence:
+
+- Source bindings now communicate `missing`, `linked-unvalidated`, `valid`, or
+  `invalid`; rendering advances a linked source to valid without entering
+  managed mode.
+- Project observation endpoints report the state and refresh manager truth on
+  demand. Refresh stores only redacted state/digest metadata and updates
+  projections, marking external changes as drift and connection loss as
+  unreachable.
+- A manager that now identifies a different cluster causes a stable mismatch
+  error rather than silently rebinding a project.
+
+Next:
+
+- Build the feature-gated observe-mode dashboard flow (S4.4).

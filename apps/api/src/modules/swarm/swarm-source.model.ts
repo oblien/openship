@@ -141,6 +141,7 @@ export function serializeStackSource(stack: SwarmStack) {
     : stack.sourceKind === "repository" && stack.sourcePaths.length > 0;
   return {
     kind: stack.sourceKind,
+    status: stack.sourceStatus,
     composePaths: stack.sourcePaths,
     sourcePath: stack.sourcePath,
     branch: stack.sourceBranch,

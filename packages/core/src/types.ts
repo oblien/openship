@@ -64,6 +64,7 @@ export type OrchestratorMode = "standalone" | "swarm";
 export type SwarmManagementMode = "observe" | "managed";
 export type SwarmRoutingMode = "external" | "openship-edge";
 export type SwarmSourceKind = "repository" | "inline" | "adopted";
+export type SwarmSourceStatus = "missing" | "linked-unvalidated" | "valid" | "invalid";
 export type SwarmDriftStatus = "unknown" | "clean" | "drifted" | "unreachable";
 export type SwarmRevisionStatus =
   | "previewed"

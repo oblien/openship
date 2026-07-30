@@ -21,6 +21,7 @@ interface ObserveDependencies {
   createStack: (input: {
     organizationId: string; projectId: string; managerServerId: string; clusterId: string; stackName: string;
     managementMode: "observe"; sourceKind: "adopted"; sourcePaths: string[]; sourcePath: null; sourceYamlEnc: null;
+    sourceStatus: "missing";
     sourceDigest: null; lastObservedDigest: string; observedState: Record<string, unknown>; lastObservedAt: Date;
   }) => Promise<SwarmStack>;
   syncProjections: (projectId: string, projections: SwarmServiceProjection[]) => Promise<unknown>;
@@ -136,6 +137,7 @@ export function createSwarmObserveService(overrides: Partial<ObserveDependencies
         stackName: input.stackName,
         managementMode: "observe",
         sourceKind: "adopted",
+        sourceStatus: "missing",
         sourcePaths: [],
         sourcePath: null,
         sourceYamlEnc: null,

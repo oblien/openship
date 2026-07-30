@@ -15,6 +15,7 @@ import type {
   SwarmRevisionStatus,
   SwarmRoutingMode,
   SwarmSourceKind,
+  SwarmSourceStatus,
 } from "@repo/core";
 import { organization } from "./organization";
 import { project } from "./project";
@@ -40,6 +41,7 @@ export const swarmStack = pgTable(
     managementMode: text("management_mode").$type<SwarmManagementMode>().notNull().default("observe"),
     /** Repository source, encrypted inline source, or an adopted live stack. */
     sourceKind: text("source_kind").$type<SwarmSourceKind>().notNull().default("inline"),
+    sourceStatus: text("source_status").$type<SwarmSourceStatus>().notNull().default("missing"),
     /** Ordered repository-relative source paths, used only under a private staging root. */
     sourcePaths: jsonb("source_paths").$type<string[]>().notNull().default([]),
     sourcePath: text("source_path"),

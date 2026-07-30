@@ -67,6 +67,7 @@ export function createSwarmStackRepo(db: Database) {
       expectedVersion: number,
       patch: Pick<NewSwarmStack,
         | "sourceKind"
+        | "sourceStatus"
         | "sourcePaths"
         | "sourcePath"
         | "sourceBranch"

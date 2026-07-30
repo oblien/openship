@@ -63,6 +63,7 @@ export async function replaceStackSource(projectId: string, organizationId: stri
   const source = validateStackSource(input);
   const updated = await repos.swarmStack.updateSourceInOrganization(stack.id, organizationId, source.expectedVersion, {
     sourceKind: source.kind,
+    sourceStatus: source.kind === "adopted" ? "missing" : "linked-unvalidated",
     sourcePaths: source.sourcePaths,
     sourcePath: source.sourcePath,
     sourceBranch: source.sourceBranch,
@@ -137,6 +138,7 @@ export async function renderStackSource(
       discovery: observed,
       registryConfigured: !!stack.registryId,
     });
+    await repos.swarmStack.updateInOrganization(stack.id, organizationId, { sourceStatus: "valid" });
     return {
       valid: true,
       ...preview,
@@ -146,6 +148,10 @@ export async function renderStackSource(
   } catch (error) {
     if (error instanceof AppError) throw error;
     if (error instanceof SwarmRenderError) {
+      // A manager-side config/interpolation failure invalidates the linked
+      // source, but a transport error below does not — retrying connectivity
+      // should not make otherwise-valid source look syntactically invalid.
+      await repos.swarmStack.updateInOrganization(stack.id, organizationId, { sourceStatus: "invalid" });
       throw new AppError(error.message, 400, error.issues[0]?.code ?? "SWARM_STACK_CONFIG_FAILED");
     }
     throw new AppError("Unable to render this stack on its Swarm manager.", 503, "SWARM_MANAGER_UNAVAILABLE");

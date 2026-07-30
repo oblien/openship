@@ -23,6 +23,7 @@ import * as routeRules from "../route-rules/route-rule.controller";
 import * as ensureEdgeCtrl from "../domains/ensure-edge.controller";
 import * as incomingWebhooks from "../incoming-webhooks/incoming.controller";
 import * as swarmSource from "../swarm/swarm-source.controller";
+import * as swarmObservation from "../swarm/swarm-observation.controller";
 import {
   CreateProjectBody,
   EnsureProjectBody,
@@ -169,6 +170,8 @@ r.patch(
 );
 r.delete("/:id", { tag: "project:admin" }, cloudProjectProxy, ctrl.remove);
 r.get("/:id/swarm/source", { tag: "project:read", localOnly: true, readOnly: true }, swarmSource.get);
+r.get("/:id/swarm/observation", { tag: "project:read", localOnly: true, readOnly: true }, swarmObservation.status);
+r.post("/:id/swarm/observation/refresh", { tag: "project:read", localOnly: true, readOnly: true }, swarmObservation.refresh);
 r.post(
   "/:id/swarm/source/validate",
   { tag: "project:read", localOnly: true, readOnly: true, body: UpdateSwarmStackSourceBody },
