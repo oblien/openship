@@ -553,3 +553,45 @@ linked, rendered, redacted, and compared; and the disposable lab has recorded
 an event-clean repeated-observation run. The next slice is the managed,
 prebuilt-image stack apply path. Portainer remains an external writer until a
 future explicit claim flow is implemented.
+
+## S5.1–S5.4: Managed prebuilt stack deployment
+
+Status: done
+Commit: 7b405091
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/normalize.test.ts src/runtime/swarm/runtime.test.ts` — passed (11 tests).
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-stack-projection.test.ts src/modules/deployments/swarm/deploy.service.test.ts src/modules/swarm/swarm-management.service.test.ts src/modules/swarm/swarm-stack.service.test.ts` — passed (13 tests).
+- TypeScript checks for `packages/core`, `packages/adapters`, `packages/db`, and `apps/api` — passed.
+- `scripts/swarm-lab.sh up`, `scripts/swarm-lab.sh managed-proof`,
+  `scripts/swarm-lab.sh cleanup`, and `scripts/swarm-lab.sh down` — passed
+  against the disposable nested manager and worker on July 30, 2026.
+
+Evidence:
+
+- The normal deployment lifecycle now branches into a stack-specific executor
+  before any container/Compose cleanup path. It persists an encrypted,
+  redacted pre-apply revision, applies only the Docker-rendered document with
+  `--resolve-image always`, reconciles manager truth, and stores stack and
+  per-service runtime references in normal deployment history.
+- Connection loss during or after Docker's command produces `reconciling` and
+  leaves the cluster untouched. A deterministic CLI failure is persisted as a
+  useful failed deployment and revision state.
+- New bindings prove the namespace is absent. Existing stacks remain observe
+  only until a typed-name, current-live-digest claim; the first accepted apply
+  verifies OpenShip labels before setting `managed`. Release Management returns
+  to observe-only without stopping workloads.
+- Prune requires a managed, labeled candidate in the same stack namespace.
+  Its removal intent is recorded in logs and sanitized revision metadata;
+  unlabelled services block the deploy. Service rows stay keyed by source name,
+  retain history on removal, and carry secret-safe environment-key,
+  healthcheck, and rendered-source-digest metadata.
+- The two-service lab harness completed two real applies with stable current
+  task IDs on the second one. It created two immutable revision records and
+  stack/service refs in its in-memory persistence, exercising the production
+  manager adapter rather than a mocked Docker command.
+
+Next:
+
+- Build durable convergence polling, reconciliation pickup, and structured
+  managed-stack drift classification (Phase 6).
