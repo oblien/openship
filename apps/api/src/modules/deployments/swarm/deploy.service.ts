@@ -94,6 +94,8 @@ function projection(service: SwarmServiceState): SwarmServiceProjection {
     mode: service.mode,
     ...(service.desiredReplicas !== null ? { replicas: { desired: service.desiredReplicas } } : {}),
     ...(service.image ? { image: service.image } : {}),
+    ...(service.environmentKeys?.length ? { environmentKeys: service.environmentKeys } : {}),
+    ...(service.healthcheck ? { healthcheck: service.healthcheck } : {}),
     ...(service.endpointMode ? { endpointMode: service.endpointMode } : {}),
     ...(service.placement ? { placement: service.placement } : {}),
     ...(service.resources ? { resources: service.resources } : {}),
@@ -138,8 +140,12 @@ function safeDeployError(error: unknown, environment: Record<string, string>): s
   return safeDeployOutput(message, environment).slice(0, 1_000);
 }
 
-function assertSafePrune(stack: SwarmStack, current: SwarmServiceState[], desiredNames: Set<string>): boolean {
-  if (!stack.prune) return false;
+function safePrunePlan(
+  stack: SwarmStack,
+  current: SwarmServiceState[],
+  desiredNames: Set<string>,
+): { prune: boolean; removals: string[] } {
+  if (!stack.prune) return { prune: false, removals: [] };
   const candidates = current.filter((service) => !desiredNames.has(service.sourceServiceName));
   const foreign = candidates.filter((service) => !isOwnedService(service, stack));
   if (foreign.length > 0) {
@@ -149,7 +155,10 @@ function assertSafePrune(stack: SwarmStack, current: SwarmServiceState[], desire
       "SWARM_PRUNE_OWNERSHIP_CONFLICT",
     );
   }
-  return candidates.length > 0;
+  return {
+    prune: candidates.length > 0,
+    removals: candidates.map((service) => service.sourceServiceName).sort(),
+  };
 }
 
 function serviceRefs(stack: SwarmStack, services: SwarmServiceState[]): Record<string, RuntimeServiceRef> {
@@ -273,9 +282,13 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       }
       // A first claim never prunes: deletion consent belongs to a later,
       // separately reviewed managed deployment after labels are verified.
-      const prune = claimPending
-        ? false
-        : assertSafePrune(stack, current, new Set(resolvedSource.services.map((service) => service.sourceServiceName)));
+      const prunePlan = claimPending
+        ? { prune: false, removals: [] }
+        : safePrunePlan(stack, current, new Set(resolvedSource.services.map((service) => service.sourceServiceName)));
+      const prune = prunePlan.prune;
+      if (prunePlan.removals.length > 0) {
+        logger.log(`→ Confirmed managed-service prune: ${prunePlan.removals.join(", ")}\n`, "warn");
+      }
       logger.step("swarm-render", "completed", "Rendered and validated the authoritative Swarm stack configuration");
 
       const startedAt = deps.now();
@@ -294,6 +307,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           secrets: resolvedSource.secrets,
           compatibility,
           prune,
+          pruneRemovals: prunePlan.removals,
         },
         serviceImages: Object.fromEntries(resolvedSource.services.flatMap((service) => service.image ? [[service.sourceServiceName, service.image]] : [])),
         configRefs: resolvedSource.configs,
@@ -323,7 +337,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         if (dockerStackDeployOutput) logger.log(dockerStackDeployOutput.endsWith("\n") ? dockerStackDeployOutput : `${dockerStackDeployOutput}\n`);
         await deps.updateRevision(revision.id, deployment.organizationId, {
           applyStatus: "converging",
-          applyOutput: { dockerStackDeploy: dockerStackDeployOutput, prune },
+          applyOutput: { dockerStackDeploy: dockerStackDeployOutput, prune, pruneRemovals: prunePlan.removals },
           appliedAt: deps.now(),
         });
       } catch (error) {
@@ -390,7 +404,10 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         eligibleNodeCount: after.nodes.filter((node) => node.status.toLowerCase() === "ready" && node.availability.toLowerCase() === "active").length,
       });
       const refs = serviceRefs(stack, live);
-      const serviceRows = await deps.syncProjections(project.id, live.map(projection));
+      const serviceRows = await deps.syncProjections(project.id, live.map((service) => ({
+        ...projection(service),
+        sourceDigest: rendered.renderedDigest,
+      })));
       const finishedAt = deps.now();
       const ready = health.state === "ready";
       await deps.createServiceDeployments(serviceRows.flatMap((service) => {
@@ -408,7 +425,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       }));
       await deps.updateRevision(revision.id, deployment.organizationId, {
         applyStatus: ready ? "ready" : "converging",
-        applyOutput: { dockerStackDeploy: dockerStackDeployOutput, prune, health },
+        applyOutput: { dockerStackDeploy: dockerStackDeployOutput, prune, pruneRemovals: prunePlan.removals, health },
         serviceRefs: refs,
         ...(ready ? { convergedAt: finishedAt } : {}),
       });

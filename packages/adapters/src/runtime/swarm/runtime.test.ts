@@ -112,7 +112,7 @@ describe("SwarmRuntime manager probe", () => {
     });
 
     const result = await runtime.renderStack({
-      files: [{ path: "compose.yaml", content: "services:\n  web:\n    image: nginx\n    command: \"$${1}\"\n" }],
+      files: [{ path: "compose.yaml", content: "version: \"3.9\"\nservices:\n  web:\n    image: nginx\n    command: \"$${1}\"\n" }],
       composePaths: ["compose.yaml"],
       environment: { IMAGE_TAG: "v1", REGEX: "$${1}" },
       ownershipLabels: { web: { "com.openship.stack-id": "swarm_a" } },
@@ -126,6 +126,7 @@ describe("SwarmRuntime manager probe", () => {
     expect(writes.get("/tmp/openship-swarm-render.abc123/compose.yaml")).toContain("$${1}");
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.env")).toContain("REGEX='$${1}'");
     expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain("com.openship.stack-id");
+    expect(writes.get("/tmp/openship-swarm-render.abc123/.openship-render.override.yaml")).toContain('version: "3.9"');
     const renderCommand = commands.find((command) => command.includes("docker stack config"))!;
     expect(renderCommand).toContain("env -i PATH=\"$PATH\"");
     expect(renderCommand).not.toContain("docker stack deploy");

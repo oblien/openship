@@ -83,11 +83,22 @@ function explicitEnvironment(environment: Record<string, string>): string {
     .join("\n") + "\n";
 }
 
-function overrideYaml(labelsByService: Record<string, Record<string, string>>): string {
+function declaredComposeVersion(files: Array<{ path: string; content: string }>, composePaths: string[]): string | null {
+  for (const path of composePaths) {
+    const content = files.find((file) => file.path === path)?.content;
+    const match = content?.match(/^\s*version\s*:\s*(?:"([^"]+)"|'([^']+)'|([^\s#]+))/m);
+    const value = match?.[1] ?? match?.[2] ?? match?.[3];
+    if (value?.trim()) return value.trim();
+  }
+  return null;
+}
+
+function overrideYaml(labelsByService: Record<string, Record<string, string>>, composeVersion: string | null): string {
   const services = Object.entries(labelsByService).sort(([a], [b]) => a.localeCompare(b));
-  if (services.length === 0) return "services: {}\n";
+  const header = composeVersion ? `version: ${JSON.stringify(composeVersion)}\n` : "";
+  if (services.length === 0) return `${header}services: {}\n`;
   // JSON strings are valid YAML scalars and avoid bespoke quoting rules.
-  return `services:\n${services.map(([service, labels]) =>
+  return `${header}services:\n${services.map(([service, labels]) =>
     `  ${JSON.stringify(service)}:\n    deploy:\n      labels:\n${Object.entries(labels)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `        ${JSON.stringify(key)}: ${JSON.stringify(value)}`)
@@ -289,12 +300,16 @@ export class SwarmRuntime implements StackRuntimeAdapter {
       const environmentPath = `${stage}/.openship-render.env`;
       const overridePath = `${stage}/.openship-render.override.yaml`;
       const warningsPath = `${stage}/.openship-render.warnings`;
-      const override = overrideYaml(input.ownershipLabels ?? {});
+      const override = overrideYaml(input.ownershipLabels ?? {}, declaredComposeVersion(files, composePaths));
       await executor.writeFile(environmentPath, explicitEnvironment(input.environment ?? {}));
       await executor.writeFile(overridePath, override);
       const command = [
         `cd ${sq(stage)} &&`,
-        `env -i PATH="$PATH" sh -c ${sq('set -a; . "$1"; shift; exec "$@"')} sh ${sq(environmentPath)}`,
+        // Preserve Docker transport selection while clearing interpolation
+        // ambient variables. `DOCKER_HOST` is transport, not stack input: a
+        // desktop/lab manager can be selected through it and must not silently
+        // render against the local daemon instead.
+        `env -i PATH="$PATH" DOCKER_HOST="\${DOCKER_HOST-}" DOCKER_CONTEXT="\${DOCKER_CONTEXT-}" DOCKER_TLS_VERIFY="\${DOCKER_TLS_VERIFY-}" DOCKER_CERT_PATH="\${DOCKER_CERT_PATH-}" sh -c ${sq('set -a; . "$1"; shift; exec "$@"')} sh ${sq(environmentPath)}`,
         "docker stack config",
         ...composePaths.flatMap((path) => ["--compose-file", sq(`${stage}/${path}`)]),
         "--compose-file",

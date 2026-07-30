@@ -320,8 +320,18 @@ export function createServiceRepo(db: Database) {
       const results: Service[] = [];
 
       for (let i = 0; i < projections.length; i++) {
-        const projection = { ...projections[i], sourceState: "present" as const };
-        const previous = bySourceName.get(projection.sourceServiceName);
+        const incomingProjection = projections[i]!;
+        const previous = bySourceName.get(incomingProjection.sourceServiceName);
+        // Read-only refreshes cannot know which rendered revision supplied a
+        // live service. Keep that safe provenance until a later apply replaces
+        // it; all current live fields still come from the manager snapshot.
+        const projection = {
+          ...(previous?.swarmProjection?.sourceDigest && !incomingProjection.sourceDigest
+            ? { sourceDigest: previous.swarmProjection.sourceDigest }
+            : {}),
+          ...incomingProjection,
+          sourceState: "present" as const,
+        };
         if (previous) {
           await this.update(previous.id, {
             kind: "swarm",

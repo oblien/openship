@@ -1,7 +1,8 @@
 #!/bin/sh
 # Disposable Docker Swarm lab. It creates only the fixed openship-swarm-lab
 # Compose project, a nested ordinary Compose Traefik fixture, and the
-# openship-swarm-fixture stack; cleanup refuses every other target. See
+# openship-swarm-fixture and openship-swarm-managed-fixture stacks; cleanup
+# refuses every other target. See
 # docs/swarm/TEST-MATRIX.md.
 set -eu
 
@@ -14,10 +15,11 @@ compose_traefik_project="openship-compose-traefik-fixture"
 manager="openship-swarm-lab-manager"
 worker="openship-swarm-lab-worker"
 fixture_stack="openship-swarm-fixture"
+managed_stack="openship-swarm-managed-fixture"
 manager_host="tcp://127.0.0.1:23750"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -43,6 +45,24 @@ wait_for_dind() {
       exit 1
     fi
     sleep 2
+  done
+}
+
+wait_for_stack_removal() {
+  stack_name="$1"
+  attempts=0
+  while :; do
+    services=$(docker -H "$manager_host" service ls --filter "label=com.docker.stack.namespace=$stack_name" -q)
+    network=$(docker -H "$manager_host" network ls --filter "name=${stack_name}_default" -q)
+    if [ -z "$services" ] && [ -z "$network" ]; then
+      return
+    fi
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 30 ]; then
+      echo "Timed out waiting for disposable stack $stack_name to be removed" >&2
+      exit 1
+    fi
+    sleep 1
   done
 }
 
@@ -134,6 +154,12 @@ case "${1:-}" in
     echo "Observe-only proof passed: no service, task, network, config, secret, or volume mutation events."
     echo "Event capture: $event_file"
     ;;
+  managed-proof)
+    require_docker
+    require_lab
+    command -v bun >/dev/null 2>&1 || { echo "bun is required for the managed deploy proof" >&2; exit 1; }
+    INTERNAL_TOKEN="openship-swarm-managed-proof-internal-token-0001" DOCKER_HOST="$manager_host" OPENSHIP_SWARM_MANAGED_STACK="$managed_stack" bun "$repo_root/scripts/swarm-managed-deploy-harness.ts"
+    ;;
   events)
     require_docker
     require_lab
@@ -150,6 +176,9 @@ case "${1:-}" in
     }
     docker -H "$manager_host" compose -p "$compose_traefik_project" -f "$compose_traefik_file" down --volumes --remove-orphans || true
     docker -H "$manager_host" stack rm "$fixture_stack"
+    docker -H "$manager_host" stack rm "$managed_stack" || true
+    wait_for_stack_removal "$fixture_stack"
+    wait_for_stack_removal "$managed_stack"
     ;;
   down)
     require_docker

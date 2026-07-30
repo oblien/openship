@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  web:
+    image: nginx:1.27-alpine
+    deploy:
+      replicas: 1
+      update_config:
+        monitor: 1ms
+
+  worker:
+    image: alpine:3.21
+    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    deploy:
+      replicas: 1
+      update_config:
+        monitor: 1ms

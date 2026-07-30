@@ -59,6 +59,29 @@ function referenceNames(value: unknown, key: "ConfigName" | "SecretName"): strin
   });
 }
 
+function environmentKeys(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.flatMap((entry) => {
+    if (typeof entry !== "string") return [];
+    const key = entry.split("=", 1)[0]?.trim() ?? "";
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ? [key] : [];
+  }))).sort();
+}
+
+function healthcheck(value: unknown): SwarmServiceState["healthcheck"] | undefined {
+  const input = asRecord(value);
+  if (!input) return undefined;
+  const integerValue = integer(input.Retries);
+  return {
+    configured: true,
+    ...(input.Test === "NONE" ? { disabled: true } : {}),
+    ...(text(input.Interval) ? { interval: text(input.Interval)! } : {}),
+    ...(text(input.Timeout) ? { timeout: text(input.Timeout)! } : {}),
+    ...(integerValue !== null ? { retries: integerValue } : {}),
+    ...(text(input.StartPeriod) ? { startPeriod: text(input.StartPeriod)! } : {}),
+  };
+}
+
 function serviceMode(mode: unknown): SwarmServiceMode {
   const input = asRecord(mode);
   if (!input) return "unknown";
@@ -187,6 +210,8 @@ export function normalizeSwarmService(value: unknown): SwarmServiceState {
     mode: serviceMode(spec?.Mode),
     desiredReplicas: integer(replicated?.Replicas),
     image: text(container?.Image),
+    ...(environmentKeys(container?.Env).length ? { environmentKeys: environmentKeys(container?.Env) } : {}),
+    ...(healthcheck(container?.Healthcheck) ? { healthcheck: healthcheck(container?.Healthcheck) } : {}),
     labels: serviceLabels,
     endpointMode: text(endpoint?.Mode),
     placement: asRecord(task?.Placement),

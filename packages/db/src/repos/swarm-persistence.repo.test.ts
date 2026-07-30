@@ -109,6 +109,7 @@ describe("Swarm persistence repositories", () => {
         sourceServiceName: "web",
         observedServiceId: "service_old",
         mode: "replicated",
+        sourceDigest: "sha256:rendered-a",
         sourceState: "present",
       },
     ]);
@@ -123,7 +124,11 @@ describe("Swarm persistence repositories", () => {
 
     const current = await repos.service.listByProjectKind("project_a", "swarm");
     expect(current).toHaveLength(1);
-    expect(current[0]?.swarmProjection).toMatchObject({ observedServiceId: "service_new", sourceState: "present" });
+    expect(current[0]?.swarmProjection).toMatchObject({
+      observedServiceId: "service_new",
+      sourceDigest: "sha256:rendered-a",
+      sourceState: "present",
+    });
 
     await repos.service.syncSwarmProjections("project_a", []);
     const retained = await repos.service.listByProjectKind("project_a", "swarm");

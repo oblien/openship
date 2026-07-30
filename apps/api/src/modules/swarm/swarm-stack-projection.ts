@@ -121,6 +121,31 @@ function mode(deploy: JsonRecord | null): SwarmServiceProjection["mode"] {
   return value ? "unknown" : "replicated";
 }
 
+function environmentKeys(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.flatMap((entry) => {
+      if (typeof entry !== "string") return [];
+      const key = entry.split("=", 1)[0]?.trim() ?? "";
+      return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ? [key] : [];
+    }))).sort();
+  }
+  return Object.keys(record(value) ?? {}).filter((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)).sort();
+}
+
+function healthcheck(value: unknown): SwarmServiceProjection["healthcheck"] | undefined {
+  const input = record(value);
+  if (!input) return undefined;
+  const retries = numberValue(input.retries);
+  return {
+    configured: true,
+    ...(input.disable === true ? { disabled: true } : {}),
+    ...(text(input.interval) ? { interval: text(input.interval)! } : {}),
+    ...(text(input.timeout) ? { timeout: text(input.timeout)! } : {}),
+    ...(retries !== null ? { retries } : {}),
+    ...(text(input.start_period) ? { startPeriod: text(input.start_period)! } : {}),
+  };
+}
+
 function parse(content: string): JsonRecord {
   const document = parseDocument(content, { prettyErrors: false });
   if (document.errors.length > 0) {
@@ -209,6 +234,8 @@ export function projectSwarmStackSource(files: StackSourceFile[]): SwarmStackSou
       ...(replicas !== null ? { replicas: { desired: replicas } } : {}),
       ...(text(service.image) ? { image: text(service.image) } : {}),
       ...(typeof service.build === "string" ? { build: service.build } : cloneRecord(service.build) ? { build: cloneRecord(service.build)! } : {}),
+      ...(environmentKeys(service.environment).length ? { environmentKeys: environmentKeys(service.environment) } : {}),
+      ...(healthcheck(service.healthcheck) ? { healthcheck: healthcheck(service.healthcheck) } : {}),
       ...(text(deploy?.endpoint_mode) ? { endpointMode: text(deploy?.endpoint_mode) } : {}),
       ...(cloneRecord(deploy?.placement) ? { placement: cloneRecord(deploy?.placement)! } : {}),
       ...(cloneRecord(deploy?.resources) ? { resources: cloneRecord(deploy?.resources)! } : {}),

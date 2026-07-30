@@ -40,6 +40,19 @@ export type SwarmServiceProjection = {
   replicas?: { desired?: number; running?: number; completed?: number };
   image?: string;
   build?: string | Record<string, unknown>;
+  /** Names only; runtime/source values are never projected. */
+  environmentKeys?: string[];
+  /** Review-safe healthcheck metadata; the command itself may contain secrets. */
+  healthcheck?: {
+    configured: boolean;
+    disabled?: boolean;
+    interval?: string;
+    timeout?: string;
+    retries?: number;
+    startPeriod?: string;
+  };
+  /** Rendered config digest that produced this denormalized row. */
+  sourceDigest?: string;
   endpointMode?: string;
   placement?: Record<string, unknown>;
   resources?: Record<string, unknown>;

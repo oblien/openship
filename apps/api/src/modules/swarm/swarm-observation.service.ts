@@ -39,6 +39,8 @@ function projection(service: SwarmServiceState): SwarmServiceProjection {
     sourceServiceName: service.sourceServiceName, observedServiceId: service.id, mode: service.mode,
     ...(service.desiredReplicas !== null ? { replicas: { desired: service.desiredReplicas } } : {}),
     ...(service.image ? { image: service.image } : {}),
+    ...(service.environmentKeys?.length ? { environmentKeys: service.environmentKeys } : {}),
+    ...(service.healthcheck ? { healthcheck: service.healthcheck } : {}),
     ...(service.endpointMode ? { endpointMode: service.endpointMode } : {}),
     ...(service.placement ? { placement: service.placement } : {}),
     ...(service.resources ? { resources: service.resources } : {}),

@@ -13,6 +13,13 @@ services:
     image: registry.example/api:1
     labels:
       app: api
+    environment:
+      PUBLIC_ORIGIN: https://example.invalid
+      API_TOKEN: should-not-be-projected
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/health?token=$API_TOKEN"]
+      interval: 30s
+      retries: 3
     ports:
       - target: 8080
         published: 443
@@ -62,6 +69,8 @@ secrets: { db-password: { external: true } }
       placement: { constraints: ["node.labels.zone == west"] },
       resources: { limits: { cpus: "0.5", memory: "256M" } },
       labels: { app: "api", "deploy-label": "present" },
+      environmentKeys: ["API_TOKEN", "PUBLIC_ORIGIN"],
+      healthcheck: { configured: true, interval: "30s", retries: 3 },
       publishedPorts: [{ target: 8080, published: 443, protocol: "tcp", mode: "host" }],
       volumes: ["data:/var/lib/api"],
       networks: ["frontend"],

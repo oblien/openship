@@ -108,6 +108,17 @@ export interface SwarmServiceState {
   mode: SwarmServiceMode;
   desiredReplicas: number | null;
   image: string | null;
+  /** Names only from ContainerSpec.Env; values never cross the adapter boundary. */
+  environmentKeys?: string[];
+  /** Safe healthcheck metadata. Commands are deliberately omitted. */
+  healthcheck?: {
+    configured: boolean;
+    disabled?: boolean;
+    interval?: string;
+    timeout?: string;
+    retries?: number;
+    startPeriod?: string;
+  };
   labels: Record<string, string>;
   endpointMode: string | null;
   placement: Record<string, unknown> | null;

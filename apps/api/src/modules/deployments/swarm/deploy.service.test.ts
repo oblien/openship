@@ -43,10 +43,15 @@ function discovery(services = true): SwarmDiscoverySnapshot {
   };
 }
 
-function fixture(options: { postDeployError?: Error; deployError?: Error; stackOverride?: SwarmStack } = {}) {
+function fixture(options: {
+  postDeployError?: Error;
+  deployError?: Error;
+  stackOverride?: SwarmStack;
+  beforeDiscovery?: SwarmDiscoverySnapshot;
+} = {}) {
   const activeStack = options.stackOverride ?? stack;
   const events: string[] = [];
-  const createRevision = vi.fn(async () => ({ id: "revision-1", revision: 1 }));
+  const createRevision = vi.fn(async (..._args: unknown[]) => ({ id: "revision-1", revision: 1 }));
   const updateRevision = vi.fn(async () => ({ id: "revision-1" }));
   const updateStack = vi.fn(async () => activeStack);
   const syncProjections = vi.fn(async () => [
@@ -55,7 +60,7 @@ function fixture(options: { postDeployError?: Error; deployError?: Error; stackO
   ]);
   const createServiceDeployments = vi.fn(async () => []);
   const discover = vi.fn()
-    .mockResolvedValueOnce(discovery(false))
+    .mockResolvedValueOnce(options.beforeDiscovery ?? discovery(false))
     .mockImplementationOnce(async () => {
       if (options.postDeployError) throw options.postDeployError;
       return discovery();
@@ -153,5 +158,37 @@ describe("managed Swarm deploy", () => {
       .resolves.toMatchObject({ state: "ready" });
     expect(test.deployStack).toHaveBeenCalledWith(expect.objectContaining({ prune: false }));
     expect(test.updateStack).toHaveBeenCalledWith("swarm-blog", "org-a", expect.objectContaining({ managementMode: "managed" }));
+  });
+
+  it("prunes only a reviewed service that already carries this stack's ownership labels", async () => {
+    const current = discovery(false);
+    current.services = [{
+      ...discovery().services[0]!,
+      id: "svc-retired",
+      name: "blog_retired",
+      sourceServiceName: "retired",
+    }];
+    const test = fixture({ stackOverride: { ...stack, prune: true } as SwarmStack, beforeDiscovery: current });
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger })).resolves.toMatchObject({ state: "ready" });
+    expect(test.deployStack).toHaveBeenCalledWith(expect.objectContaining({ prune: true }));
+    expect(test.createRevision.mock.calls[0]?.[2]).toMatchObject({
+      manifest: expect.objectContaining({ prune: true, pruneRemovals: ["retired"] }),
+    });
+    expect(test.log.mock.calls.flat().join("\n")).toContain("Confirmed managed-service prune: retired");
+  });
+
+  it("blocks automatic prune when a service in the stack namespace lacks matching ownership labels", async () => {
+    const current = discovery(false);
+    current.services = [{
+      ...discovery().services[0]!,
+      id: "svc-foreign",
+      name: "blog_foreign",
+      sourceServiceName: "foreign",
+      labels: { "com.docker.stack.namespace": "blog" },
+    }];
+    const test = fixture({ stackOverride: { ...stack, prune: true } as SwarmStack, beforeDiscovery: current });
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .rejects.toMatchObject({ code: "SWARM_STACK_OWNERSHIP_CONFLICT", statusCode: 409 });
+    expect(test.deployStack).not.toHaveBeenCalled();
   });
 });

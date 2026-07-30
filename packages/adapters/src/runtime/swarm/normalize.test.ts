@@ -19,6 +19,12 @@ describe("Swarm discovery normalizers", () => {
         TaskTemplate: {
           ContainerSpec: {
             Image: "registry.test/blog@sha256:abc",
+            Env: ["PUBLIC_ORIGIN=https://example.invalid", "API_TOKEN=not-exposed"],
+            Healthcheck: {
+              Test: ["CMD-SHELL", "curl -fsS /health?token=not-exposed"],
+              Interval: 30_000_000_000,
+              Retries: 3,
+            },
             Configs: [{ ConfigName: "blog_config" }],
             Secrets: [{ SecretName: "blog_password", File: { Name: "password" } }],
           },
@@ -42,6 +48,8 @@ describe("Swarm discovery normalizers", () => {
       desiredReplicas: 3,
       configs: ["blog_config"],
       secrets: ["blog_password"],
+      environmentKeys: ["API_TOKEN", "PUBLIC_ORIGIN"],
+      healthcheck: { configured: true, retries: 3 },
       publishedPorts: [{ target: 3000, published: 80 }],
     });
     expect(groupSwarmStacks([service])).toEqual([
