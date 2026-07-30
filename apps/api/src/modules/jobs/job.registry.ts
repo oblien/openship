@@ -16,11 +16,13 @@
 
 import { repos } from "@repo/db";
 import { platform } from "../../lib/controller-helpers";
+import { swarmSupportEnabled } from "../../config";
 import { renewExpiringCerts } from "../../lib/ssl-scheduler";
 import { runOrphanSweep } from "../projects/orphan-gc-schedule";
 import { runRetentionSweep } from "../backups/retention-prune";
 import { pruneAuditEvents } from "../audit/audit-prune";
 import { runReconcileSweep } from "../deployments/reconcile-schedule";
+import { swarmObservation } from "../swarm/swarm-observation.service";
 import { runImageGcSweep } from "../deployments/image-gc";
 import { verifyPendingDomains } from "../domains/domain.service";
 import { scanInstanceUpdates } from "../updates/updates.service";
@@ -111,6 +113,15 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     label: "Deployment reconcile",
     defaultCron: "*/10 * * * *",
     run: async () => runReconcileSweep(),
+  },
+  {
+    key: "swarm:refresh",
+    label: "Swarm managed-stack refresh",
+    // The refresh service batches every bound stack behind one manager
+    // discovery, so this cadence remains bounded even for a busy cluster.
+    defaultCron: "*/5 * * * *",
+    available: swarmSupportEnabled,
+    run: async () => swarmObservation.refreshManaged(),
   },
   {
     key: "domains:verify-pending",

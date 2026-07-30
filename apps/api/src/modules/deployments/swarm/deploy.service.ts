@@ -33,6 +33,7 @@ import { isConnectionLoss } from "../../../lib/remote-state";
 import { evaluateSwarmCompatibility } from "../../swarm/swarm-compatibility";
 import { redactRenderedStackYaml, swarmLiveStateDigest } from "../../swarm/swarm-preview";
 import { projectSwarmStackSource } from "../../swarm/swarm-stack-projection";
+import { swarmConvergence } from "./convergence.service";
 
 type SwarmPlatform = Pick<Platform, "stackRuntime">;
 
@@ -55,19 +56,26 @@ interface Dependencies {
     organizationId: string,
     patch: Record<string, unknown>,
   ) => Promise<SwarmStackRevision | undefined>;
-  updateStack: (id: string, organizationId: string, patch: Record<string, unknown>) => Promise<SwarmStack | undefined>;
+  updateStack: (
+    id: string,
+    organizationId: string,
+    patch: Record<string, unknown>,
+  ) => Promise<SwarmStack | undefined>;
   syncProjections: (projectId: string, projections: SwarmServiceProjection[]) => Promise<Service[]>;
-  createServiceDeployments: (rows: Array<{
-    deploymentId: string;
-    serviceId: string;
-    serviceName: string;
-    runtimeRef: RuntimeServiceRef;
-    status: "success" | "in_progress";
-    imageRef: string | null;
-    startedAt: Date;
-    finishedAt?: Date;
-    durationMs?: number;
-  }>) => Promise<unknown>;
+  createServiceDeployments: (
+    rows: Array<{
+      deploymentId: string;
+      serviceId: string;
+      serviceName: string;
+      runtimeRef: RuntimeServiceRef;
+      status: "success" | "in_progress";
+      imageRef: string | null;
+      startedAt: Date;
+      finishedAt?: Date;
+      durationMs?: number;
+    }>,
+  ) => Promise<unknown>;
+  waitForConvergence: typeof swarmConvergence.wait;
   now: () => Date;
 }
 
@@ -131,7 +139,7 @@ function safeDeployOutput(value: string, environment: Record<string, string>): s
     if (secret) safe = safe.replaceAll(secret, "[REDACTED]");
   }
   return safe
-    .replace(/((?:password|token|secret|api[_-]?key|authorization)\s*[=:]\s*)\S+/ig, "$1[REDACTED]")
+    .replace(/((?:password|token|secret|api[_-]?key|authorization)\s*[=:]\s*)\S+/gi, "$1[REDACTED]")
     .slice(0, 16_000);
 }
 
@@ -161,15 +169,23 @@ function safePrunePlan(
   };
 }
 
-function serviceRefs(stack: SwarmStack, services: SwarmServiceState[]): Record<string, RuntimeServiceRef> {
-  return Object.fromEntries(services.map((service) => [service.sourceServiceName, {
-    kind: "swarm-service" as const,
-    clusterId: stack.clusterId,
-    stackName: stack.stackName,
-    serviceId: service.id,
-    serviceName: service.sourceServiceName,
-    specVersion: service.specVersion ?? 0,
-  }]));
+function serviceRefs(
+  stack: SwarmStack,
+  services: SwarmServiceState[],
+): Record<string, RuntimeServiceRef> {
+  return Object.fromEntries(
+    services.map((service) => [
+      service.sourceServiceName,
+      {
+        kind: "swarm-service" as const,
+        clusterId: stack.clusterId,
+        stackName: stack.stackName,
+        serviceId: service.id,
+        serviceName: service.sourceServiceName,
+        specVersion: service.specVersion ?? 0,
+      },
+    ]),
+  );
 }
 
 function pendingClaimDigest(stack: SwarmStack): string | null {
@@ -188,13 +204,20 @@ export type SwarmDeployOutcome = {
 export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) {
   const deps: Dependencies = {
     featureEnabled: swarmSupportEnabled,
-    getStack: (projectId, organizationId) => repos.swarmStack.getForProjectInOrganization(projectId, organizationId),
-    resolvePlatform: async (serverId, organizationId) => resolveTargetPlatform("server", "docker", serverId, organizationId, "swarm"),
-    createRevision: (stackId, organizationId, data) => repos.swarmStack.createRevisionInOrganization(stackId, organizationId, data),
-    updateRevision: (revisionId, organizationId, patch) => repos.swarmStack.updateRevisionInOrganization(revisionId, organizationId, patch),
-    updateStack: (id, organizationId, patch) => repos.swarmStack.updateInOrganization(id, organizationId, patch),
-    syncProjections: (projectId, projections) => repos.service.syncSwarmProjections(projectId, projections),
+    getStack: (projectId, organizationId) =>
+      repos.swarmStack.getForProjectInOrganization(projectId, organizationId),
+    resolvePlatform: async (serverId, organizationId) =>
+      resolveTargetPlatform("server", "docker", serverId, organizationId, "swarm"),
+    createRevision: (stackId, organizationId, data) =>
+      repos.swarmStack.createRevisionInOrganization(stackId, organizationId, data),
+    updateRevision: (revisionId, organizationId, patch) =>
+      repos.swarmStack.updateRevisionInOrganization(revisionId, organizationId, patch),
+    updateStack: (id, organizationId, patch) =>
+      repos.swarmStack.updateInOrganization(id, organizationId, patch),
+    syncProjections: (projectId, projections) =>
+      repos.service.syncSwarmProjections(projectId, projections),
     createServiceDeployments: (rows) => repos.serviceDeployment.bulkCreate(rows),
+    waitForConvergence: (input) => swarmConvergence.wait(input),
     now: () => new Date(),
     ...overrides,
   };
@@ -207,12 +230,26 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       logger: SwarmDeployLogger;
     }): Promise<SwarmDeployOutcome> {
       if (!deps.featureEnabled()) {
-        throw new AppError("Docker Swarm support is not enabled on this OpenShip instance.", 404, "SWARM_FEATURE_DISABLED");
+        throw new AppError(
+          "Docker Swarm support is not enabled on this OpenShip instance.",
+          404,
+          "SWARM_FEATURE_DISABLED",
+        );
       }
       const { project, deployment, environment, logger } = input;
       const stack = await deps.getStack(project.id, deployment.organizationId);
-      if (!stack) throw new AppError("This project has no Docker Swarm stack binding.", 409, "SWARM_STACK_REQUIRED");
-      if (!stack.managerServerId) throw new AppError("This stack no longer has a Swarm manager target.", 409, "SWARM_MANAGER_UNAVAILABLE");
+      if (!stack)
+        throw new AppError(
+          "This project has no Docker Swarm stack binding.",
+          409,
+          "SWARM_STACK_REQUIRED",
+        );
+      if (!stack.managerServerId)
+        throw new AppError(
+          "This stack no longer has a Swarm manager target.",
+          409,
+          "SWARM_MANAGER_UNAVAILABLE",
+        );
       const claimPending = stack.managementMode === "observe" && !!stack.claimedAt;
       if (stack.managementMode !== "managed" && !claimPending) {
         throw new AppError(
@@ -229,20 +266,43 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         );
       }
       const yaml = decryptSecretField(stack.sourceYamlEnc);
-      if (!yaml) throw new AppError("This stack has no authoritative inline source document.", 409, "SWARM_SOURCE_REQUIRED");
+      if (!yaml)
+        throw new AppError(
+          "This stack has no authoritative inline source document.",
+          409,
+          "SWARM_SOURCE_REQUIRED",
+        );
 
       const source = projectSwarmStackSource([{ path: "compose.yaml", content: yaml }]);
-      const ownership = Object.fromEntries(source.services.map((service) => [service.sourceServiceName, {
-        ...ownershipLabels(stack),
-        "com.openship.source-service": service.sourceServiceName,
-      }]));
+      const ownership = Object.fromEntries(
+        source.services.map((service) => [
+          service.sourceServiceName,
+          {
+            ...ownershipLabels(stack),
+            "com.openship.source-service": service.sourceServiceName,
+          },
+        ]),
+      );
       const platform = await deps.resolvePlatform(stack.managerServerId, deployment.organizationId);
-      if (!platform.stackRuntime) throw new AppError("Docker Swarm is unavailable for this target.", 503, "SWARM_MANAGER_UNAVAILABLE");
+      if (!platform.stackRuntime)
+        throw new AppError(
+          "Docker Swarm is unavailable for this target.",
+          503,
+          "SWARM_MANAGER_UNAVAILABLE",
+        );
 
-      logger.step("swarm-render", "started", "Validating the stack configuration on the Swarm manager");
+      logger.step(
+        "swarm-render",
+        "started",
+        "Validating the stack configuration on the Swarm manager",
+      );
       const before = await platform.stackRuntime.discover();
       if (before.manager.clusterId !== stack.clusterId) {
-        throw new AppError("The configured manager now belongs to a different Swarm cluster.", 409, "SWARM_CLUSTER_MISMATCH");
+        throw new AppError(
+          "The configured manager now belongs to a different Swarm cluster.",
+          409,
+          "SWARM_CLUSTER_MISMATCH",
+        );
       }
       const current = stackServices(before, stack.stackName);
       if (claimPending) {
@@ -267,7 +327,9 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         environment,
         ownershipLabels: ownership,
       });
-      const resolvedSource = projectSwarmStackSource([{ path: "rendered-stack.yaml", content: rendered.renderedYaml }]);
+      const resolvedSource = projectSwarmStackSource([
+        { path: "rendered-stack.yaml", content: rendered.renderedYaml },
+      ]);
       const compatibility = evaluateSwarmCompatibility({
         renderedYaml: rendered.renderedYaml,
         discovery: before,
@@ -284,12 +346,20 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       // separately reviewed managed deployment after labels are verified.
       const prunePlan = claimPending
         ? { prune: false, removals: [] }
-        : safePrunePlan(stack, current, new Set(resolvedSource.services.map((service) => service.sourceServiceName)));
+        : safePrunePlan(
+            stack,
+            current,
+            new Set(resolvedSource.services.map((service) => service.sourceServiceName)),
+          );
       const prune = prunePlan.prune;
       if (prunePlan.removals.length > 0) {
         logger.log(`→ Confirmed managed-service prune: ${prunePlan.removals.join(", ")}\n`, "warn");
       }
-      logger.step("swarm-render", "completed", "Rendered and validated the authoritative Swarm stack configuration");
+      logger.step(
+        "swarm-render",
+        "completed",
+        "Rendered and validated the authoritative Swarm stack configuration",
+      );
 
       const startedAt = deps.now();
       const revision = await deps.createRevision(stack.id, deployment.organizationId, {
@@ -309,12 +379,21 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           prune,
           pruneRemovals: prunePlan.removals,
         },
-        serviceImages: Object.fromEntries(resolvedSource.services.flatMap((service) => service.image ? [[service.sourceServiceName, service.image]] : [])),
+        serviceImages: Object.fromEntries(
+          resolvedSource.services.flatMap((service) =>
+            service.image ? [[service.sourceServiceName, service.image]] : [],
+          ),
+        ),
         configRefs: resolvedSource.configs,
         secretRefs: resolvedSource.secrets,
         applyStatus: "applying",
       });
-      if (!revision) throw new AppError("The Swarm stack binding is no longer available.", 409, "SWARM_STACK_REQUIRED");
+      if (!revision)
+        throw new AppError(
+          "The Swarm stack binding is no longer available.",
+          409,
+          "SWARM_STACK_REQUIRED",
+        );
 
       const runtimeRef: RuntimeWorkloadRef = {
         kind: "swarm-stack",
@@ -323,7 +402,11 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         stackName: stack.stackName,
         revisionId: revision.id,
       };
-      logger.step("swarm-deploy", "started", `Applying stack ${stack.stackName} on its Swarm manager`);
+      logger.step(
+        "swarm-deploy",
+        "started",
+        `Applying stack ${stack.stackName} on its Swarm manager`,
+      );
       let dockerStackDeployOutput = "";
       try {
         const result = await platform.stackRuntime.deployStack({
@@ -334,50 +417,97 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           withRegistryAuth: stack.withRegistryAuth,
         });
         dockerStackDeployOutput = safeDeployOutput(result.output, environment);
-        if (dockerStackDeployOutput) logger.log(dockerStackDeployOutput.endsWith("\n") ? dockerStackDeployOutput : `${dockerStackDeployOutput}\n`);
+        if (dockerStackDeployOutput)
+          logger.log(
+            dockerStackDeployOutput.endsWith("\n")
+              ? dockerStackDeployOutput
+              : `${dockerStackDeployOutput}\n`,
+          );
         await deps.updateRevision(revision.id, deployment.organizationId, {
           applyStatus: "converging",
-          applyOutput: { dockerStackDeploy: dockerStackDeployOutput, prune, pruneRemovals: prunePlan.removals },
+          applyOutput: {
+            dockerStackDeploy: dockerStackDeployOutput,
+            prune,
+            pruneRemovals: prunePlan.removals,
+          },
           appliedAt: deps.now(),
         });
       } catch (error) {
         if (isConnectionLoss(error)) {
-          await deps.updateRevision(revision.id, deployment.organizationId, {
-            applyStatus: "converging",
-            applyOutput: { warning: "Manager connection dropped while Docker was applying the stack; reconciliation is required." },
-          }).catch(() => {});
+          await deps
+            .updateRevision(revision.id, deployment.organizationId, {
+              applyStatus: "converging",
+              applyOutput: {
+                warning:
+                  "Manager connection dropped while Docker was applying the stack; reconciliation is required.",
+              },
+            })
+            .catch(() => {});
           return {
             runtimeRef,
             revisionId: revision.id,
             state: "reconciling",
-            warningMessage: "Manager connection dropped during stack deploy — verifying the live stack without rollback.",
+            warningMessage:
+              "Manager connection dropped during stack deploy — verifying the live stack without rollback.",
           };
         }
-        await deps.updateRevision(revision.id, deployment.organizationId, {
-          applyStatus: "failed",
-          applyOutput: { error: safeDeployError(error, environment) },
-        }).catch(() => {});
+        await deps
+          .updateRevision(revision.id, deployment.organizationId, {
+            applyStatus: "failed",
+            applyOutput: { error: safeDeployError(error, environment) },
+          })
+          .catch(() => {});
         throw error;
       }
 
-      let after: SwarmDiscoverySnapshot;
+      let convergence: Awaited<ReturnType<typeof deps.waitForConvergence>>;
       try {
-        after = await platform.stackRuntime.discover();
+        convergence = await deps.waitForConvergence({
+          runtime: platform.stackRuntime,
+          stackName: stack.stackName,
+          logger,
+        });
       } catch (error) {
         if (!isConnectionLoss(error)) throw error;
-        await deps.updateRevision(revision.id, deployment.organizationId, {
-          applyStatus: "converging",
-          applyOutput: { warning: "Manager connection dropped after stack deploy; reconciliation is required." },
-        }).catch(() => {});
+        await deps
+          .updateRevision(revision.id, deployment.organizationId, {
+            applyStatus: "converging",
+            applyOutput: {
+              warning: "Manager connection dropped after stack deploy; reconciliation is required.",
+            },
+          })
+          .catch(() => {});
         return {
           runtimeRef,
           revisionId: revision.id,
           state: "reconciling",
-          warningMessage: "Manager connection dropped after stack deploy — verifying the live stack without rollback.",
+          warningMessage:
+            "Manager connection dropped after stack deploy — verifying the live stack without rollback.",
         };
       }
+      if (convergence.status === "unreachable" || !convergence.snapshot) {
+        await deps
+          .updateRevision(revision.id, deployment.organizationId, {
+            applyStatus: "converging",
+            applyOutput: {
+              warning: "Manager became unreachable while stack convergence was being verified.",
+            },
+          })
+          .catch(() => {});
+        return {
+          runtimeRef,
+          revisionId: revision.id,
+          state: "reconciling",
+          warningMessage: "Manager became unreachable while stack convergence was being verified.",
+        };
+      }
+      const after = convergence.snapshot;
       if (after.manager.clusterId !== stack.clusterId) {
-        throw new AppError("The configured manager changed Swarm clusters during deployment.", 409, "SWARM_CLUSTER_MISMATCH");
+        throw new AppError(
+          "The configured manager changed Swarm clusters during deployment.",
+          409,
+          "SWARM_CLUSTER_MISMATCH",
+        );
       }
       const live = stackServices(after, stack.stackName);
       const missing = resolvedSource.services
@@ -387,45 +517,85 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       if (missing.length > 0 || unlabeled.length > 0) {
         await deps.updateRevision(revision.id, deployment.organizationId, {
           applyStatus: "converging",
-          applyOutput: { warning: "Manager did not yet report the expected managed services.", missingServices: missing },
+          applyOutput: {
+            warning: "Manager did not yet report the expected managed services.",
+            missingServices: missing,
+          },
         });
         return {
           runtimeRef,
           revisionId: revision.id,
           state: "reconciling",
-          warningMessage: "Stack apply completed, but the manager has not yet reported the expected managed services.",
+          warningMessage:
+            "Stack apply completed, but the manager has not yet reported the expected managed services.",
         };
       }
-
-      const health = deriveSwarmStackHealth({
-        stackName: stack.stackName,
-        services: live,
-        tasks: after.tasks,
-        eligibleNodeCount: after.nodes.filter((node) => node.status.toLowerCase() === "ready" && node.availability.toLowerCase() === "active").length,
-      });
+      const health =
+        convergence.health ??
+        deriveSwarmStackHealth({ stackName: stack.stackName, services: live, tasks: after.tasks });
+      if (convergence.status === "failed") {
+        const reason =
+          health.diagnostics.join("; ") || "one or more Swarm services failed to converge";
+        await deps.updateRevision(revision.id, deployment.organizationId, {
+          applyStatus: "failed",
+          applyOutput: {
+            dockerStackDeploy: dockerStackDeployOutput,
+            prune,
+            pruneRemovals: prunePlan.removals,
+            health,
+          },
+        });
+        throw new AppError(
+          `Swarm stack failed to converge: ${reason}`,
+          502,
+          "SWARM_CONVERGENCE_FAILED",
+        );
+      }
       const refs = serviceRefs(stack, live);
-      const serviceRows = await deps.syncProjections(project.id, live.map((service) => ({
-        ...projection(service),
-        sourceDigest: rendered.renderedDigest,
-      })));
+      const serviceRows = await deps.syncProjections(
+        project.id,
+        live.map((service) => ({
+          ...projection(service),
+          sourceDigest: rendered.renderedDigest,
+        })),
+      );
       const finishedAt = deps.now();
-      const ready = health.state === "ready";
-      await deps.createServiceDeployments(serviceRows.flatMap((service) => {
-        const ref = refs[service.sourceServiceName ?? ""];
-        return ref ? [{
-          deploymentId: deployment.id,
-          serviceId: service.id,
-          serviceName: service.name,
-          runtimeRef: ref,
-          status: ready ? "success" as const : "in_progress" as const,
-          imageRef: live.find((candidate) => candidate.sourceServiceName === service.sourceServiceName)?.image ?? null,
-          startedAt,
-          ...(ready ? { finishedAt, durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()) } : {}),
-        }] : [];
-      }));
+      const ready = convergence.status === "ready" && health.state === "ready";
+      await deps.createServiceDeployments(
+        serviceRows.flatMap((service) => {
+          const ref = refs[service.sourceServiceName ?? ""];
+          return ref
+            ? [
+                {
+                  deploymentId: deployment.id,
+                  serviceId: service.id,
+                  serviceName: service.name,
+                  runtimeRef: ref,
+                  status: ready ? ("success" as const) : ("in_progress" as const),
+                  imageRef:
+                    live.find(
+                      (candidate) => candidate.sourceServiceName === service.sourceServiceName,
+                    )?.image ?? null,
+                  startedAt,
+                  ...(ready
+                    ? {
+                        finishedAt,
+                        durationMs: Math.max(0, finishedAt.getTime() - startedAt.getTime()),
+                      }
+                    : {}),
+                },
+              ]
+            : [];
+        }),
+      );
       await deps.updateRevision(revision.id, deployment.organizationId, {
         applyStatus: ready ? "ready" : "converging",
-        applyOutput: { dockerStackDeploy: dockerStackDeployOutput, prune, pruneRemovals: prunePlan.removals, health },
+        applyOutput: {
+          dockerStackDeploy: dockerStackDeployOutput,
+          prune,
+          pruneRemovals: prunePlan.removals,
+          health,
+        },
         serviceRefs: refs,
         ...(ready ? { convergedAt: finishedAt } : {}),
       });
@@ -437,7 +607,9 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         lastObservedAt: finishedAt,
         observedState: observedState(live),
         driftStatus: ready ? "clean" : "unknown",
-        driftDetails: ready ? {} : { summary: "Stack apply accepted; services are still converging." },
+        driftDetails: ready
+          ? {}
+          : { summary: "Stack apply accepted; services are still converging." },
       });
       if (!ready) {
         return {

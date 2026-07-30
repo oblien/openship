@@ -14,8 +14,15 @@ function currentState(value: string): "running" | "pending" | "failed" | "comple
   const state = value.toLowerCase();
   if (state.startsWith("running")) return "running";
   if (state.startsWith("complete")) return "complete";
-  if (state.startsWith("failed") || state.startsWith("rejected") || state.startsWith("shutdown")) return "failed";
-  if (state.startsWith("new") || state.startsWith("allocated") || state.startsWith("pending") || state.startsWith("preparing") || state.startsWith("starting")) return "pending";
+  if (state.startsWith("failed") || state.startsWith("rejected")) return "failed";
+  if (
+    state.startsWith("new") ||
+    state.startsWith("allocated") ||
+    state.startsWith("pending") ||
+    state.startsWith("preparing") ||
+    state.startsWith("starting")
+  )
+    return "pending";
   return "other";
 }
 
@@ -23,10 +30,22 @@ function currentState(value: string): "running" | "pending" | "failed" | "comple
  * Select only the latest desired task per replica slot. Historical rejected
  * tasks are deployment history, not a reason to mark a recovered service down.
  */
-export function selectCurrentSwarmTasks(tasks: SwarmTaskState[]): SwarmTaskState[] {
+export function selectCurrentSwarmTasks(
+  tasks: SwarmTaskState[],
+  keyFor: (task: SwarmTaskState) => string = (task) =>
+    task.slot === null ? task.id : String(task.slot),
+): SwarmTaskState[] {
   const bySlot = new Map<string, SwarmTaskState>();
   for (const task of tasks) {
-    const key = task.slot === null ? task.id : String(task.slot);
+    // Docker leaves old Shutdown rows in `service ps`. They are history, not a
+    // failed current replica. Completed job rows remain meaningful even though
+    // their desired state has already advanced to Shutdown.
+    if (
+      task.desiredState.toLowerCase().startsWith("shutdown") &&
+      currentState(task.currentState) !== "complete"
+    )
+      continue;
+    const key = keyFor(task);
     const previous = bySlot.get(key);
     if (!previous || taskTime(task) > taskTime(previous)) bySlot.set(key, task);
   }
@@ -38,34 +57,61 @@ export function deriveSwarmServiceHealth(
   tasks: SwarmTaskState[],
   options: { eligibleNodeCount?: number } = {},
 ): SwarmServiceHealth {
-  const currentTasks = selectCurrentSwarmTasks(tasks.filter((task) => task.serviceId === service.id));
+  const currentTasks = selectCurrentSwarmTasks(
+    tasks.filter((task) => task.serviceId === service.id),
+    service.mode === "global" || service.mode === "global-job"
+      ? (task) => task.nodeId ?? task.id
+      : undefined,
+  );
   const counts = { running: 0, pending: 0, failed: 0, completed: 0 };
   const diagnostics: string[] = [];
   for (const task of currentTasks) {
     switch (currentState(task.currentState)) {
-      case "running": counts.running++; break;
-      case "pending": counts.pending++; break;
+      case "running":
+        counts.running++;
+        break;
+      case "pending":
+        counts.pending++;
+        break;
       case "failed":
         counts.failed++;
         if (task.error) diagnostics.push(task.error);
         else diagnostics.push(`${task.serviceName}.${task.slot ?? "?"}: ${task.currentState}`);
         break;
-      case "complete": counts.completed++; break;
+      case "complete":
+        counts.completed++;
+        break;
     }
   }
 
-  const desired = service.mode === "global"
-    ? options.eligibleNodeCount ?? null
-    : service.desiredReplicas;
+  const isJob = service.mode === "replicated-job" || service.mode === "global-job";
+  const desired =
+    service.mode === "global" || service.mode === "global-job"
+      ? (options.eligibleNodeCount ?? null)
+      : service.desiredReplicas;
   const updateState = service.updateState?.toLowerCase();
   let state: SwarmServiceHealth["state"];
   if (desired === 0) state = "scaled-to-zero";
-  else if (updateState === "paused") state = "paused";
+  else if (updateState === "paused" || updateState === "rollback_paused") state = "paused";
+  else if (updateState?.startsWith("rollback")) state = "failed";
+  else if (isJob && counts.failed > 0) state = "failed";
+  else if (isJob && desired !== null && counts.completed >= desired) state = "converged";
+  else if (isJob && (counts.pending > 0 || counts.running > 0)) state = "updating";
+  else if (isJob && desired !== null && counts.completed + counts.running < desired)
+    state = "degraded";
   else if (updateState === "updating" || counts.pending > 0) state = "updating";
   else if (counts.failed > 0 && counts.running === 0) state = "failed";
   else if (counts.failed > 0 || (desired !== null && counts.running < desired)) state = "degraded";
   else if (desired !== null && counts.running >= desired) state = "converged";
   else state = "unknown";
+
+  if (
+    (service.mode === "global" || service.mode === "global-job") &&
+    desired !== null &&
+    currentTasks.length < desired
+  ) {
+    diagnostics.push(`Only ${currentTasks.length}/${desired} eligible nodes have a current task.`);
+  }
 
   return {
     serviceId: service.id,
@@ -86,12 +132,22 @@ export function deriveSwarmStackHealth(input: {
   eligibleNodeCount?: number;
 }): SwarmStackHealth {
   if (input.unreachable) {
-    return { stackName: input.stackName, state: "unreachable", services: [], diagnostics: ["Manager unreachable."] };
+    return {
+      stackName: input.stackName,
+      state: "unreachable",
+      services: [],
+      diagnostics: ["Manager unreachable."],
+    };
   }
   const services = input.services
     .filter((service) => service.stackName === input.stackName)
-    .map((service) => deriveSwarmServiceHealth(service, input.tasks, { eligibleNodeCount: input.eligibleNodeCount }));
-  if (services.length === 0) return { stackName: input.stackName, state: "empty", services, diagnostics: [] };
+    .map((service) =>
+      deriveSwarmServiceHealth(service, input.tasks, {
+        eligibleNodeCount: input.eligibleNodeCount,
+      }),
+    );
+  if (services.length === 0)
+    return { stackName: input.stackName, state: "empty", services, diagnostics: [] };
 
   const diagnostics = services.flatMap((service) => service.diagnostics).slice(0, 20);
   const states = new Set(services.map((service) => service.state));

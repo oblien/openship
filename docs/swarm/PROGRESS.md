@@ -235,7 +235,7 @@ Evidence:
 ## S2.5: Authorized read-only Swarm API
 
 Status: done
-Commit: pending
+Commit: current milestone
 Tests run:
 
 - `bun run --cwd apps/api lint` and `bunx tsc --noEmit -p apps/api/tsconfig.json` — passed.
@@ -595,3 +595,44 @@ Next:
 
 - Build durable convergence polling, reconciliation pickup, and structured
   managed-stack drift classification (Phase 6).
+
+## S6.1–S6.4: Convergence, reconciliation, and drift
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun --cwd packages/adapters vitest run src/runtime/swarm/health.test.ts src/runtime/swarm/normalize.test.ts` — passed (6 tests).
+- `bun --cwd apps/api vitest run src/modules/deployments/swarm/convergence.service.test.ts src/modules/deployments/swarm/reconcile.service.test.ts src/modules/deployments/swarm/deploy.service.test.ts src/modules/swarm/swarm-drift.test.ts src/modules/swarm/swarm-observation.service.test.ts` — passed (20 tests).
+- TypeScript checks for `apps/api`, `packages/adapters`, and `packages/db` — passed.
+- `scripts/swarm-lab.sh up`, `scripts/swarm-lab.sh managed-proof`,
+  `scripts/swarm-lab.sh cleanup`, and `scripts/swarm-lab.sh down` — passed
+  against the disposable nested manager and worker on July 30, 2026.
+
+Evidence:
+
+- Managed applies now poll structured service/task health with configured
+  timeout and cadence. Replicated, global, and job state account for current
+  tasks only, scheduler updates/rollbacks, and completed jobs; the bounded
+  timeout leaves a live stack `reconciling` for later observation.
+- `reconciling` Swarm deployments bypass every container operation. The durable
+  stack revision, labels, normalized service specs, service IDs, task health,
+  and image references determine the final result without reissuing a deploy.
+  Manager loss stays pending; externally changed specs become explicit drift.
+- Managed refresh compares sanitized canonical revision projections rather
+  than task history and classifies image, replica/mode, environment-key, mount,
+  network, port, label, placement/resource, config/secret, and service-set
+  changes. Docker-generated labels, implicit default networks, resolved image
+  digests, and generated placement fields are ignored.
+- The `swarm:refresh` system job groups bound managed stacks by manager,
+  discovers each group once, backs off unavailable managers, and retains the
+  last successful timestamp. The existing on-demand refresh uses the same
+  comparator and remains read-only.
+- The disposable proof now performs two identical real applies, then executes
+  a third real apply whose accepted response is deliberately withheld. Its
+  recovery path settles `ready` from manager state alone and confirms task IDs
+  were unchanged.
+
+Next:
+
+- Implement routine managed service and stack operations (Phase 7).

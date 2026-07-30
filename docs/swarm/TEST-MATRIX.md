@@ -5,17 +5,17 @@ privileged Docker-in-Docker containers, with the manager API published only at
 `127.0.0.1:23750`. It needs Docker Engine with nested privileged containers,
 approximately 4 GB free RAM, and outbound access to pull public fixture images.
 
-| Scenario | Command | Evidence |
-| --- | --- | --- |
-| Create manager + worker | `scripts/swarm-lab.sh up` | `docker node ls` reports a manager and worker |
-| Deploy replicated/global/stateful/routed fixture | `scripts/swarm-lab.sh deploy` | `docker stack services` and `docker stack ps` converge |
-| Start ordinary Compose Traefik | `scripts/swarm-lab.sh compose-proxy` | a non-Swarm Traefik container runs on the nested manager's `:18080` |
-| Read task state | `scripts/swarm-lab.sh status` | service/task table shows the fixture stack only |
-| Prove observe-mode coexistence | `scripts/swarm-lab.sh observe-proof` | runs repeated probe/discover/import/refresh plus Docker-native source validation while recording manager events; exits non-zero for any workload mutation |
-| Prove managed prebuilt deploy | `scripts/swarm-lab.sh managed-proof` | deploys a two-service inline stack through the production manager adapter twice; verifies revisions, stack/service refs, ownership labels, and unchanged task IDs on the second apply |
-| Capture mutations | `scripts/swarm-lab.sh events` | Docker events filtered to `com.openship.swarm.fixture=true` |
-| Remove fixtures only | `scripts/swarm-lab.sh cleanup` | only the fixed observe and managed fixture stacks are removed |
-| Destroy nested lab | `scripts/swarm-lab.sh down` | only `openship-swarm-lab` Compose resources are removed |
+| Scenario                                         | Command                              | Evidence                                                                                                                                                                                                                                                        |
+| ------------------------------------------------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create manager + worker                          | `scripts/swarm-lab.sh up`            | `docker node ls` reports a manager and worker                                                                                                                                                                                                                   |
+| Deploy replicated/global/stateful/routed fixture | `scripts/swarm-lab.sh deploy`        | `docker stack services` and `docker stack ps` converge                                                                                                                                                                                                          |
+| Start ordinary Compose Traefik                   | `scripts/swarm-lab.sh compose-proxy` | a non-Swarm Traefik container runs on the nested manager's `:18080`                                                                                                                                                                                             |
+| Read task state                                  | `scripts/swarm-lab.sh status`        | service/task table shows the fixture stack only                                                                                                                                                                                                                 |
+| Prove observe-mode coexistence                   | `scripts/swarm-lab.sh observe-proof` | runs repeated probe/discover/import/refresh plus Docker-native source validation while recording manager events; exits non-zero for any workload mutation                                                                                                       |
+| Prove managed prebuilt deploy and recovery       | `scripts/swarm-lab.sh managed-proof` | deploys a two-service inline stack through the production manager adapter twice; verifies revisions, stack/service refs, ownership labels, unchanged task IDs, then withholds an accepted Docker response and proves observation-only reconciliation settles it |
+| Capture mutations                                | `scripts/swarm-lab.sh events`        | Docker events filtered to `com.openship.swarm.fixture=true`                                                                                                                                                                                                     |
+| Remove fixtures only                             | `scripts/swarm-lab.sh cleanup`       | only the fixed observe and managed fixture stacks are removed                                                                                                                                                                                                   |
+| Destroy nested lab                               | `scripts/swarm-lab.sh down`          | only `openship-swarm-lab` Compose resources are removed                                                                                                                                                                                                         |
 
 The fixture has:
 
@@ -60,10 +60,13 @@ Run `up`, then `managed-proof`. It deploys the separate
 The harness holds only in-memory persistence, but invokes the production
 render, ownership-label, `docker stack deploy --resolve-image always`, manager
 discovery, health, revision, and service-reference paths. It applies the same
-source twice and fails if current task IDs change. The fixture's short update
-monitor keeps this proof bounded; it is not a production rollout default.
+source twice and fails if current task IDs change. It then applies the same
+source a third time while deliberately withholding Docker's accepted response;
+the production reconciliation service must settle that deployment by reading
+the live manager without another apply. The fixture's short update monitor
+keeps this proof bounded; it is not a production rollout default.
 
-Verified locally on July 30, 2026: both prebuilt services converged, two
-revision records and two sets of service deployment references were produced,
-and the second apply retained the two running task IDs. `cleanup` and `down`
-were then run successfully.
+Verified locally on July 30, 2026: both prebuilt services converged, three
+revision records and service deployment references were produced, the second
+apply retained the two running task IDs, and the lost-response recovery settled
+ready without changing them. `cleanup` and `down` were then run successfully.

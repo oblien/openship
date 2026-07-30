@@ -135,4 +135,10 @@ describe("Swarm persistence repositories", () => {
     expect(retained).toHaveLength(1);
     expect(retained[0]?.swarmProjection).toMatchObject({ sourceState: "removed" });
   });
+
+  it("lists managed bindings for the internal batched refresh scheduler only", async () => {
+    await repos.stack.updateInOrganization("swarm_a", "org_a", { managementMode: "managed" });
+    const managed = await repos.stack.listManaged();
+    expect(managed.map((stack) => stack.id)).toContain("swarm_a");
+  });
 });

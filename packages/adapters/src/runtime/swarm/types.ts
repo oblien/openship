@@ -46,7 +46,10 @@ export interface RenderStackInput {
 }
 
 export interface SwarmRenderIssue {
-  code: "SWARM_STACK_CONFIG_FAILED" | "SWARM_STACK_INTERPOLATION_FAILED" | "SWARM_STACK_RENDER_UNAVAILABLE";
+  code:
+    | "SWARM_STACK_CONFIG_FAILED"
+    | "SWARM_STACK_INTERPOLATION_FAILED"
+    | "SWARM_STACK_RENDER_UNAVAILABLE";
   message: string;
 }
 
@@ -89,7 +92,12 @@ export interface SwarmNodeState {
   labels: Record<string, string>;
 }
 
-export type SwarmServiceMode = "replicated" | "global" | "replicated-job" | "global-job" | "unknown";
+export type SwarmServiceMode =
+  | "replicated"
+  | "global"
+  | "replicated-job"
+  | "global-job"
+  | "unknown";
 
 export interface SwarmPublishedPort {
   target: number;
@@ -127,6 +135,8 @@ export interface SwarmServiceState {
   rollbackConfig: Record<string, unknown> | null;
   restartPolicy: Record<string, unknown> | null;
   networks: string[];
+  /** Named mount sources only; anonymous mount paths never leave the manager. */
+  volumes?: string[];
   configs: string[];
   secrets: string[];
   publishedPorts: SwarmPublishedPort[];

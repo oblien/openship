@@ -24,9 +24,7 @@ export class SwarmProbeError extends Error {
 type JsonRecord = Record<string, unknown>;
 
 function asRecord(value: unknown): JsonRecord | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : null;
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : null;
 }
 
 function text(value: unknown): string | null {
@@ -41,7 +39,9 @@ function labels(value: unknown): Record<string, string> {
   const input = asRecord(value);
   if (!input) return {};
   return Object.fromEntries(
-    Object.entries(input).flatMap(([key, label]) => (typeof label === "string" ? [[key, label]] : [])),
+    Object.entries(input).flatMap(([key, label]) =>
+      typeof label === "string" ? [[key, label]] : [],
+    ),
   );
 }
 
@@ -59,13 +59,32 @@ function referenceNames(value: unknown, key: "ConfigName" | "SecretName"): strin
   });
 }
 
+function mountSources(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(
+      value.flatMap((entry) => {
+        const mount = asRecord(entry);
+        const source = text(mount?.Source);
+        // Bind paths are host implementation detail and must not be exposed as a
+        // projected source reference. Named volume sources are enough for drift.
+        return source && !source.startsWith("/") ? [source] : [];
+      }),
+    ),
+  ).sort();
+}
+
 function environmentKeys(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return Array.from(new Set(value.flatMap((entry) => {
-    if (typeof entry !== "string") return [];
-    const key = entry.split("=", 1)[0]?.trim() ?? "";
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ? [key] : [];
-  }))).sort();
+  return Array.from(
+    new Set(
+      value.flatMap((entry) => {
+        if (typeof entry !== "string") return [];
+        const key = entry.split("=", 1)[0]?.trim() ?? "";
+        return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ? [key] : [];
+      }),
+    ),
+  ).sort();
 }
 
 function healthcheck(value: unknown): SwarmServiceState["healthcheck"] | undefined {
@@ -98,12 +117,14 @@ function publishedPorts(value: unknown): SwarmPublishedPort[] {
     const port = asRecord(entry);
     const target = integer(port?.TargetPort);
     if (target === null) return [];
-    return [{
-      target,
-      published: integer(port?.PublishedPort),
-      protocol: text(port?.Protocol) ?? "tcp",
-      mode: text(port?.PublishMode) ?? "ingress",
-    }];
+    return [
+      {
+        target,
+        published: integer(port?.PublishedPort),
+        protocol: text(port?.Protocol) ?? "tcp",
+        mode: text(port?.PublishMode) ?? "ingress",
+      },
+    ];
   });
 }
 
@@ -189,11 +210,11 @@ export function normalizeSwarmService(value: unknown): SwarmServiceState {
   const serviceLabels = labels(spec?.Labels);
   const stackName = serviceLabels["com.docker.stack.namespace"] ?? null;
   const name = text(spec?.Name) ?? text(service?.ID) ?? "";
-  const sourceServiceName = stackName && name.startsWith(`${stackName}_`)
-    ? name.slice(stackName.length + 1)
-    : name;
+  const sourceServiceName =
+    stackName && name.startsWith(`${stackName}_`) ? name.slice(stackName.length + 1) : name;
   const mode = asRecord(spec?.Mode);
   const replicated = asRecord(mode?.Replicated);
+  const replicatedJob = asRecord(mode?.ReplicatedJob);
   const networks = Array.isArray(task?.Networks)
     ? task.Networks.flatMap((network) => {
         const n = asRecord(network);
@@ -208,10 +229,14 @@ export function normalizeSwarmService(value: unknown): SwarmServiceState {
     stackName,
     specVersion: integer(asRecord(service?.Version)?.Index),
     mode: serviceMode(spec?.Mode),
-    desiredReplicas: integer(replicated?.Replicas),
+    desiredReplicas: integer(replicated?.Replicas) ?? integer(replicatedJob?.TotalCompletions),
     image: text(container?.Image),
-    ...(environmentKeys(container?.Env).length ? { environmentKeys: environmentKeys(container?.Env) } : {}),
-    ...(healthcheck(container?.Healthcheck) ? { healthcheck: healthcheck(container?.Healthcheck) } : {}),
+    ...(environmentKeys(container?.Env).length
+      ? { environmentKeys: environmentKeys(container?.Env) }
+      : {}),
+    ...(healthcheck(container?.Healthcheck)
+      ? { healthcheck: healthcheck(container?.Healthcheck) }
+      : {}),
     labels: serviceLabels,
     endpointMode: text(endpoint?.Mode),
     placement: asRecord(task?.Placement),
@@ -220,6 +245,7 @@ export function normalizeSwarmService(value: unknown): SwarmServiceState {
     rollbackConfig: asRecord(spec?.RollbackConfig),
     restartPolicy: asRecord(task?.RestartPolicy),
     networks,
+    ...(mountSources(container?.Mounts).length ? { volumes: mountSources(container?.Mounts) } : {}),
     configs: referenceNames(container?.Configs, "ConfigName"),
     secrets: referenceNames(container?.Secrets, "SecretName"),
     publishedPorts: publishedPorts(asRecord(service?.Endpoint)?.Ports ?? endpoint?.Ports),

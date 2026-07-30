@@ -17,9 +17,15 @@ export function createSwarmStackRepo(db: Database) {
       });
     },
 
-    async getForProjectInOrganization(projectId: string, organizationId: string): Promise<SwarmStack | undefined> {
+    async getForProjectInOrganization(
+      projectId: string,
+      organizationId: string,
+    ): Promise<SwarmStack | undefined> {
       return db.query.swarmStack.findFirst({
-        where: and(eq(swarmStack.projectId, projectId), eq(swarmStack.organizationId, organizationId)),
+        where: and(
+          eq(swarmStack.projectId, projectId),
+          eq(swarmStack.organizationId, organizationId),
+        ),
       });
     },
 
@@ -37,9 +43,21 @@ export function createSwarmStackRepo(db: Database) {
       });
     },
 
+    /** Internal scheduler read. No request handler may expose these rows cross-org. */
+    async listManaged(limit = 200): Promise<SwarmStack[]> {
+      return db.query.swarmStack.findMany({
+        where: eq(swarmStack.managementMode, "managed"),
+        orderBy: [desc(swarmStack.updatedAt)],
+        limit,
+      });
+    },
+
     async create(data: Omit<NewSwarmStack, "id"> & { id?: string }): Promise<SwarmStack> {
       const id = data.id ?? generateId("swarm");
-      const [row] = await db.insert(swarmStack).values({ ...data, id }).returning();
+      const [row] = await db
+        .insert(swarmStack)
+        .values({ ...data, id })
+        .returning();
       return row;
     },
 
@@ -65,7 +83,8 @@ export function createSwarmStackRepo(db: Database) {
       id: string,
       organizationId: string,
       expectedVersion: number,
-      patch: Pick<NewSwarmStack,
+      patch: Pick<
+        NewSwarmStack,
         | "sourceKind"
         | "sourceStatus"
         | "sourcePaths"
@@ -83,21 +102,31 @@ export function createSwarmStackRepo(db: Database) {
           sourceVersion: sql`${swarmStack.sourceVersion} + 1`,
           updatedAt: new Date(),
         })
-        .where(and(
-          eq(swarmStack.id, id),
-          eq(swarmStack.organizationId, organizationId),
-          eq(swarmStack.sourceVersion, expectedVersion),
-        ))
+        .where(
+          and(
+            eq(swarmStack.id, id),
+            eq(swarmStack.organizationId, organizationId),
+            eq(swarmStack.sourceVersion, expectedVersion),
+          ),
+        )
         .returning();
       return row;
     },
 
-    async listRevisionsInOrganization(stackId: string, organizationId: string): Promise<SwarmStackRevision[]> {
+    async listRevisionsInOrganization(
+      stackId: string,
+      organizationId: string,
+    ): Promise<SwarmStackRevision[]> {
       const rows = await db
         .select({ revision: swarmStackRevision })
         .from(swarmStackRevision)
         .innerJoin(swarmStack, eq(swarmStack.id, swarmStackRevision.stackId))
-        .where(and(eq(swarmStackRevision.stackId, stackId), eq(swarmStack.organizationId, organizationId)))
+        .where(
+          and(
+            eq(swarmStackRevision.stackId, stackId),
+            eq(swarmStack.organizationId, organizationId),
+          ),
+        )
         .orderBy(desc(swarmStackRevision.revision));
       return rows.map((row) => row.revision);
     },
@@ -111,10 +140,9 @@ export function createSwarmStackRepo(db: Database) {
         .select({ revision: swarmStackRevision })
         .from(swarmStackRevision)
         .innerJoin(swarmStack, eq(swarmStack.id, swarmStackRevision.stackId))
-        .where(and(
-          eq(swarmStackRevision.id, revisionId),
-          eq(swarmStack.organizationId, organizationId),
-        ))
+        .where(
+          and(eq(swarmStackRevision.id, revisionId), eq(swarmStack.organizationId, organizationId)),
+        )
         .limit(1);
       return row[0]?.revision;
     },
@@ -127,13 +155,12 @@ export function createSwarmStackRepo(db: Database) {
     async updateRevisionInOrganization(
       revisionId: string,
       organizationId: string,
-      patch: Partial<Pick<NewSwarmStackRevision,
-        | "applyStatus"
-        | "applyOutput"
-        | "serviceRefs"
-        | "appliedAt"
-        | "convergedAt"
-      >>,
+      patch: Partial<
+        Pick<
+          NewSwarmStackRevision,
+          "applyStatus" | "applyOutput" | "serviceRefs" | "appliedAt" | "convergedAt"
+        >
+      >,
     ): Promise<SwarmStackRevision | undefined> {
       const revision = await this.getRevisionInOrganization(revisionId, organizationId);
       if (!revision) return undefined;
