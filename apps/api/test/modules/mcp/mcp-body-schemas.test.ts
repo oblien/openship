@@ -72,6 +72,15 @@ describe("MCP write-tool body schemas", () => {
   it("deploy prepare/respond: prepare all-optional, respond needs action", () => {
     expect(ok(PrepareDeployBody, {})).toBe(true);
     expect(ok(PrepareDeployBody, { source: "github", owner: "a", repo: "b", branch: "main" })).toBe(true);
+    expect(
+      ok(PrepareDeployBody, {
+        source: "gitlab",
+        owner: "a",
+        repo: "b",
+        installationId: 42,
+        branch: "main",
+      }),
+    ).toBe(true);
     expect(ok(PrepareDeployBody, { source: "svn" })).toBe(false);
     expect(ok(BuildRespondBody, { action: "approve" })).toBe(true);
     expect(ok(BuildRespondBody, {})).toBe(false);

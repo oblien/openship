@@ -1,1 +1,1 @@
-ALTER TABLE "user_settings" ADD COLUMN "gitlab_base_url" text;
+ALTER TABLE "user_settings" ADD COLUMN IF NOT EXISTS "gitlab_base_url" text;
