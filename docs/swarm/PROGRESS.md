@@ -1227,3 +1227,45 @@ Next:
 
 - Complete the project configuration and settings workflows for Swarm stacks
   (S13.1).
+
+## S13.1: Project creation and settings UX
+
+Status: done
+Commit: `e715852b`
+Tests run:
+
+- `bun --filter @repo/api test src/modules/projects/project.schema.test.ts src/modules/swarm/swarm-stack.service.test.ts src/modules/swarm/swarm-source.model.test.ts`
+  — passed (8 tests).
+- `bunx tsc --noEmit -p apps/dashboard/tsconfig.json`, `bun run --cwd apps/api lint`,
+  and `git diff --check` — passed.
+- `bun run --cwd apps/dashboard build` — passed; the optimized Next.js
+  production build compiled and completed its TypeScript phase.
+- `bun run --cwd apps/dashboard lint` cannot currently run: its legacy
+  `next lint` script is unsupported by the checked-in Next.js 16.1.6
+  dependency. Direct ESLint invocation is also unavailable because the
+  repository has no flat ESLint config. This is pre-existing tool wiring, not
+  a Swarm failure.
+
+Evidence:
+
+- A manager's Swarm tab now exposes a guided “New Docker Swarm stack project”
+  flow. It discovers verified manager candidates, displays each current cluster
+  fingerprint, validates the project/stack identity and repository paths
+  inline, and creates an initially un-routed Docker project before binding an
+  absent stack namespace through the existing organization-scoped API.
+- The guided flow selects encrypted inline YAML or repository Compose paths,
+  an organization registry, and the safe external-routing default. It keeps
+  OpenShip Edge unavailable until source review and ownership claim, preventing
+  a new project from taking over router labels or traffic.
+- A bound namespace with no services is now a first-class dry-run dashboard
+  state rather than a false manager failure. The observed project surface
+  shows ownership as read-only, source digest, manager cluster identity, and
+  the render comparison's rendered/live digests before first apply.
+- Project creation accepts an explicit empty endpoint list for private or
+  externally routed workloads, while omission preserves the normal default
+  route behavior. A schema regression test covers the explicit no-route case;
+  standalone creation otherwise retains its existing defaults.
+
+Next:
+
+- Complete Swarm deployment history and detail UX (S13.2).
