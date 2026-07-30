@@ -1347,3 +1347,45 @@ Next:
 
 - Complete locale, accessibility, confirmation, and authorization coverage
   across the Swarm surface (S13.4).
+
+## S13.4: Localization, accessibility, and permission completeness
+
+Status: done
+Commit: `0b6e3f2a`
+Tests run:
+
+- `bun --filter @repo/api test src/modules/projects/swarm-route-permissions.test.ts src/modules/swarm/swarm-connection.service.test.ts src/modules/swarm/swarm-operations.service.test.ts src/modules/swarm/swarm-management.service.test.ts test/lib/permission-own-projects.test.ts` — passed (32 tests).
+- `bun --cwd apps/dashboard vitest run src/i18n/i18n-parity.test.ts` — passed (2 tests).
+- `bunx tsc --noEmit -p apps/api/tsconfig.json`,
+  `bunx tsc --noEmit -p apps/dashboard/tsconfig.json`, and
+  `git diff --check` — passed.
+- `bun run --cwd apps/api lint` and `bun run --cwd apps/dashboard build`
+  — passed.
+- `bun run --cwd apps/dashboard lint` remains unavailable because its
+  checked-in `next lint` script is unsupported by Next.js 16.1.6; direct
+  ESLint is not configured in this checkout. This is pre-existing tooling.
+
+Evidence:
+
+- The new `swarm` dictionary has matching keys in English and all eight
+  supported non-English locales, with translated deployment-phase and
+  manager-connection vocabulary. Its 27 keys and interpolation placeholders
+  were checked across all nine locales. The localization parity ratchet now
+  accurately records the existing `deploy` backlog as 90 (rather than the
+  stale 18), so the dashboard test passes while still rejecting any new
+  namespace drift.
+- Shared dialogs now expose dialog semantics, accessible labels, focus entry
+  and restoration, Tab containment, and closable Escape behavior. Swarm
+  rollback, manager rebinding, and stack removal use those dialogs; removal
+  explicitly names the stack, states preserved resources, and requires the
+  exact name before enabling the action.
+- Every Swarm project route is registered through `secureRouter`: manager
+  inspection uses `project:read`/read-only specifications, operational
+  mutations use `project:write`, and handoff/release/removal use
+  `project:admin`. Tests lock that map, prove a read-only project grant
+  cannot write or administer, reject cross-organization project IDs before
+  any manager probe, and retain stale/exact-name destructive-action checks.
+
+Next:
+
+- Conduct the security hardening review (S14.1).
