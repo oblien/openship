@@ -151,6 +151,7 @@ export function serializeStackSource(stack: SwarmStack) {
     deployable,
     routingMode: stack.routingMode,
     registryId: stack.registryId,
+    storageAcknowledgements: stack.storageAcknowledgements,
     // Presence only: encrypted source text is never part of the normal DTO.
     hasInlineYaml: !!stack.sourceYamlEnc,
   };

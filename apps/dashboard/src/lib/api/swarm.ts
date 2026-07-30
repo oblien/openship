@@ -163,6 +163,7 @@ export interface SwarmStackSource {
   hasInlineYaml: boolean;
   routingMode: "external" | "openship-edge";
   registryId: string | null;
+  storageAcknowledgements: string[];
 }
 
 export type SwarmPreviewChangeKind =
@@ -187,8 +188,8 @@ export interface SwarmSourcePreview {
   noOp: boolean;
   warnings: string[];
   compatibility: {
-    blockers: Array<{ code: string; message: string; remediation: string; serviceName?: string }>;
-    warnings: Array<{ code: string; message: string; remediation: string; serviceName?: string }>;
+    blockers: Array<{ code: string; message: string; remediation: string; serviceName?: string; acknowledgementKey?: string }>;
+    warnings: Array<{ code: string; message: string; remediation: string; serviceName?: string; acknowledgementKey?: string }>;
   };
 }
 
@@ -282,6 +283,8 @@ export const swarmApi = {
     api.patch<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/registry`, { registryId }).then((result) => result.source),
   setRoutingMode: (projectId: string, routingMode: SwarmStackSource["routingMode"]) =>
     api.patch<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/routing`, { routingMode }).then((result) => result.source),
+  setStorageAcknowledgements: (projectId: string, acknowledgements: string[]) =>
+    api.put<{ source: SwarmStackSource }>(`projects/${projectId}/swarm/storage-acknowledgements`, { acknowledgements }).then((result) => result.source),
   renderSource: (projectId: string, environment: Record<string, string> = {}) =>
     api.post<SwarmSourcePreview>(`projects/${projectId}/swarm/source/render`, { environment }),
   claimManagement: (projectId: string, input: { confirmedStackName: string; previewLiveDigest: string }) =>

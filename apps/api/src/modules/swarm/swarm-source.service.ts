@@ -93,6 +93,21 @@ export async function setStackRoutingMode(
   return serializeStackSource(updated);
 }
 
+/** Replaces acknowledgements so removed source/mount findings cannot linger silently. */
+export async function setStorageAcknowledgements(
+  projectId: string,
+  organizationId: string,
+  acknowledgements: string[],
+) {
+  const stack = await stackForProject(projectId, organizationId);
+  const normalized = [...new Set(acknowledgements.map((value) => value.trim()).filter(Boolean))].sort();
+  const updated = await repos.swarmStack.updateInOrganization(stack.id, organizationId, {
+    storageAcknowledgements: normalized,
+  });
+  if (!updated) throw new NotFoundError("Swarm stack", stack.id);
+  return serializeStackSource(updated);
+}
+
 function sourceError(message: string, code: string): AppError {
   return new AppError(message, 409, code);
 }
@@ -336,6 +351,7 @@ export async function renderStackSource(
       renderedYaml: rendered.renderedYaml,
       discovery: observed,
       registryConfigured: !!stack.registryId,
+      acknowledgedStorage: stack.storageAcknowledgements,
     });
     await repos.swarmStack.updateInOrganization(stack.id, organizationId, { sourceStatus: "valid" });
     return {

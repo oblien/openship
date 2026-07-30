@@ -861,6 +861,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         renderedYaml: initiallyRendered.renderedYaml,
         discovery: before,
         registryConfigured: !!registry,
+        acknowledgedStorage: stack.storageAcknowledgements,
       });
       if (sourceCompatibility.blockers.length > 0) {
         throw new AppError(
@@ -913,6 +914,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           renderedYaml: rendered.renderedYaml,
           discovery: resourceDiscovery,
           registryConfigured: !!registry,
+          acknowledgedStorage: stack.storageAcknowledgements,
         });
         if (compatibility.blockers.length > 0) {
           throw new AppError(

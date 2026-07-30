@@ -46,7 +46,7 @@ import {
   CreateIncomingWebhookBody,
   UpdateIncomingWebhookBody,
 } from "../incoming-webhooks/incoming.schema";
-import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, SaveSwarmManagedInputBody, ScaleSwarmServiceBody, SetSwarmRoutingModeBody, SetSwarmStackRegistryBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
+import { ClaimSwarmStackBody, CreateSwarmStackBindingBody, ReleaseSwarmManagementBody, RemoveSwarmStackBody, RenderSwarmStackSourceBody, SaveSwarmManagedInputBody, ScaleSwarmServiceBody, SetSwarmRoutingModeBody, SetSwarmStackRegistryBody, SetSwarmStorageAcknowledgementsBody, UpdateSwarmStackSourceBody } from "../swarm/swarm-source.schema";
 
 const r = secureRouter(new Hono(), {
   module: "projects",
@@ -209,6 +209,11 @@ r.patch(
   "/:id/swarm/routing",
   { tag: "project:write", localOnly: true, body: SetSwarmRoutingModeBody },
   swarmSource.setRoutingMode,
+);
+r.put(
+  "/:id/swarm/storage-acknowledgements",
+  { tag: "project:write", localOnly: true, body: SetSwarmStorageAcknowledgementsBody },
+  swarmSource.setStorageAcknowledgements,
 );
 r.post(
   "/:id/swarm/claim",

@@ -31,7 +31,7 @@ secrets:
       "SWARM_EXTERNAL_SECRET_MISSING",
     ]));
     expect(report.warnings.map((issue) => issue.code)).toEqual(expect.arrayContaining([
-      "SWARM_LOCAL_VOLUME_MOVABILITY",
+      "SWARM_STORAGE_LOCAL_VOLUME_UNPINNED",
       "SWARM_SERVICE_LOGS_LIMITED",
     ]));
     expect([...report.blockers, ...report.warnings].every((issue) => issue.remediation.length > 0)).toBe(true);
@@ -60,7 +60,7 @@ secrets:
     ]));
   });
 
-  it("clears external prerequisites found on the manager and respects a stateful placement constraint", () => {
+  it("recognizes a single-node placement constraint but still describes local storage as non-portable", () => {
     const report = evaluateSwarmCompatibility({
       renderedYaml: `services:
   database:
@@ -80,6 +80,7 @@ secrets:
   db-password: { external: true, name: shared-db-password }
 `,
       discovery: {
+        nodes: [{ id: "node-db", hostname: "db-1", status: "ready", availability: "active", managerStatus: null, engineVersion: "27", labels: { database: "true" } }],
         networks: [{ id: "n1", name: "shared-ingress", driver: "overlay", scope: "swarm", labels: {} }],
         volumes: [{ name: "db-data", driver: "local", scope: "local", labels: {}, options: {} }],
         configs: [{ id: "c1", name: "shared-app-config", labels: {}, createdAt: null }],
@@ -88,6 +89,52 @@ secrets:
       registryConfigured: true,
     });
     expect(report.blockers).toEqual([]);
-    expect(report.warnings.map((issue) => issue.code)).not.toContain("SWARM_LOCAL_VOLUME_MOVABILITY");
+    expect(report.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "SWARM_STORAGE_LOCAL_VOLUME_PINNED", serviceName: "database" }),
+    ]));
+  });
+
+  it("classifies bind, tmpfs, shared, and unknown-volume storage without claiming high availability", () => {
+    const report = evaluateSwarmCompatibility({
+      renderedYaml: `services:
+  app:
+    image: nginx
+    volumes:
+      - /srv/app:/app
+      - type: tmpfs
+        target: /run/cache
+      - nfs-data:/data
+      - mystery:/mystery
+volumes:
+  nfs-data:
+    driver: local
+    driver_opts: { type: nfs, device: ":/exports/app" }
+  mystery: { driver: custom-driver }
+`,
+      discovery: { networks: [], volumes: [], configs: [], secrets: [] },
+      registryConfigured: true,
+    });
+    expect(report.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "SWARM_STORAGE_BIND_UNVERIFIED", acknowledgementKey: "app:bind:/srv/app", message: expect.stringContaining("High storage risk") }),
+      expect.objectContaining({ code: "SWARM_STORAGE_TMPFS_EPHEMERAL" }),
+      expect.objectContaining({ code: "SWARM_STORAGE_SHARED_VOLUME", message: expect.stringContaining("does not verify") }),
+      expect.objectContaining({ code: "SWARM_STORAGE_VOLUME_DRIVER_UNKNOWN" }),
+    ]));
+  });
+
+  it("suppresses only the operator-acknowledged storage finding", () => {
+    const renderedYaml = `services:
+  database:
+    image: postgres:16
+    volumes: [db-data:/var/lib/postgresql/data]
+volumes: { db-data: {} }
+`;
+    const report = evaluateSwarmCompatibility({
+      renderedYaml,
+      discovery: { networks: [], volumes: [], configs: [], secrets: [] },
+      registryConfigured: true,
+      acknowledgedStorage: ["database:volume:db-data"],
+    });
+    expect(report.warnings.map((issue) => issue.code)).not.toContain("SWARM_STORAGE_LOCAL_VOLUME_UNPINNED");
   });
 });

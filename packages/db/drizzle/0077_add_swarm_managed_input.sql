@@ -9,5 +9,7 @@ CREATE TABLE IF NOT EXISTS "swarm_managed_input" (
   "created_at" timestamp DEFAULT now() NOT NULL,
   "updated_at" timestamp DEFAULT now() NOT NULL
 );
+--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_swarm_managed_input_project_kind_logical" ON "swarm_managed_input" USING btree ("project_id","kind","logical_name");
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_swarm_managed_input_project" ON "swarm_managed_input" USING btree ("project_id");

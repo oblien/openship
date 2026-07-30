@@ -540,6 +540,20 @@
       "when": 1785358404651,
       "tag": "0076_add_swarm_source_status",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1785358405651,
+      "tag": "0077_add_swarm_managed_input",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1785358406651,
+      "tag": "0078_add_swarm_storage_acknowledgements",
+      "breakpoints": true
     }
   ]
 }

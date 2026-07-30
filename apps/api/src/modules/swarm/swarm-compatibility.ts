@@ -68,20 +68,79 @@ export function externalSwarmResourceConsumers(renderedYaml: string): ExternalSw
   return result.sort((left, right) => left.kind.localeCompare(right.kind) || left.name.localeCompare(right.name));
 }
 
-function sourceVolumeNames(value: unknown): string[] {
+type StorageMount = {
+  kind: "bind" | "volume" | "tmpfs" | "unknown";
+  source: string | null;
+};
+
+function storageMounts(value: unknown): StorageMount[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (typeof item !== "string") return [];
-    const source = item.split(":")[0]?.trim() ?? "";
-    // Only named volumes; bind paths are separately confined and don't move
-    // with a scheduler either, but cannot be inferred as named volume state.
-    return source && !source.startsWith(".") && !source.startsWith("/") && !source.includes("/") ? [source] : [];
+  return value.flatMap<StorageMount>((entry): StorageMount[] => {
+    if (typeof entry === "string") {
+      const source = entry.split(":")[0]?.trim() ?? "";
+      if (!source) return [{ kind: "unknown", source: null }];
+      if (source === "tmpfs") return [{ kind: "tmpfs", source: null }];
+      return [{ kind: source.startsWith(".") || source.startsWith("/") || source.startsWith("~") ? "bind" : "volume", source }];
+    }
+    const mount = record(entry);
+    if (!mount) return [{ kind: "unknown", source: null }];
+    const type = text(mount.type)?.toLowerCase();
+    const source = text(mount.source);
+    if (type === "bind") return [{ kind: "bind", source }];
+    if (type === "volume") return [{ kind: "volume", source }];
+    if (type === "tmpfs") return [{ kind: "tmpfs", source: null }];
+    return [{ kind: "unknown", source }];
   });
 }
 
-function hasPlacementConstraint(service: JsonRecord): boolean {
+function placementConstraints(service: JsonRecord): string[] {
   const constraints = record(record(service.deploy)?.placement)?.constraints;
-  return Array.isArray(constraints) && constraints.length > 0;
+  return Array.isArray(constraints)
+    ? constraints.flatMap((constraint) => typeof constraint === "string" && constraint.trim() ? [constraint.trim()] : [])
+    : [];
+}
+
+function eligibleNodeCount(service: JsonRecord, nodes: SwarmDiscoverySnapshot["nodes"]): number | null {
+  const constraints = placementConstraints(service);
+  if (constraints.length === 0) return null;
+  let candidates = nodes.filter((node) => node.status.toLowerCase() === "ready" && node.availability.toLowerCase() === "active");
+  let understood = false;
+  for (const constraint of constraints) {
+    const label = constraint.match(/^node\.labels\.([A-Za-z0-9_.-]+)\s*(==|!=)\s*(.+)$/);
+    if (label) {
+      understood = true;
+      const [, key, operator, expected] = label;
+      candidates = candidates.filter((node) => (operator === "==") === (node.labels[key!] === expected!.trim()));
+      continue;
+    }
+    const hostname = constraint.match(/^node\.hostname\s*(==|!=)\s*(.+)$/);
+    if (hostname) {
+      understood = true;
+      const [, operator, expected] = hostname;
+      candidates = candidates.filter((node) => (operator === "==") === (node.hostname === expected!.trim()));
+    }
+  }
+  return understood && candidates.length > 0 ? candidates.length : null;
+}
+
+function volumeStorageKind(
+  definition: JsonRecord | null,
+  discovered: SwarmDiscoverySnapshot["volumes"][number] | undefined,
+): "local" | "shared" | "unknown" {
+  const driver = text(definition?.driver) ?? discovered?.driver ?? "local";
+  if (driver !== "local") {
+    return /(?:nfs|cifs|smb|gluster|ceph|efs|azurefile|portworx|longhorn|netapp)/i.test(driver) ? "shared" : "unknown";
+  }
+  const options = { ...(record(definition?.driver_opts) ?? {}), ...(discovered?.options ?? {}) };
+  const type = text(options.type)?.toLowerCase();
+  const device = text(options.device)?.toLowerCase();
+  const shared = ["nfs", "nfs4", "cifs", "smb", "sshfs", "glusterfs", "ceph"].includes(type ?? "") ||
+    !!device && (device.startsWith(":") || device.startsWith("//"));
+  return shared ? "shared" : "local";
+}
+
+function storageKey(serviceName: string, mount: StorageMount): string {
+  return `${serviceName}:${mount.kind}:${mount.source ?? ""}`;
 }
 
 function append(report: SwarmCompatibilityReport, issue: SwarmCompatibilityIssue): void {
@@ -95,8 +154,11 @@ function append(report: SwarmCompatibilityReport, issue: SwarmCompatibilityIssue
  */
 export function evaluateSwarmCompatibility(input: {
   renderedYaml: string;
-  discovery: Pick<SwarmDiscoverySnapshot, "networks" | "volumes" | "configs" | "secrets">;
+  discovery: Pick<SwarmDiscoverySnapshot, "networks" | "volumes" | "configs" | "secrets"> &
+    Partial<Pick<SwarmDiscoverySnapshot, "nodes">>;
   registryConfigured: boolean;
+  /** Exact storage findings the operator has explicitly reviewed as safe. */
+  acknowledgedStorage?: string[];
 }): SwarmCompatibilityReport {
   const report: SwarmCompatibilityReport = { blockers: [], warnings: [] };
   const projection = projectSwarmStackSource([{ path: "rendered-stack.yaml", content: input.renderedYaml }]);
@@ -141,6 +203,8 @@ export function evaluateSwarmCompatibility(input: {
   }
 
   const volumeDefinitions = record(source.volumes) ?? {};
+  const volumes = new Map(input.discovery.volumes.map((volume) => [volume.name, volume]));
+  const acknowledgedStorage = new Set(input.acknowledgedStorage ?? []);
   for (const [serviceName, rawService] of Object.entries(services)) {
     const service = record(rawService);
     if (!service) continue;
@@ -149,14 +213,73 @@ export function evaluateSwarmCompatibility(input: {
       message: "A source-built service cannot be applied until workers can pull its registry image.",
       remediation: "Configure an OCI registry for this stack and publish a digest-pinned image.",
     });
-    for (const volume of sourceVolumeNames(service.volumes)) {
-      const definition = record(volumeDefinitions[volume]);
-      const driver = text(definition?.driver) ?? "local";
-      if (driver === "local" && !externalName(volume, definition) && !hasPlacementConstraint(service)) append(report, {
-        severity: "warning", code: "SWARM_LOCAL_VOLUME_MOVABILITY", serviceName,
-        message: `Local named volume ${volume} may not follow ${serviceName} if Swarm reschedules it.`,
-        remediation: "Add a placement constraint, use a multi-node volume driver, or make the service stateless.",
-      });
+    for (const mount of storageMounts(service.volumes)) {
+      if (acknowledgedStorage.has(storageKey(serviceName, mount))) continue;
+      if (mount.kind === "bind") {
+        append(report, {
+          severity: "warning", code: "SWARM_STORAGE_BIND_UNVERIFIED", serviceName,
+          acknowledgementKey: storageKey(serviceName, mount),
+          message: `High storage risk: bind mount ${mount.source ?? "(unnamed)"} cannot be verified on every node eligible for ${serviceName}.`,
+          remediation: "Pin the service to a verified node, use shared storage, or explicitly acknowledge the known-safe bind setup.",
+        });
+        continue;
+      }
+      if (mount.kind === "tmpfs") {
+        append(report, {
+          severity: "warning", code: "SWARM_STORAGE_TMPFS_EPHEMERAL", serviceName,
+          acknowledgementKey: storageKey(serviceName, mount),
+          message: `tmpfs storage for ${serviceName} is intentionally ephemeral and is lost when its task is rescheduled.`,
+          remediation: "Use tmpfs only for disposable data, or attach persistent storage for application state.",
+        });
+        continue;
+      }
+      if (mount.kind === "unknown" || !mount.source) {
+        append(report, {
+          severity: "warning", code: "SWARM_STORAGE_MOUNT_UNKNOWN", serviceName,
+          acknowledgementKey: storageKey(serviceName, mount),
+          message: `OpenShip cannot classify one storage mount for ${serviceName}.`,
+          remediation: "Use an explicit bind, volume, or tmpfs mount and verify its scheduler behavior before relying on it for state.",
+        });
+        continue;
+      }
+      const definition = record(volumeDefinitions[mount.source]);
+      const actualName = externalName(mount.source, definition) ?? mount.source;
+      const discovered = volumes.get(actualName);
+      const volumeKind = volumeStorageKind(definition, discovered);
+      if (volumeKind === "shared") {
+        append(report, {
+          severity: "warning", code: "SWARM_STORAGE_SHARED_VOLUME", serviceName,
+          acknowledgementKey: storageKey(serviceName, mount),
+          message: `Volume ${actualName} for ${serviceName} appears to use shared/distributed storage; OpenShip does not verify its availability or data-consistency guarantees.`,
+          remediation: "Verify the driver's failover, locking, backup, and recovery guarantees with the storage operator.",
+        });
+        continue;
+      }
+      if (volumeKind === "unknown") {
+        append(report, {
+          severity: "warning", code: "SWARM_STORAGE_VOLUME_DRIVER_UNKNOWN", serviceName,
+          acknowledgementKey: storageKey(serviceName, mount),
+          message: `Volume ${actualName} for ${serviceName} uses a driver OpenShip cannot classify as local or shared.`,
+          remediation: "Review the driver's scheduling and data guarantees, then explicitly acknowledge the known-safe setup if appropriate.",
+        });
+        continue;
+      }
+      const eligible = eligibleNodeCount(service, input.discovery.nodes ?? []);
+      if (eligible === 1) {
+        append(report, {
+          severity: "warning", code: "SWARM_STORAGE_LOCAL_VOLUME_PINNED", serviceName,
+          acknowledgementKey: storageKey(serviceName, mount),
+          message: `Local volume ${actualName} for ${serviceName} is constrained to one eligible node; it is not portable or highly available.`,
+          remediation: "Keep that node and its volume protected, or migrate the service to shared storage before relying on rescheduling.",
+        });
+      } else {
+        append(report, {
+          severity: "warning", code: "SWARM_STORAGE_LOCAL_VOLUME_UNPINNED", serviceName,
+          acknowledgementKey: storageKey(serviceName, mount),
+          message: `High storage risk: local volume ${actualName} may be absent if Swarm reschedules ${serviceName} to another node.`,
+          remediation: "Add a constraint that selects one verified node, use a multi-node volume driver, or make the service stateless.",
+        });
+      }
     }
     const loggingDriver = text(record(service.logging)?.driver);
     if (loggingDriver && !["json-file", "local", "journald"].includes(loggingDriver)) append(report, {

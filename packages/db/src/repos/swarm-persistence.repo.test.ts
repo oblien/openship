@@ -141,4 +141,12 @@ describe("Swarm persistence repositories", () => {
     const managed = await repos.stack.listManaged();
     expect(managed.map((stack) => stack.id)).toContain("swarm_a");
   });
+
+  it("persists storage-risk acknowledgements only within the owning organization", async () => {
+    const acknowledgements = ["database:volume:db-data"];
+    const updated = await repos.stack.updateInOrganization("swarm_a", "org_a", { storageAcknowledgements: acknowledgements });
+    expect(updated?.storageAcknowledgements).toEqual(acknowledgements);
+    expect(await repos.stack.updateInOrganization("swarm_a", "org_b", { storageAcknowledgements: [] })).toBeUndefined();
+    expect((await repos.stack.getInOrganization("swarm_a", "org_a"))?.storageAcknowledgements).toEqual(acknowledgements);
+  });
 });

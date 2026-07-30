@@ -28,6 +28,8 @@ export interface SwarmCompatibilityIssue {
   severity: "warning" | "blocker";
   code: string;
   serviceName?: string;
+  /** Stable key accepted by the explicit storage-acknowledgement API. */
+  acknowledgementKey?: string;
   message: string;
   remediation: string;
 }

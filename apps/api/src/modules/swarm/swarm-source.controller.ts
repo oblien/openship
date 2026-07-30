@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
-import type { TRenderSwarmStackSourceBody, TSetSwarmRoutingModeBody, TSetSwarmStackRegistryBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
+import type { TRenderSwarmStackSourceBody, TSetSwarmRoutingModeBody, TSetSwarmStackRegistryBody, TSetSwarmStorageAcknowledgementsBody, TUpdateSwarmStackSourceBody } from "./swarm-source.schema";
 import * as source from "./swarm-source.service";
 
 export async function get(c: Context) {
@@ -72,6 +72,19 @@ export async function setRoutingMode(c: Context) {
     resourceType: "project",
     resourceId: c.req.param("id")!,
     after: { routingMode: result.routingMode },
+  });
+  return c.json({ source: result });
+}
+
+export async function setStorageAcknowledgements(c: Context) {
+  const ctx = getRequestContext(c);
+  const body = await c.req.json<TSetSwarmStorageAcknowledgementsBody>();
+  const result = await source.setStorageAcknowledgements(c.req.param("id")!, ctx.organizationId, body.acknowledgements);
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "swarm.stack.storage-acknowledgements.set",
+    resourceType: "project",
+    resourceId: c.req.param("id")!,
+    after: { count: result.storageAcknowledgements.length },
   });
   return c.json({ source: result });
 }

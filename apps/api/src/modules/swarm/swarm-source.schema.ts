@@ -72,6 +72,15 @@ export const SetSwarmRoutingModeBody = Type.Object({
 
 export type TSetSwarmRoutingModeBody = Static<typeof SetSwarmRoutingModeBody>;
 
+/** Replaces the exact storage findings the operator has reviewed as safe. */
+export const SetSwarmStorageAcknowledgementsBody = Type.Object({
+  acknowledgements: Type.Array(
+    Type.String({ minLength: 3, maxLength: 512, pattern: "^[A-Za-z0-9_.-]+:(bind|volume|tmpfs|unknown):.*$" }),
+    { maxItems: 100, uniqueItems: true },
+  ),
+});
+export type TSetSwarmStorageAcknowledgementsBody = Static<typeof SetSwarmStorageAcknowledgementsBody>;
+
 /** Typed-name confirmation before returning a stack to another controller. */
 export const ReleaseSwarmManagementBody = Type.Object({
   confirmedStackName: Type.String({ minLength: 1, maxLength: 63 }),
