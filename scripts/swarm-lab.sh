@@ -34,9 +34,15 @@ edge_certs_volume="openship-swarm-edge-proof-certs"
 edge_acme_volume="openship-swarm-edge-proof-acme"
 edge_image="${OPENSHIP_EDGE_IMAGE:-ghcr.io/oblien/openship-edge:latest}"
 manager_host="tcp://127.0.0.1:23750"
+cutover_router_service="openship-swarm-cutover-router"
+managed_edge_service="openship-edge"
+managed_edge_network="openship-edge"
+managed_edge_sites_volume="openship-edge-sites"
+managed_edge_certs_volume="openship-edge-certs"
+managed_edge_acme_volume="openship-edge-acme"
 
 usage() {
-  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|edge-proof|events|cleanup|down}" >&2
+  echo "Usage: scripts/swarm-lab.sh {up|deploy|compose-proxy|status|observe-proof|managed-proof|operations-proof|registry-proof|edge-proof|cutover-proof|events|cleanup|down}" >&2
   exit 64
 }
 
@@ -161,6 +167,16 @@ remove_edge_proof_objects() {
   docker -H "$manager_host" config rm "$edge_config" "$edge_route_update_config" >/dev/null 2>&1 || true
   docker -H "$manager_host" network rm "$edge_network" >/dev/null 2>&1 || true
   docker -H "$manager_host" volume rm "$edge_sites_volume" "$edge_certs_volume" "$edge_acme_volume" >/dev/null 2>&1 || true
+}
+
+remove_cutover_proof_objects() {
+  docker -H "$manager_host" service rm "$managed_edge_service" >/dev/null 2>&1 || true
+  docker -H "$manager_host" service rm "$cutover_router_service" >/dev/null 2>&1 || true
+  wait_for_service_removal "$managed_edge_service"
+  wait_for_service_removal "$cutover_router_service"
+  docker -H "$manager_host" network rm "$managed_edge_network" >/dev/null 2>&1 || true
+  docker -H "$manager_host" volume rm "$managed_edge_sites_volume" "$managed_edge_certs_volume" "$managed_edge_acme_volume" >/dev/null 2>&1 || true
+  docker -H "$manager_host" config ls --filter 'label=com.openship.edge.cutover=true' -q | xargs -r docker -H "$manager_host" config rm >/dev/null 2>&1 || true
 }
 
 start_lab() {
@@ -404,6 +420,29 @@ case "${1:-}" in
     docker -H "$manager_host" service inspect "$edge_service" --format '{{json .Spec.TaskTemplate.ContainerSpec.Configs}}' | grep -q 'edge-route-proof.conf'
     echo "Edge proof passed: the labelled Edge reached a worker service, retained state after replacement, and accepted a task-safe immutable route config update."
     ;;
+  cutover-proof)
+    require_docker
+    require_lab
+    command -v bun >/dev/null 2>&1 || { echo "bun is required for the cutover proof" >&2; exit 1; }
+    if docker -H "$manager_host" service ls --format '{{.Name}} {{.Ports}}' | grep -Eq '(^|_)swarm-traefik .*:(80|443)->'; then
+      echo "Cutover proof requires the fixture router to be absent; run cleanup first." >&2
+      exit 1
+    fi
+    remove_cutover_proof_objects
+    manager_hostname="$(docker exec "$manager" hostname)"
+    docker -H "$manager_host" node update --label-add openship.edge.ingress=true "$manager_hostname" >/dev/null
+    docker -H "$manager_host" service create --name "$cutover_router_service" --replicas 2 \
+      --publish published=80,target=80,protocol=tcp,mode=ingress \
+      --publish published=443,target=443,protocol=tcp,mode=ingress \
+      nginx:1.27-alpine >/dev/null
+    attempts=0
+    until docker -H "$manager_host" service ps --filter desired-state=running --format '{{.CurrentState}}' "$cutover_router_service" | grep -q '^Running'; do
+      attempts=$((attempts + 1))
+      [ "$attempts" -lt 60 ] || { docker -H "$manager_host" service ps --no-trunc "$cutover_router_service" >&2 || true; echo "Legacy router did not become ready" >&2; exit 1; }
+      sleep 1
+    done
+    INTERNAL_TOKEN="openship-swarm-cutover-proof-internal-token-0001" DOCKER_HOST="$manager_host" OPENSHIP_SWARM_CUTOVER_ROUTER="$cutover_router_service" bun "$repo_root/scripts/swarm-edge-cutover-harness.ts"
+    ;;
   events)
     require_docker
     require_lab
@@ -426,6 +465,7 @@ case "${1:-}" in
     remove_managed_persistent_objects
     remove_lab_registry_objects
     remove_edge_proof_objects
+    remove_cutover_proof_objects
     ;;
   down)
     require_docker

@@ -5,6 +5,7 @@ import { audit, auditContextFrom } from "../../lib/audit";
 import { getRequestContext } from "../../lib/request-context";
 import { swarmDiscovery } from "./swarm.service";
 import { swarmEdge } from "./swarm-edge.service";
+import type { TSwarmEdgeCutoverBody } from "./swarm.schema";
 import { buildSwarmDiscoveryView } from "./swarm-discovery-view";
 
 function target(c: Context) {
@@ -104,4 +105,37 @@ export async function ensureEdge(c: Context) {
     after: { serviceId: edge.serviceId, networkName: edge.networkName, nodeIds: edge.nodeIds },
   });
   return c.json({ edge }, 201);
+}
+
+/** Read-only ownership/strategy view; no router state changes happen here. */
+export async function edgeCutoverPlan(c: Context) {
+  const { serverId, organizationId } = target(c);
+  return c.json(await swarmEdge.cutoverPlan(serverId, organizationId));
+}
+
+/** Explicit maintenance action, separate from normal Edge enablement and deploy. */
+export async function cutoverEdge(c: Context) {
+  const { serverId, organizationId, ctx } = target(c);
+  const body = await c.req.json<TSwarmEdgeCutoverBody>();
+  const result = await swarmEdge.cutover(serverId, organizationId, body);
+  audit.recordAsync(auditContextFrom(c, organizationId, ctx.userId), {
+    eventType: "swarm.edge.cutover.completed",
+    resourceType: "server",
+    resourceId: serverId,
+    after: { previousServiceName: result.previousServiceName, edgeServiceId: result.edgeServiceId, servedRoutes: result.servedRoutes },
+  });
+  return c.json({ cutover: result }, 201);
+}
+
+/** Explicit recovery for the durable journal left by an interrupted cutover. */
+export async function recoverEdgeCutover(c: Context) {
+  const { serverId, organizationId, ctx } = target(c);
+  const result = await swarmEdge.recoverCutover(serverId, organizationId);
+  audit.recordAsync(auditContextFrom(c, organizationId, ctx.userId), {
+    eventType: "swarm.edge.cutover.recovered",
+    resourceType: "server",
+    resourceId: serverId,
+    after: { recovered: result.recovered },
+  });
+  return c.json({ recovery: result });
 }

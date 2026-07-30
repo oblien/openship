@@ -99,6 +99,11 @@ export {
   type SwarmEdgeRouteInput,
   type SwarmEdgeCertificateStatus,
 } from "./runtime/swarm/edge-routes";
+export {
+  SwarmEdgeCutoverManager,
+  SwarmEdgeCutoverError,
+  type SwarmEdgeCutoverPlan,
+} from "./runtime/swarm/cutover";
 export { SwarmProbeError, normalizeSwarmManagerInfo } from "./runtime/swarm/normalize";
 export { deriveSwarmServiceHealth, deriveSwarmStackHealth, selectCurrentSwarmTasks } from "./runtime/swarm/health";
 export type {

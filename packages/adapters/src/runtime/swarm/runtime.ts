@@ -311,10 +311,23 @@ export class SwarmRuntime implements StackRuntimeAdapter {
     const diagnostics: SwarmDiscoveryDiagnostic[] = [];
     const observedAt = new Date().toISOString();
 
-    const nodes = (await this.readJsonLines("docker node ls --format '{{json .}}'", "nodes", diagnostics))
-      .slice(0, this.maxResources)
-      .map(normalizeSwarmNode)
-      .filter((node) => node.id);
+    // `docker node ls` is a deliberately compact table and never includes
+    // operator labels. Fetch the full node specs so placement checks (notably
+    // the deliberate Edge ingress label) are based on manager truth.
+    const nodeRows = (await this.readJsonLines("docker node ls --format '{{json .}}'", "nodes", diagnostics))
+      .slice(0, this.maxResources);
+    const nodes = [];
+    for (const row of nodeRows) {
+      const listed = normalizeSwarmNode(row);
+      if (!listed.id) continue;
+      const inspected = await this.readJsonLines(
+        `docker node inspect --format '{{json .}}' ${sq(listed.id)}`,
+        "nodes",
+        diagnostics,
+      );
+      const node = inspected.length > 0 ? normalizeSwarmNode(inspected[0]) : listed;
+      if (node.id) nodes.push(node);
+    }
 
     const serviceIds = await this.readLines("docker service ls -q", "services", diagnostics);
     if (serviceIds.length > this.maxResources) {

@@ -56,6 +56,14 @@ describe("SwarmRuntime manager probe", () => {
       if (command.startsWith("docker info")) return JSON.stringify(managerInfo);
       if (command.startsWith("docker version")) return JSON.stringify(serverVersion);
       if (command.startsWith("docker node ls")) return JSON.stringify({ ID: "node-1", Hostname: "manager", Status: "Ready", Availability: "Active" });
+      if (command.startsWith("docker node inspect")) {
+        return JSON.stringify({
+          ID: "node-1",
+          Spec: { Labels: { "openship.edge.ingress": "true" }, Availability: "active" },
+          Description: { Hostname: "manager", Engine: { EngineVersion: "29.5.3" } },
+          Status: { State: "ready" },
+        });
+      }
       if (command === "docker service ls -q") return "service-1\n";
       if (command.startsWith("docker service inspect")) {
         return JSON.stringify({
@@ -86,7 +94,9 @@ describe("SwarmRuntime manager probe", () => {
       services: [{ id: "service-1", sourceServiceName: "web" }],
       tasks: [{ id: "task-1", slot: 1 }],
       secrets: [{ id: "secret-1", name: "blog_password" }],
+      nodes: [{ id: "node-1", labels: { "openship.edge.ingress": "true" } }],
     });
+    expect(commands.some((command) => command.startsWith("docker node inspect"))).toBe(true);
     expect(commands.some((command) => command.startsWith("docker secret inspect"))).toBe(false);
   });
 

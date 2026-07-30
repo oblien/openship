@@ -21,3 +21,19 @@ export const SwarmStackParams = Type.Intersect([
 
 export type TSwarmServerParams = Static<typeof SwarmServerParams>;
 export type TSwarmStackParams = Static<typeof SwarmStackParams>;
+
+/** Cutover is maintenance-window-only and bound to a fresh read-only plan. */
+export const SwarmEdgeCutoverBody = Type.Object({
+  serviceId: Type.String({ minLength: 8, maxLength: 128, pattern: "^[A-Za-z0-9]+$" }),
+  specVersion: Type.Integer({ minimum: 1 }),
+  confirmedServiceName: Type.String({ minLength: 1, maxLength: 256 }),
+  maintenanceWindowAcknowledged: Type.Literal(true),
+});
+
+export type TSwarmEdgeCutoverBody = Static<typeof SwarmEdgeCutoverBody>;
+
+export const SwarmEdgeCutoverRecoveryBody = Type.Object({
+  maintenanceWindowAcknowledged: Type.Literal(true),
+});
+
+export type TSwarmEdgeCutoverRecoveryBody = Static<typeof SwarmEdgeCutoverRecoveryBody>;
