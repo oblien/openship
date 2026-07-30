@@ -7,6 +7,7 @@ import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment } from "@/context/deployment/types";
 import DeploymentProcessing from "@/components/import-project/DeploymentProcessing";
 import ComposeDeploymentProcessing from "@/components/import-project/ComposeDeploymentProcessing";
+import SwarmDeploymentProcessing from "@/components/import-project/SwarmDeploymentProcessing";
 import BuildSkeleton from "@/components/import-project/BuildSkeleton";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -161,6 +162,10 @@ const BuildPage: React.FC = () => {
 
   if (!state.deploymentId) {
     return <BuildSkeleton />;
+  }
+
+  if (config.orchestratorMode === "swarm") {
+    return <SwarmDeploymentProcessing onRedeploy={handleRedeploy} />;
   }
 
   if (usesServiceDeployment(config)) {

@@ -328,9 +328,26 @@ export interface DeploymentResult {
  * transfer) that runs BEFORE the build timer starts — so it's shown as its own
  * phase and excluded from the reported build duration.
  */
-export type BuildStep = "prepare" | "clone" | "install" | "build" | "deploy";
+export type StandardBuildStep = "prepare" | "clone" | "install" | "build" | "deploy";
 
-export const BUILD_STEPS: readonly BuildStep[] = ["prepare", "clone", "install", "build", "deploy"] as const;
+/**
+ * Stack-native phases are intentionally distinct from the generic Docker
+ * deploy step. They make a persisted Swarm deployment explainable after an
+ * SSE reconnect without changing the ordinary build stepper.
+ */
+export type SwarmBuildStep =
+  | "swarm-source"
+  | "swarm-render"
+  | "swarm-build"
+  | "swarm-push"
+  | "swarm-apply"
+  | "swarm-converge"
+  | "swarm-route"
+  | "swarm-reconcile";
+
+export type BuildStep = StandardBuildStep | SwarmBuildStep;
+
+export const BUILD_STEPS: readonly StandardBuildStep[] = ["prepare", "clone", "install", "build", "deploy"] as const;
 
 export interface LogEntry {
   timestamp: string;

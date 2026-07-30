@@ -253,6 +253,26 @@ const project = { id: "project-blog", organizationId: "org-a" } as Project;
 const deployment = { id: "deployment-1", organizationId: "org-a" } as Deployment;
 
 describe("managed Swarm deploy", () => {
+  it("records durable stack-native phases through manager convergence", async () => {
+    const test = fixture();
+
+    await expect(test.service.deploy({ project, deployment, environment: {}, logger: test.logger }))
+      .resolves.toMatchObject({ state: "ready" });
+
+    expect(test.events).toEqual(expect.arrayContaining([
+      "swarm-source:started",
+      "swarm-source:completed",
+      "swarm-render:started",
+      "swarm-render:completed",
+      "swarm-apply:started",
+      "swarm-apply:completed",
+      "swarm-converge:started",
+      "swarm-converge:completed",
+      "swarm-route:skipped",
+      "swarm-reconcile:skipped",
+    ]));
+  });
+
   it("reuses only a prior digest for an unchanged isolated source-build context", () => {
     const result = selectSourceBuilds({
       stack: {
@@ -745,6 +765,7 @@ volumes:
       "org-a",
       expect.objectContaining({ applyStatus: "converging" }),
     );
+    expect(test.events).toContain("swarm-reconcile:started");
   });
 
   it("passes only the decrypted registry credential to the transient deploy adapter input", async () => {
@@ -785,6 +806,7 @@ volumes:
       runtimeRef: null,
       errorMessage: expect.stringContaining("No OCI registry"),
     }));
+    expect(test.events).toContain("swarm-build:failed");
     expect(test.deployStack).not.toHaveBeenCalled();
   });
 

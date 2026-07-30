@@ -29,6 +29,7 @@ export type { RouteRuleRow, RouteRuleInput } from "./projects";
 export { appsApi } from "./apps";
 export type { AppCatalogEntry, AppCatalogField, InstallAppResult } from "./apps";
 export { deployApi } from "./deploy";
+export type { SwarmBuildStatus, SwarmBuildPhaseStatus } from "./deploy";
 export { domainsApi } from "./domains";
 export {
   jobsApi,

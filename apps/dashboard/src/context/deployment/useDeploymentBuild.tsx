@@ -1064,6 +1064,11 @@ export function useDeploymentBuild(
             // so the target step's clone picker + summary reflect reality rather
             // than the "bare" default.
             runtimeMode: apiConfig.runtimeMode || prev.runtimeMode,
+            // A Swarm deployment has a dedicated detail surface. This comes
+            // from the immutable deployment snapshot so a historical refresh
+            // cannot be mis-rendered as a standalone Docker deployment.
+            orchestratorMode:
+              apiConfig.orchestratorMode === "swarm" ? "swarm" : "standalone",
             serverId: apiConfig.serverId ?? prev.serverId,
             serverName: apiConfig.serverName ?? prev.serverName,
             envVars: apiConfig.envVars || prev.envVars,

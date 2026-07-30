@@ -513,7 +513,15 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
         environment: envMap,
         logger: {
           log: (message, level) => logger.log(message, level),
-          step: (_phase, state, message) => logger.step("deploy", state === "started" ? "running" : state, message),
+          // Preserve stack-native phase names in the durable build log. The
+          // ordinary stepper still ignores these IDs, while the Swarm detail
+          // view can reconstruct source/validate/build/apply/converge/route
+          // after an SSE reconnect or API restart.
+          step: (phase, state, message) => logger.step(
+            phase,
+            state === "started" ? "running" : state,
+            message,
+          ),
         },
       });
       const durationMs = Date.now() - (dep.createdAt?.getTime?.() ?? Date.now());

@@ -64,8 +64,22 @@ type SwarmPlatform = Pick<Platform, "runtime" | "stackRuntime" | "executor">;
 
 export interface SwarmDeployLogger {
   log(message: string, level?: "info" | "warn" | "error"): void;
-  step(phase: string, state: "started" | "completed" | "failed", message: string): void;
+  step(
+    phase: SwarmDeploymentPhase,
+    state: "started" | "completed" | "failed" | "skipped",
+    message: string,
+  ): void;
 }
+
+export type SwarmDeploymentPhase =
+  | "swarm-source"
+  | "swarm-render"
+  | "swarm-build"
+  | "swarm-push"
+  | "swarm-apply"
+  | "swarm-converge"
+  | "swarm-route"
+  | "swarm-reconcile";
 
 interface Dependencies {
   featureEnabled: () => boolean;
@@ -426,8 +440,12 @@ async function publishSourceBuilds(input: {
       input.onBuildStatus?.(service.sourceServiceName, "failure", { errorMessage }),
     ));
   };
+  const failBuildPhase = async (message: string) => {
+    input.logger.step("swarm-build", "failed", message);
+    await markBuildsFailed(message);
+  };
   if (!input.registry) {
-    await markBuildsFailed("No OCI registry is configured for this source build.");
+    await failBuildPhase("No OCI registry is configured for this source build.");
     throw new AppError(
       "This stack has source-built services. Select an OCI registry before applying it.",
       409,
@@ -435,7 +453,7 @@ async function publishSourceBuilds(input: {
     );
   }
   if (!(input.runtime instanceof DockerRuntime)) {
-    await markBuildsFailed("The selected manager cannot build source services through Docker.");
+    await failBuildPhase("The selected manager cannot build source services through Docker.");
     throw new AppError(
       "The selected Swarm manager cannot build and publish source services through Docker.",
       503,
@@ -443,7 +461,7 @@ async function publishSourceBuilds(input: {
     );
   }
   if (input.stack.sourceKind !== "repository" || !input.project.gitOwner || !input.project.gitRepo) {
-    await markBuildsFailed("Source builds require a linked repository source.");
+    await failBuildPhase("Source builds require a linked repository source.");
     throw new AppError(
       "Source-built services require a linked repository stack source so OpenShip can use its bounded build context.",
       409,
@@ -464,7 +482,7 @@ async function publishSourceBuilds(input: {
       buildStrategy: "local",
     });
   } catch {
-    await markBuildsFailed("Source repository credentials could not be prepared.");
+    await failBuildPhase("Source repository credentials could not be prepared.");
     throw new AppError("OpenShip could not prepare source repository credentials for this build.", 502, "SWARM_BUILD_SOURCE_UNAVAILABLE");
   }
   const repository = [
@@ -512,7 +530,7 @@ async function publishSourceBuilds(input: {
     };
   });
   for (const spec of buildSpecs) {
-    input.logger.step("swarm-build", "started", `Building and publishing ${spec.service.sourceServiceName}`);
+    input.logger.step("swarm-build", "started", `Building ${spec.service.sourceServiceName}`);
     await input.onBuildStatus?.(spec.service.sourceServiceName, "building");
   }
   let buildResults: Array<{ serviceName: string; result: Awaited<ReturnType<DockerRuntime["build"]>> }>;
@@ -527,7 +545,7 @@ async function publishSourceBuilds(input: {
       new BuildLogger((entry) => input.logger.log(entry.message, entry.level === "error" ? "error" : entry.level === "warn" ? "warn" : "info")),
     );
   } catch {
-    await markBuildsFailed("Source image build failed.");
+    await failBuildPhase("Source image build failed.");
     throw new AppError("Could not prepare the shared source build context.", 502, "SWARM_BUILD_FAILED");
   }
   const resultsByService = new Map(buildResults.map(({ serviceName, result }) => [serviceName, result]));
@@ -540,6 +558,8 @@ async function publishSourceBuilds(input: {
   }
   for (const spec of buildSpecs) {
     const result = resultsByService.get(spec.service.sourceServiceName)!;
+    input.logger.step("swarm-build", "completed", `Built ${spec.service.sourceServiceName}`);
+    input.logger.step("swarm-push", "started", `Publishing ${spec.service.sourceServiceName} to the configured registry`);
     try {
       const published = await input.runtime.publishImage({
         source: result.imageRef!,
@@ -549,9 +569,9 @@ async function publishSourceBuilds(input: {
       });
       overrides[spec.service.sourceServiceName] = published.digestRef;
       await input.onBuildStatus?.(spec.service.sourceServiceName, "deploying", { imageRef: published.digestRef });
-      input.logger.step("swarm-build", "completed", `Published ${spec.service.sourceServiceName} as an immutable registry digest`);
+      input.logger.step("swarm-push", "completed", `Published ${spec.service.sourceServiceName} as an immutable registry digest`);
     } catch {
-      input.logger.step("swarm-build", "failed", `Could not publish ${spec.service.sourceServiceName}`);
+      input.logger.step("swarm-push", "failed", `Could not publish ${spec.service.sourceServiceName}`);
       await input.onBuildStatus?.(spec.service.sourceServiceName, "failure", { errorMessage: "Registry image publication failed." });
       throw new AppError(`Could not publish source service ${spec.service.sourceServiceName} to the configured registry.`, 502, "SWARM_IMAGE_PUBLISH_FAILED");
     }
@@ -668,12 +688,33 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       // A rollback starts from the encrypted immutable rendered document, never
       // the current editable source or a mutable image tag. It is still parsed
       // locally to retain the normal ownership/convergence checks below.
-      const sourceMaterial: ResolvedSwarmStackSource = rollbackYaml
-        ? { files: [{ path: "retained-rendered-stack.yaml", content: rollbackYaml }], composePaths: ["retained-rendered-stack.yaml"] }
-        : await deps.loadSource(stack, project, deployment.organizationId);
-      const source = projectSwarmStackSource(
-        sourceMaterial.composePaths.map((path) => sourceMaterial.files.find((file) => file.path === path)!).filter(Boolean),
+      logger.step(
+        "swarm-source",
+        "started",
+        rollbackYaml
+          ? "Loading the immutable rendered source for rollback"
+          : "Resolving the authoritative Swarm stack source",
       );
+      let sourceMaterial: ResolvedSwarmStackSource;
+      let source: ReturnType<typeof projectSwarmStackSource>;
+      try {
+        sourceMaterial = rollbackYaml
+          ? { files: [{ path: "retained-rendered-stack.yaml", content: rollbackYaml }], composePaths: ["retained-rendered-stack.yaml"] }
+          : await deps.loadSource(stack, project, deployment.organizationId);
+        source = projectSwarmStackSource(
+          sourceMaterial.composePaths.map((path) => sourceMaterial.files.find((file) => file.path === path)!).filter(Boolean),
+        );
+        logger.step(
+          "swarm-source",
+          "completed",
+          rollbackYaml
+            ? "Loaded the immutable rendered source for rollback"
+            : "Resolved the authoritative Swarm stack source",
+        );
+      } catch (error) {
+        logger.step("swarm-source", "failed", "Could not resolve the authoritative Swarm stack source");
+        throw error;
+      }
       const routingMode = rollbackRevision
         ? revisionRoutingMode(rollbackRevision, stack.routingMode)
         : stack.routingMode;
@@ -1052,7 +1093,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         revisionId: revision.id,
       };
       logger.step(
-        "swarm-deploy",
+        "swarm-apply",
         "started",
         `Applying stack ${stack.stackName} on its Swarm manager`,
       );
@@ -1082,8 +1123,18 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           },
           appliedAt: deps.now(),
         });
+        logger.step(
+          "swarm-apply",
+          "completed",
+          `Stack ${stack.stackName} apply was accepted by the Swarm manager`,
+        );
       } catch (error) {
         if (isConnectionLoss(error)) {
+          logger.step(
+            "swarm-reconcile",
+            "started",
+            "Apply response was interrupted; reconciling the live stack before deciding its outcome",
+          );
           await deps
             .updateRevision(revision.id, deployment.organizationId, {
               applyStatus: "converging",
@@ -1107,10 +1158,16 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
             applyOutput: { error: safeDeployError(error, environment) },
           })
           .catch(() => {});
+        logger.step("swarm-apply", "failed", `Could not apply stack ${stack.stackName}`);
         throw error;
       }
 
       let convergence: Awaited<ReturnType<typeof deps.waitForConvergence>>;
+      logger.step(
+        "swarm-converge",
+        "started",
+        `Waiting for ${stack.stackName} services to converge`,
+      );
       try {
         convergence = await deps.waitForConvergence({
           runtime: platform.stackRuntime,
@@ -1119,6 +1176,11 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         });
       } catch (error) {
         if (!isConnectionLoss(error)) throw error;
+        logger.step(
+          "swarm-reconcile",
+          "started",
+          "Manager access dropped after apply; reconciling the live stack before deciding its outcome",
+        );
         await deps
           .updateRevision(revision.id, deployment.organizationId, {
             applyStatus: "converging",
@@ -1136,6 +1198,11 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         };
       }
       if (convergence.status === "unreachable" || !convergence.snapshot) {
+        logger.step(
+          "swarm-reconcile",
+          "started",
+          "Manager state is unavailable; waiting to reconcile the live stack",
+        );
         await deps
           .updateRevision(revision.id, deployment.organizationId, {
             applyStatus: "converging",
@@ -1165,6 +1232,11 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
         .filter((name) => !live.some((service) => service.sourceServiceName === name));
       const unlabeled = live.filter((service) => !isOwnedService(service, stack));
       if (missing.length > 0 || unlabeled.length > 0) {
+        logger.step(
+          "swarm-reconcile",
+          "started",
+          "Manager has not reported every expected service; reconciling live placement",
+        );
         await deps.updateRevision(revision.id, deployment.organizationId, {
           applyStatus: "converging",
           applyOutput: {
@@ -1195,12 +1267,18 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
             health,
           },
         });
+        logger.step("swarm-converge", "failed", `Stack ${stack.stackName} did not converge`);
         throw new AppError(
           `Swarm stack failed to converge: ${reason}`,
           502,
           "SWARM_CONVERGENCE_FAILED",
         );
       }
+      logger.step(
+        "swarm-converge",
+        "completed",
+        `Stack ${stack.stackName} services converged on the manager`,
+      );
       const refs = serviceRefs(stack, live);
       const serviceRows = await deps.syncProjections(
         project.id,
@@ -1211,6 +1289,7 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
       );
       const routingWarnings: string[] = [];
       if (routingMode === "openship-edge") {
+        logger.step("swarm-route", "started", "Reconciling OpenShip Edge routes for the stack");
         // Service rows retain operator-controlled exposed/domain fields while
         // projections update manager facts. Re-read all rows so a source service
         // removed by this apply can have its old vhost removed too.
@@ -1277,7 +1356,25 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
             "warn",
           );
         }
+        logger.step(
+          "swarm-route",
+          "completed",
+          routingWarnings.length > 0
+            ? "OpenShip Edge route reconciliation completed with warnings"
+            : "OpenShip Edge routes are current",
+        );
+      } else {
+        logger.step(
+          "swarm-route",
+          "skipped",
+          "External routing remains under its existing controller",
+        );
       }
+      logger.step(
+        "swarm-reconcile",
+        "skipped",
+        "No separate reconciliation was required after manager convergence",
+      );
       const finishedAt = deps.now();
       const ready = convergence.status === "ready" && health.state === "ready";
       const serviceDeploymentRows = serviceRows.flatMap((service) => {
@@ -1346,7 +1443,6 @@ export function createSwarmDeployService(overrides: Partial<Dependencies> = {}) 
           warningMessage: "Stack apply was accepted; waiting for Swarm services to converge.",
         };
       }
-      logger.step("swarm-deploy", "completed", `Stack ${stack.stackName} converged on the manager`);
       return {
         runtimeRef,
         revisionId: revision.id,
