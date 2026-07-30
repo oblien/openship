@@ -17,7 +17,13 @@
   },
   "domainSettings": {
     "saveFailed": "Alan adları kaydedilemedi",
-    "toastTitle": "Alan Adları"
+    "toastTitle": "Alan Adları",
+    "routeFreeLabel": "Ücretsiz alt alan adı",
+    "routeFreeDesc": "Anında hazır, ücretsiz bir {domain} adresi.",
+    "routeCustomLabel": "Özel alan adı",
+    "routeCustomDesc": "Kendi alan adınızı bu dağıtıma yönlendirin.",
+    "routeNoneLabel": "Yok",
+    "routeNoneDesc": "Herkese açık adres yok — yalnızca dahili. Host üzerindeki port ile erişin."
   },
   "dns": {
     "title": "DNS Yapılandırması",
@@ -34,7 +40,16 @@
     "verifySuffix": " sahiplik doğrulaması için ekleyin.",
     "cloudInfoPre": "Yönlendirme için ",
     "recordCname": "CNAME kaydını",
-    "cloudInfoMid": " ekleyin, ardından "
+    "cloudInfoMid": " ekleyin, ardından ",
+    "modalTitle": "Alan adınızı yönlendirin, sonra dağıtın",
+    "modalSubtitle": "Alan adınız buraya yönlendiğinde HTTPS ilk dağıtımda verilir — ya da atlayıp DNS’i daha sonra Alan Adları sekmesinden ekleyin.",
+    "descCnameWww": "www’yi ana alan adınıza yönlendirir",
+    "autoConfigTitle": "DNS sağlayıcım ile otomatik yapılandır",
+    "autoConfigDesc": "Kayıt operatörünüzü bağlayın, bu kayıtları sizin için ekleyelim.",
+    "comingSoon": "Yakında",
+    "deployAction": "Dağıt",
+    "cancel": "İptal",
+    "loadingRecords": "DNS kayıtları yükleniyor…"
   },
   "buildSummary": {
     "title": "Dağıtım Özeti",
@@ -104,6 +119,7 @@
     "local2": "Manifestler okunuyor",
     "local3": "Framework tespit ediliyor",
     "repo1": "GitHub'a bağlanılıyor",
+    "repo1Gitlab": "GitLab'a bağlanılıyor",
     "repo2": "Depo getiriliyor",
     "repo3": "Yapı analiz ediliyor"
   },
@@ -119,6 +135,8 @@
     "addServer": "Kendi sunucunuzu ekleyin",
     "continue": "Devam et",
     "chooseServer": "Bir sunucu seçin",
+    "thisServerBadge": "Bu Sunucu",
+    "thisServerHost": "Mevcut host — dağıtımlar burada çalışır",
     "searchPlaceholder": "Sunucularda ara…",
     "noServersMatch": "Aramanızla eşleşen sunucu bulunamadı.",
     "requireCloudFeature": "Openship Bulut'a Dağıtılıyor",

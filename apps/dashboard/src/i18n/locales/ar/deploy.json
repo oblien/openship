@@ -40,7 +40,16 @@
     "verifySuffix": " للتحقق من الملكية.",
     "cloudInfoPre": "أضف ",
     "recordCname": "سجل CNAME",
-    "cloudInfoMid": " للتوجيه، ثم أضف "
+    "cloudInfoMid": " للتوجيه، ثم أضف ",
+    "modalTitle": "وجّه نطاقك، ثم انشر",
+    "modalSubtitle": "يُصدر HTTPS عند أول عملية نشر بعد أن يشير نطاقك إلى هنا — أو تجاوز الخطوة وأضف DNS لاحقًا من تبويب النطاقات.",
+    "descCnameWww": "يوجّه www إلى نطاقك الرئيسي",
+    "autoConfigTitle": "الإعداد التلقائي عبر مزوّد DNS الخاص بي",
+    "autoConfigDesc": "اربط مُسجّل النطاق وسنضيف هذه السجلات نيابةً عنك.",
+    "comingSoon": "قريبًا",
+    "deployAction": "نشر",
+    "cancel": "إلغاء",
+    "loadingRecords": "جارٍ تحميل سجلات DNS…"
   },
   "buildSummary": {
     "title": "ملخص النشر",

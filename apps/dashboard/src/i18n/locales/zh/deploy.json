@@ -40,7 +40,16 @@
     "verifySuffix": " 用于所有权验证。",
     "cloudInfoPre": "添加 ",
     "recordCname": "CNAME 记录",
-    "cloudInfoMid": " 用于路由，然后添加 "
+    "cloudInfoMid": " 用于路由，然后添加 ",
+    "modalTitle": "先将域名指向此处，然后部署",
+    "modalSubtitle": "域名指向此处后，首次部署时会自动签发 HTTPS — 也可以跳过，稍后在「域名」标签页添加 DNS。",
+    "descCnameWww": "将 www 指向你的主域名",
+    "autoConfigTitle": "使用我的 DNS 服务商自动配置",
+    "autoConfigDesc": "连接你的域名注册商，我们将为你添加这些记录。",
+    "comingSoon": "即将推出",
+    "deployAction": "部署",
+    "cancel": "取消",
+    "loadingRecords": "正在加载 DNS 记录…"
   },
   "buildSummary": {
     "title": "部署摘要",
@@ -313,6 +322,8 @@
     "startCommandLabel": "Start command",
     "startCommandPlaceholder": "npx serve -s dist -l $PORT",
     "startCommandHint": "The command that starts your server. For a static bundle, use a static file server (e.g. npx serve).",
+    "modeStatic": "静态",
+    "modeProcess": "服务器进程",
     "portLabel": "Port"
   }
 }

@@ -40,7 +40,16 @@
     "verifySuffix": " を追加してください。",
     "cloudInfoPre": "ルーティング用の ",
     "recordCname": "CNAMEレコード",
-    "cloudInfoMid": " を追加し、続けて "
+    "cloudInfoMid": " を追加し、続けて ",
+    "modalTitle": "ドメインを向けてからデプロイ",
+    "modalSubtitle": "ドメインがここを指すと、初回デプロイ時に HTTPS が発行されます — スキップして後から「ドメイン」タブで DNS を追加することもできます。",
+    "descCnameWww": "www を頂点ドメインに向けます",
+    "autoConfigTitle": "自分の DNS プロバイダーで自動設定する",
+    "autoConfigDesc": "レジストラーを接続すると、これらのレコードを代わりに追加します。",
+    "comingSoon": "近日公開",
+    "deployAction": "デプロイ",
+    "cancel": "キャンセル",
+    "loadingRecords": "DNS レコードを読み込み中…"
   },
   "buildSummary": {
     "title": "デプロイの概要",
@@ -313,6 +322,8 @@
     "startCommandLabel": "Start command",
     "startCommandPlaceholder": "npx serve -s dist -l $PORT",
     "startCommandHint": "The command that starts your server. For a static bundle, use a static file server (e.g. npx serve).",
+    "modeStatic": "静的",
+    "modeProcess": "サーバープロセス",
     "portLabel": "Port"
   }
 }

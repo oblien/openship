@@ -40,7 +40,16 @@
     "verifySuffix": " pour la vérification de propriété.",
     "cloudInfoPre": "Ajoutez l'",
     "recordCname": "enregistrement CNAME",
-    "cloudInfoMid": " pour le routage, puis ajoutez l'"
+    "cloudInfoMid": " pour le routage, puis ajoutez l'",
+    "modalTitle": "Pointez votre domaine, puis déployez",
+    "modalSubtitle": "Le HTTPS est émis lors du premier déploiement dès que votre domaine pointe ici — ou passez cette étape et ajoutez le DNS plus tard depuis l’onglet Domaines.",
+    "descCnameWww": "Pointe www vers votre domaine principal",
+    "autoConfigTitle": "Configurer automatiquement avec mon fournisseur DNS",
+    "autoConfigDesc": "Connectez votre registraire et nous ajouterons ces enregistrements pour vous.",
+    "comingSoon": "Bientôt disponible",
+    "deployAction": "Déployer",
+    "cancel": "Annuler",
+    "loadingRecords": "Chargement des enregistrements DNS…"
   },
   "buildSummary": {
     "title": "Récapitulatif du déploiement",

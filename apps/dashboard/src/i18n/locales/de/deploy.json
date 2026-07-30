@@ -40,7 +40,16 @@
     "verifySuffix": " zur Besitzbestätigung hinzu.",
     "cloudInfoPre": "Fügen Sie den ",
     "recordCname": "CNAME-Eintrag",
-    "cloudInfoMid": " zum Routing hinzu und fügen Sie dann den "
+    "cloudInfoMid": " zum Routing hinzu und fügen Sie dann den ",
+    "modalTitle": "Ihre Domain verweisen, dann deployen",
+    "modalSubtitle": "HTTPS wird beim ersten Deployment ausgestellt, sobald Ihre Domain hierauf verweist — oder überspringen Sie den Schritt und fügen DNS später im Tab „Domains“ hinzu.",
+    "descCnameWww": "Verweist www auf Ihre Hauptdomain",
+    "autoConfigTitle": "Automatisch mit meinem DNS-Anbieter konfigurieren",
+    "autoConfigDesc": "Verbinden Sie Ihren Registrar und wir fügen diese Einträge für Sie hinzu.",
+    "comingSoon": "Demnächst verfügbar",
+    "deployAction": "Deployen",
+    "cancel": "Abbrechen",
+    "loadingRecords": "DNS-Einträge werden geladen…"
   },
   "buildSummary": {
     "title": "Deploy-Zusammenfassung",
@@ -313,6 +322,8 @@
     "startCommandLabel": "Start command",
     "startCommandPlaceholder": "npx serve -s dist -l $PORT",
     "startCommandHint": "The command that starts your server. For a static bundle, use a static file server (e.g. npx serve).",
+    "modeStatic": "Statisch",
+    "modeProcess": "Serverprozess",
     "portLabel": "Port"
   }
 }

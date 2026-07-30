@@ -40,7 +40,16 @@
     "verifySuffix": " para a verificação de propriedade.",
     "cloudInfoPre": "Adicione o ",
     "recordCname": "registro CNAME",
-    "cloudInfoMid": " para o roteamento e, em seguida, adicione o "
+    "cloudInfoMid": " para o roteamento e, em seguida, adicione o ",
+    "modalTitle": "Aponte o seu domínio e depois implante",
+    "modalSubtitle": "O HTTPS é emitido na primeira implantação assim que o seu domínio apontar para aqui — ou pule e adicione o DNS mais tarde na aba Domínios.",
+    "descCnameWww": "Aponta o www para o seu domínio principal",
+    "autoConfigTitle": "Configurar automaticamente com o meu provedor de DNS",
+    "autoConfigDesc": "Conecte o seu registrador e nós adicionaremos estes registros para você.",
+    "comingSoon": "Em breve",
+    "deployAction": "Implantar",
+    "cancel": "Cancelar",
+    "loadingRecords": "Carregando registros DNS…"
   },
   "buildSummary": {
     "title": "Resumo da implantação",
@@ -313,6 +322,8 @@
     "startCommandLabel": "Start command",
     "startCommandPlaceholder": "npx serve -s dist -l $PORT",
     "startCommandHint": "The command that starts your server. For a static bundle, use a static file server (e.g. npx serve).",
+    "modeStatic": "Estático",
+    "modeProcess": "Processo de servidor",
     "portLabel": "Port"
   }
 }
