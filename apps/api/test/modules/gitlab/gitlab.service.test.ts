@@ -1,9 +1,53 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { findByGitRepo, claim, markProcessed } = vi.hoisted(() => ({
-  findByGitRepo: vi.fn(),
-  claim: vi.fn(),
-  markProcessed: vi.fn(),
+const {
+  glFetch,
+  requireTokenFor,
+  tokenFor,
+  resolveUserGitlabBaseUrl,
+  resolveGitlabUserCredential,
+  findById,
+  updateProject,
+  sharedGitlabWebhookUrl,
+  encrypt,
+  decrypt,
+} = vi.hoisted(() => ({
+  glFetch: vi.fn(),
+  requireTokenFor: vi.fn(),
+  tokenFor: vi.fn(),
+  resolveUserGitlabBaseUrl: vi.fn(),
+  resolveGitlabUserCredential: vi.fn(),
+  findById: vi.fn(),
+  updateProject: vi.fn(),
+  sharedGitlabWebhookUrl: vi.fn(() => "https://api.example.com/webhooks/gitlab"),
+  encrypt: vi.fn((v: string) => `enc:${v}`),
+  decrypt: vi.fn((v: string) => v.replace(/^enc:/, "")),
+}));
+
+vi.mock("../../../src/modules/gitlab/gitlab.http", () => ({
+  glFetch,
+  gitlabWebBase: (base?: string | null) => base || "https://gitlab.com",
+  gitlabApiBase: (base?: string | null) =>
+    `${(base || "https://gitlab.com").replace(/\/$/, "")}/api/v4`,
+}));
+
+vi.mock("../../../src/modules/gitlab/gitlab.token", () => ({
+  requireTokenFor,
+  tokenFor,
+}));
+
+vi.mock("../../../src/modules/gitlab/gitlab.auth", () => ({
+  resolveUserGitlabBaseUrl,
+  resolveGitlabUserCredential,
+}));
+
+vi.mock("../../../src/lib/public-url", () => ({
+  sharedGitlabWebhookUrl,
+}));
+
+vi.mock("../../../src/lib/encryption", () => ({
+  encrypt,
+  decrypt,
 }));
 
 vi.mock("@repo/db", async (importOriginal) => {
@@ -14,40 +58,34 @@ vi.mock("@repo/db", async (importOriginal) => {
       ...actual.repos,
       project: {
         ...actual.repos.project,
-        findByGitRepo,
-      },
-      gitlabWebhookEvent: {
-        claim,
-        markProcessed,
+        findById,
+        update: updateProject,
       },
     },
   };
 });
 
-vi.mock("../../../src/lib/encryption", () => ({
-  decrypt: (v: string) => v.replace(/^enc:/, ""),
-  encrypt: (v: string) => `enc:${v}`,
-}));
-
-// Avoid Better Auth / full gitlab.auth graph for URL + verify unit tests.
-vi.mock("../../../src/modules/gitlab/gitlab.auth", () => ({
-  resolveGitlabUserCredential: vi.fn(),
-  getUserGitlabToken: vi.fn(),
-  readUserGitlabPat: vi.fn(),
-  resolveUserGitlabBaseUrl: vi.fn(async () => "https://gitlab.com"),
-  requireTokenFor: undefined,
-}));
-
-vi.mock("../../../src/modules/gitlab/gitlab.token", () => ({
-  requireTokenFor: vi.fn(async () => ({ token: "t", source: "user-oauth" })),
-  tokenFor: vi.fn(),
-}));
-
 import {
   parseGitlabRepoUrl,
   splitPathWithNamespace,
+  registerWebhook,
+  resolveCloneToken,
 } from "../../../src/modules/gitlab/gitlab.service";
-import { gitlabWebhookProvider } from "../../../src/modules/gitlab/gitlab.webhook";
+
+const ctx = { userId: "u1", organizationId: "org-1" } as any;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  requireTokenFor.mockResolvedValue({ token: "tok", source: "user-oauth" });
+  resolveUserGitlabBaseUrl.mockResolvedValue("https://gitlab.com");
+  resolveGitlabUserCredential.mockResolvedValue(null);
+  tokenFor.mockResolvedValue(null);
+  sharedGitlabWebhookUrl.mockReturnValue(
+    "https://api.example.com/webhooks/gitlab",
+  );
+  encrypt.mockImplementation((v: string) => `enc:${v}`);
+  decrypt.mockImplementation((v: string) => v.replace(/^enc:/, ""));
+});
 
 describe("parseGitlabRepoUrl", () => {
   it("parses https gitlab.com nested groups", () => {
@@ -98,28 +136,110 @@ describe("splitPathWithNamespace", () => {
       repo: "project",
     });
   });
+
+  it("rejects single-segment paths", () => {
+    expect(splitPathWithNamespace("only-repo")).toBeNull();
+  });
 });
 
-describe("gitlabWebhookProvider.verify", () => {
-  beforeEach(() => {
-    findByGitRepo.mockReset();
+describe("registerWebhook", () => {
+  it("POSTs a push hook with a minted secret", async () => {
+    findById.mockResolvedValue(null);
+    glFetch.mockResolvedValue({ id: 7, url: "https://api.example.com/webhooks/gitlab" });
+
+    const result = await registerWebhook(ctx, 99, undefined, {
+      projectId: "openship-p1",
+    });
+
+    expect(result).toEqual({
+      hookId: 7,
+      url: "https://api.example.com/webhooks/gitlab",
+    });
+    expect(updateProject).toHaveBeenCalledWith(
+      "openship-p1",
+      expect.objectContaining({ webhookSecret: expect.stringMatching(/^enc:/) }),
+    );
+    expect(glFetch).toHaveBeenCalledWith(
+      "tok",
+      expect.objectContaining({
+        path: "/projects/99/hooks",
+        method: "POST",
+        params: expect.objectContaining({
+          push_events: true,
+          enable_ssl_verification: true,
+        }),
+      }),
+    );
   });
 
-  it("accepts a matching per-project token", async () => {
-    findByGitRepo.mockResolvedValue([{ webhookSecret: "enc:proj-secret" }]);
-    const body = JSON.stringify({
-      project: { path_with_namespace: "acme/site" },
-    });
-    const result = await gitlabWebhookProvider.verify(body, {
-      "x-gitlab-token": "proj-secret",
-    });
-    expect(result.valid).toBe(true);
-    expect(findByGitRepo).toHaveBeenCalledWith("acme", "site", "gitlab");
+  it("reuses an existing project webhook secret", async () => {
+    findById.mockResolvedValue({ webhookSecret: "enc:existing-secret" });
+    glFetch.mockResolvedValue({ id: 8 });
+
+    await registerWebhook(ctx, 99, undefined, { projectId: "openship-p1" });
+
+    expect(updateProject).not.toHaveBeenCalled();
+    expect(glFetch).toHaveBeenCalledWith(
+      "tok",
+      expect.objectContaining({
+        params: expect.objectContaining({ token: "existing-secret" }),
+      }),
+    );
   });
 
-  it("rejects missing token", async () => {
-    findByGitRepo.mockResolvedValue([]);
-    const result = await gitlabWebhookProvider.verify("{}", {});
-    expect(result.valid).toBe(false);
+  it("maps 403 to a clear webhook-scope error", async () => {
+    glFetch.mockRejectedValue(new Error("GitLab API 403 Forbidden"));
+    await expect(registerWebhook(ctx, 99)).rejects.toThrow(/lacks permission/i);
+  });
+
+  it("updates an existing hook on 422 already-exists", async () => {
+    glFetch
+      .mockRejectedValueOnce(new Error("422 already exists"))
+      .mockResolvedValueOnce([
+        { id: 3, url: "https://api.example.com/webhooks/gitlab" },
+      ])
+      .mockResolvedValueOnce({});
+
+    const result = await registerWebhook(ctx, 99);
+    expect(result.hookId).toBe(3);
+    expect(glFetch).toHaveBeenNthCalledWith(
+      3,
+      "tok",
+      expect.objectContaining({
+        path: "/projects/99/hooks/3",
+        method: "PUT",
+      }),
+    );
+  });
+});
+
+describe("resolveCloneToken", () => {
+  it("prefers tokenFor when a project token exists", async () => {
+    tokenFor.mockResolvedValue({ token: "proj", source: "project" });
+    const result = await resolveCloneToken(ctx, "p1");
+    expect(result).toEqual({
+      token: "proj",
+      username: "oauth2",
+      cloneUrlPrefix: "https://gitlab.com",
+    });
+    expect(tokenFor).toHaveBeenCalledWith(ctx, "local", { projectId: "p1" });
+    expect(resolveGitlabUserCredential).not.toHaveBeenCalled();
+  });
+
+  it("falls back to user credential when tokenFor is empty", async () => {
+    resolveGitlabUserCredential.mockResolvedValue({
+      token: "user-pat",
+      mode: "pat",
+    });
+    const result = await resolveCloneToken(ctx);
+    expect(result).toEqual({
+      token: "user-pat",
+      username: "oauth2",
+      cloneUrlPrefix: "https://gitlab.com",
+    });
+  });
+
+  it("returns null when no credential exists", async () => {
+    await expect(resolveCloneToken(ctx)).resolves.toBeNull();
   });
 });
