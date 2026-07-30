@@ -512,6 +512,13 @@
       "when": 1785358400651,
       "tag": "0072_gh_device_token_method",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1785358401651,
+      "tag": "0073_add_swarm_persistence",
+      "breakpoints": true
     }
   ]
 }

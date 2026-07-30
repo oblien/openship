@@ -63,3 +63,5 @@ export {
   billingUsageSnapshot,
 } from "./billing";
 export { customAppTemplate } from "./custom-app-template";
+export { swarmStack, swarmStackRevision } from "./swarm-stack";
+export { containerRegistry } from "./container-registry";
