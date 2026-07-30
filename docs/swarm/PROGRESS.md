@@ -962,3 +962,41 @@ Next:
 
 - Reapply exact prior revisions without weakening the service-DNS route and
   Edge ownership guarantees (S11.1).
+
+## S11.1: Reapply an exact prior stack revision
+
+Status: done
+Commit: `e77f4c93`
+Tests run:
+
+- `bun --filter @repo/api test src/modules/deployments/rollback/rollback-orchestrator.test.ts src/modules/deployments/swarm/deploy.service.test.ts src/modules/deployments/build-execution-plan.test.ts`
+  — passed (26 tests).
+- `bun run --cwd apps/api lint`, `sh -n scripts/swarm-lab.sh`, and
+  `git diff --check` — passed.
+- `scripts/swarm-lab.sh up && scripts/swarm-lab.sh rollback-proof && scripts/swarm-lab.sh cleanup && scripts/swarm-lab.sh down`
+  — passed on July 30, 2026. After a one-replica httpd change, the retained
+  nginx YAML restored exactly two replicas and
+  `nginx:1.27-alpine@sha256:65645c…`.
+
+Evidence:
+
+- Rolling back a Swarm deployment now creates a new ordinary deployment with
+  `trigger=rollback`, bound to the selected immutable Swarm revision and the
+  target deployment's encrypted environment snapshot. Existing non-Swarm
+  rollback behavior remains an in-place artifact restoration.
+- The deploy pipeline validates ownership, decrypts the retained rendered YAML,
+  verifies its SHA-256 digest, and reapplies that document directly rather than
+  loading current editable source, rebuilding source services, or resolving a
+  mutable image tag. The new revision records both source deployment and
+  source revision IDs while preserving source digest, commit, image map,
+  config/secret references, prune intent, and routing mode.
+- Referenced config and secret metadata must still be present on the manager
+  before a rollback creates a new revision or invokes `docker stack deploy`.
+  Missing, unreadable, mismatched, or never-successful retained revisions fail
+  with an actionable pre-mutation error.
+
+Next:
+
+- Make OpenShip-managed configs and secrets content-addressed and retained with
+  each immutable revision (S11.2), then integrate revision retention/pinning
+  (S11.3).
