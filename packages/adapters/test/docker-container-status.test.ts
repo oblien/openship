@@ -131,3 +131,80 @@ describe("DockerRuntime container status normalization", () => {
     expect(c.state).toBe("exited");
   });
 });
+
+describe("DockerRuntime.purge() shared-tag safety", () => {
+  it("does NOT untag the image when another container still runs it", async () => {
+    const runtime = await DockerRuntime.create();
+
+    // Simulate a mutable, registry-less tag (docker-migration import) shared
+    // by three sibling containers — "app" is being purged, "horizon" and
+    // "scheduler" are still running from the exact same tag.
+    runtime.docker.listContainers = (async () => [
+      { Id: "horizon-id", Image: "migration-360p-app:latest" },
+      { Id: "scheduler-id", Image: "migration-360p-app:latest" },
+    ]) as any;
+
+    let destroyCalled = false;
+    runtime.destroy = async () => {
+      destroyCalled = true;
+    };
+    let removeImageCalled = false;
+    runtime.removeImage = async () => {
+      removeImageCalled = true;
+    };
+
+    await runtime.purge({
+      id: "dep1",
+      projectId: "proj1",
+      imageRef: "migration-360p-app:latest",
+      containerId: "app-id",
+    } as any);
+
+    expect(destroyCalled).toBe(true);
+    expect(removeImageCalled).toBe(false);
+  });
+
+  it("removes the image when no other container references the tag", async () => {
+    const runtime = await DockerRuntime.create();
+
+    runtime.docker.listContainers = (async () => []) as any;
+
+    let removeImageCalled = false;
+    runtime.removeImage = async () => {
+      removeImageCalled = true;
+    };
+    runtime.destroy = async () => {};
+
+    await runtime.purge({
+      id: "dep1",
+      projectId: "proj1",
+      imageRef: "some-app:latest",
+      containerId: "app-id",
+    } as any);
+
+    expect(removeImageCalled).toBe(true);
+  });
+
+  it("treats a listContainers failure as in-use (safer default: skip removal)", async () => {
+    const runtime = await DockerRuntime.create();
+
+    runtime.docker.listContainers = (async () => {
+      throw new Error("daemon unreachable");
+    }) as any;
+
+    let removeImageCalled = false;
+    runtime.removeImage = async () => {
+      removeImageCalled = true;
+    };
+    runtime.destroy = async () => {};
+
+    await runtime.purge({
+      id: "dep1",
+      projectId: "proj1",
+      imageRef: "some-app:latest",
+      containerId: "app-id",
+    } as any);
+
+    expect(removeImageCalled).toBe(false);
+  });
+});

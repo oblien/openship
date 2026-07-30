@@ -1927,6 +1927,30 @@ export class DockerRuntime implements RuntimeAdapter {
     }
   }
 
+  /**
+   * True if some container OTHER than `excludeContainerId` was created from
+   * this exact image tag. A locally-built image with no registry behind it
+   * (e.g. a docker-migration import, tagged once and reused verbatim) is
+   * shared across every deployment row ever generated from it — there is no
+   * per-deployment digest, just one mutable tag string. Best-effort: if the
+   * check itself fails, treat the tag as in-use (skip the removal) rather
+   * than risk deleting something a sibling deployment still needs.
+   */
+  private async imageTagInUseElsewhere(
+    imageRef: string,
+    excludeContainerId: string | null,
+  ): Promise<boolean> {
+    try {
+      const containers = await this.docker.listContainers({
+        all: true,
+        filters: { ancestor: [imageRef] },
+      });
+      return containers.some((c) => c.Id !== excludeContainerId);
+    } catch {
+      return true;
+    }
+  }
+
   async purge(deployment: DeploymentRef): Promise<void> {
     // Purge order: remove container first (best-effort), then image.
     // Container removal silently no-ops if already gone — keeps purge
@@ -1940,7 +1964,14 @@ export class DockerRuntime implements RuntimeAdapter {
     }
     if (deployment.imageRef) {
       try {
-        await this.removeImage(deployment.imageRef);
+        // Untagging a mutable, registry-less tag here would strand any
+        // SIBLING deployment/service whose container was created from that
+        // same tag — a later recreate against the tag then fails with
+        // "repository does not exist" even though the image is still very
+        // much in use elsewhere.
+        if (!(await this.imageTagInUseElsewhere(deployment.imageRef, deployment.containerId))) {
+          await this.removeImage(deployment.imageRef);
+        }
       } catch {
         // image already removed / not present locally
       }
