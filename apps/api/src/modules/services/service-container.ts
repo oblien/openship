@@ -1,5 +1,6 @@
 import { repos } from "@repo/db";
 import type { RuntimeAdapter } from "@repo/adapters";
+import { AppError, resolveOrchestratorMode, type RuntimeWorkloadRef } from "@repo/core";
 import {
   resolveDeploymentPlatform,
   resolveDeploymentRuntimeForRead,
@@ -50,6 +51,13 @@ export async function resolveServicePlatform(
   dep: { meta: unknown },
 ) {
   const snapshot = { ...(dep.meta as DeploymentConfigSnapshot), runtimeMode: "docker" as const };
+  if (resolveOrchestratorMode(snapshot.orchestratorMode) === "swarm") {
+    throw new AppError(
+      "This service belongs to a Docker Swarm stack. Use Swarm service operations instead of container lifecycle controls.",
+      409,
+      "SWARM_CONTAINER_OPERATION_UNSUPPORTED",
+    );
+  }
   return resolveDeploymentPlatform(snapshot, { organizationId: project.organizationId });
 }
 
@@ -61,11 +69,13 @@ export async function resolveServicePlatform(
  */
 export async function resolveServiceRuntimeForRead(
   project: { organizationId: string },
-  dep: { meta: unknown },
+  dep: { meta: unknown; runtimeRef?: RuntimeWorkloadRef | null; containerId?: string | null },
 ): Promise<RuntimeAdapter | null> {
   return resolveDeploymentRuntimeForRead({
     meta: dep.meta,
     organizationId: project.organizationId,
+    runtimeRef: dep.runtimeRef,
+    containerId: dep.containerId,
   })
     .then((r) => r.runtime)
     .catch(() => null);

@@ -83,6 +83,12 @@ beforeEach(() => {
 });
 
 describe("resolveDeploymentRuntimeForRead — reaches the deploy's host, without the platform", () => {
+  it("refuses a Swarm stack before it can resolve a container runtime", async () => {
+    await expect(read({ orchestratorMode: "swarm", runtimeMode: "docker" })).rejects.toMatchObject({
+      code: "SWARM_CONTAINER_OPERATION_UNSUPPORTED",
+    });
+  });
+
   it("server target → the pinned server's docker, never the local socket", async () => {
     await read({ deployTarget: "server", serverId: "srv-9" });
     expect(sshHosts()).toEqual(["host-of-srv-9"]);

@@ -91,3 +91,70 @@ Status: done
 
 The draft contains the tested S0.1–S0.2 foundation. Work continues without
 waiting for review.
+
+## S1.1: Orchestrator discriminator and typed workload identities
+
+Status: done
+Commit: `2a3ad566`
+Tests run:
+
+- `bun run --cwd packages/core lint && bun run --cwd packages/core test -- runtime-identity.test.ts` — passed (4 tests).
+- `bun run --cwd apps/api lint` and `bunx tsc --noEmit -p apps/dashboard/tsconfig.json` — passed.
+- `bun --cwd apps/api vitest run src/lib/deployment-runtime-read.test.ts src/modules/deployments/build-execution-plan.test.ts src/modules/projects/project.schema.test.ts` — passed (21 tests).
+
+Evidence:
+
+- `RuntimeMode` remains `bare | docker`; `OrchestratorMode` is threaded through
+  projects, deployment snapshots, platform resolution, API payloads, and the
+  dashboard.
+- Invalid Swarm/bare and Swarm/cloud combinations fail before runtime resolution.
+- Typed workload/service refs parse complete Swarm identities and preserve the
+  legacy Docker, bare, and cloud `containerId` conventions.
+
+Next:
+
+- Persist stack/revision/registry state and complete the container-ID
+  compatibility audit.
+
+## S1.2: Swarm stack, revision, and registry persistence
+
+Status: done
+Commit: `ec9fa4e3` (schema/repositories), `32448914` (service projections)
+Tests run:
+
+- `bun run --cwd packages/db lint` — passed.
+- `bun --cwd packages/db vitest run src/repos/swarm-persistence.repo.test.ts src/migrations-additive.test.ts src/dump.test.ts` — passed (17 tests).
+
+Evidence:
+
+- Migration `0073_add_swarm_persistence.sql` adds project orchestration,
+  typed runtime refs, stack/revision/registry tables, indexes, ownership FKs,
+  and dump redaction.
+- Stack and registry repositories are organization-scoped. Revisions are
+  immutable/monotonic; registry credentials and source/rendered YAML use only
+  encrypted fields.
+
+Next:
+
+- Finish every container-only lifecycle guard (S1.3), then begin the manager
+  adapter probe.
+
+## S1.3: Compatibility-safe runtime reference usage
+
+Status: in-progress
+Commit: pending
+Tests run:
+
+- `bun --cwd apps/api vitest run src/lib/deployment-runtime-read.test.ts` — passed (8 tests).
+
+Evidence:
+
+- `docs/swarm/CONTAINER-ID-AUDIT.md` classifies the legacy-ID surface.
+- Runtime and service lifecycle resolution reject Swarm before any container
+  runtime or fallback provisioning path is selected.
+- Project/deployment cleanup represents a Swarm stack as an inert manifest
+  entry; record deletion cannot remove a live stack.
+
+Next:
+
+- Complete day-two container-only guards while introducing the stack adapter.
