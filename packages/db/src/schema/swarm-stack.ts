@@ -118,3 +118,29 @@ export const swarmStackRevision = pgTable(
     index("idx_swarm_stack_revision_stack_created").on(t.stackId, t.createdAt),
   ],
 );
+
+/**
+ * Operator-entered payload for a project-managed Swarm config or secret.
+ * Values are application-encrypted and are deliberately absent from all
+ * discovery, source, revision-manifest, and list/read DTO surfaces.
+ */
+export const swarmManagedInput = pgTable(
+  "swarm_managed_input",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => project.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"config" | "secret">().notNull(),
+    logicalName: text("logical_name").notNull(),
+    valueEnc: text("value_enc").notNull(),
+    createdByUserId: text("created_by_user_id"),
+    updatedByUserId: text("updated_by_user_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("uq_swarm_managed_input_project_kind_logical").on(t.projectId, t.kind, t.logicalName),
+    index("idx_swarm_managed_input_project").on(t.projectId),
+  ],
+);

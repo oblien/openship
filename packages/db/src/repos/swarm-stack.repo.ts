@@ -1,12 +1,14 @@
 import { and, desc, eq, max, sql } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { swarmStack, swarmStackRevision } from "../schema";
+import { project, swarmManagedInput, swarmStack, swarmStackRevision } from "../schema";
 
 export type SwarmStack = typeof swarmStack.$inferSelect;
 export type NewSwarmStack = typeof swarmStack.$inferInsert;
 export type SwarmStackRevision = typeof swarmStackRevision.$inferSelect;
 export type NewSwarmStackRevision = typeof swarmStackRevision.$inferInsert;
+export type SwarmManagedInput = typeof swarmManagedInput.$inferSelect;
+export type NewSwarmManagedInput = typeof swarmManagedInput.$inferInsert;
 
 /** All request-path reads are organization-scoped by construction. */
 export function createSwarmStackRepo(db: Database) {
@@ -111,6 +113,68 @@ export function createSwarmStackRepo(db: Database) {
         )
         .returning();
       return row;
+    },
+
+    /** Metadata + encrypted payload remain organization-scoped through project ownership. */
+    async listManagedInputsInOrganization(projectId: string, organizationId: string): Promise<SwarmManagedInput[]> {
+      const rows = await db
+        .select({ input: swarmManagedInput })
+        .from(swarmManagedInput)
+        .innerJoin(project, eq(project.id, swarmManagedInput.projectId))
+        .where(and(eq(swarmManagedInput.projectId, projectId), eq(project.organizationId, organizationId)))
+        .orderBy(swarmManagedInput.kind, swarmManagedInput.logicalName);
+      return rows.map((row) => row.input);
+    },
+
+    async getManagedInputInOrganization(
+      id: string,
+      organizationId: string,
+    ): Promise<SwarmManagedInput | undefined> {
+      const rows = await db
+        .select({ input: swarmManagedInput })
+        .from(swarmManagedInput)
+        .innerJoin(project, eq(project.id, swarmManagedInput.projectId))
+        .where(and(eq(swarmManagedInput.id, id), eq(project.organizationId, organizationId)))
+        .limit(1);
+      return rows[0]?.input;
+    },
+
+    async upsertManagedInputInOrganization(
+      projectId: string,
+      organizationId: string,
+      input: Pick<NewSwarmManagedInput, "kind" | "logicalName" | "valueEnc" | "createdByUserId" | "updatedByUserId">,
+    ): Promise<SwarmManagedInput | undefined> {
+      const owningProject = await db.query.project.findFirst({
+        where: and(eq(project.id, projectId), eq(project.organizationId, organizationId)),
+      });
+      if (!owningProject) return undefined;
+      const existing = await db.query.swarmManagedInput.findFirst({
+        where: and(
+          eq(swarmManagedInput.projectId, projectId),
+          eq(swarmManagedInput.kind, input.kind),
+          eq(swarmManagedInput.logicalName, input.logicalName),
+        ),
+      });
+      if (existing) {
+        const [updated] = await db
+          .update(swarmManagedInput)
+          .set({ valueEnc: input.valueEnc, updatedByUserId: input.updatedByUserId, updatedAt: new Date() })
+          .where(eq(swarmManagedInput.id, existing.id))
+          .returning();
+        return updated;
+      }
+      const [created] = await db
+        .insert(swarmManagedInput)
+        .values({ id: generateId("swmi"), projectId, ...input })
+        .returning();
+      return created;
+    },
+
+    async removeManagedInputInOrganization(id: string, organizationId: string): Promise<boolean> {
+      const input = await this.getManagedInputInOrganization(id, organizationId);
+      if (!input) return false;
+      const removed = await db.delete(swarmManagedInput).where(eq(swarmManagedInput.id, input.id)).returning();
+      return removed.length === 1;
     },
 
     async listRevisionsInOrganization(
