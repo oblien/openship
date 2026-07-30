@@ -789,4 +789,26 @@ Evidence:
 
 Next:
 
-- Begin external-routing preservation and explicit OpenShip Edge work (Phase 10).
+- Define and validate the explicit OpenShip Edge topology (S10.2–S10.5).
+
+## S10.1: External routing is explicit and non-mutating
+
+Status: done
+Commit: pending Phase 10.1 milestone
+Tests run:
+
+- `bun --cwd apps/api vitest run src/modules/swarm/swarm-routing-labels.test.ts src/modules/swarm/swarm-source.model.test.ts src/modules/swarm/swarm.service.test.ts` — passed (10 tests).
+- `bun --cwd packages/adapters vitest run src/platform.swarm.test.ts` — passed (1 test).
+- TypeScript checks for `apps/api` and `apps/dashboard` — passed.
+
+Evidence:
+
+- New bindings and imported stacks persist `routingMode = external`; the safe
+  source DTO now makes that mode visible to the dashboard.
+- Swarm platform resolution uses a no-op routing/TLS provider, so ordinary
+  stack inspection, claim, deploy, and service lifecycle work do not bind
+  ports 80/443, provision an Edge, or change router/TLS state.
+- Live-stack detail strips general service labels and returns only recognised
+  router labels, with credential-shaped values redacted and bounded. The
+  dashboard identifies external routing, shows those labels as read-only
+  inspection metadata, and offers only syntactically safe inferred HTTPS URLs.

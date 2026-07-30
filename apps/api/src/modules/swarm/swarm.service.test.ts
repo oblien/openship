@@ -20,7 +20,7 @@ function snapshot(): SwarmDiscoverySnapshot {
     stacks: [{ name: "blog", serviceIds: ["svc-a"], serviceNames: ["web"] }],
     services: [{
       id: "svc-a", name: "blog_web", sourceServiceName: "web", stackName: "blog", specVersion: 1,
-      mode: "replicated", desiredReplicas: 1, image: "repo/web@sha256:abc", loggingDriver: null, labels: {}, endpointMode: null,
+      mode: "replicated", desiredReplicas: 1, image: "repo/web@sha256:abc", loggingDriver: null, labels: { "traefik.http.routers.web.rule": "Host(`app.example.test`)" }, endpointMode: null,
       placement: null, resources: null, updateConfig: null, rollbackConfig: null, restartPolicy: null,
       networks: [], configs: [], secrets: [], publishedPorts: [], updateState: null, updateMessage: null,
     }],
@@ -57,6 +57,17 @@ describe("Swarm discovery service", () => {
     expect(second.stacks[0]?.services[0]?.state).toBe("converged");
     expect(fixture.discover).toHaveBeenCalledTimes(1);
     expect(fixture.resolvePlatform).toHaveBeenCalledWith("server", "docker", "server-a", "org-a", "swarm");
+  });
+
+  it("returns only read-only, redacted router metadata from stack detail", async () => {
+    const fixture = service();
+    const detail = await fixture.service.stack("server-a", "org-a", "blog");
+
+    expect(detail.services[0]).toMatchObject({
+      routingLabels: [{ key: "traefik.http.routers.web.rule", value: "Host(`app.example.test`)", redacted: false }],
+      routingUrls: ["https://app.example.test"],
+    });
+    expect(detail.services[0]).not.toHaveProperty("labels");
   });
 
   it("fails closed when the feature is disabled", async () => {

@@ -17,6 +17,7 @@ import { AppError, NotFoundError } from "@repo/core";
 import { repos } from "@repo/db";
 import { swarmSupportEnabled } from "../../config";
 import { resolveTargetPlatform } from "../../lib/deployment-runtime";
+import { inferSwarmRoutingUrls, readSwarmRoutingLabels } from "./swarm-routing-labels";
 
 const DISCOVERY_CACHE_MS = 2_000;
 
@@ -138,7 +139,10 @@ export function createSwarmDiscoveryService(
   async function stack(serverId: string, organizationId: string, stackName: string): Promise<{
     stack: SwarmDiscoverySnapshot["stacks"][number];
     health: SwarmStackHealth;
-    services: SwarmDiscoverySnapshot["services"];
+    services: Array<Omit<SwarmDiscoverySnapshot["services"][number], "labels"> & {
+      routingLabels: ReturnType<typeof readSwarmRoutingLabels>;
+      routingUrls: string[];
+    }>;
     tasks: SwarmDiscoverySnapshot["tasks"];
     observedAt: string;
     diagnostics: SwarmDiscoverySnapshot["diagnostics"];
@@ -146,7 +150,12 @@ export function createSwarmDiscoveryService(
     const snapshot = await discover(serverId, organizationId);
     const found = snapshot.stacks.find((candidate) => candidate.name === stackName);
     if (!found) throw new NotFoundError("Swarm stack", stackName);
-    const services = snapshot.services.filter((service) => service.stackName === stackName);
+    const liveServices = snapshot.services.filter((service) => service.stackName === stackName);
+    const services = liveServices
+      .map(({ labels, ...service }) => {
+        const routingLabels = readSwarmRoutingLabels(labels);
+        return { ...service, routingLabels, routingUrls: inferSwarmRoutingUrls(routingLabels) };
+      });
     const serviceIds = new Set(services.map((service) => service.id));
     const tasks = snapshot.tasks.filter((task) => serviceIds.has(task.serviceId));
     const eligibleNodeCount = snapshot.nodes.filter(
@@ -154,7 +163,7 @@ export function createSwarmDiscoveryService(
     ).length;
     return {
       stack: found,
-      health: deriveSwarmStackHealth({ stackName, services, tasks, eligibleNodeCount }),
+      health: deriveSwarmStackHealth({ stackName, services: liveServices, tasks, eligibleNodeCount }),
       services,
       tasks,
       observedAt: snapshot.observedAt,

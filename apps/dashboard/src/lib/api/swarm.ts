@@ -121,6 +121,9 @@ export interface SwarmStackDetail {
     publishedPorts: Array<{ target: number; published: number | null; protocol: string; mode: string }>;
     updateState: string | null;
     updateMessage: string | null;
+    /** Selected routing labels are informational; OpenShip does not mutate them in external mode. */
+    routingLabels: Array<{ key: string; value: string | null; redacted: boolean }>;
+    routingUrls: string[];
   }>;
   tasks: SwarmTask[];
   observedAt: string;
@@ -158,6 +161,7 @@ export interface SwarmStackSource {
   digest: string | null;
   deployable: boolean;
   hasInlineYaml: boolean;
+  routingMode: "external" | "openship-edge";
   registryId: string | null;
 }
 

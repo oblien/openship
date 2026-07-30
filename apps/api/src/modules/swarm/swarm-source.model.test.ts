@@ -32,9 +32,9 @@ describe("Swarm stack source model", () => {
     const dto = serializeStackSource({
       sourceKind: "inline", sourcePaths: [], sourcePath: null, sourceBranch: null,
       sourceCommitSha: null, sourceVersion: 1, sourceDigest: source.sourceDigest,
-      sourceYamlEnc: "enc1:not-the-plaintext",
+      sourceYamlEnc: "enc1:not-the-plaintext", routingMode: "external",
     } as unknown as SwarmStack);
-    expect(dto).toMatchObject({ kind: "inline", deployable: true, hasInlineYaml: true });
+    expect(dto).toMatchObject({ kind: "inline", deployable: true, hasInlineYaml: true, routingMode: "external" });
     expect(JSON.stringify(dto)).not.toContain("nginx:alpine");
     expect(JSON.stringify(dto)).not.toContain("enc1:not-the-plaintext");
   });

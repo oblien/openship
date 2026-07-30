@@ -6,6 +6,7 @@ vi.mock("./runtime/docker", () => ({
 }));
 
 import { createPlatform } from "./platform";
+import { NoopInfraProvider } from "./infra/noop";
 
 const managerInfo = JSON.stringify({
   ServerVersion: "29.5.3",
@@ -35,6 +36,8 @@ describe("createPlatform Swarm resolution", () => {
     expect(platform.runtime.name).toBe("docker");
     expect(platform.orchestratorMode).toBe("swarm");
     expect(platform.stackRuntime?.name).toBe("swarm");
+    expect(platform.routing).toBeInstanceOf(NoopInfraProvider);
+    expect(platform.ssl).toBeInstanceOf(NoopInfraProvider);
     await expect(platform.stackRuntime?.probe()).resolves.toMatchObject({ clusterId: "cluster-1" });
     expect(exec.mock.calls.map(([command]) => command)).toEqual([
       "docker info --format '{{json .}}'",
