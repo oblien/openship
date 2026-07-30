@@ -5,6 +5,7 @@ import { repos, type Project, type Deployment, type Domain } from "@repo/db";
 import {
   BUILD_ENV_VARS,
   safeErrorMessage,
+  withBuildNodeOptions,
 } from "@repo/core";
 import type {
   BuildResult,
@@ -98,10 +99,17 @@ import * as settingsService from "../settings/settings.service";
 // to control via their project env vars. Forcing it (e.g. NODE_ENV=production)
 // makes npm/pnpm omit devDependencies, which breaks any build whose tooling
 // (tailwind, postcss, typescript, …) lives in devDependencies.
-function buildScopedEnvVars(envVars: Record<string, string>): {
+// NODE_OPTIONS gets --max-old-space-size from build RAM unless the customer
+// already set one (Nuxt/Next often need >2GB; Node's default OOMs otherwise).
+function buildScopedEnvVars(
+  envVars: Record<string, string>,
+  buildMemoryMb: number,
+): {
   envVars: Record<string, string>;
 } {
-  return { envVars: { ...BUILD_ENV_VARS, ...envVars } };
+  return {
+    envVars: withBuildNodeOptions({ ...BUILD_ENV_VARS, ...envVars }, buildMemoryMb),
+  };
 }
 
 function resolveStaticOutputDirectory(outputDirectory: string, targetPath?: string): string {
@@ -544,7 +552,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       snapshot.buildStrategy,
       { deployTarget: snapshot.deployTarget },
     );
-    const buildEnv = buildScopedEnvVars(envMap);
+    const buildEnv = buildScopedEnvVars(envMap, buildResources.memoryMb);
 
     // Resolve a fresh GitHub token for cloning private repos.
     // Policy lives in resolveBuildGitToken - local builds keep the broad
