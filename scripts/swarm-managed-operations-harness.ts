@@ -11,7 +11,9 @@ const runtime = await SwarmRuntime.create({ executor: new LocalExecutor(), timeo
 const initial = await runtime.discover();
 
 if (!initial.stacks.some((stack) => stack.name === stackName)) {
-  throw new Error(`Managed proof stack ${stackName} is absent; run scripts/swarm-lab.sh managed-proof first.`);
+  throw new Error(
+    `Managed proof stack ${stackName} is absent; run scripts/swarm-lab.sh managed-proof first.`,
+  );
 }
 
 const binding = {
@@ -31,7 +33,7 @@ const binding = {
 const operations = createSwarmOperationsService({
   featureEnabled: () => true,
   getStack: async () => binding,
-  resolvePlatform: async () => ({ stackRuntime: runtime } as never),
+  resolvePlatform: async () => ({ stackRuntime: runtime }) as never,
   // The isolated proof has no durable stack/revision table. The real service's
   // refresh is independently covered; this invocation deliberately exercises
   // the manager-scale + convergence boundary without a second test database.
@@ -49,7 +51,8 @@ async function scale(replicas: number) {
     replicas,
     persistence: "temporary",
   });
-  if (result.state !== "ready") throw new Error(`Scale to ${replicas} did not converge: ${result.state}`);
+  if (result.state !== "ready")
+    throw new Error(`Scale to ${replicas} did not converge: ${result.state}`);
   const snapshot = await runtime.discover();
   const service = snapshot.services.find(
     (candidate) => candidate.stackName === stackName && candidate.sourceServiceName === "web",
@@ -62,20 +65,30 @@ async function scale(replicas: number) {
 
 const results = [await scale(2), await scale(0), await scale(1)];
 const beforeRestart = (await runtime.discover()).tasks
-  .filter((task) => task.serviceName === `${stackName}_web` && task.currentState.toLowerCase().startsWith("running"))
+  .filter(
+    (task) =>
+      task.serviceName === `${stackName}_web` &&
+      task.currentState.toLowerCase().startsWith("running"),
+  )
   .map((task) => task.id)
   .sort();
 const restart = await operations.restart({ projectId, organizationId, serviceName: "web" });
 if (restart.state !== "ready") throw new Error(`Restart did not converge: ${restart.state}`);
 const afterRestart = (await runtime.discover()).tasks
-  .filter((task) => task.serviceName === `${stackName}_web` && task.currentState.toLowerCase().startsWith("running"))
+  .filter(
+    (task) =>
+      task.serviceName === `${stackName}_web` &&
+      task.currentState.toLowerCase().startsWith("running"),
+  )
   .map((task) => task.id)
   .sort();
 if (JSON.stringify(beforeRestart) === JSON.stringify(afterRestart)) {
   throw new Error("Force restart retained the same current task identity.");
 }
 const workerTask = (await runtime.discover()).tasks.find(
-  (task) => task.serviceName === `${stackName}_worker` && task.currentState.toLowerCase().startsWith("running"),
+  (task) =>
+    task.serviceName === `${stackName}_worker` &&
+    task.currentState.toLowerCase().startsWith("running"),
 );
 if (!workerTask) throw new Error("Managed worker task was unavailable for the task-log proof.");
 const workerLogs = await operations.logs({
@@ -100,19 +113,24 @@ if (!taskLogs.entries.some((entry) => entry.message.includes("openship-swarm-wor
   throw new Error("Manager task-scoped logs did not include the worker heartbeat.");
 }
 const streamedEntries: string[] = [];
-const liveLogStream = await operations.streamLogs({
-  projectId,
-  organizationId,
-  serviceName: "worker",
-  taskId: workerTask.id,
-  tail: 1,
-  timestamps: true,
-}, (entry) => streamedEntries.push(entry.message));
+const liveLogStream = await operations.streamLogs(
+  {
+    projectId,
+    organizationId,
+    serviceName: "worker",
+    taskId: workerTask.id,
+    tail: 1,
+    timestamps: true,
+  },
+  (entry) => streamedEntries.push(entry.message),
+);
 await new Promise((resolve) => setTimeout(resolve, 2_500));
 liveLogStream.stop();
 await liveLogStream.done;
 if (!streamedEntries.some((entry) => entry.includes("openship-swarm-worker-alive"))) {
-  throw new Error("Manager task log follow did not receive the worker heartbeat before cancellation.");
+  throw new Error(
+    "Manager task log follow did not receive the worker heartbeat before cancellation.",
+  );
 }
 const removal = await operations.remove({
   projectId,
@@ -120,7 +138,8 @@ const removal = await operations.remove({
   confirmedStackName: stackName,
   expectedSourceVersion: binding.sourceVersion,
 });
-if (removal.state !== "removed") throw new Error(`Managed stack removal did not settle: ${removal.state}`);
+if (removal.state !== "removed")
+  throw new Error(`Managed stack removal did not settle: ${removal.state}`);
 const afterRemoval = await runtime.discover();
 if (afterRemoval.services.some((service) => service.stackName === stackName)) {
   throw new Error("Managed stack removal left services present on the manager.");
@@ -131,11 +150,21 @@ if (!afterRemoval.configs.some((config) => config.name === "openship_lab_config"
 if (!afterRemoval.secrets.some((secret) => secret.name === "openship_lab_secret")) {
   throw new Error("Managed stack removal deleted the external lab secret.");
 }
-console.log(JSON.stringify({
-  result: "managed service operations proof completed",
-  stack: stackName,
-  results,
-  restart: { serviceId: restart.serviceId, beforeTaskIds: beforeRestart, afterTaskIds: afterRestart },
-  logs: { workerEntries: workerLogs.entries.length, taskEntries: taskLogs.entries.length, streamedEntries: streamedEntries.length },
-  removal,
-}));
+console.log(
+  JSON.stringify({
+    result: "managed service operations proof completed",
+    stack: stackName,
+    results,
+    restart: {
+      serviceId: restart.serviceId,
+      beforeTaskIds: beforeRestart,
+      afterTaskIds: afterRestart,
+    },
+    logs: {
+      workerEntries: workerLogs.entries.length,
+      taskEntries: taskLogs.entries.length,
+      streamedEntries: streamedEntries.length,
+    },
+    removal,
+  }),
+);
