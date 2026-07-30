@@ -1497,3 +1497,46 @@ Next:
 
 - Run full product regression, migration compatibility, and feature-off checks
   for S14.4.
+
+## S14.4: Full regression and compatibility gate
+
+Status: done
+Commit: pending
+Tests run:
+
+- `bun run test` — passed: API (157 files, 1,392 tests and 3 intentional
+  skips), adapters (86 files, 666 tests), DB (10 files, 54 tests), CLI (22
+  files, 178 tests), desktop, core, and dashboard all completed successfully.
+- `bun run build` — passed for the API, dashboard, and their build
+  dependencies. `bun run --cwd apps/api lint`,
+  `bun run --cwd packages/adapters lint`, and `bun run --cwd apps/cli lint`
+  — passed; each is `tsc --noEmit`.
+- `bun run --cwd apps/dashboard build` — passed, including its TypeScript
+  phase. `git diff --check` — passed.
+
+Evidence:
+
+- Standalone Compose remains on `DockerRuntime`: the execution-plan regression
+  test asserts Docker build and per-container server deployment semantics when
+  `orchestratorMode` is `standalone`. Dockerfile-first workspace apps likewise
+  keep their Dockerfile-owned install/build/start commands rather than entering
+  the buildpack path.
+- The root suite covers normal Docker, bare, cloud/static routing, desktop IPC,
+  migration/re-attach and rollback paths, domain/SSL routing, and Compose
+  finalization. The finalization test uses the real DB schema with only its
+  repositories mocked, preventing a partial mock from hiding import-surface
+  regressions.
+- The PGlite-backed Swarm persistence test applies the additive migration and
+  exercises the new stack/revision tables. The data-transfer registry now
+  encrypts and re-encrypts both Swarm source/revision documents as well as OCI
+  registry credentials, matching the database encrypted-column manifest.
+- Feature-off startup is retained by the health capability test: Swarm support
+  defaults disabled, hides the dashboard tab, and registers no available Swarm
+  maintenance jobs. No new required configuration was introduced.
+- The CLI port-resolution test now permits the resolver's documented six-second
+  restart grace period, avoiding a false timeout while retaining its precedence
+  assertion.
+
+Next:
+
+- Publish an operator-facing guide and release/runbook notes (S14.5).
