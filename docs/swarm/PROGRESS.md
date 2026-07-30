@@ -1081,3 +1081,28 @@ Next:
 
 - Validate external config/secret references and expose safe consumer metadata
   (S12.1), then add encrypted OpenShip-managed inputs (S12.2).
+
+## S12.1: External configs and secrets
+
+Status: done
+Commit: `5ab5f64c`
+Tests run:
+
+- `bun --filter @repo/api test src/modules/swarm/swarm-compatibility.test.ts src/modules/deployments/swarm/deploy.service.test.ts`
+  — passed (17 tests).
+- `bun run --cwd apps/api lint` and `git diff --check` — passed.
+
+Evidence:
+
+- External config and secret declarations are preserved exactly in rendered
+  stack documents. Discovery validates manager metadata only and blocks a
+  missing external object before stack mutation.
+- Compatibility output identifies every consuming service for a missing
+  external resource, and each immutable revision records only external object
+  names and consumer service names. No config or secret payload is read,
+  returned, or stored.
+
+Next:
+
+- Add permission-scoped, encrypted OpenShip-managed config and secret inputs
+  (S12.2).
