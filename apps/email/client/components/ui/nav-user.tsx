@@ -440,20 +440,36 @@ export function NavUser() {
         )}
       </div>
 
-      {state !== 'collapsed' && (
-        <div className="mt-2 flex items-center justify-between gap-2">
-          <div className="mt-[2px] flex flex-col items-start gap-1 space-y-1">
-            <div className="flex items-center gap-1 text-[13px] leading-none text-black dark:text-white">
-              <p className={cn('max-w-[14.5ch] truncate text-[13px]')}>
-                {activeAccount?.name || session.user.name || 'User'}
-              </p>
+      {state !== 'collapsed' &&
+        (() => {
+          const accountEmail = activeAccount?.email || session.user.email;
+          const displayName = activeAccount?.name || session.user.name;
+          // A mailbox with no display name set falls back to the email for
+          // BOTH the name line and the email line below it - same string
+          // twice, one truncated harder than the other. Show just the one
+          // line when there's nothing besides the email to show.
+          const hasDistinctName =
+            !!displayName && displayName.trim().toLowerCase() !== accountEmail?.trim().toLowerCase();
+          return (
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <div className="mt-[2px] flex flex-col items-start gap-1 space-y-1">
+                {hasDistinctName && (
+                  <div className="flex items-center gap-1 text-[13px] leading-none text-black dark:text-white">
+                    <p className={cn('max-w-[14.5ch] truncate text-[13px]')} title={displayName}>
+                      {displayName}
+                    </p>
+                  </div>
+                )}
+                <div
+                  className="h-5 max-w-[200px] overflow-hidden truncate text-xs font-normal leading-none text-[#898989]"
+                  title={accountEmail}
+                >
+                  {accountEmail}
+                </div>
+              </div>
             </div>
-            <div className="h-5 max-w-[200px] overflow-hidden truncate text-xs font-normal leading-none text-[#898989]">
-              {activeAccount?.email || session.user.email}
-            </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
     </div>
   );
 }

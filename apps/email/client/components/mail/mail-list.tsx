@@ -44,6 +44,7 @@ import { Button } from '../ui/button';
 import { Avatar } from '../ui/avatar';
 import { useQueryState } from 'nuqs';
 import { useAtom } from 'jotai';
+import { CreateEmail } from '../create/create-email';
 
 const Thread = memo(
   function Thread({
@@ -715,6 +716,23 @@ export const MailList = memo(
     const [searchValue, setSearchValue] = useSearchValue();
     const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
 
+    // Mobile compose FAB - the "New email" trigger otherwise lives inside the
+    // sidebar, which on mobile is a Sheet that's unmounted (not just hidden)
+    // while closed. That was 2 taps to compose (open drawer, then New email).
+    // Query-state is shared/URL-synced (nuqs) with the sidebar's own trigger,
+    // so setting it here opens the exact same compose dialog.
+    const [isComposeOpen, setComposeOpen] = useQueryState('isComposeOpen');
+    const [, setComposeTo] = useQueryState('to');
+    const [, setComposeReplyId] = useQueryState('activeReplyId');
+    const [, setComposeMode] = useQueryState('mode');
+    const openCompose = useCallback(() => {
+      setComposeOpen('true');
+      setDraftId(null);
+      setComposeTo(null);
+      setComposeReplyId(null);
+      setComposeMode(null);
+    }, [setComposeOpen, setDraftId, setComposeTo, setComposeReplyId, setComposeMode]);
+
     useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
         if (event.key === 'Escape') {
@@ -1016,6 +1034,21 @@ export const MailList = memo(
             <div className="h-2" />
           )}
         </div>
+
+        {/* Mobile compose FAB - see the hook comment above for why this
+            can't just reuse the sidebar's trigger. CreateEmail wraps its own
+            Dialog keyed off the same isComposeOpen query state, so mounting
+            it here is enough for the dialog to actually open - no separate
+            Dialog/DialogTrigger needed on this end. */}
+        <button
+          type="button"
+          onClick={openCompose}
+          aria-label={m['common.commandPalette.commands.newEmail']()}
+          className="fixed bottom-6 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[#006FFE] text-white shadow-lg transition-colors hover:bg-[#0056CC] md:hidden"
+        >
+          <PencilCompose className="h-5 w-5 fill-white" />
+        </button>
+        {isComposeOpen === 'true' && <CreateEmail />}
       </>
     );
   },

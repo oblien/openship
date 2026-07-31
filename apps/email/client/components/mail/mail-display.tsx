@@ -1259,7 +1259,11 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
                   <span>
                     {emailData.subject}{' '}
                     <span className="text-muted-foreground dark:text-[#8C8C8C]">
-                      {totalEmails && totalEmails > 1 && `[${totalEmails}]`}
+                      {/* `totalEmails && totalEmails > 1 && ...` renders a bare "0"
+                          for a single-message thread - `0 && x` evaluates to `0`,
+                          and unlike false/null/undefined, React renders a numeric
+                          0 as text. Ternary avoids that. */}
+                      {totalEmails != null && totalEmails > 1 ? `[${totalEmails}]` : null}
                     </span>
                   </span>
                 </span>

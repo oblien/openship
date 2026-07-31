@@ -694,7 +694,7 @@ export function EmailComposer({
             <p className="text-sm font-medium text-[#8C8C8C]">Subject:</p>
             <input
               className="h-4 w-full bg-transparent text-sm font-normal leading-normal text-black placeholder:text-[#797979] focus:outline-none dark:text-white/90"
-              placeholder="Re: Design review feedback"
+              placeholder="Subject"
               value={subjectInput}
               onChange={(e) => {
                 const value = replaceEmojiShortcodes(e.target.value);

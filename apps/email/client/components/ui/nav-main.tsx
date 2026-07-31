@@ -215,7 +215,14 @@ export function NavMain({ items }: NavMainProps) {
             </SidebarMenuItem>
           </Collapsible>
         ))}
-        {!pathname.includes('/settings') && !isBottomNav && state !== 'collapsed' && (
+        {!pathname.includes('/settings') &&
+          !isBottomNav &&
+          state !== 'collapsed' &&
+          // Google always gets the section (it has an inline "add label"
+          // action even at zero); everyone else only gets it once there's
+          // something to show - otherwise this was rendering a "Folders"
+          // header over a permanently empty body.
+          (userLabels.length > 0 || activeAccount?.providerId === 'google') && (
           <Collapsible defaultOpen={true} className="group/collapsible flex-col">
             <SidebarMenuItem className="mb-4" style={{ height: 'auto' }}>
               <div className="mx-2 mb-4 flex items-center justify-between">
