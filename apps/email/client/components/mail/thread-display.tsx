@@ -782,6 +782,7 @@ export function ThreadDisplay() {
                     <TooltipTrigger asChild>
                       <button
                         onClick={handleClose}
+                        aria-label={m['common.actions.close']()}
                         className="inline-flex h-7 w-7 items-center justify-center gap-1 overflow-hidden rounded-md hover:bg-white md:hidden dark:hover:bg-[#313131]"
                       >
                         <X className="fill-iconLight dark:fill-iconDark h-3.5 w-3.5" />
@@ -825,6 +826,11 @@ export function ThreadDisplay() {
                     <TooltipTrigger asChild>
                       <button
                         onClick={handleToggleStar}
+                        aria-label={
+                          isStarred
+                            ? m['common.threadDisplay.unstar']()
+                            : m['common.threadDisplay.star']()
+                        }
                         className="inline-flex h-7 w-7 items-center justify-center gap-1 overflow-hidden rounded-lg bg-white dark:bg-[#313131] hover:bg-gray-100 dark:hover:bg-[#404040] transition-colors cursor-pointer"
                       >
                         <Star
@@ -850,6 +856,7 @@ export function ThreadDisplay() {
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => moveThreadTo('archive')}
+                        aria-label={m['common.threadDisplay.archive']()}
                         className="inline-flex h-7 w-7 items-center justify-center gap-1 overflow-hidden rounded-lg bg-white dark:bg-[#313131] hover:bg-gray-100 dark:hover:bg-[#404040] transition-colors cursor-pointer"
                       >
                         <Archive className="fill-iconLight dark:fill-iconDark" />
@@ -867,6 +874,7 @@ export function ThreadDisplay() {
                       <TooltipTrigger asChild>
                         <button
                           onClick={() => moveThreadTo('bin')}
+                          aria-label={m['common.mail.moveToBin']()}
                           className="inline-flex h-7 w-7 items-center justify-center gap-1 overflow-hidden rounded-lg border border-[#FCCDD5] bg-[#FDE4E9] hover:bg-[#fccdd5]/70 dark:border-[#6E2532] dark:bg-[#411D23] dark:hover:bg-[#6E2532]/70 cursor-pointer transition-colors"
                         >
                           <Trash className="fill-[#F43F5E]" />

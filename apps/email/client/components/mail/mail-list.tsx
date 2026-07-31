@@ -488,7 +488,7 @@ const Thread = memo(
                     {isFolderSent ? (
                       <p
                         className={cn(
-                          'mt-1 line-clamp-1 max-w-[50ch] overflow-hidden text-sm text-[#8C8C8C] md:max-w-[25ch]',
+                          'mt-1 line-clamp-1 max-w-[50ch] overflow-hidden text-sm text-muted-foreground dark:text-[#8C8C8C] md:max-w-[25ch]',
                         )}
                       >
                         {latestMessage.to.map((e) => e.email).join(', ')}
@@ -496,7 +496,7 @@ const Thread = memo(
                     ) : (
                       <p
                         className={cn(
-                          'mt-1 line-clamp-1 w-[95%] min-w-0 overflow-hidden text-sm text-[#8C8C8C]',
+                          'mt-1 line-clamp-1 w-[95%] min-w-0 overflow-hidden text-sm text-muted-foreground dark:text-[#8C8C8C]',
                         )}
                       >
                         {highlightText(latestMessage.subject, searchValue.highlight)}
@@ -691,7 +691,7 @@ const Draft = memo(({ message, index }: { message: DraftListRow; index: number }
               <div className="flex justify-between">
                 <p
                   className={cn(
-                    'mt-1 line-clamp-1 max-w-[50ch] text-sm text-[#8C8C8C] md:max-w-[30ch]',
+                    'mt-1 line-clamp-1 max-w-[50ch] text-sm text-muted-foreground dark:text-[#8C8C8C] md:max-w-[30ch]',
                   )}
                 >
                   {message.subject}

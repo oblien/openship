@@ -1501,6 +1501,7 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
                                   e.stopPropagation();
                                   e.preventDefault();
                                 }}
+                                aria-label={m['common.threadDisplay.moreOptions']()}
                                 className="inline-flex h-7 w-7 items-center justify-center gap-1 overflow-hidden rounded-md bg-white hover:bg-gray-100 focus:outline-none focus:ring-0 dark:bg-[#313131] dark:hover:bg-[#3d3d3d] cursor-pointer transition-colors"
                               >
                                 <ThreeDots className="fill-iconLight dark:fill-iconDark" />
@@ -1684,6 +1685,7 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
                         </button>
                         <button
                           onClick={() => downloadAttachment(attachment)}
+                          aria-label="Download attachment"
                           className="flex cursor-pointer items-center gap-1 rounded-[5px] px-1.5 py-1 text-sm"
                         >
                           <HardDriveDownload className="text-muted-foreground dark:text-muted-foreground h-4 w-4 fill-[#FAFAFA] dark:fill-[#262626]" />

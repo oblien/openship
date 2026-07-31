@@ -623,7 +623,7 @@ export function EmailComposer({
         <div className="shrink-0 overflow-visible border-b border-[#E7E7E7] pb-2 dark:border-[#252525]">
           <div className="flex justify-between px-3 pt-3">
             <div className="flex w-full items-center gap-2">
-              <p className="text-sm font-medium text-[#8C8C8C]">To:</p>
+              <p className="text-sm font-medium text-muted-foreground dark:text-[#8C8C8C]">To:</p>
               <RecipientAutosuggest
                 control={form.control}
                 name="to"
@@ -635,14 +635,14 @@ export function EmailComposer({
             <div className="flex gap-2">
               <button
                 tabIndex={-1}
-                className="flex h-full items-center gap-2 text-sm font-medium text-[#8C8C8C] hover:text-[#A8A8A8] hover:bg-gray-50 dark:hover:bg-[#404040] transition-colors cursor-pointer rounded-sm px-1 py-0.5"
+                className="flex h-full items-center gap-2 text-sm font-medium text-muted-foreground dark:text-[#8C8C8C] hover:text-[#A8A8A8] hover:bg-gray-50 dark:hover:bg-[#404040] transition-colors cursor-pointer rounded-sm px-1 py-0.5"
                 onClick={() => setShowCc(!showCc)}
               >
                 <span>Cc</span>
               </button>
               <button
                 tabIndex={-1}
-                className="flex h-full items-center gap-2 text-sm font-medium text-[#8C8C8C] hover:text-[#A8A8A8] hover:bg-gray-50 dark:hover:bg-[#404040] transition-colors cursor-pointer rounded-sm px-1 py-0.5"
+                className="flex h-full items-center gap-2 text-sm font-medium text-muted-foreground dark:text-[#8C8C8C] hover:text-[#A8A8A8] hover:bg-gray-50 dark:hover:bg-[#404040] transition-colors cursor-pointer rounded-sm px-1 py-0.5"
                 onClick={() => setShowBcc(!showBcc)}
               >
                 <span>Bcc</span>
@@ -650,7 +650,7 @@ export function EmailComposer({
               {onClose && (
                 <button
                   tabIndex={-1}
-                  className="flex h-full items-center gap-2 text-sm font-medium text-[#8C8C8C] hover:text-[#A8A8A8] hover:bg-gray-50 dark:hover:bg-[#404040] transition-colors cursor-pointer rounded-sm px-1 py-0.5"
+                  className="flex h-full items-center gap-2 text-sm font-medium text-muted-foreground dark:text-[#8C8C8C] hover:text-[#A8A8A8] hover:bg-gray-50 dark:hover:bg-[#404040] transition-colors cursor-pointer rounded-sm px-1 py-0.5"
                   onClick={handleClose}
                 >
                   <X className="h-3.5 w-3.5 fill-[#9A9A9A]" />
@@ -663,7 +663,7 @@ export function EmailComposer({
             {/* CC Section */}
             {showCc && (
               <div className="flex items-center gap-2 px-3">
-                <p className="text-sm font-medium text-[#8C8C8C]">Cc:</p>
+                <p className="text-sm font-medium text-muted-foreground dark:text-[#8C8C8C]">Cc:</p>
                 <RecipientAutosuggest
                   control={form.control}
                   name="cc"
@@ -676,7 +676,7 @@ export function EmailComposer({
             {/* BCC Section */}
             {showBcc && (
               <div className="flex items-center gap-2 px-3">
-                <p className="text-sm font-medium text-[#8C8C8C]">Bcc:</p>
+                <p className="text-sm font-medium text-muted-foreground dark:text-[#8C8C8C]">Bcc:</p>
                 <RecipientAutosuggest
                   control={form.control}
                   name="bcc"
@@ -691,7 +691,7 @@ export function EmailComposer({
         {/* Subject */}
         {!activeReplyId ? (
           <div className="flex items-center gap-2 border-b p-3">
-            <p className="text-sm font-medium text-[#8C8C8C]">Subject:</p>
+            <p className="text-sm font-medium text-muted-foreground dark:text-[#8C8C8C]">Subject:</p>
             <input
               className="h-4 w-full bg-transparent text-sm font-normal leading-normal text-black placeholder:text-[#797979] focus:outline-none dark:text-white/90"
               placeholder="Subject"
@@ -723,7 +723,7 @@ export function EmailComposer({
         {/* From */}
         {aliases && aliases.length > 1 ? (
           <div className="flex items-center gap-2 border-b p-3">
-            <p className="text-sm font-medium text-[#8C8C8C]">From:</p>
+            <p className="text-sm font-medium text-muted-foreground dark:text-[#8C8C8C]">From:</p>
             <Select
               value={fromEmail || ''}
               onValueChange={(value) => {
@@ -741,7 +741,7 @@ export function EmailComposer({
                       <span className="text-sm">
                         {alias.name ? `${alias.name} <${alias.email}>` : alias.email}
                       </span>
-                      {alias.primary && <span className="text-xs text-[#8C8C8C]">Primary</span>}
+                      {alias.primary && <span className="text-xs text-muted-foreground dark:text-[#8C8C8C]">Primary</span>}
                     </div>
                   </SelectItem>
                 ))}
@@ -895,7 +895,7 @@ export function EmailComposer({
                                 >
                                   <span className="truncate">{truncatedName}</span>
                                   {extension && (
-                                    <span className="ml-0.5 shrink-0 text-[10px] text-[#8C8C8C] dark:text-[#9A9A9A]">
+                                    <span className="ml-0.5 shrink-0 text-[10px] text-muted-foreground dark:text-[#9A9A9A]">
                                       .{extension}
                                     </span>
                                   )}

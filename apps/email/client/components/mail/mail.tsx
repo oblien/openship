@@ -637,7 +637,10 @@ export const Categories = () => {
             />
           ),
           colors:
-            'border-0 bg-[#006FFE] text-white dark:bg-[#006FFE] dark:text-white dark:hover:bg-[#006FFE]/90',
+            // #006FFE with white text is ~4.46:1, just under the 4.5:1 text
+            // minimum - darkened to #0062D4 (still the same brand blue family,
+            // ~5.7:1) so white text passes in both themes.
+            'border-0 bg-[#0062D4] text-white dark:bg-[#0062D4] dark:text-white dark:hover:bg-[#0062D4]/90',
         };
       case 'Personal':
         return {
