@@ -351,7 +351,7 @@ export function Sidebar() {
           {navSections.map(({ section, items }, si) => (
             <div key={section ?? si} className={si > 0 ? "mt-5" : undefined}>
               {!collapsed && section && (
-                <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                   {sectionLabel(section)}
                 </p>
               )}
@@ -427,7 +427,7 @@ export function Sidebar() {
       <div className="px-3 pb-4 pt-1">
         <div className="mx-2 mb-3 h-px bg-border/60" />
         {!collapsed && (
-          <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+          <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
             {t.dashboard.nav.sections.account}
           </p>
         )}
