@@ -21,7 +21,7 @@ function mockExecutor(
 describe("checkMailHealth spamassassin probe", () => {
   test("reports active when SpamAssassin runs inside amavis (no standalone unit)", async () => {
     const exec = mockExecutor({
-      "systemctl show spamassassin": "LoadState=not-found\n",
+      "systemctl show spamd": "LoadState=not-found\n",
       "command -v spamassassin": "active\n",
     });
 
@@ -34,9 +34,9 @@ describe("checkMailHealth spamassassin probe", () => {
     });
   });
 
-  test("keeps standalone active status when spamassassin.service is running", async () => {
+  test("keeps standalone active status when spamd.service is running", async () => {
     const exec = mockExecutor({
-      "systemctl show spamassassin":
+      "systemctl show spamd":
         "LoadState=loaded\nActiveState=active\nSubState=running\nActiveEnterTimestamp=Mon 2026-01-01 00:00:00 UTC\n",
     });
 
@@ -51,7 +51,7 @@ describe("checkMailHealth spamassassin probe", () => {
 
   test("reports missing when neither standalone unit nor amavis-integrated SA exists", async () => {
     const exec = mockExecutor({
-      "systemctl show spamassassin": "LoadState=not-found\n",
+      "systemctl show spamd": "LoadState=not-found\n",
       "command -v spamassassin": "inactive\n",
     });
 
