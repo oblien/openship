@@ -126,7 +126,7 @@ export default function BackupsPage() {
           >
             {m.title}
           </h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             {m.subtitle}
           </p>
         </div>
@@ -228,7 +228,7 @@ export default function BackupsPage() {
                           {m.failedBadge}
                         </span>
                       ) : (
-                        <span className="rounded-full bg-foreground/[0.04] px-2 py-0.5 text-[11px] font-medium text-muted-foreground/70">
+                        <span className="rounded-full bg-foreground/[0.04] px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                           {m.notVerifiedBadge}
                         </span>
                       )}
@@ -238,7 +238,7 @@ export default function BackupsPage() {
                     </p>
                     {/* One tidy meta line: kind · credentials · storage rollup.
                         min-w-0 + truncate keeps long values inside the row. */}
-                    <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground/70">
+                    <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                       <span className="font-medium text-muted-foreground/90">{kindLabel(row.kind, m)}</span>
                       <span className="text-muted-foreground/30">·</span>
                       <span className="min-w-0 truncate">{describeCredentials(row, m)}</span>
@@ -524,7 +524,7 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
       >
         {m.emptyTitle}
       </h3>
-      <p className="text-sm text-muted-foreground/70 max-w-sm mx-auto mb-8 leading-relaxed">
+      <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-8 leading-relaxed">
         {m.emptyDescription}
       </p>
 

@@ -127,7 +127,7 @@ function DeliveryRow({ d }: { d: WebhookDelivery }) {
       <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-foreground">
         <span className="text-muted-foreground/60">{sourceIcon(d.source)}</span>
         <span className="truncate">{label}</span>
-        {commit && <code className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{commit}</code>}
+        {commit && <code className="shrink-0 font-mono text-[11px] text-muted-foreground">{commit}</code>}
       </span>
       <span className="shrink-0 text-[11px] text-muted-foreground/60" title={when.toLocaleString()}>
         {when.toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}

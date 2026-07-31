@@ -547,7 +547,7 @@ function CredentialProblem(props: {
             {t.settings.github.ghCli.recheck}
           </button>
           {checked && (
-            <span className="text-xs text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground">
               {interpolate(t.settings.github.credentialCheckedAt, { time: checked })}
             </span>
           )}
@@ -887,7 +887,7 @@ function TokenForm(props: { message: string; hint?: string; onSaved: () => void 
         </button>
       </div>
       {error && <p className="text-xs text-danger leading-relaxed">{error}</p>}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/70">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <a
           href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Openship"
           target="_blank"

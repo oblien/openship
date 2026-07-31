@@ -96,7 +96,7 @@ export default function ProjectsPage() {
             <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
               {t.dashboard.pages.projects.title}
             </h1>
-            <p className="text-sm text-muted-foreground/70 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               {isLoading
                 ? t.projects.list.loading
                 : interpolate(
@@ -181,7 +181,7 @@ export default function ProjectsPage() {
                   <div className="flex min-h-[380px] flex-col items-center justify-center px-6 py-12 text-center">
                     <ProjectIllustration className="relative mx-auto mb-6 h-40 w-56" />
                     {searchQuery ? (
-                      <p className="mx-auto max-w-sm text-sm text-muted-foreground/70">
+                      <p className="mx-auto max-w-sm text-sm text-muted-foreground">
                         {t.dashboard.pages.projects.noResultsFound.replace("{query}", searchQuery)}
                       </p>
                     ) : (
@@ -192,7 +192,7 @@ export default function ProjectsPage() {
                         {/* No CTA button here — the page header already owns the
                             primary "Create Project" action, and the right card
                             owns "Connect a server". This copy just points to both. */}
-                        <p className="mx-auto max-w-sm text-sm leading-relaxed text-muted-foreground/70">
+                        <p className="mx-auto max-w-sm text-sm leading-relaxed text-muted-foreground">
                           {t.projects.list.noTargetDesc}
                         </p>
                       </>
@@ -215,7 +215,7 @@ export default function ProjectsPage() {
                     <h3 className="font-semibold text-foreground text-sm mb-1">
                       {t.projects.serverCta.title}
                     </h3>
-                    <p className="text-xs text-muted-foreground/70 mb-3 leading-relaxed">
+                    <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
                       {t.projects.serverCta.description}
                     </p>
                     {/* SSH servers are a self-hosted/desktop capability — the SaaS

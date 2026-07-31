@@ -90,7 +90,7 @@ export const TopPaths: React.FC<Props> = ({ paths, onDisable, isBusy = false }) 
                   full precision the two numbers plus a long path did not fit on one line
                   in a half-width card. */}
               <span
-                className="shrink-0 tabular-nums text-xs text-muted-foreground/70"
+                className="shrink-0 tabular-nums text-xs text-muted-foreground"
                 title={`${path.count.toLocaleString()} ${t.projectDetail.general.topPaths.requestsShort}`}
               >
                 {formatCount(path.count)}

@@ -80,7 +80,7 @@ export function JobsEmptyState({ onCreate }: { onCreate: () => void }) {
       <h3 className="mb-2 text-xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
         {e.title}
       </h3>
-      <p className="mx-auto mb-6 max-w-md text-sm leading-relaxed text-muted-foreground/70">{e.desc}</p>
+      <p className="mx-auto mb-6 max-w-md text-sm leading-relaxed text-muted-foreground">{e.desc}</p>
 
       <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
         <button

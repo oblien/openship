@@ -240,7 +240,7 @@ function EmptyState({ onImport }: { onImport: () => void }) {
       <h3 className="text-2xl font-medium text-foreground/80 mb-2" style={{ letterSpacing: "-0.2px" }}>
         {t.library.localProjects.empty.title}
       </h3>
-      <p className="text-sm text-muted-foreground/70 max-w-sm mx-auto mb-8 leading-relaxed">
+      <p className="text-sm text-muted-foreground max-w-sm mx-auto mb-8 leading-relaxed">
         {t.library.localProjects.empty.description}
       </p>
 

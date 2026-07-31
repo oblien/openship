@@ -268,7 +268,7 @@ export function ServerTerminalTabs({
       <div className="relative min-h-0 flex-1">
         {shells.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
-            <p className="text-sm text-muted-foreground/70">{m.noTerminals}</p>
+            <p className="text-sm text-muted-foreground">{m.noTerminals}</p>
             <button
               type="button"
               onClick={handleAdd}

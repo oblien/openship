@@ -44,7 +44,7 @@ export const TrafficChart: React.FC<Props> = ({
           {generateIcon('chart%204%20line-5-1666004410.png', 24, 'var(--primary)')}
           <div className="min-w-0">
             <h3 className="text-sm sm:text-lg font-semibold text-foreground truncate">{t.projectDetail.general.traffic.title}</h3>
-            <p className="text-[10px] sm:text-sm text-muted-foreground/70 truncate">{dateRange || t.projectDetail.general.traffic.last24Hours}</p>
+            <p className="text-[10px] sm:text-sm text-muted-foreground truncate">{dateRange || t.projectDetail.general.traffic.last24Hours}</p>
           </div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
@@ -78,7 +78,7 @@ export const TrafficChart: React.FC<Props> = ({
       {/* Traffic Chart */}
       {isLoading ? (
         <div className="flex items-center justify-center flex-1">
-          <div className="text-sm text-muted-foreground/70">{t.projectDetail.general.traffic.loading}</div>
+          <div className="text-sm text-muted-foreground">{t.projectDetail.general.traffic.loading}</div>
         </div>
       ) : !hasAnalytics ? (
         <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/20">

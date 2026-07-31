@@ -132,7 +132,7 @@ export default function NewAppPage() {
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
             {ap.catalogTitle}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground/70">{ap.catalogDescription}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{ap.catalogDescription}</p>
         </div>
         {/* Add-custom button + the 3-dots menu (guide / support). */}
         <div className="flex shrink-0 items-center gap-2">

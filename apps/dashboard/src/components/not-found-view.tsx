@@ -93,7 +93,7 @@ export function NotFoundView({
     <div className="mx-auto flex max-w-md flex-col items-center text-center">
       <NotFoundIllustration />
       <h1 className="mt-4 text-2xl font-medium tracking-tight text-foreground/85">{title}</h1>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground/70">{description}</p>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
       <div className="mt-8 flex flex-col gap-3 sm:flex-row">
         {actions.map((action) => (
           <Link

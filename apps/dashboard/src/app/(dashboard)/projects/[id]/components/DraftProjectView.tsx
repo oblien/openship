@@ -281,7 +281,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
                 label={t.projects.draft.sourceTitle}
                 value={t.projects.draft.managedImages}
               />
-              <p className="text-xs text-muted-foreground/70">
+              <p className="text-xs text-muted-foreground">
                 {t.projects.draft.managedImagesText}
               </p>
             </div>

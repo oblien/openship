@@ -676,7 +676,7 @@ function CatalogPickStep({
           <div className="flex items-baseline justify-between gap-3">
             <h3 className="text-[15px] font-semibold text-foreground truncate">{activeLabel}</h3>
             {!loading && catalog.length > 0 && (
-              <span className="text-[11px] font-medium text-muted-foreground/70 tabular-nums shrink-0">
+              <span className="text-[11px] font-medium text-muted-foreground tabular-nums shrink-0">
                 {interpolate(catalog.length === 1 ? m.serviceCountOne : m.serviceCountOther, { count: String(catalog.length) })}
               </span>
             )}
@@ -716,7 +716,7 @@ function CatalogPickStep({
                 <Search className="size-4 text-muted-foreground/60" />
               </div>
               <p className="text-sm font-medium text-foreground">{m.noMatchesTitle}</p>
-              <p className="text-xs text-muted-foreground/70 mt-1 max-w-[280px]">
+              <p className="text-xs text-muted-foreground mt-1 max-w-[280px]">
                 {m.noMatchesBody}
               </p>
             </div>
@@ -806,7 +806,7 @@ function CategoryItem({
     >
       <span
         className={`flex size-7 items-center justify-center rounded-lg shrink-0 transition-colors ${
-          active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground/70 group-hover:text-foreground"
+          active ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground group-hover:text-foreground"
         }`}
       >
         <Icon className="size-3.5" />

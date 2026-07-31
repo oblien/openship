@@ -106,7 +106,7 @@ export default function AppsPage() {
           >
             {ap.title}
           </h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             {isLoading
               ? ap.loading
               : interpolate(apps.length === 1 ? ap.countOne : ap.countOther, {
@@ -177,7 +177,7 @@ export default function AppsPage() {
             >
               {ap.emptyTitle}
             </h2>
-            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground/70">
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
               {ap.emptyDescription}
             </p>
             <Link
