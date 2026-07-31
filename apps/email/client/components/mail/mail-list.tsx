@@ -1044,7 +1044,7 @@ export const MailList = memo(
           type="button"
           onClick={openCompose}
           aria-label={m['common.commandPalette.commands.newEmail']()}
-          className="fixed bottom-6 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[#006FFE] text-white shadow-lg transition-colors hover:bg-[#0056CC] md:hidden"
+          className="fixed bottom-6 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[#006FFE] text-white shadow-lg transition-colors hover:bg-[#0056CC] lg:hidden"
         >
           <PencilCompose className="h-5 w-5 fill-white" />
         </button>
