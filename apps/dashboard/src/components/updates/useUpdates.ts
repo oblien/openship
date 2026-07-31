@@ -28,6 +28,15 @@ import { getRestApiBaseUrl } from "@/lib/api/urls";
 const LS_MUTED = "openship_update_muted";
 const LS_DISMISSED = "openship_dismissed_advisories";
 const LS_LAST_SEEN = "openship_last_seen_version";
+// Separate from LS_DISMISSED: `resolveUpdateState` (packages/core, shared with
+// the desktop app) deliberately always includes critical advisories - "shown
+// once [per launch] by design" there. On the dashboard web app that "launch"
+// boundary doesn't exist the way it does for a desktop process; a critical
+// banner dismissed once was reappearing on every client-side navigation
+// within the same session. This dashboard-only layer remembers a critical
+// dismissal keyed to the advisory id + the version it targets, so a NEW
+// critical advisory in a later release still surfaces normally.
+const LS_DISMISSED_CRITICAL = "openship_dismissed_critical_advisories";
 
 function isDesktop(): boolean {
   return typeof window !== "undefined" && !!window.desktop?.isDesktop;
@@ -36,6 +45,7 @@ function isDesktop(): boolean {
 interface Prefs {
   muted: boolean;
   dismissed: string[];
+  dismissedCritical: string[];
   lastSeen: string | null;
 }
 
@@ -45,8 +55,10 @@ async function getPrefs(): Promise<Prefs> {
   if (cfg) {
     const notif = await cfg.get<boolean | undefined>("updateNotifications").catch(() => undefined);
     const dismissed = (await cfg.get<string[] | undefined>("dismissedAdvisoryIds").catch(() => undefined)) ?? [];
+    const dismissedCritical =
+      (await cfg.get<string[] | undefined>("dismissedCriticalAdvisoryKeys").catch(() => undefined)) ?? [];
     const lastSeen = (await cfg.get<string | undefined>("lastSeenVersion").catch(() => undefined)) ?? null;
-    return { muted: notif === false, dismissed, lastSeen };
+    return { muted: notif === false, dismissed, dismissedCritical, lastSeen };
   }
   let dismissed: string[] = [];
   try {
@@ -54,9 +66,16 @@ async function getPrefs(): Promise<Prefs> {
   } catch {
     dismissed = [];
   }
+  let dismissedCritical: string[] = [];
+  try {
+    dismissedCritical = JSON.parse(localStorage.getItem(LS_DISMISSED_CRITICAL) ?? "[]");
+  } catch {
+    dismissedCritical = [];
+  }
   return {
     muted: localStorage.getItem(LS_MUTED) === "1",
     dismissed,
+    dismissedCritical,
     lastSeen: localStorage.getItem(LS_LAST_SEEN),
   };
 }
@@ -81,6 +100,22 @@ async function persistDismissed(id: string): Promise<void> {
     cur = [];
   }
   if (!cur.includes(id)) localStorage.setItem(LS_DISMISSED, JSON.stringify([...cur, id]));
+}
+
+async function persistDismissedCritical(key: string): Promise<void> {
+  const cfg = isDesktop() ? window.desktop?.config : undefined;
+  if (cfg) {
+    const cur = (await cfg.get<string[] | undefined>("dismissedCriticalAdvisoryKeys").catch(() => undefined)) ?? [];
+    if (!cur.includes(key)) await cfg.set("dismissedCriticalAdvisoryKeys", [...cur, key]);
+    return;
+  }
+  let cur: string[] = [];
+  try {
+    cur = JSON.parse(localStorage.getItem(LS_DISMISSED_CRITICAL) ?? "[]");
+  } catch {
+    cur = [];
+  }
+  if (!cur.includes(key)) localStorage.setItem(LS_DISMISSED_CRITICAL, JSON.stringify([...cur, key]));
 }
 
 async function persistLastSeen(version: string): Promise<void> {
@@ -141,6 +176,26 @@ async function fetchNotices(): Promise<AdvisoryManifest> {
 }
 
 const SEVERITY_RANK: Record<string, number> = { critical: 0, recommended: 1, info: 2 };
+
+function criticalDismissKey(advisoryId: string, version: string): string {
+  return `${advisoryId}:${version}`;
+}
+
+/** Drops critical advisories the operator already dismissed FOR THIS VERSION.
+ *  `resolveUpdateState` (and the inline notice filters below) intentionally
+ *  never drop critical advisories on their own - this is the dashboard-only
+ *  layer that makes a dismissal stick within the app instead of resurfacing
+ *  on the next navigation. Non-critical advisories are unaffected (already
+ *  handled by `prefs.dismissed` upstream). */
+function withoutDismissedCritical<T extends { id: string; severity: string }>(
+  advisories: T[],
+  dismissedCritical: string[],
+  version: string,
+): T[] {
+  return advisories.filter(
+    (a) => a.severity !== "critical" || !dismissedCritical.includes(criticalDismissKey(a.id, version)),
+  );
+}
 
 /** Where the in-app download/install is in its lifecycle (desktop only). */
 export type UpdatePhase = "idle" | "downloading" | "installing" | "error";
@@ -211,9 +266,13 @@ export function useUpdates(): UseUpdates {
       if (!deployInfo) return; // deploy info still loading — not yet known to be cloud
       const [prefs, manifest] = await Promise.all([getPrefs(), fetchNotices()]);
       setMutedState(prefs.muted);
-      const advisories = matchAdvisories(deployInfo.version ?? "", manifest, mode)
-        .filter((a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)))
-        .sort((x, y) => (SEVERITY_RANK[x.severity] ?? 9) - (SEVERITY_RANK[y.severity] ?? 9));
+      const advisories = withoutDismissedCritical(
+        matchAdvisories(deployInfo.version ?? "", manifest, mode)
+          .filter((a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)))
+          .sort((x, y) => (SEVERITY_RANK[x.severity] ?? 9) - (SEVERITY_RANK[y.severity] ?? 9)),
+        prefs.dismissedCritical,
+        deployInfo.version ?? "",
+      );
       setState({
         currentVersion: deployInfo.version ?? "",
         latestVersion: null,
@@ -255,9 +314,14 @@ export function useUpdates(): UseUpdates {
     const noticeAdvisories = matchAdvisories(current, notices, mode).filter(
       (a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)),
     );
-    const advisories = [...base.advisories, ...noticeAdvisories]
-      .filter((a, i, arr) => arr.findIndex((b) => b.id === a.id) === i)
-      .sort((x, y) => (SEVERITY_RANK[x.severity] ?? 9) - (SEVERITY_RANK[y.severity] ?? 9));
+    const versionKey = remote.latest?.version || current;
+    const advisories = withoutDismissedCritical(
+      [...base.advisories, ...noticeAdvisories]
+        .filter((a, i, arr) => arr.findIndex((b) => b.id === a.id) === i)
+        .sort((x, y) => (SEVERITY_RANK[x.severity] ?? 9) - (SEVERITY_RANK[y.severity] ?? 9)),
+      prefs.dismissedCritical,
+      versionKey,
+    );
     setState({ ...base, advisories });
 
     // "What's new": show once when the running version is newer than the last
@@ -277,9 +341,16 @@ export function useUpdates(): UseUpdates {
     (id: string) => {
       const adv = state?.advisories.find((a) => a.id === id);
       setState((s) => (s ? { ...s, advisories: s.advisories.filter((a) => a.id !== id) } : s));
-      // Critical advisories are session-dismiss only (they resurface next launch
-      // by design); everything else is remembered so it never nags again.
-      if (adv && adv.severity !== "critical") void persistDismissed(id);
+      if (!adv) return;
+      if (adv.severity === "critical") {
+        // Persisted separately, keyed to the version it targets (see
+        // withoutDismissedCritical) - a critical advisory for a LATER version
+        // still surfaces normally even though an earlier one was dismissed.
+        const versionKey = state?.latestVersion || state?.currentVersion || "";
+        void persistDismissedCritical(criticalDismissKey(id, versionKey));
+      } else {
+        void persistDismissed(id);
+      }
     },
     [state],
   );
