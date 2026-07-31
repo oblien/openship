@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -85,6 +85,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
   const statusMeta = PROJECT_STATUS_META[status];
   const fw = getFrameworkConfig(project.framework);
   const [faviconError, setFaviconError] = useState(false);
+  const faviconImgRef = useRef<HTMLImageElement | null>(null);
 
   const isLocal = !!project.localPath;
   const hasRepo = !!(project.gitOwner && project.gitRepo);
@@ -97,6 +98,25 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
   const hosting = getHostingLabel(project.deployTarget, project.serverName, t);
   const hasFavicon = !!project.favicon && !faviconError;
   const appTemplateId = (project as { appTemplateId?: string }).appTemplateId;
+
+  // Belt-and-suspenders for a favicon URL that 200s with an EMPTY body (seen
+  // in production: content-length 0). That resolves as `complete=true` with
+  // naturalWidth/Height 0 - a real, rendered "broken image" glyph - but can
+  // beat React's onLoad/onError listener attach (the response is so fast/
+  // cached that the native load fires before the synthetic handlers are
+  // wired up), so neither fires and the fallback never kicks in. Checking
+  // directly post-mount catches that race; the onLoad/onError handlers on
+  // the <img> below still cover the normal cases (404, slow load).
+  useEffect(() => {
+    if (!hasFavicon) return;
+    const check = () => {
+      const img = faviconImgRef.current;
+      if (img?.complete && img.naturalWidth === 0) setFaviconError(true);
+    };
+    check();
+    const id = window.setTimeout(check, 300);
+    return () => window.clearTimeout(id);
+  }, [hasFavicon, project.favicon]);
   // A not-yet-deployed app reopens the install wizard (adopting its draft);
   // a deployed app opens as a normal project.
   const isDraftApp = !!project.isApp && status === "draft" && !!appTemplateId;
@@ -144,10 +164,19 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
           <AppLogo appId={appTemplateId} className="w-6 h-6 object-contain" />
         ) : hasFavicon ? (
           <img
+            ref={faviconImgRef}
             src={project.favicon!}
             alt=""
             className="w-6 h-6 object-contain"
             onError={() => setFaviconError(true)}
+            // A favicon URL that 200s with an empty/corrupt body (seen on
+            // Faltou: content-length: 0) doesn't reliably fire `onError` in
+            // every browser - it "loads" with naturalWidth 0 instead of
+            // erroring, leaving the browser's broken-image glyph on screen.
+            // Catch that case here too.
+            onLoad={(e) => {
+              if (e.currentTarget.naturalWidth === 0) setFaviconError(true);
+            }}
           />
         ) : (
           fw.icon("hsl(var(--foreground))")
@@ -182,9 +211,16 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
 
       {/* Meta badges */}
       <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden">
-        {/* Stack */}
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 text-xs text-muted-foreground shrink-0">
-          {fw.name}
+        {/* Stack. min-w-0 + truncate: a shrink-0 badge with unclamped text
+            inside an overflow-hidden row doesn't ellipsize under pressure -
+            the row just hard-clips it at the box edge ("Unknown" -> "Unkr"
+            at 390px, once the narrower mobile name column left less room
+            here). Same fix as the other badges in this row. */}
+        <span
+          className="inline-flex min-w-0 items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 text-xs text-muted-foreground shrink-0"
+          title={fw.name}
+        >
+          <span className="truncate max-w-[110px]">{fw.name}</span>
         </span>
 
         {/* App marker — catalog-installed (Convex, webmail, …) */}
@@ -194,23 +230,22 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
           </span>
         )}
 
-        {/* Hosting target. A fixed max-w on the label truncated real server
-            names mid-word once several badges shared this row (the row's
-            overflow-hidden hard-clips at the box edge - it doesn't ellipsize
-            per item), and did so differently depending on how many sibling
-            badges were visible at a given width. Icon is always shown (with
-            a native title tooltip for the icon-only sizes); the label text
-            only renders as a DOM node from md up - `hidden` removes it from
-            layout entirely rather than shrinking it, so it never contributes
-            partial-width overflow, and once it does render it's unclamped
-            (whitespace-nowrap, no max-w) so it can never cut mid-word. */}
+        {/* Hosting target - icon + tooltip, no label text, at every width.
+            This row shares its column with the home page's right-hand
+            Activity/Updates sidebar, so even at a wide desktop viewport the
+            available track for Stack + Hosting + Source + Build-target
+            together is narrower than it looks - a fixed max-w truncated the
+            label mid-word, and even an unclamped from-md-up label still got
+            hard-clipped by the row's own overflow-hidden (which cuts at the
+            box edge, not per-badge) once real content pushed the row's
+            total width past what that column actually had. Icon-only avoids
+            the failure mode entirely instead of re-tuning another width. */}
         {hosting && (
           <span
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground shrink-0"
+            className="inline-flex items-center text-xs text-muted-foreground shrink-0"
             title={hosting.label}
           >
             {hosting.icon}
-            <span className="hidden whitespace-nowrap md:inline">{hosting.label}</span>
           </span>
         )}
 
