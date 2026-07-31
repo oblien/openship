@@ -94,7 +94,7 @@ export function DataTable<T>({
               {c.header}
             </div>
           ))}
-          {rowActions && <div />}
+          {rowActions && <div role="columnheader" />}
         </div>
       </div>
 
@@ -163,6 +163,7 @@ function DataTableRow<T>({
       ))}
       {rowActions && (
         <div
+          role="cell"
           className="flex items-center justify-end gap-1"
           onClick={(e) => e.stopPropagation()}
         >
