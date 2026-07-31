@@ -211,13 +211,17 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
 
       {/* Meta badges */}
       <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden">
-        {/* Stack. min-w-0 + truncate: a shrink-0 badge with unclamped text
-            inside an overflow-hidden row doesn't ellipsize under pressure -
-            the row just hard-clips it at the box edge ("Unknown" -> "Unkr"
-            at 390px, once the narrower mobile name column left less room
-            here). Same fix as the other badges in this row. */}
+        {/* Stack. Measured on the real page at exactly 390px: after the name
+            column (w-32) and the trailing Live-badge+arrow block, this row
+            has ~35px of actual width left below sm - nowhere near enough
+            for this badge (~67px) even with min-w-0 + truncate, so the
+            parent's overflow-hidden was hard-clipping it ("Unknown" ->
+            "Unkr") regardless of the ellipsis fix. Hidden below sm instead,
+            same reveal pattern as Source (md) and Build target (lg) further
+            down this row - Hosting (icon-only, ~30px) is the only thing
+            that actually fits in that space at 390px. */}
         <span
-          className="inline-flex min-w-0 items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 text-xs text-muted-foreground shrink-0"
+          className="hidden min-w-0 items-center gap-1.5 px-2 py-0.5 rounded-md bg-muted/60 text-xs text-muted-foreground shrink-0 sm:inline-flex"
           title={fw.name}
         >
           <span className="truncate max-w-[110px]">{fw.name}</span>
