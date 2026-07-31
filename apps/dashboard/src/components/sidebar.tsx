@@ -503,7 +503,7 @@ export function Sidebar() {
               >
                 {/* Heading */}
                 <div className="px-3 pt-3 pb-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                     {t.chrome.sidebar.switchOrganization}
                   </p>
                 </div>
@@ -569,7 +569,7 @@ export function Sidebar() {
                       </p>
                       {cloudBadge?.email && (
                         <p
-                          className="truncate text-[10px] leading-tight text-muted-foreground/70"
+                          className="truncate text-[10px] leading-tight text-muted-foreground"
                           title={interpolate(t.chrome.sidebar.linkedToCloud, { email: cloudBadge.email })}
                         >
                           {interpolate(t.chrome.sidebar.cloudLabel, { email: cloudBadge.email })}
@@ -618,7 +618,7 @@ export function Sidebar() {
                     </p>
                     {cloudBadge?.email && (
                       <p
-                        className="truncate text-[11px] leading-tight text-muted-foreground/70"
+                        className="truncate text-[11px] leading-tight text-muted-foreground"
                         title={interpolate(t.chrome.sidebar.linkedToCloud, { email: cloudBadge.email })}
                       >
                         {interpolate(t.chrome.sidebar.cloudLabel, { email: cloudBadge.email })}

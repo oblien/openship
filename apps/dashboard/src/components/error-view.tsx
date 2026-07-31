@@ -138,7 +138,7 @@ export function ErrorView({
       <ErrorIllustration variant={variant} className="mt-6" />
 
       <h1 className="mt-3 text-2xl font-medium tracking-tight text-foreground/85">{title}</h1>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground/70">{description}</p>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
 
       {hints && hints.length > 0 && (
         <ul className="mt-5 w-full space-y-2 rounded-xl border border-border/50 bg-muted/20 px-4 py-3.5 text-start">

@@ -163,6 +163,7 @@ export function DnsTab({
           <select
             value={activeDomain}
             onChange={(e) => onSelectDomain(e.target.value)}
+            aria-label={t.emailsAdmin.dns.domainLabel}
             className="px-3 py-2 text-sm rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors min-w-[200px]"
           >
             {domains.length === 0 && primaryDomain && (
@@ -176,7 +177,7 @@ export function DnsTab({
           </select>
         )}
         {isPrimary && (
-          <span className="text-xs text-muted-foreground/70">{t.emailsAdmin.dns.primary}</span>
+          <span className="text-xs text-muted-foreground">{t.emailsAdmin.dns.primary}</span>
         )}
       </div>
 
@@ -344,7 +345,7 @@ function KV({
       </p>
       <p
         className={`font-mono break-all ${
-          muted ? "text-muted-foreground/70 italic" : "text-foreground"
+          muted ? "text-muted-foreground italic" : "text-foreground"
         }`}
       >
         {value}

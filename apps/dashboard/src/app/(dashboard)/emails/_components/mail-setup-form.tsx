@@ -119,7 +119,7 @@ export function MailSetupForm({
               <label className="block text-sm font-medium text-foreground">
                 {t.emails.setup.adminPasswordLabel}
               </label>
-              <span className="text-xs text-muted-foreground/70">
+              <span className="text-xs text-muted-foreground">
                 postmaster@{domain || "your-domain.com"}
               </span>
             </div>
@@ -300,7 +300,7 @@ function PasswordField({
         <button
           type="button"
           onClick={() => setRevealed((v) => !v)}
-          className="absolute end-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground/70 hover:text-foreground transition-colors"
+          className="absolute end-2 top-1/2 -translate-y-1/2 p-1.5 text-muted-foreground hover:text-foreground transition-colors"
           title={revealed ? t.emails.setup.hide : t.emails.setup.reveal}
         >
           {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}

@@ -853,7 +853,7 @@ const CloudPowerPicker: React.FC = () => {
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0 flex items-baseline gap-2">
                             <span className="text-sm font-semibold shrink-0 text-foreground">{summary.label}</span>
-                            <span className="text-muted-foreground/70 shrink-0">·</span>
+                            <span className="text-muted-foreground shrink-0">·</span>
                             <span className="text-xs text-muted-foreground truncate">{summary.bestFor}</span>
                         </div>
                         <span className="inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground shrink-0">
@@ -863,9 +863,9 @@ const CloudPowerPicker: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground tabular-nums">
                         <span>{summary.cpu}</span>
-                        <span className="text-muted-foreground/70">·</span>
+                        <span className="text-muted-foreground">·</span>
                         <span>{t.deploy.power.ram} {summary.ram}</span>
-                        <span className="text-muted-foreground/70">·</span>
+                        <span className="text-muted-foreground">·</span>
                         <span>{t.deploy.power.disk} {summary.disk}</span>
                     </div>
                 </button>
@@ -890,7 +890,7 @@ const CloudPowerPicker: React.FC = () => {
                                     <span className={`text-sm font-semibold shrink-0 ${isSelected ? "text-foreground" : "text-foreground/80"}`}>
                                         {tierText[tier.id].label}
                                     </span>
-                                    <span className="text-muted-foreground/70 shrink-0">·</span>
+                                    <span className="text-muted-foreground shrink-0">·</span>
                                     <span className="text-xs text-muted-foreground truncate">
                                         {tierText[tier.id].bestFor}
                                     </span>
@@ -905,9 +905,9 @@ const CloudPowerPicker: React.FC = () => {
                                 value reads on its own without context. */}
                             <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground tabular-nums">
                                 <span>{tier.cpu}</span>
-                                <span className="text-muted-foreground/70">·</span>
+                                <span className="text-muted-foreground">·</span>
                                 <span>{t.deploy.power.ram} {tier.ram}</span>
-                                <span className="text-muted-foreground/70">·</span>
+                                <span className="text-muted-foreground">·</span>
                                 <span>{t.deploy.power.disk} {tier.disk}</span>
                             </div>
                         </button>
@@ -937,7 +937,7 @@ const CloudPowerPicker: React.FC = () => {
                             <span className={`text-sm font-semibold shrink-0 ${selected === "custom" ? "text-foreground" : "text-foreground/80"}`}>
                                 {t.deploy.power.custom}
                             </span>
-                            <span className="text-muted-foreground/70 shrink-0">·</span>
+                            <span className="text-muted-foreground shrink-0">·</span>
                             <span className="text-xs text-muted-foreground truncate">
                                 {t.deploy.power.customDesc}
                             </span>
@@ -950,9 +950,9 @@ const CloudPowerPicker: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground tabular-nums">
                         <span>{custom.cpuCores} {t.deploy.power.vcpu}</span>
-                        <span className="text-muted-foreground/70">·</span>
+                        <span className="text-muted-foreground">·</span>
                         <span>{t.deploy.power.ram} {custom.memoryMb} MB</span>
-                        <span className="text-muted-foreground/70">·</span>
+                        <span className="text-muted-foreground">·</span>
                         <span>{t.deploy.power.disk} {Math.round(custom.diskMb / 1024)} GB</span>
                     </div>
                 </button>
@@ -1532,7 +1532,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
         />
         <span className="text-sm text-muted-foreground leading-snug">
           {ts.saveDefault}{" "}
-          <span className="text-muted-foreground/70">{ts.saveDefaultHint}</span>
+          <span className="text-muted-foreground">{ts.saveDefaultHint}</span>
         </span>
       </label>
     ) : null;
@@ -1568,7 +1568,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
       <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
         {headerTitle}
       </h1>
-      {headerSubtitle && <p className="text-sm text-muted-foreground/70 mt-1">{headerSubtitle}</p>}
+      {headerSubtitle && <p className="text-sm text-muted-foreground mt-1">{headerSubtitle}</p>}
     </div>
   );
   const header = showRightPanel && !serverLayout ? (

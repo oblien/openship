@@ -659,7 +659,7 @@ const ProjectSettingsContent = () => {
                       {t.projects.delete.forceModalBody}
                     </p>
                     {reasons && (
-                      <p className="mt-2 text-xs text-muted-foreground/70">{reasons}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">{reasons}</p>
                     )}
                   </div>
                 </div>

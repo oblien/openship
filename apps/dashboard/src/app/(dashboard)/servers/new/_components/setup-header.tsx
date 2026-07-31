@@ -45,7 +45,7 @@ export function SetupHeader({
         >
           {t.servers.setup.serverSetup}
         </h1>
-        <p className="text-sm text-muted-foreground/70 mt-0.5">
+        <p className="text-sm text-muted-foreground mt-0.5">
           {subtitle}
         </p>
       </div>

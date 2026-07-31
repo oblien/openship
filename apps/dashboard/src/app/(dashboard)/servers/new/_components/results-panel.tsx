@@ -60,7 +60,7 @@ export function ResultsPanel({
             <>
               <div className="flex items-center gap-2 pt-3 pb-1">
                 <div className="h-px flex-1 bg-border/50" />
-                <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
+                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                   {t.servers.setup.detectedInfrastructure}
                 </span>
                 <div className="h-px flex-1 bg-border/50" />

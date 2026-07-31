@@ -92,7 +92,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
             {displayName ? interpolate(t.dashboard.home.greetingName, { greeting, name: displayName }) : greeting}
           </h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             {t.dashboard.home.subtitle}
           </p>
         </div>
@@ -155,7 +155,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                   {userProjects.length > 6 && (
                     <Link
                       href="/projects"
-                      className="block px-5 py-3 text-center text-sm text-muted-foreground/70 hover:text-foreground hover:bg-muted/40 transition-colors"
+                      className="block px-5 py-3 text-center text-sm text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
                     >
                       {interpolate(t.dashboard.home.viewAllProjects, { count: String(userProjects.length) })}
                     </Link>
@@ -319,7 +319,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                     <circle cx="121" cy="51" r="4" fill="var(--th-on-08)" />
                   </svg>
                   <p className="text-sm font-medium text-foreground">{t.dashboard.home.appsEmptyTitle}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground/70">{t.dashboard.home.appsEmptyDesc}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{t.dashboard.home.appsEmptyDesc}</p>
                   {/* Overlapping logo stack — the full catalog at a glance, on-theme. */}
                   <div className="mt-3.5 flex items-center justify-center">
                     {["supabase", "convex", "n8n", "ghost", "vaultwarden", "metabase"].map((id, i) => (
@@ -364,7 +364,7 @@ export default function DashboardHomeClient({ initialData }: DashboardHomeClient
                   {appProjects.length > 3 && (
                     <Link
                       href="/apps"
-                      className="block border-t border-border/50 px-3 py-2.5 text-center text-xs text-muted-foreground/70 hover:text-foreground hover:bg-muted/40 transition-colors"
+                      className="block border-t border-border/50 px-3 py-2.5 text-center text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
                     >
                       {interpolate(t.dashboard.home.viewAllApps, { count: String(appProjects.length) })}
                     </Link>

@@ -231,6 +231,7 @@ export function AliasesTab({
           <select
             value={activeDomain}
             onChange={(e) => onSelectDomain(e.target.value)}
+            aria-label={t.emailsAdmin.aliases.domainLabel}
             className="px-3 py-2 text-sm rounded-xl border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition-colors min-w-[200px]"
           >
             {domains.map((d) => (

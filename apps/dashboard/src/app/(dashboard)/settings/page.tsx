@@ -97,7 +97,7 @@ function SettingsPageInner() {
           >
             {t.settings.page.title}
           </h1>
-          <p className="text-sm text-muted-foreground/70 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             {t.settings.page.subtitle}
           </p>
         </div>

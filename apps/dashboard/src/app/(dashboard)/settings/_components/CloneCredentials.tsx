@@ -211,7 +211,7 @@ export function CloneCredentials() {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">{t.settings.cloneCredentials.tokenSaved}</p>
-                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
                     {t.settings.cloneCredentials.lastUpdated}{" "}
                     {state.setAt
                       ? new Date(state.setAt).toLocaleString()

@@ -354,7 +354,7 @@ function AllStepsCard({
     <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
       <div className="px-5 py-3.5 border-b border-border/50 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">{t.emails.sidebar.steps.title}</h3>
-        <span className="text-xs text-muted-foreground/70 tabular-nums">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {completedCount} / {steps.length}
         </span>
       </div>
@@ -418,7 +418,7 @@ function AllStepsCard({
                           ? "text-foreground"
                           : isFailed
                             ? "text-danger font-medium"
-                            : "text-muted-foreground/70"
+                            : "text-muted-foreground"
                     }`}
                   >
                     {s.label}
@@ -475,7 +475,7 @@ function DnsRecordsCollapsibleCard({ dnsRecords }: { dnsRecords: DnsRecords }) {
           <h3 className="text-sm font-semibold text-foreground">
             {t.emails.sidebar.dnsRef.title}
           </h3>
-          <p className="text-xs text-muted-foreground/70 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {t.emails.sidebar.dnsRef.subtitle}
           </p>
         </div>

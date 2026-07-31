@@ -937,7 +937,7 @@ function StatusBadge({ status }: { status: string }) {
   const labels = t.projectDetail.services.detail.status;
   const map: Record<string, { dot: string; badge: string; label: string }> = {
     running: { dot: "bg-success-solid", badge: "bg-success-bg text-success", label: labels.running },
-    stopped: { dot: "bg-muted-foreground/30", badge: "bg-muted/60 text-muted-foreground/70", label: labels.stopped },
+    stopped: { dot: "bg-muted-foreground/30", badge: "bg-muted/60 text-muted-foreground", label: labels.stopped },
     disabled: { dot: "bg-muted-foreground/20", badge: "bg-muted/40 text-muted-foreground/50", label: labels.disabled },
     failed: { dot: "bg-danger-solid", badge: "bg-danger-bg text-danger", label: labels.failed },
     starting: { dot: "bg-warning-solid", badge: "bg-warning-bg text-warning", label: labels.starting },

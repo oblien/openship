@@ -98,7 +98,7 @@ function StatusPill({ completed, active }: { completed: boolean; active: boolean
     ? { dot: "bg-warning-solid", badge: "bg-warning-bg text-warning", label: t.emails.serverList.installing }
     : completed
       ? { dot: "bg-success-solid", badge: "bg-success-bg text-success", label: t.emails.serverList.running }
-      : { dot: "bg-muted-foreground/30", badge: "bg-muted/60 text-muted-foreground/70", label: t.emails.serverList.incomplete };
+      : { dot: "bg-muted-foreground/30", badge: "bg-muted/60 text-muted-foreground", label: t.emails.serverList.incomplete };
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${s.badge}`}>
       <span className={`size-1.5 rounded-full ${s.dot}`} />

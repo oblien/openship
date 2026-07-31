@@ -78,7 +78,7 @@ export const SleepModeSettings: React.FC<SleepModeSettingsProps> = ({
             <p className={`text-xs ${selectedMode === 'auto_sleep' ? 'text-primary' : 'text-muted-foreground'}`}>
               {t.projectSettings.sleep.autoSleepDesc}
             </p>
-            <p className={`text-xs ${selectedMode === 'auto_sleep' ? 'text-primary/70' : 'text-muted-foreground/70'}`}>
+            <p className={`text-xs ${selectedMode === 'auto_sleep' ? 'text-primary/70' : 'text-muted-foreground'}`}>
               {t.projectSettings.sleep.autoSleepMeta}
             </p>
           </div>
@@ -111,7 +111,7 @@ export const SleepModeSettings: React.FC<SleepModeSettingsProps> = ({
             <p className={`text-xs ${selectedMode === 'always_on' ? 'text-primary' : 'text-muted-foreground'}`}>
               {t.projectSettings.sleep.alwaysOnDesc}
             </p>
-            <p className={`text-xs ${selectedMode === 'always_on' ? 'text-primary/70' : 'text-muted-foreground/70'}`}>
+            <p className={`text-xs ${selectedMode === 'always_on' ? 'text-primary/70' : 'text-muted-foreground'}`}>
               {t.projectSettings.sleep.alwaysOnMeta}
             </p>
           </div>

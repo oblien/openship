@@ -124,7 +124,7 @@ export const ProjectSidebar = () => {
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 {t.projects.sidebar.project}
               </p>
               <div className="mt-2 flex items-center gap-2">

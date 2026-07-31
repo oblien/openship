@@ -544,7 +544,7 @@ export default function ServerDetailPage({
               >
                 {t.servers.detail.editServer}
               </h1>
-              <p className="text-sm text-muted-foreground/70 mt-0.5">
+              <p className="text-sm text-muted-foreground mt-0.5">
                 {interpolate(t.servers.detail.editSubtitle, { name: server.name || server.sshHost })}
               </p>
             </div>
@@ -606,7 +606,7 @@ export default function ServerDetailPage({
                 The country flag lives on the connection card's Host row — beside
                 the value it describes — and the SSH port lives there too. */}
             <div className="mt-1 flex items-center gap-2">
-              <p className="text-sm text-muted-foreground/70 font-mono">
+              <p className="text-sm text-muted-foreground font-mono">
                 {server.sshUser ?? "root"}@<BlurIp>{server.sshHost}</BlurIp>
               </p>
               {allHealthy ? (

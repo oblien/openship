@@ -317,7 +317,7 @@ export function ServerGitHubConnect({
                             {g.save}
                           </button>
                         </div>
-                        <p className="mt-1.5 text-xs text-muted-foreground/70">{g.patHint}</p>
+                        <p className="mt-1.5 text-xs text-muted-foreground">{g.patHint}</p>
                       </div>
                     </div>
                   )}

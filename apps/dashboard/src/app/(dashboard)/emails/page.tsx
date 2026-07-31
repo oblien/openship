@@ -803,7 +803,7 @@ export default function EmailsPage() {
               >
                 {t.emails.page.title}
               </h1>
-              <p className="text-sm text-muted-foreground/70 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {t.emails.page.subtitle}
               </p>
             </div>
