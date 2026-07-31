@@ -1168,8 +1168,10 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
     (person: Sender) => (
       <Popover key={person.email}>
         <PopoverTrigger asChild>
-          <div
+          <button
             key={person.email}
+            type="button"
+            aria-label={person.name || person.email}
             className="dark:bg-panelDark inline-flex items-center justify-start gap-1.5 overflow-hidden rounded-full border bg-white p-1 pr-2"
           >
             <BimiAvatar
@@ -1180,7 +1182,7 @@ const MailDisplay = ({ emailData, index, totalEmails, demo, threadAttachments }:
             <div className="text-panelDark justify-start text-sm font-medium leading-none dark:text-white">
               {person.name || person.email}
             </div>
-          </div>
+          </button>
         </PopoverTrigger>
         <PopoverContent className="min-w-fit text-sm">
           <div className="flex items-center gap-2">

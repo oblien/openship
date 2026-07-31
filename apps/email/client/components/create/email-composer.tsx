@@ -32,6 +32,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useSettings } from '@/hooks/use-settings';
 
 import { cn, formatFileSize } from '@/lib/utils';
+import { m } from '@/paraglide/messages';
 import { useThread } from '@/hooks/use-threads';
 import { serializeFiles } from '@/lib/schemas';
 import { Input } from '@/components/ui/input';
@@ -650,6 +651,7 @@ export function EmailComposer({
               {onClose && (
                 <button
                   tabIndex={-1}
+                  aria-label={m['common.actions.close']()}
                   className="flex h-full items-center gap-2 text-sm font-medium text-muted-foreground dark:text-[#8C8C8C] hover:text-[#A8A8A8] hover:bg-gray-50 dark:hover:bg-[#404040] transition-colors cursor-pointer rounded-sm px-1 py-0.5"
                   onClick={handleClose}
                 >
@@ -705,6 +707,7 @@ export function EmailComposer({
             <button
               onClick={handleGenerateSubject}
               disabled={isLoading || isGeneratingSubject || messageLength < 1}
+              aria-label="Generate subject with AI"
               className="hover:bg-gray-50 dark:hover:bg-[#404040] transition-colors cursor-pointer rounded p-1"
             >
               <div className="flex items-center justify-center gap-2.5 pl-0.5">

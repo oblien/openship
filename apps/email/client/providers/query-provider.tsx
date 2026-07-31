@@ -134,6 +134,14 @@ export function QueryProvider({
         // and connection data are slow-changing and safe to persist.
         dehydrateOptions: {
           shouldDehydrateQuery: (query) => {
+            // Match the library default (only persist settled/successful
+            // queries). Without this, a query that's still pending when the
+            // debounced persist fires gets dehydrated with its live in-flight
+            // `promise` attached (see dehydrateQuery in @tanstack/query-core),
+            // and idb-keyval's IndexedDB put() throws a DataCloneError trying
+            // to structured-clone that Promise - surfacing as a generic
+            // "Uncaught (in promise)" console error on nearly every persist.
+            if (query.state.status !== 'success') return false;
             const head = query.queryKey?.[0];
             const path = Array.isArray(head) ? head : [];
             const root = typeof path[0] === 'string' ? path[0] : '';

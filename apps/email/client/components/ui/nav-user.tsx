@@ -116,7 +116,11 @@ export function NavUser() {
           activeAccount && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <div className="flex cursor-pointer items-center">
+                <button
+                  type="button"
+                  aria-label={m['common.navUser.accounts']()}
+                  className="flex cursor-pointer items-center"
+                >
                   <div className="relative">
                     <Avatar className="relative left-0.5 size-7 rounded-[5px]">
                       <AvatarImage
@@ -135,7 +139,7 @@ export function NavUser() {
                       </AvatarFallback>
                     </Avatar>
                   </div>
-                </div>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 className="w-(--radix-dropdown-menu-trigger-width) ml-3 min-w-56 bg-white font-medium dark:bg-[#131313]"
@@ -384,7 +388,10 @@ export function NavUser() {
               )}
 
               <AddConnectionDialog>
-                <Button className="hover:bg-offsetLight/80 dark:hover:bg-offsetDark/80 flex h-7 w-7 cursor-pointer items-center justify-center rounded-[5px] border border-dashed bg-transparent px-0 text-black dark:bg-[#262626] dark:text-[#929292]">
+                <Button
+                  aria-label={m['pages.settings.connections.addEmail']()}
+                  className="hover:bg-offsetLight/80 dark:hover:bg-offsetDark/80 flex h-7 w-7 cursor-pointer items-center justify-center rounded-[5px] border border-dashed bg-transparent px-0 text-black dark:bg-[#262626] dark:text-[#929292]"
+                >
                   <Plus className="size-4" />
                 </Button>
               </AddConnectionDialog>
@@ -398,7 +405,11 @@ export function NavUser() {
               )} */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className={cn('md:h-fit md:px-2')}>
+                  <Button
+                    variant="ghost"
+                    aria-label={m['common.threadDisplay.moreOptions']()}
+                    className={cn('md:h-fit md:px-2')}
+                  >
                     <ThreeDots className="fill-iconLight dark:fill-iconDark" />
                   </Button>
                 </DropdownMenuTrigger>

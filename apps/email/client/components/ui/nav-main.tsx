@@ -228,6 +228,7 @@ export function NavMain({ items }: NavMainProps) {
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={m['common.threadDisplay.addLabel']()}
                       className="mr-1 h-4 w-4 p-0 hover:bg-transparent"
                     >
                       <Plus className="text-muted-foreground h-3 w-3 dark:text-[#898989]" />
