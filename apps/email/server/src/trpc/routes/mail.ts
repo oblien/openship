@@ -156,24 +156,51 @@ export const mailRouter = router({
         threadId: z.string().nullable().optional(),
         isForward: z.boolean().optional(),
         originalMessage: z.string().optional(),
+        originalMessageId: z.string().optional(),
         scheduleAt: z.string().optional(),
         headers: z.record(z.string(), z.string()).optional(),
         inReplyTo: z.string().optional(),
         references: z.array(z.string()).optional(),
       }),
     )
-    .mutation(({ ctx, input }) => {
+    .mutation(async ({ ctx, input }) => {
       const refsHeader = input.headers?.References;
       const inReplyToHeader = input.headers?.['In-Reply-To'];
       const fromAddress = formatFromAddress(input.fromEmail, ctx.session.email, ctx.session.name);
+
+      // Forward: the client's own attachments field is always empty (the
+      // "attachment chip" the user sees while forwarding is just the
+      // read-pane's display of the ORIGINAL message, never wired into the
+      // composer's own file list) - so for a forward, fetch the original
+      // message's attachments straight from IMAP server-side instead of
+      // trusting the client payload. Likewise the client's composed HTML
+      // ends at the "---------- Forwarded message ----------" header block;
+      // the original content only travels in `originalMessage` (already
+      // HTML-preferring, see getThread's `decodedBody`) and must be
+      // appended here or the recipient gets a bodyless forward.
+      let forwardAttachments: typeof input.attachments;
+      let outgoingHtml = input.message ?? input.html ?? input.body ?? undefined;
+      if (input.isForward && input.originalMessageId) {
+        const original = await getThread(ctx.imap, input.originalMessageId).catch(() => null);
+        const originalAttachments = original?.latest.attachments ?? [];
+        if (originalAttachments.length > 0) {
+          forwardAttachments = originalAttachments
+            .filter((a) => a.body)
+            .map((a) => ({ name: a.filename, type: a.contentType, base64: a.body }));
+        }
+      }
+      if (input.isForward && input.originalMessage) {
+        outgoingHtml = `${outgoingHtml ?? ''}${input.originalMessage}`;
+      }
+
       return driverSend(ctx.smtp, ctx.imap, fromAddress, {
         to: input.to.map(senderToAddress),
         cc: input.cc?.map(senderToAddress),
         bcc: input.bcc?.map(senderToAddress),
         subject: input.subject,
-        html: input.message ?? input.html ?? input.body ?? undefined,
+        html: outgoingHtml,
         text: input.text,
-        attachments: input.attachments,
+        attachments: forwardAttachments ?? input.attachments,
         inReplyTo: input.inReplyTo ?? inReplyToHeader ?? undefined,
         references:
           input.references ??
