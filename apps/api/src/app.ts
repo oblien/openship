@@ -31,6 +31,7 @@ import { analyticsRoutes } from "./modules/analytics/analytics.routes";
 import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
+import { vcsRoutes } from "./modules/vcs/vcs.routes";
 import { githubRoutes } from "./modules/github";
 import * as githubAuth from "./modules/github/github.auth";
 import { settingsRoutes } from "./modules/settings/settings.routes";
@@ -127,6 +128,7 @@ app.route("/api/projects/:id/storage", projectStorageRoutes);
 app.route("/api/deployments", deploymentRoutes);
 app.route("/api/domains", domainRoutes);
 app.route("/api/webhooks", webhookRoutes);
+app.route("/api/vcs", vcsRoutes);
 app.route("/api/github", githubRoutes);
 app.route("/api/analytics", analyticsRoutes);
 app.route("/api/settings", settingsRoutes);
@@ -182,9 +184,8 @@ setupWebSocket(app);
 // exec via the Docker runtime adapter. The controller picks via
 // resolveDeploymentRuntime() from the service's active deployment.
 {
-  const { serviceTerminalRoutes } = await import(
-    "./modules/service-terminal/service-terminal.routes"
-  );
+  const { serviceTerminalRoutes } =
+    await import("./modules/service-terminal/service-terminal.routes");
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
@@ -243,9 +244,7 @@ if (env.CLOUD_MODE) {
 // desktop installs. The runner is module-singleton; first access
 // here triggers Redis detection.
 {
-  const sweepStale = repos.backupRun.sweepStaleRuns(
-    "API restart while backup in flight",
-  );
+  const sweepStale = repos.backupRun.sweepStaleRuns("API restart while backup in flight");
   const sweepStaleRestores = repos.backupRestore.sweepStaleRestores(
     "API restart while restore in flight",
   );
@@ -263,9 +262,12 @@ if (env.CLOUD_MODE) {
   // died mid-flight (no teardown outlives a restart), so clear stuck locks at
   // boot — otherwise the project refuses all deletes forever ("Another delete
   // is already running"). Fire-and-forget; logs the count if any were stuck.
-  void repos.project.clearStaleDeletions().then((n) => {
-    if (n > 0) console.log(`[boot] cleared ${n} stale project deletion lock(s)`);
-  }).catch((err) => console.warn("[boot] clearStaleDeletions failed:", err));
+  void repos.project
+    .clearStaleDeletions()
+    .then((n) => {
+      if (n > 0) console.log(`[boot] cleared ${n} stale project deletion lock(s)`);
+    })
+    .catch((err) => console.warn("[boot] clearStaleDeletions failed:", err));
   // A Docker migration is an in-memory FSM that quiesces (stops) the source
   // containers before the target deploy — a restart mid-migration would strand
   // a stopped production stack forever. Restart the originals + roll back any
@@ -287,9 +289,7 @@ if (env.CLOUD_MODE) {
   // prunes, deployment reconcile) into the `job` table and register every
   // enabled row on the runner. Operator cron/enabled overrides survive restarts.
   void reconcileJobs()
-    .then((stats) =>
-      console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`),
-    )
+    .then((stats) => console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`))
     .catch((err) => console.warn("[boot] reconcileJobs failed:", err));
 
   // Self-hosted (single box): any job_run still "running" at boot was orphaned
@@ -335,9 +335,7 @@ if (env.CLOUD_MODE) {
 
   void Promise.all([sweepStale, sweepStaleRestores]).then(([runs, restores]) => {
     if (runs > 0 || restores > 0) {
-      console.log(
-        `[boot] swept ${runs} stale backup runs + ${restores} stale restores`,
-      );
+      console.log(`[boot] swept ${runs} stale backup runs + ${restores} stale restores`);
     }
   });
 }

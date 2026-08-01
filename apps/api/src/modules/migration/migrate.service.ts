@@ -19,7 +19,7 @@ import { slugify, safeErrorMessage } from "@repo/core";
 import type { ContainerStatus } from "@repo/adapters";
 import type { RequestContext } from "../../lib/request-context";
 import { ensureProject, createServicesProjectWithId } from "../projects/project-crud.service";
-import { getFileContent } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { parseComposeFile } from "../../lib/compose-parser";
 import { unmaskEnv } from "../../lib/secret-env";
 import { createServerDockerRuntime } from "../../lib/deployment-runtime";
@@ -41,7 +41,12 @@ type ParsedComposeList = Parameters<typeof repos.service.syncFromCompose>[1];
 const DEPLOYMENT_ID_RE = /^dep_[A-Za-z0-9]+$/;
 
 /** Compose file names to probe in a linked repo (mirrors prepare.service COMPOSE_FILES). */
-const REPO_COMPOSE_FILES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"];
+const REPO_COMPOSE_FILES = [
+  "docker-compose.yml",
+  "docker-compose.yaml",
+  "compose.yml",
+  "compose.yaml",
+];
 
 /** Compose-service shape returned to the migrate wizard's mapping step. Carries
  *  enough to render a full native service card (env + deps), so a repo service
@@ -73,6 +78,7 @@ export async function parseRepoCompose(
   owner: string,
   repo: string,
   branch?: string,
+  provider: string = "github",
 ): Promise<RepoComposeService[]> {
   // NB: we deliberately do NOT read the repo's `.env` for `${VAR}` interpolation.
   // Secrets live in Openship's ENCRYPTED env store — captured from the running
@@ -83,7 +89,13 @@ export async function parseRepoCompose(
   for (const file of REPO_COMPOSE_FILES) {
     let content: string | null = null;
     try {
-      const res = await getFileContent(ctx, owner, repo, file, { branch });
+      const res = await VcsStrategyFactory.getStrategy(provider).getFileContent(
+        ctx,
+        owner,
+        repo,
+        file,
+        branch,
+      );
       content = res?.content ?? null;
     } catch {
       continue; // not found at this name → try the next
@@ -111,7 +123,9 @@ export async function parseRepoCompose(
 }
 
 /** Overall deployment status from the live per-container states. */
-export function deriveDeploymentStatus(states: ContainerStatus[]): "ready" | "partial_failure" | "failed" {
+export function deriveDeploymentStatus(
+  states: ContainerStatus[],
+): "ready" | "partial_failure" | "failed" {
   const running = states.filter((s) => s === "running").length;
   if (running === states.length && running > 0) return "ready";
   if (running > 0) return "partial_failure";
@@ -259,11 +273,16 @@ export function buildAdoptedServiceRows(
     //  • No mapping (no repo linked / unmapped) → adopt the running image as-is
     //    (legacy: we have no build source, so reuse the image). Cross-server the
     //    image is transferred (docker save|load) so the target has it.
-    const repo = repoServices?.get(uniqueNames[i]) ?? repoServices?.get(serviceRenames?.[s.name] ?? s.name);
+    const repo =
+      repoServices?.get(uniqueNames[i]) ?? repoServices?.get(serviceRenames?.[s.name] ?? s.name);
     const native = repo && (repo.build || repo.image);
     const source = native
       ? { image: repo.image, build: repo.build, dockerfile: repo.dockerfile }
-      : { image: s.image, build: s.image ? undefined : s.build, dockerfile: s.image ? undefined : s.dockerfile };
+      : {
+          image: s.image,
+          build: s.image ? undefined : s.build,
+          dockerfile: s.image ? undefined : s.dockerfile,
+        };
     // Hand the running image to the deploy for the one-time cutover: a native
     // `build:` row would otherwise rebuild on its very first deploy. Only when we
     // actually have a running image to reuse.
@@ -298,7 +317,6 @@ export function buildAdoptedServiceRows(
   });
   return { rows, renames, handover, claimedHostPorts };
 }
-
 
 export async function adoptServerStack(opts: {
   serverId: string;
@@ -338,7 +356,19 @@ export async function adoptServerStack(opts: {
    *  and the returned `handover` lets the first deploy reuse the running image. */
   repoServices?: Map<string, RepoComposeService>;
 }): Promise<AdoptResult> {
-  const { serverId, organizationId, projectName, serviceNames, sameServer, volumeStrategies, serviceSubpaths, serviceEnv, serviceRenames, flatDocker, repoServices } = opts;
+  const {
+    serverId,
+    organizationId,
+    projectName,
+    serviceNames,
+    sameServer,
+    volumeStrategies,
+    serviceSubpaths,
+    serviceEnv,
+    serviceRenames,
+    flatDocker,
+    repoServices,
+  } = opts;
 
   const stack = await discoverServerStack(serverId, organizationId, undefined, { flatDocker });
   const selected = new Set(serviceNames);
@@ -407,13 +437,12 @@ export async function adoptServerStack(opts: {
   };
   const { project_id, created } = await ensureProject(ensureBody, organizationId);
 
-  const { rows: parsed, renames, handover, claimedHostPorts } = buildAdoptedServiceRows(
-    chosen,
-    selected,
-    serviceEnv,
-    serviceRenames,
-    repoServices,
-  );
+  const {
+    rows: parsed,
+    renames,
+    handover,
+    claimedHostPorts,
+  } = buildAdoptedServiceRows(chosen, selected, serviceEnv, serviceRenames, repoServices);
 
   // Repo compose services with NO adopted container (e.g. `redis`, or a `build:`
   // app that isn't running) become native rows in the SAME create pass — so every
@@ -443,7 +472,7 @@ export async function adoptServerStack(opts: {
         // #336: restore masked sentinels from the repo compose env (real values).
         environment: serviceEnv?.[name]
           ? unmaskEnv(serviceEnv[name], rs.environment ?? {})
-          : rs.environment ?? {},
+          : (rs.environment ?? {}),
         volumes: rs.volumes ?? [],
         command: rs.command,
         commandArgv: rs.commandArgv ?? null, // #332
@@ -538,7 +567,14 @@ async function reattachRuntime(opts: {
           const info = await rt.getContainerInfo(disc.containerId).catch(() => null);
           if (info) ({ status, ip, hostPort } = info);
         }
-        return { service, containerId: disc?.containerId, image: disc?.image, status, ip, hostPort };
+        return {
+          service,
+          containerId: disc?.containerId,
+          image: disc?.image,
+          status,
+          ip,
+          hostPort,
+        };
       }),
     );
 
@@ -557,7 +593,13 @@ async function reattachRuntime(opts: {
       // says deployTarget==="server", so without it a redeploy re-resolves to
       // the desktop cloud default and misroutes to Oblien. These reattach paths
       // always run against a migration serverId, so the target is always server.
-      meta: { deployTarget: "server", serverId, runtimeMode: "docker", adopt: true, serviceDeploymentMode: "services" },
+      meta: {
+        deployTarget: "server",
+        serverId,
+        runtimeMode: "docker",
+        adopt: true,
+        serviceDeploymentMode: "services",
+      },
     });
     if (!dep) return null;
 
@@ -635,7 +677,14 @@ export async function attachLiveRuntime(opts: {
           const info = await rt.getContainerInfo(disc.containerId).catch(() => null);
           if (info) ({ status, ip, hostPort } = info);
         }
-        return { service, containerId: disc?.containerId, image: disc?.image, status, ip, hostPort };
+        return {
+          service,
+          containerId: disc?.containerId,
+          image: disc?.image,
+          status,
+          ip,
+          hostPort,
+        };
       }),
     );
 
@@ -655,7 +704,14 @@ export async function attachLiveRuntime(opts: {
         trigger: "manual",
         // deployTarget:"server" required — see reattachRuntime above; without it a
         // later redeploy of this migrated project re-resolves to the cloud default.
-        meta: { deployTarget: "server", serverId, runtimeMode: "docker", adopt: true, adoptLive: true, serviceDeploymentMode: "services" },
+        meta: {
+          deployTarget: "server",
+          serverId,
+          runtimeMode: "docker",
+          adopt: true,
+          adoptLive: true,
+          serviceDeploymentMode: "services",
+        },
       });
       if (!dep) return;
     }

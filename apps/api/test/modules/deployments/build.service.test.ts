@@ -43,9 +43,13 @@ const {
   syncProjectRouteState: vi.fn(),
 }));
 
-vi.mock("@repo/db", () => ({
-  repos,
-}));
+vi.mock("@repo/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/db")>();
+  return {
+    ...actual,
+    repos,
+  };
+});
 
 vi.mock("../../../src/modules/deployments/preflight", () => ({
   runPreflightChecks,
@@ -370,14 +374,32 @@ describe("requestBuildAccess — folder-upload compose services", () => {
   it("#336: recovers the real env when the caller echoes the mask sentinel", async () => {
     const uploadSessionId = seedSession({
       services: [
-        { name: "api", image: "ghcr.io/acme/api:1", ports: [], dependsOn: [], environment: { API_TOKEN: "real-token" }, volumes: [] },
+        {
+          name: "api",
+          image: "ghcr.io/acme/api:1",
+          ports: [],
+          dependsOn: [],
+          environment: { API_TOKEN: "real-token" },
+          volumes: [],
+        },
       ],
     });
     const requested = [
-      { name: "api", image: "ghcr.io/acme/api:1", ports: [], dependsOn: [], environment: { API_TOKEN: "••••••••" }, volumes: [] },
+      {
+        name: "api",
+        image: "ghcr.io/acme/api:1",
+        ports: [],
+        dependsOn: [],
+        environment: { API_TOKEN: "••••••••" },
+        volumes: [],
+      },
     ];
 
-    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, services: requested as any });
+    await requestBuildAccess(ctx, {
+      projectId: "project-1",
+      uploadSessionId,
+      services: requested as any,
+    });
 
     expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1", [
       expect.objectContaining({ name: "api", environment: { API_TOKEN: "real-token" } }),
@@ -388,10 +410,21 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     const uploadSessionId = seedSession({ services: [] });
     repos.service.listByProject.mockResolvedValue([]);
     const requested = [
-      { name: "api", image: "x", ports: [], dependsOn: [], environment: { GHOST: "••••••••", REAL: "keep" }, volumes: [] },
+      {
+        name: "api",
+        image: "x",
+        ports: [],
+        dependsOn: [],
+        environment: { GHOST: "••••••••", REAL: "keep" },
+        volumes: [],
+      },
     ];
 
-    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, services: requested as any });
+    await requestBuildAccess(ctx, {
+      projectId: "project-1",
+      uploadSessionId,
+      services: requested as any,
+    });
 
     expect(repos.service.syncFromCompose).toHaveBeenCalledWith("project-1", [
       expect.objectContaining({ name: "api", environment: { REAL: "keep" } }),

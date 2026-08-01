@@ -33,13 +33,10 @@
 
 import { repos, type Project, type BackupRun, type BackupRestore } from "@repo/db";
 import { safeErrorMessage } from "@repo/core";
-import {
-  collectProjectManifest,
-  executeCleanup,
-} from "./project-cleanup.service";
+import { collectProjectManifest, executeCleanup } from "./project-cleanup.service";
 import { removeProjectFromServerManifests } from "../../lib/openship-manifest-sync";
 import { cancelBuildSession } from "../deployments/build.service";
-import { deleteWebhook as deleteGitHubWebhook } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import type { RequestContext } from "../../lib/request-context";
 import { env } from "../../config";
 import {
@@ -200,9 +197,7 @@ export async function getActiveProjectState(projectId: string): Promise<Prefligh
     activeBackupRestoreIds: restores.map((r) => r.id),
     blocking: parts.length > 0,
     summary:
-      parts.length === 0
-        ? "No active work"
-        : `Cannot delete while in-flight: ${parts.join(", ")}`,
+      parts.length === 0 ? "No active work" : `Cannot delete while in-flight: ${parts.join(", ")}`,
   };
 }
 
@@ -602,7 +597,7 @@ async function stepDeleteWebhook(
     return;
   }
   try {
-    await deleteGitHubWebhook(
+    await VcsStrategyFactory.getStrategy(project.gitProvider || "github").deleteWebhook(
       ctx,
       project.gitOwner,
       project.gitRepo,

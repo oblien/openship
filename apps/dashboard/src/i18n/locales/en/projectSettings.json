@@ -401,7 +401,7 @@
     "chooseBranch": "Choose which branch to deploy from your repository",
     "save": "Save",
     "cancel": "Cancel",
-    "viewOnGithub": "View on GitHub",
+    "viewOnGithub": "View in VCS",
     "recentCommits": "Recent Commits",
     "totalCommits": "{count} total",
     "noCommits": "No commits yet",
@@ -418,14 +418,14 @@
   },
   "git": {
     "connectFirst": {
-      "title": "Connect GitHub first",
-      "description": "Link your GitHub account to connect a repository to this project.",
+      "title": "Connect VCS first",
+      "description": "Link your Version Control account to connect a repository to this project.",
       "connecting": "Connecting…",
-      "connect": "Connect GitHub"
+      "connect": "Connect Version Control"
     },
     "link": {
       "title": "Link a Repository",
-      "description": "Connect a GitHub repository to enable webhook-triggered deployments.",
+      "description": "Connect a version control repository to enable webhook-triggered deployments.",
       "select": "Select Repository"
     },
     "picker": {
@@ -450,7 +450,7 @@
     },
     "webhookEndpoint": {
       "title": "Webhook Endpoint",
-      "descriptionSet": "GitHub delivers push events directly to this domain",
+      "descriptionSet": "The VCS provider delivers push events directly to this domain",
       "descriptionUnset": "Choose a domain for direct webhook delivery",
       "updating": "Updating...",
       "select": "Select domain...",

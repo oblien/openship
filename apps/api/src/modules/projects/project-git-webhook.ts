@@ -11,7 +11,7 @@
 
 import { repos, type Project } from "@repo/db";
 import type { RequestContext } from "../../lib/request-context";
-import { registerWebhook, updateWebhook } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 
 /** Projects in this org pointing at (owner, repo), case-insensitive. */
 export async function listOrgRepoProjects(organizationId: string, owner: string, repo: string) {
@@ -62,14 +62,22 @@ export async function ensureSharedWebhook(
 ): Promise<number | null> {
   const existingHookId =
     project.webhookId ?? (await findSharedWebhookId(project.organizationId, owner, repo));
-  const result = await registerWebhook(ctx, owner, repo, webhookUrl, { projectId: project.id });
-  if (!result.hookId) return null;
+  const result = await VcsStrategyFactory.getStrategy(project.gitProvider).registerWebhook(
+    ctx,
+    owner,
+    repo,
+    webhookUrl,
+    { projectId: project.id },
+  );
+  if (!result?.id) return null;
 
   // A new hook superseded a stale one on the same repo — turn the old one off so
   // stale GitHub hooks don't pile up (the gap the old link path never closed).
-  if (existingHookId && existingHookId !== result.hookId) {
-    await updateWebhook(ctx, owner, repo, existingHookId, { active: false }).catch(() => undefined);
+  if (existingHookId && existingHookId !== result.id) {
+    await VcsStrategyFactory.getStrategy(project.gitProvider)
+      .updateWebhook(ctx, owner, repo, existingHookId, { active: false })
+      .catch(() => undefined);
   }
-  await syncSharedWebhookId(project.organizationId, owner, repo, result.hookId);
-  return result.hookId;
+  await syncSharedWebhookId(project.organizationId, owner, repo, result.id);
+  return result.id;
 }
