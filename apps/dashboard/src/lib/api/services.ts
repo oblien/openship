@@ -1,8 +1,8 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { ComposeAdvanced } from "@repo/core";
+import type { ComposeAdvanced, ComposeAdvancedPatch } from "@repo/core";
 
-export type { ComposeAdvanced, ComposeHealthcheck } from "@repo/core";
+export type { ComposeAdvanced, ComposeAdvancedPatch, ComposeHealthcheck, OpenshipReadiness } from "@repo/core";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -179,7 +179,7 @@ export type ServiceInput = {
   volumes?: string[];
   command?: string;
   restart?: string;
-  advanced?: ComposeAdvanced;
+  advanced?: ComposeAdvancedPatch;
   exposed?: boolean;
   exposedPort?: string;
   domain?: string;
@@ -279,6 +279,12 @@ export const servicesApi = {
   getEnv: (projectId: string | number, serviceId: string, environment?: string) =>
     api.get<{ success: boolean; vars: ServiceEnvVar[] }>(
       `${endpoints.services.envGet(projectId, serviceId)}${environment ? `?environment=${environment}` : ""}`,
+    ),
+
+  /** #336: real (unmasked) compose `environment` map — write-gated on the API. */
+  revealEnv: (projectId: string | number, serviceId: string) =>
+    api.get<{ success: boolean; environment: Record<string, string> }>(
+      endpoints.services.envReveal(projectId, serviceId),
     ),
 
   /** Set environment variables for a service */

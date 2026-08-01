@@ -227,7 +227,16 @@ function unanimousConflictAction(
 
 const VERIFY_TIMEOUT_MS = 20 * 60 * 1000; // 20 min for the target deploy
 const VERIFY_POLL_MS = 5000;
-const TERMINAL_DEPLOY = new Set(["ready", "partial_failure", "failed", "cancelled"]);
+// Every status a deploy can SETTLE on. `action_required` is a settled failure
+// (blocked on something the operator must clear), so it belongs here — omitting
+// it would leave waitForDeployment polling for the full VERIFY_TIMEOUT_MS.
+const TERMINAL_DEPLOY = new Set([
+  "ready",
+  "partial_failure",
+  "failed",
+  "action_required",
+  "cancelled",
+]);
 /** How many volumes move concurrently — a few in flight without saturating one SSH link. */
 const TRANSFER_CONCURRENCY = 3;
 

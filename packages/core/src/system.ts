@@ -43,6 +43,34 @@ export const SYSTEM = {
     MAX_ERROR_MESSAGE_LENGTH: 512,
     /** Default restart policy for production containers */
     DEFAULT_RESTART_POLICY: "always" as const,
+    /**
+     * How long a just-started container is watched before a deploy may call
+     * itself ready. Container-create succeeding proves nothing: a bad start
+     * command exits within milliseconds and `restart: always` hides it behind a
+     * bounce loop. Measured from each container's OWN start time, so a stack
+     * whose earlier services have already been up this long waits only for the
+     * last one.
+     */
+    STABILIZE_WINDOW_MS: 15_000,
+    /** Inspect poll interval inside that window. */
+    STABILIZE_POLL_MS: 1_000,
+    /**
+     * Restarts within the window that mean "crash loop" rather than "waited for
+     * a dependency and recovered". Docker's restart backoff (100ms doubling)
+     * takes an instantly-exiting process past this in ~2s, while a service that
+     * times out waiting on a slow database manages one or two.
+     */
+    STABILIZE_CRASH_RESTARTS: 3,
+    /** Log lines folded into the failure message, so diagnosing needs no SSH. */
+    STABILIZE_LOG_TAIL_LINES: 20,
+    /**
+     * Readiness-probe budget when a project OPTS IN to the health check. Only
+     * reached with `readiness.enabled` — an unconfigured deploy runs no probe
+     * at all, so this never sits on the default critical path.
+     */
+    READINESS_TIMEOUT_MS: 45_000,
+    /** Readiness-probe poll interval. */
+    READINESS_INTERVAL_MS: 1_000,
   },
 
   // ── SSE / Build Streaming ────────────────────────────────────────────
@@ -98,11 +126,12 @@ export const SYSTEM = {
     /** Port range */
     MIN_PORT: 1,
     MAX_PORT: 65535,
-    /** Resource limits */
-    MIN_CPU_CORES: 0.25,
-    MAX_CPU_CORES: 4,
-    MIN_MEMORY_MB: 128,
-    MAX_MEMORY_MB: 8192,
+    // Resource bounds deliberately do NOT live here. They belong to
+    // ./resources.ts, which is the single source of truth: the floors
+    // (MIN_CPU_CORES / MIN_MEMORY_MB) plus the rule that the UPPER bound is the
+    // target machine's probed capacity, not a constant. The unread
+    // MAX_CPU_CORES: 4 / MAX_MEMORY_MB: 8192 pair that used to sit here encoded
+    // exactly the fixed ceiling that made a large self-hosted box unusable.
     /** Pagination */
     DEFAULT_PAGE: 1,
     DEFAULT_PER_PAGE: 20,

@@ -457,6 +457,11 @@ export async function listThreads(
           flags: true,
           internalDate: true,
           bodyStructure: true,
+          // Bounded partial fetch for the list-row snippet - see
+          // `extractListSnippet`. This rides along in the SAME fetch
+          // command as everything else in this page, so it costs no
+          // additional round trip.
+          bodyParts: [LIST_SNIPPET_BODY_PART],
         },
         { uid: useUid },
       )) {
@@ -496,7 +501,7 @@ export async function listThreads(
           threadId: messageId,
           messageId,
           subject,
-          snippet: '',
+          snippet: extractListSnippet(msg.bodyParts, msg.bodyStructure),
           from: sender,
           sender,
           to: addrMany(env.to),
@@ -557,6 +562,161 @@ function hasAttachmentStructure(struct: unknown): boolean {
   if (s.disposition === 'attachment') return true;
   if (Array.isArray(s.childNodes)) return s.childNodes.some(hasAttachmentStructure);
   return false;
+}
+
+// ---------------------------------------------------------------------
+// List-view snippet extraction
+// ---------------------------------------------------------------------
+
+/**
+ * Body-part request for the list-view snippet: RFC 3501's TEXT section
+ * (everything after the top-level RFC822 headers), bounded to a small byte
+ * range via IMAP partial fetch. We deliberately do NOT request a numbered
+ * MIME part (e.g. "1") - a single `client.fetch()` call applies the SAME
+ * body-part list to every message in the page, but different messages in a
+ * page can have completely different MIME structures (single-part,
+ * multipart/alternative, multipart/mixed with an attachment part first,
+ * ...), so there is no one part number that's correct for all of them.
+ * TEXT is structure-agnostic and guaranteed to exist on every message,
+ * which is what makes fetching the snippet in the SAME batched command as
+ * envelope/flags/bodyStructure possible at all (no per-message round trip).
+ */
+const LIST_SNIPPET_BODY_PART = { key: 'TEXT', start: 0, maxLength: 320 } as const;
+// The key imapflow stores the above under in `message.bodyParts` - see
+// imapflow/lib/tools.js `formatMessageResponse`: the response map key is
+// the section name lowercased with the `<offset>` suffix stripped, i.e.
+// "TEXT" -> "text".
+const LIST_SNIPPET_MAP_KEY = 'text';
+const LIST_SNIPPET_MAX_CHARS = 140;
+
+interface LeafPartInfo {
+  type: string;
+  encoding: string;
+}
+
+/**
+ * Descend into `childNodes[0]` (the MIME convention puts the "primary"
+ * alternative first, e.g. multipart/alternative lists text/plain before
+ * text/html) until we hit a non-multipart leaf. Returns both the leaf's
+ * type/encoding (so we know how to decode the bytes BODY[TEXT] handed us)
+ * and the nesting depth (so we know how many "boundary + part headers"
+ * blocks precede the leaf's actual content in those raw bytes). Depth is
+ * capped defensively - real messages are only ever a couple levels deep.
+ */
+function resolveLeafPart(struct: unknown, depth = 0): { leaf: LeafPartInfo | null; depth: number } {
+  if (!struct || typeof struct !== 'object' || depth > 4) return { leaf: null, depth };
+  const s = struct as { type?: string; encoding?: string; childNodes?: unknown[] };
+  if (typeof s.type !== 'string') return { leaf: null, depth };
+  if (s.type.startsWith('multipart/')) {
+    if (!Array.isArray(s.childNodes) || s.childNodes.length === 0) return { leaf: null, depth };
+    return resolveLeafPart(s.childNodes[0], depth + 1);
+  }
+  return { leaf: { type: s.type, encoding: (s.encoding ?? '7bit').toLowerCase() }, depth };
+}
+
+/**
+ * Byte-level quoted-printable decode (soft line breaks + `=XX` escapes).
+ * Operates on raw bytes rather than a decoded string so multi-byte UTF-8
+ * sequences (e.g. a curly quote encoded as "=E2=80=99") decode correctly
+ * instead of turning into mojibake.
+ */
+function decodeQuotedPrintableBytes(raw: Buffer): Buffer {
+  const ascii = raw.toString('latin1').replace(/=\r?\n/g, '');
+  const bytes: number[] = [];
+  for (let i = 0; i < ascii.length; i++) {
+    const hex = ascii.slice(i + 1, i + 3);
+    if (ascii[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(hex)) {
+      bytes.push(parseInt(hex, 16));
+      i += 2;
+    } else {
+      bytes.push(ascii.charCodeAt(i) & 0xff);
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+/**
+ * Build the 1-line list-row snippet from the bounded BODY[TEXT] partial
+ * fetch requested alongside envelope/flags/bodyStructure in `listThreads`.
+ * Best-effort only: the fetch is capped at a few hundred bytes (cheap -
+ * that's the whole point of IMAP partial fetch), so on multipart messages
+ * we may only capture MIME boundary/header noise before real content
+ * starts, or truncate mid-word/mid-character. Any failure here must NEVER
+ * break the list - this always degrades to '' rather than throwing, and
+ * the client falls back to the subject line when snippet is empty.
+ */
+function extractListSnippet(bodyParts: Map<string, Buffer> | undefined, bodyStructure: unknown): string {
+  try {
+    const raw = bodyParts?.get(LIST_SNIPPET_MAP_KEY);
+    if (!raw || raw.length === 0) return '';
+
+    const { leaf, depth } = resolveLeafPart(bodyStructure);
+
+    let bytes = raw;
+    // BODY[TEXT] on a multipart message returns the raw MIME body -
+    // boundary line + part headers included, one such block per nesting
+    // level - since TEXT can't target a specific sub-part directly. Skip
+    // past `depth` header blocks so we land on the leaf part's content.
+    for (let i = 0; i < depth; i++) {
+      const text = bytes.toString('latin1');
+      const blankLine = text.indexOf('\r\n\r\n');
+      const idx = blankLine !== -1 ? blankLine + 4 : text.indexOf('\n\n') + 2;
+      if (idx <= 1) return ''; // ran out of budget before reaching real content
+      bytes = Buffer.from(text.slice(idx), 'latin1');
+    }
+    if (bytes.length === 0) return '';
+
+    // The fetch window is a flat byte range across the whole multipart body,
+    // not scoped to a single part - short leaf content commonly leaves
+    // budget that runs past this part's end into the NEXT part's boundary
+    // line + headers (e.g. a one-sentence body followed by an attachment).
+    // A MIME boundary is always its own line starting with "--" and is never
+    // itself encoded (base64's alphabet excludes "-"), so cut there before
+    // decoding rather than let it leak into the snippet.
+    const rawLatin1 = bytes.toString('latin1');
+    const nextBoundaryAt = rawLatin1.search(/\r?\n--/);
+    if (nextBoundaryAt !== -1) {
+      bytes = Buffer.from(rawLatin1.slice(0, nextBoundaryAt), 'latin1');
+    }
+    if (bytes.length === 0) return '';
+
+    const encoding = leaf?.encoding ?? '7bit';
+    const decoded =
+      encoding === 'quoted-printable'
+        ? decodeQuotedPrintableBytes(bytes)
+        : encoding === 'base64'
+          ? Buffer.from(bytes.toString('ascii').replace(/[^A-Za-z0-9+/=]/g, ''), 'base64')
+          : bytes;
+
+    let text = decoded.toString('utf8').replace(/�+$/, ''); // drop a truncated trailing char
+    if (leaf?.type === 'text/html' || /<[a-z][\s\S]*>/i.test(text)) {
+      text = text
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        // The fetch window is byte-bounded, so an HTML message's markup
+        // commonly gets cut mid-tag (e.g. `<div style="margin-top`, no
+        // closing `>` yet) - the rule above needs a full `<...>` pair to
+        // match, so a dangling tag at the very end survives as literal
+        // text. Strip it too.
+        .replace(/<[^>]*$/, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#0*39;|&apos;/gi, "'");
+    }
+    text = text.replace(/\s+/g, ' ').trim();
+
+    // Leftover MIME noise guard - if what's left still looks like a
+    // header line or a boundary marker, we didn't land on real content.
+    if (!text || /^(content-|--)/i.test(text)) return '';
+
+    return text.slice(0, LIST_SNIPPET_MAX_CHARS);
+  } catch {
+    return '';
+  }
 }
 
 /**

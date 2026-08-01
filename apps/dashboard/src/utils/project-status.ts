@@ -22,6 +22,12 @@ type ProjectStatusSource = {
    *  didn't sync — also surfaced as "Action Required", with a Retry routing
    *  action (distinct from the keep/reject decision above). */
   routingUnsynced?: boolean | null;
+  /** True when the LATEST deploy is blocked on a named, clearable cause (status
+   *  `action_required` — today a port conflict). Unlike the two flags above this
+   *  is not a property of the live release: a blocked deploy never becomes the
+   *  active one, so nothing derived from the active deployment can see it, which
+   *  is why such a deploy used to vanish from the project entirely. */
+  latestDeploymentBlocked?: boolean | null;
   deletedAt?: string | null;
   /** True while an atomic teardown is in flight (the real in-progress flag;
    *  teardown hard-deletes on success, so `deletedAt` is rarely set). */
@@ -106,10 +112,14 @@ export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
       break;
   }
 
-  // A live release that still needs the operator: either a partial-failure
-  // deploy awaiting keep/reject, or one whose free-domain edge route didn't
-  // sync. Both flag "Action Required" — never the green "Live".
-  if (project.awaitingDecision || project.routingUnsynced) {
+  // Needs the operator: a partial-failure deploy awaiting keep/reject, one whose
+  // free-domain edge route didn't sync, or a newer deploy blocked on a named
+  // cause. All flag "Action Required" — never the green "Live".
+  //
+  // Deliberately BEFORE the `activeDeploymentId → live` check below: a project
+  // whose last release is serving fine but whose newest deploy is blocked is not
+  // simply "Live", or the blocker would be invisible on every card and sidebar.
+  if (project.awaitingDecision || project.routingUnsynced || project.latestDeploymentBlocked) {
     return "attention";
   }
 
@@ -120,6 +130,13 @@ export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
   switch (project.latestDeploymentStatus) {
     case "failed":
       return "failed";
+    // A never-deployed project whose first attempt is blocked. The
+    // `latestDeploymentBlocked` check above already caught this via the flag;
+    // this arm is the belt-and-braces for a caller that only passes the status
+    // (without it the default would render "draft" + a "Deploy now" CTA, hiding
+    // the blocker completely).
+    case "action_required":
+      return "attention";
     case "cancelled":
       return "cancelled";
     default:

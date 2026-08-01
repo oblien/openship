@@ -3,7 +3,7 @@
   "verified": true,
   "id": "minio",
   "name": "MinIO",
-  "description": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it.",
+  "description": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it, or bind a bucket straight into another project's uploads.",
   "kind": "template",
   "logo": "minio",
   "category": "database",
@@ -57,6 +57,29 @@
       "help": "Auto-generated. The S3 admin secret — shown once after install.",
       "generate": "secret",
       "secret": true
+    },
+    {
+      "key": "OPENSHIP_BUCKET",
+      "service": "minio",
+      "label": "First bucket",
+      "help": "Created on the first deploy so an app can use this storage immediately. More can be added from the console.",
+      "type": "text",
+      "default": "uploads",
+      "required": true
+    }
+  ],
+  "prepare": [
+    {
+      "service": "minio",
+      "command": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" > /dev/null && mc mb --ignore-existing \"local/$OPENSHIP_BUCKET\" > /dev/null && printf '%s' \"$OPENSHIP_BUCKET\"",
+      "capture": "bucket",
+      "phase": "post-ready",
+      "readiness": {
+        "test": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\"",
+        "interval": 1000,
+        "retries": 30
+      },
+      "once": true
     }
   ],
   "endpoints": [
@@ -68,9 +91,50 @@
     "description": "Use these with any S3 client — the endpoint is the S3 API URL, the keys are the root user / password.",
     "outputs": [
       { "id": "console", "label": "Console", "source": "publicUrl:minio:9001" },
-      { "id": "endpoint", "label": "S3 endpoint", "source": "publicUrl:minio:9000" },
-      { "id": "accessKey", "label": "Access key", "source": "env:minio:MINIO_ROOT_USER" },
-      { "id": "secretKey", "label": "Secret key", "source": "env:minio:MINIO_ROOT_PASSWORD", "secret": true }
-    ]
-  }
+      {
+        "id": "endpoint",
+        "label": "S3 endpoint",
+        "source": "publicUrl:minio:9000",
+        "service": "minio",
+        "envKey": "S3_ENDPOINT",
+        "recommended": true
+      },
+      {
+        "id": "accessKey",
+        "label": "Access key",
+        "source": "env:minio:MINIO_ROOT_USER",
+        "service": "minio",
+        "envKey": "S3_ACCESS_KEY_ID",
+        "recommended": true
+      },
+      {
+        "id": "secretKey",
+        "label": "Secret key",
+        "source": "env:minio:MINIO_ROOT_PASSWORD",
+        "service": "minio",
+        "envKey": "S3_SECRET_ACCESS_KEY",
+        "secret": true,
+        "recommended": true
+      },
+      {
+        "id": "bucket",
+        "label": "Bucket",
+        "source": "env:minio:OPENSHIP_BUCKET",
+        "service": "minio",
+        "envKey": "S3_BUCKET"
+      }
+    ],
+    "guide": {
+      "intro": "Your app gets an S3-compatible bucket it can write uploads to.",
+      "useHint": "Bind it from the consuming project's Configuration → Object storage to get the framework's own env names (Laravel gets FILESYSTEM_DISK + AWS_*), or wire these values by hand.",
+      "defaultMode": "internal"
+    }
+  },
+  "provides": [
+    {
+      "id": "s3",
+      "outputRefs": ["endpoint", "accessKey", "secretKey", "bucket"],
+      "category": "database"
+    }
+  ]
 }

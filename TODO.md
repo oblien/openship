@@ -364,6 +364,93 @@ and two people have now reported it as an SSL bug.
 
 ---
 
+## Runtime roles: release phase, queue workers, scheduler (#231)
+
+An app stack declares exactly ONE `defaultStartCommand`
+(`packages/core/src/stacks.ts` `StackDefinition`), so a framework whose production
+shape is several processes can't express it. Laravel is the clearest case — web +
+`queue:work` + `schedule:run` — and the same shape appears in Rails
+(Sidekiq/Solid Queue + cron) and Django (Celery worker + beat).
+
+**What landed** (from #231, so the gap below is narrower than the issue describes):
+the PHP recipe now runs on FrankenPHP, which supervises correctly and propagates
+`SIGTERM` (`packages/adapters/src/runtime/docker-build-plan.ts`
+`generatePhpDockerfile`) — a worker can now be added without inheriting the old
+"container stop kills the job mid-flight" problem. Persistence, PHP extensions and
+the JS asset stage also landed; the storage section below has what's left of those.
+
+### A generic release phase
+
+Commands that run ONCE per deploy, after build and before cutover, failing the
+deploy on error. `queue:work`, `schedule:run`, `migrate --force`, `optimize` and
+`storage:link` appear nowhere in the tree today, so migrations, scheduled tasks
+and queued jobs silently never run.
+
+- [ ] Add release commands to the project + `openship.json`, snapshot them onto
+      the deployment, and run them from the deploy pipeline between build and
+      activate (`apps/api/src/modules/deployments/build-pipeline.ts` — the same
+      seam `deployConfig` is assembled in).
+- [ ] Laravel's set for 13.x: `migrate --force`, `optimize` (config/events/routes/
+      views), `storage:link`, and `reload` (13's umbrella for cycling long-running
+      services — supersedes `queue:restart` for deploys, also covers Reverb and
+      Octane).
+- [ ] Not the same thing as `#206` deploy hooks: those are an inbound trigger that
+      STARTS a deploy; this runs DURING one.
+- [ ] Until this exists, a stock SQLite Laravel app still needs its migrations run
+      by hand (the service terminal can do it) — a persistent volume stops data
+      LOSS, it doesn't bootstrap a schema.
+
+### Multi-role stacks
+
+- [ ] Decide the shape: roles declared in `StackDefinition` (worker + scheduler
+      exist automatically on detection, preserving zero-config, at the cost of a
+      real runtime-model change that has to compose with multi-node plans) vs.
+      keeping apps single-process and pushing extras to `--type services`.
+- [ ] Whichever way it goes, ANSWER IT in the docs. Auto-detection currently reads
+      as "Laravel supported" while quietly omitting queues and scheduling, and
+      that's the part the issue is actually complaining about.
+- [ ] Cheap intermediate available today: an app project can already gain a
+      second source-built unit (a `monorepo`-kind service row carries its own
+      `startCommand`), and the #231 materialization keeps the web app in the
+      fan-out. A "add a worker" button could write exactly that row.
+- [ ] `laravel` and `symfony` (`stacks.ts`) still differ only in `name` +
+      `detection`. That's correct while the recipe is generic PHP; it stops being
+      correct the moment roles are per-framework.
+
+---
+
+## Persistent storage — remaining gaps (#231, #163, #188)
+
+Volumes for single apps shipped (`packages/core/src/volumes.ts`,
+`project.volumes`, Docker `Binds` + bare `shared/` symlinks + a cloud warn), and
+object storage bindings shipped (`apps/api/src/modules/projects/project-storage.service.ts`).
+What's left:
+
+- [ ] **Backups don't cover a single app's volumes.** The backup subsystem targets
+      `service` rows (`apps/api/src/modules/backups/`), so a single-app project
+      with a `storage` volume has no policy that can back it up. The container's
+      mounts ARE discoverable (`backup/executors/docker.ts` reads them off the
+      container), so this is a targeting gap, not a capability gap.
+- [ ] **Cloud has no volume primitive.** `CloudRuntime.deploy` warns and drops a
+      declared mount. Either give Oblien workspaces a durable attach or make the
+      UI refuse the field on a cloud target instead of warning at deploy time.
+- [ ] **#163 multi-node volumes.** A stack- or project-declared path assumes the
+      workload lands on the same host next time. Settle the multi-node story
+      before any scheduler can move a container between boxes.
+- [ ] **Non-root for the other stacks.** Only the PHP recipe drops root
+      (`USER www-data`). Node/Python/Ruby/JVM/static images still run as root, each
+      with its own writable-path assumptions (npm cache, `.next`, `__pycache__`,
+      nginx temp dirs) — do them one stack at a time, not in one sweep.
+- [ ] **A default healthcheck.** Laravel ships `/up` (configurable in
+      `bootstrap/app.php`), which makes a real container healthcheck nearly free
+      for that stack; compose services already support `advanced.healthcheck`.
+- [ ] **Bare PHP is not supported.** The PHP start command assumes the frankenphp
+      binary, and the toolchain catalog has no php/composer installer
+      (`packages/adapters/src/system/modules/catalog-embedded.ts`), so PHP is
+      docker-only. Fine, but say so if a user picks bare.
+
+---
+
 ## Open TODO markers in code
 
 Verified present; listed so they aren't lost.

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Globe, Loader2, Sparkles } from "lucide-react";
+import { Server, Loader2 } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import { domainsApi } from "@/lib/api";
 import type { DomainDnsRecord } from "@/lib/api/domains";
@@ -70,39 +70,29 @@ export default function DnsRecordsModal({
   }, [records, includeWww, mode, hostname]);
 
   return (
-    <div className="p-6">
-      <div className="mb-1 flex items-center gap-3">
+    <div className="p-5">
+      {/* Same clean header as the "view DNS" modal — records + the hint carry
+          everything; the old "Point your domain, then deploy" title/subtitle and
+          the "auto-configure" row were redundant chrome. */}
+      <div className="mb-4 flex items-center gap-3">
         <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-          <Globe className="size-4 text-primary" />
+          <Server className="size-4 text-primary" />
         </div>
-        <h2 className="text-base font-semibold text-foreground">{d.modalTitle}</h2>
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{d.title}</h2>
+          <p className="text-xs text-muted-foreground">
+            {d.addRecordsFor} <span className="font-medium text-foreground">{hostname}</span>
+          </p>
+        </div>
       </div>
-      <p className="mb-4 text-sm text-muted-foreground">{d.modalSubtitle}</p>
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> {d.loadingRecords}
         </div>
       ) : (
-        <DnsConfiguration domain={hostname} records={shown} mode={mode} />
+        <DnsConfiguration domain={hostname} records={shown} mode={mode} showHeader={false} />
       )}
-
-      <button
-        type="button"
-        disabled
-        className="mt-3 flex w-full cursor-not-allowed items-center justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3 text-left opacity-70"
-      >
-        <span className="flex min-w-0 items-center gap-2.5">
-          <Sparkles className="size-4 shrink-0 text-primary" />
-          <span className="min-w-0">
-            <span className="block text-[13px] font-medium text-foreground">{d.autoConfigTitle}</span>
-            <span className="block truncate text-[12px] text-muted-foreground">{d.autoConfigDesc}</span>
-          </span>
-        </span>
-        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-          {d.comingSoon}
-        </span>
-      </button>
 
       <div className="mt-5 flex items-center justify-end gap-2">
         <button

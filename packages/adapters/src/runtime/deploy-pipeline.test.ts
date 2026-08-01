@@ -135,6 +135,229 @@ describe("runDeployPipeline cutover ordering", () => {
     expect(events).toEqual(["activate", "route"]);
   });
 
+  // The non-overlap path has to free a fixed port before the new workload can
+  // bind, so the old one MUST stop first. Whether it is stopped-and-kept or
+  // destroyed decides what a later failure costs: Docker takes this path whenever
+  // routeStrategy is loopback-port (the default), and while its pre-stop
+  // force-removed the container, a failed health gate left the project with NO
+  // running deployment — the old one deleted and the new one reaped by the caller.
+  it("non-overlap: prefers deactivateRetaining over the destructive deactivate", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: false,
+      deactivateRetaining: async () => {
+        events.push("stop-retaining");
+      },
+      retireRetainedPrevious: async () => {
+        events.push("retire");
+      },
+    });
+
+    const res = await runDeployPipeline(env, makeInput(), fakeLogger());
+
+    expect(res.status).toBe("ready");
+    // Retired only AFTER the new one is up and routed, never before.
+    expect(events).toEqual(["stop-retaining", "activate", "route", "retire"]);
+    expect(events).not.toContain("deactivate");
+  });
+
+  it("non-overlap: a failed health gate restores the retained old one and never retires it", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: false,
+      deactivateRetaining: async () => {
+        events.push("stop-retaining");
+      },
+      retireRetainedPrevious: async () => {
+        events.push("retire");
+      },
+      healthCheck: async () => {
+        events.push("health");
+        throw new Error("never answered on its port");
+      },
+      reactivatePrevious: async () => {
+        events.push("reactivate");
+      },
+    });
+
+    const res = await runDeployPipeline(env, makeInput(), fakeLogger());
+
+    expect(res.status).toBe("failed");
+    expect(events).toEqual(["stop-retaining", "activate", "health", "reactivate"]);
+    // The whole point: the old deployment is still there to come back to.
+    expect(events).not.toContain("retire");
+    expect(events).not.toContain("route");
+  });
+
+  // Non-overlap exists because old and new contend for ONE fixed port. A
+  // health-gate failure means the new workload started fine and is still holding
+  // that port, so the revert has to free it first or `start` fails with "port is
+  // already allocated" — the caller only reaps the failed container after this
+  // returns, which is too late.
+  it("non-overlap: stops the FAILED new deployment before restarting the old one", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: false,
+      deactivateRetaining: async () => {
+        events.push("stop-retaining");
+      },
+      healthCheck: async () => {
+        events.push("health");
+        throw new Error("never answered on its port");
+      },
+      stopActivated: async (id) => {
+        events.push(`stop-activated:${id}`);
+      },
+      reactivatePrevious: async () => {
+        events.push("reactivate");
+      },
+    });
+
+    const res = await runDeployPipeline(env, makeInput(), fakeLogger());
+
+    expect(res.status).toBe("failed");
+    expect(events).toEqual([
+      "stop-retaining",
+      "activate",
+      "health",
+      "stop-activated:new-container",
+      "reactivate",
+    ]);
+    // Ordering is the assertion: freeing the port must precede the rebind.
+    expect(events.indexOf("stop-activated:new-container")).toBeLessThan(events.indexOf("reactivate"));
+  });
+
+  it("non-overlap: a failing stopActivated still attempts the revert", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: false,
+      deactivateRetaining: async () => {
+        events.push("stop-retaining");
+      },
+      healthCheck: async () => {
+        throw new Error("never answered");
+      },
+      stopActivated: async () => {
+        events.push("stop-activated");
+        throw new Error("daemon hiccup");
+      },
+      reactivatePrevious: async () => {
+        events.push("reactivate");
+      },
+    });
+
+    const res = await runDeployPipeline(env, makeInput(), fakeLogger());
+
+    expect(res.status).toBe("failed");
+    // Best-effort: a failed stop must not swallow the revert attempt.
+    expect(events).toContain("reactivate");
+  });
+
+  it("overlap never stops the activated deployment — nothing to free", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: true,
+      healthCheck: async () => {
+        throw new Error("never answered");
+      },
+      stopActivated: async () => {
+        events.push("stop-activated");
+      },
+      reactivatePrevious: async () => {
+        events.push("reactivate");
+      },
+    });
+
+    const res = await runDeployPipeline(env, makeInput(), fakeLogger());
+
+    expect(res.status).toBe("failed");
+    // The old one was never stopped, so it is still serving; touching the new
+    // container here would be pointless work on a container the caller reaps.
+    expect(events).not.toContain("stop-activated");
+    expect(events).not.toContain("reactivate");
+  });
+
+  it("non-overlap: falls back to deactivate when the env can't retain, and retires nothing", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: false,
+      retireRetainedPrevious: async () => {
+        events.push("retire");
+      },
+    });
+
+    const res = await runDeployPipeline(env, makeInput(), fakeLogger());
+
+    expect(res.status).toBe("ready");
+    // Nothing was retained, so retire must not fire on a container already gone.
+    expect(events).toEqual(["deactivate", "activate", "route"]);
+  });
+
+  it("non-overlap: deactivatePrevious=false neither stops nor retires the old one", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: false,
+      deactivateRetaining: async () => {
+        events.push("stop-retaining");
+      },
+      retireRetainedPrevious: async () => {
+        events.push("retire");
+      },
+    });
+
+    const res = await runDeployPipeline(
+      env,
+      makeInput({ deactivatePrevious: false }),
+      fakeLogger(),
+    );
+
+    expect(res.status).toBe("ready");
+    expect(events).toEqual(["activate", "route"]);
+  });
+
+  it("first deploy (no previous): non-overlap retains and retires nothing", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: false,
+      deactivateRetaining: async () => {
+        events.push("stop-retaining");
+      },
+      retireRetainedPrevious: async () => {
+        events.push("retire");
+      },
+    });
+
+    const res = await runDeployPipeline(
+      env,
+      makeInput({ previousContainerId: undefined }),
+      fakeLogger(),
+    );
+
+    expect(res.status).toBe("ready");
+    expect(events).toEqual(["activate", "route"]);
+  });
+
+  it("non-overlap: a failing retire never flips a good deploy to failed", async () => {
+    const events: string[] = [];
+    const env = recordingEnv(events, {
+      canOverlap: false,
+      deactivateRetaining: async () => {
+        events.push("stop-retaining");
+      },
+      retireRetainedPrevious: async () => {
+        events.push("retire");
+        throw new Error("daemon hiccup");
+      },
+    });
+
+    const res = await runDeployPipeline(env, makeInput(), fakeLogger());
+
+    // Cleaning up the OLD deployment is housekeeping; the new one is already live.
+    expect(res.status).toBe("ready");
+    expect(res.containerId).toBe("new-container");
+    expect(events).toEqual(["stop-retaining", "activate", "route", "retire"]);
+  });
+
   it("R1 gate: deactivatePrevious=false leaves the old one running even in overlap mode", async () => {
     // Models build-pipeline's snapshot gate: previousContainerId stays accurate,
     // but deactivatePrevious=false so archivePreviousDeployment can stop+retain

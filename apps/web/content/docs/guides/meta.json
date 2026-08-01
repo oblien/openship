@@ -8,6 +8,7 @@
     "openship-json",
     "custom-domains",
     "environment-variables",
+    "persistent-storage",
     "compose-multi-service",
     "preview-environments",
     "auto-deploy",

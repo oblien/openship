@@ -46,6 +46,25 @@ export const domain = pgTable("domain", {
   isPrimary: boolean("is_primary").notNull().default(false),
 
   /**
+   * Canonical redirect: when set, this hostname does NOT serve the app — its
+   * vhost answers `redirect_status` (null = 301) pointing at
+   * `https://<redirect_to><original path+query>`.
+   *
+   * The target must be ANOTHER hostname of the same project (enforced by
+   * lib/domain-redirect.ts, which also rejects self-targets and redirect cycles —
+   * a cycle is an instant outage, and an unconstrained target would turn the
+   * operator's own verified domain into an open redirect).
+   *
+   * A redirecting host still needs its own DNS record, its own verification and
+   * its own certificate: it has to serve a valid `https://` before it can 301.
+   * That independence is the point — this is how `www.example.com` becomes an
+   * ordinary domain that happens to point at its apex, instead of a flag on it.
+   */
+  redirectTo: text("redirect_to"),
+  /** 301 | 302 | 307 | 308. Null = 301. */
+  redirectStatus: integer("redirect_status"),
+
+  /**
    * Externally-managed ingress + TLS. When true, an upstream (Cloudflare Tunnel,
    * a load balancer, etc.) terminates TLS and forwards HTTP to this box, so the
    * hostname does NOT resolve to the server's (possibly Tailscale) SSH address.

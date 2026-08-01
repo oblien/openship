@@ -158,6 +158,18 @@ export const getStatusConfig = (status: string) => {
         borderColor: "border-warning-border",
         label: "Verifying",
       };
+    case "action_required":
+      // A failure whose cause we can name and the operator can clear (today: the
+      // port was held by another process). Nothing deployed — but unlike a plain
+      // red "Failed" there is a next step, so it reads amber to match the project
+      // card's "Action Required" badge rather than looking like a dead end.
+      return {
+        icon: 'circle%20clock-39-1658435834.png',
+        color: "var(--color-warning)",
+        bgColor: "bg-warning-bg",
+        borderColor: "border-warning-border",
+        label: "Action required",
+      };
     default:
       return {
         icon: 'circle%20clock-39-1658435834.png',
@@ -192,8 +204,16 @@ export const filterDeployments = (
   const { status = "all", searchQuery = "", projectId = "all" } = filters;
 
   return deployments.filter((deployment) => {
-    // Handle both "canceled" and "cancelled" spellings
-    const deploymentStatus = deployment.status === 'cancelled' ? 'canceled' : deployment.status;
+    // Handle both "canceled" and "cancelled" spellings; and count a blocked
+    // deploy under "Failed" — it genuinely didn't ship, so hiding it from that
+    // tab would make a real failure invisible. The chip still reads "Action
+    // required" so the difference isn't lost.
+    const deploymentStatus =
+      deployment.status === 'cancelled'
+        ? 'canceled'
+        : deployment.status === 'action_required'
+          ? 'failed'
+          : deployment.status;
     const matchesStatus = status === "all" || deploymentStatus === status;
     const matchesSearch =
       !searchQuery ||
@@ -214,7 +234,11 @@ export const calculateDeploymentStats = (deployments: Deployment[]) => {
   return {
     total: deployments.length,
     success: deployments.filter((d) => d.status === "success").length,
-    failed: deployments.filter((d) => d.status === "failed").length,
+    // Blocked deploys count as failed here for the same reason they show under
+    // the Failed filter — they didn't ship. Keeping them out would quietly
+    // inflate the success rate.
+    failed: deployments.filter((d) => d.status === "failed" || d.status === "action_required")
+      .length,
     building: deployments.filter((d) => d.status === "building").length,
     pending: deployments.filter((d) => d.status === "pending").length,
     // Handle both "canceled" and "cancelled" spellings

@@ -115,10 +115,29 @@ export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   // isn't cloning on the server clones on the api-host (both local → gh OK).
   // Everything else (on-server clone, cloud workspace clone) is off-host → remote.
   //
+  // Stated as "off-host unless proven otherwise": the clone runs HERE unless it
+  // runs on a server, or it's a cloud deploy building in the cloud workspace.
+  //
+  // #346 — this was `buildStrategy === "local" || onServer`, which silently
+  // omitted the LOCAL target. A local deploy has no server to clone on, so the
+  // clone always runs here; but no stack declares `defaultBuildStrategy`, so
+  // `resolveStrategy` hands back "server" to every caller that omits it (MCP, the
+  // CLI, CI, webhooks — the dashboard always sends it explicitly, which is why
+  // only non-dashboard deploys broke). That tagged a host-local clone "server",
+  // whose chain refuses the non-shippable gh-cli token, and the deploy hard-failed
+  // "No GitHub token available … (purpose: remote)" on a host that could clone fine.
+  //
+  // Preflight's checkRemoteCloneToken already short-circuits `effectiveTarget ===
+  // "local"` to pass, so it green-lit the very deploy the pipeline then rejected —
+  // the preflight/pipeline drift this function exists to make impossible, surviving
+  // because the rule lived inline in preflight and not in the shared plan. Keep the
+  // two agreeing: a local target is a host-local clone on BOTH sides.
+  //
   // runsLocally MUST imply !runsOnServer — otherwise a contradictory config
   // (buildStrategy="local" + cloneStrategy="server") would tag an on-server clone
   // as local and ship the operator's local gh/OAuth token off-host to the remote.
-  const runsLocally = !runsOnServer && (input.buildStrategy === "local" || onServer);
+  const runsLocally =
+    !runsOnServer && (input.effectiveTarget !== "cloud" || input.buildStrategy === "local");
 
   return {
     runsOnServer,

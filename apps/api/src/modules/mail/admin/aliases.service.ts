@@ -57,6 +57,15 @@ function validateEmail(email: string): void {
   }
 }
 
+/** Trim + lowercase an address, then validate it. Returns the normalized form. */
+function normalizeEmail(email: string): string {
+  const e = email.trim().toLowerCase();
+  if (!EMAIL_RE.test(e) || e.length > 255) {
+    throw new Error(`Invalid email: ${email}`);
+  }
+  return e;
+}
+
 function validateLocalPart(local: string): void {
   if (!LOCAL_PART_RE.test(local) || local.length === 0 || local.length > 64) {
     throw new Error(`Invalid local-part: ${local}`);
@@ -102,8 +111,7 @@ export async function createAlias(
 ): Promise<AliasRow> {
   const domain = input.domain.trim().toLowerCase();
   validateDomain(domain);
-  validateEmail(input.destination);
-  const destination = input.destination.trim().toLowerCase();
+  const destination = normalizeEmail(input.destination);
   const destDomain = destination.split("@")[1]!;
 
   const address = input.isCatchAll

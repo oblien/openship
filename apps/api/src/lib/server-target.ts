@@ -56,6 +56,19 @@ function isIpLiteral(s: string): boolean {
 }
 
 /**
+ * A loopback / unroutable host is useless as public DNS guidance (an A record
+ * pointing at 127.0.0.1 is dead). The local "This Server" row's display `sshHost`
+ * falls back to `127.0.0.1` when no public IP was known at registration (desktop,
+ * or detection skipped) — callers surfacing a "point your domain here" target
+ * must treat that as "unknown", not a real address.
+ */
+export function isLoopbackHost(host: string | null | undefined): boolean {
+  if (!host) return false;
+  const h = host.trim().toLowerCase();
+  return h === "127.0.0.1" || h === "::1" || h === "localhost" || h === "0.0.0.0" || h.startsWith("127.");
+}
+
+/**
  * Public IP echo endpoints, most white-label first. These return a BARE IP with
  * no branding page (unlike a product like ipify), and we try them in order for
  * redundancy. When Openship Cloud gains its own `/ip` echo we should prepend it.
@@ -115,5 +128,8 @@ export async function resolveInstancePublicIp(): Promise<string | null> {
 export async function resolveLocalServerHost(organizationId: string): Promise<string | null> {
   if (env.SERVER_IP) return env.SERVER_IP;
   const local = await repos.server.findLocal(organizationId);
-  return local?.sshHost ?? null;
+  const host = local?.sshHost ?? null;
+  // The display host is `127.0.0.1` when no public IP was known at registration;
+  // never hand that back as a real target (callers re-detect / show a placeholder).
+  return host && !isLoopbackHost(host) ? host : null;
 }

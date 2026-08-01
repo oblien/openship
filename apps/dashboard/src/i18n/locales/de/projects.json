@@ -280,6 +280,9 @@
     "success": "Freie Domain-Weiterleitung synchronisiert.",
     "failed": "Die freie Domain-Weiterleitung konnte nicht synchronisiert werden."
   },
+  "deployBlocked": {
+    "redeploy": "Erneut bereitstellen"
+  },
   "redeploy": {
     "deployStartedLong": "Bereitstellung gestartet — dauert länger als üblich, Bereitstellungen werden geöffnet.",
     "deployingTitle": "Wird bereitgestellt",

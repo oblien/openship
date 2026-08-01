@@ -14,7 +14,21 @@ import { resolveDeploymentRuntime, type DeploymentMeta } from "../../lib/deploym
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import { collectDeploymentManifest, executeCleanup } from "../projects/project-cleanup.service";
 import { assertGitHubRepoAccess } from "../github/github-access";
-import { rollback, setPin } from "./rollback";
+import { maskDeploymentEnv } from "../../lib/secret-env";
+import { rollback, setPin, resolveRestorePlan, planNeedsRepository } from "./rollback";
+
+/**
+ * #336: present a deployment to a CLIENT — masks `meta.composeServices[].environment`.
+ * This is the single boundary every client-facing return must go through; the
+ * raw `getDeployment` (and repos.deployment reads) stay unmasked for the internal
+ * mutating callers (delete/rollback/reject/keep) that need the real env. Prefer
+ * these over calling `maskDeploymentEnv` ad-hoc at each controller return so a new
+ * endpoint has one obvious thing to call instead of a per-site decision to forget.
+ */
+export const presentDeployment = <T extends { meta?: unknown } | null | undefined>(dep: T): T =>
+  maskDeploymentEnv(dep);
+export const presentDeployments = <T extends { meta?: unknown }>(deps: T[]): T[] =>
+  deps.map((d) => maskDeploymentEnv(d));
 
 /**
  * GitHub access gate for a deployment-scoped action (rollback, reject).
@@ -178,6 +192,27 @@ export async function rollbackDeployment(
   await rollback(deploymentId);
   // Return the post-rollback deployment row (now with any updated container id).
   return (await repos.deployment.findById(dep.id)) ?? dep;
+}
+
+/**
+ * How a rollback to this deployment WOULD run — instant from the retained
+ * artifact, or a rebuild from its commit. Read-only.
+ *
+ * Serves the confirm dialog's copy and the controller's GitHub-access gate from
+ * the same resolution the executor uses, so the three can't disagree.
+ */
+export async function previewRestore(deploymentId: string, organizationId: string) {
+  const dep = await getDeployment(deploymentId, organizationId);
+  await assertNotControlPlaneDeployment(dep);
+  const { plan } = await resolveRestorePlan(deploymentId);
+  return {
+    mode: plan.mode,
+    /** True when the restore needs the repo (clone + token + GitHub access). */
+    needsRepository: planNeedsRepository(plan),
+    /** Services that will rebuild because their image is gone (empty = fully instant). */
+    rebuildServices: plan.mode === "redeploy-pinned" ? plan.rebuildServices : [],
+    ...(plan.mode === "ineligible" ? { code: plan.code, reason: plan.message } : {}),
+  };
 }
 
 export async function setDeploymentPin(

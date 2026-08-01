@@ -25,6 +25,7 @@ import ProjectSettings from "./ProjectSettings";
 import BuildSettings from "./BuildSettings";
 import EnvironmentVariables from "./EnvironmentVariables";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useDefaultDomainType } from "@/context/CloudContext";
 
 // Tiny class-joining helper to avoid pulling in a util just for the toggle.
 function cn(...parts: Array<string | false | undefined | null>): string {
@@ -110,6 +111,7 @@ const WorkspaceCard: React.FC = () => {
 const AppCard: React.FC<{ app: MonorepoAppConfig; index: number }> = ({ app, index }) => {
   const { config, updateConfig } = useDeployment();
   const { baseDomain } = usePlatform();
+  const newEndpointDomainType = useDefaultDomainType();
   const { t } = useI18n();
   const a = t.importProject.monorepo.app;
   const apps = config.monorepoApps ?? [];
@@ -150,13 +152,13 @@ const AppCard: React.FC<{ app: MonorepoAppConfig; index: number }> = ({ app, ind
             port: a.port || "",
             targetPath: a.hasServer ? "" : "/",
             domain: `${appSlug}-${projectSlug}`,
-            domainType: "free",
+            domainType: newEndpointDomainType,
           });
         });
 
       updateConfig({ monorepoApps: next, publicEndpoints: nextEndpoints });
     },
-    [apps, app, index, config.projectName, config.publicEndpoints, updateConfig],
+    [apps, app, index, config.projectName, config.publicEndpoints, newEndpointDomainType, updateConfig],
   );
 
   // Preview the host this sub-app will be served on - same logic the

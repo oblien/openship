@@ -143,6 +143,21 @@ export function detectPackageManager(
   return "unknown";
 }
 
+/**
+ * The JS package manager of a repo whose PRIMARY package manager is something
+ * else. A Laravel app is detected as `composer` — correct for its dependencies,
+ * but useless for its asset build, which still needs to know whether to run
+ * `npm ci` or `pnpm install`. Same lockfile precedence as the JS arm of
+ * `detectPackageManager`; defaults to npm, which the asset stage always has.
+ */
+export function detectJsPackageManager(files?: RepoFile[]): string {
+  const fileSet = new Set((files ?? []).map((f) => f.name.toLowerCase()));
+  if (fileSet.has("pnpm-lock.yaml")) return "pnpm";
+  if (fileSet.has("bun.lockb") || fileSet.has("bun.lock")) return "bun";
+  if (fileSet.has("yarn.lock")) return "yarn";
+  return "npm";
+}
+
 // ─── Framework detection rules ───────────────────────────────────────────────
 
 interface FrameworkRule {
@@ -473,14 +488,21 @@ export function detectStack(
     }
   }
 
-  // Dockerfile / compose own install/build/start — don't synthesize buildpack
-  // commands from a co-located package.json (or the runtime would both build
-  // the image AND try to run npm install outside it).
-  const dockerfileOwned = matched === "docker" || matched === "docker-compose";
+  // A Dockerfile / compose file owns its own build — the runtime builds
+  // straight from it (requireRepositoryDockerfile), so nothing is synthesized
+  // around it. buildCommand/startCommand already come out empty via the
+  // registry defaults on the `docker` stack, but installCommand is derived
+  // from the package manager alone, which has no way to know that. A
+  // Dockerfile sub-app that also carries a package.json for workspace
+  // membership (the Railway-style monorepo layout) would otherwise be handed
+  // a bogus `npm i --force`. Same for docker-compose: don't synthesize
+  // buildpack commands from a co-located package.json.
+  const projectType = getProjectType(matched);
+  const dockerfileOwned = projectType === "docker" || matched === "docker-compose";
 
   const result: StackResult = {
     stack: matched,
-    projectType: getProjectType(matched),
+    projectType,
     category: stackDef.category,
     dependencies: deps,
     packageManager: pm,
@@ -743,6 +765,18 @@ export function getBuildCommand(
   }
 
   const lang = STACKS[stack].language;
+
+  // PHP: the install step is `composer install`, so the BUILD step is the asset
+  // pipeline — a Laravel/Vite or Symfony/Encore app ships CSS/JS that has to be
+  // compiled or it deploys with no styling at all. Emitted as a real command
+  // (rather than hidden in the Dockerfile) so it shows up in the wizard and can
+  // be edited; the recipe runs it in a Node stage, since php:*-cli has no node.
+  // Empty when the repo has no JS build — most Symfony APIs, plain PHP.
+  if (lang === "php") {
+    if (!scripts.build) return "";
+    const jsPm = detectJsPackageManager(files);
+    return `${getInstallCommand(jsPm)} && ${scriptRunner(jsPm)} build`;
+  }
 
   // Python: install per detected package manager; Django also collects static.
   if (lang === "python") {

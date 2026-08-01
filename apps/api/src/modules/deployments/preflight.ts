@@ -24,11 +24,13 @@ import {
   servicesNeedCloud,
   cloudRequiredCode,
   CLOUD_UNREACHABLE_CODE,
+  stackExpectsBuildCommand,
 } from "@repo/core";
 import { cloudClient } from "../../lib/cloud/client";
 import { isCloudConnectedForOrg } from "../../lib/cloud/session";
 import { runCloudPreflight, type CloudPreflightData } from "../../lib/cloud-preflight";
 import { isStaticService, type DeployableService } from "../../lib/deployable-service";
+import { isFullyPinned, snapshotNeedsGitSource } from "./pinned-artifacts";
 import { serviceKind } from "./compose/project-services";
 import { relayConfigEligible, resolveClonePlan } from "./clone-plan";
 import { hasLocalGitIdentity } from "../github/github.local-auth";
@@ -840,6 +842,24 @@ async function resolveCloudPreflight(
 function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions): PreflightCheck {
   const missing: string[] = [];
 
+  // A FULLY PINNED deploy (a rollback restoring a retained artifact, a migration
+  // cutover) builds nothing and clones nothing: it runs an artifact that was
+  // validated and built when it was created. Judging it by today's build-config
+  // rules would make every release created before a newly-added required field
+  // un-restorable — precisely when a rollback is needed. Only what a pinned
+  // deploy still consumes is checked: the port it publishes on.
+  if (isFullyPinned(snapshot, opts?.composeServices)) {
+    if (snapshot.hasServer && !snapshot.port) {
+      return {
+        id: "config",
+        label: "Build configuration",
+        status: "fail",
+        message: "Missing required fields: port",
+      };
+    }
+    return { id: "config", label: "Build configuration", status: "pass" };
+  }
+
   // A folder-upload deploy has no git and no host path — its source is the
   // pre-staged upload workspace (`sourceStaged`, set by requestBuildAccess).
   // That's a valid source, so it satisfies both the source and branch checks.
@@ -857,11 +877,9 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
     // project-level `hasBuild` flag, which an adopted-Docker project may leave
     // unset on the snapshot even though nothing builds — the bug that made a
     // Docker migration fail preflight with "repository URL or local path".
-    const enabledServices = (opts.composeServices ?? []).filter((s) => s.enabled !== false);
-    const needsProjectSource =
-      enabledServices.length > 0
-        ? enabledServices.some((s) => s.kind === "monorepo" || !!s.build || !!s.dockerfile)
-        : snapshot.hasBuild !== false;
+    // Same rule the build pipeline and the commit resolver use — one definition
+    // (pin-aware, so a restored service with a retained image needs no source).
+    const needsProjectSource = snapshotNeedsGitSource(snapshot, opts.composeServices);
     const serviceMissing = needsProjectSource
       ? missing
       : missing.filter((m) => m !== "repository URL or local path" && m !== "branch");
@@ -882,6 +900,7 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
     // value here so the operator sees "sub-app X has no install command"
     // before resources are provisioned.
     const subAppFailures: string[] = [];
+    const deadRowWarnings: string[] = [];
     for (const svc of opts.composeServices ?? []) {
       if (svc.kind !== "monorepo") continue;
       // Disabled sub-apps never run; skip. `enabled === false` is the
@@ -889,6 +908,29 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
       // sub-app get a public URL) and conflating them lets enabled-but-
       // not-exposed sub-apps slip past this check with no install command.
       if (svc.enabled === false) continue;
+      // Dead/orphaned row: a saved sub-app this project has NEVER once
+      // deployed (confirmed, not just "not this deploy" — see `everDeployed`),
+      // carrying no install/build/start command at all. Nothing distinguishes
+      // that from stray leftover config (a duplicate/abandoned row from an
+      // earlier import or a half-finished "add service" that was never
+      // followed through) — and unlike a genuinely misconfigured LIVE
+      // service, hard-failing it blocks every future deploy of the WHOLE
+      // project indefinitely, with no route to recovery short of editing the
+      // DB by hand. Warn instead: surface it so the operator can clean it up,
+      // but let the rest of the project keep deploying.
+      //
+      // EXCEPT a `docker` sub-app: a Dockerfile owns its build, so having no
+      // install/build/start command is CORRECT there, not "dead" (see the
+      // `framework === "docker"` exempt below). Without this guard a valid,
+      // never-yet-deployed Dockerfile sub-app would be mislabeled a dead row
+      // on its very first deploy.
+      const hasAnyCommand = !!(svc.installCommand || svc.buildCommand || svc.startCommand);
+      if (svc.everDeployed === false && !hasAnyCommand && svc.framework !== "docker") {
+        deadRowWarnings.push(
+          `sub-app "${svc.name}" has never been deployed and has no install/build/start command — skipping (disable or configure it to silence this)`,
+        );
+        continue;
+      }
       if (!svc.rootDirectory) {
         subAppFailures.push(`sub-app "${svc.name}" missing rootDirectory`);
         continue;
@@ -933,6 +975,14 @@ function checkConfig(snapshot: DeploymentConfigSnapshot, opts?: PreflightOptions
         message: subAppFailures.join("; "),
       };
     }
+    if (deadRowWarnings.length > 0) {
+      return {
+        id: "config",
+        label: "Service configuration",
+        status: "warn",
+        message: deadRowWarnings.join("; "),
+      };
+    }
 
     return { id: "config", label: "Service configuration", status: "pass" };
   }
@@ -975,7 +1025,12 @@ function checkStack(snapshot: DeploymentConfigSnapshot): PreflightCheck {
     };
   }
 
-  if (snapshot.hasBuild && !snapshot.buildCommand) {
+  // Only flag this where the stack actually declares a build step. Plenty don't —
+  // Express/Hono/plain Node install and run, a `docker` project builds from its
+  // own Dockerfile, and a PHP app's build step exists only for an optional JS
+  // asset pipeline. For those, "no build command" is the normal state, and saying
+  // otherwise on every deploy is how a preflight warning becomes background noise.
+  if (snapshot.hasBuild && !snapshot.buildCommand && stackExpectsBuildCommand(snapshot.framework)) {
     return {
       id: "stack",
       label: "Stack configuration",

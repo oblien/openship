@@ -28,11 +28,6 @@
   "dns": {
     "title": "DNS 配置",
     "addRecordsFor": "在你的 DNS 服务商处为以下项添加这些记录",
-    "descCname": "通过边缘网络路由你的域名",
-    "descA": "将你的域名指向服务器",
-    "descTxt": "验证域名所有权",
-    "nameHost": "名称 / 主机",
-    "valueTarget": "值 / 目标",
     "selfInfoPre": "添加 ",
     "recordA": "A 记录",
     "selfInfoMid": " 指向你的服务器 IP，然后添加 ",
@@ -43,13 +38,28 @@
     "cloudInfoMid": " 用于路由，然后添加 ",
     "modalTitle": "先将域名指向此处，然后部署",
     "modalSubtitle": "域名指向此处后，首次部署时会自动签发 HTTPS — 也可以跳过，稍后在「域名」标签页添加 DNS。",
-    "descCnameWww": "将 www 指向你的主域名",
     "autoConfigTitle": "使用我的 DNS 服务商自动配置",
     "autoConfigDesc": "连接你的域名注册商，我们将为你添加这些记录。",
     "comingSoon": "即将推出",
     "deployAction": "部署",
     "cancel": "取消",
-    "loadingRecords": "正在加载 DNS 记录…"
+    "loadingRecords": "正在加载 DNS 记录…",
+    "serverIpPlaceholder": "您服务器的公网 IP",
+    "record": {
+      "purposeA": "将 {hostname} 指向此服务器的 IP 地址",
+      "purposeCname": "将 {hostname} 通过边缘网络路由",
+      "purposeCnameAlias": "将 {hostname} 指向 {target}",
+      "purposeTxt": "证明 {hostname} 归你所有 —— 点击验证时我们会查询这条记录",
+      "fieldType": "类型",
+      "fieldName": "名称",
+      "fieldValue": "值",
+      "fieldTtl": "TTL",
+      "ttlValue": "自动（或 3600）",
+      "apexHint": "“@” 表示域名本身，部分服务商要求此处留空",
+      "fullName": "如果服务商需要完整记录名：",
+      "proxyNote": "请关闭任何代理/CDN 开关（Cloudflare 中为灰色云朵，即“DNS only”），以便为该域名签发 HTTPS。",
+      "copy": "复制"
+    }
   },
   "buildSummary": {
     "title": "部署摘要",
@@ -195,7 +205,15 @@
       "apiHostServerDesc": "在 Openship 主机上克隆，然后上传。适用于任何环境。",
       "serverLabel": "在服务器上",
       "serverDesc": "在服务器上克隆——无需上传。最适合大型仓库。"
-    }
+    },
+    "rollbackTitle": "回滚与备份",
+    "rollbackHint": "此服务器上可恢复的历史版本数量，以及部署前会备份的内容。",
+    "rollbackFirstDeploy": "首次部署后可在项目设置中修改。",
+    "backupSummaryNone": "尚无备份策略",
+    "backupSummaryConfigured": "{count} 条备份策略 · 部署前：{preDeploy}",
+    "backupManage": "管理备份",
+    "on": "开启",
+    "off": "关闭"
   },
   "summary": {
     "buildAndDeploy": "构建并部署：",
@@ -210,7 +228,12 @@
     "runtimeStatic": "Static · edge-served",
     "runtimeSandboxed": "Sandboxed",
     "runtimeDirectWarning": "Not sandboxed",
-    "runtimeDirectHint": "Runs directly on the host — not sandboxed."
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed.",
+    "rollbackOne": "{count} 个版本",
+    "rollbackOther": "{count} 个版本",
+    "rollbackAuto": "回滚：自动",
+    "rollbackSnapshotHint": "会保留每个版本的副本，因此回滚无需重新构建。可在“高级”中更改。",
+    "rollbackGitHint": "有多少个历史版本可供恢复。可在“高级”中更改。"
   },
   "power": {
     "heading": "性能",

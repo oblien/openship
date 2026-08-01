@@ -119,11 +119,11 @@ Create and manage the personal access tokens that authenticate the CLI and the A
 ### `token create`
 
 ```bash
-# A full-access, non-expiring token
-openship token create "laptop"
+# A full-access, non-expiring token — the breadth has to be stated
+openship token create "laptop" --full-access
 
 # A read-only token that expires in 30 days
-openship token create "ci-reader" --read-only --expires 30
+openship token create "ci-reader" --read-only --expires 30 --full-access
 
 # Scope a token to one project with specific permissions (repeatable)
 openship token create "deploy-bot" --grant project:abc123:read,write
@@ -133,7 +133,16 @@ openship token create "deploy-bot" --grant project:abc123:read,write
 |---|---|---|
 | `--read-only` | Reject mutation methods (`POST`/`PUT`/`PATCH`/`DELETE`). | off |
 | `--expires <days>` | Expire after N days (1–365); omit for a non-expiring token. | never |
-| `--grant <type:id:perms>` | Scope the token to a resource. Repeatable. Format `type:id:perm1,perm2`, e.g. `project:abc123:read,write`. | *(full access)* |
+| `--grant <type:id:perms>` | Scope the token to a resource. Repeatable. Format `type:id:perm1,perm2`, e.g. `project:abc123:read,write`. | — |
+| `--full-access` | Deliberately mint an **unscoped** token with your own full access. Required when no `--grant` is given. | off |
+
+<Callout title="Scope must be stated" type="warn">
+Pass **either** `--grant` (scoped) **or** `--full-access` (unscoped) — one is required, and both together
+is an error. `openship token create "laptop"` on its own is refused.
+
+An unscoped token acts with your own role, so it can't be reached by omission: a missing `--grant` used to
+mean full access, which made "I want no limits" and "my scope came out empty" the same command.
+</Callout>
 
 <Callout title="Copy the secret immediately" type="warn">
 `token create` prints the full `opsh_pat_…` secret **once** and never again. `token list` only ever shows a

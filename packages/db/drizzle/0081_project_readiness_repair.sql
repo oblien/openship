@@ -1,0 +1,34 @@
+-- Repair: create `project.readiness` on a database that skipped 0079.
+--
+-- WHY THIS EXISTS (and why it is not just "0079 again"):
+--
+-- 0079 was originally `0079_project_health_check` (adding `project.health_check`)
+-- and was replaced in place by `0079_project_readiness` (adding
+-- `project.readiness`) before either shipped. Both journal entries carry the SAME
+-- `when` — 1785882107324 — because the second reused the first's slot.
+--
+-- drizzle's migrator reads only the single most recent applied row and applies a
+-- migration when `lastDbMigration.created_at < migration.folderMillis`
+-- (pg-core/dialect.js). That comparison is STRICT, so on any database that had
+-- already run the old 0079, the new one is equal, not greater — it is skipped
+-- without a word. 0080 carried a later stamp and applied normally, which is why
+-- such a database ends up with 0080's columns, an orphan `health_check`, and no
+-- `readiness` at all. Every query selecting the project row then dies with
+-- `column "readiness" does not exist` (42703).
+--
+-- Bumping 0079's `when` would NOT fix it: the max applied stamp is now 0080's, so
+-- anything ordered before 0080 still compares as already-applied. The repair has
+-- to sort AFTER 0080, which is what this file is.
+--
+-- Idempotent on purpose. A fresh database creates the column at 0079 and this is
+-- a no-op; a database that skipped 0079 creates it here. Either way the end state
+-- is identical, so this is safe to leave in history permanently rather than being
+-- a one-off someone has to remember to delete.
+ALTER TABLE "project" ADD COLUMN IF NOT EXISTS "readiness" jsonb;--> statement-breakpoint
+
+-- Drop the column the replaced migration left behind. `health_check` was only
+-- ever created by 0079_project_health_check, which never shipped in a release and
+-- is referenced by no schema, query, or type in the codebase — so on the
+-- databases that have it, it is dead weight with a confusingly similar name to
+-- the compose service `healthcheck`. Guarded, so this is a no-op everywhere else.
+ALTER TABLE "project" DROP COLUMN IF EXISTS "health_check";

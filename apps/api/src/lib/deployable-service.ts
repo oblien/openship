@@ -71,6 +71,16 @@ export type DeployableService = ComposeService & MonorepoSubAppFields & {
     customDomain?: string | null;
     domainType?: string | null;
   }>;
+  /**
+   * Whether ANY service_deployment row has ever been recorded for this
+   * service. `undefined` means unknown (the caller supplied services
+   * directly, e.g. an in-flight wizard session, rather than projecting them
+   * from the project's saved `service` rows) — preflight treats that as "not
+   * provably dead" and keeps failing loudly. Only an explicit `false` — a
+   * saved row this project has never once deployed — is eligible for the
+   * dead-row carve-out.
+   */
+  everDeployed?: boolean;
 };
 
 /**

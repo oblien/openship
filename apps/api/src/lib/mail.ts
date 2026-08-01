@@ -1,3 +1,4 @@
+import { lookup as dnsLookup } from "node:dns/promises";
 import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "../config/env";
 import { safeErrorMessage, withTimeout } from "@repo/core";
@@ -98,6 +99,38 @@ const PLATFORM_ENSURE_TIMEOUT_MS = 8_000;
 const platformTransportFailures = new Map<string, number>();
 
 /**
+ * `ensureOpenshipPlatformMailbox` reports `mail.<domain>` as the platform
+ * mailbox's SMTP host - correct for an external mail client, and correct
+ * for THIS process too when the api runs bare on the mail server box. But
+ * when containerized, that hostname commonly resolves to a loopback address
+ * via the HOST's own `/etc/hosts` self-entry (e.g. Ubuntu's default
+ * `127.0.1.1 <hostname>`) - meaningful only in the host's network
+ * namespace, not the container's. Connecting there fails immediately with
+ * ECONNREFUSED before ever reaching Postfix.
+ *
+ * Detected generically (not by hardcoding any domain): resolve the reported
+ * host and check if it's loopback. If so, and we have a working container
+ * -> host bridge address (the same one the SSH manager already uses to
+ * reach this box from inside a container), reconnect through that instead.
+ * A genuinely remote mail server resolves to a real address and is passed
+ * through untouched.
+ */
+async function resolveContainerReachableSmtpHost(reportedHost: string): Promise<string> {
+  const bridgeHost = process.env.OPENSHIP_HOST_SSH_HOST?.trim();
+  if (!bridgeHost) return reportedHost;
+  try {
+    const { address } = await dnsLookup(reportedHost);
+    const isLoopback = address === "::1" || address.startsWith("127.");
+    if (!isLoopback) return reportedHost;
+  } catch {
+    // Unresolvable - fall through and let nodemailer's own lookup fail with
+    // its normal error rather than silently substituting a guess.
+    return reportedHost;
+  }
+  return bridgeHost;
+}
+
+/**
  * Locate the active mail server and (re)build its platform-mailbox
  * transport. Returns null if no mail server is provisioned, or if the
  * ensure*-call throws (we don't want a transient mail-server fault to
@@ -152,14 +185,22 @@ async function getPlatformTransport(): Promise<{
       PLATFORM_ENSURE_TIMEOUT_MS,
       `platform mailbox lookup on ${installed.serverId}`,
     );
+    const smtpHost = await resolveContainerReachableSmtpHost(creds.smtpHost);
     const transport = nodemailer.createTransport({
-      host: creds.smtpHost,
+      host: smtpHost,
       port: creds.smtpPort,
       secure: creds.secure,
       auth: {
         user: creds.email,
         pass: creds.password,
       },
+      // When smtpHost got rewritten to the container->host bridge address,
+      // the TCP connection no longer matches the certificate's name (it's
+      // issued for the mail server's real hostname, e.g. mail.<domain>) -
+      // pin SNI/cert verification to the ORIGINAL hostname so TLS still
+      // validates against the right name while the socket itself reaches a
+      // container-routable address.
+      ...(smtpHost !== creds.smtpHost ? { tls: { servername: creds.smtpHost } } : {}),
     });
     const entry: CachedPlatformTransport = {
       transport,

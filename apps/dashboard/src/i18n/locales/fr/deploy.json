@@ -28,11 +28,6 @@
   "dns": {
     "title": "Configuration DNS",
     "addRecordsFor": "Ajoutez ces enregistrements chez votre fournisseur DNS pour",
-    "descCname": "Achemine votre domaine à travers le réseau edge",
-    "descA": "Pointe votre domaine vers le serveur",
-    "descTxt": "Vérifie la propriété du domaine",
-    "nameHost": "Nom / Hôte",
-    "valueTarget": "Valeur / Cible",
     "selfInfoPre": "Ajoutez l'",
     "recordA": "enregistrement A",
     "selfInfoMid": " pointant vers l'IP de votre serveur, puis ajoutez l'",
@@ -43,13 +38,28 @@
     "cloudInfoMid": " pour le routage, puis ajoutez l'",
     "modalTitle": "Pointez votre domaine, puis déployez",
     "modalSubtitle": "Le HTTPS est émis lors du premier déploiement dès que votre domaine pointe ici — ou passez cette étape et ajoutez le DNS plus tard depuis l’onglet Domaines.",
-    "descCnameWww": "Pointe www vers votre domaine principal",
     "autoConfigTitle": "Configurer automatiquement avec mon fournisseur DNS",
     "autoConfigDesc": "Connectez votre registraire et nous ajouterons ces enregistrements pour vous.",
     "comingSoon": "Bientôt disponible",
     "deployAction": "Déployer",
     "cancel": "Annuler",
-    "loadingRecords": "Chargement des enregistrements DNS…"
+    "loadingRecords": "Chargement des enregistrements DNS…",
+    "serverIpPlaceholder": "l’IP publique de ton serveur",
+    "record": {
+      "purposeA": "Pointe {hostname} vers l’adresse IP de ce serveur",
+      "purposeCname": "Achemine {hostname} via le réseau edge",
+      "purposeCnameAlias": "Pointe {hostname} vers {target}",
+      "purposeTxt": "Prouve que {hostname} vous appartient — nous consultons cet enregistrement lors de la vérification",
+      "fieldType": "Type",
+      "fieldName": "Nom",
+      "fieldValue": "Valeur",
+      "fieldTtl": "TTL",
+      "ttlValue": "Auto (ou 3600)",
+      "apexHint": "« @ » désigne le domaine lui-même — certains fournisseurs veulent ce champ vide",
+      "fullName": "Nom complet, si votre fournisseur l’exige :",
+      "proxyNote": "Laissez tout proxy/CDN désactivé (Cloudflare : nuage gris, « DNS only ») pour que le HTTPS puisse être émis pour ce domaine.",
+      "copy": "Copier"
+    }
   },
   "buildSummary": {
     "title": "Récapitulatif du déploiement",
@@ -195,7 +205,15 @@
       "apiHostServerDesc": "Clonez sur l'hôte Openship, puis téléversez. Fonctionne partout.",
       "serverLabel": "Sur le serveur",
       "serverDesc": "Clonez sur le serveur — sans téléversement. Idéal pour les gros dépôts."
-    }
+    },
+    "rollbackTitle": "Restauration et sauvegardes",
+    "rollbackHint": "Combien de versions précédentes restent restaurables sur ce serveur, et ce qui est sauvegardé avant un déploiement.",
+    "rollbackFirstDeploy": "Modifiable dans les paramètres du projet après le premier déploiement.",
+    "backupSummaryNone": "Aucune règle de sauvegarde",
+    "backupSummaryConfigured": "{count} règle(s) de sauvegarde · avant déploiement : {preDeploy}",
+    "backupManage": "Gérer les sauvegardes",
+    "on": "activé",
+    "off": "désactivé"
   },
   "summary": {
     "buildAndDeploy": "Builder et déployer :",
@@ -210,7 +228,12 @@
     "runtimeStatic": "Static · edge-served",
     "runtimeSandboxed": "Sandboxed",
     "runtimeDirectWarning": "Not sandboxed",
-    "runtimeDirectHint": "Runs directly on the host — not sandboxed."
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed.",
+    "rollbackOne": "{count} version",
+    "rollbackOther": "{count} versions",
+    "rollbackAuto": "Rollback : auto",
+    "rollbackSnapshotHint": "Une copie de chaque version est conservée, donc un rollback ne reconstruit jamais. Modifiable dans Avancé.",
+    "rollbackGitHint": "Combien de versions passées restent restaurables. Modifiable dans Avancé."
   },
   "power": {
     "heading": "Puissance",
@@ -322,8 +345,8 @@
     "startCommandLabel": "Start command",
     "startCommandPlaceholder": "npm start",
     "startCommandHint": "Leave empty to serve the build output as static files from the edge (nothing runs). Enter a command to run it as a live server process.",
-    "modeStatic": "Static",
-    "modeProcess": "Server process",
+    "modeStatic": "Statique",
+    "modeProcess": "Processus serveur",
     "portLabel": "Port"
   }
 }

@@ -23,6 +23,8 @@ export const personalAccessTokenGrant = pgTable(
     resourceType: text("resource_type").notNull(),
     resourceId: text("resource_id").notNull(),
     permissionsJson: text("permissions_json").notNull().default("[]"),
+    /** Source-access scope (NULL = metadata only). See resource-grant.ts. */
+    scopeJson: text("scope_json"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [

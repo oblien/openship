@@ -66,6 +66,7 @@
     "building": "Building",
     "deploying": "Deploying",
     "partial": "Partial",
+    "actionRequired": "Action required",
     "rejected": "Rejected",
     "verifying": "Verifying",
     "pending": "Pending"
@@ -150,11 +151,10 @@
     "rollbackTitle": {
       "enabled": "Restore the project to this version (code only — data is unchanged)",
       "active": "This is already the active version",
-      "pruned": "Rollback artifact has been pruned. Use 'Redeploy this commit' to rebuild from source instead.",
-      "notReady": "Only ready deployments can be rolled back to"
+      "pruned": "This deployment has no retained image and no commit to rebuild from",
+      "notReady": "Only ready deployments can be rolled back to",
+      "rebuildOnly": "Restore this version by rebuilding its commit (its image has been pruned)"
     },
-    "redeploy": "Redeploy this commit",
-    "redeployTitle": "Rebuild this exact commit from source. Slower than rollback but works after the artifact has been pruned.",
     "pin": "Pin",
     "unpin": "Unpin",
     "pinTitle": {
@@ -165,9 +165,10 @@
     "deleteDeployment": "Delete Deployment",
     "confirmRollback": "Roll back to this version?\n\nThis restores the application code only. Database and volume data are unchanged.",
     "rollbackFailed": "Rollback failed",
-    "confirmRedeploy": "Redeploy commit {hash}?\n\nRebuilds this exact commit from source. Slower than rollback (full build runs again), but works even after the rollback artifact has been pruned. A new deployment will appear in the list.",
-    "redeployFailed": "Redeploy failed",
     "pinFailed": "Failed to pin deployment",
-    "unpinFailed": "Failed to unpin deployment"
+    "unpinFailed": "Failed to unpin deployment",
+    "rollbackModeInstant": "Instant restore — reuses this version's retained image, no rebuild.",
+    "rollbackModeRebuild": "Rebuild — this version's image is no longer on the host, so its commit is built again.",
+    "rollbackModeMixed": "Mostly instant — {count} service(s) lost their image and will be rebuilt."
   }
 }

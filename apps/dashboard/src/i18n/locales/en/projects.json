@@ -318,6 +318,9 @@
     "success": "Free domain routing synced.",
     "failed": "Couldn't sync the free domain routing."
   },
+  "deployBlocked": {
+    "redeploy": "Redeploy"
+  },
   "redeploy": {
     "deployStartedLong": "Deploy started — taking longer than usual, opening deployments.",
     "deployingTitle": "Deploying",

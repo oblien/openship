@@ -24,7 +24,13 @@
  */
 
 import type { Deployment } from "@repo/db";
-import type { Platform, RouteProxyLocation, RouteRedirect, RouteHeaderRule } from "@repo/adapters";
+import type {
+  Platform,
+  RouteProxyLocation,
+  RouteRedirect,
+  RouteHeaderRule,
+  RouteHostRedirect,
+} from "@repo/adapters";
 import { safeErrorMessage } from "@repo/core";
 import { platform } from "./controller-helpers";
 import { resolveDeploymentRuntime } from "./deployment-runtime";
@@ -72,6 +78,13 @@ export interface RouteRegister {
   proxyLocations?: RouteProxyLocation[];
   redirects?: RouteRedirect[];
   headerRules?: RouteHeaderRule[];
+  /**
+   * Canonical redirect to another host instead of serving (see
+   * RouteConfig.redirectHost). Carried on the LIVE path too, so turning a
+   * redirect on or off takes effect on save rather than waiting for a redeploy —
+   * the same treatment a domain/port edit already gets.
+   */
+  redirectHost?: RouteHostRedirect;
 }
 
 export interface RouteRemove {
@@ -176,6 +189,7 @@ export async function reconcileProjectRoutes(
         ...(r.proxyLocations?.length ? { proxyLocations: r.proxyLocations } : {}),
         ...(r.redirects?.length ? { redirects: r.redirects } : {}),
         ...(r.headerRules?.length ? { headerRules: r.headerRules } : {}),
+        ...(r.redirectHost ? { redirectHost: r.redirectHost } : {}),
       })
       .catch((err) =>
         console.warn(`[route-apply] registerRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`),

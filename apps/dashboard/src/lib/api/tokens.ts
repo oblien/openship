@@ -28,6 +28,9 @@ export const tokensApi = {
     expiresInDays?: number;
     /** Non-empty → a scoped token limited to exactly these resources. */
     grants?: PickerGrant[];
+    /** Required when `grants` is empty/omitted: deliberately mint an UNSCOPED
+     *  token with the caller's own access. The server refuses to infer this. */
+    fullAccess?: boolean;
   }) => api.post<{ data: CreatedAccessToken }>(endpoints.tokens.list, body),
   revoke: (id: string) => api.delete<{ data: { revoked: boolean } }>(endpoints.tokens.item(id)),
   /** Record an OAuth MCP client's scope (org + read-only + resource grants) at consent. */
@@ -36,6 +39,10 @@ export const tokensApi = {
     readOnly: boolean;
     grants: PickerGrant[];
     organizationId?: string;
+    /** Required when `grants` is empty: the chosen template really does mean
+     *  "no limits" (isUnscopedTemplate), rather than a scoped pick that came
+     *  out empty. The server refuses to guess between the two. */
+    fullAccess?: boolean;
   }) =>
     api.post<{ data: { ok: boolean; scoped: boolean; readOnly: boolean } }>(
       endpoints.tokens.mcpAuthorize,

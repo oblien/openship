@@ -12,7 +12,6 @@ import {
   Gitlab,
   Key,
   Loader2,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -37,8 +36,6 @@ export const GitSettings = () => {
   const gitlab = useGitLab();
   const { showToast } = useToast();
   const { t } = useI18n();
-  const [isTogglingRollback, setIsTogglingRollback] = useState(false);
-  const [savingRollbackWindow, setSavingRollbackWindow] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   // Which provider the bind picker is browsing — defaults to GitHub, a
@@ -153,46 +150,6 @@ export const GitSettings = () => {
       refreshGit();
     }
   }, [refreshGit]);
-
-  const handleRollbackStrategyToggle = async () => {
-    setIsTogglingRollback(true);
-    try {
-      // git ⇄ snapshot. Default to git when unset.
-      const next: "git" | "snapshot" =
-        (gitData.defaultRollbackStrategy ?? "git") === "git" ? "snapshot" : "git";
-      await projectsApi.update(id, { defaultRollbackStrategy: next });
-      showToast(
-        next === "git"
-          ? t.projectSettings.git.toast.rollbackGit
-          : t.projectSettings.git.toast.rollbackSnapshot,
-        "success",
-      );
-      await refreshGit();
-    } catch (error) {
-      showToast(getApiErrorMessage(error, t.projectSettings.git.toast.rollbackStrategyFailed), "error");
-    } finally {
-      setIsTogglingRollback(false);
-    }
-  };
-
-  const handleRollbackWindowChange = async (next: number) => {
-    const clamped = Math.max(0, Math.min(20, next));
-    const current = projectData?.rollbackWindow ?? 5;
-    if (clamped === current) return;
-    setSavingRollbackWindow(true);
-    try {
-      await projectsApi.update(id, { rollbackWindow: clamped });
-      updateProjectData({ rollbackWindow: clamped });
-      showToast(
-        interpolate(clamped === 1 ? t.projectSettings.git.toast.rollbackWindowOne : t.projectSettings.git.toast.rollbackWindowOther, { count: String(clamped) }),
-        "success",
-      );
-    } catch (error) {
-      showToast(getApiErrorMessage(error, t.projectSettings.git.toast.rollbackHistoryFailed), "error");
-    } finally {
-      setSavingRollbackWindow(false);
-    }
-  };
 
   if (gitData.isLoading) {
     // Mirror the real SectionCard layout below (header → repository sub-card with
@@ -546,87 +503,10 @@ export const GitSettings = () => {
             </div>
           </div>
 
-          {/* Rollback strategy + history (independent of the auto-deploy hook). */}
-          <div className="grid gap-3 sm:grid-cols-2">
-                <InfoCard
-                  icon={RotateCcw}
-                  title={t.projectSettings.git.rollbackStrategy.title}
-                  value={
-                    (gitData.defaultRollbackStrategy ?? "git") === "git"
-                      ? t.projectSettings.git.rollbackStrategy.rebuild
-                      : t.projectSettings.git.rollbackStrategy.instant
-                  }
-                  description={
-                    (gitData.defaultRollbackStrategy ?? "git") === "git"
-                      ? t.projectSettings.git.rollbackStrategy.descRebuild
-                      : t.projectSettings.git.rollbackStrategy.descInstant
-                  }
-                  action={
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={(gitData.defaultRollbackStrategy ?? "git") === "snapshot"}
-                      onClick={handleRollbackStrategyToggle}
-                      disabled={isTogglingRollback}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${(gitData.defaultRollbackStrategy ?? "git") === "snapshot" ? "bg-primary" : "bg-muted"} ${isTogglingRollback ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
-                      aria-label={t.projectSettings.git.rollbackStrategy.toggleAria}
-                    >
-                      {isTogglingRollback ? (
-                        <span className="mx-auto">
-                          <Loader2 className="size-3.5 animate-spin text-background" />
-                        </span>
-                      ) : (
-                        <span className={`inline-block h-4 w-4 transform rounded-full bg-background transition-transform ${(gitData.defaultRollbackStrategy ?? "git") === "snapshot" ? "translate-x-6 rtl:-translate-x-6" : "translate-x-1 rtl:-translate-x-1"}`} />
-                      )}
-                    </button>
-                  }
-                />
-                {(() => {
-                  const isSnapshot = (gitData.defaultRollbackStrategy ?? "git") === "snapshot";
-                  const windowVal = projectData?.rollbackWindow ?? 5;
-                  return (
-                    <InfoCard
-                      icon={RotateCcw}
-                      title={t.projectSettings.git.rollbackHistory.title}
-                      value={interpolate(windowVal === 1 ? t.projectSettings.git.rollbackHistory.valueOne : t.projectSettings.git.rollbackHistory.valueOther, { count: String(windowVal) })}
-                      description={
-                        isSnapshot
-                          ? t.projectSettings.git.rollbackHistory.descSnapshot
-                          : t.projectSettings.git.rollbackHistory.descGit
-                      }
-                      action={
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleRollbackWindowChange(windowVal - 1)}
-                            disabled={!isSnapshot || savingRollbackWindow || windowVal <= 0}
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors enabled:hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label={t.projectSettings.git.rollbackHistory.decreaseAria}
-                          >
-                            −
-                          </button>
-                          <span className="w-5 text-center text-[13px] font-medium tabular-nums text-foreground">
-                            {savingRollbackWindow ? (
-                              <Loader2 className="mx-auto size-3.5 animate-spin text-muted-foreground" />
-                            ) : (
-                              windowVal
-                            )}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRollbackWindowChange(windowVal + 1)}
-                            disabled={!isSnapshot || savingRollbackWindow || windowVal >= 20}
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-border/60 text-foreground transition-colors enabled:hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label={t.projectSettings.git.rollbackHistory.increaseAria}
-                          >
-                            +
-                          </button>
-                        </div>
-                      }
-                    />
-                  );
-                })()}
-          </div>
+          {/* Rollback retention used to live here. It moved to the Backup tab,
+              next to the other recovery controls — and to the deploy wizard's
+              target panel, since retention is a property of the machine you
+              deploy to. Both render the one RollbackRetentionCards component. */}
         </SectionCard>
 
         <SectionCard
@@ -812,41 +692,4 @@ function SectionCard({
   );
 }
 
-function InfoCard({
-  icon: Icon,
-  title,
-  value,
-  description,
-  action,
-  footer,
-  tone = "neutral",
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  value: string;
-  description: string;
-  action?: React.ReactNode;
-  /** Optional full-width content below the row (e.g. the webhook delivery-domain picker). */
-  footer?: React.ReactNode;
-  tone?: "neutral" | "success";
-}) {
-  return (
-    <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone === "success" ? "bg-success-bg text-success" : "bg-primary/10 text-primary"}`}>
-            <Icon className="size-4" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[13px] font-medium text-foreground">{title}</p>
-            <p className="mt-1 text-[13px] font-semibold text-foreground">{value}</p>
-            <p className="mt-1 text-[12px] text-muted-foreground">{description}</p>
-          </div>
-        </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
-      </div>
-      {footer ? <div className="mt-3 border-t border-border/40 pt-3">{footer}</div> : null}
-    </div>
-  );
-}
 

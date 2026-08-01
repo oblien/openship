@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "Verzeichnis mit der Build-Ausgabe",
     "sourceFolderLabel": "Quellordner",
     "sourceFolderDesc": "Aus einem Unterverzeichnis innerhalb des Repositorys oder lokalen Projekts bauen.",
+    "composePath": {
+      "title": "Compose-Datei",
+      "subtitle": "Automatisch im Projektstamm erkannt",
+      "label": "Pfad zur Compose-Datei",
+      "description": "Für Repos, die compose außerhalb des Stammverzeichnisses ablegen — gib die Datei (deploy/stack.yml) oder den enthaltenden Ordner (deploy/docker-compose) an. Scannt das Repo neu und deployt die dort deklarierten Services.",
+      "apply": "Scannen",
+      "scanning": "Wird gescannt…",
+      "scanFailed": "Dieser Compose-Pfad konnte nicht gescannt werden.",
+      "subtitleOptIn": "Mit Docker Compose bereitstellen? Gib die Datei an."
+    },
+    "healthCheck": {
+      "title": "Health-Checks",
+      "subtitle": "Aus — das Deployment ist fertig, sobald die App läuft",
+      "subtitleOn": "Ein — das Deployment wartet erst auf die App",
+      "description": "Openship wartet nach dem Start nicht auf deine App, ein langsamer Start verzögert oder bricht also nie ein Deployment ab. Sobald es live ist, wird der Port trotzdem geprüft und gemeldet, ohne etwas zu blockieren. Aktiviere das nur, wenn das Deployment selbst fehlschlagen soll.",
+      "probeLabel": "Auf Antwort der App warten",
+      "probeDesc": "Nach dem Start des Containers den Port der App ansprechen und auf eine Verbindung warten.",
+      "pathLabel": "HTTP-Pfad",
+      "pathPlaceholder": "/health",
+      "pathDesc": "Verlangt, dass ein GET hier mit unter 500 antwortet. Leer lassen, um jede TCP-Verbindung zu akzeptieren — das funktioniert auch für Dienste ohne HTTP.",
+      "timeoutLabel": "Abbrechen nach (Sekunden)",
+      "stabilizationLabel": "Auf Neustart-Schleifen achten",
+      "stabilizationDesc": "Beobachtet den Container nach dem Start und meldet eine Absturzschleife. Liest die Runtime aus und funktioniert daher auch auf entfernten Servern.",
+      "stabilizationWindowLabel": "Beobachten für (Sekunden)",
+      "onFailureLabel": "Wenn eine Prüfung fehlschlägt",
+      "onFailureWarn": "Deployment live lassen und zur Prüfung markieren",
+      "onFailureFail": "Deployment abbrechen und die vorherige Version weiter ausliefern"
+    },
     "buildImageLabel": "Build-Image",
     "buildImageDesc": "Builder-Container-Image für Cloud- oder Server-Builds. Überschreibe es, wenn das erkannte Basis-Image falsch ist.",
     "productionPathsLabel": "Produktionspfade",
@@ -122,6 +150,11 @@
       "clipboardEmpty": "Zwischenablage ist leer",
       "clipboardInvalid": "Zwischenablage enthält keine gültigen KEY=VALUE-Umgebungsvariablen",
       "clipboardBlocked": "Zugriff auf die Zwischenablage wurde blockiert. Klicke in das Umgebungsfeld und füge mit Cmd/Strg+V ein."
+    },
+    "reveal": {
+      "show": "Werte anzeigen",
+      "hide": "Werte ausblenden",
+      "error": "Werte konnten nicht angezeigt werden"
     }
   },
   "composeServices": {
@@ -278,7 +311,6 @@
       "successful": "Bereitstellung erfolgreich",
       "deploying": "Wird bereitgestellt..."
     },
-    "viewDashboard": "Dashboard anzeigen",
     "visitSite": "Website besuchen",
     "warningTitle": "Bereitstellung abgeschlossen, aber einige Services benötigen noch Aufmerksamkeit.",
     "productionLogs": "Produktionsprotokolle",
@@ -320,7 +352,6 @@
     "running": "laufend",
     "buildingSuffix": "· {count} werden gebaut",
     "failedSuffix": "· {count} fehlgeschlagen",
-    "viewDashboard": "Dashboard anzeigen",
     "decisionBannerTitle": "Aktion erforderlich – einige Services sind fehlgeschlagen",
     "decisionBannerDefaultMsg": "Diese Bereitstellung wurde mit fehlgeschlagenen Services abgeschlossen. Behalte sie und behebe sie später, oder verwirf sie, um die vorherige Version wiederherzustellen.",
     "review": "Prüfen",

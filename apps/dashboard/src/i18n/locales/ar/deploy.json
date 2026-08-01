@@ -28,11 +28,6 @@
   "dns": {
     "title": "إعداد DNS",
     "addRecordsFor": "أضف هذه السجلات لدى مزوّد DNS الخاص بك من أجل",
-    "descCname": "يوجّه نطاقك عبر الشبكة الطرفية",
-    "descA": "يوجّه نطاقك إلى الخادم",
-    "descTxt": "يتحقق من ملكية النطاق",
-    "nameHost": "الاسم / المضيف",
-    "valueTarget": "القيمة / الوجهة",
     "selfInfoPre": "أضف ",
     "recordA": "سجل A",
     "selfInfoMid": " الذي يشير إلى عنوان IP الخاص بخادمك، ثم أضف ",
@@ -43,13 +38,28 @@
     "cloudInfoMid": " للتوجيه، ثم أضف ",
     "modalTitle": "وجّه نطاقك، ثم انشر",
     "modalSubtitle": "يُصدر HTTPS عند أول عملية نشر بعد أن يشير نطاقك إلى هنا — أو تجاوز الخطوة وأضف DNS لاحقًا من تبويب النطاقات.",
-    "descCnameWww": "يوجّه www إلى نطاقك الرئيسي",
     "autoConfigTitle": "الإعداد التلقائي عبر مزوّد DNS الخاص بي",
     "autoConfigDesc": "اربط مُسجّل النطاق وسنضيف هذه السجلات نيابةً عنك.",
     "comingSoon": "قريبًا",
     "deployAction": "نشر",
     "cancel": "إلغاء",
-    "loadingRecords": "جارٍ تحميل سجلات DNS…"
+    "loadingRecords": "جارٍ تحميل سجلات DNS…",
+    "serverIpPlaceholder": "عنوان IP العام لخادمك",
+    "record": {
+      "purposeA": "يشير {hostname} إلى عنوان IP لهذا الخادم",
+      "purposeCname": "يمرّر {hostname} عبر شبكة الحافة",
+      "purposeCnameAlias": "يشير {hostname} إلى {target}",
+      "purposeTxt": "يؤكّد ملكيتك لـ {hostname} — نبحث عن هذا السجل عند الضغط على تحقّق",
+      "fieldType": "النوع",
+      "fieldName": "الاسم",
+      "fieldValue": "القيمة",
+      "fieldTtl": "TTL",
+      "ttlValue": "تلقائي (أو 3600)",
+      "apexHint": "«@» تعني النطاق نفسه — بعض المزوّدين يطلبون ترك هذا الحقل فارغًا",
+      "fullName": "الاسم الكامل، إن احتاجه مزوّدك:",
+      "proxyNote": "أوقف أي مفتاح وكيل/CDN (في Cloudflare: السحابة الرمادية «DNS only») حتى يمكن إصدار HTTPS لهذا النطاق.",
+      "copy": "نسخ"
+    }
   },
   "buildSummary": {
     "title": "ملخص النشر",
@@ -195,7 +205,15 @@
       "apiHostServerDesc": "استنسخ على مضيف Openship، ثم ارفع سياق البناء. يعمل في كل مكان.",
       "serverLabel": "على الخادم",
       "serverDesc": "استنسخ مباشرة على الخادم — دون رفع، الأفضل للمستودعات الكبيرة."
-    }
+    },
+    "rollbackTitle": "التراجع والنسخ الاحتياطي",
+    "rollbackHint": "عدد النسخ السابقة التي تبقى قابلة للاستعادة على هذا الخادم، وما يُنسخ احتياطيًا قبل النشر.",
+    "rollbackFirstDeploy": "قابل للتعديل في إعدادات المشروع بعد أول عملية نشر.",
+    "backupSummaryNone": "لا توجد سياسة نسخ احتياطي بعد",
+    "backupSummaryConfigured": "{count} سياسة نسخ احتياطي · قبل النشر: {preDeploy}",
+    "backupManage": "إدارة النسخ الاحتياطي",
+    "on": "مفعّل",
+    "off": "معطّل"
   },
   "summary": {
     "buildAndDeploy": "البناء والنشر:",
@@ -210,7 +228,12 @@
     "runtimeStatic": "Static · edge-served",
     "runtimeSandboxed": "Sandboxed",
     "runtimeDirectWarning": "Not sandboxed",
-    "runtimeDirectHint": "Runs directly on the host — not sandboxed."
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed.",
+    "rollbackOne": "إصدار واحد",
+    "rollbackOther": "{count} إصدارات",
+    "rollbackAuto": "التراجع: تلقائي",
+    "rollbackSnapshotHint": "يتم حفظ نسخة من كل إصدار، لذا لا يحتاج التراجع إلى إعادة بناء. يمكن تغييره من «إعدادات متقدمة».",
+    "rollbackGitHint": "عدد الإصدارات السابقة التي تبقى قابلة للاستعادة. يمكن تغييره من «إعدادات متقدمة»."
   },
   "power": {
     "heading": "الأداء",
@@ -322,8 +345,8 @@
     "startCommandLabel": "Start command",
     "startCommandPlaceholder": "npm start",
     "startCommandHint": "Leave empty to serve the build output as static files from the edge (nothing runs). Enter a command to run it as a live server process.",
-    "modeStatic": "Static",
-    "modeProcess": "Server process",
+    "modeStatic": "ثابت",
+    "modeProcess": "عملية خادم",
     "portLabel": "Port"
   }
 }

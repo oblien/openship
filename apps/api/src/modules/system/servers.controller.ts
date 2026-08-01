@@ -8,6 +8,7 @@ import type { Context } from "hono";
 import { repos } from "@repo/db";
 import { hostControlDisabled } from "@repo/adapters";
 import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
+import { invalidateHostCapacity } from "@/lib/host-capacity";
 import { env } from "../../config";
 import { sshManager } from "../../lib/ssh-manager";
 import { resolvesToLocalHost } from "@/lib/self-host";
@@ -155,6 +156,11 @@ export async function createServer(c: Context) {
 
   sshManager.invalidate(server.id);
   await invalidateOpenRestyPaths(server.id);
+  // createServer upserts, so this id may now point at DIFFERENT hardware —
+  // re-probe rather than validate resource limits against the old box's specs.
+  await invalidateHostCapacity(ctx.organizationId, server.id).catch((err: unknown) =>
+    console.error("[server.create] capacity cache cleanup failed:", err),
+  );
 
   // Names + non-secret connection details only. SSH passwords & key
   // passphrases are encrypted at rest; never include them in the audit.
@@ -209,6 +215,11 @@ export async function updateServer(c: Context) {
   const updated = await repos.server.update(id, patch);
   sshManager.invalidate(id);
   await invalidateOpenRestyPaths(id);
+  // Edited connection details can repoint this row at another machine (and a
+  // resize changes the specs of the same one) — re-probe capacity either way.
+  await invalidateHostCapacity(ctx.organizationId, id).catch((err: unknown) =>
+    console.error("[server.update] capacity cache cleanup failed:", err),
+  );
 
   // Audit only the fields the caller intended to touch. Skip secrets entirely.
   const auditAfter: Record<string, unknown> = {};
@@ -267,6 +278,12 @@ export async function deleteServer(c: Context) {
     );
   sshManager.invalidate(id);
   await invalidateOpenRestyPaths(id);
+  // Drop the cached CPU/RAM capacity for this box so a re-added server (or a
+  // reused id) re-probes instead of validating resource limits against the
+  // hardware of a machine that's gone.
+  await invalidateHostCapacity(ctx.organizationId, id).catch((err: unknown) =>
+    console.error("[server.delete] capacity cache cleanup failed:", err),
+  );
 
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "server.removed",

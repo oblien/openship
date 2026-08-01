@@ -15,8 +15,9 @@ import { permission } from "../../lib/permission";
 import { isServerInOrg, param } from "../../lib/controller-helpers";
 import { streamRunSSE } from "../../lib/run-sse";
 import { streamSSE } from "../../lib/sse";
-import { discoverServerStack } from "./docker-inspect.service";
+import { discoverServerStack, type DiscoveredStack, type DiscoveredService } from "./docker-inspect.service";
 import { adoptServerStack, reimportOpenshipProject, parseRepoCompose } from "./migrate.service";
+import { maskEnv, maskServicesEnv } from "../../lib/secret-env";
 import { buildMigrationPreview } from "./migration-preflight";
 import { migrationOrchestrator } from "./migration.orchestrator";
 import { migrationRunBus } from "./migration.sse";
@@ -37,6 +38,29 @@ import {
 } from "../settings/settings.service";
 
 const TERMINAL_MIGRATION = ["succeeded", "failed", "rolled_back"];
+
+/**
+ * #336: mask the live `env` read off running containers before it leaves the
+ * server-scan API. `services` is a flat view of the same objects nested in
+ * `groups` / `openshipProjects`, so each array is masked into its own copy. The
+ * adopt path re-discovers server-side (server truth), so masking the RESPONSE
+ * doesn't affect what actually gets persisted. Typed against the real shapes so
+ * a field rename fails to compile instead of silently un-masking.
+ */
+function maskDiscoveredEnv(s: DiscoveredService): DiscoveredService {
+  return s.env ? { ...s, env: maskEnv(s.env) } : s;
+}
+function maskDiscoveredStack(stack: DiscoveredStack): DiscoveredStack {
+  return {
+    ...stack,
+    services: stack.services.map(maskDiscoveredEnv),
+    groups: stack.groups.map((g) => ({ ...g, services: g.services.map(maskDiscoveredEnv) })),
+    openshipProjects: stack.openshipProjects.map((g) => ({
+      ...g,
+      services: g.services.map(maskDiscoveredEnv),
+    })),
+  };
+}
 
 /** Assert both source and target servers belong to the caller's org + write. */
 async function assertServersWritable(
@@ -73,7 +97,7 @@ export async function repoCompose(c: Context) {
   }
   try {
     const services = await parseRepoCompose(ctx, owner.trim(), repo.trim(), branch?.trim() || undefined);
-    return c.json({ success: true, services });
+    return c.json({ success: true, services: maskServicesEnv(services) });
   } catch (err) {
     return c.json({ error: `Failed to parse repo compose: ${safeErrorMessage(err)}` }, 502);
   }
@@ -104,7 +128,7 @@ export async function scanServer(c: Context) {
     const stack = await discoverServerStack(serverId, ctx.organizationId, undefined, {
       flatDocker: flatDocker === true,
     });
-    return c.json({ success: true, stack });
+    return c.json({ success: true, stack: maskDiscoveredStack(stack) });
   } catch (err) {
     return c.json({ error: `Scan failed: ${safeErrorMessage(err)}` }, 502);
   }
@@ -141,7 +165,7 @@ export async function scanServerStream(c: Context) {
         },
         { flatDocker },
       );
-      await s.writeSSE({ event: "result", data: JSON.stringify({ type: "result", stack }) });
+      await s.writeSSE({ event: "result", data: JSON.stringify({ type: "result", stack: maskDiscoveredStack(stack) }) });
     } catch (err) {
       await s.writeSSE({
         event: "error",
@@ -167,6 +191,10 @@ export async function adoptServer(c: Context) {
     volumeStrategies?: Record<string, "reuse" | "copy">;
     serviceSubpaths?: Record<string, string>;
     serviceEnv?: Record<string, Record<string, string>>;
+    /** Compose project to resolve `serviceNames` in (`null` = standalone group).
+     *  Omit for the legacy server-wide match — ambiguous when several stacks
+     *  share service names like `app`/`db`/`redis`. */
+    composeProject?: string | null;
   }>();
   const { serverId, projectName, serviceNames, flatDocker, volumeStrategies, serviceSubpaths, serviceEnv } = body;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
@@ -195,6 +223,7 @@ export async function adoptServer(c: Context) {
       volumeStrategies,
       serviceSubpaths,
       serviceEnv,
+      ...("composeProject" in body ? { composeProject: body.composeProject } : {}),
     });
     return c.json({ success: true, ...result });
   } catch (err) {
@@ -371,11 +400,30 @@ export async function getMigration(c: Context) {
   // Prefer the in-memory log tail while the run is live (fresher than the
   // throttled DB copy); fall back to the persisted logs once terminal.
   const liveLogs = migrationOrchestrator.getLiveLogs(run.id);
+  // #336: inputSnapshot.serviceEnv holds operator-supplied per-service env
+  // (secrets) — mask it on output. Server-side resume reads the raw row via the
+  // repo, not this response, and the write path unmask-merges, so this is safe.
+  const safeRun = maskMigrationRunEnv(run);
   return c.json({
     success: true,
-    run: liveLogs ? { ...run, logs: liveLogs } : run,
+    run: liveLogs ? { ...safeRun, logs: liveLogs } : safeRun,
     progress: migrationOrchestrator.getProgress(run.id),
   });
+}
+
+/** Mask serviceEnv inside a migration run's inputSnapshot (see #336). */
+function maskMigrationRunEnv<T extends { inputSnapshot?: unknown }>(run: T): T {
+  const snap = run.inputSnapshot as { serviceEnv?: Record<string, Record<string, string>> } | null;
+  if (!snap?.serviceEnv) return run;
+  return {
+    ...run,
+    inputSnapshot: {
+      ...snap,
+      serviceEnv: Object.fromEntries(
+        Object.entries(snap.serviceEnv).map(([name, env]) => [name, maskEnv(env)]),
+      ),
+    },
+  };
 }
 
 /**

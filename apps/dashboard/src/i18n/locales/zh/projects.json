@@ -280,6 +280,9 @@
     "success": "免费域名路由已同步。",
     "failed": "无法同步免费域名路由。"
   },
+  "deployBlocked": {
+    "redeploy": "重新部署"
+  },
   "redeploy": {
     "deployStartedLong": "部署已开始——耗时比平常更长，正在打开部署页面。",
     "deployingTitle": "部署中",

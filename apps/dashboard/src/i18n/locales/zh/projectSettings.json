@@ -175,19 +175,55 @@
       "framework": "框架",
       "packageManager": "包管理器",
       "runtimeIsolation": "运行时隔离",
-      "resources": "资源",
-      "resourcesValue": "{cpu} vCPU · {memory} MB",
       "runtimePort": "运行时端口",
       "installCommand": "安装命令",
       "buildCommand": "构建命令",
       "noBuildStep": "无构建步骤",
       "outputDirectory": "输出目录",
       "rootDirectory": "根目录",
+      "composePath": "Compose 文件",
       "startCommand": "启动命令",
       "staticNoServer": "静态（无服务器）",
       "modeSandboxed": "沙盒化（容器）",
       "modeDirect": "直接（主机进程）",
       "modeDefault": "默认（部署时解析）"
+    },
+    "storage": {
+      "title": "持久化存储",
+      "description": "新版本替换旧版本时保留的路径。容器内的其他内容会在部署时丢弃。",
+      "edit": "编辑",
+      "save": "保存",
+      "cancel": "取消",
+      "saved": "存储已更新，将在下次部署时生效。",
+      "reset": "使用框架默认值",
+      "empty": "部署之间不保留任何内容。",
+      "inherited": "该技术栈的框架默认值。",
+      "declared": "已为该项目设置。",
+      "placeholder": "storage\nuploads:/app/public/uploads",
+      "hint": "每行一个。仅写路径表示相对于应用（storage），也可写完整挂载（name:/app/path、/host/path:/app/path）。"
+    },
+    "objectStorage": {
+      "title": "对象存储",
+      "description": "用于上传文件的 S3 存储桶——可跨部署保留，且与本地路径不同，在多副本下同样可用。",
+      "connect": "连接",
+      "disconnect": "断开连接",
+      "disconnected": "已断开对象存储连接。",
+      "connected": "已验证并连接存储桶，将在下次部署时生效。",
+      "loading": "检查中…",
+      "empty": "未连接存储桶，上传文件将保存在容器磁盘上。",
+      "sourceLabel": "来源",
+      "externalOption": "外部提供商",
+      "providerLabel": "提供商",
+      "bucketLabel": "存储桶",
+      "endpointLabel": "端点",
+      "regionLabel": "区域",
+      "accessKeyLabel": "访问密钥 ID",
+      "secretKeyLabel": "私有访问密钥",
+      "testAndConnect": "测试并连接",
+      "cancel": "取消",
+      "envLabel": "变量",
+      "envHint": "将设置：",
+      "appliesOnDeploy": "将在下次部署时生效。"
     },
     "env": {
       "title": "环境变量",
@@ -311,18 +347,29 @@
       "title": "回滚策略",
       "rebuild": "重新构建（git）",
       "instant": "即时（快照）",
-      "descRebuild": "回滚会重新克隆并重新构建旧提交——成本更低，但速度较慢，且如果该提交无法再构建则可能失败。",
-      "descInstant": "在磁盘上保留每个版本的构建产物，可在几秒内完成回滚。会占用额外磁盘空间，并受历史记录上限限制。",
-      "toggleAria": "切换快照保留"
+      "descRebuild": "除非镜像仍在主机上，否则会重新构建旧提交。",
+      "descInstant": "保留每个版本的镜像，恢复时无需重新构建。占用更多磁盘。",
+      "toggleAria": "切换快照保留",
+      "keepNone": "不额外保留副本",
+      "keepCopies": "每个版本保留一份副本",
+      "descRebuildFiles": "除非文件仍在主机上，否则会重新构建旧提交。",
+      "descInstantFiles": "保留每个版本的文件，恢复时无需重新构建。占用更多磁盘。"
     },
     "rollbackHistory": {
       "title": "回滚历史",
       "valueOne": "{count} 个版本",
       "valueOther": "{count} 个版本",
-      "descSnapshot": "保留多少个最近版本的构建产物以供回滚。较旧的版本会被清理以回收磁盘空间。",
-      "descGit": "仅适用于即时（快照）模式——Git 模式不保留任何可保留的产物。",
+      "descSnapshot": "较旧的版本会被清理以回收磁盘空间。",
+      "descGit": "最近的镜像无论如何都会保留，因此回滚可以跳过构建。",
       "decreaseAria": "减少回滚历史",
-      "increaseAria": "增加回滚历史"
+      "increaseAria": "增加回滚历史",
+      "sizeEach": "每个约 {size}",
+      "diskFree": "剩余 {size}",
+      "autoBadge": "自动计算",
+      "manualBadge": "手动设置",
+      "kindFiles": "磁盘上的构建文件",
+      "kindImages": "主机上的镜像",
+      "descGitFiles": "最近版本的文件无论如何都会保留，因此回滚可以跳过构建。"
     },
     "commits": {
       "title": "最近的提交",
@@ -385,53 +432,53 @@
   },
   "resources": {
     "title": "机器性能",
-    "description": "为你的项目配置机器性能。",
+    "description": "此项目容器的 CPU 与内存上限。",
+    "loading": "正在读取目标机器…",
+    "machineCapacity": "机器：{cpu} vCPU · {memory}",
+    "exceedsMachine": "超出该机器容量",
+    "appliesOnNextDeploy": "上限在容器重建时生效——请重新部署以应用更改。",
     "tiers": {
-      "lightweight": {
-        "name": "轻量",
-        "description": "小型应用和静态站点"
+      "unlimited": {
+        "name": "无上限",
+        "description": "使用整台机器（默认）",
+        "spec": "机器容量"
       },
-      "standard": {
-        "name": "标准",
+      "micro": {
+        "name": "Micro",
+        "description": "小型边车与工作进程"
+      },
+      "low": {
+        "name": "低",
+        "description": "小型应用与静态站点"
+      },
+      "medium": {
+        "name": "中",
         "description": "大多数 Web 应用"
       },
-      "performance": {
-        "name": "高性能",
+      "high": {
+        "name": "高",
         "description": "高流量应用"
-      },
-      "enterprise": {
-        "name": "企业级",
-        "description": "大规模生产应用"
-      },
-      "autoscale": {
-        "name": "自动扩缩",
-        "description": "根据需求自动扩缩"
       }
     },
-    "dynamic": "动态",
     "custom": {
       "name": "自定义",
-      "description": "定义你自己的资源",
-      "clickToConfigure": "点击以配置"
+      "description": "自行设置上限",
+      "notSet": "未设置"
     },
-    "cpuValue": "{cpu} vCPU",
     "customPanel": {
-      "title": "配置自定义资源",
+      "boundedBy": "该机器有 {cpu} vCPU 和 {memory}。输入 0 表示无上限。",
+      "capacityUnknown": "无法读取该机器的容量，因此不强制任何上限。输入 0 表示无上限。",
       "cpuCores": "CPU 核心数",
-      "cpuRange": "范围：0.25 - 4.00",
       "memory": "内存 (MB)",
-      "memoryRange": "范围：128 - 8192",
+      "zeroMeansNoLimit": "0 = 无上限",
       "cancel": "取消",
-      "saving": "保存中...",
-      "save": "保存配置"
+      "saving": "保存中…",
+      "save": "保存"
     },
     "toast": {
-      "updated": "资源更新成功",
-      "updateFailed": "更新资源失败",
-      "cpuRange": "CPU 必须介于 0.25 到 4.00 核心之间",
-      "memoryRange": "内存必须介于 128 MB 到 8192 MB 之间",
-      "customSaved": "自定义资源保存成功",
-      "customSaveFailed": "保存自定义资源失败"
+      "updated": "机器性能已更新",
+      "updateFailed": "更新机器性能失败",
+      "invalidValues": "CPU 与内存必须为 0 或正数"
     }
   },
   "sleep": {
@@ -574,12 +621,13 @@
       "infoPreview": "先添加这些记录——它们在添加后不会改变，因此传播现在就会开始。然后按“添加域名”以附加它，最后在 DNS 解析后点击“验证”。",
       "infoApply": "DNS 更改在全球传播最多可能需要 48 小时。一旦记录解析完成，请点击下方的“验证”——我们会检查 DNS、将域名标记为活跃，并在后台配置 SSL。",
       "verifying": "验证中...",
-      "verify": "验证 {hostname}",
-      "copy": "复制"
+      "verify": "验证 {hostname}"
     },
     "overview": {
       "primary": "主域名",
       "mappedTo": "映射到",
+      "redirect": "重定向",
+      "redirectValue": "{status} → {hostname}",
       "status": "状态",
       "ssl": "SSL",
       "visit": "访问"
@@ -666,6 +714,12 @@
       "checking": "正在检查边缘…",
       "recheck": "重新检查",
       "foreignProxyHint": "另一个代理占用了 80/443"
+    },
+    "diagnosis": {
+      "title": "为什么无法正常工作",
+      "noneYet": "尚未执行任何检查，因此没有可显示的结果。请添加此域名所需的 DNS 记录，然后运行“验证”。",
+      "attempts": "目前已失败 {count} 次。",
+      "pillHint": "查看原因"
     }
   }
 }

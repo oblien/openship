@@ -160,36 +160,6 @@ async function sendEmail(
   });
 }
 
-/** Validate a webhook URL to prevent SSRF. */
-function assertPublicWebhookUrl(url: string): void {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error("Webhook URL is malformed");
-  }
-  if (parsed.protocol !== "https:") {
-    throw new Error("Webhook URL must use HTTPS");
-  }
-  const host = parsed.hostname.toLowerCase();
-  const blocked =
-    host === "localhost" ||
-    host === "0.0.0.0" ||
-    host === "::1" ||
-    host === "127.0.0.1" ||
-    host.endsWith(".local") ||
-    /^127\./.test(host) ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    /^169\.254\./.test(host) ||
-    /^0\./.test(host) ||
-    host === "[::1]";
-  if (blocked) {
-    throw new Error(`Webhook URL targets a private or loopback host: ${host}`);
-  }
-}
-
 async function sendWebhook(
   delivery: NotificationDelivery,
   channel: NotificationChannel,
@@ -198,7 +168,6 @@ async function sendWebhook(
   if (!config?.url) {
     throw new Error("Webhook channel has no URL configured");
   }
-  assertPublicWebhookUrl(config.url);
 
   const payload = (delivery.payload ?? {}) as Record<string, unknown>;
   const body = JSON.stringify({
@@ -231,16 +200,21 @@ async function sendWebhook(
   // SSRF-safe delivery: safeFetch resolves once, pins the validated IP (closes
   // the DNS-rebind window a validate-then-fetch leaves open), preserves SNI/Host,
   // and never follows a 3xx into the internal network (maxRedirects defaults to 0,
-  // so a 3xx is non-2xx → thrown). Multi-tenant (CLOUD_MODE) always rejects
+  // so a 3xx is non-2xx → thrown). It is the ONLY gate here — a literal pre-check
+  // would be strictly weaker (no DNS pin) and, being unconditional, silently made
+  // the two opt-ins below dead code. Multi-tenant (CLOUD_MODE) always rejects
   // internal targets; a single-tenant box can opt into its own LAN with
   // NOTIFY_WEBHOOK_ALLOW_INTERNAL.
   const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  // Plaintext http is only for that LAN opt-in: a receiver on the box's own
+  // network has no usable cert, but a public destination must never get the
+  // payload (and its HMAC) in cleartext.
   const res = await safeFetch(config.url, {
     method: "POST",
     headers,
     body,
     timeoutMs: 10_000,
-    allowHttp: true,
+    allowHttp: allowPrivate,
     allowPrivate,
   });
   if (!res.ok) {

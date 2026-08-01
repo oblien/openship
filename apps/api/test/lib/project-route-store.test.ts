@@ -140,4 +140,118 @@ describe("syncProjectPublicRoutes", () => {
     expect(domainRepo.update).not.toHaveBeenCalled();
     expect(domainRepo.remove).not.toHaveBeenCalled();
   });
+
+  // The endpoints list is what routing reconciles against, so a redirect has to
+  // survive the whole trip: submitted endpoint → normalize → domain row. Every
+  // link is a field-by-field copy, so any one of them dropping it means the UI
+  // shows a redirect and the edge serves the app.
+  describe("canonical redirects", () => {
+    const apex = {
+      id: "dom_apex",
+      projectId: "proj_123",
+      serviceId: null,
+      hostname: "example.com",
+      targetPort: 3000,
+      targetPath: null,
+      domainType: "custom",
+      isPrimary: true,
+      verified: true,
+      status: "active",
+      redirectTo: null,
+      redirectStatus: null,
+    };
+
+    it("persists redirectTo + redirectStatus on a NEW row", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        endpoints: [
+          { port: 3000, customDomain: "example.com", domainType: "custom" },
+          {
+            port: 3000,
+            customDomain: "www.example.com",
+            domainType: "custom",
+            redirectTo: "example.com",
+            redirectStatus: 301,
+          },
+        ],
+        currentDomains: [apex],
+      });
+
+      const created = domainRepo.create.mock.calls.map(([data]: [any]) => data);
+      expect(created).toHaveLength(1);
+      expect(created[0]).toMatchObject({
+        hostname: "www.example.com",
+        redirectTo: "example.com",
+        redirectStatus: 301,
+      });
+    });
+
+    it("CLEARS a redirect the submitted list omits — that's how you stop redirecting", async () => {
+      await syncProjectPublicRoutes({
+        projectId: "proj_123",
+        endpoints: [{ port: 3000, customDomain: "www.example.com", domainType: "custom" }],
+        currentDomains: [
+          {
+            ...apex,
+            id: "dom_www",
+            hostname: "www.example.com",
+            isPrimary: true,
+            redirectTo: "example.com",
+            redirectStatus: 301,
+          },
+        ],
+      });
+
+      expect(domainRepo.update).toHaveBeenCalledWith(
+        "dom_www",
+        expect.objectContaining({ redirectTo: null, redirectStatus: null }),
+      );
+    });
+
+    // Refused BEFORE any row is written: once the loop is on disk the edge serves
+    // it, and every request to either hostname bounces until the browser gives up.
+    it("REFUSES a loop without writing anything", async () => {
+      await expect(
+        syncProjectPublicRoutes({
+          projectId: "proj_123",
+          endpoints: [
+            {
+              port: 3000,
+              customDomain: "example.com",
+              domainType: "custom",
+              redirectTo: "www.example.com",
+            },
+            {
+              port: 3000,
+              customDomain: "www.example.com",
+              domainType: "custom",
+              redirectTo: "example.com",
+            },
+          ],
+          currentDomains: [apex],
+        }),
+      ).rejects.toThrow(/redirect loop/);
+
+      expect(domainRepo.create).not.toHaveBeenCalled();
+      expect(domainRepo.update).not.toHaveBeenCalled();
+      expect(domainRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it("REFUSES a target that isn't one of the project's own hostnames", async () => {
+      await expect(
+        syncProjectPublicRoutes({
+          projectId: "proj_123",
+          endpoints: [
+            {
+              port: 3000,
+              customDomain: "example.com",
+              domainType: "custom",
+              redirectTo: "somewhere-else.test",
+            },
+          ],
+          currentDomains: [apex],
+        }),
+      ).rejects.toThrow(/only redirect to another domain of this project/);
+    });
+  });
 });

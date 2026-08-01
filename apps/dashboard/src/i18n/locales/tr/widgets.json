@@ -27,7 +27,11 @@
       "projectNotFound": {
         "title": "Proje Bulunamadı",
         "subtitle": "Aradığınız proje mevcut değil veya silinmiş.",
-        "hints": ["Proje silinmiş", "Bu projeye erişim izniniz yok", "Proje URL'si yanlış"],
+        "hints": [
+          "Proje silinmiş",
+          "Bu projeye erişim izniniz yok",
+          "Proje URL'si yanlış"
+        ],
         "backToDashboard": "Kontrol Paneline Dön",
         "createNewProject": "Yeni Proje Oluştur"
       },
@@ -277,6 +281,11 @@
       "checkingDns": "DNS kontrol ediliyor…",
       "addRecordHint": "Bir {primary} ve {txt} kaydı ekleyin",
       "viewRecords": "Kayıtları görüntüle",
+      "redirectTo": "Yönlendirme",
+      "redirectServeApp": "Uygulamayı burada sun",
+      "redirectToHost": "→ {hostname}",
+      "redirectPermanent": "301 kalıcı",
+      "redirectTemporary": "302 geçici",
       "exposedPort": "Dışa açık port",
       "staticPath": "Statik yol",
       "staticPathHint": "Derleme çıktısı içindeki bu alt dizinden dosyaları sunun. Kök çıktı için {path} kullanın.",

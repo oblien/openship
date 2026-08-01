@@ -27,19 +27,26 @@ export type AmbientGitVia = "gh" | "helper" | "ssh";
 // ─── Resource configuration ──────────────────────────────────────────────────
 
 export interface ResourceConfig {
-  /** CPU cores (fractional, e.g. 0.5, 1.0, 2.0) - the universal unit all runtimes use */
+  /** CPU cores (fractional, e.g. 0.5, 1.0, 2.0) - the universal unit all
+   *  runtimes use. `0` = NO LIMIT (see UNLIMITED_RESOURCES in @repo/core). */
   cpuCores: number;
-  /** Memory limit in megabytes */
+  /** Memory limit in megabytes. `0` = NO LIMIT. */
   memoryMb: number;
   /** Writable disk in megabytes */
   diskMb: number;
 }
 
-/** Single source of truth - production/runtime resources (the free-tier limit).
- *  Deliberately small: a runtime doesn't need build-sized resources, and cloud
- *  runtimes are shrunk to this after the build so they don't hog the pool.
- *  Matches the cloud "low" tier (cloud-resources.ts) so a tier-less / fallback
- *  deploy lands at the same 0.5 vCPU · 512 MB as an explicit free-tier pick. */
+/** CLOUD-ONLY production default (the metered free tier). Deliberately small: a
+ *  runtime doesn't need build-sized resources, and cloud runtimes are shrunk to
+ *  this after the build so they don't hog the pool. Matches the cloud "low" tier
+ *  (cloud-resources.ts) so a tier-less cloud deploy lands at the same
+ *  0.5 vCPU · 512 MB as an explicit free-tier pick.
+ *
+ *  Do NOT use this as a self-hosted fallback. A self-hosted box is the
+ *  operator's own hardware with no pool to protect, so its default is
+ *  UNLIMITED_RESOURCES — applying this tier there silently OOM-killed
+ *  memory-hungry images (ML models, headless browsers) at 512 MB. Resolve the
+ *  right default per target with `resolveRuntimeResources` (apps/api). */
 export const DEFAULT_RESOURCE_CONFIG: ResourceConfig = {
   cpuCores: 0.5,
   memoryMb: 512,
@@ -269,6 +276,18 @@ export interface DeployConfig {
   restartPolicy?: "always" | "on-failure" | "no";
   /** Runtime-safe identifier used for workload/container/page naming. */
   runtimeName?: string;
+  /** Project slug — scopes named volumes to `openship-<slug>-<name>` so two
+   *  projects that pick the same volume name never share one. */
+  slug?: string;
+  /**
+   * Persistent mounts for this workload, in compose syntax
+   * (`name:/container/path`, or a host bind mount). Already resolved from the
+   * project's declaration or the stack's defaults by `resolveProjectVolumes`.
+   *
+   * Docker mounts them; bare symlinks the in-app paths into a shared directory
+   * that outlives releases; cloud has no volume primitive and warns.
+   */
+  volumes?: string[];
   /** Authoritative public route mappings for this workload. */
   publicEndpoints?: DeployPublicEndpoint[];
   /** Files/directories to copy into /app/production/ before starting the workload.
@@ -412,6 +431,21 @@ export interface RouteHeaderRule {
   headers: { key: string; value: string }[];
 }
 
+/**
+ * Canonical host redirect: this vhost answers `statusCode` → `https://<target>`
+ * plus the original path and query, instead of serving anything.
+ *
+ * Distinct from {@link RouteRedirect}, which is a per-PATH rule inside a serving
+ * vhost. This replaces the whole route: the classic `www.example.com` →
+ * `example.com` (or the reverse), and old-domain → new-domain moves.
+ */
+export interface RouteHostRedirect {
+  /** Hostname to redirect to. Validated as a domain before it's emitted. */
+  target: string;
+  /** 301 | 302 | 307 | 308. */
+  statusCode: number;
+}
+
 interface BaseRouteConfig {
   /** External domain (e.g. "my-app.example.com") */
   domain: string;
@@ -448,6 +482,16 @@ interface BaseRouteConfig {
   proxyLocations?: RouteProxyLocation[];
   /** Redirect rules (vercel.json `redirects`) → `return <code> <dest>` locations. */
   redirects?: RouteRedirect[];
+  /**
+   * Serve a canonical redirect to another host INSTEAD of this route's content.
+   *
+   * Overrides the primary target and every path-scoped location: a host that
+   * redirects has no content of its own, so honouring `proxyLocations` /
+   * `redirects` / `headerRules` / `webhookProxy` alongside it would mean some
+   * paths redirect and others don't. It still needs its own certificate — a 301
+   * from `https://` only works if the TLS handshake succeeds first.
+   */
+  redirectHost?: RouteHostRedirect;
   /** Response-header rules (vercel.json `headers`) → `add_header`. */
   headerRules?: RouteHeaderRule[];
   /** Curated reverse-proxy tunables (client_max_body_size, proxy/body timeouts,

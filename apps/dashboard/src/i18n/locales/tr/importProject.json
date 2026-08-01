@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "Derleme çıktısını içeren dizin",
     "sourceFolderLabel": "Kaynak Klasör",
     "sourceFolderDesc": "Depodaki veya yerel projedeki bir alt dizinden derleyin.",
+    "composePath": {
+      "title": "Compose dosyası",
+      "subtitle": "Proje kökünde otomatik algılanır",
+      "label": "Compose dosyasının yolu",
+      "description": "compose dosyasını kök dizin dışında tutan depolar için — dosyayı (deploy/stack.yml) veya onu içeren klasörü (deploy/docker-compose) girin. Depo yeniden taranır ve tanımlanan servisler dağıtılır.",
+      "apply": "Tara",
+      "scanning": "Taranıyor…",
+      "scanFailed": "Bu Compose yolu taranamadı.",
+      "subtitleOptIn": "Docker Compose ile mi dağıtıyorsunuz? Dosyayı belirtin."
+    },
+    "healthCheck": {
+      "title": "Sağlık kontrolleri",
+      "subtitle": "Kapalı — uygulama çalışmaya başlar başlamaz dağıtım tamamlanır",
+      "subtitleOn": "Açık — dağıtım yayına almadan önce uygulamanı bekler",
+      "description": "Openship uygulamanı başlattıktan sonra beklemez; bu yüzden yavaş bir açılış bir dağıtımı asla geciktirmez veya başarısız kılmaz. Yayına girdikten sonra port yine de kontrol edilir ve hiçbir şeyi engellemeden bildirilir. Bunları yalnızca dağıtımın kendisinin yeşile geçmeyi reddetmesini istiyorsan aç.",
+      "probeLabel": "Uygulamanın yanıt vermesini bekle",
+      "probeDesc": "Konteyner başladıktan sonra uygulamanın portuna bağlanıp bağlantıyı kabul etmesini bekle.",
+      "pathLabel": "HTTP yolu",
+      "pathPlaceholder": "/health",
+      "pathDesc": "Buraya yapılan bir GET'in 500'ün altında yanıt vermesini şart koşar. Herhangi bir TCP bağlantısını kabul etmek için boş bırak; bu, HTTP olmayan servisler için de çalışır.",
+      "timeoutLabel": "Şu süreden sonra vazgeç (saniye)",
+      "stabilizationLabel": "Yeniden başlatma döngülerini izle",
+      "stabilizationDesc": "Konteyneri başladıktan sonra izler ve çökme döngüsünü bildirir. Runtime'ı okuduğu için uzak sunucularda da çalışır.",
+      "stabilizationWindowLabel": "Şu kadar izle (saniye)",
+      "onFailureLabel": "Bir kontrol başarısız olursa",
+      "onFailureWarn": "Dağıtımı yayında tut ve incelenmek üzere işaretle",
+      "onFailureFail": "Dağıtımı başarısız kıl ve önceki sürümü yayında tut"
+    },
     "buildImageLabel": "Derleme İmajı",
     "buildImageDesc": "Bulut veya sunucu derlemeleri için derleyici konteyner imajı. Tespit edilen taban imajı yanlışsa değiştirin.",
     "productionPathsLabel": "Canlı ortam yolları",
@@ -123,6 +151,11 @@
       "clipboardEmpty": "Pano boş",
       "clipboardInvalid": "Pano geçerli KEY=VALUE ortam değişkenleri içermiyor",
       "clipboardBlocked": "Pano erişimi engellendi. Ortam kutusunun içine tıklayın ve Cmd/Ctrl+V ile yapıştırın."
+    },
+    "reveal": {
+      "show": "Değerleri göster",
+      "hide": "Değerleri gizle",
+      "error": "Değerler gösterilemedi"
     }
   },
   "composeServices": {
@@ -294,7 +327,6 @@
       "successful": "Dağıtım Başarılı",
       "deploying": "Dağıtılıyor..."
     },
-    "viewDashboard": "Paneli görüntüle",
     "visitSite": "Siteyi Ziyaret Et",
     "warningTitle": "Dağıtım tamamlandı ancak bazı servisler hâlâ müdahale gerektiriyor.",
     "productionLogs": "Canlı ortam günlükleri",
@@ -336,7 +368,6 @@
     "running": "çalışıyor",
     "buildingSuffix": "· {count} derleniyor",
     "failedSuffix": "· {count} başarısız",
-    "viewDashboard": "Paneli Görüntüle",
     "decisionBannerTitle": "İşlem gerekiyor — bazı servisler başarısız oldu",
     "decisionBannerDefaultMsg": "Bu dağıtım bazı servisler başarısız olarak tamamlandı. Dağıtımı koruyup başarısız servisleri daha sonra düzeltebilir veya önceki sürümü geri yüklemek için dağıtımı reddedebilirsiniz.",
     "review": "İncele",

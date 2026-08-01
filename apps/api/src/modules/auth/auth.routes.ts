@@ -12,9 +12,10 @@
  */
 
 import { Hono } from "hono";
-import { db, schema } from "@repo/db";
+import { db, eq, schema } from "@repo/db";
 import { env } from "../../config/env";
 import { auth, isSaasDeployment } from "../../lib/auth";
+import { normalizeMcpRedirectUri } from "../../lib/oauth-redirect";
 import { internalAuth } from "../../middleware/internal-auth";
 import { isLoopbackRequest } from "../../middleware/loopback-peer";
 import * as ctrl from "./auth.controller";
@@ -50,4 +51,14 @@ authRoutes.on("POST", "/sign-up/*", async (c, next) => {
 });
 
 // Better Auth catch-all — must be last so the desktop overrides + signup guard win.
-authRoutes.on(["GET", "POST"], "/*", (c) => auth.handler(c.req.raw));
+authRoutes.on(["GET", "POST"], "/*", async (c) => {
+  const request = await normalizeMcpRedirectUri(c.req.raw, async (clientId) => {
+    const [client] = await db
+      .select({ redirectUrls: schema.oauthApplication.redirectUrls })
+      .from(schema.oauthApplication)
+      .where(eq(schema.oauthApplication.clientId, clientId))
+      .limit(1);
+    return client?.redirectUrls.split(",");
+  });
+  return auth.handler(request);
+});

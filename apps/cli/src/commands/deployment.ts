@@ -239,13 +239,25 @@ const sslStatus = new Command("status")
 const sslRenew = new Command("renew")
   .description("Renew (issue) an SSL certificate for a domain")
   .argument("<domain>", "Domain to renew")
-  .option("--www", "Also include the www subdomain")
+  .option("--www", "Also renew the www subdomain (separately — its own certificate)")
   .action(
     run(async (domain: string, opts) => {
-      const res = await apiRequest("/deployments/ssl/renew", {
+      const res = await apiRequest<{
+        results?: Array<{ domain: string; status: string; success: boolean; message?: string }>;
+      }>("/deployments/ssl/renew", {
         method: "POST",
         body: JSON.stringify({ domain, includeWww: opts.www === true }),
       });
+      // `--www` renews TWO independent certificates, so report both. Collapsing
+      // them into one line hid the case where the apex succeeded and the sibling
+      // (not pointed here yet) didn't.
+      if (!isJsonMode() && res.results && res.results.length > 1) {
+        for (const r of res.results) {
+          if (r.success) ok(`${r.domain}: ${r.status}`);
+          else err(`${r.domain}: ${r.message ?? r.status}`);
+        }
+        return;
+      }
       report(res, `SSL renewal requested for ${domain}`);
     }),
   );

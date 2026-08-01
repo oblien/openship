@@ -87,14 +87,13 @@ export function Modal({
         onClick={handleBackdropDivClick}
       />
 
-      {/* Modal surface: the SOLID card token at 96% + its own blur, so it reads
-          as elevated glass but never shows the page through it. It was 50%, which
-          in dark (#060606 over a black scrim) looked fine and in LIGHT (#ffffff
-          over a white veil) let the whole page ghost through the panel — the
-          "transparent modal" bug. Keep this high; the blur + ring + shadow are
-          what sell the glass, not the transparency. */}
+      {/* Modal surface: the SOLID card token at 96% + its own blur + shadow, so
+          it reads as elevated glass but never shows the page through it (it was
+          50%, which in LIGHT let the page ghost through — the "transparent modal"
+          bug). NO border at all — the fill + blur + shadow do the lifting; a
+          resting border/ring made it read as a boxed panel, not glass. */}
       <div
-        className="relative w-full border border-border/60 ring-1 ring-inset ring-foreground/[0.06] rounded-2xl shadow-2xl backdrop-blur-2xl flex flex-col transition-all duration-300 !overflow-x-hidden"
+        className="relative w-full rounded-2xl shadow-2xl backdrop-blur-2xl flex flex-col transition-all duration-300 !overflow-x-hidden"
         style={{
           background: 'color-mix(in oklab, var(--th-card-bg-solid) 96%, transparent)',
           width,

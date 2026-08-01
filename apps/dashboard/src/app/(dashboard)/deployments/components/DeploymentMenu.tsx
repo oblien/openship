@@ -6,7 +6,6 @@ import {
   ExternalLink,
   Copy,
   RotateCcw,
-  RefreshCw,
   XCircle,
   Trash2,
   Pin,
@@ -69,19 +68,19 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
   // "currently the active version" — the chip / rollback gating cares
   // about that one.
   const isInFlight = ["pending", "queued", "building", "deploying"].includes(deployment.status);
+  const hasCommit = !!deployment.commit?.fullHash && deployment.commit.fullHash !== "N/A";
+  // ONE rollback action. The API resolves HOW at call time — instant from the
+  // retained artifact, or a rebuild from this deployment's commit — so the only
+  // question here is whether a restore is possible AT ALL. That's why a pruned
+  // artifact no longer disables the button (it used to, which left a project
+  // whose releases had aged out with no rollback affordance) and why the separate
+  // "Redeploy this commit" fallback is gone: it was the same operation behind a
+  // second label.
   const canRollback =
-    deployment.status === "ready" &&
-    !deployment.isActive &&
-    !!deployment.artifactRetainedAt;
-  // Surfaced when rollback is unavailable because the artifact was pruned —
-  // the user can still rebuild this exact commit from source. Requires a
-  // commit SHA to be on file (manual deploys without one are excluded).
-  const canRedeployCommit =
-    !canRollback &&
+    (deployment.status === "ready" || deployment.status === "partial_failure") &&
     !deployment.isActive &&
     !isInFlight &&
-    !!deployment.commit?.fullHash &&
-    deployment.commit.fullHash !== "N/A";
+    (!!deployment.artifactRetainedAt || hasCommit);
 
   const handleCancel = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -98,30 +97,31 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
     e.stopPropagation();
     setIsOpen(false);
     if (!canRollback) return;
-    const ok = window.confirm(t.deployments.menu.confirmRollback);
+    // Ask the API how this restore will actually run so the confirm can say
+    // "instant" or "rebuild" truthfully instead of guessing from a DB flag.
+    const plan = await deployApi
+      .restorePlan(deployment.id)
+      .then((res) => res.data)
+      .catch(() => null);
+    const modeLine =
+      plan?.mode === "rebuild"
+        ? t.deployments.menu.rollbackModeRebuild
+        : plan?.mode === "redeploy-pinned" && plan.rebuildServices.length > 0
+          ? interpolate(t.deployments.menu.rollbackModeMixed, {
+              count: String(plan.rebuildServices.length),
+            })
+          : plan
+            ? t.deployments.menu.rollbackModeInstant
+            : "";
+    const ok = window.confirm(
+      [modeLine, t.deployments.menu.confirmRollback].filter(Boolean).join("\n\n"),
+    );
     if (!ok) return;
     try {
       await deployApi.rollback(deployment.id);
       onStatusChange?.();
     } catch (err) {
       window.alert(getApiErrorMessage(err, t.deployments.menu.rollbackFailed));
-    }
-  };
-
-  const handleRedeployCommit = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsOpen(false);
-    if (!canRedeployCommit) return;
-    const shortHash = deployment.commit.hash;
-    const ok = window.confirm(
-      interpolate(t.deployments.menu.confirmRedeploy, { hash: shortHash }),
-    );
-    if (!ok) return;
-    try {
-      await deployApi.redeploy(deployment.id, { useExistingCommit: true });
-      onStatusChange?.();
-    } catch (err) {
-      window.alert(getApiErrorMessage(err, t.deployments.menu.redeployFailed));
     }
   };
 
@@ -231,9 +231,9 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
             </>
           )}
 
-          {/* Rollback path — instant restore from the preserved artifact.
-              Enabled iff status=ready, not currently active, AND artifact
-              is still retained (not pruned). */}
+          {/* Restore this version. The API picks instant-from-artifact vs
+              rebuild-from-commit, so this is enabled whenever EITHER is
+              possible; the confirm dialog names the mode it resolved. */}
           {!isInFlight && deployment.status !== "building" && (
             <>
               <div className="h-px bg-border/50 my-2" />
@@ -242,10 +242,12 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
                 disabled={!canRollback}
                 title={
                   canRollback
-                    ? t.deployments.menu.rollbackTitle.enabled
+                    ? deployment.artifactRetainedAt
+                      ? t.deployments.menu.rollbackTitle.enabled
+                      : t.deployments.menu.rollbackTitle.rebuildOnly
                     : deployment.isActive
                       ? t.deployments.menu.rollbackTitle.active
-                      : !deployment.artifactRetainedAt
+                      : !hasCommit
                         ? t.deployments.menu.rollbackTitle.pruned
                         : t.deployments.menu.rollbackTitle.notReady
                 }
@@ -254,21 +256,6 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
                 <RotateCcw className="w-4 h-4" />
                 {t.deployments.menu.rollback}
               </button>
-
-              {/* Fallback for when the artifact has been pruned out of the
-                  rollback window: rebuild the same commit from source. Only
-                  shown when rollback isn't available, so the two CTAs never
-                  overlap. */}
-              {canRedeployCommit && (
-                <button
-                  onClick={handleRedeployCommit}
-                  title={t.deployments.menu.redeployTitle}
-                  className="w-full px-4 py-2.5 text-start text-sm text-foreground/70 hover:bg-muted transition-colors flex items-center gap-3"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  {t.deployments.menu.redeploy}
-                </button>
-              )}
             </>
           )}
 

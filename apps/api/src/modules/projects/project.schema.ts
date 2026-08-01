@@ -5,7 +5,13 @@
  */
 
 import { Type, type Static, type TLiteral } from "@sinclair/typebox";
-import { STACK_IDS, ALL_PACKAGE_MANAGERS } from "@repo/core";
+import {
+  STACK_IDS,
+  ALL_PACKAGE_MANAGERS,
+  ALL_RESOURCE_TIERS,
+  CLOUD_RESOURCE_TIER_IDS,
+  type ResourceTier,
+} from "@repo/core";
 
 // ─── Shared enums (derived from registry) ────────────────────────────────────
 
@@ -16,6 +22,32 @@ export const FrameworkEnum = Type.Union(
 export const PackageManagerEnum = Type.Union(
   ALL_PACKAGE_MANAGERS.map((pm) => Type.Literal(pm)) as [TLiteral<string>, ...TLiteral<string>[]],
 );
+
+/**
+ * Resource-tier validators derived from the ONE tier list in @repo/core, the
+ * same way FrameworkEnum derives from STACKS. Spelling the literals out per
+ * schema is how the accepted set drifts between endpoints.
+ */
+export const ResourceTierEnum = (opts?: { description?: string }) =>
+  Type.Union(
+    // Typed as the real union (not TLiteral<string>) so `Static<>` keeps the
+    // literal type and consumers don't need a cast back from `string`.
+    ALL_RESOURCE_TIERS.map((t) => Type.Literal(t)) as [
+      TLiteral<ResourceTier>,
+      ...TLiteral<ResourceTier>[],
+    ],
+    opts,
+  );
+
+/** Cloud-selectable subset — no "unlimited" (a metered workspace must be sized). */
+export const CloudResourceTierEnum = (opts?: { description?: string }) =>
+  Type.Union(
+    CLOUD_RESOURCE_TIER_IDS.map((t) => Type.Literal(t)) as [
+      TLiteral<Exclude<ResourceTier, "unlimited">>,
+      ...TLiteral<Exclude<ResourceTier, "unlimited">>[],
+    ],
+    opts,
+  );
 
 /**
  * Validator block for "this row is a source-built monorepo sub-app."
@@ -62,6 +94,16 @@ const PublicEndpointSchema = Type.Object({
   ),
   customDomain: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
   domainType: Type.Optional(Type.Union([Type.Literal("free"), Type.Literal("custom")])),
+  /**
+   * Canonical redirect: this hostname answers a 30x to another hostname of the
+   * SAME project instead of serving. The target and the whole set are checked by
+   * lib/domain-redirect.ts (own-project only, no self-target, no loops) — this is
+   * only the shape gate.
+   */
+  redirectTo: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
+  redirectStatus: Type.Optional(
+    Type.Union([Type.Literal(301), Type.Literal(302), Type.Literal(307), Type.Literal(308)]),
+  ),
 });
 
 /**
@@ -92,6 +134,33 @@ const MonorepoAppSchema = Type.Object({
   customDomain: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
   domainType: Type.Optional(Type.Union([Type.Literal("free"), Type.Literal("custom")])),
   environment: Type.Optional(Type.Record(Type.String(), Type.String())),
+});
+
+/**
+ * One compose service as parsed from a docker-compose.yml — the shape
+ * `folder/scan` (and `deployments/prepare`) returns in its `services[]`. Mirrors
+ * the wire `BuildServiceInput` of POST /deployments/build/access so a client can
+ * hand the SAME array to either step; both persist it with `syncFromCompose`.
+ */
+const ComposeServiceSchema = Type.Object({
+  name: Type.String({ minLength: 1, maxLength: 100 }),
+  image: Type.Optional(Type.String({ maxLength: 500 })),
+  build: Type.Optional(Type.String({ maxLength: 500 })),
+  dockerfile: Type.Optional(Type.String({ maxLength: 500 })),
+  ports: Type.Optional(Type.Array(Type.String({ maxLength: 100 }), { maxItems: 50 })),
+  dependsOn: Type.Optional(Type.Array(Type.String({ maxLength: 100 }), { maxItems: 50 })),
+  environment: Type.Optional(Type.Record(Type.String(), Type.String())),
+  volumes: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 })),
+  command: Type.Optional(Type.String({ maxLength: 2000 })),
+  // #332: structured argv passed through from folder/scan (compose Cmd, no `sh -c`).
+  commandArgv: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }), { maxItems: 100 })),
+  restart: Type.Optional(Type.String({ maxLength: 50 })),
+  exposed: Type.Optional(Type.Boolean()),
+  exposedPort: Type.Optional(Type.String({ maxLength: 100 })),
+  domain: Type.Optional(Type.String({ maxLength: 63 })),
+  customDomain: Type.Optional(Type.String({ maxLength: 255 })),
+  domainType: Type.Optional(Type.Union([Type.Literal("free"), Type.Literal("custom")])),
+  publicEndpoints: Type.Optional(Type.Array(PublicEndpointSchema, { maxItems: 20 })),
 });
 
 const MonorepoWorkspaceSchema = Type.Object({
@@ -125,6 +194,26 @@ export const ListProjectsQuery = Type.Object({
 const RoutingRuleSchema = Type.Object({
   source: Type.String({ maxLength: 2000 }),
   destination: Type.String({ maxLength: 2000 }),
+});
+
+/**
+ * Openship's deploy-time readiness gate — mirrors `OpenshipReadiness` in
+ * @repo/core, which is what `openship.json` declares and what the pipeline
+ * reads. NOT the Docker HEALTHCHECK directive (that one is per compose service,
+ * under `service.advanced.healthcheck`).
+ *
+ * Every field optional, every default off: an absent/`{}` value means the deploy
+ * does no post-start waiting at all. Bounds mirror the core parser so the wizard,
+ * `openship.json`, and MCP can't disagree about what's accepted.
+ */
+const ReadinessSchema = Type.Object({
+  enabled: Type.Optional(Type.Boolean()),
+  path: Type.Optional(Type.String({ maxLength: 2000 })),
+  port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
+  timeoutSeconds: Type.Optional(Type.Number({ minimum: 1, maximum: 600 })),
+  stabilization: Type.Optional(Type.Boolean()),
+  stabilizationSeconds: Type.Optional(Type.Number({ minimum: 1, maximum: 600 })),
+  onFailure: Type.Optional(Type.Union([Type.Literal("warn"), Type.Literal("fail")])),
 });
 const RoutingConfigSchema = Type.Object({
   rewrites: Type.Optional(Type.Array(RoutingRuleSchema, { maxItems: 200 })),
@@ -200,14 +289,27 @@ export const CreateProjectBody = Type.Object({
   buildCommand: Type.Optional(Type.String({ maxLength: 500 })),
   outputDirectory: Type.Optional(Type.String({ maxLength: 200, pattern: "^[A-Za-z0-9._~/-]+$" })),
   productionPaths: Type.Optional(Type.String({ maxLength: 2000 })),
+  /**
+   * Persistent mounts, compose syntax or a bare app-relative path. Omit to keep
+   * the current value; send `[]` to turn persistence off (which is different
+   * from `null`/absent, where the stack's defaults apply).
+   */
+  volumes: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 })),
   rootDirectory: Type.Optional(Type.String({ maxLength: 200 })),
+  /**
+   * Where the compose file lives when it is NOT at the auto-detected root —
+   * the file itself (`deploy/stack.yml`) or the directory holding it
+   * (`deploy/docker-compose`). Makes the project a compose/services deploy.
+   */
+  composePath: Type.Optional(Type.String({ maxLength: 300 })),
   startCommand: Type.Optional(Type.String({ maxLength: 500 })),
   buildImage: Type.Optional(Type.String({ maxLength: 200 })),
   productionMode: Type.Optional(
     Type.Union([Type.Literal("host"), Type.Literal("static"), Type.Literal("standalone")]),
   ),
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
-  publicEndpoints: Type.Optional(Type.Array(PublicEndpointSchema, { minItems: 1, maxItems: 20 })),
+  /** Public routes for the project. An explicit `[]` clears them (no public route). */
+  publicEndpoints: Type.Optional(Type.Array(PublicEndpointSchema, { maxItems: 20 })),
   hasServer: Type.Optional(Type.Boolean({ default: true })),
   hasBuild: Type.Optional(Type.Boolean({ default: true })),
   rollbackWindow: Type.Optional(Type.Number({ minimum: 0, maximum: 20 })),
@@ -269,6 +371,15 @@ export const CreateProjectBody = Type.Object({
     ]),
   ),
   /**
+   * Deploy-time readiness gate. Omitted/null = OFF, which is the default for
+   * every project — the deploy reports ready as soon as the workload is up and
+   * routed, and the advisory in-container port probe (`meta.portCheck`,
+   * re-runnable via POST /projects/:id/port-check) reports listening state
+   * without being able to fail a deploy. Pass an object to opt in; pass null to
+   * clear it. See ReadinessSchema.
+   */
+  readiness: Type.Optional(Type.Union([Type.Null(), ReadinessSchema])),
+  /**
    * Apps-catalog marker. Set by the Create-App instantiator when a project is
    * installed from the Apps catalog (Convex, WordPress, webmail, …). Moves the
    * project to the Apps tab; `appTemplateId` records which catalog entry it came
@@ -282,13 +393,27 @@ export const UpdateProjectBody = Type.Partial(CreateProjectBody);
 
 /**
  * POST /projects/ensure — CreateProjectBody plus an optional `projectId` to
- * update an existing project in place instead of creating a new one.
+ * update an existing project in place instead of creating a new one, and the
+ * compose `services` the source declared.
  */
 export const EnsureProjectBody = Type.Composite([
   CreateProjectBody,
   Type.Object({
     projectId: Type.Optional(
       Type.String({ description: "Update this existing project instead of creating a new one." }),
+    ),
+    services: Type.Optional(
+      Type.Array(ComposeServiceSchema, {
+        maxItems: 100,
+        description:
+          "Compose services for a multi-service project — pass the folder/scan (or deployments/prepare) `services` array through verbatim. Persisted as the project's service set: services not listed are removed, so send the WHOLE set.",
+      }),
+    ),
+    uploadSessionId: Type.Optional(
+      Type.String({
+        description:
+          "Folder-upload session the `services` came from. Only used to restore environment values the scan masked (`••••••••`) — it never changes the project's source or config. Pass it whenever you echo scanned services back, or those secrets are dropped.",
+      }),
     ),
   }),
 ]);
@@ -338,21 +463,33 @@ export const MergeEnvVarsBody = Type.Object({
   }),
 });
 
+/**
+ * A cpu/memory/disk selection.
+ *
+ * `tier` picks a preset; explicit numbers are the "custom" path. `0` means NO
+ * LIMIT (self-hosted default — the machine is the cap). The upper bound here is
+ * only a sanity rail: the REAL ceiling is the target machine's probed capacity,
+ * enforced in project-resources.service so a large box isn't artificially
+ * capped (the old flat `maximum: 8192` made >8 GB impossible to request).
+ */
+const ResourceSelection = Type.Object({
+  tier: Type.Optional(
+    ResourceTierEnum({ description: "Resource preset. 'unlimited' = no caps (self-hosted only)." }),
+  ),
+  cpuCores: Type.Optional(
+    Type.Number({ minimum: 0, maximum: 1024, description: "vCPU limit. 0 = no limit." }),
+  ),
+  memoryMb: Type.Optional(
+    Type.Number({ minimum: 0, maximum: 4194304, description: "Memory limit in MB. 0 = no limit." }),
+  ),
+  diskMb: Type.Optional(
+    Type.Number({ minimum: 0, maximum: 204800, description: "Disk limit in MB. 0 = no limit." }),
+  ),
+});
+
 export const UpdateResourcesBody = Type.Object({
-  production: Type.Optional(
-    Type.Object({
-      cpuCores: Type.Optional(Type.Number({ minimum: 0.25, maximum: 4 })),
-      memoryMb: Type.Optional(Type.Number({ minimum: 128, maximum: 8192 })),
-      diskMb: Type.Optional(Type.Number({ minimum: 64, maximum: 204800 })),
-    }),
-  ),
-  build: Type.Optional(
-    Type.Object({
-      cpuCores: Type.Optional(Type.Number({ minimum: 0.25, maximum: 4 })),
-      memoryMb: Type.Optional(Type.Number({ minimum: 128, maximum: 8192 })),
-      diskMb: Type.Optional(Type.Number({ minimum: 64, maximum: 204800 })),
-    }),
-  ),
+  production: Type.Optional(ResourceSelection),
+  build: Type.Optional(ResourceSelection),
   sleepMode: Type.Optional(Type.Union([Type.Literal("auto_sleep"), Type.Literal("always_on")])),
   port: Type.Optional(Type.Number({ minimum: 1, maximum: 65535 })),
 });
@@ -409,7 +546,13 @@ export const SetOptionsBody = Type.Object(
     installCommand: Type.Optional(Type.String()),
     outputDirectory: Type.Optional(Type.String()),
     productionPaths: Type.Optional(Type.String()),
+    /** Persistent mounts; `null` restores the stack's defaults. */
+    volumes: Type.Optional(
+      Type.Union([Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 }), Type.Null()]),
+    ),
     rootDirectory: Type.Optional(Type.String()),
+    /** Compose file location; `null` clears it and restores root detection. */
+    composePath: Type.Optional(Type.Union([Type.String({ maxLength: 300 }), Type.Null()])),
     startCommand: Type.Optional(Type.String()),
     productionPort: Type.Optional(Type.Union([Type.Number(), Type.String()])),
     packageManager: Type.Optional(Type.String()),
@@ -428,6 +571,7 @@ export const SetOptionsBody = Type.Object(
 export type TProjectIdParam = Static<typeof ProjectIdParam>;
 export type TListProjectsQuery = Static<typeof ListProjectsQuery>;
 export type TCreateProjectBody = Static<typeof CreateProjectBody>;
+export type TEnsureProjectBody = Static<typeof EnsureProjectBody>;
 export type TUpdateProjectBody = Static<typeof UpdateProjectBody> & {
   rollbackWindow?: number | null;
 };

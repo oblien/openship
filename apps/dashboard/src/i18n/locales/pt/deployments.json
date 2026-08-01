@@ -66,6 +66,7 @@
     "building": "A construir",
     "deploying": "A implantar",
     "partial": "Parcial",
+    "actionRequired": "Ação necessária",
     "rejected": "Rejeitada",
     "verifying": "A verificar",
     "pending": "Pendente"
@@ -150,11 +151,10 @@
     "rollbackTitle": {
       "enabled": "Restaurar o projeto para esta versão (apenas o código — os dados não são alterados)",
       "active": "Esta já é a versão ativa",
-      "pruned": "O artefacto de reversão foi removido. Use 'Reimplantar este commit' para reconstruir a partir da fonte.",
-      "notReady": "Só é possível reverter para implantações prontas"
+      "pruned": "Este deploy não tem imagem retida nem commit para reconstruir",
+      "notReady": "Só é possível reverter para implantações prontas",
+      "rebuildOnly": "Restaurar esta versão reconstruindo o commit (a imagem foi removida)"
     },
-    "redeploy": "Reimplantar este commit",
-    "redeployTitle": "Reconstruir este commit exato a partir da fonte. Mais lento do que a reversão, mas funciona após o artefacto ter sido removido.",
     "pin": "Fixar",
     "unpin": "Desafixar",
     "pinTitle": {
@@ -163,11 +163,12 @@
       "pruned": "Não é possível fixar — o artefacto já foi removido"
     },
     "deleteDeployment": "Eliminar implantação",
-    "confirmRollback": "Reverter para esta versão?\n\nIsto restaura apenas o código da aplicação. Os dados da base de dados e dos volumes não são alterados.",
+    "confirmRollback": "Voltar para esta versão?\n\nRestaura apenas o código da aplicação. Dados de banco e volumes não mudam.",
     "rollbackFailed": "A reversão falhou",
-    "confirmRedeploy": "Reimplantar o commit {hash}?\n\nReconstrói este commit exato a partir da fonte. Mais lento do que a reversão (a construção completa é executada novamente), mas funciona mesmo após o artefacto de reversão ter sido removido. Uma nova implantação aparecerá na lista.",
-    "redeployFailed": "A reimplantação falhou",
     "pinFailed": "Falha ao fixar a implantação",
-    "unpinFailed": "Falha ao desafixar a implantação"
+    "unpinFailed": "Falha ao desafixar a implantação",
+    "rollbackModeInstant": "Restauração instantânea — reutiliza a imagem retida desta versão, sem rebuild.",
+    "rollbackModeRebuild": "Rebuild — a imagem desta versão não está mais no host, então o commit é construído novamente.",
+    "rollbackModeMixed": "Quase instantâneo — {count} serviço(s) perderam a imagem e serão reconstruídos."
   }
 }

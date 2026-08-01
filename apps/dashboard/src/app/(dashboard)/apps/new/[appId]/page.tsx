@@ -48,6 +48,7 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
+import { defaultDomainType } from "@/lib/default-domain-type";
 import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
 import { AppLogo } from "@/components/AppLogo";
 import { VerifiedBadge } from "@/components/apps/VerifiedBadge";
@@ -212,7 +213,11 @@ export default function AppInstallPage() {
             : cloudConnected
               ? "domain"
               : "port";
-        out[endpointKey(e)] = { kind: "http", mode, ep: createPublicEndpoint({ domainType: "free" }) };
+        out[endpointKey(e)] = {
+          kind: "http",
+          mode,
+          ep: createPublicEndpoint({ domainType: defaultDomainType(cloudConnected) }),
+        };
       } else {
         const mode = e.defaultMode === "internal" || e.defaultMode === "publish" ? e.defaultMode : "publish";
         out[endpointKey(e)] = { kind: "tcp", mode };
@@ -293,7 +298,12 @@ export default function AppInstallPage() {
             setLiveUrl(null);
           }
           setPhase("done");
-        } else if (["failed", "cancelled", "partial_failure", "rejected"].includes(status)) {
+        } else if (
+          // Every SETTLED status. `action_required` is a failure we can name
+          // (e.g. the port was taken) — still an error for this wizard, and
+          // omitting it would leave the install polling at 2s forever.
+          ["failed", "cancelled", "partial_failure", "action_required", "rejected"].includes(status)
+        ) {
           setErrorMsg(s.failureMessage || w.installFailed);
           setPhase("error");
         }
@@ -791,7 +801,7 @@ export default function AppInstallPage() {
               <h3 className="text-sm font-semibold text-foreground">{w.destinationTitle}</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
               <div className="mt-4">
-                <AppDestinationPicker value={destination} onChange={setDestination} allowLocal />
+                <AppDestinationPicker value={destination} onChange={setDestination} />
               </div>
             </div>
 

@@ -19,15 +19,17 @@ import {
   listLocalGhOrgs,
 } from "../github.local-auth";
 import { mapRepositories } from "./mappers";
+import type { LocalGhStatus } from "../github.local-auth";
 import type {
   GitHubRepository,
   MappedAccount,
   MappedRepository,
 } from "../github.types";
 
-export type GhCliStatus =
-  | { available: true; login: string; id: number; avatar_url: string }
-  | { available: false };
+/** Alias, not a re-declaration: this shape carries `method` + `problem`, and a
+ *  hand-mirrored copy here is exactly how the probe's method got dropped before
+ *  it reached the wire. */
+export type GhCliStatus = LocalGhStatus;
 
 export class GhCliSource {
   constructor(private readonly userId: string) {}

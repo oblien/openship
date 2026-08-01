@@ -15,7 +15,10 @@ export interface DockerConnectionOptions {
    */
   executor?: CommandExecutor;
 
-  /** Explicit Docker socket path on the remote host (SSH transport only) */
+  /**
+   * Explicit Docker socket path. Honored by BOTH transports: the socket path to
+   * dial locally, and the remote daemon socket to forward to over SSH.
+   */
   dockerSocketPath?: string;
 
   /** Host for SSH / TCP transports */
@@ -58,13 +61,53 @@ export interface DockerTransport {
   preflight: () => Promise<void>;
 }
 
+export const DEFAULT_DOCKER_SOCKET_PATH = "/var/run/docker.sock";
+
+/**
+ * Which UNIX socket a LOCAL docker connection dials, in precedence order:
+ *
+ *   1. an explicit `dockerSocketPath`
+ *   2. `DOCKER_HOST` — the docker CLI's own knob, either `unix:///path` or a
+ *      bare absolute path. Every non-Docker-Desktop daemon on macOS (Colima,
+ *      Rancher, Podman) and rootless Docker on Linux put their socket somewhere
+ *      other than the default and advertise it through this variable; hardcoding
+ *      the default made those daemons unreachable for local deploys.
+ *   3. `/var/run/docker.sock`
+ *
+ * A non-`unix://` DOCKER_HOST (e.g. `tcp://`) is ignored here — the socket
+ * transport can't dial it, and TCP needs mutual TLS material (see below).
+ */
+export function resolveLocalDockerSocketPath(
+  opts?: Pick<DockerConnectionOptions, "dockerSocketPath">,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const explicit = opts?.dockerSocketPath?.trim();
+  if (explicit) return explicit;
+
+  const host = env.DOCKER_HOST?.trim();
+  if (host) {
+    if (host.startsWith("unix://")) {
+      const path = host.slice("unix://".length).trim();
+      if (path.startsWith("/")) return path;
+    } else if (host.startsWith("/")) {
+      return host;
+    }
+  }
+
+  return DEFAULT_DOCKER_SOCKET_PATH;
+}
+
 export function resolveDockerTransport(opts?: DockerConnectionOptions): DockerTransport {
   if (!opts || !opts.transport || opts.transport === "socket") {
+    const socketPath = resolveLocalDockerSocketPath(opts);
     return {
       kind: "socket",
-      description: "local Docker daemon via socket",
-      unreachableHint: "Check that the local Docker daemon is running.",
-      establish: async () => ({ socketPath: "/var/run/docker.sock" }),
+      description: `local Docker daemon via socket (${socketPath})`,
+      unreachableHint:
+        socketPath === DEFAULT_DOCKER_SOCKET_PATH
+          ? "Check that the local Docker daemon is running. If it isn't Docker Desktop (Colima, Rancher, Podman, rootless), set DOCKER_HOST to its socket."
+          : `Check that the local Docker daemon is running and listening on ${socketPath} (from DOCKER_HOST / dockerSocketPath).`,
+      establish: async () => ({ socketPath }),
       close: async () => {},
       preflight: async () => {},
     };

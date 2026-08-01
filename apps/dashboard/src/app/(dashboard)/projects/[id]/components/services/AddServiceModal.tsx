@@ -25,6 +25,7 @@ import { imagesApi, type ImageCatalogEntry } from "@/lib/api/images";
 import type { ServiceInput } from "@/lib/api/services";
 import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
+import { defaultDomainType } from "@/lib/default-domain-type";
 import { getApiErrorMessage } from "@/lib/api";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
@@ -212,6 +213,7 @@ export function AddServiceModal({ open, projectName, isCloudProject, onClose, on
   const { t } = useI18n();
   const { deployMode } = usePlatform();
   const cloud = useCloud();
+  const newEndpointDomainType = defaultDomainType(cloud.connected);
   // Cloud-only catalog when EITHER the install is the SaaS dashboard
   // (deployMode === "cloud") OR this specific project is deployed to
   // openship cloud (isCloudProject). In either case the local upstream-
@@ -252,7 +254,7 @@ export function AddServiceModal({ open, projectName, isCloudProject, onClose, on
   const [exposedPort, setExposedPort] = useState("");
   const [domain, setDomain] = useState("");
   const [customDomain, setCustomDomain] = useState("");
-  const [domainType, setDomainType] = useState<"free" | "custom">("free");
+  const [domainType, setDomainType] = useState<"free" | "custom">(newEndpointDomainType);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

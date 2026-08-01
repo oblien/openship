@@ -3,8 +3,9 @@ import type { RoutedDomainInput, SslProvider, SslResult } from "@repo/adapters";
 import { SYSTEM, ConflictError, resolveServiceHostnameLabel, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
 import { env } from "../config/env";
 import { serviceKind } from "./deployable-service";
-import { resolveServicePublicEndpoints } from "./public-endpoints";
-import { resolveSslPatch, sslIssueLockKey } from "./domain-ssl";
+import { resolveServicePublicEndpoints, type StoredPublicEndpoint } from "./public-endpoints";
+import { acmeIssueLockKey, LOCAL_ACME_SCOPE, resolveSslPatch, sslIssueLockKey } from "./domain-ssl";
+import { resolveRouteRedirect } from "./domain-redirect";
 import { createProvisionLock } from "./provision-lock";
 import { generateToken } from "./domain-token";
 
@@ -37,6 +38,10 @@ export interface PlannedRouteDomain {
   isPrimary?: boolean;
   createIfMissing?: boolean;
   verified?: boolean;
+  /** Canonical redirect: serve a 30x to this hostname instead of the app. Kept as
+   *  the raw stored value; `resolveRouteRedirect` decides whether it's live. */
+  redirectTo?: string | null;
+  redirectStatus?: number | null;
 }
 
 export function getRoutingBaseDomain(): string {
@@ -93,6 +98,56 @@ export function hostTerminatesTlsLocally(
   return !domain?.externalIngress;
 }
 
+/**
+ * Resolve a route's proxy destination. Precedence: explicit path > explicit
+ * port > static release root ("/") > none. Single-sourced so the #345
+ * static-root fallback can't drift between buildProjectRouteDomains' two loops.
+ *
+ * `targetPort` is tested with `!= null` (NOT `!== undefined`) because a domain
+ * row's port is a nullable DB column: a portless row carries literal `null`, and
+ * a `{ targetPort: null }` would slip past add()'s `=== undefined` guard and mint
+ * a vhost with a broken upstream. `targetPath` stays a TRUTHY check so an empty
+ * string falls through to the port branch — matching the original inline
+ * ternaries exactly (a public endpoint's `port` is never null at runtime, so the
+ * broader check is a safe no-op there).
+ */
+export function resolveRouteDestination(
+  input: { targetPath?: string | null; targetPort?: number | null },
+  isStatic?: boolean,
+): { targetPort?: number; targetPath?: string } | undefined {
+  // THE DEPLOYMENT'S SHAPE DECIDES, not the stored hint.
+  //
+  // `targetPath` and `targetPort` are meant to be mutually exclusive — "exactly
+  // one of port / targetPath must be set (proxy vs static)", enforced in
+  // routeDomainRowToPublicEndpoint. But `domain.targetPath` is a PERSISTED column,
+  // so a hostname that once served a static path keeps it forever, and a later
+  // port-based deploy of the same hostname sets `targetPort` alongside it without
+  // anything clearing the old value.
+  //
+  // This used to test `targetPath` FIRST and unconditionally, so in that state the
+  // stale path outranked the live port: the route plan said "serve files", the
+  // pipeline resolved a static doc root, and `registerRoute` wrote a STATIC vhost
+  // for a server app. The vhost overwrite was complete and correct — it just
+  // rebuilt the PREVIOUS project's shape, so redeploying a proxy app onto a
+  // hostname that once served static files brought the old static site back.
+  //
+  // Worse, it was self-perpetuating: the plan derived `targetPath` from the row,
+  // and the reconcile below then patched the row to match the plan, so
+  // `expected === existing` and the stale column could never be cleared. Deciding
+  // from `isStatic` breaks that loop — a non-static deploy now plans
+  // `targetPath: null`, which the reconcile finally writes back as a clear.
+  if (isStatic) {
+    // Serving FILES. A stored subpath only refines WHICH subdir of the release;
+    // absent, serve the release root (#345).
+    return { targetPath: input.targetPath || "/" };
+  }
+  // Serving a PORT. A `targetPath` left over from a previous static deployment of
+  // this hostname is not a destination — it is stale state, and ignoring it here
+  // is what lets the reconcile clear it.
+  if (input.targetPort != null) return { targetPort: input.targetPort };
+  return undefined;
+}
+
 export function buildProjectRouteDomains(opts: {
   project: Project;
   projectDomains: Domain[];
@@ -103,11 +158,22 @@ export function buildProjectRouteDomains(opts: {
     domain?: string;
     customDomain?: string;
     domainType?: "free" | "custom";
+    redirectTo?: string | null;
+    redirectStatus?: number | null;
   }>;
   runtimeName: string;
   usesManagedRouting: boolean;
+  /**
+   * #345: a static (file-served) deploy has NO port to proxy to — it serves the
+   * built release dir off disk. A domain/endpoint with no explicit destination
+   * must therefore default to serving the release ROOT (`targetPath: "/"`), not
+   * be dropped as "unroutable". Dropping it left `sites-enabled` empty, so every
+   * request fell through to the OpenResty default_server 404 even though the
+   * files were built and the deploy reported ready.
+   */
+  isStatic?: boolean;
 }): PlannedRouteDomain[] {
-  const { projectDomains, managedSlug, publicEndpoints, runtimeName, usesManagedRouting } = opts;
+  const { projectDomains, managedSlug, publicEndpoints, runtimeName, usesManagedRouting, isStatic } = opts;
   const baseDomain = getRoutingBaseDomain();
   const seen = new Set<string>();
   const planned: PlannedRouteDomain[] = [];
@@ -130,6 +196,8 @@ export function buildProjectRouteDomains(opts: {
       skipSsl?: boolean;
       isPrimary?: boolean;
       verified?: boolean;
+      redirectTo?: string | null;
+      redirectStatus?: number | null;
     },
   ) => {
     const normalized = hostname.trim().toLowerCase();
@@ -181,16 +249,19 @@ export function buildProjectRouteDomains(opts: {
       isPrimary: route.isPrimary ?? planned.length === 0,
       createIfMissing: true,
       verified: isVerified,
+      // Prefer the caller's value (the submitted endpoint) over the row, so a
+      // redirect set in the same save applies on this deploy rather than the next.
+      redirectTo: route.redirectTo ?? domainRow?.redirectTo ?? null,
+      redirectStatus: route.redirectStatus ?? domainRow?.redirectStatus ?? null,
     });
   };
 
   if (publicEndpoints?.length) {
     for (const [index, endpoint] of publicEndpoints.entries()) {
-      const destination = endpoint.targetPath
-        ? { targetPath: endpoint.targetPath }
-        : endpoint.port !== undefined
-          ? { targetPort: endpoint.port }
-          : undefined;
+      const destination = resolveRouteDestination(
+        { targetPath: endpoint.targetPath, targetPort: endpoint.port },
+        isStatic,
+      );
 
       if (!destination) {
         continue;
@@ -206,7 +277,13 @@ export function buildProjectRouteDomains(opts: {
       // preflight.ts. The chosen route is primary for the first endpoint
       // (deploy URL, analytics, etc.).
       if (endpoint.domainType === "custom" && endpoint.customDomain) {
-        add(endpoint.customDomain, { domainType: "custom", destination, isPrimary: index === 0 });
+        add(endpoint.customDomain, {
+          domainType: "custom",
+          destination,
+          isPrimary: index === 0,
+          redirectTo: endpoint.redirectTo,
+          redirectStatus: endpoint.redirectStatus,
+        });
         continue;
       }
 
@@ -217,35 +294,78 @@ export function buildProjectRouteDomains(opts: {
           destination,
           skipSsl: true,
           isPrimary: index === 0,
+          redirectTo: endpoint.redirectTo,
+          redirectStatus: endpoint.redirectStatus,
         });
       }
     }
 
-    return planned;
+    // #345: a static deploy has no port, so its endpoints above may all be
+    // destination-less — and Domains-tab custom rows never appear in
+    // `publicEndpoints` at all. Fall through to the project's own domain rows
+    // below (the `seen` set dedups anything already routed) so those still get
+    // a root route instead of leaving `sites-enabled` empty → default 404.
+    if (!isStatic) return planned;
   }
 
-  // No public endpoints: route the project's own domain rows directly. A
-  // domain only routes if its row carries a destination (port or path) —
-  // add() ignores the rest. Pending custom domains still get an HTTP-only
-  // route so certbot --webroot can answer the ACME challenge; add() gates
-  // SSL on domain.verified.
+  // Route the project's own domain rows directly. A domain only routes if its
+  // row carries a destination (port or path) — add() ignores the rest — EXCEPT
+  // for a static deploy, where a destination-less row defaults to serving the
+  // release root ("/"). Pending custom domains still get an HTTP-only route so
+  // certbot --webroot can answer the ACME challenge; add() gates SSL on
+  // domain.verified.
   for (const domain of projectDomains) {
     if (domain.serviceId) continue;
     if (domain.domainType === "free" && !domain.verified) continue;
     add(domain.hostname, {
       domainType: domain.domainType === "free" ? "free" : "custom",
       skipSsl: domain.domainType === "free",
-      destination: domain.targetPath
-        ? { targetPath: domain.targetPath }
-        : domain.targetPort !== null && domain.targetPort !== undefined
-          ? { targetPort: domain.targetPort }
-          : undefined,
+      destination: resolveRouteDestination(
+        { targetPath: domain.targetPath, targetPort: domain.targetPort },
+        isStatic,
+      ),
       isPrimary: domain.isPrimary,
       verified: domain.verified,
+      redirectTo: domain.redirectTo,
+      redirectStatus: domain.redirectStatus,
     });
   }
 
   return planned;
+}
+
+/**
+ * The hostname a single service endpoint routes on: a normalized custom domain,
+ * or a managed `<label>.<baseDomain>` free host. Returns null when a custom
+ * endpoint carries no customDomain, or a free endpoint runs on a box that
+ * doesn't do managed routing — the caller then skips the endpoint.
+ *
+ * NOT interchangeable with resolveServiceEndpointUrls (display URLs off
+ * CLOUD_DOMAIN, no normalize) or the single-app free-host builder in
+ * buildProjectRouteDomains. The managed suffix MUST be getRoutingBaseDomain():
+ * the result feeds resolveManagedHostname for the SSL gate, so CLOUD_DOMAIN here
+ * would misclassify a custom-HOST_DOMAIN box's free host as unmanaged and certbot
+ * a host it doesn't own. The custom branch is TERMINAL — a custom endpoint with
+ * no customDomain must NOT fall through to the managed builder (that would hand
+ * it a free hostname and route/cert it wrongly).
+ */
+export function resolveServiceEndpointHostname(
+  project: Project,
+  service: Service,
+  endpoint: Pick<StoredPublicEndpoint, "domainType" | "customDomain" | "domain">,
+  usesManagedRouting: boolean,
+): string | null {
+  if (endpoint.domainType === "custom") {
+    return endpoint.customDomain ? normalizeCustomHostname(endpoint.customDomain) : null;
+  }
+  if (!usesManagedRouting) return null;
+  const label = resolveServiceHostnameLabel(
+    project.slug ?? project.name,
+    service.name,
+    endpoint.domain,
+    serviceKind(service),
+  );
+  return `${label}.${getRoutingBaseDomain()}`;
 }
 
 export function buildServiceRouteDomains(opts: {
@@ -279,11 +399,7 @@ export function buildServiceRouteDomains(opts: {
     // Compose services keep the "frontend"/"web"/"app" → bare-project-label
     // shortcut (see defaultServiceHostnameLabel). Each endpoint's own free slug
     // overrides that default, so secondary ports get distinct hostnames.
-    const hostname = endpoint.domainType === "custom"
-      ? (endpoint.customDomain ? normalizeCustomHostname(endpoint.customDomain) : null)
-      : usesManagedRouting
-        ? `${resolveServiceHostnameLabel(project.slug ?? project.name, service.name, endpoint.domain, serviceKind(service))}.${getRoutingBaseDomain()}`
-        : null;
+    const hostname = resolveServiceEndpointHostname(project, service, endpoint, usesManagedRouting);
 
     if (!hostname) continue;
     const normalized = hostname.toLowerCase();
@@ -324,6 +440,11 @@ export function buildServiceRouteDomains(opts: {
       isPrimary: false,
       createIfMissing: true,
       verified: isVerified,
+      // A service-scoped hostname can carry a redirect too (its own www sibling),
+      // and it's stored on the same row — so read it from there rather than
+      // silently ignoring it for compose/service routes.
+      redirectTo: domainRow?.redirectTo ?? null,
+      redirectStatus: domainRow?.redirectStatus ?? null,
     });
   }
 
@@ -377,6 +498,9 @@ export function createTrackedSslProvider(
   ssl: SslProvider,
   domainByHostname: Map<string, Domain>,
   log?: (message: string) => void,
+  /** {@link acmeIssueLockKey} scope — the serving server's id. Defaults to the
+   *  local box, which is correct for a single-box install. */
+  lockScope: string = LOCAL_ACME_SCOPE,
 ): SslProvider {
   // Persist via the shared no-clobber resolver: a verified cert → "active"; a
   // genuinely missing cert → "provisioning"; a transient read failure leaves the
@@ -415,7 +539,13 @@ export function createTrackedSslProvider(
       let result: SslResult;
       let errorReason: string | null = null;
       try {
-        result = await ssl.provisionCert(host);
+        // Nested per-box lock: a deploy routing BOTH `example.com` and
+        // `www.example.com` issues two certificates in a row, and each certbot run
+        // binds the same standalone challenge port. Without this they can also
+        // collide with the pending-SSL sweep working on the other hostname.
+        result = await createProvisionLock(acmeIssueLockKey(lockScope)).run(() =>
+          ssl.provisionCert(host),
+        );
       } catch (err) {
         errorReason = safeErrorMessage(err);
         result = { domain: host, expiresAt: "", issuer: "", verified: false, reason: "missing" };
@@ -564,12 +694,20 @@ export async function ensureRouteDomainRecord(opts: {
 }
 
 export function toRoutedDomainInputs(domains: PlannedRouteDomain[]): RoutedDomainInput[] {
-  return domains.map((domain) => ({
-    hostname: domain.hostname,
-    tls: domain.tls,
-    provisionSsl: domain.provisionSsl,
-    terminatesTlsLocally: domain.terminatesTlsLocally,
-    targetPort: domain.targetPort,
-    targetPath: domain.targetPath,
-  }));
+  // A redirect is only registered when its target is one of the hostnames being
+  // routed right now — see resolveRouteRedirect for why a stale target must fall
+  // back to serving rather than sending every visitor to a dead host.
+  const live = domains.map((domain) => domain.hostname);
+  return domains.map((domain) => {
+    const redirect = resolveRouteRedirect(domain, live);
+    return {
+      hostname: domain.hostname,
+      tls: domain.tls,
+      provisionSsl: domain.provisionSsl,
+      terminatesTlsLocally: domain.terminatesTlsLocally,
+      targetPort: domain.targetPort,
+      targetPath: domain.targetPath,
+      ...(redirect ? { redirectHost: redirect } : {}),
+    };
+  });
 }

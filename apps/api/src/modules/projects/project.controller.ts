@@ -10,6 +10,7 @@
 import type { Context } from "hono";
 import { streamSSE } from "../../lib/sse";
 import { assertResourceInOrg, param } from "../../lib/controller-helpers";
+import { maskDeploymentEnv } from "../../lib/secret-env";
 import { serviceKind } from "../../lib/deployable-service";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { isLoopbackHost, isReservedLoopbackPort } from "../../lib/public-endpoints";
@@ -23,11 +24,12 @@ import * as projectTeardown from "./project-teardown";
 import { getRouteStrategy } from "../settings/settings.service";
 import { checkProjectPorts } from "./port-check.service";
 import { checkProjectOutput } from "./output-check.service";
-import { AppError, safeErrorMessage } from "@repo/core";
+import { AppError, resolveProjectVolumes, safeErrorMessage } from "@repo/core";
 import { resolveUserGitlabBaseUrl } from "../gitlab/gitlab.auth";
 import type {
   TCreateProjectBody,
   TCreateProjectEnvironmentBody,
+  TEnsureProjectBody,
   TUpdateProjectBody,
   TMergeEnvVarsBody,
   TUpdateResourcesBody,
@@ -71,7 +73,7 @@ const luaDeployedServers = new Set<string>();
 
 function logEnsureProjectError(
   userId: string,
-  body: TCreateProjectBody & { projectId?: string },
+  body: TEnsureProjectBody,
   err: unknown,
 ) {
   console.error("[PROJECT] Failed to ensure project", {
@@ -100,7 +102,7 @@ function logEnsureProjectError(
 
 export async function ensure(c: Context) {
   const ctx = getRequestContext(c);
-  const body = await c.req.json<TCreateProjectBody & { projectId?: string }>();
+  const body = await c.req.json<TEnsureProjectBody>();
 
   if (!body.name) {
     return c.json({ success: false, error: "name is required" }, 400);
@@ -246,6 +248,7 @@ export async function getHome(c: Context) {
       ...enriched,
       latestDeploymentId: latest?.id ?? null,
       latestDeploymentStatus: latest?.status ?? null,
+      latestDeploymentBlocked: projectService.deploymentIsBlocked(latest),
       primaryDomain: primary?.hostname ?? null,
       serviceCount: services.length,
       hasMultipleServices: services.length > 1,
@@ -792,6 +795,16 @@ export async function getResources(c: Context) {
   return c.json({ data: resources });
 }
 
+/** GET /projects/:id/rollback-capacity — the retention window in force, the
+ *  measured snapshot size and the host's free disk, for the rollback label. */
+export async function getRollbackCapacity(c: Context) {
+  const id = param(c, "id");
+  await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: id, action: "read" });
+  const { organizationId } = getRequestContext(c);
+  const { getRollbackCapacity: read } = await import("./rollback-capacity.service");
+  return c.json({ data: await read(id, organizationId) });
+}
+
 /** POST /projects/:id/port-check — live, on-demand port-reachability audit of
  *  the active deployment's container(s). Advisory (never throws on probe
  *  failure); powers the Domains tab's "port not reachable" hint. */
@@ -1241,7 +1254,7 @@ export async function serverLogStream(c: Context) {
 
       await new Promise<void>((resolve) => {
         conn.stream.on("data", (chunk: Buffer) => {
-          sseStream.write(chunk.toString()).catch(() => conn.destroy());
+          sseStream.write(chunk).catch(() => conn.destroy());
         });
         conn.stream.on("close", () => resolve());
         conn.stream.on("end", () => resolve());
@@ -2084,6 +2097,22 @@ export async function getCommitStatus(c: Context) {
   return c.json({ data: status });
 }
 
+/**
+ * GET /projects/:id/pending-actions — everything waiting on a human for this
+ * project, each item carrying the call that resolves it.
+ *
+ * On-demand like the other attention reads (`/commit-status`, `/port-check`,
+ * `/routing/edge-status`), so the project list and detail reads pay nothing.
+ */
+export async function getPendingActions(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  await permission.assert(ctx, { resourceType: "project", resourceId: id, action: "read" });
+  const { getProjectPendingActions } = await import("./pending-actions.service");
+  const actions = await getProjectPendingActions(id, ctx.organizationId);
+  return c.json({ data: { actions } });
+}
+
 // ─── Sleep mode ──────────────────────────────────────────────────────────────
 
 export async function setSleepMode(c: Context) {
@@ -2190,7 +2219,8 @@ export async function listDeployments(c: Context) {
     environment,
   });
   return c.json({
-    data: result.rows,
+    // #336: mask meta.composeServices[].environment (twin of deployment.controller list).
+    data: result.rows.map(maskDeploymentEnv),
     total: result.total,
     page: result.page,
     perPage: result.perPage,
@@ -2217,6 +2247,11 @@ export async function getInfo(c: Context) {
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: id, action: "read" });
   const project = await projectService.getProject(id, organizationId);
   const environments = await projectService.listProjectEnvironments(id, organizationId);
+  // The LATEST deployment, for the blocked-deploy flag. `getProject` resolves the
+  // ACTIVE one, which by construction is never a blocked deploy — so without this
+  // the detail page's status pill couldn't show a blocker that the project list
+  // (which already fetches `latest`) does show. One query on a detail read.
+  const latestDeployment = await repos.deployment.findLatestByProject(id).catch(() => null);
   const hasServer = project.hasServer ?? project.productionMode === "host";
   const serviceRows = await repos.service.listByProject(id);
   const serviceCount = serviceRows.length;
@@ -2246,6 +2281,14 @@ export async function getInfo(c: Context) {
     hasServer,
     hasBuild: project.hasBuild ?? true,
     rootDirectory: project.rootDirectory ?? "./",
+    // Two fields, because "" and "inherits the framework default" are different
+    // answers: `volumes` is what the project declared (null = not declared) and
+    // `resolvedVolumes` is what a deploy would actually mount, so the editor can
+    // show the inherited value as a placeholder instead of pretending it's unset.
+    volumes: (project.volumes as string[] | null) ?? null,
+    resolvedVolumes: hasServer
+      ? resolveProjectVolumes(project.volumes as string[] | null, project.framework)
+      : [],
     isLoading: false,
     error: null,
   };
@@ -2284,6 +2327,11 @@ export async function getInfo(c: Context) {
         serviceCount,
         hasMultipleServices: serviceCount > 1,
         projectType,
+        // Same two fields the project LIST provides, so `getProjectStatus` reads
+        // identically on the detail page and the cards.
+        latestDeploymentId: latestDeployment?.id ?? null,
+        latestDeploymentStatus: latestDeployment?.status ?? null,
+        latestDeploymentBlocked: projectService.deploymentIsBlocked(latestDeployment),
       },
       environments,
     },
@@ -2327,6 +2375,12 @@ export async function connectDomain(c: Context) {
       success: true,
       domain: result.domain,
       records: result.records,
+      // `www.<apex>` is its OWN domain row — it verifies and certs separately, so
+      // the caller needs its id to offer Verify for it, and `wwwError` when the
+      // sibling couldn't be claimed at all. Reporting only the apex is what made
+      // "Include www" look like it worked when it hadn't.
+      ...(result.www ? { www: result.www } : {}),
+      ...(result.wwwError ? { wwwError: result.wwwError } : {}),
     });
   } catch (err) {
     if (err instanceof Error) {

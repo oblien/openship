@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
+import { folderApi } from "@/lib/api/folder";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   usesServiceDeployment,
@@ -703,11 +704,19 @@ const ServiceCard: React.FC<{
   onDelete: () => void;
 }> = ({ service, projectName, onUpdate, onEnvChange, onDelete }) => {
   const { t } = useI18n();
+  const { config } = useDeployment();
   const cs = t.importProject.composeServices;
   const cnt = t.importProject.counts;
   const missingCount = missingEnvCount(service);
   const envCount = Object.keys(service.environment).length;
   const [envModalOpen, setEnvModalOpen] = useState(false);
+  // #336: in the folder-upload flow the scan masks env — reveal THIS service's
+  // real values from the upload session (write-gated on the API). Only wired
+  // when an upload session exists; git/edit flows have no session-scoped source.
+  const uploadSessionId = config.uploadSessionId;
+  const onRevealAll = uploadSessionId
+    ? async () => (await folderApi.reveal(uploadSessionId)).environments[service.name] ?? {}
+    : undefined;
   const [envRows, setEnvRows] = useState<EnvVarRow[]>(() =>
     envToArray(service.environment, {}, service.environmentMeta),
   );
@@ -900,6 +909,7 @@ const ServiceCard: React.FC<{
             envVars={envRows}
             envMeta={service.environmentMeta}
             onEnvVarsChange={handleEnvChange}
+            onRevealAll={onRevealAll}
           />
         </div>
       </Modal>

@@ -7,6 +7,9 @@ import { Switch } from "@/components/ui/Switch";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { PublicEndpoint } from "@/context/deployment/types";
 import { createPublicEndpoint } from "@/context/deployment/types";
+import { useDefaultDomainType } from "@/context/CloudContext";
+import { usePlatform } from "@/context/PlatformContext";
+import { resolvePublicEndpointHostname } from "@/lib/public-endpoint-payload";
 
 interface PublicEndpointsCardProps {
   projectName: string;
@@ -39,6 +42,13 @@ interface PublicEndpointsCardProps {
     apex: string | null;
     onToggle: (on: boolean) => void;
   };
+  /**
+   * Offer the per-endpoint "Redirect to" control (a hostname answers a 30x to
+   * another of the project's hostnames instead of serving). Off by default; the
+   * caller opts in where it applies — never for a cloud project, whose routing the
+   * managed edge owns.
+   */
+  allowRedirects?: boolean;
 }
 
 const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
@@ -54,10 +64,17 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
   hideTypeToggle = false,
   allowRemoveAll = false,
   wwwToggle,
+  allowRedirects = false,
 }) => {
   const { t } = useI18n();
+  const { baseDomain } = usePlatform();
   const w = t.widgets.routing.publicEndpoints;
   const hasMultipleEndpoints = endpoints.length > 1;
+  const newEndpointDomainType = useDefaultDomainType();
+
+  /** Shared with the project Domains tab — one answer for "which host is this?". */
+  const endpointHostname = (endpoint: PublicEndpoint): string =>
+    resolvePublicEndpointHostname(endpoint, baseDomain);
 
   // With multiple domains, collapse each into a compact row so the list isn't
   // a huge stack of full forms — click a row to expand its editor. A single
@@ -119,9 +136,11 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
         hasServer
           ? {
               port: lastEndpoint?.port || runtimePort || "",
+              domainType: newEndpointDomainType,
             }
           : {
               targetPath: lastEndpoint?.targetPath || "/",
+              domainType: newEndpointDomainType,
             },
       )),
     ]);
@@ -171,6 +190,16 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
       endpoint.customDomain.trim().toLowerCase() === `www.${wwwToggle.apex}`;
     const stripWww = !!wwwToggle && endpoint.domainType === "custom" && !isWwwVariant;
 
+    // Redirect targets = the project's OTHER named hostnames. A closed list, so a
+    // redirect can never point off-site; an endpoint with no hostname yet (freshly
+    // added row) isn't offerable as a target.
+    const redirectTargets = allowRedirects
+      ? endpoints
+          .filter((other) => other.id !== endpoint.id)
+          .map((other) => endpointHostname(other))
+          .filter((hostname): hostname is string => !!hostname)
+      : [];
+
     return (
       <RoutingSettingsCard
         projectName={projectName}
@@ -186,6 +215,20 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
         actionSlot={actionSlot}
         portInline={portInline}
         hideTypeToggle={hideTypeToggle}
+        redirect={
+          redirectTargets.length > 0
+            ? {
+                to: endpoint.redirectTo ?? "",
+                status: endpoint.redirectStatus ?? 301,
+                targets: redirectTargets,
+                onChange: ({ to, status }) =>
+                  handleEndpointChange(endpoint.id, {
+                    redirectTo: to || undefined,
+                    redirectStatus: to ? status : undefined,
+                  }),
+              }
+            : undefined
+        }
         onDomainChange={(value) => handleEndpointChange(endpoint.id, { domain: value })}
         onCustomDomainChange={(value) => handleEndpointChange(endpoint.id, { customDomain: value })}
         onDomainTypeChange={(value) => handleEndpointChange(endpoint.id, { domainType: value })}

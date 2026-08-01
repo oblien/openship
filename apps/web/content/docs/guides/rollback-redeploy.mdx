@@ -27,7 +27,7 @@ Each row shows the version (like `v3`), a status, the commit message, and small 
 state of that version:
 
 - **Active** — the version currently live and serving your site.
-- **Snapshotted** — Openship still has this version's finished build saved, so you can roll back to it fast, without a rebuild.
+- **Snapshotted** — Openship still has this version's finished build saved, so rolling back to it skips the build entirely.
 - **Pinned** — this version is kept safe forever and will never be cleaned up (more on this below).
 
 <Callout title="Screenshot">Project → **Deployments** tab: the "Deploy Latest Changes" card on top and the deploy history list below, showing the **Active** / **Snapshotted** / **Pinned** labels on rows. *(screenshot pending)*</Callout>
@@ -40,9 +40,9 @@ state of that version:
 
 ### Open the version you want to return to
 
-In the history, find the last row that was healthy. It should show the **Snapshotted** label — that's your
-signal Openship still has its build ready to restore. (A **Pinned** row works too: pinning keeps that saved
-build around, so pinned versions stay rollback-ready as well.)
+In the history, find the last row that was healthy. If it shows the **Snapshotted** label, Openship still has
+its build saved and the rollback will be near-instant; if it doesn't, you can still roll back — Openship
+rebuilds that version's commit for you. Either way it's the same menu item.
 
 Click the **⋮** (three-dots) menu on that row.
 
@@ -52,11 +52,20 @@ Click the **⋮** (three-dots) menu on that row.
 
 ### Choose "Rollback to this version"
 
-Press **Rollback to this version**. Openship asks you to confirm, and reminds you what rollback does:
+Press **Rollback to this version**. Openship tells you which of the two routes it's about to take —
+
+> Instant restore — reuses this version's retained image, no rebuild.
+
+— or, if that build has since been cleaned up:
+
+> Rebuild — this version's image is no longer on the host, so its commit is built again.
+
+and reminds you what rollback does either way:
 
 > This restores the application code only. Database and volume data are unchanged.
 
-Confirm, and Openship switches the live site back to that version.
+Confirm, and Openship brings that version back as a new entry in your history. Rolling back doesn't erase
+anything: the version you rolled away from stays in the list, so you can roll forward again the same way.
 
 <Callout title="Screenshot">The row **⋮** menu open, with **Rollback to this version** highlighted and the confirmation dialog. *(screenshot pending)*</Callout>
 
@@ -65,21 +74,33 @@ Confirm, and Openship switches the live site back to that version.
 </Steps>
 
 <Callout title="Why rollback is quick — and safe for your data" type="info">
-Rolling back does **not** rebuild anything. Openship kept a copy of that version's finished build, so it
-simply switches back to it. Two things follow from that:
+When that version's build is still on the server, rolling back doesn't rebuild anything — Openship ships the
+saved build again. Three things follow:
 
-- **It's fast, with no long outage.** There's no waiting for a fresh build — Openship restarts the saved
-  version, so your site is back in seconds instead of the minutes a full build takes.
+- **It's fast, with no long outage.** No waiting for a fresh build; your site is back in seconds instead of
+  the minutes a build takes.
+- **It restores that version's settings too**, not today's. The environment variables, port, volumes and
+  resource limits that version ran with come back with it.
 - **Only your code changes.** Your database and any saved files (volumes) are left exactly as they are.
   Rollback rewinds the app, not your data.
+
+If the build has been cleaned up, Openship rebuilds that version's commit instead. Slower — a real build runs
+— but it lands you in the same place, so rollback is never a dead end.
 </Callout>
 
 <Callout title="The rollback option is greyed out" type="warn">
-Rollback needs the saved build (the **Snapshotted** label). Openship only keeps a limited number of old
-builds per project, so very old versions get cleaned up over time. When that happens, the menu offers
-**Redeploy this commit** instead — it rebuilds that exact commit from your source code. It's slower than a
-rollback (a full build runs again), but it gets you to the same place. To stop a version from ever being
-cleaned up, **pin** it — see below.
+Only two things disable it: the version is already **Active** (you're on it), or it never finished healthy.
+A cleaned-up build no longer disables rollback — Openship rebuilds the commit instead.
+
+If a version has neither a saved build nor a commit to rebuild from (a one-off manual deploy, say), the menu
+says so. To make sure a version always stays instantly restorable, **pin** it — see below.
+</Callout>
+
+<Callout title="Multi-service and static projects" type="info">
+- **Several services?** Only the services whose build is missing get rebuilt. A service the deploy never
+  touched keeps running on the image it already has — so rolling back your app code doesn't restart your
+  database.
+- **Static site?** The saved files for that version are what get restored; there's no image involved.
 </Callout>
 
 ## Redeploy (run it again)
@@ -98,22 +119,31 @@ The small caret (⌄) next to the button opens a couple of extra choices:
   only for multi-service projects (a single-app project always rebuilds the whole app anyway).
 
 <Callout title="Rebuild one specific old commit" type="info">
-Want to rebuild one particular past deploy from source rather than shipping the latest? It depends on whether
-that row still has its saved build:
+To go back to a past deploy, use **Rollback to this version** on its row — Openship reuses its saved build
+when it can and rebuilds its commit when it can't, so you don't have to know which.
 
-- **Build still saved (Snapshotted or Pinned):** the row's **⋮** menu shows **Rollback to this version**, not
-  a rebuild option — use it, since a rollback gets you there instantly with no build.
-- **Build cleaned up:** the same menu now offers **Redeploy this commit**, which rebuilds that exact commit
-  from source and adds it as a new version.
-
-To force a from-source rebuild of a specific commit from the terminal at any time — saved build or not — use
+To *force* a from-source rebuild of a specific commit even when its build is still saved, use the terminal:
 `openship deployment redeploy <id> --use-existing-commit` (below).
 </Callout>
 
+## How many versions stay instantly restorable
+
+Saved builds take disk, so Openship keeps a window of the most recent ones and cleans up the rest. You'll find
+the setting in your project's **Backup** tab — and in the deploy wizard when you edit the target server, since
+it's that machine's disk being used.
+
+By default the window sizes itself: Openship measures free space on the deploy host and how much one of your
+builds actually takes, then keeps as many as fit comfortably (between 2 and 20). The card shows what it
+measured — something like *"5 versions · ~1.8 GB each · 42 GB free · sized automatically"*. Type a number to
+pin the window yourself; clear the field to hand it back to Openship.
+
+Versions beyond the window aren't lost — you can still roll back to them, Openship just rebuilds their commit
+instead of reusing a saved build.
+
 ## Pin a version so it's always there
 
-Openship keeps only so many old builds around, then cleans up the oldest to save space. If there's a
-known-good version you always want to be able to snap back to, **pin** it.
+If there's a known-good version you always want to snap back to instantly, **pin** it — pinned versions are
+exempt from that cleanup and don't count against the window.
 
 In a deploy row's **⋮** menu, choose **Pin**. That version becomes exempt from cleanup and stays instantly
 rollback-restorable for as long as you keep it pinned. To lift it later, open the menu again and choose

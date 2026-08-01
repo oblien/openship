@@ -300,6 +300,12 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
+      # Keep the data dir in a subdirectory of the volume so a fresh install never
+      # runs initdb against a bare mount root (which fails on quirky host
+      # filesystems with EPERM — #350). OPENSHIP_PGDATA is decided ONCE at install
+      # by the CLI (fresh → subdir, pre-existing volume → root) and preserved in
+      # .env, so this never moves an existing database.
+      PGDATA: \${OPENSHIP_PGDATA:-/var/lib/postgresql/data/pgdata}
       POSTGRES_USER: \${POSTGRES_USER:-openship}
       POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?missing from .env — re-run openship up to regenerate it}
       POSTGRES_DB: \${POSTGRES_DB:-openship}
@@ -543,6 +549,25 @@ function provisionHostSshChannel(): { user: string; keyPath: string } | null {
 function composeProjectName(prev: Record<string, string>): string {
   if (prev.COMPOSE_PROJECT_NAME) return prev.COMPOSE_PROJECT_NAME;
   return Object.keys(prev).length > 0 ? "compose" : "openship";
+}
+
+/**
+ * Where Postgres keeps its data directory INSIDE the `postgres_data` volume.
+ *
+ * A fresh install uses a subdirectory (`…/data/pgdata`) rather than the bare
+ * mount root: initdb against a mount root fails on quirky host filesystems with
+ * "Operation not permitted" (WAL preallocation / lost+found — see #350). But a
+ * pre-existing install already has its DB at the mount ROOT, and moving PGDATA
+ * would make Postgres init a fresh empty DB and orphan the old one. So the
+ * decision is made ONCE and then pinned in `.env` (same sticky rule as
+ * COMPOSE_PROJECT_NAME): re-runs reuse it; a volume that predates this pin keeps
+ * the root. The check uses the resolved project name so it inspects the right
+ * `<project>_postgres_data` volume.
+ */
+const PGDATA_ROOT = "/var/lib/postgresql/data";
+function resolvePgData(prev: Record<string, string>): string {
+  if (prev.OPENSHIP_PGDATA) return prev.OPENSHIP_PGDATA; // decided already — never move it
+  return dbVolumeExists(composeProjectName(prev)) ? PGDATA_ROOT : `${PGDATA_ROOT}/pgdata`;
 }
 
 /**
@@ -939,6 +964,8 @@ function renderEnv(
     `OPENSHIP_IMAGE_REGISTRY=${cfg.registry}`,
     `OPENSHIP_VERSION=${opts.version || (typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "latest")}`,
     `POSTGRES_PASSWORD=${keepSecret(prev, "POSTGRES_PASSWORD")}`,
+    // Pinned once (see resolvePgData): fresh install → subdir, existing volume → root.
+    `OPENSHIP_PGDATA=${resolvePgData(prev)}`,
     `BETTER_AUTH_SECRET=${keepSecret(prev, "BETTER_AUTH_SECRET")}`,
     `INTERNAL_TOKEN=${keepSecret(prev, "INTERNAL_TOKEN")}`,
     `API_PORT=${cfg.apiPort}`,

@@ -280,6 +280,9 @@
     "success": "Ücretsiz alan adı yönlendirmesi senkronize edildi.",
     "failed": "Ücretsiz alan adı yönlendirmesi senkronize edilemedi."
   },
+  "deployBlocked": {
+    "redeploy": "Yeniden dağıt"
+  },
   "redeploy": {
     "deployStartedLong": "Dağıtım başladı — normalden uzun sürüyor, dağıtımlar açılıyor.",
     "deployingTitle": "Dağıtılıyor",

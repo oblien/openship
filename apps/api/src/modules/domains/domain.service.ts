@@ -14,8 +14,8 @@
  * in the SSL status pill on the next read.
  */
 
-import { repos, type Domain, type Project } from "@repo/db";
-import { NotFoundError, ConflictError, ValidationError, safeErrorMessage, normalizeCustomHostname, isValidCustomHostname, SYSTEM } from "@repo/core";
+import { repos, normalizeRoutingFields, type Domain, type Project } from "@repo/db";
+import { NotFoundError, ConflictError, ValidationError, safeErrorMessage, normalizeCustomHostname, isValidCustomHostname, wwwSiblingHostname, SYSTEM } from "@repo/core";
 import { platform, assertResourceInOrg } from "../../lib/controller-helpers";
 import { buildBackgroundContext, type RequestContext } from "../../lib/request-context";
 import {
@@ -27,11 +27,18 @@ import {
 } from "../../lib/domain-ssl";
 import { getRoutingBaseDomain } from "../../lib/routing-domains";
 import { resolveRecords } from "../../lib/dns-resolver";
-import { resolveProjectServerHost, resolveLocalServerHost } from "../../lib/server-target";
+import { resolveProjectServerHost, resolveLocalServerHost, resolveInstancePublicIp, isLoopbackHost } from "../../lib/server-target";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
 import { generateToken } from "../../lib/domain-token";
+import { untrackedSiteFor } from "../../lib/edge-orphans.service";
+import { publicEndpointHostname, resolveServicePublicEndpoints } from "../../lib/public-endpoints";
 import { sshManager } from "../../lib/ssh-manager";
 import type { DeploymentMeta } from "../../lib/deployment-runtime";
+import {
+  assertRedirectSupported,
+  assertRedirectTargets,
+  normalizeRedirect,
+} from "../../lib/domain-redirect";
 import type { TAddDomainBody } from "./domain.schema";
 import { edgeProxy, readEdgeFile, validateCertFor } from "@repo/adapters";
 import type { AdoptedCert, CloudRuntime, CommandExecutor, ManualCert } from "@repo/adapters";
@@ -42,6 +49,17 @@ export async function listDomains(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   return repos.domain.listByProject(projectId);
+}
+
+/**
+ * Read ONE domain's live verify + SSL state. The recovery read for any flow that
+ * lost its result mid-run — a verify whose SSE stream dropped before the terminal
+ * event still finished server-side, and this is how the UI learns that instead of
+ * telling the operator to go and look.
+ */
+export async function getDomain(ctx: RequestContext, domainId: string) {
+  const { domain } = await getDomainWithAuth(domainId, ctx.organizationId);
+  return domain;
 }
 
 // ─── Set primary ───────────────────────────────────────────────────────────────
@@ -67,7 +85,24 @@ export async function setPrimaryDomain(ctx: RequestContext, domainId: string) {
 
 // ─── Add ─────────────────────────────────────────────────────────────────────
 
-export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
+export async function addDomain(
+  ctx: RequestContext,
+  data: TAddDomainBody,
+  opts: {
+    /**
+     * Hostnames the caller has ALREADY established this project owns, unioned
+     * into the redirect-target set.
+     *
+     * For `addWwwSibling`, which creates `www.<apex>` redirecting to the apex it
+     * has just created/confirmed in the same call. Reading the apex back out of
+     * the DB to prove ownership we already hold would make the sibling's redirect
+     * depend on read-after-write visibility — and drop it silently when that
+     * doesn't hold. This does NOT loosen the wire gate: route callers pass
+     * nothing, so a client-supplied target is still checked against stored rows.
+     */
+    extraOwnedHostnames?: string[];
+  } = {},
+) {
   const project = await repos.project.findById(data.projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, data.projectId);
 
@@ -98,6 +133,24 @@ export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
     throw new ValidationError(`"${hostname}" is not a valid public hostname.`);
   }
 
+  // Redirect target: validated against THIS project's hostname set (plus the row
+  // being added), so a redirect can only ever point at a hostname the project
+  // already owns — never off-site, never at itself, never round a loop.
+  const redirect = normalizeRedirect(data);
+  if (redirect.redirectTo) {
+    assertRedirectSupported({ isCloudProject: !!project?.cloudWorkspaceId, hostname });
+    const peers = await repos.domain.listByProject(data.projectId).catch(() => []);
+    assertRedirectTargets([
+      ...peers
+        .filter((peer) => peer.hostname.toLowerCase() !== hostname)
+        .map((peer) => ({ hostname: peer.hostname, redirectTo: peer.redirectTo })),
+      ...(opts.extraOwnedHostnames ?? [])
+        .filter((owned) => normalizeCustomHostname(owned) !== hostname)
+        .map((owned) => ({ hostname: owned })),
+      { hostname, redirectTo: redirect.redirectTo },
+    ]);
+  }
+
   const existing = await repos.domain.findByHostname(hostname);
   if (existing) {
     if (existing.projectId !== data.projectId) {
@@ -116,6 +169,12 @@ export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
     ) {
       patch.externalIngress = data.externalIngress;
     }
+    // Only ever SET a redirect here; `redirectTo: undefined` (the common case —
+    // a plain re-save) must not clear one the operator configured separately.
+    if (redirect.redirectTo && existing.redirectTo !== redirect.redirectTo) {
+      patch.redirectTo = redirect.redirectTo;
+      patch.redirectStatus = redirect.redirectStatus;
+    }
 
     if (Object.keys(patch).length > 0) {
       await repos.domain.update(existing.id, patch);
@@ -125,11 +184,7 @@ export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
     }
     // Re-saving with the toggle on must be able to ADD the www row that a first
     // save (or an older build) never created.
-    if (data.includeWww) {
-      await addWwwSibling(ctx, data, hostname).catch((err) =>
-        console.warn(`[domains] www.${hostname} not added: ${safeErrorMessage(err)}`),
-      );
-    }
+    const resaveWww = data.includeWww ? await addWwwSibling(ctx, data, hostname) : null;
 
     const domain = {
       ...existing,
@@ -142,9 +197,30 @@ export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
       token,
       project,
       domain.externalIngress,
+      ctx.organizationId,
+      !!data.includeWww,
     );
-    return { domain, records };
+    return { domain, records, ...resaveWww };
   }
+
+  /**
+   * Is the edge ALREADY serving this hostname from a vhost Openship lost track of?
+   *
+   * The DB conflict check above is the only gate on claiming a hostname, and it
+   * only knows about `domain` rows. Edge config lives on the host and outlives
+   * those rows by design — record-only delete keeps the vhost serving on purpose —
+   * so a hostname can be free in the DB while something is still answering on it.
+   *
+   * ADVISORY, never a block. Re-claiming a hostname whose forgotten vhost is still
+   * up is the normal recovery flow, and the next deploy rewrites that vhost
+   * wholesale (`registerRoute` replaces the whole file, and static-vs-proxy is an
+   * exclusive choice inside it). What was missing is being TOLD: if the deploy's
+   * route apply then fails — routing is best-effort, deliberately — the old site
+   * keeps serving under the new owner's hostname with nothing anywhere saying so.
+   * A static leftover is the bad case: it answers 200 with the previous project's
+   * files rather than 502ing like a dead upstream would.
+   */
+  const preexisting = await untrackedSiteFor(hostname);
 
   const token = generateToken(hostname);
 
@@ -161,6 +237,8 @@ export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
     isPrimary: data.isPrimary ?? false,
     externalIngress: data.externalIngress ?? false,
     verificationToken: token,
+    redirectTo: redirect.redirectTo,
+    redirectStatus: redirect.redirectStatus,
   });
 
   if (data.isPrimary) {
@@ -168,33 +246,53 @@ export async function addDomain(ctx: RequestContext, data: TAddDomainBody) {
   }
 
   // "Include www" is a REQUEST FOR A SECOND HOSTNAME, so it has to exist as its own
-  // row: verification, DNS records, SSL and routing are all keyed per row, and
-  // `manageDomainSsl`'s www branch explicitly looks for `www.<host>` in the domain
-  // table. Without this the toggle set a flag nothing ever read (issue #289).
+  // row: verification, DNS records, SSL and routing are all keyed per row. Without
+  // this the toggle set a flag nothing ever read (issue #289).
   //
   // Best-effort: the apex is what the caller asked for and already succeeded. A www
   // that can't be claimed (already taken by another project, invalid) must not undo
   // it — the apex stays, and the operator can add www by hand.
-  if (data.includeWww) {
-    await addWwwSibling(ctx, data, hostname).catch((err) =>
-      console.warn(`[domains] www.${hostname} not added: ${safeErrorMessage(err)}`),
-    );
-  }
+  const www = data.includeWww ? await addWwwSibling(ctx, data, hostname) : null;
 
-  const records = await buildRecords(domain.hostname, token, project, domain.externalIngress);
-  return { domain, records };
+  // `includeWww` reaches buildRecords so the returned panel lists the SIBLING's
+  // record too. It didn't before, which is why "Include www" so often ended in a
+  // www that never resolved: the row and the route existed, but the operator was
+  // never told to add its DNS record, so its certificate could never be issued.
+  const records = await buildRecords(
+    domain.hostname,
+    token,
+    project,
+    domain.externalIngress,
+    ctx.organizationId,
+    !!data.includeWww,
+  );
+  return {
+    domain,
+    records,
+    ...www,
+    // Only present when there IS something to say, so callers can spread it and
+    // clients can treat its absence as "nothing was already serving this".
+    ...(preexisting ? { preexistingEdgeSite: preexisting } : {}),
+  };
 }
 
 /**
  * "Include www" asks for a SECOND routable hostname, not a flag on the apex row: the
- * edge binds one `server_name` per row, and `domain-ssl.ts`'s www branch resolves the
- * variant BY HOSTNAME — so it only exists once it has a row, which then verifies and
- * certs on its own.
+ * edge binds one `server_name` per row, so the variant only exists once it HAS a row,
+ * which then verifies and certs entirely on its own.
  *
  * Recurses through `addDomain` on purpose: hostname validation, the cross-project
  * conflict check and the interrupted-connect retry path all live there and must apply
  * to the variant too. Runs AFTER the apex so an apex conflict aborts before we mint a
  * sibling, and the apex keeps `isPrimary`.
+ *
+ * The sibling is created REDIRECTING to the apex (301). Two hostnames serving the
+ * same app is duplicate content; the toggle's intent is "cover www too", and the
+ * direction is editable per row afterwards (see domain-redirect.ts).
+ *
+ * Returns what happened so the caller can SURFACE it. A failure here used to be a
+ * `console.warn` the operator never saw: the toggle looked like it worked, and the
+ * missing sibling only showed up later as a www that never resolved.
  *
  * NOTE: the row alone is not enough — `syncProjectPublicRoutes` deletes project-level
  * rows the submitted endpoint list omits, so the caller must also include
@@ -204,14 +302,29 @@ async function addWwwSibling(
   ctx: RequestContext,
   data: TAddDomainBody,
   hostname: string,
-): Promise<void> {
-  if (hostname.startsWith("www.")) return;
-  await addDomain(ctx, {
-    projectId: data.projectId,
-    hostname: `www.${hostname}`,
-    isPrimary: false,
-    externalIngress: data.externalIngress,
-  });
+): Promise<{ www?: { id: string; hostname: string }; wwwError?: string }> {
+  const www = wwwSiblingHostname(hostname);
+  if (!www) return {};
+  try {
+    const result = await addDomain(
+      ctx,
+      {
+        projectId: data.projectId,
+        hostname: www,
+        isPrimary: false,
+        externalIngress: data.externalIngress,
+        redirectTo: hostname,
+      },
+      // The apex was created/confirmed by the call we're inside — see
+      // `extraOwnedHostnames`.
+      { extraOwnedHostnames: [hostname] },
+    );
+    return { www: { id: result.domain.id, hostname: result.domain.hostname } };
+  } catch (err) {
+    const message = safeErrorMessage(err);
+    console.warn(`[domains] ${www} not added: ${message}`);
+    return { wwwError: `${www} couldn't be added: ${message}` };
+  }
 }
 
 /**
@@ -304,9 +417,13 @@ export async function removeServiceDomain(opts: {
 
 // ─── Preview records (no auth, no DB write) ──────────────────────────────────
 
-export async function previewRecords(hostname: string, organizationId?: string) {
+export async function previewRecords(
+  hostname: string,
+  organizationId?: string,
+  includeWww = false,
+) {
   const token = generateToken(hostname);
-  return buildRecords(hostname, token, undefined, false, organizationId);
+  return buildRecords(hostname, token, undefined, false, organizationId, includeWww);
 }
 
 // ─── Get DNS records (existing domain) ───────────────────────────────────────
@@ -834,7 +951,58 @@ export async function removeDomain(ctx: RequestContext, domainId: string) {
     console.error(`[DOMAIN] Failed to remove route for ${domain.hostname}:`, err);
   }
 
+  // A service-scoped row is only HALF the routing config — the owning SERVICE row
+  // also carries `exposed`/`domain`/`customDomain`/`publicEndpoints`. Deleting
+  // just the domain row left the service still configured for that hostname,
+  // which is why removing a free route then made every later action demand Cloud:
+  // preflight's `servicesNeedCloud` kept seeing the stale *.opsh.io slug and
+  // reported "Connect Openship Cloud to expose services on free *.opsh.io
+  // subdomains" — even while the user was adding a CUSTOM domain.
+  //
+  // ONE transaction, because the two writes describe one outcome. As separate
+  // awaits a failure between them recreates exactly that stale state, with the
+  // row already gone so there's nothing left to retry against.
+  const serviceRouting = domain.serviceId
+    ? await resolveRemainingServiceRouting(domain.serviceId, domain.hostname)
+    : null;
+
+  if (domain.serviceId && serviceRouting) {
+    await repos.domain.removeWithServiceRouting(domainId, {
+      serviceId: domain.serviceId,
+      routing: serviceRouting,
+    });
+    return;
+  }
+
   await repos.domain.remove(domainId);
+}
+
+/**
+ * The routing columns a service should keep once `hostname` is gone: the
+ * surviving endpoints, or fully unexposed when none remain — "exposed with no
+ * hostname" is the state that produces a dead Pending route.
+ *
+ * Pure resolution (one read, no writes) so the caller can commit it inside the
+ * same transaction as the domain delete. Returns null when the service row is
+ * missing, so the caller falls back to a plain delete.
+ */
+async function resolveRemainingServiceRouting(
+  serviceId: string,
+  hostname: string,
+): Promise<Record<string, unknown> | null> {
+  const svc = await repos.service.findById(serviceId);
+  if (!svc) return null;
+  const target = hostname.toLowerCase();
+
+  const remaining = resolveServicePublicEndpoints(svc).filter(
+    (endpoint) => publicEndpointHostname(endpoint)?.toLowerCase() !== target,
+  );
+
+  // Still serving something → stay exposed on the survivors, with entry[0]
+  // mirrored onto the scalar columns by normalizeRoutingFields.
+  return remaining.length > 0
+    ? { ...normalizeRoutingFields({ exposed: true, publicEndpoints: remaining }) }
+    : { ...normalizeRoutingFields({ exposed: false }) };
 }
 
 // ─── SSL ─────────────────────────────────────────────────────────────────────
@@ -1241,7 +1409,12 @@ async function buildRecords(
   project?: Project,
   externalIngress = false,
   organizationId?: string,
+  /** Mirror the "Include www" toggle: that toggle claims a SECOND hostname, so
+   *  the panel must show ITS record too. Without this the user turned www on and
+   *  saw only the apex record, then wondered why www never resolved. */
+  includeWww = false,
 ): Promise<{ mode: "cloud" | "selfhosted" | "external"; records: DnsRecord[] }> {
+  const wwwHostname = includeWww ? wwwSiblingHostname(hostname) : null;
   const { target, runtime } = platform();
 
   const { routeHost, routeName, txtHost, txtName } = dnsRecordHosts(hostname);
@@ -1260,10 +1433,28 @@ async function buildRecords(
       cnameTarget = result.requiredRecords.cname.target;
     } catch { /* Oblien unreachable */ }
 
-    return {
-      mode: "cloud",
-      records: [{ type: "CNAME", host: routeHost, name: routeName, value: cnameTarget ?? "" }, txt],
-    };
+    const records: DnsRecord[] = [
+      { type: "CNAME", host: routeHost, name: routeName, value: cnameTarget ?? "" },
+      txt,
+    ];
+    if (wwwHostname) {
+      // The www sibling is its OWN hostname, so it needs its own CNAME + the
+      // ownership TXT for that name — the shared edge verifies each separately.
+      const www = dnsRecordHosts(wwwHostname);
+      records.push({
+        type: "CNAME",
+        host: www.routeHost,
+        name: www.routeName,
+        value: cnameTarget ?? "",
+      });
+      records.push({
+        type: "TXT",
+        host: www.txtHost,
+        name: www.txtName,
+        value: generateToken(wwwHostname),
+      });
+    }
+    return { mode: "cloud", records };
   }
 
   // ── Self-hosted ──
@@ -1278,13 +1469,27 @@ async function buildRecords(
   // front would answer with its own IP — so it's a hint, not a gate. Read the
   // box's public address (resolved once at ensure-server): the deployed project's
   // server, else this org's "This Server" row for the pre-deploy preview.
-  const serverIp =
+  let serverIp =
     (await resolveProjectServerHost(project)) ??
     (organizationId ? await resolveLocalServerHost(organizationId) : null);
-  return {
-    mode: "selfhosted",
-    records: [{ type: "A", host: routeHost, name: routeName, value: serverIp ?? "" }],
-  };
+  // A loopback is the local row's display host when no public IP was known at
+  // registration — useless as "point your domain here". Re-detect live for this
+  // (user-initiated, off-hot-path) preview; leave EMPTY so the UI shows a
+  // placeholder rather than a dead `127.0.0.1` the operator would copy verbatim.
+  if (!serverIp || isLoopbackHost(serverIp)) {
+    const detected = await resolveInstancePublicIp().catch(() => null);
+    serverIp = detected && !isLoopbackHost(detected) ? detected : null;
+  }
+  const records: DnsRecord[] = [
+    { type: "A", host: routeHost, name: routeName, value: serverIp ?? "" },
+  ];
+  if (wwwHostname) {
+    // Same box, so the same A value — a CNAME to the apex would also work, but an
+    // A keeps both rows identical and independent of apex-CNAME restrictions.
+    const www = dnsRecordHosts(wwwHostname);
+    records.push({ type: "A", host: www.routeHost, name: www.routeName, value: serverIp ?? "" });
+  }
+  return { mode: "selfhosted", records };
 }
 
 /** Build a human-readable verification failure message. */

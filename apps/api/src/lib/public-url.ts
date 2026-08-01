@@ -198,6 +198,18 @@ export function resolveApiPublicUrl(): string {
 }
 
 /**
+ * `resolveApiPublicUrl` for a URL we hand back to the CALLER of this request
+ * (rather than to a third party): the configured public base when there is one,
+ * else the origin the caller actually reached us on. That fallback is what keeps
+ * a desktop dynamic port or a LAN address from being advertised as
+ * `localhost:4000`. Callers append `/api/...` paths.
+ */
+export function requestApiPublicUrl(req: Request): string {
+  const pub = publicUrl();
+  return pub ? `${pub}${SAME_ORIGIN_PROXY_PREFIX}` : requestPublicOrigin(req);
+}
+
+/**
  * The shared/repo-strategy GitHub webhook callback URL — where GitHub POSTs
  * push/release deliveries. Public URL when configured, so a `--public-url` VPS
  * registers a reachable hook instead of a dead `localhost:4000` one.

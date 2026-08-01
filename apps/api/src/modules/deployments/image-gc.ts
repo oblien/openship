@@ -19,9 +19,14 @@
 
 import { repos, type Deployment, type Project } from "@repo/db";
 import { DockerRuntime } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
+import { normalizeRollbackWindow, safeErrorMessage } from "@repo/core";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
-import { resolveRollbackWindow } from "./release-retention";
+import { getHostDisk } from "../../lib/host-disk";
+import {
+  refreshRollbackCapacity,
+  resolveRollbackWindow,
+  type RollbackWindowProject,
+} from "./release-retention";
 
 export interface ImageGcSummary {
   projectsScanned: number;
@@ -42,7 +47,7 @@ export interface ImageGcSummary {
  * Exported for unit testing; pure given the injected loaders.
  */
 export async function computeKeepSet(
-  project: Pick<Project, "id" | "activeDeploymentId" | "rollbackWindow">,
+  project: Pick<Project, "id" | "activeDeploymentId"> & RollbackWindowProject,
   loaders?: {
     listReadyOrderedDesc?: (projectId: string) => Promise<Deployment[]>;
     findById?: (id: string) => Promise<Deployment | undefined>;
@@ -92,6 +97,38 @@ export interface ReapResult {
   removed: number;
   bytes: number;
   skippedInUse: number;
+}
+
+/**
+ * Feed the auto-sized rollback window: mean built-image size for this project +
+ * free disk where the daemon stores images. Uses the images this sweep already
+ * listed and the CACHED disk probe, so a burst of deploys costs one `df`.
+ * Best-effort — an unmeasured project simply falls back to the instance default.
+ */
+async function refreshRollbackCapacityFor(
+  project: Project,
+  images: Array<{ repoTags: string[]; size: number }>,
+): Promise<void> {
+  // Only OUR build images estimate a release's size; a project that has never
+  // built anything (pure registry-image compose stack) has no snapshot cost.
+  const sizes = images
+    .filter((img) => img.repoTags.some((t) => t.startsWith("openship/")))
+    .map((img) => img.size);
+  if (sizes.length === 0) return;
+
+  const activeDep = project.activeDeploymentId
+    ? await repos.deployment.findById(project.activeDeploymentId)
+    : null;
+  const serverId = (activeDep?.meta as { serverId?: string } | null)?.serverId;
+  const disk = await getHostDisk(serverId, project.organizationId).catch(() => null);
+  const settings = await repos.instanceSettings.get().catch(() => null);
+
+  await refreshRollbackCapacity({
+    projectId: project.id,
+    imageSizes: sizes,
+    diskFreeBytes: disk?.freeBytes ?? null,
+    instanceDefault: normalizeRollbackWindow(settings?.defaultRollbackWindow),
+  });
 }
 
 /**
@@ -155,6 +192,11 @@ export async function reapProjectImages(project: Project): Promise<ReapResult> {
     }
     // Reclaim this project's untagged (superseded final) layers too.
     await runtime.pruneProjectDanglingImages(project.id);
+
+    // Re-measure the AUTO rollback window while we're here: we already have this
+    // project's image sizes, and host capacity is cached, so retention stays
+    // sized to the disk without prune or the wizard ever probing anything.
+    await refreshRollbackCapacityFor(project, images).catch(() => {});
   } finally {
     await runtime.dispose?.();
   }

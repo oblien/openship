@@ -31,6 +31,13 @@ Every PR is reviewed by a human, so make it easy to trust:
 - **Explain the why.** State what was broken (or what the linked issue agreed), and exactly how you
   verified it — the commands you ran and the before/after behavior.
 - **Prove it.** Add a test that fails without your change and passes with it, and say so in the PR.
+- **No test spam.** A test earns its place by catching a regression that could actually happen.
+  Don't add tests to move a coverage number, and don't submit ones that assert a constant equals
+  itself, re-check what the type system already guarantees, only verify that a mock you just wrote
+  was called, or restate the implementation line by line. Those pass forever, catch nothing, and
+  every future contributor pays to read and maintain them. Coverage percentage is not a review
+  criterion — one test that genuinely fails without your change is worth more than twenty that
+  can't fail at all.
 - **Green before you open.** `bun run test`, the relevant typecheck (`bun run --cwd <workspace>
   lint`), and `bun format` all pass locally.
 

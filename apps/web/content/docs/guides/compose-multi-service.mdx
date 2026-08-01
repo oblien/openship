@@ -49,6 +49,28 @@ Openship tracks the compose fields it models: `image`, `build`, `dockerfile`, `p
 `environment`, `volumes`, `command`, `restart`, and `healthcheck`. Everything else in your file — `networks`,
 build args, labels, `profiles`, comments — is left untouched: Openship neither reads it nor rewrites it.
 
+#### Compose file in a subfolder
+
+Openship looks for the compose file at the project root. If yours lives somewhere else — say
+`deploy/docker-compose/docker-compose.yml` — open **Compose file** in the deploy wizard and enter
+the path, then hit **Scan**. Openship re-reads the repo and picks up the services it declares. You
+can give either the file or the folder that holds it, and the filename doesn't have to be the
+standard one (`stack.yml` works).
+
+Relative `build:` contexts are resolved the way compose resolves them — against the compose file's
+own folder — so a file in `deploy/docker-compose/` can use `build: ../../api` to build the `api`
+directory at the repo root.
+
+To keep it in the repo instead of setting it per project, declare it in
+[`openship.json`](/docs/reference/openship-json):
+
+```json
+{ "composePath": "deploy/docker-compose/docker-compose.yml" }
+```
+
+The wizard field wins if you later change it there — the config file seeds the value, your edit is
+what deploys.
+
 <Callout title="Openship never writes to your repo" type="info">
 Edits you make in the dashboard are stored by Openship and used on every deploy. Your `docker-compose.yml` is
 never changed. If you want the file itself to reflect a change (so a teammate or a fresh clone sees it), edit

@@ -22,10 +22,40 @@ const MISSING_BASELINE: Record<string, number> = {
   projectSettings: 1074,
   jobs: 876,
   migration: 1237,
-  settings: 1184,
+  // +64: the GitHub card's credential-health strings — 8 English-first keys for
+  // "GitHub rejected the stored {method}" vs "couldn't reach GitHub to check it",
+  // the manage-on-GitHub links, and the note that Disconnect does NOT revoke the
+  // credential at GitHub. Same reasoning as permissions.sourceAccess below:
+  // deliberately NOT machine-translated, because these decide whether an operator
+  // believes a leaked token is dead, and whether they go revoke a credential that
+  // was only unreachable. They fall back to English via deepMerge, so the UI is
+  // correct everywhere — as is the rest of this card's block, which is also still
+  // English-only in the other 8 locales.
+  //
+  // +184: settings.edgeOrphans — 23 English-first keys for the untracked-edge-routes
+  // card. Same reasoning again, and it's the sharpest case yet: the primary action
+  // there STOPS SERVING A HOSTNAME. An operator has to understand from the copy that
+  // a "static" leftover is answering requests right now while an "app route" one is
+  // already 502ing, that removing touches this hostname's edge config and nothing
+  // else, and that built files stay on disk. A mistranslation is somebody taking a
+  // live site offline, or leaving a forgotten one serving. English falls through via
+  // deepMerge, so the card is correct in every locale, just not localised.
+  //
+  // +296: GitLab connect/settings strings from feat/gitlab-phase1 that are still
+  // English-first in the other locales (same deepMerge fallback).
+  settings: 1432,
   emailsAdmin: 628,
-  widgets: 138,
-  misc: 123,
+  // +360: permissions.sourceAccess — 45 keys for the source access modal and its
+  // repository path tree,
+  // still English in the other 8 locales (they fall back via deepMerge, so the UI
+  // is correct everywhere, just not localised). Deliberately NOT machine-translated:
+  // these strings drive a security decision — e.g. "a clone can't be limited to
+  // paths, so local builds won't work" — and a subtly wrong translation would
+  // mislead the operator choosing a grant. Lower this as they're translated.
+  widgets: 498,
+  // +40: mcpAuthorize gained 5 English-first keys — two digest lines that answer
+  // "can it read my source?" either way, and three level tooltips.
+  misc: 145,
   overview: 120,
   servers: 113,
   importProject: 81,

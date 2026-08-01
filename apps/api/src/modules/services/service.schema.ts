@@ -62,7 +62,55 @@ const HealthcheckSchema = Type.Object(
  */
 const AdvancedSchema = Type.Object(
   {
-    healthcheck: Type.Optional(HealthcheckSchema),
+    // Each key is nullable because `advanced` is MERGED on update, not replaced
+    // (see mergeAdvanced in service.service.ts): omitting a key means "leave it
+    // alone" so a partial caller can't wipe the rest of the blob, which makes an
+    // explicit `null` the way to say "remove this one".
+    healthcheck: Type.Optional(Type.Union([HealthcheckSchema, Type.Null()])),
+    /**
+     * Per-service DEPLOY-TIME readiness gate, overriding the project's for this
+     * service (mirrors OpenshipReadiness in @repo/core). Absent ⇒ inherit the
+     * project's; neither ⇒ off, which is the default.
+     *
+     * Not `healthcheck` above: that's the daemon-run Docker HEALTHCHECK (a custom
+     * command, on a loop, forever). This is the pipeline's one-shot "did it come
+     * up?" and the only one of the two that can fail a deploy.
+     */
+    readiness: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            enabled: Type.Optional(Type.Boolean()),
+            path: Type.Optional(Type.String({ maxLength: 2000 })),
+            port: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
+            timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 600 })),
+            stabilization: Type.Optional(Type.Boolean()),
+            stabilizationSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 600 })),
+            onFailure: Type.Optional(
+              Type.Union([Type.Literal("warn"), Type.Literal("fail")]),
+            ),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Null(),
+      ]),
+    ),
+    /** Per-service cpu/memory caps (compose `mem_limit`/`cpus` or
+     *  `deploy.resources.limits`). Overrides the project-wide config field by
+     *  field; `0` = no limit. The real ceiling is the target machine's capacity,
+     *  enforced at deploy time — these bounds are sanity rails. */
+    resources: Type.Optional(
+      Type.Union([
+        Type.Object(
+          {
+            cpuCores: Type.Optional(Type.Number({ minimum: 0, maximum: 1024 })),
+            memoryMb: Type.Optional(Type.Number({ minimum: 0, maximum: 4194304 })),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Null(),
+      ]),
+    ),
   },
   { additionalProperties: false },
 );
@@ -81,6 +129,9 @@ const ComposeFieldsBlock = {
   environment: Type.Optional(Type.Record(Type.String(), Type.String())),
   volumes: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 })),
   command: Type.Optional(Type.String({ maxLength: 1000 })),
+  // #332: structured argv (docker-compose Cmd — no `sh -c`). Send an argv array
+  // to run an entrypoint+CMD image correctly; `command` string stays supported.
+  commandArgv: Type.Optional(Type.Array(Type.String({ maxLength: 2000 }), { maxItems: 100 })),
   advanced: Type.Optional(AdvancedSchema),
   exposed: Type.Optional(Type.Boolean()),
   exposedPort: Type.Optional(Type.String({ maxLength: 50 })),
@@ -148,6 +199,99 @@ export const UpdateServiceBody = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * Reconcile a project's compose services against a parsed compose file.
+ *
+ * Entries carry every field `repos.service.syncFromCompose` consumes
+ * (`ParsedComposeService` in @repo/db): `name` keys the row, `kind` filters
+ * monorepo entries out, and the rest are the compose-owned and routing fields.
+ * Declaring all of them - rather than leaning on `additionalProperties` - is
+ * what lets an MCP agent discover the surface instead of guessing at it.
+ *
+ * Deliberately OPEN and unbounded, unlike Create/Update above: the payload is
+ * machine-produced from `docker compose config`, whose scalars carry no length
+ * limit and whose `restart` accepts forms outside the four-value enum
+ * (`on-failure:3`). `advanced` stays an open object because ComposeAdvanced
+ * grows per phase (healthcheck, files, ...) and this is an import path, not the
+ * curated Create/Update surface. Mass assignment isn't a concern either way:
+ * the repo layer rebuilds each row field-by-field through `toComposeSpec` +
+ * `normalizeRoutingFields` rather than spreading the entry.
+ *
+ * `services: []` is left to the handler, which rejects it with its own message.
+ */
+export const SyncServicesBody = Type.Object({
+  services: Type.Array(
+    Type.Object(
+      {
+        name: Type.String({
+          minLength: 1,
+          description: "Compose service name - keys the service row.",
+        }),
+        kind: Type.Optional(
+          Type.String({ description: 'Defaults to "compose"; "monorepo" entries are skipped.' }),
+        ),
+        image: Type.Optional(Type.String()),
+        build: Type.Optional(
+          Type.String({ description: "Build context, relative to the compose file." }),
+        ),
+        dockerfile: Type.Optional(Type.String()),
+        ports: Type.Optional(
+          Type.Array(Type.String(), { description: 'Compose port mappings, e.g. "8080:80".' }),
+        ),
+        dependsOn: Type.Optional(Type.Array(Type.String())),
+        environment: Type.Optional(Type.Record(Type.String(), Type.String())),
+        volumes: Type.Optional(Type.Array(Type.String())),
+        command: Type.Optional(Type.String()),
+        restart: Type.Optional(
+          Type.String({
+            description: 'Compose restart policy, e.g. "unless-stopped" or "on-failure:3".',
+          }),
+        ),
+        advanced: Type.Optional(
+          Type.Object(
+            {},
+            {
+              additionalProperties: true,
+              description: "Extended compose block stored as-is (healthcheck, files, ...).",
+            },
+          ),
+        ),
+        exposed: Type.Optional(Type.Boolean()),
+        exposedPort: Type.Optional(Type.String()),
+        domain: Type.Optional(Type.String()),
+        customDomain: Type.Optional(Type.String()),
+        domainType: Type.Optional(
+          Type.String({
+            description: '"custom" routes the custom domain; anything else is treated as "free".',
+          }),
+        ),
+        publicEndpoints: Type.Optional(
+          Type.Array(
+            Type.Object(
+              {
+                port: Type.Optional(Type.Union([Type.Number(), Type.String()])),
+                domain: Type.Optional(Type.String()),
+                customDomain: Type.Optional(Type.String()),
+                domainType: Type.Optional(Type.String()),
+                targetPath: Type.Optional(Type.String()),
+              },
+              { additionalProperties: true },
+            ),
+            {
+              description: "Additional public routes, one per port. Entry[0] mirrors the scalars.",
+            },
+          ),
+        ),
+      },
+      { additionalProperties: true },
+    ),
+    {
+      description:
+        "The full service list from the compose file - services missing from it are removed.",
+    },
+  ),
+});
+
 export const SetServiceEnvVarsBody = Type.Object(
   {
     environment: Type.Union([
@@ -172,4 +316,5 @@ export const SetServiceEnvVarsBody = Type.Object(
 
 export type TCreateServiceBody = Static<typeof CreateServiceBody>;
 export type TUpdateServiceBody = Static<typeof UpdateServiceBody>;
+export type TSyncServicesBody = Static<typeof SyncServicesBody>;
 export type TSetServiceEnvVarsBody = Static<typeof SetServiceEnvVarsBody>;

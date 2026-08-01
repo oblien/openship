@@ -1,3 +1,4 @@
+import type { SourceAccessScope } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 
@@ -27,6 +28,17 @@ export interface PickerGrant {
   /** "*" for "all of this type" OR a specific id from the catalog. */
   resourceId: string;
   permissions: Permission[];
+  /**
+   * Source access for a github repo grant — the SURFACE, where `permissions` is
+   * the VERB. Absent means metadata only: the grantee may deploy the repo and read
+   * its branches/build config, but NOT its file contents. Edited via
+   * SourceAccessModal; enforced by the API's source tier.
+   *
+   * Declared here so it threads through every consumer of this shape — member
+   * grants (replaceGrants), invites (inviteWithGrants), and MCP consent
+   * (mcpAuthorize) — instead of each growing its own field.
+   */
+  scope?: SourceAccessScope;
 }
 
 /** A grant as stored on the server (a PickerGrant plus its row id + owner). */

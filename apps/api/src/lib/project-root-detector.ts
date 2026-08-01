@@ -166,7 +166,12 @@ export function isIgnoredRepoPath(value?: string): boolean {
   return normalized.split("/").some((segment) => IGNORED_REPO_DIRS.has(segment.toLowerCase()));
 }
 
-function buildSnapshot(input: ProjectRootSnapshotInput): ProjectRootSnapshot {
+/**
+ * Normalize one directory's raw listing into a snapshot + its detected stack.
+ * Exported for callers that already KNOW the root (a user-declared compose path),
+ * where the scoring in `selectPreferredProjectRoot` would only second-guess them.
+ */
+export function buildProjectRootSnapshot(input: ProjectRootSnapshotInput): ProjectRootSnapshot {
   const fileContents = normalizeFileContents(input.fileContents);
 
   return {
@@ -646,7 +651,7 @@ function selectPreferredCandidate(
     fallback: (root: ProjectRootSnapshot) => ProjectRootSnapshot | null;
   },
 ): ProjectRootSnapshot | null {
-  const root = buildSnapshot(rootInput);
+  const root = buildProjectRootSnapshot(rootInput);
   if (!options.canSelect(root)) {
     return options.fallback(root);
   }
@@ -655,7 +660,7 @@ function selectPreferredCandidate(
   let bestScore = -1;
 
   for (const candidateInput of candidateInputs) {
-    const candidate = buildSnapshot(candidateInput);
+    const candidate = buildProjectRootSnapshot(candidateInput);
     if (!options.isEligible(candidate)) {
       continue;
     }
@@ -858,6 +863,15 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     rootDirectory ||
     "app";
 
+  // A sub-app the Dockerfile owns carries no buildpack commands: the pipeline
+  // takes the Dockerfile branch on `stack === "docker"` (see cloud.ts /
+  // docker.ts) and ignores them, so a detected `npm i --force` — which
+  // detectStack still emits from a sibling package.json — is a lie in the UI and
+  // in the persisted service. Keyed on the STACK, not on "a Dockerfile exists":
+  // a Next.js app that merely ships an optional Dockerfile detects as `nextjs`
+  // and still builds via buildpack, so blanking its commands would leave it with
+  // nothing to install, build, or start.
+  const dockerOwnsBuild = stack.stack === "docker";
   // Static sub-apps keep an empty start command: the monorepo build pipeline
   // serves them as files — via the edge on self-hosted, a generated nginx image on
   // cloud (see isStaticService /
@@ -869,9 +883,9 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     stack: stack.stack,
     category: stack.category,
     packageManager: stack.packageManager,
-    buildCommand: stack.buildCommand,
-    installCommand: stack.installCommand,
-    startCommand: stack.startCommand,
+    buildCommand: dockerOwnsBuild ? "" : stack.buildCommand,
+    installCommand: dockerOwnsBuild ? "" : stack.installCommand,
+    startCommand: dockerOwnsBuild ? "" : stack.startCommand,
     buildImage: stack.buildImage,
     outputDirectory: stack.outputDirectory,
     productionPaths: stack.productionPaths,
@@ -896,7 +910,7 @@ export function discoverMonorepoApps(
   candidateInputs: ProjectRootSnapshotInput[],
 ): { apps: MonorepoApp[]; workspace: MonorepoWorkspace } | null {
   const candidates = candidateInputs
-    .map(buildSnapshot)
+    .map(buildProjectRootSnapshot)
     .filter(isMonorepoAppCandidate);
 
   const workspacePackageManager = detectPackageManager(
@@ -920,7 +934,7 @@ export function discoverMonorepoApps(
     prepareCommand = getInstallCommand(resolvedPackageManager) || "";
   } else {
     // Implicit monorepo: deployable root app + ≥1 self-contained nested app.
-    const rootSnapshot = buildSnapshot(rootInput);
+    const rootSnapshot = buildProjectRootSnapshot(rootInput);
     const independent = candidates.filter(isIndependentlyDeployable);
     if (!isDeployableRootApp(rootSnapshot) || independent.length < 1) return null;
     apps = [

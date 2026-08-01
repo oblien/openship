@@ -6,9 +6,11 @@ import ProjectSettings from "@/components/import-project/ProjectSettings";
 import BuildSettings from "@/components/import-project/BuildSettings";
 import DockerSettings from "@/components/import-project/DockerSettings";
 import ComposeServices from "@/components/import-project/ComposeServices";
+import { ComposePathField } from "@/components/import-project/ComposePathField";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import MonorepoApps from "@/components/import-project/MonorepoApps";
 import RoutingSection from "@/components/import-project/RoutingSection";
+import ReadinessSection from "@/components/project-settings/ReadinessSection";
 import Sidebar from "./components/Sidebar";
 import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets, useSeedDeployTarget } from "./components/DeployTargetStep";
 // Clone-strategy gate moved from inline render to a preflight modal
@@ -156,18 +158,29 @@ const DeployRepository: React.FC = () => {
     const appliedLastPickRef = useRef(false);
 
     const applyLastPick = useCallback(() => {
-        if (!canPickTarget || appliedLastPickRef.current) return;
+        // Don't override a SAVED project's hydrated target (same gate as
+        // useSeedDeployTarget) — the last-pick memory is for NEW deploys only.
+        if (!canPickTarget || isExistingProject || appliedLastPickRef.current) return;
         const last = typeof window !== "undefined" ? lastPickStore.read() : null;
         if (!last) return;
-        appliedLastPickRef.current = true;
-        if (last.target === "server" && last.serverId) {
+        if (last.target === "server") {
+            // lastPickStore is a browser-GLOBAL key, so this serverId may be from
+            // another project/org or a since-removed server. Replay it ONLY when
+            // it's a live target in THIS org's list (mirrors useSeedDeployTarget's
+            // gate) — otherwise leave appliedLastPickRef UNconsumed so pass-2 (after
+            // targets load) can retry, and fall through to the validated seed rather
+            // than submitting a serverId the deploy's org doesn't own.
+            if (!last.serverId || !targets.servers.some((s) => s.id === last.serverId)) return;
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "server", serverId: last.serverId });
         } else if (last.target === "cloud") {
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         } else if (last.target === "local") {
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "local", serverId: undefined });
         }
-    }, [canPickTarget, updateConfig]);
+    }, [canPickTarget, isExistingProject, targets.servers, updateConfig]);
 
     useLayoutEffect(() => {
         applyLastPick();
@@ -339,10 +352,27 @@ const DeployRepository: React.FC = () => {
             {config.projectType === "docker" && <DockerSettings />}
             {config.projectType === "services" && <ComposeServices />}
             {isMonorepoFlow && <MonorepoApps />}
+            {/* Outside every type-specific section on purpose: a repo whose compose
+                file lives in a subfolder scans as an app/docker project, and applying
+                a path flips this to `services` — so the control has to survive that
+                flip to stay correctable. */}
             {!isServiceDeployment &&
                 !(isMonorepoFlow && config.serviceDeploymentMode !== "single") && (
                 <EnvironmentVariables collapsible />
             )}
+            {/* Both of these sit AFTER env and outside every type-specific section:
+                they're project-level opt-ins that apply to whatever this deploy
+                turns out to be, and a control nested in the app/docker section
+                would vanish the moment applying a compose path flipped the wizard
+                to `services`. Readiness covers a port/path probe for a server, a
+                doc-root+index probe for a static site, and a restart-loop watch for
+                containers; compose services can override it individually in the
+                service's own settings. Both collapsed and off unless opened. */}
+            <ComposePathField />
+            <ReadinessSection
+                value={config.readiness}
+                onChange={(next) => updateConfig({ readiness: next ?? null })}
+            />
             <ProjectName />
             {(config.projectType === "app" || isMonorepoFlow) && <RoutingSection />}
         </>
@@ -360,6 +390,7 @@ const DeployRepository: React.FC = () => {
                             targets={targets}
                             autoSkipAllowed={autoSkipTargetRef.current}
                             onContinue={() => setStep("config")}
+                            projectId={projectId}
                         />
                     </div>
                 )}
@@ -378,6 +409,8 @@ const DeployRepository: React.FC = () => {
                                     hasServer={config.options.hasServer}
                                     runtimeMode={config.runtimeMode}
                                     isServices={usesServiceDeployment(config)}
+                                    rollbackWindow={config.rollbackWindow}
+                                    rollbackStrategy={config.rollbackStrategy}
                                     serverName={(() => {
                                         // Resolve the selected server by id; if id isn't set yet but
                                         // there's exactly one server, use it (covers the paint before

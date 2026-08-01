@@ -6,6 +6,8 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { encodeLocalSlug, encodeRepoSlug } from "@/utils/repoSlug";
 import { EnvVarsEditor } from "./EnvVarsEditor";
+import { StorageSettings } from "./StorageSettings";
+import { ResourceSettings } from "./ResourceSettings";
 
 /**
  * Project → Runtime tab. READ-ONLY by design.
@@ -91,7 +93,6 @@ export const BuildSettings = () => {
   const [envOpen, setEnvOpen] = useState(false);
 
   const isWebmail = projectData?.framework === "webmail";
-  const isCloud = projectData?.deployTarget === "cloud";
   const services = servicesData.services;
   const monorepoCount = services.filter((s) => s.kind === "monorepo").length;
   const composeCount = services.length - monorepoCount;
@@ -190,9 +191,6 @@ export const BuildSettings = () => {
         ? t.projectSettings.build.runtime.modeDirect
         : t.projectSettings.build.runtime.modeDefault;
 
-  const cpuCores = projectData?.resources?.production?.cpuCores;
-  const memoryMb = projectData?.resources?.production?.memoryMb;
-
   return (
     <div className="space-y-5">
       <SectionCard
@@ -206,12 +204,9 @@ export const BuildSettings = () => {
           <Row label={t.projectSettings.build.runtime.framework} value={projectData?.framework} />
           <Row label={t.projectSettings.build.runtime.packageManager} value={projectData?.packageManager} />
           <Row label={t.projectSettings.build.runtime.runtimeIsolation} value={runtimeModeLabel} />
-          {isCloud && (
-            <Row
-              label={t.projectSettings.build.runtime.resources}
-              value={cpuCores || memoryMb ? interpolate(t.projectSettings.build.runtime.resourcesValue, { cpu: String(cpuCores ?? "?"), memory: String(memoryMb ?? "?") }) : undefined}
-            />
-          )}
+          {/* Resources moved to the editable ResourceSettings card below — one
+              source, and it covers self-hosted (where limits are now a real
+              choice) instead of being cloud-only and read-only. */}
           <Row label={t.projectSettings.build.runtime.runtimePort} value={buildData.productionPort} mono />
           <Row label={t.projectSettings.build.runtime.installCommand} value={buildData.installCommand} mono />
           <Row
@@ -221,6 +216,11 @@ export const BuildSettings = () => {
           />
           <Row label={t.projectSettings.build.runtime.outputDirectory} value={buildData.outputDirectory} mono />
           <Row label={t.projectSettings.build.runtime.rootDirectory} value={buildData.rootDirectory || "."} mono />
+          {/* Only when pinned — a blank row would be noise for the vast majority
+              of projects, whose compose file (if any) sits at the root. */}
+          {buildData.composePath && (
+            <Row label={t.projectSettings.build.runtime.composePath} value={buildData.composePath} mono />
+          )}
           <Row
             label={t.projectSettings.build.runtime.startCommand}
             value={buildData.hasServer ? buildData.startCommand : t.projectSettings.build.runtime.staticNoServer}
@@ -228,6 +228,17 @@ export const BuildSettings = () => {
           />
         </div>
       </SectionCard>
+
+      {/* Machine power — cpu/memory caps. Editable in place, like Storage: you
+          reach for it BECAUSE a container just got OOM-killed, and routing that
+          through the full re-deploy wizard is the wrong shape. Only meaningful
+          for a project that actually runs a container. */}
+      {buildData.hasServer && <ResourceSettings />}
+
+      {/* Storage — persistent paths + object storage. Editable in place (see the
+          component's own note on why it doesn't route through the wizard). Only
+          meaningful for a project with a running container. */}
+      {buildData.hasServer && <StorageSettings />}
 
       {/* Environment variables — edited in place via a safe per-variable editor
           (diff-merge; untouched secrets are never re-sent), NOT the wizard. */}

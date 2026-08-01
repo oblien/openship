@@ -1,5 +1,5 @@
 import type { Domain, Project, Service } from "@repo/db";
-import { SYSTEM, resolveServiceHostnameLabel } from "@repo/core";
+import { SYSTEM, resolveServiceHostnameLabel, resolveRedirectStatus } from "@repo/core";
 import { getRoutingBaseDomain } from "./routing-domains";
 import { resolveServicePort, serviceKind } from "./deployable-service";
 import { env } from "../config/env";
@@ -37,6 +37,11 @@ export interface StoredPublicEndpoint {
   domain?: string;
   customDomain?: string;
   domainType: "free" | "custom";
+  /** Canonical redirect to another hostname of the same project instead of
+   *  serving the app — see lib/domain-redirect.ts. Absent = serves the app. */
+  redirectTo?: string;
+  /** 301 | 302 | 307 | 308; absent = 301. Only meaningful with `redirectTo`. */
+  redirectStatus?: number;
 }
 
 type StoredPublicEndpointInput = {
@@ -45,11 +50,21 @@ type StoredPublicEndpointInput = {
   domain?: string | null;
   customDomain?: string | null;
   domainType?: "free" | "custom" | null;
+  redirectTo?: string | null;
+  redirectStatus?: number | string | null;
 };
 
 export type ProjectDomainRow = Pick<
   Domain,
-  "hostname" | "isPrimary" | "verified" | "serviceId" | "targetPort" | "targetPath" | "domainType"
+  | "hostname"
+  | "isPrimary"
+  | "verified"
+  | "serviceId"
+  | "targetPort"
+  | "targetPath"
+  | "domainType"
+  | "redirectTo"
+  | "redirectStatus"
 >;
 
 function normalizePort(port: number | string | null | undefined): number | null {
@@ -84,6 +99,25 @@ export function normalizeTargetPath(targetPath: string | null | undefined): stri
 
   const cleanSegments = segments.filter((segment) => segment !== ".");
   return cleanSegments.length > 0 ? `/${cleanSegments.join("/")}` : "/";
+}
+
+/**
+ * Redirect fields for an endpoint, omitted entirely when there's no redirect — so
+ * a serving route's stored shape is byte-identical to what it was before redirects
+ * existed.
+ *
+ * This is the READ/normalize path, so an unusable status is coerced rather than
+ * rejected (`resolveRedirectStatus`, the same coercion the edge renderer uses).
+ * Refusing a bad one is the write path's job — see lib/domain-redirect.ts.
+ */
+function normalizeRedirectFields(
+  redirectTo: string | null | undefined,
+  redirectStatus: number | string | null | undefined,
+): { redirectTo?: string; redirectStatus?: number } {
+  const target = redirectTo ? normalizeCustomDomain(redirectTo) : undefined;
+  if (!target) return {};
+  const raw = typeof redirectStatus === "string" ? Number(redirectStatus) : redirectStatus;
+  return { redirectTo: target, redirectStatus: resolveRedirectStatus(raw) };
 }
 
 function managedHostnameSuffix(): string {
@@ -138,10 +172,14 @@ export function routeDomainRowToPublicEndpoint(
   const targetPath = normalizeTargetPath(domain.targetPath);
   const domainType = inferPublicRouteDomainType(hostname, domain.domainType);
 
-  // Exactly one of port / targetPath must be set (proxy vs static).
+  // Exactly one of port / targetPath must be set (proxy vs static). A redirecting
+  // host is no exception: it keeps its destination so that dropping the redirect
+  // restores a serving route with no re-entry of the port/path.
   if ((port !== undefined) === Boolean(targetPath)) {
     return null;
   }
+
+  const redirect = normalizeRedirectFields(domain.redirectTo, domain.redirectStatus);
 
   if (domainType === "free") {
     const slug = managedHostnameToSlug(hostname);
@@ -152,6 +190,7 @@ export function routeDomainRowToPublicEndpoint(
       ...(targetPath ? { targetPath } : {}),
       domain: slug,
       domainType,
+      ...redirect,
     } satisfies StoredPublicEndpoint;
   }
 
@@ -160,6 +199,7 @@ export function routeDomainRowToPublicEndpoint(
     ...(targetPath ? { targetPath } : {}),
     customDomain: hostname,
     domainType,
+    ...redirect,
   } satisfies StoredPublicEndpoint;
 }
 
@@ -220,6 +260,7 @@ function normalizeStoredPublicEndpoint(
     domain,
     customDomain,
     domainType,
+    ...normalizeRedirectFields(endpoint.redirectTo, endpoint.redirectStatus),
   } satisfies StoredPublicEndpoint;
 }
 

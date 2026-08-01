@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "Directorio con la salida de la compilación",
     "sourceFolderLabel": "Carpeta de origen",
     "sourceFolderDesc": "Compila desde un subdirectorio dentro del repositorio o proyecto local.",
+    "composePath": {
+      "title": "Archivo Compose",
+      "subtitle": "Detectado automáticamente en la raíz del proyecto",
+      "label": "Ruta al archivo Compose",
+      "description": "Para repos que guardan compose fuera de la raíz: indica el archivo (deploy/stack.yml) o la carpeta que lo contiene (deploy/docker-compose). Vuelve a escanear el repo y despliega los servicios que declara.",
+      "apply": "Escanear",
+      "scanning": "Escaneando…",
+      "scanFailed": "No se pudo escanear esa ruta de Compose.",
+      "subtitleOptIn": "¿Desplegar con Docker Compose? Indica el archivo."
+    },
+    "healthCheck": {
+      "title": "Comprobaciones de estado",
+      "subtitle": "Desactivadas — el despliegue termina en cuanto la app está en marcha",
+      "subtitleOn": "Activadas — el despliegue espera a tu app antes de publicarse",
+      "description": "Openship no espera a tu app después de arrancarla, así que un arranque lento nunca retrasa ni hace fallar un despliegue. Una vez publicado, el puerto se comprueba de todos modos y se informa sin bloquear nada. Actívalas solo si quieres que el propio despliegue se niegue a darse por bueno.",
+      "probeLabel": "Esperar a que la app responda",
+      "probeDesc": "Tras arrancar el contenedor, contactar con el puerto de la app y esperar a que acepte una conexión.",
+      "pathLabel": "Ruta HTTP",
+      "pathPlaceholder": "/health",
+      "pathDesc": "Exige que un GET aquí responda por debajo de 500. Déjalo vacío para aceptar cualquier conexión TCP, lo que también sirve para servicios que no son HTTP.",
+      "timeoutLabel": "Rendirse tras (segundos)",
+      "stabilizationLabel": "Vigilar bucles de reinicio",
+      "stabilizationDesc": "Vigila el contenedor tras arrancar e informa de un bucle de caídas. Consulta el runtime, así que también funciona en servidores remotos.",
+      "stabilizationWindowLabel": "Vigilar durante (segundos)",
+      "onFailureLabel": "Si falla una comprobación",
+      "onFailureWarn": "Mantener el despliegue activo y marcarlo para revisión",
+      "onFailureFail": "Hacer fallar el despliegue y mantener sirviendo la versión anterior"
+    },
     "buildImageLabel": "Imagen de compilación",
     "buildImageDesc": "Imagen del contenedor compilador para compilaciones en la nube o en el servidor. Sobrescríbela cuando la imagen base detectada sea incorrecta.",
     "productionPathsLabel": "Rutas de producción",
@@ -122,6 +150,11 @@
       "clipboardEmpty": "El portapapeles está vacío",
       "clipboardInvalid": "El portapapeles no contiene variables de entorno válidas con formato KEY=VALUE",
       "clipboardBlocked": "El acceso al portapapeles fue bloqueado. Haz clic dentro de la caja de entorno y pega con Cmd/Ctrl+V."
+    },
+    "reveal": {
+      "show": "Mostrar valores",
+      "hide": "Ocultar valores",
+      "error": "No se pudieron mostrar los valores"
     }
   },
   "composeServices": {
@@ -278,7 +311,6 @@
       "successful": "Despliegue exitoso",
       "deploying": "Desplegando..."
     },
-    "viewDashboard": "Ver panel",
     "visitSite": "Visitar el sitio",
     "warningTitle": "El despliegue finalizó, pero algunos servicios aún necesitan atención.",
     "productionLogs": "Registros de producción",
@@ -320,7 +352,6 @@
     "running": "en ejecución",
     "buildingSuffix": "· {count} compilando",
     "failedSuffix": "· {count} fallidos",
-    "viewDashboard": "Ver panel",
     "decisionBannerTitle": "Acción requerida: algunos servicios fallaron",
     "decisionBannerDefaultMsg": "Este despliegue finalizó con servicios fallidos. Consérvalo y corrígelos más tarde, o recházalo para restaurar la versión anterior.",
     "review": "Revisar",

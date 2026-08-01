@@ -23,6 +23,7 @@ Send a personal access token as a bearer header (`Authorization: Bearer <token>`
 | `GET /api/domains` | `domain:list` | List domains (optionally `?projectId=`). |
 | `POST /api/domains` | `domain:write` | Add a domain to a project. |
 | `POST /api/domains/preview` | `domain:read` | Preview the DNS records a hostname will need — creates nothing. |
+| `GET /api/domains/:id` | `domain:read` | Read one domain's verify + SSL state. |
 | `DELETE /api/domains/:id` | `domain:admin` | Remove a domain. |
 | `POST /api/domains/:id/verify` | `domain:write` | Verify ownership / DNS for a domain. |
 | `POST /api/domains/:id/primary` | `domain:write` | Make this the project's primary domain. |
@@ -44,6 +45,9 @@ POST /api/domains
     hostname: { type: 'string', description: 'The fully-qualified domain, e.g. app.example.com.', required: true },
     isPrimary: { type: 'boolean', description: "Make this the project's primary domain.", default: 'false' },
     externalIngress: { type: 'boolean', description: 'TLS is terminated upstream (Cloudflare Tunnel, a load balancer). Openship verifies ownership by DNS TXT only, does not require the domain to resolve to this box, and issues no certificate.', default: 'false' },
+    includeWww: { type: 'boolean', description: 'Also claim www.<hostname> as a SEPARATE domain — its own row, DNS record, verification and certificate, created as a 301 to the bare domain. The response carries its id in `www` (or the reason it could not be claimed in `wwwError`), and `records` includes its DNS record.', default: 'false' },
+    redirectTo: { type: 'string', description: 'Answer a redirect to another domain of the SAME project instead of serving the app. Must be one of the project\'s own hostnames; self-targets and loops are refused. Self-hosted only.' },
+    redirectStatus: { type: 'number', description: 'Redirect code used with redirectTo: 301, 302, 307 or 308.', default: '301' },
   }}
 />
 

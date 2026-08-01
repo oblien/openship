@@ -11,6 +11,7 @@ import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { useBuildStream } from "@/hooks/useSSEConnection";
 import { deployApi, projectsApi } from "@/lib/api";
 import { randomUUID } from "@/lib/random-uuid";
+import { redirectPayloadFields } from "@/lib/public-endpoint-payload";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { ApiError, getApiErrorMessage } from "@/lib/api/client";
 import { DeployCredentialModal } from "@/components/deployments/DeployCredentialModal";
@@ -74,6 +75,10 @@ function mapServiceStatusesFromBuildStatus(data: any): ServiceDeployStatus[] {
   });
 }
 
+// Two wire shapes, deliberately: the project API takes `port` as a number and
+// optional hostnames, the build API takes a string port and required ones. They
+// share `redirectPayloadFields` so the part that's easy to forget lives in one
+// place — see lib/public-endpoint-payload.
 function serializeProjectPublicEndpoint(
   endpoint: DeploymentConfig["publicEndpoints"][number],
   hasServer: boolean,
@@ -85,6 +90,7 @@ function serializeProjectPublicEndpoint(
     domain: endpoint.domain || undefined,
     customDomain: endpoint.customDomain || undefined,
     domainType: endpoint.domainType,
+    ...redirectPayloadFields(endpoint),
   };
 }
 
@@ -99,6 +105,7 @@ function serializeBuildPublicEndpoint(
     domain: endpoint.domain,
     customDomain: endpoint.customDomain,
     domainType: endpoint.domainType,
+    ...redirectPayloadFields(endpoint),
   };
 }
 
@@ -217,6 +224,19 @@ export function useDeploymentBuild(
   // Wall-clock of the last self-heal poll — rate-caps the leading poll so effect
   // re-creation (dep churn) can't burst getBuildStatus into a request storm.
   const lastBuildStatusPollRef = useRef(0);
+  /**
+   * Deployment ids whose terminal state has already dropped the project cache.
+   *
+   * A deploy can be observed as finished by THREE different paths: the live SSE
+   * completion event, the self-heal poll, and the initial load of an
+   * already-finished deployment (a refresh). Only the SSE one invalidated, so
+   * refreshing mid-deploy left the project page serving whatever it had cached —
+   * which, if the user opened the project while the deploy was still running, was
+   * the pre-deploy DRAFT. "Open Dashboard" then landed on "Ready to deploy" next
+   * to a Deployed v1 in the same view. Keyed by id so the poll can fire every
+   * tick without re-invalidating.
+   */
+  const terminalInvalidatedRef = useRef<Set<string>>(new Set());
   /** Wall-clock when each build phase (by step index) became current — used to
    *  derive live per-phase durations as the build advances. Reset per deploy. */
   const phaseStartRef = useRef<Record<number, number>>({});
@@ -234,6 +254,20 @@ export function useDeploymentBuild(
           : "building";
 
   // ── Terminal helpers ──────────────────────────────────────────────────────
+
+  /**
+   * A deployment reached a terminal state → drop the project's cached info once,
+   * so the project view re-reads instead of serving a snapshot taken while the
+   * deploy was still running (draft status, no live URL, stale banners).
+   *
+   * Idempotent per deployment id: safe to call from the poll on every tick.
+   */
+  const invalidateOnTerminal = useCallback((projectId?: string, deploymentId?: string) => {
+    if (!projectId || !deploymentId) return;
+    if (terminalInvalidatedRef.current.has(deploymentId)) return;
+    terminalInvalidatedRef.current.add(deploymentId);
+    invalidateProjectCaches(projectId);
+  }, []);
 
   const writeToTerminal = useCallback((data: Uint8Array) => {
     if (terminalRef.current && isTerminalReady.current) {
@@ -295,11 +329,12 @@ export function useDeploymentBuild(
     // view re-reads fresh (clears the "New commit"/"Action Required" banners).
     if (data?.project_id) invalidateProjectCaches(data.project_id);
 
-    if (warningMessage) {
-      const textEncoder = new TextEncoder();
-      writeToTerminal(textEncoder.encode(`\r\n\x1b[33m Deployment completed with warnings: ${warningMessage}\x1b[0m\r\n`));
-    }
-  }, [writeToTerminal]);
+    // No terminal write: every warning path now logs `Deployment completed with
+    // warnings: …` server-side (compose deploy.service, the edge/route rollup in
+    // executeServerDeploy, and the compose partial-failure rollup), so writing it
+    // here as well double-printed it for compose and left it out of the persisted
+    // log for the others. One writer — the server. Same rule as the failure path.
+  }, []);
 
   const handleFailureMessage = useCallback(
     (message?: string, errorCode?: string, errorDetails?: Record<string, unknown>) => {
@@ -325,11 +360,19 @@ export function useDeploymentBuild(
         errorDetails: errorDetails || null,
       }));
 
-      const textEncoder = new TextEncoder();
-      writeToTerminal(textEncoder.encode(`\r\n\x1b[31m Deployment Failed: ${errorMessage}\x1b[0m\r\n`));
+      // The TRACE is written server-side and only server-side: the pipeline logs
+      // `Error: <msg>` (build-pipeline catch) or `Deployment failed before build
+      // started: <msg>` (markDeploymentFailedFromOutside) before this ever fires,
+      // and both persist into the build session. Writing the message here too put
+      // it in the terminal TWICE — live (log event, then this) and on replay
+      // (hydrated buildLogs, then this). `onFailure` in deployment-lifecycle
+      // appends no log of its own, so the server line is the single emission.
+      //
+      // The toast is a DIFFERENT surface, not the trace, so it stays: state drives
+      // the failure banner, the toast notifies, the terminal keeps the one line.
       showToast(errorMessage, "error", "Deployment Failed");
     },
-    [showToast, writeToTerminal],
+    [showToast],
   );
 
   const handleProgressUpdate = useCallback((currentStep: number, progress: number) => {
@@ -657,6 +700,7 @@ export function useDeploymentBuild(
             outputDirectory: config.options.outputDirectory,
             productionPaths: config.options.productionPaths,
             rootDirectory: config.options.rootDirectory,
+            composePath: config.composePath ?? "",
             productionPort:
               config.options.hasServer && config.options.productionPort
                 ? Number(config.options.productionPort)
@@ -714,6 +758,10 @@ export function useDeploymentBuild(
         installCommand: config.options.installCommand,
         startCommand: config.options.startCommand,
         rootDirectory: config.options.rootDirectory,
+        // Always sent, never omitted: the API normalizes blank to NULL, so this
+        // both persists a pin (the push-triggered drift reconcile needs it to
+        // re-read the SAME file) and clears one the user removed.
+        composePath: config.composePath ?? "",
         port: config.options.hasServer && config.options.productionPort
           ? Number(config.options.productionPort)
           : undefined,
@@ -729,6 +777,10 @@ export function useDeploymentBuild(
           : undefined,
         hasServer: config.options.hasServer,
         hasBuild: config.options.hasBuild,
+        // Rollback retention chosen in the target panel. Only meaningful on a
+        // FIRST deploy — for an existing project the panel already persisted it.
+        ...(config.rollbackWindow !== undefined ? { rollbackWindow: config.rollbackWindow } : {}),
+        ...(config.rollbackStrategy ? { defaultRollbackStrategy: config.rollbackStrategy } : {}),
         // Monorepo: persist the per-sub-app slices + shared workspace install.
         projectType: isMonorepoDeployment ? "monorepo" : undefined,
         monorepoApps: isMonorepoDeployment
@@ -756,6 +808,9 @@ export function useDeploymentBuild(
         // Persist the repo's vercel.json routing so the backend compiles it to
         // OpenResty at deploy (single-domain rewrites, redirects, headers).
         routingConfig: config.routingConfig ?? undefined,
+        // Deploy-time readiness gate. Omitted when the Health section was left
+        // alone, which is the default — the backend then runs no post-start probe.
+        readiness: config.readiness ?? undefined,
       });
 
       if (!projectData.success || !projectData.project_id) {
@@ -955,6 +1010,10 @@ export function useDeploymentBuild(
         if (typeof data.lastEventId === "number") {
           lastEventIdRef.current = data.lastEventId;
         }
+        // The poll — not just the live stream — can be what observes the finish.
+        if (!isActive && status === "ready") {
+          invalidateOnTerminal(data.project_id, deploymentId);
+        }
         setState((prev) => ({
           ...prev,
           currentProgress: data.progress ?? prev.currentProgress,
@@ -1039,6 +1098,8 @@ export function useDeploymentBuild(
               domain?: string;
               customDomain?: string;
               domainType?: "free" | "custom";
+              redirectTo?: string;
+              redirectStatus?: number;
             }) => {
               let cleanDomain = endpoint.domain || "";
               const dotIdx = cleanDomain.indexOf(".");
@@ -1053,6 +1114,10 @@ export function useDeploymentBuild(
                 domain: cleanDomain,
                 customDomain: endpoint.customDomain || "",
                 domainType: endpoint.domainType || "free",
+                // Restoring a build session: the deploy sends this list back, and an
+                // omitted redirect clears the stored one.
+                redirectTo: endpoint.redirectTo || undefined,
+                redirectStatus: endpoint.redirectStatus || undefined,
               };
             }),
             apiHasServer ? undefined : { targetPath: "/" },
@@ -1126,6 +1191,12 @@ export function useDeploymentBuild(
         // the self-heal poll, instead of freezing until a manual refresh.
         const isTerminal = status === "ready" || status === "failed" || status === "cancelled";
         const isLive = isActive || !isTerminal;
+
+        // Landing on an ALREADY-finished deployment (the refresh case) must drop
+        // the cache too — this page instance never saw the SSE completion.
+        if (!isActive && status === "ready") {
+          invalidateOnTerminal(data.project_id, deploymentId);
+        }
 
         setState((prev) => ({
           ...prev,

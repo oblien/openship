@@ -237,6 +237,21 @@ export function GitHubConnection() {
       : ghMethod === "device"
         ? t.settings.github.methodDevice
         : t.settings.github.methodHostCli;
+  // Where this credential is administered ON GITHUB — the only place it can
+  // actually be revoked. A PAT lives in the token settings; a device sign-in and
+  // the host's gh login are both OAuth grants under authorized apps.
+  const ghManageUrl =
+    ghMethod === "token"
+      ? "https://github.com/settings/tokens"
+      : "https://github.com/settings/applications";
+  const ghManageLabel =
+    ghMethod === "token"
+      ? t.settings.github.manageTokensOnGithub
+      : t.settings.github.manageAccessOnGithub;
+  // A credential is stored but unusable. Distinct from "nothing connected": the
+  // card used to render the connect chooser for both, so a revoked token looked
+  // exactly like a fresh install while every clone using it failed.
+  const ghProblem = state.sources.ghCli.problem;
 
   return (
     <SettingsSection
@@ -353,7 +368,9 @@ export function GitHubConnection() {
                 onClick={() =>
                   promptDisconnect(
                     activeIsGh ? "cli" : "oauth",
-                    activeIsGh ? t.settings.github.methodDevice : t.settings.github.disconnectAppLabel,
+                    // Name what is being disconnected. This said "GitHub sign-in"
+                    // for every gh-side credential, including a pasted token.
+                    activeIsGh ? ghMethodLabel : t.settings.github.disconnectAppLabel,
                     activeIsGh ? t.settings.github.ghCli.disconnectBody : t.settings.github.disconnectAppBody,
                   )
                 }
@@ -362,6 +379,20 @@ export function GitHubConnection() {
                 <Unplug className="size-3.5" />
                 {t.settings.github.disconnect}
               </button>
+              {/* Revoking is only possible ON GitHub, so the card has to be able
+                  to send the operator there. Shown for the ACTIVE identity, same
+                  as Disconnect — the App block carries its own installs link. */}
+              {activeIsGh && (
+                <a
+                  href={ghManageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/40 hover:bg-muted/60 rounded-lg border border-border/50 transition-colors"
+                >
+                  {ghManageLabel}
+                  <ExternalLink className="size-3" />
+                </a>
+              )}
               <button
                 type="button"
                 onClick={() => setShowChangeMethod((v) => !v)}
@@ -372,6 +403,15 @@ export function GitHubConnection() {
                 <ChevronDown className={`size-3.5 transition-transform ${showChangeMethod ? "rotate-180" : ""}`} />
               </button>
             </div>
+            {/* What Disconnect actually does. It clears the credential from this
+                instance and sweeps the caches; it cannot and does not revoke
+                anything at GitHub, which is a difference the operator has to know
+                before assuming a leaked token is dead. */}
+            {activeIsGh && (
+              <p className="text-xs text-muted-foreground/80 leading-relaxed">
+                {t.settings.github.disconnectScopeNote}
+              </p>
+            )}
             {showChangeMethod && (
               <MethodChooser
                 can={can}
@@ -394,25 +434,123 @@ export function GitHubConnection() {
       ) : (
         /* Nothing connected. Signing in with GitHub is the default because it
            needs no app registration, no Openship account and no shell on the box;
-           everything else is a deliberate choice behind the disclosure. */
-        <MethodChooser
-          can={can}
-          appRequiresCloud={
-            capabilities?.methods.find((m) => m.kind === "app")?.requiresCloud ?? isSelfHosted
-          }
-          cloudConnected={cloudConnected}
-          connecting={connecting}
-          showSignIn
-          showApp
-          primary
-          onSignIn={() => connect("cli")}
-          onConnectApp={() => connect("oauth")}
-          onConnectCloud={startCloudConnect}
-          onSsh={() => router.push("/servers")}
-          onToken={() => router.push("/settings?tab=tokens")}
-        />
+           everything else is a deliberate choice behind the disclosure.
+
+           When a credential IS stored and merely failed its check, the chooser
+           alone would be a lie by omission — hence the banner above it. */
+        <div className="space-y-4">
+          {ghProblem && (
+            <CredentialProblem
+              problem={ghProblem}
+              methodLabel={ghMethodLabel}
+              checkedAt={state.sources.ghCli.checkedAt}
+              manageUrl={ghManageUrl}
+              manageLabel={ghManageLabel}
+              onRecheck={() => void loadStatus(true)}
+            />
+          )}
+          <MethodChooser
+            can={can}
+            appRequiresCloud={
+              capabilities?.methods.find((m) => m.kind === "app")?.requiresCloud ?? isSelfHosted
+            }
+            cloudConnected={cloudConnected}
+            connecting={connecting}
+            showSignIn
+            showApp
+            primary
+            onSignIn={() => connect("cli")}
+            onConnectApp={() => connect("oauth")}
+            onConnectCloud={startCloudConnect}
+            onSsh={() => router.push("/servers")}
+            onToken={() => router.push("/settings?tab=tokens")}
+          />
+        </div>
       )}
     </SettingsSection>
+  );
+}
+
+/**
+ * A stored credential that didn't pass its check.
+ *
+ * The two cases must not read alike. "rejected" is GitHub refusing the
+ * credential — actionable, and clones will keep failing until it's replaced.
+ * "unreachable" means we never got an answer, so the credential is probably
+ * fine and telling the operator to go revoke it would be actively wrong.
+ */
+function CredentialProblem(props: {
+  problem: "rejected" | "unreachable";
+  methodLabel: string;
+  checkedAt?: string;
+  manageUrl: string;
+  manageLabel: string;
+  /** Re-run the verify. The card checks on load, but "unreachable" is usually
+   *  transient and re-checking beats making the operator reload the page. */
+  onRecheck: () => void;
+}) {
+  const { problem, methodLabel, checkedAt, manageUrl, manageLabel, onRecheck } = props;
+  const { t } = useI18n();
+  const rejected = problem === "rejected";
+  // Locale-formatted and only as precise as it needs to be. Invalid/absent
+  // timestamps simply drop the line rather than rendering "Invalid Date".
+  const checked = (() => {
+    if (!checkedAt) return null;
+    const d = new Date(checkedAt);
+    return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
+  })();
+
+  return (
+    <div
+      className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${
+        rejected ? "border-danger-border bg-danger-bg" : "border-border/50 bg-muted/20"
+      }`}
+    >
+      {rejected ? (
+        <KeyRound className="size-4 mt-0.5 shrink-0 text-danger" />
+      ) : (
+        <KeyRound className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+      )}
+      <div className="min-w-0 space-y-1">
+        <p className={`text-sm font-medium ${rejected ? "text-danger" : "text-foreground"}`}>
+          {interpolate(
+            rejected ? t.settings.github.credentialRejected : t.settings.github.credentialUnreachable,
+            { method: methodLabel },
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {rejected
+            ? t.settings.github.credentialRejectedImpact
+            : t.settings.github.credentialUnreachableImpact}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+          {rejected && (
+            <a
+              href={manageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-foreground underline underline-offset-2 hover:text-primary"
+            >
+              {manageLabel}
+              <ExternalLink className="size-3" />
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={onRecheck}
+            className="inline-flex items-center gap-1 text-xs font-medium text-foreground underline underline-offset-2 hover:text-primary"
+          >
+            <RefreshCw className="size-3" />
+            {t.settings.github.ghCli.recheck}
+          </button>
+          {checked && (
+            <span className="text-xs text-muted-foreground/70">
+              {interpolate(t.settings.github.credentialCheckedAt, { time: checked })}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

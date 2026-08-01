@@ -107,11 +107,15 @@ export function PersonalAccessTokens() {
     }
     setCreating(true);
     try {
+      // Scope intent is stated, not inferred: the guard above already rejects
+      // "scoped but nothing picked", so reaching here with no grants means the
+      // user left scoping off and really does want a full-access token.
+      const wantScoped = scopeEnabled && scopeGrants.length > 0;
       const res = await tokensApi.create({
         name: name.trim(),
         readOnly,
         ...(expiryDays > 0 ? { expiresInDays: expiryDays } : {}),
-        ...(scopeEnabled && scopeGrants.length > 0 ? { grants: scopeGrants } : {}),
+        ...(wantScoped ? { grants: scopeGrants } : { fullAccess: true }),
       });
       setNewToken(res.data.token);
       setShowForm(false);

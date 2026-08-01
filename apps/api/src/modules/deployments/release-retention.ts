@@ -1,55 +1,112 @@
-import { repos, type Deployment, type Project } from "@repo/db";
-import { normalizeRollbackWindow } from "../../lib/release-retention";
-import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { repos } from "@repo/db";
+import { computeAutoRollbackWindow, normalizeRollbackWindow } from "@repo/core";
 
-export async function resolveRollbackWindow(project: Pick<Project, "rollbackWindow">): Promise<number> {
+/** The retention-relevant slice of a project row. Fields are optional so
+ *  callers (and test fixtures) can pass a narrow literal; a full `Project`
+ *  satisfies it structurally. */
+export interface RollbackWindowProject {
+  rollbackWindow?: number | null;
+  rollbackWindowComputed?: number | null;
+  snapshotSizeBytes?: number | null;
+  capacityMeasuredAt?: Date | null;
+}
+
+export type RollbackWindowSource = "explicit" | "auto" | "instance-default";
+
+export interface ResolvedRollbackWindow {
+  window: number;
+  source: RollbackWindowSource;
+  /** Measured bytes for one retained release, when known. */
+  snapshotSizeBytes: number | null;
+  measuredAt: Date | null;
+}
+
+/**
+ * THE rollback window for a project. Every retention decision — prune, the image
+ * GC keep set, the wizard's label — resolves through here, so there is exactly
+ * one answer to "how many releases stay restorable".
+ *
+ *   explicit          the operator typed a number (`project.rollbackWindow`).
+ *   auto              nothing typed → the disk-sized window measured at the last
+ *                     deploy (`project.rollbackWindowComputed`).
+ *   instance-default  never measured → instance_settings.default_rollback_window.
+ *
+ * Deliberately I/O-free apart from the instance-settings read: the disk probe and
+ * the snapshot measurement happen ONCE per deploy (see refreshRollbackCapacity)
+ * and are persisted, so prune and the daily GC sweep never SSH anywhere to
+ * decide retention.
+ */
+export async function resolveRollbackWindowDetail(
+  project: RollbackWindowProject,
+): Promise<ResolvedRollbackWindow> {
+  const snapshotSizeBytes = project.snapshotSizeBytes ?? null;
+  const measuredAt = project.capacityMeasuredAt ?? null;
+
   if (project.rollbackWindow !== null && project.rollbackWindow !== undefined) {
-    return normalizeRollbackWindow(project.rollbackWindow);
+    return {
+      window: normalizeRollbackWindow(project.rollbackWindow),
+      source: "explicit",
+      snapshotSizeBytes,
+      measuredAt,
+    };
+  }
+
+  if (project.rollbackWindowComputed !== null && project.rollbackWindowComputed !== undefined) {
+    return {
+      window: normalizeRollbackWindow(project.rollbackWindowComputed),
+      source: "auto",
+      snapshotSizeBytes,
+      measuredAt,
+    };
   }
 
   const settings = await repos.instanceSettings.get();
-  return normalizeRollbackWindow(settings?.defaultRollbackWindow);
+  return {
+    window: normalizeRollbackWindow(settings?.defaultRollbackWindow),
+    source: "instance-default",
+    snapshotSizeBytes,
+    measuredAt,
+  };
 }
 
-export async function pruneRetainedBareReleases(
-  project: Project,
-  currentDeployment: Deployment,
-): Promise<void> {
-  const rollbackWindow = await resolveRollbackWindow(project);
-  const { rows } = await repos.deployment.listByProject(project.id, {
-    perPage: 1000,
-    environment: currentDeployment.environment,
+export async function resolveRollbackWindow(project: RollbackWindowProject): Promise<number> {
+  return (await resolveRollbackWindowDetail(project)).window;
+}
+
+/**
+ * Re-measure and persist the inputs to the AUTO window. Called from the image
+ * reap that already runs after every successful deploy — it has the project's
+ * images (and their sizes) in hand there, and the host is already reachable, so
+ * this costs one extra `df`.
+ *
+ * `imageSizes` are this project's built images. The mean is the honest estimate
+ * for "one more retained release": Docker's per-image sizes double-count shared
+ * layers, so summing them would badly over-estimate, and the largest single
+ * image would too.
+ */
+export async function refreshRollbackCapacity(opts: {
+  projectId: string;
+  imageSizes: number[];
+  diskFreeBytes: number | null;
+  instanceDefault: number;
+}): Promise<void> {
+  const sizes = opts.imageSizes.filter((n) => Number.isFinite(n) && n > 0);
+  if (sizes.length === 0) return;
+
+  const snapshotSizeBytes = Math.round(sizes.reduce((a, b) => a + b, 0) / sizes.length);
+  const rollbackWindowComputed = computeAutoRollbackWindow({
+    diskFreeBytes: opts.diskFreeBytes,
+    snapshotSizeBytes,
+    fallback: opts.instanceDefault,
   });
 
-  let retainedPrevious = 0;
-
-  for (const dep of rows) {
-    if (dep.id === currentDeployment.id || dep.status !== "ready" || !dep.containerId) {
-      continue;
-    }
-
-    let runtime;
-    try {
-      ({ runtime } = await resolveDeploymentRuntime(dep));
-    } catch {
-      continue;
-    }
-
-    if (runtime.name !== "bare") continue;
-
-    if (retainedPrevious < rollbackWindow) {
-      retainedPrevious += 1;
-      continue;
-    }
-
-    try {
-      await runtime.destroy(dep.containerId);
-      await repos.deployment.updateStatus(dep.id, dep.status, {
-        containerId: null,
-        url: null,
-      });
-    } catch (err) {
-      console.error(`[DEPLOY] Failed to prune retained release ${dep.id}:`, err);
-    }
-  }
+  await repos.project
+    .update(opts.projectId, {
+      snapshotSizeBytes,
+      rollbackWindowComputed,
+      capacityMeasuredAt: new Date(),
+    })
+    .catch(() => {
+      /* best-effort: retention still resolves via the instance default */
+    });
 }

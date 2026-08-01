@@ -175,19 +175,55 @@
       "framework": "Framework",
       "packageManager": "Gestor de paquetes",
       "runtimeIsolation": "Aislamiento del tiempo de ejecución",
-      "resources": "Recursos",
-      "resourcesValue": "{cpu} vCPU · {memory} MB",
       "runtimePort": "Puerto del tiempo de ejecución",
       "installCommand": "Comando de instalación",
       "buildCommand": "Comando de compilación",
       "noBuildStep": "Sin paso de compilación",
       "outputDirectory": "Directorio de salida",
       "rootDirectory": "Directorio raíz",
+      "composePath": "Archivo Compose",
       "startCommand": "Comando de inicio",
       "staticNoServer": "Estático (sin servidor)",
       "modeSandboxed": "En sandbox (contenedor)",
       "modeDirect": "Directo (proceso del host)",
       "modeDefault": "Predeterminado (resuelto en el despliegue)"
+    },
+    "storage": {
+      "title": "Almacenamiento persistente",
+      "description": "Rutas que se conservan cuando una nueva versión reemplaza la anterior. Todo lo demás del contenedor se descarta en cada despliegue.",
+      "edit": "Editar",
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "saved": "Almacenamiento actualizado. Se aplica en el próximo despliegue.",
+      "reset": "Usar los valores del framework",
+      "empty": "No se conserva nada entre despliegues.",
+      "inherited": "Valores por defecto del framework para este stack.",
+      "declared": "Definido para este proyecto.",
+      "placeholder": "storage\nuploads:/app/public/uploads",
+      "hint": "Uno por línea. Una ruta simple es relativa a la app (storage), o indica un montaje completo (nombre:/app/ruta, /host/ruta:/app/ruta)."
+    },
+    "objectStorage": {
+      "title": "Almacenamiento de objetos",
+      "description": "Un bucket S3 para las subidas: sobrevive a los despliegues y funciona con más de una réplica, a diferencia de una ruta local.",
+      "connect": "Conectar",
+      "disconnect": "Desconectar",
+      "disconnected": "Almacenamiento de objetos desconectado.",
+      "connected": "Bucket verificado y conectado. Se aplica en el próximo despliegue.",
+      "loading": "Comprobando…",
+      "empty": "Ningún bucket conectado. Las subidas se quedan en el disco del contenedor.",
+      "sourceLabel": "Origen",
+      "externalOption": "Proveedor externo",
+      "providerLabel": "Proveedor",
+      "bucketLabel": "Bucket",
+      "endpointLabel": "Endpoint",
+      "regionLabel": "Región",
+      "accessKeyLabel": "ID de clave de acceso",
+      "secretKeyLabel": "Clave secreta de acceso",
+      "testAndConnect": "Probar y conectar",
+      "cancel": "Cancelar",
+      "envLabel": "Variables",
+      "envHint": "Define:",
+      "appliesOnDeploy": "Se aplica en el próximo despliegue."
     },
     "env": {
       "title": "Variables de entorno",
@@ -311,18 +347,29 @@
       "title": "Estrategia de reversión",
       "rebuild": "Reconstruir (git)",
       "instant": "Instantáneo (snapshot)",
-      "descRebuild": "La reversión vuelve a clonar y reconstruir el commit antiguo: más económico, pero más lento y puede fallar si ese commit ya no compila.",
-      "descInstant": "Mantiene en disco el artefacto de compilación de cada versión para revertir en segundos. Usa disco adicional, limitado por el máximo del historial.",
-      "toggleAria": "Alternar retención de snapshots"
+      "descRebuild": "Reconstruye el commit anterior, salvo que su imagen siga en el host.",
+      "descInstant": "Guarda la imagen de cada versión, así una restauración nunca reconstruye. Usa más disco.",
+      "toggleAria": "Alternar retención de snapshots",
+      "keepNone": "Sin copias extra",
+      "keepCopies": "Una copia por versión",
+      "descRebuildFiles": "Reconstruye el commit anterior, salvo que sus archivos sigan en el host.",
+      "descInstantFiles": "Guarda los archivos de cada versión, así una restauración nunca reconstruye. Usa más disco."
     },
     "rollbackHistory": {
       "title": "Historial de reversiones",
       "valueOne": "{count} versión",
       "valueOther": "{count} versiones",
-      "descSnapshot": "Cuántas versiones recientes conservan su artefacto de compilación para la reversión. Las más antiguas se limpian para recuperar disco.",
-      "descGit": "Solo se aplica al modo Instantáneo (snapshot): el modo Git no conserva artefactos que retener.",
+      "descSnapshot": "Las versiones antiguas se eliminan para liberar disco.",
+      "descGit": "Las imágenes recientes se conservan igualmente, así un rollback puede omitir la compilación.",
       "decreaseAria": "Reducir historial de reversiones",
-      "increaseAria": "Aumentar historial de reversiones"
+      "increaseAria": "Aumentar historial de reversiones",
+      "sizeEach": "~{size} cada una",
+      "diskFree": "{size} libres",
+      "autoBadge": "ajustado automáticamente",
+      "manualBadge": "definido manualmente",
+      "kindFiles": "archivos generados en disco",
+      "kindImages": "imágenes en el host",
+      "descGitFiles": "Los archivos de las versiones recientes se conservan igualmente, así un rollback puede omitir la compilación."
     },
     "commits": {
       "title": "Commits recientes",
@@ -385,53 +432,53 @@
   },
   "resources": {
     "title": "Potencia de la máquina",
-    "description": "Configura la potencia de la máquina para tu proyecto.",
+    "description": "Límites de CPU y memoria para los contenedores de este proyecto.",
+    "loading": "Leyendo la máquina de destino…",
+    "machineCapacity": "Máquina: {cpu} vCPU · {memory}",
+    "exceedsMachine": "Supera esta máquina",
+    "appliesOnNextDeploy": "Los límites se aplican al recrear el contenedor: vuelve a desplegar para que el cambio surta efecto.",
     "tiers": {
-      "lightweight": {
-        "name": "Ligero",
-        "description": "Aplicaciones pequeñas y sitios estáticos"
+      "unlimited": {
+        "name": "Sin límites",
+        "description": "Usar toda la máquina (predeterminado)",
+        "spec": "Capacidad de la máquina"
       },
-      "standard": {
-        "name": "Estándar",
-        "description": "La mayoría de las aplicaciones web"
+      "micro": {
+        "name": "Micro",
+        "description": "Sidecars y workers pequeños"
       },
-      "performance": {
-        "name": "Rendimiento",
-        "description": "Aplicaciones de alto tráfico"
+      "low": {
+        "name": "Baja",
+        "description": "Apps pequeñas y sitios estáticos"
       },
-      "enterprise": {
-        "name": "Empresa",
-        "description": "Aplicaciones de producción a gran escala"
+      "medium": {
+        "name": "Media",
+        "description": "La mayoría de aplicaciones web"
       },
-      "autoscale": {
-        "name": "Escalado automático",
-        "description": "Escala según la demanda"
+      "high": {
+        "name": "Alta",
+        "description": "Aplicaciones con mucho tráfico"
       }
     },
-    "dynamic": "Dinámico",
     "custom": {
       "name": "Personalizado",
-      "description": "Define tus propios recursos",
-      "clickToConfigure": "Haz clic para configurar"
+      "description": "Define tus propios límites",
+      "notSet": "Sin definir"
     },
-    "cpuValue": "{cpu} vCPU",
     "customPanel": {
-      "title": "Configurar recursos personalizados",
+      "boundedBy": "Esta máquina tiene {cpu} vCPU y {memory}. Introduce 0 para sin límite.",
+      "capacityUnknown": "No se pudo leer la capacidad de esta máquina, así que no se aplica ningún tope. Introduce 0 para sin límite.",
       "cpuCores": "Núcleos de CPU",
-      "cpuRange": "Rango: 0.25 - 4.00",
       "memory": "Memoria (MB)",
-      "memoryRange": "Rango: 128 - 8192",
+      "zeroMeansNoLimit": "0 = sin límite",
       "cancel": "Cancelar",
-      "saving": "Guardando...",
-      "save": "Guardar configuración"
+      "saving": "Guardando…",
+      "save": "Guardar"
     },
     "toast": {
-      "updated": "Recursos actualizados correctamente",
-      "updateFailed": "No se pudieron actualizar los recursos",
-      "cpuRange": "La CPU debe estar entre 0.25 y 4.00 núcleos",
-      "memoryRange": "La memoria debe estar entre 128 MB y 8192 MB",
-      "customSaved": "Recursos personalizados guardados correctamente",
-      "customSaveFailed": "No se pudieron guardar los recursos personalizados"
+      "updated": "Potencia de la máquina actualizada",
+      "updateFailed": "No se pudo actualizar la potencia de la máquina",
+      "invalidValues": "La CPU y la memoria deben ser 0 o un número positivo"
     }
   },
   "sleep": {
@@ -574,12 +621,13 @@
       "infoPreview": "Añade estos registros primero: no cambian después de añadir el dominio, así que la propagación empieza ya. Después pulsa Añadir dominio para adjuntarlo y, por último, Verificar una vez que el DNS se resuelva.",
       "infoApply": "Los cambios de DNS pueden tardar hasta 48 horas en propagarse globalmente. Una vez que los registros se resuelvan, haz clic en Verificar abajo: comprobaremos el DNS, marcaremos el dominio como activo y aprovisionaremos SSL en segundo plano.",
       "verifying": "Verificando...",
-      "verify": "Verificar {hostname}",
-      "copy": "Copiar"
+      "verify": "Verificar {hostname}"
     },
     "overview": {
       "primary": "Principal",
       "mappedTo": "Asignado a",
+      "redirect": "Redirección",
+      "redirectValue": "{status} → {hostname}",
       "status": "Estado",
       "ssl": "SSL",
       "visit": "Visitar"
@@ -666,6 +714,12 @@
       "checking": "Comprobando edge…",
       "recheck": "Volver a comprobar",
       "foreignProxyHint": "Otro proxy ocupa 80/443"
+    },
+    "diagnosis": {
+      "title": "Por qué no funciona",
+      "noneYet": "Aún no se ha ejecutado ninguna comprobación, así que no hay resultado. Añade los registros DNS mostrados y luego pulsa Verificar.",
+      "attempts": "{count} intento(s) fallido(s) hasta ahora.",
+      "pillHint": "Ver el motivo"
     }
   }
 }

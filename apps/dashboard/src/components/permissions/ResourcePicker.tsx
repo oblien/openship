@@ -16,7 +16,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Loader2, Search } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2, Search, SlidersHorizontal } from "lucide-react";
 import {
   permissionsApi,
   RESOURCE_TYPE_LABELS,
@@ -28,6 +28,11 @@ import {
 import { getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { LevelSwitch, type LevelOption } from "./LevelSwitch";
+import { ResourceAvatar } from "./ResourceAvatar";
+import { Modal } from "@/components/ui/Modal";
+import { SourceAccessModal } from "./SourceAccessModal";
+import type { SourceAccessScope } from "@repo/core";
 
 // Re-export for existing importers (TeamTab et al.) — canonical defs live in @/lib/api.
 export type { Permission, PickerGrant, ResourceType } from "@/lib/api";
@@ -82,12 +87,29 @@ function writeGrant(
   resourceType: ResourceType,
   resourceId: string,
   perms: Permission[],
+  /** Explicit source scope. Omit to CARRY FORWARD whatever the grant already had. */
+  scope?: SourceAccessScope | null,
 ): PickerGrant[] {
+  const prev = findGrantIn(value, resourceType, resourceId);
   const next = value.filter(
     (g) => !(g.resourceType === resourceType && g.resourceId === resourceId),
   );
-  if (perms.length > 0) next.push({ resourceType, resourceId, permissions: perms });
+  if (perms.length > 0) {
+    // Preserving the scope matters: this function rebuilds the grant from scratch,
+    // so without it, toggling a permission chip would silently wipe a carefully
+    // chosen path restriction (or re-open a repo the owner had narrowed).
+    const carried = scope === undefined ? prev?.scope : (scope ?? undefined);
+    next.push({ resourceType, resourceId, permissions: perms, ...(carried ? { scope: carried } : {}) });
+  }
   return next;
+}
+
+export interface LevelsConfig {
+  options: readonly LevelOption[];
+  /** A row's permissions → the id of the option to show as active. */
+  resolve: (permissions: Permission[]) => string;
+  /** A chosen option id → the exact permission set to write. */
+  toPermissions: (id: string) => Permission[];
 }
 
 interface ResourcePickerProps {
@@ -101,6 +123,34 @@ interface ResourcePickerProps {
   fixedType?: ResourceType;
   /** Default permissions when a resource is first checked. Defaults to ["read"]. */
   defaultPermissions?: Permission[];
+  /**
+   * Types whose "All X" wildcard row must NOT be offered.
+   *
+   * Needed because a wildcard is not universally mintable: `{project,"*"}` on a
+   * TOKEN must be exactly `["create"]` (apps/api token.schema.ts
+   * `wildcardProjectGrantRejected`), so offering "All projects · read/write" in a
+   * token-scoping flow builds a selection the server rejects with 400
+   * INVALID_GRANT_SCOPE. The same row is legitimate for MEMBER grants, hence a
+   * per-call-site prop rather than a rule baked in here.
+   */
+  suppressWildcardTypes?: ResourceType[];
+  /**
+   * Render named access levels instead of the read/write/admin chips.
+   *
+   * Opt-in and fully caller-defined so this component owns no level vocabulary:
+   * the MCP consent screen shows View / Deploy & manage / Full control, while the
+   * member-grants and PAT editors keep the raw chips. `resolve` maps a row's
+   * permissions to the active option, `toPermissions` maps a chosen option back to
+   * the exact set to write.
+   */
+  levels?: LevelsConfig;
+  /**
+   * Called whenever a catalog page loads, with the entries it fetched. Lets a
+   * caller that renders its own view of the selection (e.g. the MCP consent
+   * screen's summary panel) show "storefront" instead of a raw cuid, without
+   * re-fetching the same catalogs. Must be referentially stable.
+   */
+  onCatalogLoaded?: (type: ResourceType, entries: CatalogEntry[]) => void;
   disabled?: boolean;
 }
 
@@ -110,6 +160,9 @@ export function ResourcePicker({
   availableTypes,
   fixedType,
   defaultPermissions = ["read"],
+  suppressWildcardTypes,
+  levels,
+  onCatalogLoaded,
   disabled,
 }: ResourcePickerProps) {
   const { showToast } = useToast();
@@ -133,6 +186,9 @@ export function ResourcePicker({
 
   const isGithub = activeTab === "github";
   const isSingleton = activeTab === "billing" || activeTab === "audit";
+  const wildcardSuppressed =
+    !isGithub && !!suppressWildcardTypes?.includes(activeTab as ResourceType);
+  const showWildcardRow = !isSingleton && !wildcardSuppressed;
 
   const loadCatalog = useCallback(
     async (type: ResourceType) => {
@@ -140,6 +196,7 @@ export function ResourcePicker({
       try {
         const res = await permissionsApi.listResources(type);
         setCatalog(res.data ?? []);
+        onCatalogLoaded?.(type, res.data ?? []);
       } catch (err) {
         showToast(getApiErrorMessage(err, w.failedLoadResources), "error", "Picker");
         setCatalog([]);
@@ -147,7 +204,7 @@ export function ResourcePicker({
         setLoading(false);
       }
     },
-    [showToast],
+    [showToast, onCatalogLoaded],
   );
 
   useEffect(() => {
@@ -178,6 +235,11 @@ export function ResourcePicker({
     onChange(writeGrant(value, resourceType, resourceId, next));
   };
 
+  /** Replace a row's permissions outright — the level control's writer. */
+  const setPermissions = (resourceType: ResourceType, resourceId: string, perms: Permission[]) => {
+    onChange(writeGrant(value, resourceType, resourceId, perms));
+  };
+
   const filteredCatalog = useMemo(() => {
     if (!search.trim()) return catalog;
     const q = search.trim().toLowerCase();
@@ -185,9 +247,11 @@ export function ResourcePicker({
   }, [catalog, search]);
 
   // When the "All X" wildcard is selected, the specific rows are covered by it —
-  // render them disabled so the user can't pick a redundant subset.
+  // render them disabled so the user can't pick a redundant subset. Never while
+  // the wildcard row is suppressed: its checkbox is the only way to clear it, so
+  // an unclearable "covered by All X" would disable the whole list for good.
   const wildcardActive =
-    !isGithub && !isSingleton && !!findGrantIn(value, activeTab as ResourceType, "*");
+    showWildcardRow && !isGithub && !!findGrantIn(value, activeTab as ResourceType, "*");
 
   const countForTab = (tab: TabId) =>
     tab === "github"
@@ -234,6 +298,8 @@ export function ResourcePicker({
           value={value}
           onChange={onChange}
           defaultPermissions={defaultPermissions}
+          levels={levels}
+          onCatalogLoaded={onCatalogLoaded}
           disabled={disabled}
         />
       ) : (
@@ -261,7 +327,7 @@ export function ResourcePicker({
               </div>
             ) : (
               <>
-                {!isSingleton && (
+                {showWildcardRow && (
                   <ResourceRow
                     resourceType={activeTab as ResourceType}
                     resourceId="*"
@@ -270,6 +336,8 @@ export function ResourcePicker({
                     grant={findGrantIn(value, activeTab as ResourceType, "*")}
                     onToggleResource={toggleResource}
                     onTogglePermission={togglePermission}
+                    onSetPermissions={setPermissions}
+                    levels={levels}
                     disabled={disabled}
                   />
                 )}
@@ -292,6 +360,8 @@ export function ResourcePicker({
                       grant={findGrantIn(value, activeTab as ResourceType, entry.id)}
                       onToggleResource={toggleResource}
                       onTogglePermission={togglePermission}
+                      onSetPermissions={setPermissions}
+                      levels={levels}
                       disabled={disabled || wildcardActive}
                       covered={wildcardActive}
                     />
@@ -355,6 +425,39 @@ function PermissionChips({
   );
 }
 
+/** One row's access control: named levels when the caller configured them,
+ *  otherwise the read/write/admin chips. */
+function GrantControl({
+  levels,
+  perms,
+  onToggle,
+  onSet,
+  disabled,
+}: {
+  levels?: LevelsConfig;
+  perms: Permission[];
+  onToggle: (p: Permission) => void;
+  onSet: (perms: Permission[]) => void;
+  disabled?: boolean;
+}) {
+  if (levels) {
+    return (
+      <LevelSwitch
+        options={levels.options}
+        value={levels.resolve(perms)}
+        disabled={disabled}
+        onChange={(id) => onSet(levels.toPermissions(id))}
+        // Default (md) on purpose — no `size="sm"`. This sits directly beside
+        // SourceAccessButton on the same row, and `sm` made the two read as
+        // different scales (10px with tighter padding, vs 11px), which looks like a
+        // bug rather than a hierarchy. The two controls are peers: one picks the
+        // verb, the other the surface. They share one size.
+      />
+    );
+  }
+  return <PermissionChips perms={perms} onToggle={onToggle} disabled={disabled} />;
+}
+
 // ── Flat catalog row ─────────────────────────────────────────────────────────
 function ResourceRow({
   resourceType,
@@ -364,6 +467,8 @@ function ResourceRow({
   grant,
   onToggleResource,
   onTogglePermission,
+  onSetPermissions,
+  levels,
   disabled,
   covered,
 }: {
@@ -374,6 +479,8 @@ function ResourceRow({
   grant: PickerGrant | undefined;
   onToggleResource: (rt: ResourceType, rid: string) => void;
   onTogglePermission: (rt: ResourceType, rid: string, p: Permission) => void;
+  onSetPermissions: (rt: ResourceType, rid: string, perms: Permission[]) => void;
+  levels?: LevelsConfig;
   disabled?: boolean;
   /** True when an "All X" wildcard is selected — this specific row is redundant
    *  and shown dimmed + non-interactive. */
@@ -416,9 +523,11 @@ function ResourceRow({
           )}
         </div>
         {checked && !covered && (
-          <PermissionChips
+          <GrantControl
+            levels={levels}
             perms={grant?.permissions ?? []}
             onToggle={(p) => onTogglePermission(resourceType, resourceId, p)}
+            onSet={(perms) => onSetPermissions(resourceType, resourceId, perms)}
             disabled={disabled}
           />
         )}
@@ -455,20 +564,96 @@ function Checkbox({
 }
 
 // ── GitHub org → repo tree ────────────────────────────────────────────────────
+/**
+ * Entry point to the source-access modal, on both the org row and the repo row.
+ *
+ * The label doubles as state: deploy-only is the DEFAULT, so a neutral "configure"
+ * affordance would make the safe default look identical to an unconfigured one.
+ * Saying which tier is active is the whole point — an operator scanning the list
+ * needs to see at a glance which repos can be read.
+ */
+function SourceAccessButton({
+  label,
+  active,
+  title,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  title: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  // IS a LevelSwitch with one segment, rather than a pill that copies its look.
+  // Reproducing the classes by hand is how the two controls drifted apart in the
+  // first place (10px vs 11px, different padding) — delegating means there is one
+  // definition of a row control's size, and they cannot diverge again.
+  //
+  // `value` is the segment id when active and "" when not, so the inactive segment
+  // renders in LevelSwitch's own unselected style.
+  // The icon is what makes this read as a CONTROL. As a bare word it looked like a
+  // static state label next to the real switch — nothing suggested it opened
+  // anything, so the whole feature was invisible. Sliders + a tooltip naming the
+  // action fix that without breaking the shared shell.
+  return (
+    <LevelSwitch
+      options={[
+        {
+          id: SOURCE_SEGMENT,
+          title,
+          label: (
+            <span className="inline-flex items-center gap-1">
+              <SlidersHorizontal className="size-3 shrink-0" />
+              {label}
+            </span>
+          ),
+        },
+      ]}
+      value={active ? SOURCE_SEGMENT : ""}
+      disabled={disabled}
+      onChange={onClick}
+    />
+  );
+}
+
+/** Segment id for the single-option source-access switch. */
+const SOURCE_SEGMENT = "source";
+
 function GitHubTree({
   value,
   onChange,
   defaultPermissions,
+  levels,
+  onCatalogLoaded,
   disabled,
 }: {
   value: PickerGrant[];
   onChange: (v: PickerGrant[]) => void;
   defaultPermissions: Permission[];
+  levels?: LevelsConfig;
+  onCatalogLoaded?: (type: ResourceType, entries: CatalogEntry[]) => void;
   disabled?: boolean;
 }) {
   const { showToast } = useToast();
   const { t } = useI18n();
   const w = t.widgets.permissions.resourcePicker;
+  const sa = t.widgets.permissions.sourceAccess;
+  /**
+   * What the source-access modal is editing, or null when it's shut.
+   *
+   * Both widths are valid targets: an org-wide grant can carry a scope ("read
+   * `src/**` in every repo under this account") exactly as a single repo can, and
+   * `resolveSourceAccess` resolves whichever grant is most specific. This has to
+   * cover the org row, because the default consent template grants ORG-level
+   * access — with a whole-org grant active the repo rows collapse to "covered by
+   * the org-wide grant", so a repo-only entry point would be unreachable.
+   */
+  const [sourceTarget, setSourceTarget] = useState<{
+    type: "github_installation" | "github_repository";
+    id: string;
+    label: string;
+  } | null>(null);
   const [orgs, setOrgs] = useState<CatalogEntry[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -482,7 +667,9 @@ function GitHubTree({
     permissionsApi
       .listResources("github_installation")
       .then((res) => {
-        if (!cancelled) setOrgs(res.data ?? []);
+        if (cancelled) return;
+        setOrgs(res.data ?? []);
+        onCatalogLoaded?.("github_installation", res.data ?? []);
       })
       .catch((err) => {
         if (!cancelled) showToast(getApiErrorMessage(err, w.failedLoadOrgs), "error", "Picker");
@@ -565,6 +752,7 @@ function GitHubTree({
   }
 
   return (
+    <>
     <div className="rounded-xl border border-border/50 overflow-hidden max-h-[380px] overflow-y-auto divide-y divide-border/30">
       {orgs.map((org) => {
         const login = org.id;
@@ -595,6 +783,7 @@ function GitHubTree({
                   {isOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4 rtl:rotate-180" />}
                 </button>
                 <Checkbox checked={wholeOrg} disabled={disabled} onClick={() => toggleOrg(login)} />
+                <ResourceAvatar resourceType="github_installation" resourceId={login} className="size-5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">
                     {org.label}
@@ -608,7 +797,23 @@ function GitHubTree({
                   </p>
                 </div>
                 {wholeOrg && (
-                  <PermissionChips
+                  <SourceAccessButton
+                    label={grant?.scope ? sa.tierContent : sa.tierDeploy}
+                    active={!!grant?.scope}
+                    title={sa.buttonHint}
+                    disabled={disabled}
+                    onClick={() =>
+                      setSourceTarget({
+                        type: "github_installation",
+                        id: login,
+                        label: org.label,
+                      })
+                    }
+                  />
+                )}
+                {wholeOrg && (
+                  <GrantControl
+                    levels={levels}
                     perms={grant?.permissions ?? []}
                     onToggle={(p) => {
                       const cur = grant?.permissions ?? [];
@@ -621,6 +826,9 @@ function GitHubTree({
                         ),
                       );
                     }}
+                    onSet={(perms) =>
+                      onChange(writeGrant(value, "github_installation", login, perms))
+                    }
                     disabled={disabled}
                   />
                 )}
@@ -683,7 +891,23 @@ function GitHubTree({
                               </p>
                             </div>
                             {checked && (
-                              <PermissionChips
+                              <SourceAccessButton
+                                label={rg?.scope ? sa.tierContent : sa.tierDeploy}
+                                active={!!rg?.scope}
+                                title={sa.buttonHint}
+                                disabled={disabled}
+                                onClick={() =>
+                                  setSourceTarget({
+                                    type: "github_repository",
+                                    id: repo.id,
+                                    label: repo.label,
+                                  })
+                                }
+                              />
+                            )}
+                            {checked && (
+                              <GrantControl
+                                levels={levels}
                                 perms={rg?.permissions ?? []}
                                 onToggle={(p) => {
                                   const cur = rg?.permissions ?? [];
@@ -696,6 +920,9 @@ function GitHubTree({
                                     ),
                                   );
                                 }}
+                                onSet={(perms) =>
+                                  onChange(writeGrant(value, "github_repository", repo.id, perms))
+                                }
                                 disabled={disabled}
                               />
                             )}
@@ -711,5 +938,54 @@ function GitHubTree({
         );
       })}
     </div>
+
+    {/* Source access is its own dedicated surface rather than more chips on the
+        row: it carries three tiers, two path lists and a summary, and it is the
+        difference between "may deploy this repo" and "may read its source". */}
+    {sourceTarget && (() => {
+      const current = findGrantIn(value, sourceTarget.type, sourceTarget.id);
+      return (
+        <Modal
+          isOpen
+          onClose={() => setSourceTarget(null)}
+          // Wide, and `overflow="hidden"` so the TREE scrolls inside its column
+          // rather than the whole panel growing until the footer leaves the screen.
+          // Same shape as the app's other browse-and-choose modals.
+          // Size is driven by the panel's own content, not fixed here: only
+          // SourceAccessModal knows the tier, and it animates its width when you
+          // move from Deploy only (narrow, no columns) into a browse tier (wide,
+          // two columns). Passing a width here would freeze it at one of the two.
+          width="auto"
+          maxWidth="95vw"
+          maxHeight="86vh"
+          overflow="hidden"
+          showCloseButton={false}
+        >
+          <SourceAccessModal
+            open
+            onClose={() => setSourceTarget(null)}
+            targetLabel={sourceTarget.label}
+            wholeAccount={sourceTarget.type === "github_installation"}
+            permissions={current?.permissions ?? []}
+            scope={current?.scope}
+            onApply={(scope) =>
+              onChange(
+                writeGrant(
+                  value,
+                  sourceTarget.type,
+                  sourceTarget.id,
+                  // Keep the verb exactly as it was — this modal edits the SURFACE
+                  // only. Falling back to defaultPermissions would quietly widen a
+                  // target the owner had set to read-only.
+                  current?.permissions ?? defaultPermissions,
+                  scope ?? null,
+                ),
+              )
+            }
+          />
+        </Modal>
+      );
+    })()}
+    </>
   );
 }

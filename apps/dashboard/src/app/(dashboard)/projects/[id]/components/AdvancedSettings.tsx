@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Activity,
   AlertTriangle,
   ArrowRightLeft,
   Check,
@@ -26,6 +27,8 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { projectsApi } from "@/lib/api";
 import type { RouteStrategy } from "@/lib/api/settings";
+import type { OpenshipReadiness } from "@repo/core";
+import ReadinessSection from "@/components/project-settings/ReadinessSection";
 
 interface Props {
   onDeleteProject: (deleteApp?: boolean, wipeVolumes?: boolean, recordOnly?: boolean) => void;
@@ -237,6 +240,21 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
           </SectionCard>
         )}
 
+        {/* Health checks — collapsed, and off unless opted into. Reuses the
+            wizard's section so the form and its copy exist once. */}
+        <SectionCard
+          title={t.importProject.buildSettings.healthCheck.title}
+          description={t.importProject.buildSettings.healthCheck.subtitle}
+          icon={Activity}
+          iconTone="primary"
+          collapsible
+        >
+          <ReadinessCard
+            projectId={projectData.id}
+            initial={(projectData?.readiness as OpenshipReadiness | null) ?? null}
+          />
+        </SectionCard>
+
         {/* Cache Management (mock — hidden until wired) */}
         {SHOW_MOCK_ADVANCED && (
         <SectionCard
@@ -428,6 +446,57 @@ function MetricRow({ label, value }: { label: string; value: string }) {
       <span className="max-w-[180px] truncate text-end text-[13px] font-medium text-foreground">{value}</span>
     </div>
   );
+}
+
+/* ── Health checks ────────────────────────────────────────────────── */
+
+/**
+ * Persisting wrapper around the shared ReadinessSection.
+ *
+ * Debounced because the section has free-text/number inputs — RoutingStrategyCard
+ * can PATCH per click since it's a 3-way pick, but a timeout field would otherwise
+ * fire a request per keystroke. Optimistic with a rollback on failure, matching
+ * RoutingStrategyCard.
+ */
+function ReadinessCard({
+  projectId,
+  initial,
+}: {
+  projectId: string;
+  initial: OpenshipReadiness | null;
+}) {
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const [value, setValue] = useState<OpenshipReadiness | null>(initial);
+  const savedRef = React.useRef<OpenshipReadiness | null>(initial);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const title = t.importProject.buildSettings.healthCheck.title;
+
+  React.useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  function handleChange(next: OpenshipReadiness | undefined) {
+    const resolved = next ?? null;
+    setValue(resolved);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      const previous = savedRef.current;
+      try {
+        const res = await projectsApi.update(projectId, { readiness: resolved });
+        if ((res as { success?: boolean })?.success === false) throw new Error("update failed");
+        savedRef.current = resolved;
+      } catch {
+        setValue(previous);
+        showToast(t.projectSettings.advanced.routing.toast.failed, "error", title);
+      }
+    }, 700);
+  }
+
+  return <ReadinessSection value={value} onChange={handleChange} embedded />;
 }
 
 /* ── Transfer & Clone ─────────────────────────────────────────────── */

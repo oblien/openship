@@ -27,6 +27,7 @@ import * as serverModules from "./server-modules.controller";
 import * as migration from "./migration/migration.controller";
 import * as dataTransfer from "./data-transfer/data-transfer.controller";
 import * as systemHealth from "./system-health.controller";
+import * as edgeOrphans from "./edge-orphans.controller";
 
 const r = secureRouter(new Hono(), {
   module: "system",
@@ -58,6 +59,21 @@ r.public("post", "/self-register", { reason: "CLI setup — register the control
 r.public("get", "/self-register/stream", { reason: "CLI setup — SSE progress for custom-domain edge provisioning; internal-token gated" }, internalAuth, selfApp.selfRegisterStream);
 r.public("post", "/self-edge/preflight", { reason: "CLI setup — detect what owns ports 80/443 before installing OpenResty; internal-token gated" }, internalAuth, selfApp.selfEdgePreflight);
 r.public("post", "/edge/import-sites", { reason: "CLI `openship up` (compose) — register sites migrated from a foreign proxy into the container edge (host stops the proxy pre-up; api re-serves via DockerEdgeExecutor); internal-token gated" }, internalAuth, selfApp.edgeImportSites);
+
+/* ── Untracked edge vhosts ──────────────────────────────────────────
+ * Edge config lives on the host and outlives its DB rows by design (record-only
+ * delete keeps the workload AND its route running). A leftover PROXY vhost 502s
+ * and announces itself; a leftover STATIC one keeps serving the removed project's
+ * files with a 200. This finds them, and removes them one named hostname at a
+ * time — never as a sweep, which would break record-only's guarantee. */
+r.get("/edge/untracked", { tag: "settings:read" }, edgeOrphans.listUntrackedEdgeSites);
+// Stops serving a hostname → owner-only, like the other destructive system routes.
+r.post(
+  "/edge/untracked/remove",
+  { tag: "settings:admin" },
+  requireRole("owner"),
+  edgeOrphans.removeUntrackedEdgeSite,
+);
 
 /* ── Authenticated routes (dashboard settings page) ─────────────── */
 r.get("/settings", { tag: "settings:read" }, setup.getSetup);

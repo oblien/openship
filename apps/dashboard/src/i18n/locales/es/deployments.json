@@ -66,6 +66,7 @@
     "building": "Compilando",
     "deploying": "Desplegando",
     "partial": "Parcial",
+    "actionRequired": "Acción requerida",
     "rejected": "Rechazado",
     "verifying": "Verificando",
     "pending": "Pendiente"
@@ -150,11 +151,10 @@
     "rollbackTitle": {
       "enabled": "Restaura el proyecto a esta versión (solo el código — los datos no cambian)",
       "active": "Esta ya es la versión activa",
-      "pruned": "El artefacto de reversión se ha eliminado. Usa 'Volver a desplegar este commit' para recompilar desde el código fuente.",
-      "notReady": "Solo se puede revertir a despliegues listos"
+      "pruned": "Este despliegue no tiene imagen retenida ni commit para recompilar",
+      "notReady": "Solo se puede revertir a despliegues listos",
+      "rebuildOnly": "Restaurar esta versión recompilando su commit (su imagen fue purgada)"
     },
-    "redeploy": "Volver a desplegar este commit",
-    "redeployTitle": "Recompila este commit exacto desde el código fuente. Más lento que la reversión, pero funciona después de que el artefacto se haya eliminado.",
     "pin": "Fijar",
     "unpin": "Desfijar",
     "pinTitle": {
@@ -163,11 +163,12 @@
       "pruned": "No se puede fijar — el artefacto ya se ha eliminado"
     },
     "deleteDeployment": "Eliminar despliegue",
-    "confirmRollback": "¿Revertir a esta versión?\n\nEsto restaura únicamente el código de la aplicación. La base de datos y los datos de los volúmenes no cambian.",
+    "confirmRollback": "¿Volver a esta versión?\n\nSolo restaura el código de la aplicación. Los datos de la base de datos y los volúmenes no cambian.",
     "rollbackFailed": "La reversión falló",
-    "confirmRedeploy": "¿Volver a desplegar el commit {hash}?\n\nRecompila este commit exacto desde el código fuente. Más lento que la reversión (se ejecuta la compilación completa de nuevo), pero funciona incluso después de que el artefacto de reversión se haya eliminado. Aparecerá un nuevo despliegue en la lista.",
-    "redeployFailed": "El nuevo despliegue falló",
     "pinFailed": "No se pudo fijar el despliegue",
-    "unpinFailed": "No se pudo desfijar el despliegue"
+    "unpinFailed": "No se pudo desfijar el despliegue",
+    "rollbackModeInstant": "Restauración instantánea: reutiliza la imagen retenida de esta versión, sin recompilar.",
+    "rollbackModeRebuild": "Recompilación: la imagen de esta versión ya no está en el host, así que se compila su commit.",
+    "rollbackModeMixed": "Casi instantáneo: {count} servicio(s) perdieron su imagen y se recompilarán."
   }
 }

@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { commandToArgv } from "@repo/core";
 import { apiRequest, ApiError, paginate } from "../lib/api-client";
 import { sseRequest } from "../lib/sse";
 import { getToken } from "../lib/config";
@@ -349,9 +350,14 @@ function mapComposeService(name: string, def: unknown, baseDir: string): Record<
   const volumes = mapVolumes(d.volumes);
   if (volumes.length) svc.volumes = volumes;
 
-  const command = d.command;
-  if (typeof command === "string") svc.command = command;
-  else if (Array.isArray(command)) svc.command = command.map(String).join(" ");
+  // #332: carry structured argv (list verbatim / string shell-split) so the
+  // deploy runs the real Cmd, not a `sh -c`-wrapped string that breaks
+  // entrypoint+CMD images. `command` string kept for display / legacy.
+  const command = d.command as string | string[] | undefined;
+  if (command != null) {
+    svc.commandArgv = commandToArgv(command);
+    svc.command = typeof command === "string" ? command : command.map(String).join(" ");
+  }
 
   if (typeof d.restart === "string") svc.restart = d.restart;
 

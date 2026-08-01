@@ -6,9 +6,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  Copy,
   ExternalLink,
   Globe,
+  Info,
   Link2,
   Loader2,
   Pencil,
@@ -31,6 +31,7 @@ import { usePlatform } from "@/context/PlatformContext";
 import { useCloud } from "@/context/CloudContext";
 import { resolveServiceHostnameLabel } from "@repo/core";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
+import DnsRecordCard from "@/components/domains/DnsRecordCard";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { useEdgeModal, useVerifyModal } from "@/hooks/useSystemPrepareModal";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
@@ -41,6 +42,10 @@ import {
   type PortCheckUI,
   type OutputCheckUI,
 } from "@/context/deployment/types";
+import {
+  resolvePublicEndpointHostname,
+  validatedPublicEndpointPayload,
+} from "@/lib/public-endpoint-payload";
 
 interface DnsRecord {
   type: "CNAME" | "A" | "TXT";
@@ -84,8 +89,24 @@ interface DomainSummaryItem {
    * still valid and stays offered.
    */
   externalIngress?: boolean;
+  /** Canonical redirect: this hostname answers a 30x to `redirectTo` instead of
+   *  serving. Shown on the card so a domain that deliberately serves nothing
+   *  doesn't read as broken. */
+  redirectTo?: string;
+  redirectStatus?: number;
   status: { label: string; tone: DomainTone };
   ssl: { label: string; tone: DomainTone };
+  /**
+   * Why this domain isn't working, verbatim from the server.
+   *
+   * `summarizeCertbotFailure` already maps a failed issuance to the REAL cause
+   * (DNS not resolving, :80 firewalled, a proxy answering 404) and
+   * `recordVerifyFailure` persists it on the row. It was already in the API
+   * payload and simply thrown away here, so a red "Error" pill was a dead end —
+   * the operator could see that something broke but never what. Present = the
+   * pills become pressable and open the diagnosis.
+   */
+  diagnosis?: { message: string | null; attempts: number };
 }
 
 function toEditablePublicEndpoint(endpoint: any): PublicEndpoint {
@@ -99,18 +120,42 @@ function toEditablePublicEndpoint(endpoint: any): PublicEndpoint {
     domain: endpoint?.domain || "",
     customDomain: endpoint?.customDomain || "",
     domainType: endpoint?.domainType === "custom" ? "custom" : "free",
+    // Must round-trip: the endpoints list is authoritative on save, so dropping a
+    // redirect here would silently clear it on the next unrelated edit.
+    redirectTo: typeof endpoint?.redirectTo === "string" ? endpoint.redirectTo : undefined,
+    redirectStatus:
+      typeof endpoint?.redirectStatus === "number" ? endpoint.redirectStatus : undefined,
   });
 }
 
+/**
+ * Editable drafts for the project's public endpoints.
+ *
+ * A LOADED-BUT-EMPTY `publicEndpoints` means "this project has no routes", and
+ * must stay empty. Seeding a `<slug>.<baseDomain>` placeholder there invented a
+ * domain that doesn't exist, which is how deleting the last route appeared to
+ * "auto-generate" one: the phantom rendered as a real card (Pending / Included
+ * by host, with no DB row behind it so it couldn't be removed), and — because it
+ * carried `domainType: "free"` — it also tripped the free-subdomain cloud gate on
+ * the next save, refusing to add ANY domain with "Connect Openship Cloud…".
+ *
+ * The seed only applies when endpoints haven't loaded yet (undefined), and only
+ * when a free managed subdomain is actually available (`freeAvailable`): on a
+ * self-hosted instance with no cloud connection, `*.opsh.io` can't route at all,
+ * so offering it as a default is never right.
+ */
 function createProjectEndpointDrafts(
   projectData: Record<string, any>,
   hasServer: boolean,
   runtimePort: string,
+  freeAvailable: boolean,
 ): PublicEndpoint[] {
+  if (Array.isArray(projectData.publicEndpoints)) {
+    return projectData.publicEndpoints.map((endpoint) => toEditablePublicEndpoint(endpoint));
+  }
+  if (!freeAvailable) return [];
   return ensurePublicEndpoints(
-    Array.isArray(projectData.publicEndpoints)
-      ? projectData.publicEndpoints.map((endpoint) => toEditablePublicEndpoint(endpoint))
-      : undefined,
+    undefined,
     hasServer
       ? {
           port: runtimePort,
@@ -125,65 +170,11 @@ function createProjectEndpointDrafts(
   );
 }
 
-function buildPublicEndpointPayload(
-  endpoint: PublicEndpoint,
-  hasServer: boolean,
-): {
-  port?: number;
-  targetPath?: string;
-  domain?: string;
-  customDomain?: string;
-  domainType: "free" | "custom";
-} | null {
-  const domainType: "free" | "custom" = endpoint.domainType === "custom" ? "custom" : "free";
-  const freeDomain = endpoint.domain.trim().toLowerCase();
-  const customDomain = endpoint.customDomain.trim().toLowerCase();
+/** Shared with the deploy wizard's Domains step — see lib/public-endpoint-payload. */
+const buildPublicEndpointPayload = validatedPublicEndpointPayload;
 
-  if (domainType === "custom" && !customDomain) {
-    return null;
-  }
-
-  if (domainType === "free" && !freeDomain) {
-    return null;
-  }
-
-  if (hasServer) {
-    const port = Number(endpoint.port.trim());
-    if (!Number.isFinite(port) || port < 1 || port > 65535) {
-      return null;
-    }
-
-    return {
-      port,
-      domainType,
-      ...(domainType === "custom"
-        ? { customDomain }
-        : { domain: freeDomain }),
-    };
-  }
-
-  const targetPath = endpoint.targetPath.trim() || "/";
-  return {
-    targetPath,
-    domainType,
-    ...(domainType === "custom"
-      ? { customDomain }
-      : { domain: freeDomain }),
-  };
-}
-
-function resolveProjectEndpointHostname(endpoint: any, baseDomain: string): string {
-  if (typeof endpoint?.hostname === "string" && endpoint.hostname.trim()) {
-    return endpoint.hostname.trim().toLowerCase();
-  }
-
-  if (endpoint?.domainType === "custom") {
-    return endpoint?.customDomain?.trim().toLowerCase() || "";
-  }
-
-  const domain = endpoint?.domain?.trim().toLowerCase();
-  return domain ? `${domain}.${baseDomain}` : "";
-}
+/** Shared with the routing card so both resolve a hostname the same way. */
+const resolveProjectEndpointHostname = resolvePublicEndpointHostname;
 
 function resolveDomainStatus(domain: any, t: Dictionary): { label: string; tone: DomainTone } {
   const s = t.projectSettings.domains.status;
@@ -201,6 +192,33 @@ function resolveDomainStatus(domain: any, t: Dictionary): { label: string; tone:
     default:
       return { label: s.pending, tone: "warning" };
   }
+}
+
+/**
+ * Is there something to explain about this domain, and what?
+ *
+ * Only returned for a row that is actually in a bad/incomplete state — a healthy
+ * domain's pills stay plain text so a pressable pill always means "there's a
+ * reason in here". `message` may be null when the row is merely awaiting its
+ * first check (nothing has failed yet); the modal then explains the next step
+ * instead of a failure.
+ */
+function resolveDomainDiagnosis(
+  domain: any,
+): { message: string | null; attempts: number } | undefined {
+  if (!domain) return undefined;
+  const unhealthy =
+    domain.verified === false ||
+    domain.status === "pending" ||
+    domain.status === "failed" ||
+    domain.sslStatus === "error" ||
+    domain.sslStatus === "expired" ||
+    domain.sslStatus === "provisioning";
+  if (!unhealthy) return undefined;
+  return {
+    message: typeof domain.lastVerifyError === "string" ? domain.lastVerifyError : null,
+    attempts: typeof domain.verifyAttempts === "number" ? domain.verifyAttempts : 0,
+  };
 }
 
 function resolveDomainSsl(hostname: string, domain: any, baseDomain: string, t: Dictionary): { label: string; tone: DomainTone } {
@@ -253,7 +271,7 @@ export const DomainSettings = () => {
   // Free .<baseDomain> subdomains route through the Openship Cloud edge, so
   // choosing "free" without a cloud connection opens the connect-cloud modal
   // (requireCloud returns true immediately on SaaS / when already connected).
-  const { requireCloud } = useCloud();
+  const { requireCloud, connected: cloudConnected } = useCloud();
   // Awaitable: resolves true when connected (or after the user connects via the
   // modal), false on dismiss. Callers `await` it so a free route is only chosen/
   // saved once cloud is available. Single source: the `managed-project-domain`
@@ -342,10 +360,13 @@ export const DomainSettings = () => {
   // records for. Populated on successful connectDomain so the panel's
   // bottom CTA can re-run verify against the exact row the user just
   // created (instead of guessing by hostname).
-  const [pendingVerifyDomain, setPendingVerifyDomain] = useState<{
-    id: string;
-    hostname: string;
-  } | null>(null);
+  // A LIST, not one row: "Include www" claims a SECOND hostname, and that sibling
+  // verifies + certs entirely on its own. Tracking only the apex meant the panel
+  // offered Verify for one of the two domains it had just created, and the other
+  // sat pending with no affordance at all.
+  const [pendingVerifyDomains, setPendingVerifyDomains] = useState<
+    Array<{ id: string; hostname: string }>
+  >([]);
   const [editingRouteServiceId, setEditingRouteServiceId] = useState<string | null>(null);
   const [routeSavingServiceId, setRouteSavingServiceId] = useState<string | null>(null);
   // Local draft for the "Edit route" modal — the card edits this in memory; the
@@ -360,11 +381,19 @@ export const DomainSettings = () => {
   // "Add route" form (services projects): a generic domain → port entry. The
   // port is matched to the service that owns it; that service is then exposed.
   const [showAddRoute, setShowAddRoute] = useState(false);
+  // A free *.<baseDomain> subdomain only routes through the Openship Cloud edge,
+  // so it's a usable default only on a cloud-connected (or SaaS) instance.
+  const freeDomainsAvailable = !selfHosted || cloudConnected;
+  const emptyAddRouteDraft = {
+    domainType: (freeDomainsAvailable ? "free" : "custom") as "free" | "custom",
+    domain: "",
+    port: "",
+  };
   const [addRouteDraft, setAddRouteDraft] = useState<{
     domainType: "free" | "custom";
     domain: string;
     port: string;
-  }>({ domainType: "free", domain: "", port: "" });
+  }>(emptyAddRouteDraft);
   const [addRouteError, setAddRouteError] = useState<string | null>(null);
   const [addRouteSaving, setAddRouteSaving] = useState(false);
   const [isSavingPublicEndpoints, setIsSavingPublicEndpoints] = useState(false);
@@ -404,14 +433,24 @@ export const DomainSettings = () => {
     (Array.isArray(projectData.publicEndpoints) && projectData.publicEndpoints.length > 0) ||
     services.length === 0;
   const draftPublicEndpoints = useMemo(
-    () => createProjectEndpointDrafts(projectData, hasProjectServer, projectRuntimePort),
-    [projectData, hasProjectServer, projectRuntimePort],
+    () =>
+      createProjectEndpointDrafts(
+        projectData,
+        hasProjectServer,
+        projectRuntimePort,
+        freeDomainsAvailable,
+      ),
+    [projectData, hasProjectServer, projectRuntimePort, freeDomainsAvailable],
   );
   const [publicEndpoints, setPublicEndpoints] = useState<PublicEndpoint[]>(draftPublicEndpoints);
   const [settingPrimaryId, setSettingPrimaryId] = useState<string | null>(null);
 
   const domainSummaries = useMemo<DomainSummaryItem[]>(() => {
-    const endpointSource = Array.isArray(projectData.publicEndpoints) && projectData.publicEndpoints.length > 0
+    // SERVER TRUTH ONLY. A loaded-but-empty list means "no routes" and must render
+    // as none — falling back to the local edit draft here is what displayed a
+    // phantom `<slug>.<baseDomain>` card after the last route was deleted. The
+    // draft is for the editor; this list describes what actually exists.
+    const endpointSource = Array.isArray(projectData.publicEndpoints)
       ? projectData.publicEndpoints
       : publicEndpoints;
     const domains = Array.isArray(domainsData.domains) ? domainsData.domains : [];
@@ -463,6 +502,12 @@ export const DomainSettings = () => {
           needsVerify,
           status: resolveDomainStatus(domain, t),
           ssl: resolveDomainSsl(hostname, domain, baseDomain, t),
+          diagnosis: resolveDomainDiagnosis(domain),
+          // Read from the persisted ROW: a redirecting host still verifies and
+          // certs like any other, so the card must say why it serves no content.
+          redirectTo: typeof domain?.redirectTo === "string" ? domain.redirectTo : undefined,
+          redirectStatus:
+            typeof domain?.redirectStatus === "number" ? domain.redirectStatus : undefined,
         };
       })
       .filter((domain): domain is DomainSummaryItem => domain !== null);
@@ -661,7 +706,7 @@ export const DomainSettings = () => {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const result = await domainsApi.previewRecords(trimmed);
+        const result = await domainsApi.previewRecords(trimmed, includeWww);
         if (cancelled) return;
         if (result?.data?.records) {
           setPreviewedRecords(result.data.records);
@@ -680,7 +725,10 @@ export const DomainSettings = () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [newDomain, newDomainType, selfHosted, showCustomDomainSection, baseDomain]);
+    // `includeWww` is a real dependency: toggling it changes WHICH records the
+    // user has to add, so the panel must re-fetch instead of showing the apex
+    // record alone while the toggle says www is included.
+  }, [newDomain, newDomainType, selfHosted, showCustomDomainSection, baseDomain, includeWww]);
 
   // Add a domain = add a ROUTE (the same model services use): pick free/custom,
   // the host, and the port (server) / path (static) it maps to. It lands in the
@@ -728,11 +776,18 @@ export const DomainSettings = () => {
           return;
         }
         if (result.records?.records) setDnsRecords(result.records.records);
-        setPendingVerifyDomain(
-          typeof result.domain?.id === "string"
-            ? { id: result.domain.id, hostname: host }
-            : null,
-        );
+        // Track EVERY row the connect created. `result.www` is the sibling's own
+        // row (its own verify, its own cert); `wwwError` means it couldn't be
+        // claimed at all — say so instead of leaving the toggle looking successful.
+        setPendingVerifyDomains([
+          ...(typeof result.domain?.id === "string"
+            ? [{ id: result.domain.id as string, hostname: host }]
+            : []),
+          ...(result.www?.id ? [{ id: result.www.id as string, hostname: result.www.hostname as string }] : []),
+        ]);
+        if (result.wwwError) {
+          showToast(result.wwwError, "error", t.projectSettings.domains.toast.addDomainFailedTitle);
+        }
       }
 
       const target = hasProjectServer
@@ -749,11 +804,17 @@ export const DomainSettings = () => {
       // connect call just minted would be removed by the save that follows it.
       // publicEndpoints is the source of truth for routing — the variant has to be
       // in it to survive, verify, and get a cert of its own.
+      //
+      // Same reason `redirectTo` is repeated here even though the connect call
+      // already set it on the row: an OMITTED redirect clears one, so leaving it out
+      // would wipe the 301 a request later and quietly serve the app on both hosts.
       const wwwEndpoint =
         isCustom && includeWww && !host.startsWith("www.")
           ? createPublicEndpoint({
               domainType: newDomainType,
               customDomain: `www.${host}`,
+              redirectTo: host,
+              redirectStatus: 301,
               ...target,
             })
           : null;
@@ -776,7 +837,7 @@ export const DomainSettings = () => {
       if (!isCustom) {
         setShowCustomDomainSection(false);
         setDnsRecords([]);
-        setPendingVerifyDomain(null);
+        setPendingVerifyDomains([]);
       }
     } catch (err) {
       console.error("Failed to add domain:", err);
@@ -1380,7 +1441,7 @@ export const DomainSettings = () => {
           : { domain: domainValue.toLowerCase() }),
       });
       setShowAddRoute(false);
-      setAddRouteDraft({ domainType: "free", domain: "", port: "" });
+      setAddRouteDraft(emptyAddRouteDraft);
     } finally {
       setAddRouteSaving(false);
     }
@@ -1651,7 +1712,7 @@ export const DomainSettings = () => {
       setShowCustomDomainSection(false);
       setDnsRecords([]);
       setPreviewedRecords([]);
-      setPendingVerifyDomain(null);
+      setPendingVerifyDomains([]);
       setNewDomain("");
       setNewDomainType("custom");
       setNewDomainPort("");
@@ -1867,7 +1928,7 @@ export const DomainSettings = () => {
             >
               <div className="space-y-3">
                 {recordsToShow.map((record, index) => (
-                  <DnsRecordRow
+                  <DnsRecordCard
                     key={`${record.type}-${record.host}-${index}`}
                     record={record}
                     onCopy={handleCopy}
@@ -1881,20 +1942,24 @@ export const DomainSettings = () => {
                   : t.projectSettings.domains.dns.infoApply}
               </div>
 
-              {pendingVerifyDomain ? (
-                <div className="flex justify-end pt-1">
-                  <ActionButton
-                    label={
-                      verifyingDomainId === pendingVerifyDomain.id
-                        ? t.projectSettings.domains.dns.verifying
-                        : interpolate(t.projectSettings.domains.dns.verify, { hostname: pendingVerifyDomain.hostname })
-                    }
-                    icon={verifyingDomainId === pendingVerifyDomain.id ? Loader2 : RefreshCw}
-                    onClick={() =>
-                      startVerify(pendingVerifyDomain.id, pendingVerifyDomain.hostname)
-                    }
-                    disabled={verifyingDomainId === pendingVerifyDomain.id}
-                  />
+              {/* One button per hostname just created. With "Include www" that's
+                  two, because each verifies and gets its certificate on its own —
+                  and either can succeed while the other is still waiting on DNS. */}
+              {pendingVerifyDomains.length > 0 ? (
+                <div className="flex flex-wrap justify-end gap-2 pt-1">
+                  {pendingVerifyDomains.map((pending) => (
+                    <ActionButton
+                      key={pending.id}
+                      label={
+                        verifyingDomainId === pending.id
+                          ? t.projectSettings.domains.dns.verifying
+                          : interpolate(t.projectSettings.domains.dns.verify, { hostname: pending.hostname })
+                      }
+                      icon={verifyingDomainId === pending.id ? Loader2 : RefreshCw}
+                      onClick={() => startVerify(pending.id, pending.hostname)}
+                      disabled={verifyingDomainId === pending.id}
+                    />
+                  ))}
                 </div>
               ) : null}
             </SectionCard>
@@ -1997,6 +2062,10 @@ export const DomainSettings = () => {
                 runtimePort={publicEndpoints[0]?.port || projectRuntimePort}
                 onChange={(nextEndpoints) => setPublicEndpoints(nextEndpoints)}
                 allowRemoveAll
+                // Canonical redirects are rendered in the box's own vhost, so
+                // they're self-hosted only — a cloud-owned project's routing
+                // belongs to the managed edge (the API refuses it there too).
+                allowRedirects={selfHosted && !isCloudProject}
               />
             </div>
 
@@ -2474,6 +2543,46 @@ function firstContainerPort(ports?: string[] | null): string {
   return (parts.length === 2 ? parts[1] : parts[0]).split("/")[0];
 }
 
+/**
+ * A status pill that becomes a BUTTON when there's a reason behind it.
+ *
+ * A red "Error" / amber "Pending" pill used to be a dead end: the server already
+ * knew the cause (certbot's mapped DNS/firewall/proxy diagnosis, persisted on the
+ * row) but the UI rendered the label and dropped it. A healthy pill stays plain
+ * text, so "this pill is clickable" reliably means "there's an explanation here".
+ */
+function DiagnosablePill({
+  tone,
+  label,
+  diagnosis,
+  open,
+  onToggle,
+  t,
+}: {
+  tone: DomainTone;
+  label: string;
+  diagnosis?: { message: string | null; attempts: number };
+  open: boolean;
+  onToggle: () => void;
+  t: Dictionary;
+}) {
+  if (!diagnosis) return <StatusPill tone={tone}>{label}</StatusPill>;
+  const hint = t.projectSettings.domains.diagnosis.pillHint;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={hint}
+      aria-label={`${label} — ${hint}`}
+      aria-expanded={open}
+      className="inline-flex items-center gap-1 rounded-full transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      <StatusPill tone={tone}>{label}</StatusPill>
+      <Info className="size-3.5 text-muted-foreground" />
+    </button>
+  );
+}
+
 function DomainOverviewCard({
   domain,
   menuActions = [],
@@ -2507,6 +2616,7 @@ function DomainOverviewCard({
   const { t } = useI18n();
   const d = t.projectSettings.domains;
   const canVerify = domain.needsVerify && !!domain.domainId;
+  const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const [recordsOpen, setRecordsOpen] = useState(false);
   const [records, setRecords] = useState<DnsRecord[] | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
@@ -2562,11 +2672,66 @@ function DomainOverviewCard({
 
       <div className="space-y-4 px-5 py-4">
         <div className="break-all text-[15px] font-semibold text-foreground">{domain.hostname}</div>
-        {/* No service behind the domain → nothing to be "mapped to". Rendering the
-            row with an empty value reads as a half-loaded card. */}
-        {domain.mappedLabel ? <InfoRow label={d.overview.mappedTo} value={domain.mappedLabel} /> : null}
-        <InfoRow label={d.overview.status} value={<StatusPill tone={domain.status.tone}>{domain.status.label}</StatusPill>} />
-        <InfoRow label={d.overview.ssl} value={<StatusPill tone={domain.ssl.tone}>{domain.ssl.label}</StatusPill>} />
+        {/* A redirecting host serves no content, so "mapped to port 3000" would be
+            a lie — name the destination instead. It still shows its own status +
+            SSL rows below, because it still verifies and holds its own cert. */}
+        {domain.redirectTo ? (
+          <InfoRow
+            label={d.overview.redirect}
+            value={interpolate(d.overview.redirectValue, {
+              hostname: domain.redirectTo,
+              status: String(domain.redirectStatus ?? 301),
+            })}
+          />
+        ) : domain.mappedLabel ? (
+          <InfoRow label={d.overview.mappedTo} value={domain.mappedLabel} />
+        ) : null}
+        <InfoRow
+          label={d.overview.status}
+          value={
+            <DiagnosablePill
+              tone={domain.status.tone}
+              label={domain.status.label}
+              diagnosis={domain.diagnosis}
+              open={diagnosisOpen}
+              onToggle={() => setDiagnosisOpen((v) => !v)}
+              t={t}
+            />
+          }
+        />
+        <InfoRow
+          label={d.overview.ssl}
+          value={
+            <DiagnosablePill
+              tone={domain.ssl.tone}
+              label={domain.ssl.label}
+              diagnosis={domain.diagnosis}
+              open={diagnosisOpen}
+              onToggle={() => setDiagnosisOpen((v) => !v)}
+              t={t}
+            />
+          }
+        />
+        {/* The actual reason, in place. Inline rather than a separate dialog so it
+            sits next to the pill that has the problem and stays open while the
+            operator fixes DNS and re-checks. */}
+        {diagnosisOpen && domain.diagnosis ? (
+          <div className="rounded-xl border border-danger/20 bg-danger-bg/40 p-3">
+            <p className="text-[12px] font-semibold text-foreground">
+              {d.diagnosis.title}
+            </p>
+            <p className="mt-1.5 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted-foreground">
+              {domain.diagnosis.message?.trim() || d.diagnosis.noneYet}
+            </p>
+            {domain.diagnosis.attempts > 0 ? (
+              <p className="mt-2 text-[11px] text-muted-foreground/80">
+                {interpolate(d.diagnosis.attempts, {
+                  count: String(domain.diagnosis.attempts),
+                })}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {portHint ? (
           <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-bg/40 px-3 py-2.5 text-[12px] text-warning">
@@ -2622,10 +2787,10 @@ function DomainOverviewCard({
                   </div>
                 ) : records && records.length > 0 ? (
                   records.map((record, i) => (
-                    <DnsRecordRow
+                    <DnsRecordCard
                       key={`${record.type}-${record.host}-${i}`}
                       record={record}
-                      onCopy={onCopy ?? (() => {})}
+                      onCopy={onCopy}
                     />
                   ))
                 ) : (
@@ -2639,43 +2804,3 @@ function DomainOverviewCard({
     </div>
   );
 }
-
-function DnsRecordRow({
-  record,
-  onCopy,
-}: {
-  record: DnsRecord;
-  onCopy: (text: string) => void | Promise<void>;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
-            {record.type}
-          </div>
-          <div className="mt-1 text-[13px] font-medium text-foreground">{record.host}</div>
-          {record.name && record.name !== record.host ? (
-            <code className="mt-0.5 block break-all text-[11px] text-muted-foreground/70">
-              {record.name}
-            </code>
-          ) : null}
-          <code className="mt-2 block break-all text-[12px] text-muted-foreground">
-            {record.value || "-"}
-          </code>
-        </div>
-        {record.value ? (
-          <button
-            onClick={() => onCopy(record.value)}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-            title={t.projectSettings.domains.dns.copy}
-          >
-            <Copy className="size-3.5" />
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-

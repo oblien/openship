@@ -406,6 +406,9 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
     "usage",
     "containerIp",
     "rollback",
+    // One workspace per deployment, stopped-not-deleted on archive, so its
+    // disk is still there to start back up (see makeActive).
+    "unitRestore",
     "serviceShell",
     "inContainerExec",
   ]);
@@ -1478,6 +1481,19 @@ export class CloudRuntime implements MultiServiceRuntimeAdapter {
 
     const ws = this.ws(workspaceId);
     const log: LogCallback = onLog ?? (() => {});
+
+    // Declared persistent paths can't be honoured here: Oblien has no volume
+    // primitive, so the only durable storage is the permanent workspace disk
+    // below — which a fresh workspace does not inherit. Say so rather than
+    // reporting a healthy deploy that quietly drops the mount (same
+    // warn-and-drop contract as compose `advanced` on this runtime).
+    if (config.volumes?.length) {
+      log({
+        timestamp: new Date().toISOString(),
+        level: "warn",
+        message: `Persistent storage (${config.volumes.join(", ")}) is not supported on Openship Cloud — the workspace disk is the only durable storage. Use object storage for uploads, or deploy to a server.\n`,
+      });
+    }
 
     try {
       // 1. Make workspace permanent (it was temporary during build)

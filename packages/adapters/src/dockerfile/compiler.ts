@@ -1,3 +1,4 @@
+import { shellSplitWords } from "@repo/core";
 import { parseDockerfile } from "./parser";
 import type {
   CompileDockerfileOptions,
@@ -54,56 +55,9 @@ function parseJsonArray(value: string): string[] | null {
   }
 }
 
-function splitWords(value: string): string[] {
-  const words: string[] = [];
-  let current = "";
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
-
-  for (const char of value.trim()) {
-    if (escaped) {
-      current += char;
-      escaped = false;
-      continue;
-    }
-
-    if (char === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (char === "'" && !inDouble) {
-      inSingle = !inSingle;
-      continue;
-    }
-
-    if (char === '"' && !inSingle) {
-      inDouble = !inDouble;
-      continue;
-    }
-
-    if (/\s/.test(char) && !inSingle && !inDouble) {
-      if (current) {
-        words.push(current);
-        current = "";
-      }
-      continue;
-    }
-
-    current += char;
-  }
-
-  if (escaped) {
-    current += "\\";
-  }
-
-  if (current) {
-    words.push(current);
-  }
-
-  return words;
-}
+// splitWords now lives in @repo/core (shellSplitWords) so the compose parser +
+// CLI share the exact same tokenizer — see #332.
+const splitWords = shellSplitWords;
 
 function shellQuote(value: string): string {
   if (PATHLIKE_RE.test(value)) {

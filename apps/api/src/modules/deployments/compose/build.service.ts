@@ -21,7 +21,9 @@ import {
   type BuildConfigSnapshotLike,
 } from "../build-config";
 import * as sessionManager from "../session-manager";
+import { pinnedImageForService } from "../pinned-artifacts";
 import { serviceKind, isStaticService } from "../../../lib/deployable-service";
+import { normalizeProjectRootDirectory } from "../../../lib/project-root-detector";
 import { resolveServicePort } from "./domain-helpers";
 
 function sanitizeComposeImageName(value: string): string {
@@ -31,6 +33,49 @@ function sanitizeComposeImageName(value: string): string {
       .replace(/[^a-z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "service"
   );
+}
+
+/**
+ * Resolve a compose service's `build.context` to a path relative to the CLONE
+ * ROOT, which is what BuildConfig.rootDirectory means.
+ *
+ * Compose resolves `build.context` relative to the compose FILE's directory, not
+ * the repo root — so for a compose file at `deploy/docker-compose/`, `build: ./api`
+ * means `deploy/docker-compose/api` and `build: ../../api` means `api`. Using the
+ * raw value (as this did before) silently built the wrong directory for every
+ * compose file that isn't at the repo root.
+ *
+ * `..` is resolved rather than rejected: pointing back at the repo root is normal
+ * for a compose file kept in a `deploy/` subfolder. Escaping ABOVE the clone root
+ * is not resolvable and falls back to the compose directory, since there is no
+ * such path in the checkout to build from.
+ *
+ * The directory half is normalized by the shared `normalizeProjectRootDirectory`
+ * rather than a local regex pair, so a repo-relative directory means the same
+ * thing here as everywhere else. That also makes the two halves symmetric — the
+ * local version split the CONTEXT on `[\\/]` but the DIRECTORY on `/` only, so a
+ * backslash or stray whitespace in the directory produced a literally broken path.
+ */
+export function resolveComposeBuildContext(composeDirectory: string, context: string): string {
+  // Already maps "." / "./" / "" → "", so no special-casing is needed below.
+  const normalizedDirectory = normalizeProjectRootDirectory(composeDirectory);
+  const segments = [...normalizedDirectory.split("/"), ...context.split(/[\\/]/)].filter(
+    (segment) => segment.length > 0 && segment !== ".",
+  );
+
+  const resolved: string[] = [];
+  for (const segment of segments) {
+    if (segment !== "..") {
+      resolved.push(segment);
+      continue;
+    }
+    // `..` above the clone root has nothing to resolve against — keep the compose
+    // directory rather than emitting a path outside the checkout.
+    if (resolved.length === 0) return normalizedDirectory;
+    resolved.pop();
+  }
+
+  return resolved.join("/");
 }
 
 /**
@@ -174,18 +219,15 @@ export async function buildComposeImages(opts: {
   //     would drop every Dockerfile-based monorepo sub-app to neither bucket -
   //     the same silent "No image available" failure.
   // External = compose rows with a pre-built image and no Dockerfile build.
-  // ONE-TIME image handover (migration cutover): a service named here deploys
-  // from an already-present image (a transferred / running container's image)
-  // with NO build and NO pull — it is seeded straight into imageRefs, exactly
-  // like a freshly-built one, so the SAME native deploy step consumes it. Keyed
-  // by service name (migration knows repo-service names). Only present on the
-  // migration's first deploy (per-deployment snapshot), so a later Redeploy has
-  // no handover and rebuilds/pulls natively — no separate migration deploy path.
-  const handover = opts.snapshot.handoverImages ?? {};
-  const isHandedOver = (service: { name: string }) => {
-    const img = handover[service.name];
-    return typeof img === "string" && img.length > 0;
-  };
+  // PINNED ARTIFACT: a service whose image is pinned deploys from that
+  // already-present image with NO build and NO pull — seeded straight into
+  // imageRefs, exactly like a freshly-built one, so the SAME native deploy step
+  // consumes it. Two producers, one mechanism (see pinned-artifacts.ts): the
+  // migration cutover's one-time handover, and a rollback restoring a past
+  // release's retained images. A plain Redeploy strips the pins and rebuilds
+  // natively — no separate migration or rollback deploy path exists.
+  const isHandedOver = (service: { name: string }) =>
+    !!pinnedImageForService(opts.snapshot, service.name);
 
   const buildable = enabled.filter(
     (service) =>
@@ -223,8 +265,9 @@ export async function buildComposeImages(opts: {
   }
 
   for (const service of enabled) {
-    if (!isHandedOver(service)) continue;
-    imageRefs.set(service.id, handover[service.name]);
+    const pinned = pinnedImageForService(opts.snapshot, service.name);
+    if (!pinned) continue;
+    imageRefs.set(service.id, pinned);
     sessionManager.broadcastServiceStatus(opts.dep.id, {
       serviceName: service.name,
       serviceId: service.id,
@@ -265,10 +308,15 @@ export async function buildComposeImages(opts: {
   const buildSpecFor = (service: Service) => {
     const isMonorepo = serviceKind(service) === "monorepo";
     // Build context resolution:
-    //   - Compose service with Dockerfile  → service.build (the context dir)
+    //   - Compose service with Dockerfile  → service.build, resolved against the
+    //     compose file's directory (compose semantics — see
+    //     resolveComposeBuildContext)
     //   - Monorepo sub-app                 → service.rootDirectory
     //   - Fallback                         → snapshot.rootDirectory
-    const context = service.build ?? service.rootDirectory ?? opts.snapshot.rootDirectory;
+    const context =
+      service.build != null
+        ? resolveComposeBuildContext(opts.snapshot.rootDirectory ?? "", service.build)
+        : service.rootDirectory ?? opts.snapshot.rootDirectory;
     const dockerfileLabel = service.dockerfile ? ` using ${service.dockerfile}` : "";
     opts.logger.log(
       `Building ${isMonorepo ? "monorepo app" : "compose service"} "${service.name}" from ${context || "."}${dockerfileLabel}...\n`,

@@ -29,6 +29,11 @@ import {
   type BackupRun,
 } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
+import { RollbackRetentionCards } from "@/components/rollback/RollbackRetentionCards";
+import { projectsApi } from "@/lib/api";
+import type { RollbackCapacityUI } from "@/lib/api/projects";
+import { MAX_ROLLBACK_WINDOW } from "@repo/core";
+import { useToast } from "@/context/ToastContext";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
 import { RestoreWizard } from "@/components/backup/RestoreWizard";
 
@@ -89,6 +94,60 @@ export function BackupSettings(): React.JSX.Element {
     { existing: BackupPolicy | null; serviceId: string | null; serviceName?: string; serviceImage?: string | null } | null
   >(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  // Rollback retention lives here, next to backups: both answer "how far back can
+  // we recover, and at what disk cost?". The controls themselves are the shared
+  // component the deploy wizard's target panel also renders.
+  const { showToast } = useToast();
+  const [rollbackCapacity, setRollbackCapacity] = useState<RollbackCapacityUI | null>(null);
+  const [togglingRollback, setTogglingRollback] = useState(false);
+  const [savingRollbackWindow, setSavingRollbackWindow] = useState(false);
+
+  const loadRollbackCapacity = useCallback(async () => {
+    try {
+      const res = await projectsApi.getRollbackCapacity(projectId);
+      setRollbackCapacity(res.data ?? null);
+    } catch {
+      /* advisory — the cards fall back to the plain window value */
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadRollbackCapacity();
+  }, [loadRollbackCapacity]);
+
+  const rollbackStrategy: "git" | "snapshot" =
+    rollbackCapacity?.strategy === "snapshot" ? "snapshot" : "git";
+
+  const toggleRollbackStrategy = useCallback(async () => {
+    setTogglingRollback(true);
+    try {
+      await projectsApi.update(projectId, {
+        defaultRollbackStrategy: rollbackStrategy === "git" ? "snapshot" : "git",
+      });
+      await loadRollbackCapacity();
+    } catch (err) {
+      showToast(getApiErrorMessage(err, t.projectSettings.git.toast.rollbackStrategyFailed), "error");
+    } finally {
+      setTogglingRollback(false);
+    }
+  }, [projectId, rollbackStrategy, loadRollbackCapacity, showToast, t]);
+
+  const changeRollbackWindow = useCallback(
+    async (next: number) => {
+      const clamped = Math.max(0, Math.min(rollbackCapacity?.maxWindow ?? MAX_ROLLBACK_WINDOW, next));
+      if (clamped === (rollbackCapacity?.window ?? 5)) return;
+      setSavingRollbackWindow(true);
+      try {
+        await projectsApi.update(projectId, { rollbackWindow: clamped });
+        await loadRollbackCapacity();
+      } catch (err) {
+        showToast(getApiErrorMessage(err, t.projectSettings.git.toast.rollbackHistoryFailed), "error");
+      } finally {
+        setSavingRollbackWindow(false);
+      }
+    },
+    [projectId, rollbackCapacity, loadRollbackCapacity, showToast, t],
+  );
   const [restoreFromRun, setRestoreFromRun] = useState<BackupRun | null>(null);
 
   const reload = useCallback(async () => {
@@ -178,6 +237,31 @@ export function BackupSettings(): React.JSX.Element {
           }}
         />
       )}
+
+      {/* Rollback retention — how many past releases stay restorable, and the
+          measured disk cost. Same component the deploy wizard renders; the
+          project's Git tab no longer carries a second copy. */}
+      <SectionCard
+        title={t.projectSettings.git.rollbackHistory.title}
+        description={t.deploy.targetStep.rollbackHint}
+        icon={RotateCcw}
+        iconTone="primary"
+      >
+        <RollbackRetentionCards
+          strategy={rollbackStrategy}
+          capacity={rollbackCapacity}
+          // Static projects retain built FILES, not images.
+          artifactKind={
+            projectData.hasServer === false && (servicesData.services?.length ?? 0) === 0
+              ? "files"
+              : "image"
+          }
+          onToggleStrategy={toggleRollbackStrategy}
+          onChangeWindow={changeRollbackWindow}
+          togglingStrategy={togglingRollback}
+          savingWindow={savingRollbackWindow}
+        />
+      </SectionCard>
 
       <SectionCard
         title={t.projectSettings.backup.destinations.title}

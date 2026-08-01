@@ -556,6 +556,36 @@ describe("detectPackageManager", () => {
     expect(detectPackageManager(files("package.json", "bun.lock"))).toBe("bun");
   });
 
+  it("bun via bunfig.toml with no lock file", () => {
+    expect(detectPackageManager(files("package.json", "bunfig.toml"))).toBe("bun");
+  });
+
+  // bunfig.toml is a runtime/test-runner config, NOT an install marker: using
+  // `bun test` while installing with npm/yarn is its whole point. It must stay
+  // BELOW the lock files and below an explicit packageManager field — promoting it
+  // silently flips those repos to `bun install` and the oven/bun build image.
+  describe("bunfig.toml never outranks a real install marker", () => {
+    it("loses to package-lock.json", () => {
+      expect(detectPackageManager(files("package.json", "bunfig.toml", "package-lock.json"))).toBe("npm");
+    });
+
+    it("loses to yarn.lock", () => {
+      expect(detectPackageManager(files("package.json", "bunfig.toml", "yarn.lock"))).toBe("yarn");
+    });
+
+    it("loses to pnpm-lock.yaml", () => {
+      expect(detectPackageManager(files("package.json", "bunfig.toml", "pnpm-lock.yaml"))).toBe("pnpm");
+    });
+
+    it("loses to an explicit packageManager field", () => {
+      expect(
+        detectPackageManager(files("package.json", "bunfig.toml"), {
+          packageManager: "yarn@4.1.0",
+        }),
+      ).toBe("yarn");
+    });
+  });
+
   it("npm via package-lock.json", () => {
     expect(detectPackageManager(files("package.json", "package-lock.json"))).toBe("npm");
   });

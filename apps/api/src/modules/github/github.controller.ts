@@ -17,7 +17,11 @@ import { audit, auditContextFrom } from "../../lib/audit";
 import * as githubAuth from "./github.auth";
 import * as githubService from "./github.service";
 import { createGitHubSource } from "./sources";
-import { filterAllowedRepos, filterAllowedAccounts } from "./github-access";
+import { filterAllowedRepos, filterAllowedAccounts, filterTreeEntries } from "./github-access";
+import {
+  resolveProjectInfo,
+  projectInfoToScanResponse,
+} from "../deployments/prepare.service";
 import { paginateRepoList, type RepoListParams } from "./repo-list";
 import { getRequestContext } from "../../lib/request-context";
 
@@ -779,7 +783,14 @@ export async function getCloneToken(c: Context) {
   const owner = param(c, "owner");
   const repo = param(c, "repo");
 
-  const token = await githubAuth.getInstallationToken(ctx, owner);
+  // Narrow the token to THIS repo. An installation token otherwise reaches every
+  // repo the installation covers, so a caller granted one repo would walk away
+  // with an owner-wide credential — broader than their grant, and long-lived
+  // enough to matter. The route also requires `content-whole`, because a clone
+  // cannot be path-filtered.
+  const token = await githubAuth.getInstallationToken(ctx, owner, undefined, {
+    repositories: [repo],
+  });
   if (!token) {
     return c.json(
       {
@@ -794,6 +805,44 @@ export async function getCloneToken(c: Context) {
   return c.json({ token, cloneUrl, command: `git clone ${cloneUrl}` });
 }
 
+// ─── Stack detection ─────────────────────────────────────────────────────────
+
+/**
+ * GET /github/repos/:owner/:repo/detect — derived build config, no file bytes.
+ *
+ * This is what makes deploy-only access usable. Detecting a stack previously meant
+ * the caller reading `package.json`, `docker-compose.yml` and friends through the
+ * content endpoints — so any agent that needed to configure a deploy needed
+ * permission to crawl the whole repo. Here the server does the reading and returns
+ * only its CONCLUSIONS, so the route sits at metadata tier.
+ *
+ * Reuses `resolveProjectInfo` (the same resolver the deploy pipeline runs) and
+ * `projectInfoToScanResponse` (the shared mapping behind the local-folder and
+ * folder-upload scans). Reusing the latter is what keeps this safe AND consistent:
+ * it already masks env values — repo `.env` contents via `maskEnv` and compose
+ * `environment` blocks via `maskScanService` — so detect cannot become a
+ * side-channel for the content it replaces, and the wizard gets a payload shape
+ * identical to the one it already consumes.
+ */
+export async function detectStack(c: Context) {
+  const ctx = getRequestContext(c);
+  const owner = param(c, "owner");
+  const repo = param(c, "repo");
+  const branch = c.req.query("branch")?.trim();
+  const composePath = c.req.query("composePath")?.trim();
+
+  const info = await resolveProjectInfo({
+    source: "github",
+    owner,
+    repo,
+    ctx,
+    ...(branch ? { branch } : {}),
+    ...(composePath ? { composePath } : {}),
+  });
+
+  return c.json({ data: projectInfoToScanResponse(info) });
+}
+
 // ─── Files ───────────────────────────────────────────────────────────────────
 
 /** GET /github/repos/:owner/:repo/files - List files in a directory */
@@ -802,13 +851,82 @@ export async function listFiles(c: Context) {
   const owner = param(c, "owner");
   const repo = param(c, "repo");
   const branch = c.req.query("branch");
-  const path = c.req.query("path");
+  // The NORMALISED path the middleware authorised (see getFile) — never the raw
+  // `?path=`, so the directory checked is the directory listed. "" is the repo
+  // root, which is what /files with no path lists.
+  const path = c.get("sourcePath") as string | undefined;
 
   const data = await githubService.listFiles(ctx, owner, repo, {
     branch: branch ?? undefined,
-    path: path ?? undefined,
+    path: path || undefined,
       });
-  return c.json({ data });
+
+  // Filter to what this caller's source scope permits. The route declares
+  // `source: "content-tree"`, so the permission middleware already resolved the
+  // allow-list and stashed it — reuse it rather than resolving the grant twice.
+  //
+  // The middleware only proved this directory LEADS somewhere granted; without
+  // filtering, listing the root under a `src/**` grant would return every
+  // top-level name. Absent stash ⇒ empty list ⇒ nothing visible (fail closed).
+  const readPaths = (c.get("sourceReadPaths") as string[] | undefined) ?? [];
+
+  // GitHub's contents API returns a single OBJECT — the blob, base64 content
+  // included — when `path` names a FILE rather than a directory. So this endpoint
+  // can serve content, and `.filter` on a non-array would throw. `project-reader`
+  // guards the same shape. Normalise to an array, and treat the single-file case
+  // as a FILE so it must be granted outright rather than merely being an ancestor
+  // of something granted (which is all the `content-tree` tier proved).
+  const isDir = Array.isArray(data);
+  const entries = isDir ? data : [data as unknown as (typeof data)[number]];
+  const visible = filterTreeEntries(entries, readPaths, (entry) => ({
+    path: entry.path,
+    isDirectory: isDir ? entry.type === "dir" : false,
+  }));
+
+  // Preserve the response shape: an array for a directory, the entry itself for a
+  // file. A file the caller may not see is absent, not empty — same IDOR-safe 404
+  // convention the permission middleware uses.
+  if (!isDir) {
+    if (visible.length === 0) {
+      return c.json({ error: "Not found", code: "NOT_FOUND" }, 404);
+    }
+    return c.json({ data: visible[0] });
+  }
+  return c.json({ data: visible });
+}
+
+/**
+ * GET /github/repos/:owner/:repo/tree — the whole tree, flat and recursive.
+ *
+ * Powers the path picker in the source-access modal: choosing which paths a grant
+ * covers is not something anyone should do by typing globs blind. One recursive
+ * fetch lets the client build a collapsible tree AND search it without a request
+ * per directory.
+ *
+ * Filtered by the CALLER's own read paths, which is what stops this becoming a
+ * way to enumerate a repo you can't read: an org owner sees everything, and a
+ * member granting access to someone else can only ever offer paths they hold
+ * themselves. `listRepositoryTree` handles GitHub's truncation for huge repos.
+ */
+export async function listTree(c: Context) {
+  const ctx = getRequestContext(c);
+  const owner = param(c, "owner");
+  const repo = param(c, "repo");
+  const branch = c.req.query("branch")?.trim();
+
+  const entries = await githubService.listRepositoryTree(
+    ctx,
+    owner,
+    repo,
+    branch ? { branch } : {},
+  );
+
+  const readPaths = (c.get("sourceReadPaths") as string[] | undefined) ?? [];
+  const visible = filterTreeEntries(entries, readPaths, (entry) => ({
+    path: entry.path,
+    isDirectory: entry.type === "dir",
+  }));
+  return c.json({ data: visible });
 }
 
 /** GET /github/repos/:owner/:repo/file - Get a single file's content */
@@ -816,8 +934,23 @@ export async function getFile(c: Context) {
   const ctx = getRequestContext(c);
   const owner = param(c, "owner");
   const repo = param(c, "repo");
-  const file = c.req.query("file") ?? "package.json";
   const branch = c.req.query("branch");
+  // Required, not defaulted. The permission middleware authorises the path in
+  // `?file=`; an implicit fallback here would mean the check and the read could
+  // disagree — a caller granted only `package.json` would be denied for the root
+  // while the handler went on to serve package.json anyway.
+  //
+  // Read the NORMALISED path the middleware authorised, not the raw query param,
+  // so the string checked and the string fetched are the same one. Absent stash ⇒
+  // the tier gate did not run ⇒ refuse rather than fall back to the raw value
+  // (fail closed: a route mounted without `source` must not serve content here).
+  const file = c.get("sourcePath") as string | undefined;
+  if (!file) {
+    return c.json(
+      { error: "Query parameter `file` is required", code: "FILE_PARAM_REQUIRED" },
+      400,
+    );
+  }
 
   const data = await githubService.getFileContent(ctx, owner, repo, file, {
     branch: branch ?? undefined,

@@ -133,7 +133,7 @@ POST /api/deployments/build/access
     serverId: { type: 'string', description: "Target server id when deployTarget = 'server'." },
     runtimeMode: { type: '"bare" | "docker"', description: 'How the app runs on the target.' },
     serviceDeploymentMode: { type: '"services" | "single"', description: 'Multi-service (compose/monorepo) or single app.' },
-    services: { type: 'BuildService[]', description: 'Compose / multi-service definitions (services mode).' },
+    services: { type: 'BuildService[]', description: 'Compose / multi-service definitions (services mode). Omit on a folder upload and the services the scan parsed for that upload session are used.' },
     cloudResourceTier: { type: '"micro" | "low" | "medium" | "high" | "custom"', description: 'Cloud resource tier.' },
     cloudResourceCustom: { type: '{ cpuCores; memoryMb; diskMb }', description: "CPU/RAM/disk when cloudResourceTier = 'custom'." },
     cloneStrategy: { type: '"api-host" | "server"', description: 'Where the repo clone happens.' },

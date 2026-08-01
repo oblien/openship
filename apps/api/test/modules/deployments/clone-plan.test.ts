@@ -75,4 +75,49 @@ describe("resolveClonePlan", () => {
     expect(plan.runsLocally).toBe(false);
     expect(plan.cloneBuildStrategy).toBe("server");
   });
+
+  /**
+   * #346 — a LOCAL target has no server to clone on, so the clone always runs on
+   * this host and must use a LOCAL credential, whatever buildStrategy says.
+   *
+   * This is not a hypothetical: no stack declares `defaultBuildStrategy`, so
+   * `resolveStrategy` returns "server" for every caller that omits it. The
+   * dashboard always sends it explicitly and so never hit this; MCP, the CLI, CI
+   * and webhooks don't, and got a clone tagged "server" for a local deploy —
+   * which refuses gh-cli (not shippable) and hard-failed with "No GitHub token
+   * available … (purpose: remote)" on a box that could clone perfectly well.
+   */
+  describe("local target — clone always runs on this host", () => {
+    const localBase: ClonePlanInput = { ...base, effectiveTarget: "local", serverId: null };
+
+    it("defaulted buildStrategy=server still clones locally with a local credential", () => {
+      const plan = resolveClonePlan({ ...localBase, buildStrategy: "server" });
+      expect(plan.runsOnServer).toBe(false);
+      expect(plan.runsLocally).toBe(true);
+      expect(plan.cloneBuildStrategy).toBe("local");
+    });
+
+    it("explicit buildStrategy=local is unchanged", () => {
+      const plan = resolveClonePlan({ ...localBase, buildStrategy: "local" });
+      expect(plan.runsLocally).toBe(true);
+      expect(plan.cloneBuildStrategy).toBe("local");
+    });
+
+    it("a bare runtime on a local target does not become an on-server clone", () => {
+      // runsOnServer requires effectiveTarget==="server" AND a serverId; bare only
+      // forces on-server WITHIN that. A local target has neither.
+      const plan = resolveClonePlan({ ...localBase, runtimeIsBare: true });
+      expect(plan.runsOnServer).toBe(false);
+      expect(plan.cloneBuildStrategy).toBe("local");
+    });
+
+    it("never relay-eligible: there is no remote build host to forward to", () => {
+      const plan = resolveClonePlan({
+        ...localBase,
+        isDesktop: true,
+        forwardGitCredentials: true,
+      });
+      expect(plan.relayEligible).toBe(false);
+    });
+  });
 });

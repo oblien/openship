@@ -198,7 +198,13 @@ export function validateReturnTo(input: string | null): string | null {
   // Split off any query/fragment for the prefix check, but keep them on
   // the returned value so the consent page reloads with its params.
   const pathOnly = input.split(/[?#]/)[0];
-  const ALLOWED_PREFIXES = ["/cloud-authorize", "/"];
+  // `/mcp/authorize` is here for the same reason as `/cloud-authorize`: it's a
+  // consent page for an ALREADY-authenticated visitor that sends the user to
+  // /login with a returnTo when the session is missing. Without it in this list
+  // the returnTo was silently dropped and the user landed on `/`, abandoning the
+  // OAuth authorize the MCP client was waiting on — the flow could not complete
+  // for anyone not already signed in.
+  const ALLOWED_PREFIXES = ["/cloud-authorize", "/mcp/authorize", "/"];
   const isAllowed = ALLOWED_PREFIXES.some((prefix) => {
     if (prefix === "/") return pathOnly === "/";
     return pathOnly === prefix || pathOnly.startsWith(prefix + "/");

@@ -149,7 +149,7 @@
       "forwardOnNote": "Forwarding is on — gh CLI also authenticates remote server clones. Your identity is tunneled over SSH per clone; nothing is stored on the server.",
       "forwardOffHint": "Local builds only for now. Turn on \"Forward my git identity to build servers\" to use gh CLI for remote server deploys too.",
       "manageForward": "Manage forwarding",
-      "disconnectBody": "Openship will stop using this GitHub sign-in for clones. You can sign in again at any time.",
+      "disconnectBody": "Openship will remove this credential from this instance and stop using it for clones. It stays valid at GitHub until you revoke it there. You can reconnect at any time.",
       "recheck": "Check again"
     },
     "activeVia": "Connected via {method}",
@@ -172,7 +172,15 @@
     "forwardOffHint": "Local builds only. Turn on \"Forward my git identity to build servers\" to use it for remote server deploys too.",
     "remoteCredentialHint": "Used for repo browsing and builds that run on this host. Deploys that build on a remote server use that server's own credential — add a deploy key or token per server.",
     "methodToken": "GitHub token",
-    "methodHostCli": "gh CLI on this host"
+    "methodHostCli": "gh CLI on this host",
+    "manageTokensOnGithub": "Manage tokens on GitHub",
+    "manageAccessOnGithub": "Manage access on GitHub",
+    "disconnectScopeNote": "Disconnect removes this credential from Openship and stops using it for clones. It stays valid at GitHub until you revoke it there.",
+    "credentialRejected": "GitHub rejected the stored {method}.",
+    "credentialRejectedImpact": "It was revoked, expired, or lost a required scope. Deploys that clone with it will keep failing until you reconnect below.",
+    "credentialUnreachable": "Couldn't reach GitHub to check the stored {method}.",
+    "credentialUnreachableImpact": "This is usually a network problem rather than a bad credential — Openship keeps using it. Reconnecting won't help if GitHub is unreachable.",
+    "credentialCheckedAt": "Last checked {time}"
   },
   "gitlab": {
     "title": "GitLab",
@@ -888,5 +896,30 @@
       "setTo": "Route strategy set to {mode}",
       "failed": "Failed to update route strategy"
     }
+  },
+  "edgeOrphans": {
+    "title": "Untracked edge routes",
+    "description": "Hostnames this machine still serves that Openship has no record of",
+    "scan": "Scan",
+    "scanning": "Scanning…",
+    "allClear": "Every hostname the edge serves is accounted for.",
+    "comparedTo": "Compared against {count} tracked hostnames.",
+    "unavailable": "Couldn't check the edge",
+    "explain": "Removing a project with \"Remove from Openship only\" deliberately leaves its route running. A leftover app route then returns 502 once its container is gone, but a leftover STATIC route keeps serving the old files with a 200 — even on a hostname since given to another project.",
+    "kindStatic": "Static files",
+    "kindProxy": "App route",
+    "staticWarning": "Still serving files. This answers requests today.",
+    "proxyWarning": "Points at an upstream that is probably gone.",
+    "servingFrom": "Serving from",
+    "proxyingTo": "Proxying to",
+    "alsoAnswers": "Also answers for",
+    "stopServing": "Stop serving",
+    "stopping": "Stopping…",
+    "stopped": "{hostname} is no longer served.",
+    "stopFailed": "Couldn't stop serving {hostname}",
+    "confirmTitle": "Stop serving {hostname}?",
+    "confirmBody": "This removes the edge configuration for this hostname only. Built files stay on disk, and nothing else on the server is touched. If a project is later deployed to this hostname it will create its own route.",
+    "confirmCta": "Stop serving",
+    "cancel": "Cancel"
   }
 }

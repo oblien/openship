@@ -66,6 +66,7 @@
     "building": "En construction",
     "deploying": "Déploiement en cours",
     "partial": "Partiel",
+    "actionRequired": "Action requise",
     "rejected": "Rejeté",
     "verifying": "Vérification",
     "pending": "En attente"
@@ -150,11 +151,10 @@
     "rollbackTitle": {
       "enabled": "Restaurer le projet à cette version (code uniquement — les données restent inchangées)",
       "active": "Il s'agit déjà de la version active",
-      "pruned": "L'artéfact de rollback a été purgé. Utilisez « Redéployer ce commit » pour reconstruire à partir des sources.",
-      "notReady": "Seuls les déploiements prêts peuvent faire l'objet d'un rollback"
+      "pruned": "Ce déploiement n'a ni image conservée ni commit à reconstruire",
+      "notReady": "Seuls les déploiements prêts peuvent faire l'objet d'un rollback",
+      "rebuildOnly": "Restaurer cette version en reconstruisant son commit (son image a été supprimée)"
     },
-    "redeploy": "Redéployer ce commit",
-    "redeployTitle": "Reconstruire ce commit exact à partir des sources. Plus lent qu'un rollback mais fonctionne après la purge de l'artéfact.",
     "pin": "Épingler",
     "unpin": "Désépingler",
     "pinTitle": {
@@ -163,11 +163,12 @@
       "pruned": "Impossible d'épingler — l'artéfact a déjà été purgé"
     },
     "deleteDeployment": "Supprimer le déploiement",
-    "confirmRollback": "Revenir à cette version ?\n\nCela restaure uniquement le code de l'application. Les données de la base de données et des volumes restent inchangées.",
+    "confirmRollback": "Revenir à cette version ?\n\nSeul le code de l'application est restauré. Les données de base et de volumes ne changent pas.",
     "rollbackFailed": "Échec du rollback",
-    "confirmRedeploy": "Redéployer le commit {hash} ?\n\nReconstruit ce commit exact à partir des sources. Plus lent qu'un rollback (une construction complète est relancée), mais fonctionne même après la purge de l'artéfact de rollback. Un nouveau déploiement apparaîtra dans la liste.",
-    "redeployFailed": "Échec du redéploiement",
     "pinFailed": "Échec de l'épinglage du déploiement",
-    "unpinFailed": "Échec du désépinglage du déploiement"
+    "unpinFailed": "Échec du désépinglage du déploiement",
+    "rollbackModeInstant": "Restauration instantanée — réutilise l'image conservée de cette version, sans reconstruction.",
+    "rollbackModeRebuild": "Reconstruction — l'image de cette version n'est plus sur l'hôte, son commit est reconstruit.",
+    "rollbackModeMixed": "Presque instantané — {count} service(s) ont perdu leur image et seront reconstruits."
   }
 }

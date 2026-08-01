@@ -28,11 +28,6 @@
   "dns": {
     "title": "Configuração de DNS",
     "addRecordsFor": "Adicione estes registros no seu provedor de DNS para",
-    "descCname": "Roteia o seu domínio através da rede de borda",
-    "descA": "Aponta o seu domínio para o servidor",
-    "descTxt": "Verifica a propriedade do domínio",
-    "nameHost": "Nome / Host",
-    "valueTarget": "Valor / Destino",
     "selfInfoPre": "Adicione o ",
     "recordA": "registro A",
     "selfInfoMid": " apontando para o IP do seu servidor e, em seguida, adicione o ",
@@ -43,13 +38,28 @@
     "cloudInfoMid": " para o roteamento e, em seguida, adicione o ",
     "modalTitle": "Aponte o seu domínio e depois implante",
     "modalSubtitle": "O HTTPS é emitido na primeira implantação assim que o seu domínio apontar para aqui — ou pule e adicione o DNS mais tarde na aba Domínios.",
-    "descCnameWww": "Aponta o www para o seu domínio principal",
     "autoConfigTitle": "Configurar automaticamente com o meu provedor de DNS",
     "autoConfigDesc": "Conecte o seu registrador e nós adicionaremos estes registros para você.",
     "comingSoon": "Em breve",
     "deployAction": "Implantar",
     "cancel": "Cancelar",
-    "loadingRecords": "Carregando registros DNS…"
+    "loadingRecords": "Carregando registros DNS…",
+    "serverIpPlaceholder": "o IP público do seu servidor",
+    "record": {
+      "purposeA": "Aponta {hostname} para o IP deste servidor",
+      "purposeCname": "Encaminha {hostname} pela rede edge",
+      "purposeCnameAlias": "Aponta {hostname} para {target}",
+      "purposeTxt": "Comprova que {hostname} é seu — consultamos este registro ao verificar",
+      "fieldType": "Tipo",
+      "fieldName": "Nome",
+      "fieldValue": "Valor",
+      "fieldTtl": "TTL",
+      "ttlValue": "Automático (ou 3600)",
+      "apexHint": "“@” é o próprio domínio — alguns provedores pedem este campo em branco",
+      "fullName": "Nome completo, se o seu provedor exigir:",
+      "proxyNote": "Mantenha qualquer proxy/CDN desligado (no Cloudflare: nuvem cinza, “DNS only”) para que o HTTPS possa ser emitido para este domínio.",
+      "copy": "Copiar"
+    }
   },
   "buildSummary": {
     "title": "Resumo da implantação",
@@ -195,7 +205,15 @@
       "apiHostServerDesc": "Clone no host do Openship e depois envie. Funciona em qualquer lugar.",
       "serverLabel": "No servidor",
       "serverDesc": "Clone no servidor — sem envio. Melhor para repositórios grandes."
-    }
+    },
+    "rollbackTitle": "Rollback e backups",
+    "rollbackHint": "Quantas versões anteriores continuam restauráveis neste servidor e o que é copiado antes de um deploy.",
+    "rollbackFirstDeploy": "Editável nas configurações do projeto após o primeiro deploy.",
+    "backupSummaryNone": "Sem política de backup ainda",
+    "backupSummaryConfigured": "{count} política(s) de backup · pré-deploy: {preDeploy}",
+    "backupManage": "Gerenciar backups",
+    "on": "ativo",
+    "off": "inativo"
   },
   "summary": {
     "buildAndDeploy": "Compilar e implantar:",
@@ -210,7 +228,12 @@
     "runtimeStatic": "Static · edge-served",
     "runtimeSandboxed": "Sandboxed",
     "runtimeDirectWarning": "Not sandboxed",
-    "runtimeDirectHint": "Runs directly on the host — not sandboxed."
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed.",
+    "rollbackOne": "{count} versão",
+    "rollbackOther": "{count} versões",
+    "rollbackAuto": "Rollback: automático",
+    "rollbackSnapshotHint": "Uma cópia de cada versão é mantida, então um rollback nunca reconstrói. Altere em Avançado.",
+    "rollbackGitHint": "Quantas versões anteriores continuam restauráveis. Altere em Avançado."
   },
   "power": {
     "heading": "Potência",

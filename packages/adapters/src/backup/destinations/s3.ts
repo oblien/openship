@@ -28,7 +28,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "node:stream";
 import { decryptCredential } from "../common/credentials";
 import { registerDestination } from "../registry";
-import { safeErrorMessage } from "@repo/core";
+import { isAwsS3Endpoint, safeErrorMessage } from "@repo/core";
 import type {
   BackupDestination,
   BackupDestinationRow,
@@ -70,11 +70,10 @@ class S3DestinationImpl implements BackupDestination {
     if (!accessKeyId || !secretAccessKey) {
       throw new Error(`S3Destination "${row.name}" missing access credentials`);
     }
-    // Force path-style for non-AWS endpoints (R2, MinIO, etc.).
-    const isAws =
-      !row.endpoint ||
-      row.endpoint.includes(".amazonaws.com") ||
-      row.endpoint === "https://s3.amazonaws.com";
+    // Force path-style for non-AWS endpoints (R2, MinIO, etc.). Shared with the
+    // app-side object-storage binding so a bucket can't be addressed one way by
+    // backups and another way by the app writing to it.
+    const isAws = isAwsS3Endpoint(row.endpoint);
 
     this.client = new S3Client({
       endpoint: row.endpoint ?? undefined,

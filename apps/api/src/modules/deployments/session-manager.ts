@@ -388,8 +388,14 @@ export async function promptUser(
 
   // Hold the prompt on the session so a refresh/reconnect re-shows it (replayed
   // in subscribe), not just a one-shot broadcast.
-  session.currentPrompt = prompt;
-  const payload = JSON.stringify({ type: "prompt", ...prompt });
+  //
+  // Stamp the deadline HERE, where the hold actually starts — the raising code
+  // (ensurePortAvailable, the edge-consent flow) doesn't own the timeout. A
+  // client that has to poll to discover this prompt needs to know how long it
+  // has; without it, "waiting" and "about to be aborted" look identical.
+  const held: PromptPayload = { ...prompt, expiresAt: promptRegistry.deadlineFromNow() };
+  session.currentPrompt = held;
+  const payload = JSON.stringify({ type: "prompt", ...held });
   for (const writer of session.subscribers) {
     writer("prompt", payload);
   }

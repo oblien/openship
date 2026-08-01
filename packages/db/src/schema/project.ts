@@ -4,12 +4,19 @@ import {
   timestamp,
   boolean,
   integer,
+  bigint,
   jsonb,
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { RoutingConfig, ProjectCompositeRoute, ReleaseSource } from "@repo/core";
+import type {
+  RoutingConfig,
+  ProjectCompositeRoute,
+  ReleaseSource,
+  ProjectObjectStorage,
+  OpenshipReadiness,
+} from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
 
@@ -157,6 +164,19 @@ export const project = pgTable(
     productionPaths: text("production_paths"),
     /** Root directory within the repo (for monorepos) */
     rootDirectory: text("root_directory"),
+    /**
+     * Where this project's compose file lives, when it is NOT at the auto-detected
+     * root — either the file itself (`deploy/stack.yml`, which is also how a
+     * non-standard filename is deployed) or the directory holding it
+     * (`deploy/docker-compose`). Set by the user; seeded from `openship.json`'s
+     * `composePath` when they haven't set one.
+     *
+     * Read on every scan AND on every redeploy: the push-triggered compose-drift
+     * reconcile re-parses the file from the repo, so without this it would look at
+     * the wrong path and silently stop tracking upstream changes. Null = detect
+     * the root as usual.
+     */
+    composePath: text("compose_path"),
     /** Start command for production runtime */
     startCommand: text("start_command"),
     /** Docker image for build environment (e.g. node:22, oven/bun:latest) */
@@ -201,6 +221,39 @@ export const project = pgTable(
      */
     workspacePrepareCommand: text("workspace_prepare_command"),
 
+    /* ── Persistent storage ─────────────────────────────────────────────── */
+    /**
+     * Paths this app's container keeps across deploys. Accepts the same compose
+     * syntax as `service.volumes` (`name:/container/path`, host bind mounts, a
+     * `:ro` mode) plus the short app form — a bare path relative to the app root
+     * (`storage`), which `@repo/core` volumes.ts expands.
+     *
+     * NULL means "use the stack's declared `persistentPaths`" (so a Laravel app
+     * keeps `storage/` with no configuration); an explicit `[]` means the user
+     * turned persistence off. Compose services keep declaring their own volumes
+     * on `service.volumes` — this is the single-app half of the same idea.
+     */
+    volumes: jsonb("volumes").$type<string[] | null>(),
+    /**
+     * Bound object-storage bucket (S3-compatible) — NON-SECRET metadata only:
+     * provider, endpoint, region, bucket, path-style, the source app when the
+     * bucket came from a MinIO project, and which env keys the binding wrote.
+     * The access key + secret live in the project's encrypted env store, which
+     * is the one place credentials are kept. Null when nothing is bound.
+     */
+    objectStorage: jsonb("object_storage").$type<ProjectObjectStorage | null>(),
+
+    /**
+     * Deploy-time readiness gate (Openship's own, NOT the Docker HEALTHCHECK
+     * directive — that one lives per compose service in `service.advanced`).
+     *
+     * NULL = off, which is the default for every project: an unconfigured deploy
+     * does no post-start waiting at all. Only a project that explicitly opts in
+     * here gets a probe that can delay or veto a deploy. Set from the wizard's
+     * Health section, seeded by `openship.json`'s `readiness`.
+     */
+    readiness: jsonb("readiness").$type<OpenshipReadiness | null>(),
+
     /* ── Resources (VM-native format) ───────────────────────────────────── */
     /** JSON: { cpuCores, memoryMb } */
     resources: jsonb("resources"),
@@ -215,22 +268,40 @@ export const project = pgTable(
      * deploy time (the prior wizard-only behavior).
      */
     runtimeMode: text("runtime_mode"),
-    /** Number of previous successful releases to retain for rollback (null = use instance default) */
+    /**
+     * How many past releases stay restorable. Explicit operator override;
+     * NULL = AUTO — use `rollbackWindowComputed` (sized from the deploy
+     * host's free disk), falling back to
+     * `instance_settings.default_rollback_window`. Resolved in exactly one
+     * place: `resolveRollbackWindow` (modules/deployments/release-retention.ts).
+     */
     rollbackWindow: integer("rollback_window"),
     /**
-     * Default rollback strategy snapshotted onto each new deployment
-     * via `deployment.rollbackStrategy`.
+     * The auto-sized window, recomputed once per successful deploy from
+     * `snapshotSizeBytes` + the host's free disk (see computeAutoRollbackWindow
+     * in @repo/core). Persisted so retention prune, the image GC and the deploy
+     * wizard's label all read it with zero I/O. Null = never measured.
+     */
+    rollbackWindowComputed: integer("rollback_window_computed"),
+    /** Mean on-disk size of ONE retained release for this project, in bytes
+     *  (measured from the project's own built images). Null = never measured. */
+    snapshotSizeBytes: bigint("snapshot_size_bytes", { mode: "number" }),
+    /** When snapshotSizeBytes / rollbackWindowComputed were last measured. */
+    capacityMeasuredAt: timestamp("capacity_measured_at"),
+    /**
+     * Retention preference for this project's rollback artifacts:
      *
-     *   - `"git"`      → no archive; rollback checks out the previous
-     *     successful deploy's commit_sha and rebuilds in place. Saves
-     *     disk at the cost of build time on restore. Default for new
-     *     projects since most are GitHub-backed and commits ARE the
-     *     rollback fuel.
-     *   - `"snapshot"` → archive image/workspace, rollback restores it.
-     *     Use when build is expensive and instant rollback matters.
+     *   - `"git"`      → don't hold a per-deployment unit; a restore rebuilds
+     *     from the target's commit. Cheapest on disk. Default.
+     *   - `"snapshot"` → keep past artifacts restorable so a rollback skips
+     *     the build entirely.
      *
-     * Stored per-project so a project can opt into either mode without
-     * touching the global default.
+     * NOTE this is a preference about RETENTION, not a frozen decision about
+     * how a given rollback runs: the restore mode is resolved at rollback time
+     * from what's actually still on the host (rollback/restore-plan.ts), so
+     * flipping this affects existing history too. On Docker an instant restore
+     * is available either way — images are retained by the rollback-window keep
+     * set regardless of this setting.
      */
     defaultRollbackStrategy: text("default_rollback_strategy")
       .notNull()

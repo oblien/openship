@@ -7,7 +7,12 @@
  */
 
 import { and, eq, sql } from "drizzle-orm";
-import { generateId } from "@repo/core";
+import {
+  generateId,
+  parseSourceAccessScope,
+  serializeSourceAccessScope,
+  type SourceAccessScope,
+} from "@repo/core";
 
 import type { Database } from "../client";
 import { personalAccessTokenGrant } from "../schema/personal-access-token-grant";
@@ -37,6 +42,7 @@ function rowToGrant(row: Row): ResourceGrant {
     resourceType: row.resourceType as ResourceType,
     resourceId: row.resourceId,
     permissions,
+    scope: parseSourceAccessScope(row.scopeJson),
     grantedByUserId: null,
     createdAt: row.createdAt,
   };
@@ -74,7 +80,12 @@ export function createPersonalAccessTokenGrantRepo(db: Database) {
 
     async createMany(
       tokenId: string,
-      grants: Array<{ resourceType: ResourceType; resourceId: string; permissions: Permission[] }>,
+      grants: Array<{
+        resourceType: ResourceType;
+        resourceId: string;
+        permissions: Permission[];
+        scope?: SourceAccessScope | null;
+      }>,
     ): Promise<void> {
       if (grants.length === 0) return;
       await db.insert(personalAccessTokenGrant).values(
@@ -84,6 +95,7 @@ export function createPersonalAccessTokenGrantRepo(db: Database) {
           resourceType: g.resourceType,
           resourceId: g.resourceId,
           permissionsJson: JSON.stringify(g.permissions),
+          scopeJson: serializeSourceAccessScope(g.scope),
         })),
       );
     },

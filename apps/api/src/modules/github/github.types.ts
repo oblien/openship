@@ -289,8 +289,23 @@ export interface GitHubConnectionState {
        * Everything used to render as "gh CLI" regardless. Also decides whether
        * the library's first-run consent prompt applies — only "host-cli" is a
        * pre-existing credential the operator didn't hand over here.
+       *
+       * Set on the `available: false` branch too, when a credential exists but
+       * failed its check (see `problem`).
        */
       method?: "host-cli" | "device" | "token";
+      /**
+       * Set ONLY when a credential is stored but unusable — the difference
+       * between "nothing connected" and "what you connected stopped working".
+       * Without it both states rendered as the connect chooser, so a revoked
+       * token looked identical to a fresh install while clones kept failing.
+       *
+       *   "rejected"    → GitHub returned 401/403. Reconnect.
+       *   "unreachable" → no answer from GitHub; the credential may be fine.
+       */
+      problem?: "rejected" | "unreachable";
+      /** ISO timestamp of the last verify against GitHub. */
+      checkedAt?: string;
     };
   };
   /**

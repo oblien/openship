@@ -7,6 +7,7 @@ import ServerSelector, { type ServerOption } from "@/components/shared/ServerSel
 import type { DeployTarget } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
 import { useCloud } from "@/context/CloudContext";
+import { usePlatform } from "@/context/PlatformContext";
 
 export interface AppDestination {
   deployTarget: DeployTarget;
@@ -20,23 +21,36 @@ export interface AppDestination {
  * "Where to install" picker for the app wizards. Servers use the shared
  * mail-style `ServerSelector` dropdown (pre-selects the first/only server so the
  * wizard opens with a destination already chosen; collapses many into a
- * searchable list, carries its own "add server"), with Openship Cloud /
- * this-machine as sibling choices. Reports the pick as
- * `{deployTarget, serverId, serverHost}`.
+ * searchable list, carries its own "add server"), with Openship Cloud as a
+ * sibling choice. Reports the pick as `{deployTarget, serverId, serverHost}`.
+ *
+ * DESKTOP ONLY gets a separate "this machine" card. On a server-host install the
+ * Openship host is already registered as the `isLocal` "This Server" row (see
+ * startup/self-server.ts) and appears in the selector above, so a second card for
+ * the same box is not just redundant — it resolves to the same platform
+ * (`resolveTargetPlatform` builds an identical selfhosted/socket/`provision:local`
+ * target either way) while losing the server's `sshHost`, which is what makes a
+ * port-only install's URL reachable. Picking it on a VPS yielded
+ * `http://localhost:<port>`, useless from anywhere but the box itself. The main
+ * deploy wizard already models the host purely as a server row (`useDesktopTargets`
+ * offers servers + cloud, no local), so this keeps the two consistent.
+ *
+ * The same rule covers a host-control-disabled box: no `isLocal` row is created
+ * there because the host is deliberately not a deploy target, and it isn't
+ * desktop, so no local card either.
  */
 export function AppDestinationPicker({
   value,
   onChange,
-  allowLocal = false,
 }: {
   value: AppDestination | null;
   onChange: (d: AppDestination) => void;
-  allowLocal?: boolean;
 }) {
   const { t } = useI18n();
   const w = t.projectSettings.appInstall;
   const opt = t.deploy.targetStep.options;
   const { connected: cloudConnected } = useCloud();
+  const { deployMode } = usePlatform();
 
   const serverActive = value?.deployTarget === "server";
 
@@ -66,7 +80,7 @@ export function AppDestinationPicker({
         description={cloudConnected ? opt.cloudConnectedDesc : opt.cloudDisconnectedDesc}
       />
 
-      {allowLocal && (
+      {deployMode === "desktop" && (
         <OptionCard
           value="local"
           selected={value?.deployTarget === "local"}

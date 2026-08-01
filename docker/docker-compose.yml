@@ -60,6 +60,14 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
+      # Fresh installs keep the data dir in a SUBDIR of the volume so initdb never
+      # runs against a bare mount root (fails on quirky host filesystems with
+      # "Operation not permitted" — #350). UPGRADING an install that already had
+      # its DB at the mount root? Set PGDATA=/var/lib/postgresql/data in your .env
+      # first — otherwise Postgres inits a fresh empty DB (your data stays in the
+      # volume, just unused, until you point PGDATA back). The `openship up` CLI
+      # handles this automatically; this note is for raw `docker compose` users.
+      PGDATA: ${PGDATA:-/var/lib/postgresql/data/pgdata}
       POSTGRES_USER: ${POSTGRES_USER:-openship}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — re-run `openship up` to regenerate .env}
       POSTGRES_DB: ${POSTGRES_DB:-openship}

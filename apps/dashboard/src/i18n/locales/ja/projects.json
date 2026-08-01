@@ -280,6 +280,9 @@
     "success": "無料ドメインのルーティングを同期しました。",
     "failed": "無料ドメインのルーティングを同期できませんでした。"
   },
+  "deployBlocked": {
+    "redeploy": "再デプロイ"
+  },
   "redeploy": {
     "deployStartedLong": "デプロイを開始しました — 通常より時間がかかっています。デプロイ画面を開きます。",
     "deployingTitle": "デプロイ中",

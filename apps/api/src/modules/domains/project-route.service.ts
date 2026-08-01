@@ -11,6 +11,7 @@ import {
 import { resolveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import { deregisterManagedEdgeRoutes, syncManagedEdgeRoutes } from "../../lib/managed-edge-proxy";
 import { syncProjectPublicRoutes } from "../../lib/project-route-store";
+import { resolveRouteRedirect } from "../../lib/domain-redirect";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 import { pushProjectRules } from "../route-rules/route-rule.service";
 import {
@@ -414,6 +415,9 @@ export async function reapplyProjectLiveRoutes(
     return url;
   };
 
+  // A redirect only goes live when its target is one of the hostnames this
+  // project currently routes — see resolveRouteRedirect.
+  const liveHostnames = current.map((domain) => domain.hostname);
   const registers: RouteRegister[] = [];
   for (const domain of current) {
     if (domain.targetPath) continue;
@@ -424,10 +428,12 @@ export async function reapplyProjectLiveRoutes(
     }
     const targetUrl = await resolveTargetUrl(port);
     if (!targetUrl) continue;
+    const redirectHost = resolveRouteRedirect(domain, liveHostnames);
     registers.push({
       hostname: domain.hostname,
       targetUrl,
       isCustomDomain: domain.domainType === "custom",
+      ...(redirectHost ? { redirectHost } : {}),
     });
   }
 

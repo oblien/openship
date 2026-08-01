@@ -28,7 +28,7 @@
 
 import { repos, db, schema, eq, type Project, type Deployment } from "@repo/db";
 import { BareRuntime } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, UNLIMITED_RESOURCES } from "@repo/core";
 import { env } from "../../config/env";
 import { registerStartupHook } from "./index";
 import { ensureSelfEdgeInfra, type SelfEdgeOptions } from "./self-edge";
@@ -74,6 +74,7 @@ function adoptSnapshot(project: Project, dashPort: number): DeploymentConfigSnap
     buildCommand: "",
     outputDirectory: "",
     productionPaths: [],
+    volumes: [],
     rootDirectory: ".",
     port: dashPort,
     startCommand: "",
@@ -147,7 +148,11 @@ export async function ensureAdoptDeployment(
       environment: "production",
       port: dashPort,
       envVars: {},
-      resources: { cpuCores: 1, memoryMb: 512, diskMb: 1024 },
+      // No caps: this is the control plane on the operator's own host, and
+      // BareRuntime is a host process — it has no cgroup to apply them to
+      // anyway. The old hardcoded 0.5-core/512 MB literal read like a real
+      // limit on Openship itself, which it never was.
+      resources: { ...UNLIMITED_RESOURCES },
       adopt: true,
     });
     containerId = result.containerId ?? dep.id;

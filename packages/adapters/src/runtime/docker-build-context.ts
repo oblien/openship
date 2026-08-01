@@ -117,6 +117,26 @@ function toPosixPath(value: string): string {
 }
 
 /**
+ * Anchor one `.dockerignore` line to the context root. Docker matches patterns
+ * against the whole context-relative path — a slash-less `node_modules` is the
+ * root one only, and a leading globstar is what reaches any depth — while the
+ * `ignore` package applies gitignore rules, where the slash-less form matches
+ * at every depth. Patterns that already carry a slash, leading globstars,
+ * comments and `!` negations are passed through unchanged.
+ */
+function anchorDockerignorePattern(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) return line;
+
+  const negated = trimmed.startsWith("!");
+  const pattern = negated ? trimmed.slice(1) : trimmed;
+  if (!pattern || pattern.startsWith("/") || pattern.startsWith("**/")) return line;
+  if (pattern.replace(/\/+$/, "").includes("/")) return line;
+
+  return `${negated ? "!" : ""}/${pattern}`;
+}
+
+/**
  * `.dockerignore` matcher for the build context. `.gitignore` is deliberately
  * NOT read here — the base tree is already git-truth (local: `git ls-files`;
  * clone: a clean checkout), so gitignored output was never included. We only
@@ -125,25 +145,46 @@ function toPosixPath(value: string): string {
  */
 async function loadDockerignoreMatcher(rootPath: string): Promise<IgnoreMatcher | undefined> {
   try {
-    return ignore().add(await readFile(join(rootPath, ".dockerignore"), "utf-8"));
+    const contents = await readFile(join(rootPath, ".dockerignore"), "utf-8");
+    return ignore().add(contents.split(/\r?\n/).map(anchorDockerignorePattern));
   } catch {
     return undefined; // no .dockerignore
   }
 }
 
+/** The build files (`.dockerignore` plus every Dockerfile candidate this config
+ *  can resolve to) and the directories leading to them, in posix form. */
+function buildFilePaths(config: BuildConfig): Set<string> {
+  const paths = new Set<string>([".dockerignore"]);
+
+  const candidates = resolveDockerfileCandidates(config.rootDirectory, config.dockerfilePath);
+
+  for (const candidate of candidates) {
+    const segments = candidate.split("/");
+    for (let depth = 1; depth <= segments.length; depth += 1) {
+      paths.add(segments.slice(0, depth).join("/"));
+    }
+  }
+
+  return paths;
+}
+
 /** Remove everything matching `.dockerignore` from an already-materialized
- *  context tree. No-op when the repo has no `.dockerignore`. */
-async function applyDockerignore(contextDir: string): Promise<void> {
+ *  context tree, except the build files themselves — Docker sends those to the
+ *  builder regardless. No-op when the repo has no `.dockerignore`. */
+async function applyDockerignore(contextDir: string, config: BuildConfig): Promise<void> {
   const matcher = await loadDockerignoreMatcher(contextDir);
   if (!matcher) return;
+
+  const buildFiles = buildFilePaths(config);
 
   const prune = async (currentPath: string): Promise<void> => {
     const entries = await readdir(currentPath, { withFileTypes: true });
     await Promise.all(
       entries.map(async (entry) => {
         const absolutePath = join(currentPath, entry.name);
-        const relativePath = relative(contextDir, absolutePath);
-        if (matcher.ignores(toPosixPath(relativePath))) {
+        const relativePath = toPosixPath(relative(contextDir, absolutePath));
+        if (!buildFiles.has(relativePath) && matcher.ignores(relativePath)) {
           await rm(absolutePath, { recursive: true, force: true });
           return;
         }
@@ -330,7 +371,7 @@ export async function prepareSourceTree(
 
     // Docker-only refinement: dockerode tars the context as-is, so honor
     // .dockerignore here. No-op when the repo has none.
-    await applyDockerignore(contextDir);
+    await applyDockerignore(contextDir, config);
 
     return {
       contextDir,

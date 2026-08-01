@@ -5,7 +5,83 @@ the in-app updater surfaces critical advisories from `release-advisories.json`.
 
 ## 0.4.9
 
-A round of fixes across the MCP integration and custom domains.
+Rollback is rebuilt so it actually restores a release, plus a round of fixes
+across the MCP integration and custom domains.
+
+### Rollback
+
+- **Roll back any release, on every project** — the Rollback action used to be
+  greyed out on projects using the default settings, because nothing marked their
+  releases as restorable. It's now available on every successful release, and it
+  is a single action: Openship reuses the release's retained image when it's still
+  on the server (seconds, no rebuild) and rebuilds that release's commit when it
+  isn't. It can no longer dead-end — the "Redeploy this commit" fallback button is
+  gone because the one action already covers it, and the confirmation tells you
+  which of the two you're about to get.
+- **A restored release comes back complete** — a rollback now runs the same deploy
+  pipeline a normal deploy does, replaying that release's own frozen configuration
+  and environment variables. Previously it hand-assembled a bare container, which
+  meant a "successful" rollback could come back with no environment variables, no
+  published port (a 502 behind your domain) and its volumes detached. Restores now
+  get the health check, the crash-loop watch, routing, logs and a build log of
+  their own, exactly like any other deploy.
+- **Compose stacks roll back per service** — only services whose image is missing
+  are rebuilt; a service the deploy never touched keeps running on the image it
+  already has, so rolling back your app code doesn't bounce your database.
+- **Static sites roll back their files** — a static release's artifact is its built
+  files on disk, not an image, so restoring one copies that version's files back
+  into place (hard-linked, so it costs almost no extra disk) and re-points the edge
+  at them. No image, no rebuild. A static rollback previously tried — and failed —
+  to restart a directory as if it were a process.
+- **Restoring never breaks the release you're on** — a restore reuses its source
+  release's image, so two releases can share one. Retention now knows that and will
+  not delete an image another retained release still needs.
+- **Rollback history sizes itself to the disk** — how many releases stay restorable
+  is now measured from free space on the deploy host and your project's real image
+  size (a quarter of what's free, between 2 and 20 releases), instead of a fixed 5.
+  You can still pin an exact number; clearing the field returns it to automatic.
+- **The settings moved next to backups** — rollback retention now lives in the
+  project's Backup tab, and in the deploy wizard's target panel where you pick the
+  server, with the measured snapshot size and free disk shown inline. Pinning a
+  release to keep it restorable indefinitely is unchanged.
+- **Set retention while you're still choosing the server** — the wizard's rollback
+  controls are editable on a first deploy too, and the choice is applied when the
+  project is created. They used to render read-only until the project existed,
+  which was the one moment you were actually looking at them. The card also names
+  what a retained version *is* on your project — built files for a static site,
+  images otherwise — instead of talking about images either way.
+- **The wizard's Advanced panel says what's in it** — it listed only the build
+  location while hiding the rollback window and clone location; it now names each
+  section it contains. The summary chips next to the target (Static, Sandboxed, tier)
+  lost their coloured pill backgrounds and read as plain text, with the one that
+  matters — an unsandboxed "direct on host" runtime — still called out in colour.
+- **Flipping the retention setting applies to existing releases** — it used to be
+  frozen onto each deployment as it was created, so turning on instant rollback did
+  nothing for anything already deployed.
+
+### Fixes found while rebuilding rollback
+
+- **Older releases could not be deployed or restored at all** — a release whose
+  configuration snapshot predated the "production paths" setting crashed the deploy
+  pipeline outright. This affected plain redeploys too, not just rollback.
+- **A restore is no longer refused for missing build settings** — a release that
+  reuses an existing image needs no install or start command, but pre-deploy checks
+  demanded them. Adding a required setting would otherwise have made every older
+  release un-restorable.
+- **Registry-image-only projects can deploy again** — a stack adopted from a Docker
+  migration has no git repository and needs none, but deploys were refused for not
+  having one.
+- **Compose deploys record which service ran which image** — six of the nine places
+  that write per-service deployment records left the service name blank, so a later
+  rollback couldn't tell services apart and rebuilt the whole stack.
+- **A cleared rollback-history field no longer means "keep nothing"** — an empty
+  value now falls back to the default instead of purging every restorable release.
+- **Docker outside Docker Desktop is reachable** — local deploys honor `DOCKER_HOST`
+  (and an explicit socket path) instead of assuming `/var/run/docker.sock`, so
+  Colima, Rancher Desktop, Podman and rootless Docker work.
+
+Upgrade note: this release drops an unused `artifact_retained_at` column from the
+per-service deployment table. Nothing read or wrote it.
 
 ### MCP
 - **Guided deploy flows** — the MCP server now ships a prompt catalog
@@ -22,6 +98,39 @@ A round of fixes across the MCP integration and custom domains.
   nothing to work with.
 
 ### Custom domains
+- **`www` is its own domain, not an attachment to yours** — "Include www" always
+  created a second hostname, but the pieces around it still treated the pair as
+  one thing. Renewing SSL for a domain issued the `www` certificate inside the
+  same operation, unguarded: a `www` that wasn't pointed at the server yet failed
+  *after* the apex had already succeeded, and the apex was reported as broken.
+  Adding a domain with the switch on also showed you only the apex's DNS record,
+  so `www` never resolved, its certificate could never be issued, and every
+  deploy retried a hostname that had been set up to fail. Both hostnames now get
+  their own DNS record, their own Verify button, their own certificate — and their
+  own failure.
+- **Redirect one domain to another** — any domain can now answer a 301 (or 302) to
+  another domain of the same project, set on the domain's card. `www` uses it by
+  default (`www.example.com` → `example.com`), and the direction is yours to flip
+  or turn off. Old-domain-to-new-domain moves work the same way. The path and query
+  string are preserved, the redirecting host still gets its own certificate, and a
+  target outside the project — or a redirect that would loop — is refused.
+- **Verify keeps the log when it fails** — the verify modal streamed certbot's
+  output and then, on any failure, replaced the whole console with one line:
+  "the connection closed before the operation reported a result — check the
+  domain's status." The actual reason was discarded. The log now stays on screen in
+  every outcome, with Copy log and Try again next to it. And if the connection
+  really does drop, Openship reads the domain's state back and tells you what
+  happened instead of asking you to go and look.
+- **A finished run stops reporting itself as failed** — a keep-alive ping could
+  race the final event of any live-log stream (verify, edge setup, deploys) and win,
+  so the browser never received the result of an operation the server had already
+  completed. Stream writes are serialized now, and a result that has arrived can no
+  longer be overwritten by the connection closing behind it.
+- **Two domains on one server no longer fight over certificates** — certificate
+  issuance is serialized per server, not just per hostname. `www` made two pending
+  domains the normal case, and a manual Verify could collide with the background
+  retry working on the sibling: both ran certbot, both wanted the same challenge
+  port, and one died with an error that read like a DNS problem.
 - **The A record shows your server's IP** — on a self-hosted install the
   pre-deploy DNS panel now fills the A record's value with the server's public
   address (detected once when the server is registered) instead of leaving it

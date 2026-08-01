@@ -280,6 +280,9 @@
     "success": "Enrutamiento del dominio gratuito sincronizado.",
     "failed": "No se pudo sincronizar el enrutamiento del dominio gratuito."
   },
+  "deployBlocked": {
+    "redeploy": "Redesplegar"
+  },
   "redeploy": {
     "deployStartedLong": "Despliegue iniciado — está tardando más de lo habitual, abriendo despliegues.",
     "deployingTitle": "Desplegando",

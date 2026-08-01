@@ -66,6 +66,16 @@ export interface DeploymentMeta {
    */
   portCheckSkipped?: (number | string)[];
   /**
+   * An OPT-IN readiness check that failed while the project's
+   * `readiness.onFailure` was "warn" — the deploy is live and `ready`, and this
+   * records what didn't answer.
+   *
+   * Deliberately NOT merged into `deployWarning`: any `deployWarning` makes the
+   * project read `routingUnsynced` (see enrichProject), which offers "Retry
+   * routing" — the wrong affordance for an app that didn't answer on its port.
+   */
+  readinessWarning?: string;
+  /**
    * Advisory post-deploy static-output probe — the file-side twin of `portCheck`,
    * one entry per routed path. Point-in-time; never gates the deploy. An entry
    * that is `checked && (!found || !hasIndex)` is a 404 waiting to happen.
@@ -151,7 +161,19 @@ async function resolveOrgServer(
   if (serverId) {
     const server = await repos.server.getInOrganization(serverId, organizationId);
     if (!server) {
-      throw new Error("Deployment target server not found in this organization.");
+      // Actionable, but deliberately org-AGNOSTIC in wording: never look the id
+      // up outside this org. The strict org scope here IS the layer-1 host-root
+      // gate (an isLocal row resolved cross-org would escalate any org to a
+      // host-root executor), and the serverId comes from the client-supplied
+      // deploy snapshot — probing it unscoped would also be a cross-tenant
+      // existence/name oracle. So we explain the likely cause + recovery without
+      // revealing whether the id exists elsewhere.
+      throw new Error(
+        "The selected deploy target isn't in this project's organization. This usually " +
+          "happens after re-deploying Openship at the same URL (a stale session) or when " +
+          "your active organization differs from the project's. Re-open the deploy target " +
+          "picker and reselect a server, or switch your active organization to match, then redeploy.",
+      );
     }
     return server;
   }

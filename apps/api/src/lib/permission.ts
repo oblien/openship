@@ -62,6 +62,33 @@ const GRANTABLE_ROOTS: ResourceType[] = [
   "cloud",
 ];
 
+/**
+ * Resources that exist exactly once per org and carry no resource id in the URL —
+ * their routes assert `resourceId: "*"` and the org comes from request scope.
+ *
+ * Lives here, next to GRANTABLE_ROOTS and `roleAllowsResourceType`, because it is
+ * resource-type POLICY that both the route middleware and the restricted arm below
+ * must agree on. `route-permission.ts` re-exports it for its existing importers;
+ * defining it there instead would make this module import from it and cycle.
+ *
+ * Add any new "feature" tag whose URL doesn't follow /resource/:id. Per-resource
+ * types (project, deployment, …) MUST NOT be here.
+ */
+export const ORG_SINGLETON_RESOURCES = new Set<string>([
+  "billing",
+  "audit",
+  "analytics",
+  "github",
+  "gitlab",
+  "permissions",
+  "settings",
+  "job",
+  "cloud",
+  "terminal",
+  "notifications",
+  "updates",
+]);
+
 /** Resource types accepted by permission.check — includes leaves. */
 export type CheckedResourceType =
   | ResourceType
@@ -357,6 +384,28 @@ export async function checkPermission(
     }
   }
 
+  // Org-singleton grants (billing, audit, …). Every route for these asserts
+  // resourceId "*", and the resolution below CANNOT resolve "*": `loadRootOrgId`
+  // returns null for it, so the grant lookup never ran and the grant was inert at
+  // every id. Mint-time acceptance has no such gap — `resolveInputOrg`
+  // short-circuits "*" to the request-scope org and evaluates the MINTER's role —
+  // so an owner could mint a billing grant the token could never use. That
+  // asymmetry is the bug this closes; `project` had the only such case (above).
+  //
+  // The org is already resolved by the caller (`resolveInputOrg` → request scope,
+  // pinned to the token's bound org for a scoped principal — see the unbound
+  // rejection in middleware/auth.ts), and `checkPermission` has already asserted
+  // membership in it, so reading the grant directly adds no new trust input.
+  if (ORG_SINGLETON_RESOURCES.has(input.resourceType) && input.resourceId === "*") {
+    const singleton = await source.findForResource(
+      organizationId,
+      userId,
+      input.resourceType as ResourceType,
+      "*",
+    );
+    return singleton ? permitsAction(singleton.permissions, input.action) : false;
+  }
+
   let root = await resolveResourceOrg(input.resourceType, input.resourceId);
   if (!root) {
     // A `project` with no local row is a CLOUD project (canonical on the
@@ -379,21 +428,34 @@ export async function checkPermission(
   );
   if (!grant) return false;
 
-  // Exhaustive switch — adding a new Permission value (delete/list/etc.)
-  // without updating this arm fails the build via the `never` check.
-  switch (input.action) {
+  return permitsAction(grant.permissions, input.action);
+}
+
+/**
+ * Does a grant's permission array authorize `action`?
+ *
+ * Cumulative by design — read ⇐ read|write|admin, write ⇐ write|admin — which is
+ * what lets the dashboard render the three levels as a lossless view of the
+ * underlying arrays (mcp-access-templates.ts).
+ *
+ * The single definition shared by the org-singleton arm and the per-resource arm,
+ * so the two can't drift. Exhaustive switch: adding a new Permission value without
+ * updating this fails the build via the `never` check.
+ */
+function permitsAction(permissions: readonly Permission[], action: Permission): boolean {
+  switch (action) {
     case "read":
-      return grant.permissions.some((p) => p === "read" || p === "write" || p === "admin");
+      return permissions.some((p) => p === "read" || p === "write" || p === "admin");
     case "write":
-      return grant.permissions.some((p) => p === "write" || p === "admin");
+      return permissions.some((p) => p === "write" || p === "admin");
     case "admin":
-      return grant.permissions.includes("admin");
+      return permissions.includes("admin");
     case "create":
-      // "create" is a collection-only capability (handled above for "*"); it is
-      // never a per-resource action, so it grants nothing on a specific id.
+      // "create" is a collection-only capability (handled by the project "*" arm);
+      // it is never a per-resource action, so it grants nothing on a specific id.
       return false;
     default: {
-      const _exhaustive: never = input.action;
+      const _exhaustive: never = action;
       return false;
     }
   }

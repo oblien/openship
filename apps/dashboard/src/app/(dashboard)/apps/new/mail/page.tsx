@@ -82,7 +82,11 @@ export default function MailWizardPage() {
         if (status === "ready") {
           setLiveUrl(firstPublicHost(s?.config?.publicEndpoints, baseDomain));
           setPhase("done");
-        } else if (["failed", "cancelled", "partial_failure", "rejected"].includes(status)) {
+        } else if (
+          // Every SETTLED status — see the same list in apps/new/[appId]. Without
+          // `action_required` this polls at 2s forever on a named blocker.
+          ["failed", "cancelled", "partial_failure", "action_required", "rejected"].includes(status)
+        ) {
           setErrorMsg(s.failureMessage || w.installFailed);
           setPhase("error");
         }
@@ -302,7 +306,7 @@ export default function MailWizardPage() {
                 <h3 className="text-sm font-semibold text-foreground">{w.destinationTitle}</h3>
                 <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
                 <div className="mt-4">
-                  <AppDestinationPicker value={destination} onChange={setDestination} allowLocal />
+                  <AppDestinationPicker value={destination} onChange={setDestination} />
                 </div>
               </div>
 

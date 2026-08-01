@@ -50,7 +50,25 @@ export async function add(c: Context) {
       isPrimary: result.domain.isPrimary,
     },
   });
-  return c.json({ data: result.domain, records: result.records }, 201);
+  return c.json(
+    {
+      data: result.domain,
+      records: result.records,
+      ...(result.preexistingEdgeSite
+        ? { preexistingEdgeSite: result.preexistingEdgeSite }
+        : {}),
+    },
+    201,
+  );
+}
+
+/** GET /domains/:id — one domain's verify + SSL state. */
+export async function get(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  await permission.assert(ctx, { resourceType: "domain", resourceId: id, action: "read" });
+  const domain = await domainService.getDomain(ctx, id);
+  return c.json({ data: domain });
 }
 
 export async function remove(c: Context) {
@@ -203,13 +221,14 @@ export async function setPrimary(c: Context) {
 /** POST /domains/preview - get DNS records for a hostname (no DB write) */
 export async function preview(c: Context) {
   const ctx = getRequestContext(c);
-  const body = await c.req.json<{ hostname: string }>();
+  const body = await c.req.json<{ hostname: string; includeWww?: boolean }>();
   if (!body.hostname?.trim()) {
     return c.json({ error: "hostname is required" }, 400);
   }
   const result = await domainService.previewRecords(
     body.hostname.trim().toLowerCase(),
     ctx.organizationId,
+    body.includeWww === true,
   );
   return c.json({ data: result });
 }

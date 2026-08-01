@@ -29,6 +29,7 @@ export {
   getLatestDeploymentSession,
   enrichProject,
   enrichProjectsBatch,
+  deploymentIsBlocked,
 } from "./project-crud.service";
 
 export { previewProjectDeletion } from "./project-cleanup.service";

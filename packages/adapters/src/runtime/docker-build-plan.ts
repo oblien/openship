@@ -77,81 +77,187 @@ function workspacePrepareRunLine(config: BuildConfig, envPrefix: string, workspa
   return `RUN ${envPrefix}${body}`;
 }
 
-/** The install+build RUN line (with progress markers), or null if neither step. */
-function installBuildRunLine(config: BuildConfig, envPrefix: string): string | null {
+/**
+ * One RUN line covering the requested steps, with the stepper's progress
+ * markers. `packageManager` selects the corepack prelude — normally the
+ * project's, but the PHP recipe runs its asset build in a Node stage where the
+ * project PM ("composer") says nothing about which JS PM the command needs.
+ */
+function stepsRunLine(
+  config: BuildConfig,
+  envPrefix: string,
+  opts: { install?: boolean; build?: boolean; packageManager?: string },
+): string | null {
+  const install = opts.install ? config.installCommand : "";
+  const build = opts.build ? config.buildCommand : "";
   const steps: string[] = [];
-  // Ensure the package manager exists in the builder image before install
+  // Ensure the package manager exists in the image before install
   // (corepack for pnpm/yarn; no-op for npm/bun/non-node) — fixes "pnpm: not found".
-  const pmEnsure = packageManagerEnsureCommand(config.packageManager);
-  if (pmEnsure && (config.installCommand || config.buildCommand)) {
+  const pmEnsure = packageManagerEnsureCommand(opts.packageManager ?? config.packageManager);
+  if (pmEnsure && (install || build)) {
     steps.push(pmEnsure);
   }
-  if (config.installCommand) {
+  if (install) {
     steps.push(`printf '${formatDockerBuildEvent("install", "running")}\\n'`);
-    steps.push(buildRunCommand(config.installCommand, envPrefix));
+    steps.push(buildRunCommand(install, envPrefix));
     steps.push(`printf '${formatDockerBuildEvent("install", "completed")}\\n'`);
   }
-  if (config.buildCommand) {
+  if (build) {
     steps.push(`printf '${formatDockerBuildEvent("build", "running")}\\n'`);
-    steps.push(buildRunCommand(config.buildCommand, envPrefix));
+    steps.push(buildRunCommand(build, envPrefix));
     steps.push(`printf '${formatDockerBuildEvent("build", "completed")}\\n'`);
   }
   return steps.length > 0 ? `RUN ${steps.join(" && ")}` : null;
 }
 
-/** PHP stacks are served php-fpm + nginx. The php:*-cli build image has no
- *  Composer and the php:*-fpm runtime image has no web server, so both are added
- *  here; the launch itself (envsubst + php-fpm + nginx) is the stack's start
- *  command, because the runtime overrides the image CMD at `docker run`. */
-function isPhpRuntime(config: BuildConfig): boolean {
-  return /^php:/.test(config.runtimeImage);
+/** The install+build RUN line (with progress markers), or null if neither step. */
+function installBuildRunLine(config: BuildConfig, envPrefix: string): string | null {
+  return stepsRunLine(config, envPrefix, { install: true, build: true });
 }
 
-// nginx server block for a public/-docroot PHP app. `${PORT}` is substituted at
-// start time by envsubst; nginx's own $uri/$document_root/etc. are written
-// literally (single-quoted at build time) so envsubst leaves them intact.
-const PHP_NGINX_TEMPLATE_LINES = [
-  "server {",
-  "    listen ${PORT} default_server;",
-  "    root /app/public;",
-  "    index index.php index.html;",
-  "    location / { try_files $uri $uri/ /index.php?$query_string; }",
-  "    location ~ \\.php$ {",
-  "        fastcgi_pass 127.0.0.1:9000;",
-  "        fastcgi_index index.php;",
-  "        include fastcgi_params;",
-  "        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;",
-  "    }",
-  "}",
-];
+/** Install step only — the PHP recipe's build step runs in a separate stage. */
+function installRunLine(config: BuildConfig, envPrefix: string): string | null {
+  return stepsRunLine(config, envPrefix, { install: true });
+}
 
+/** JS package managers a build command can lead with, longest-first so `pnpm`
+ *  isn't shadowed by a prefix match. */
+const JS_PACKAGE_MANAGERS = ["pnpm", "yarn", "bun", "npm"] as const;
+
+/**
+ * Build step only, prepared for a Node stage: the corepack prelude is chosen
+ * from the command itself (`pnpm install && pnpm build` → pnpm) rather than from
+ * the project's package manager.
+ */
+function buildOnlyRunLine(config: BuildConfig, envPrefix: string): string | null {
+  const command = config.buildCommand?.trim() ?? "";
+  const packageManager = JS_PACKAGE_MANAGERS.find((pm) =>
+    new RegExp(`(^|\\s|&&\\s*)${pm}\\s`).test(command),
+  );
+  return stepsRunLine(config, envPrefix, { build: true, packageManager });
+}
+
+/** PHP stacks build with the `php:*-cli` image (plus Composer, which it doesn't
+ *  ship) and run on FrankenPHP, whose docroot convention — `public/` under
+ *  WORKDIR `/app` — is already the layout this recipe emits. The `^php:` arm
+ *  keeps a project that pinned a raw php runtime image on this branch rather
+ *  than dropping it into the generic single-CMD template, which can't express a
+ *  PHP web recipe at all. */
+function isPhpRuntime(config: BuildConfig): boolean {
+  return /^php:/.test(config.runtimeImage) || /frankenphp/i.test(config.runtimeImage);
+}
+
+/**
+ * PHP extensions installed into BOTH the build and the runtime stage.
+ *
+ * `pdo_mysql` alone was the old common denominator, which meant a Postgres app
+ * simply couldn't connect and a queue worker had no `pcntl`. The set below is
+ * what a mainstream Laravel/Symfony app expects; the two stages get the SAME
+ * list so `composer install`'s platform check can't pass on a requirement the
+ * runtime then lacks.
+ *
+ * `install-php-extensions` (the same script FrankenPHP bundles) resolves the
+ * native build deps for each one — doing this with bare `docker-php-ext-install`
+ * would mean hand-maintaining an apt list of `libicu-dev`, `libpq-dev`, … here.
+ */
+const PHP_EXTENSIONS = [
+  "pdo_mysql",
+  "pdo_pgsql",
+  "redis",
+  "pcntl",
+  "bcmath",
+  "intl",
+  "zip",
+  "gd",
+  "opcache",
+] as const;
+
+/** Image the builder stage copies `install-php-extensions` from. FrankenPHP has
+ *  it built in; the plain `php:*-cli` build image does not. */
+const PHP_EXT_INSTALLER_IMAGE = "mlocati/php-extension-installer:2";
+
+/** Build image for the JS asset stage — see `generatePhpDockerfile`. */
+const PHP_ASSET_BUILD_IMAGE = "node:22-bookworm-slim";
+
+const PHP_EXT_INSTALL_LINE = `RUN install-php-extensions ${PHP_EXTENSIONS.join(" ")} > /dev/null`;
+
+/**
+ * PHP recipe: Composer in the builder, an optional Node stage for the JS asset
+ * pipeline, FrankenPHP as the runtime.
+ *
+ * Two things drive the shape. First, PHP's install and build steps are DIFFERENT
+ * toolchains: `composer install` is the install step, and the build step is the
+ * asset pipeline (`npm run build`) that a Laravel/Vite or Symfony/Encore app
+ * needs and that a `php:*-cli` image can't run. So the build command, when the
+ * detector found one, goes to its own `node:*` stage and only its output — the
+ * docroot — is copied forward. Nothing is emitted when there's no asset build.
+ *
+ * Second, the extension install is the expensive layer, so it sits BEFORE the
+ * source copy in both stages: it then caches across every commit, and across
+ * every PHP project on the same builder.
+ */
 function generatePhpDockerfile(config: BuildConfig): string {
   const sourceDir = builderSourceDir(
     normalizeDockerRootDirectory(config.rootDirectory, config.localPath),
   );
   const envPrefix = buildEnvPrefix(config.envVars);
-  const stepsLine = installBuildRunLine(config, envPrefix);
-  const nginxTemplate = PHP_NGINX_TEMPLATE_LINES.map((line) => `'${line}'`).join(" ");
+  const installLine = installRunLine(config, envPrefix);
+  const assetBuildLine = buildOnlyRunLine(config, envPrefix);
 
   const lines: string[] = [
     `FROM ${config.buildImage} AS builder`,
-    `WORKDIR /workspace`,
-    `COPY . /workspace`,
     // php:*-cli ships no Composer — pull the binary from the official image.
     `COPY --from=composer:2 /usr/bin/composer /usr/bin/composer`,
-    // pdo_mysql is the common denominator (Laravel/Symfony + MySQL/MariaDB);
-    // app-specific extensions are a per-project follow-on.
-    `RUN docker-php-ext-install pdo_mysql > /dev/null`,
+    `COPY --from=${PHP_EXT_INSTALLER_IMAGE} /usr/bin/install-php-extensions /usr/bin/install-php-extensions`,
+    PHP_EXT_INSTALL_LINE,
+    `WORKDIR /workspace`,
+    `COPY . /workspace`,
     `WORKDIR ${sourceDir}`,
   ];
-  if (stepsLine) lines.push(stepsLine);
+  if (installLine) lines.push(installLine);
+
+  if (assetBuildLine) {
+    lines.push(
+      `FROM ${PHP_ASSET_BUILD_IMAGE} AS assets`,
+      `WORKDIR /workspace`,
+      `COPY . /workspace`,
+      `WORKDIR ${sourceDir}`,
+      assetBuildLine,
+    );
+  }
+
+  const docroot = normalizeRelativePath(config.outputDirectory) || "public";
 
   lines.push(
     `FROM ${config.runtimeImage} AS runtime`,
-    `RUN apt-get update && apt-get install -y --no-install-recommends nginx gettext-base && rm -rf /var/lib/apt/lists/* && rm -f /etc/nginx/sites-enabled/default && docker-php-ext-install pdo_mysql > /dev/null`,
-    `COPY --from=builder ${sourceDir} /app`,
+    PHP_EXT_INSTALL_LINE,
+    // --chown on the COPY instead of a trailing `chown -R`: the recursive form
+    // rewrites every file into a second layer, doubling the app's size on disk.
+    // Ownership has to be settled HERE, before anything mounts: Docker seeds a
+    // fresh named volume from the image directory it covers, ownership included,
+    // so `/app/storage` is only writable by the runtime user if it was already
+    // owned by them in the image (see @repo/core volumes.ts).
+    `COPY --from=builder --chown=www-data:www-data ${sourceDir} /app`,
+  );
+  if (assetBuildLine) {
+    lines.push(
+      `COPY --from=assets --chown=www-data:www-data ${sourceDir}/${docroot} /app/${docroot}`,
+    );
+  }
+  lines.push(
     `WORKDIR /app`,
-    `RUN printf '%s\\n' ${nginxTemplate} > /etc/nginx/app.conf.template`,
+    // FrankenPHP's bundled Caddyfile reads the docroot from SERVER_ROOT (default
+    // `public/`, resolved against WORKDIR). Setting it keeps the project's
+    // outputDirectory authoritative for BOTH what gets served and where the asset
+    // stage's output lands — otherwise a project that renamed its docroot builds
+    // assets into one directory and serves another.
+    `ENV SERVER_ROOT=${docroot}/`,
+    // Caddy's config + data dirs are root-owned in the base image, and it writes
+    // to both on startup — without this the non-root switch below fails at boot.
+    `RUN mkdir -p /data/caddy /config/caddy && chown -R www-data:www-data /data/caddy /config/caddy`,
+    // The frankenphp binary carries cap_net_bind_service, so dropping root here
+    // still leaves any port bindable.
+    `USER www-data`,
     `EXPOSE ${config.port}`,
   );
   if (config.startCommand) {

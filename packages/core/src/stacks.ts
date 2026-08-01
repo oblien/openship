@@ -79,8 +79,15 @@ export const LANGUAGES = {
   },
   php: {
     name: "PHP",
-    buildImage: "php:8.3-cli",
-    runtimeImage: "php:8.3-fpm",
+    buildImage: "php:8.4-cli",
+    // FrankenPHP, not php:*-fpm. An fpm image is a FastCGI backend, not a
+    // process host: it ships no web server, and pairing it with an apt nginx
+    // means two processes under a shell that swallows SIGTERM — a container stop
+    // then kills in-flight work instead of draining it. FrankenPHP is ONE
+    // process that owns both the HTTP server and PHP, so signals land where they
+    // should with no supervision tree, it runs fine as a non-root user, and its
+    // docroot convention (`/app/public`) is already the layout our recipes emit.
+    runtimeImage: "dunglas/frankenphp:1-php8.4-bookworm",
     packageManagers: ["composer"],
     requiredTools: ["php", "composer"],
   },
@@ -198,6 +205,17 @@ export interface StackDefinition {
    * Only framework-specific caches - generic ones (.git) are always excluded.
    */
   cacheDirs?: readonly string[];
+  /**
+   * Paths (relative to the app root) this framework WRITES at runtime and would
+   * lose on redeploy. Declared here so a stock app keeps its data with no
+   * configuration; the project can override the list. Resolved by
+   * `resolveStackVolumes` in `volumes.ts`, which turns each entry into a real
+   * mount — so keep them to paths that are genuinely stateful. A path that also
+   * holds CODE must not be listed: mounting over it shadows what later releases
+   * ship there (Laravel's `database/` holds migrations as well as the SQLite
+   * file, which is why only `storage` is declared).
+   */
+  persistentPaths?: readonly string[];
   /**
    * Preferred build location for this stack.
    * "server" = build in the cloud/workspace (default if omitted).
@@ -635,19 +653,29 @@ export const STACKS = {
 
   // ── PHP ────────────────────────────────────────────────────────────────────
 
-  // PHP stacks run php-fpm behind nginx (docroot public/). The generated
-  // Dockerfile (docker-build-plan.ts PHP branch) installs nginx + writes the
-  // config template; this start command renders it for the injected $PORT and
-  // launches both processes. Runtime image inherits php:8.3-fpm from the language.
+  // PHP stacks serve `public/` from FrankenPHP (see LANGUAGES.php). `exec` hands
+  // the container's PID to frankenphp so SIGTERM drains in-flight requests
+  // instead of being swallowed by the shell; SERVER_NAME carries the injected
+  // $PORT (a bare `:port` also keeps Caddy's automatic HTTPS out of the way —
+  // TLS terminates at the edge). No build command: `composer install` is the
+  // INSTALL step, and the build step is where a JS asset pipeline goes (the
+  // detector fills it in when the repo has one).
   laravel: {
     name: "Laravel",
     language: "php",
     category: "fullstack",
     outputDirectory: "public",
     defaultPort: 8000,
-    defaultBuildCommand: "composer install --no-dev --optimize-autoloader",
+    defaultBuildCommand: "",
     defaultStartCommand:
-      "envsubst '$PORT' < /etc/nginx/app.conf.template > /etc/nginx/conf.d/default.conf && php-fpm -D && nginx -g 'daemon off;'",
+      'SERVER_NAME=":$PORT" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile',
+    // Everything a stock Laravel app writes lives here: uploads
+    // (storage/app), sessions + cache when the drivers are `file`, and the
+    // framework's own scratch space. `database/` is deliberately NOT persisted —
+    // it holds migrations, so mounting over it would hide the ones a later
+    // release adds. A SQLite app should point DB_DATABASE at a persisted path or
+    // (better) use a database service.
+    persistentPaths: ["storage"],
     detection: {
       rootMarkers: ["artisan", "composer.json"],
       deps: ["laravel/framework"],
@@ -659,9 +687,11 @@ export const STACKS = {
     category: "fullstack",
     outputDirectory: "public",
     defaultPort: 8000,
-    defaultBuildCommand: "composer install --no-dev --optimize-autoloader",
+    defaultBuildCommand: "",
     defaultStartCommand:
-      "envsubst '$PORT' < /etc/nginx/app.conf.template > /etc/nginx/conf.d/default.conf && php-fpm -D && nginx -g 'daemon off;'",
+      'SERVER_NAME=":$PORT" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile',
+    // No persistentPaths: Symfony's `var/` is cache + logs, both regenerated,
+    // and it has no convention for where user uploads land.
     detection: {
       rootMarkers: ["composer.json", "symfony.lock"],
       deps: ["symfony/framework-bundle"],
@@ -1012,10 +1042,20 @@ export function getBuildImage(stackId: StackId, packageManager?: string): string
  * it installs the pnpm/yarn shims and lets each project's
  * `package.json#packageManager` field select the exact version. Falls back to a
  * global npm install when corepack is unavailable (old Node / no perms), and is
- * fully swallowed so it never fails the build. Returns "" for `npm` (already
- * present), `bun` (its own image), and every non-node PM (in-image).
+ * fully swallowed so it never fails the build.
+ *
+ * `bun` gets a presence check instead: corepack doesn't manage it. Inside a
+ * container this is a no-op — getBuildImage already resolves bun-eligible stacks
+ * to oven/bun, so `command -v bun` short-circuits before the npm fallback (which
+ * matters: that image ships no npm). It earns its keep on a BARE target, where we
+ * install onto whatever the box already has (see runtime/bare.ts).
+ *
+ * Returns "" for `npm` (already present) and every non-node PM (in-image).
  */
 export function packageManagerEnsureCommand(packageManager?: string): string {
+  if (packageManager === "bun") {
+    return `(command -v bun >/dev/null 2>&1 || npm i -g bun) >/dev/null 2>&1 || true`;
+  }
   if (packageManager !== "pnpm" && packageManager !== "yarn") return "";
   return `(corepack enable ${packageManager} || corepack enable || npm i -g ${packageManager}) >/dev/null 2>&1 || true`;
 }
@@ -1062,6 +1102,25 @@ export function isServicesFramework(framework?: string | null): boolean {
   } catch {
     return framework === "docker-compose";
   }
+}
+
+/**
+ * Does this stack normally HAVE a build step?
+ *
+ * The registry already answers this: a stack with no `defaultBuildCommand` is one
+ * whose dependency install is the whole story (Express, Hono, plain Node), whose
+ * build lives in its own Dockerfile (`docker`), or whose build step is reserved
+ * for something optional (PHP: `composer install` is the install step, and the
+ * build step only exists when the repo ships a JS asset pipeline).
+ *
+ * Use it before telling a user that a missing build command looks wrong — for the
+ * stacks above it's the normal state, and warning there is noise that trains
+ * people to ignore preflight. False for an unknown framework: no declared
+ * expectation, nothing to flag.
+ */
+export function stackExpectsBuildCommand(framework?: string | null): boolean {
+  if (!framework || !(framework in STACKS)) return false;
+  return !!(STACKS[framework as StackId] as StackDefinition).defaultBuildCommand;
 }
 
 /**

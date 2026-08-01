@@ -68,7 +68,37 @@ const projCreate = tool({
   perm: { root: "project", leaf: "project", action: "write", wildcard: true, grantRoot: "project", projectCreate: true },
 });
 
-const ALL = [ghGetRepo, ghBranches, ghListAll, projGet, projUpdate, projList, projCreate];
+const billingGet = tool({
+  name: "get_billing",
+  method: "GET",
+  // org-singleton with no path params → wildcard, but reachable by a scoped token
+  // holding {billing,"*"} since the restricted arm authorizes that directly.
+  perm: { root: "billing", leaf: "billing", action: "read", wildcard: true, grantRoot: "billing" },
+});
+
+// Content-serving github tools. `source` marks them as needing a capability
+// BEYOND the repo grant — a repo grant alone is deploy-only.
+const ghFile = tool({
+  name: "get_github_repos_by_owner_by_repo_file",
+  method: "GET",
+  perm: { root: "github", leaf: "github", action: "read", wildcard: false, grantRoot: "github", source: "content" },
+});
+const ghFiles = tool({
+  name: "get_github_repos_by_owner_by_repo_files",
+  method: "GET",
+  perm: { root: "github", leaf: "github", action: "list", wildcard: false, grantRoot: "github", source: "content-tree" },
+});
+const ghDetect = tool({
+  name: "get_github_repos_by_owner_by_repo_detect",
+  method: "GET",
+  // No `source` — derived config only, so it works on a deploy-only grant.
+  perm: { root: "github", leaf: "github", action: "read", wildcard: false, grantRoot: "github" },
+});
+
+const ALL = [
+  ghGetRepo, ghBranches, ghListAll, projGet, projUpdate, projList, projCreate, billingGet,
+  ghFile, ghFiles, ghDetect,
+];
 const names = (tools: McpToolDef[]) => tools.map((t) => t.name).sort();
 
 function principal(p: Partial<McpPrincipal>): McpPrincipal {
@@ -77,6 +107,7 @@ function principal(p: Partial<McpPrincipal>): McpPrincipal {
     readOnly: p.readOnly ?? false,
     grantedRootTypes: p.grantedRootTypes ?? new Set(),
     canCreateProjects: p.canCreateProjects ?? false,
+    sourceCapabilities: p.sourceCapabilities ?? new Set(),
   };
 }
 
@@ -118,6 +149,96 @@ describe("filterToolsForPrincipal", () => {
     expect(names(out)).not.toContain("get_projects"); // wildcard list
     expect(names(out)).not.toContain("post_projects"); // create needs the own-projects scope
     expect(names(out)).not.toContain("get_github_repos_by_owner_by_repo");
+  });
+
+  /**
+   * Org-singleton wildcards are the mirror of the `github '*' not found` bug: once
+   * the restricted arm of checkPermission authorizes {leaf,"*"} from a grant, a
+   * blanket `wildcard → hidden` rule would hide tools the token CAN call. Listed
+   * iff the grant is held — nothing more, nothing less.
+   */
+  it("a billing-granted scoped token SEES the org-singleton billing tool", () => {
+    const out = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set(["billing"]) }));
+    expect(names(out)).toContain("get_billing");
+  });
+
+  it("a scoped token without a billing grant never sees it", () => {
+    for (const g of ["project", "github", "github_repository"]) {
+      const out = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set([g]) }));
+      expect(names(out), `grant=${g}`).not.toContain("get_billing");
+    }
+  });
+
+  it("an all-github grant sees the org-wide repo list; a repo-scoped one does not", () => {
+    const all = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set(["github"]) }));
+    expect(names(all)).toContain("get_github_repos");
+
+    const repoOnly = filterToolsForPrincipal(
+      ALL,
+      principal({ grantedRootTypes: new Set(["github_repository"]) }),
+    );
+    expect(names(repoOnly)).not.toContain("get_github_repos");
+  });
+
+  it("a LIST wildcard stays hidden even for a matching grant — no arm authorizes it", () => {
+    const out = filterToolsForPrincipal(ALL, principal({ grantedRootTypes: new Set(["project"]) }));
+    expect(names(out)).not.toContain("get_projects");
+  });
+
+  /**
+   * Repo access is DEPLOY-ONLY by default. A token can hold a github grant and
+   * still have no business reading files, so the content tools must not be
+   * advertised to it — otherwise the agent tries them and gets a 404 it cannot
+   * interpret, which is exactly the failure mode of the original bug.
+   */
+  it("a repo-granted but deploy-only token sees metadata + detect, NOT file content", () => {
+    const out = filterToolsForPrincipal(
+      ALL,
+      principal({ grantedRootTypes: new Set(["github_repository"]) }),
+    );
+    expect(names(out)).toContain("get_github_repos_by_owner_by_repo");
+    expect(names(out)).toContain("get_github_repos_by_owner_by_repo_branches");
+    // detect is what lets it configure a deploy without content access
+    expect(names(out)).toContain("get_github_repos_by_owner_by_repo_detect");
+    // and the content tools stay hidden
+    expect(names(out)).not.toContain("get_github_repos_by_owner_by_repo_file");
+    expect(names(out)).not.toContain("get_github_repos_by_owner_by_repo_files");
+  });
+
+  it("a token WITH content capability sees the file tools", () => {
+    const out = filterToolsForPrincipal(
+      ALL,
+      principal({
+        grantedRootTypes: new Set(["github_repository"]),
+        sourceCapabilities: new Set(["content"]),
+      }),
+    );
+    expect(names(out)).toContain("get_github_repos_by_owner_by_repo_file");
+    expect(names(out)).toContain("get_github_repos_by_owner_by_repo_files");
+  });
+
+  it("content capability does NOT imply write capability", () => {
+    const writeTool = tool({
+      name: "put_github_file",
+      method: "PUT",
+      perm: { root: "github", leaf: "github", action: "write", wildcard: false, grantRoot: "github", source: "write" },
+    });
+    const out = filterToolsForPrincipal(
+      [...ALL, writeTool],
+      principal({
+        grantedRootTypes: new Set(["github_repository"]),
+        sourceCapabilities: new Set(["content"]),
+      }),
+    );
+    expect(names(out)).toContain("get_github_repos_by_owner_by_repo_file");
+    expect(names(out)).not.toContain("put_github_file");
+  });
+
+  it("a non-restricted role is not hidden from content tools (its own role governs)", () => {
+    // An owner's GitHub reach is resolved by github-access.ts, not by grants, so
+    // hiding on an empty capability set would blank the tools for the org owner.
+    const out = filterToolsForPrincipal(ALL, principal({ role: "owner" }));
+    expect(names(out)).toContain("get_github_repos_by_owner_by_repo_file");
   });
 
   it("own-projects scope (canCreateProjects) sees create + the project list", () => {

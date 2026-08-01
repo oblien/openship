@@ -13,7 +13,7 @@
 import type { Context } from "hono";
 import { setSignedCookie } from "hono/cookie";
 import { db, repos, schema, eq, and } from "@repo/db";
-import { generateId, safeErrorMessage } from "@repo/core";
+import { generateId, normalizeRollbackWindow, safeErrorMessage } from "@repo/core";
 import { hashPassword } from "better-auth/crypto";
 import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
 import { env } from "../../config";
@@ -33,7 +33,6 @@ import {
   canSendMail,
 } from "../../lib/mail";
 import { zeroAuthAllowed } from "../../middleware/zero-auth-guard";
-import { normalizeRollbackWindow } from "../../lib/release-retention";
 import { getInstanceReachability } from "../../lib/public-url";
 import { sshManager } from "../../lib/ssh-manager";
 import { encryptSecretField } from "@/lib/credential-encryption";

@@ -385,6 +385,127 @@ describe("behind a TLS-terminating CDN", () => {
   });
 });
 
+// A canonical host redirect (`www.example.com` → `example.com`, or an old domain
+// → a new one). The redirecting host serves NO content of its own, but it is still
+// an ordinary domain: it needs its own certificate, and it still has to be able to
+// answer the ACME challenge that issues it.
+describe("canonical host redirect", () => {
+  const REDIRECT: RouteConfig = {
+    ...OURS,
+    domain: "www.example.com",
+    redirectHost: { target: "example.com", statusCode: 301 },
+  };
+  const wwwConf = (conf: (slug: string) => string | undefined) => conf("www-example-com")!;
+
+  test("replaces the upstream in BOTH the :80 and :443 blocks", async () => {
+    const { nginx, conf } = setup({ certDomains: ["www.example.com"] });
+    await nginx.registerRoute(REDIRECT);
+    const c = wwwConf(conf);
+    const http = c.slice(c.indexOf("listen 80;"), c.indexOf("listen 443 ssl;"));
+    const https = c.slice(c.indexOf("listen 443 ssl;"));
+    for (const block of [http, https]) {
+      expect(block).toContain("return 301 https://example.com$request_uri;");
+      expect(block).not.toContain("proxy_pass http://127.0.0.1:3009;");
+    }
+  });
+
+  test("goes STRAIGHT to the target from :80 — no bounce through our own https", async () => {
+    // The destination is a different host, so there's no Flexible-CDN loop to dodge
+    // and the conditional self-redirect would only cost an extra round trip.
+    const { nginx, conf } = setup({ certDomains: ["www.example.com"] });
+    await nginx.registerRoute(REDIRECT);
+    const http = wwwConf(conf).split("listen 443 ssl;")[0];
+    expect(http).not.toContain("return 301 https://$server_name$request_uri;");
+    expect(http).toContain("return 301 https://example.com$request_uri;");
+  });
+
+  test("$request_uri is preserved, so a deep link keeps its path AND query", async () => {
+    const { nginx, conf } = setup({ certDomains: ["www.example.com"] });
+    await nginx.registerRoute(REDIRECT);
+    expect(wwwConf(conf)).toContain("https://example.com$request_uri;");
+  });
+
+  test("KEEPS the ACME challenge location — it issues its own certificate", async () => {
+    // Without this the redirect would answer certbot's HTTP-01 with a 301 and the
+    // host could never get the cert its own `https://` redirect depends on.
+    const { nginx, conf } = setup({ certDomains: ["www.example.com"] });
+    await nginx.registerRoute(REDIRECT);
+    const c = wwwConf(conf);
+    expect(c).toContain("location /.well-known/acme-challenge/");
+    expect(c).toContain(`proxy_pass http://127.0.0.1:${ACME_HTTP01_PORT}`);
+  });
+
+  test("still gets a :443 listener before its real cert exists (bootstrap TLS)", async () => {
+    // Same reason as any other locally-terminated host: no listener means the origin
+    // refuses the handshake (Cloudflare 525) and issuance deadlocks.
+    const { nginx, conf } = setup();
+    await nginx.registerRoute(REDIRECT);
+    expect(wwwConf(conf)).toContain("listen 443 ssl;");
+  });
+
+  test("honours the other redirect codes, and falls back to 301 for a non-redirect", async () => {
+    for (const [status, expected] of [[302, 302], [308, 308], [200, 301]] as const) {
+      const { nginx, conf } = setup({ certDomains: ["www.example.com"] });
+      await nginx.registerRoute({
+        ...REDIRECT,
+        redirectHost: { target: "example.com", statusCode: status },
+      });
+      expect(wwwConf(conf)).toContain(`return ${expected} https://example.com$request_uri;`);
+    }
+  });
+
+  test("DROPS path locations, header rules and the webhook proxy", async () => {
+    // A host where some paths redirect and others proxy is a split-brain vhost, and
+    // a 30x would lose a webhook delivery's POST body.
+    const { nginx, conf } = setup({ certDomains: ["www.example.com"] });
+    await nginx.registerRoute({
+      ...REDIRECT,
+      proxyLocations: [{ pathPrefix: "/api/", targetUrl: "http://127.0.0.1:4001" }],
+      redirects: [{ path: "/old", exact: true, statusCode: 302, destination: "/new" }],
+      headerRules: [{ path: "/", headers: [{ key: "X-Frame-Options", value: "DENY" }] }],
+      webhookProxy: "http://127.0.0.1:4000/api/webhooks/",
+    });
+    const c = wwwConf(conf);
+    expect(c).not.toContain("location /api/");
+    expect(c).not.toContain("location = /old");
+    expect(c).not.toContain("X-Frame-Options");
+    expect(c).not.toContain("/_openship/hooks/");
+  });
+
+  test("REFUSES an injection-shaped target instead of interpolating it", async () => {
+    // The target lands in the emitted config, so it gets the same validation the
+    // route's own domain does — an API-side check is not the last line of defence.
+    const { nginx } = setup();
+    await expect(
+      nginx.registerRoute({
+        ...OURS,
+        domain: "www.example.com",
+        redirectHost: { target: "example.com;\n return 301 http://evil.test", statusCode: 301 },
+      }),
+    ).rejects.toThrow();
+  });
+
+  test("survives cert re-registration — the route sidecar carries the redirect", async () => {
+    // provisionCert re-registers from the persisted RouteConfig to add the TLS
+    // block; a redirect dropped there would silently start serving the app again.
+    const { nginx, conf, files } = setup();
+    await nginx.registerRoute(REDIRECT);
+    const sidecar = [...files.entries()].find(([p]) => p.includes("www-example-com") && p.endsWith(".json"));
+    expect(sidecar).toBeDefined();
+    expect(JSON.parse(sidecar![1]).redirectHost).toEqual({
+      target: "example.com",
+      statusCode: 301,
+    });
+    // Re-register the way provisionCert does, now WITH a cert on disk.
+    const saved = JSON.parse(sidecar![1]) as RouteConfig;
+    const withCert = setup({ certDomains: ["www.example.com"] });
+    await withCert.nginx.registerRoute({ ...saved, domain: "www.example.com", tls: true });
+    const reissued = wwwConf(withCert.conf);
+    expect(reissued).toContain("listen 443 ssl;");
+    expect(reissued).toContain("return 301 https://example.com$request_uri;");
+  });
+});
+
 // Security: an HTTPS request whose SNI matches no vhost must NOT fall through to
 // the first-loaded 443 server block (cross-serving another app's cert+backend).
 // The default catch-all owns `443 ssl default_server` and rejects unknown SNI.
@@ -457,5 +578,138 @@ describe("static root confinement", () => {
         staticRootAdopted: true,
       }),
     ).rejects.toThrow(/must be an absolute path, no traversal/);
+  });
+});
+
+/**
+ * SLUG COLLISIONS.
+ *
+ * `domainSlug` folds every non-alphanumeric to `-`, so a dot and a literal dash
+ * collapse together and two different hostnames land on one filename:
+ *
+ *     staging.app.example.com  ->  staging-app-example-com
+ *     staging-app.example.com  ->  staging-app-example-com
+ *
+ * Both are ordinary hostnames, separately claimable, and can belong to different
+ * projects or orgs (one edge fronts the whole box). Before `resolveSlug` the
+ * second registration silently overwrote the first's vhost — the loser's traffic
+ * fell through to `default_server`, a silent outage of someone else's domain —
+ * and `removeRoute` on either deleted the shared file and took out both.
+ */
+describe("slug collisions between dotted and dashed hostnames", () => {
+  const DOTTED = "staging.app.example.com";
+  const DASHED = "staging-app.example.com";
+  const BASE = "staging-app-example-com";
+
+  const route = (domain: string, port: number): RouteConfig => ({
+    domain,
+    tls: false,
+    targetUrl: `http://127.0.0.1:${port}`,
+  });
+
+  /** Every vhost conf currently on disk. */
+  const confs = (files: Map<string, string>) =>
+    [...files.keys()].filter((p) => p.startsWith(`${SITES}/`) && p.endsWith(".conf"));
+
+  const confFor = (files: Map<string, string>, domain: string) =>
+    confs(files).filter((p) => (files.get(p) ?? "").includes(`server_name ${domain};`));
+
+  test("the second hostname does NOT overwrite the first — each gets its own file", async () => {
+    const { nginx, files } = setup();
+    await nginx.registerRoute(route(DOTTED, 3001));
+    await nginx.registerRoute(route(DASHED, 3002));
+
+    expect(confs(files)).toHaveLength(2);
+    // Each hostname is served by exactly one file, with its own upstream.
+    expect(confFor(files, DOTTED)).toHaveLength(1);
+    expect(confFor(files, DASHED)).toHaveLength(1);
+    expect(files.get(confFor(files, DOTTED)[0]!)).toContain("127.0.0.1:3001");
+    expect(files.get(confFor(files, DASHED)[0]!)).toContain("127.0.0.1:3002");
+  });
+
+  test("the incumbent keeps the base filename; the newcomer is the one disambiguated", async () => {
+    const { nginx, files } = setup();
+    await nginx.registerRoute(route(DOTTED, 3001));
+    await nginx.registerRoute(route(DASHED, 3002));
+
+    expect(confFor(files, DOTTED)[0]).toBe(`${SITES}/${BASE}.conf`);
+    expect(confFor(files, DASHED)[0]).not.toBe(`${SITES}/${BASE}.conf`);
+  });
+
+  test("re-registering the newcomer is stable — no third file, no move", async () => {
+    const { nginx, files } = setup();
+    await nginx.registerRoute(route(DOTTED, 3001));
+    await nginx.registerRoute(route(DASHED, 3002));
+    const before = confFor(files, DASHED)[0];
+
+    await nginx.registerRoute(route(DASHED, 3003));
+    expect(confs(files)).toHaveLength(2);
+    expect(confFor(files, DASHED)[0]).toBe(before);
+    expect(files.get(before!)).toContain("127.0.0.1:3003");
+  });
+
+  test("removing one does not take the other down", async () => {
+    const { nginx, files } = setup();
+    await nginx.registerRoute(route(DOTTED, 3001));
+    await nginx.registerRoute(route(DASHED, 3002));
+
+    await nginx.removeRoute(DASHED);
+    expect(confFor(files, DASHED)).toHaveLength(0);
+    // The incumbent survives — this is what the shared file used to destroy.
+    expect(confFor(files, DOTTED)).toHaveLength(1);
+    expect(files.get(confFor(files, DOTTED)[0]!)).toContain("127.0.0.1:3001");
+  });
+
+  test("removing the incumbent does not take the newcomer down", async () => {
+    const { nginx, files } = setup();
+    await nginx.registerRoute(route(DOTTED, 3001));
+    await nginx.registerRoute(route(DASHED, 3002));
+
+    await nginx.removeRoute(DOTTED);
+    expect(confFor(files, DOTTED)).toHaveLength(0);
+    expect(confFor(files, DASHED)).toHaveLength(1);
+  });
+
+  /**
+   * The ordering argument for `resolveSlug`. Once a hostname owns a suffixed file
+   * it must KEEP it: if freeing the base name let it migrate, the old suffixed
+   * conf would stay on disk still answering for the same hostname — two vhosts for
+   * one name, which is precisely the orphan class this is meant to prevent.
+   */
+  test("keeps its own file after the incumbent is removed, rather than migrating and orphaning", async () => {
+    const { nginx, files } = setup();
+    await nginx.registerRoute(route(DOTTED, 3001));
+    await nginx.registerRoute(route(DASHED, 3002));
+    const own = confFor(files, DASHED)[0];
+
+    await nginx.removeRoute(DOTTED);
+    await nginx.registerRoute(route(DASHED, 3004));
+
+    expect(confFor(files, DASHED)).toHaveLength(1);
+    expect(confFor(files, DASHED)[0]).toBe(own);
+    expect(confs(files)).toHaveLength(1);
+  });
+
+  test("an ordinary hostname still uses the plain slug — naming is unchanged", async () => {
+    const { nginx, conf } = setup();
+    await nginx.registerRoute(route("solo.example.com", 3005));
+    expect(conf("solo-example-com")).toContain("server_name solo.example.com;");
+  });
+
+  /**
+   * An ADOPTED vhost can list several hostnames in one `server_name`. Registering
+   * one of them must reuse that file, not add a second vhost answering the same
+   * name (nginx would warn about the conflict and silently prefer one).
+   */
+  test("reuses a multi-hostname vhost that already lists this domain", async () => {
+    const { nginx, files } = setup();
+    files.set(
+      `${SITES}/${BASE}.conf`,
+      `server {\n  listen 80;\n  server_name ${DOTTED} ${DASHED};\n}\n`,
+    );
+
+    await nginx.registerRoute(route(DASHED, 3006));
+    expect(confs(files)).toHaveLength(1);
+    expect(files.get(`${SITES}/${BASE}.conf`)).toContain("127.0.0.1:3006");
   });
 });

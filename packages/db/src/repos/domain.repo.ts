@@ -1,7 +1,7 @@
 import { eq, and, ne, lt, inArray } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { domain, project } from "../schema";
+import { domain, project, service } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -46,6 +46,20 @@ export function createDomainRepo(db: Database) {
       return db.query.domain.findFirst({
         where: eq(domain.hostname, hostname.toLowerCase()),
       });
+    },
+
+    /**
+     * Every hostname Openship tracks, instance-wide.
+     *
+     * Deliberately NOT org-scoped: the only caller is the edge-orphan sweep,
+     * which asks "does the box serve a vhost nobody has a record of". One edge
+     * fronts every org on the box, so scoping this to one org would report
+     * another org's live domains as orphans. Hostnames only (no rows), used
+     * purely as a set-membership check.
+     */
+    async listAllHostnames(): Promise<string[]> {
+      const rows = await db.query.domain.findMany({ columns: { hostname: true } });
+      return rows.map((r) => r.hostname);
     },
 
     /**
@@ -313,6 +327,29 @@ export function createDomainRepo(db: Database) {
 
     async remove(id: string) {
       await db.delete(domain).where(eq(domain.id, id));
+    },
+
+    /**
+     * Delete a domain row AND patch the owning service's routing columns in ONE
+     * transaction, because the two writes describe one outcome: "this service no
+     * longer serves this hostname".
+     *
+     * As separate awaits, a failure after the delete left the service still
+     * configured for a hostname whose row is gone — and that stale
+     * `*.opsh.io` slug then made preflight demand an Openship Cloud connection
+     * for every later action on the project, with nothing left to retry against.
+     */
+    async removeWithServiceRouting(
+      id: string,
+      servicePatch: { serviceId: string; routing: Record<string, unknown> },
+    ) {
+      await db.transaction(async (tx) => {
+        await tx.delete(domain).where(eq(domain.id, id));
+        await tx
+          .update(service)
+          .set({ ...servicePatch.routing, updatedAt: new Date() })
+          .where(eq(service.id, servicePatch.serviceId));
+      });
     },
 
     /** Hard-delete every domain row tied to a project. Frees managed slugs immediately on project teardown. */

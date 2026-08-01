@@ -125,6 +125,16 @@ const envSchema = z.object({
   OPENSHIP_DASHBOARD_PORT: z.coerce.number().int().positive().catch(3001),
   /** Let's Encrypt contact email for the managed edge (defaults to the admin). */
   OPENSHIP_ACME_EMAIL: z.string().optional(),
+  /**
+   * How long a deploy may HOLD waiting for a user decision (port conflict, edge
+   * 80/443 takeover) before it gives up and aborts. Milliseconds; default 5 min
+   * (see PROMPT_TIMEOUT_MS in lib/prompt-gateway).
+   *
+   * Exists for API-driven deploys: a human sees the modal instantly, but a client
+   * has to poll to notice the prompt at all, so the human-tuned window can expire
+   * before it ever looks. The deadline is published on the prompt as `expiresAt`.
+   */
+  OPENSHIP_PROMPT_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
 
   /* ---------- Mode ---------- */
   CLOUD_MODE: envBool("false"),

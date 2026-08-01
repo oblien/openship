@@ -463,7 +463,7 @@ export function createDeploymentRepo(db: Database) {
     },
 
     /** Count pinned ready deployments for a project. Used by the pin
-     *  endpoint to enforce maxPinnedDeployments. */
+     *  endpoint to enforce MAX_PINNED_PER_PROJECT. */
     async countPinned(projectId: string): Promise<number> {
       const [{ value }] = await db
         .select({ value: sql<number>`count(*)` })

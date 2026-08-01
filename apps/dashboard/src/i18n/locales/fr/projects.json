@@ -280,6 +280,9 @@
     "success": "Routage du domaine gratuit synchronisé.",
     "failed": "Impossible de synchroniser le routage du domaine gratuit."
   },
+  "deployBlocked": {
+    "redeploy": "Redéployer"
+  },
   "redeploy": {
     "deployStartedLong": "Déploiement démarré — cela prend plus de temps que d'habitude, ouverture des déploiements.",
     "deployingTitle": "Déploiement",

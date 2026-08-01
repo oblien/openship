@@ -13,10 +13,18 @@ import { ArrowLeft, Moon, Sun, SunMoon } from "lucide-react";
 export function AuthShell({
   children,
   maxWidth = "max-w-[400px]",
+  align = "center",
   onBack,
 }: {
   children: React.ReactNode;
   maxWidth?: string;
+  /**
+   * Vertical placement. `center` is right for a short form. Pass `start` for
+   * anything tall: centering a page taller than the viewport pushes its top ABOVE
+   * the scroll origin (unreachable), and it breaks `lg:sticky` children, which
+   * need a normal-flow top edge to stick against.
+   */
+  align?: "center" | "start";
   /** When provided, renders a back button in the top bar */
   onBack?: () => void;
 }) {
@@ -24,7 +32,11 @@ export function AuthShell({
   const { t } = useI18n();
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center px-4 py-12">
+    <div
+      className={`flex min-h-dvh flex-col items-center px-4 ${
+        align === "start" ? "justify-start pb-12 pt-20" : "justify-center py-12"
+      }`}
+    >
       {/* Top bar - logo left, controls right */}
       <div
         data-app-topinset

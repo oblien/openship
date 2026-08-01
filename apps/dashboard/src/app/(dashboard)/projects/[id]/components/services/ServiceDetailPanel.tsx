@@ -717,6 +717,11 @@ export function ServiceDetailPanel({
               isEditingMode={true}
               setIsEditingMode={() => { /* always editing in the Env tab */ }}
               showSettingsActions={false}
+              // #336: env values arrive masked; reveal the real ones on demand
+              // (the endpoint is write-gated, so read-only members can't).
+              onRevealAll={async () =>
+                (await servicesApi.revealEnv(projectId, service.id)).environment
+              }
               borderless
             />
           </div>

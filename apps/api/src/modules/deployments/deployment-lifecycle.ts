@@ -23,6 +23,7 @@ import { notification } from "../../lib/notification-dispatcher";
 import { audit } from "../../lib/audit";
 import * as sessionManager from "./session-manager";
 import type { BuildSessionState } from "./session-manager";
+import { failureStatusFor } from "./blocking-errors";
 import { detectAndStoreFavicon } from "../../lib/favicon-detector";
 import {
   markWebmailInstalled,
@@ -197,7 +198,21 @@ export async function onFailure(
   // live state. Do not add a setActiveDeployment call here.
   const errorMessage = error ? truncateError(error) : undefined;
   const collapsed = persistLogs();
-  await repos.deployment.updateStatus(dep.id, "failed", { errorMessage });
+  // PERSIST the classification, not just the prose. The code + details used to
+  // reach the in-memory session only, so a restart left the row saying "Port 3000
+  // is already in use by …" with no machine-readable cause, no pid, and nothing
+  // able to offer a fix. See migration 0080.
+  //
+  // A code with a resolution the operator can carry out is persisted as
+  // `action_required` (failureStatusFor). That is a DB-ONLY distinction — the SSE
+  // session below is always told `failed`, because "ready|failed|cancelled" is
+  // what closes the stream (session-manager). Same split as `partial_failure`.
+  const dbStatus = failureStatusFor(errorMeta?.errorCode);
+  await repos.deployment.updateStatus(dep.id, dbStatus, {
+    errorMessage,
+    errorCode: errorMeta?.errorCode ?? null,
+    errorDetails: errorMeta?.errorDetails ?? null,
+  });
   await repos.deployment.finishBuildSession(buildSessionId, "failed", durationMs ?? 0, collapsed);
   sessionManager.updateStatus(dep.id, "failed", {
     ...errorMeta,
@@ -218,6 +233,11 @@ export async function onFailure(
       branch: dep.branch,
       commitSha: dep.commitSha,
       errorMessage: errorMessage ?? "Unknown error",
+      // The classified cause rides along so a webhook/Slack consumer can branch
+      // on it instead of parsing the message. Still emitted for
+      // `action_required` — that deploy DID fail, and anything watching failures
+      // must not go blind just because we can also offer a fix.
+      errorCode: errorMeta?.errorCode,
       logsTail: lastLogs,
       durationMs,
     },
@@ -235,11 +255,12 @@ export async function onFailure(
       resourceId: dep.id,
       before: { status: dep.status },
       after: {
-        status: "failed",
+        status: dbStatus,
         projectId: project.id,
         branch: dep.branch,
         commitSha: dep.commitSha,
         errorMessage,
+        errorCode: errorMeta?.errorCode,
         durationMs,
       },
     },

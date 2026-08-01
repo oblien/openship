@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "Répertoire contenant la sortie de compilation",
     "sourceFolderLabel": "Dossier source",
     "sourceFolderDesc": "Compiler depuis un sous-répertoire à l'intérieur du dépôt ou du projet local.",
+    "composePath": {
+      "title": "Fichier Compose",
+      "subtitle": "Détecté automatiquement à la racine du projet",
+      "label": "Chemin vers le fichier Compose",
+      "description": "Pour les dépôts qui placent compose hors de la racine — indiquez le fichier (deploy/stack.yml) ou le dossier qui le contient (deploy/docker-compose). Le dépôt est réanalysé et les services déclarés sont déployés.",
+      "apply": "Analyser",
+      "scanning": "Analyse…",
+      "scanFailed": "Impossible d'analyser ce chemin Compose.",
+      "subtitleOptIn": "Déployer avec Docker Compose ? Indiquez le fichier."
+    },
+    "healthCheck": {
+      "title": "Contrôles de santé",
+      "subtitle": "Désactivés — le déploiement se termine dès que l'app tourne",
+      "subtitleOn": "Activés — le déploiement attend votre app avant la mise en ligne",
+      "description": "Openship n'attend pas votre app après son démarrage : un démarrage lent ne retarde donc jamais un déploiement et ne le fait pas échouer. Une fois en ligne, le port est vérifié malgré tout et signalé sans rien bloquer. N'activez ceci que si vous voulez que le déploiement lui-même refuse de passer au vert.",
+      "probeLabel": "Attendre que l'app réponde",
+      "probeDesc": "Après le démarrage du conteneur, contacter le port de l'app et attendre qu'elle accepte une connexion.",
+      "pathLabel": "Chemin HTTP",
+      "pathPlaceholder": "/health",
+      "pathDesc": "Exige qu'un GET ici réponde en dessous de 500. Laissez vide pour accepter toute connexion TCP, ce qui fonctionne aussi pour les services non HTTP.",
+      "timeoutLabel": "Abandonner après (secondes)",
+      "stabilizationLabel": "Surveiller les boucles de redémarrage",
+      "stabilizationDesc": "Surveille le conteneur après son démarrage et signale une boucle de plantage. Interroge le runtime, donc fonctionne aussi sur les serveurs distants.",
+      "stabilizationWindowLabel": "Surveiller pendant (secondes)",
+      "onFailureLabel": "Si un contrôle échoue",
+      "onFailureWarn": "Garder le déploiement en ligne et le signaler pour vérification",
+      "onFailureFail": "Faire échouer le déploiement et continuer à servir la version précédente"
+    },
     "buildImageLabel": "Image de compilation",
     "buildImageDesc": "Image de conteneur de compilation pour les builds cloud ou serveur. Remplacez-la lorsque l'image de base détectée est incorrecte.",
     "productionPathsLabel": "Chemins de production",
@@ -123,6 +151,11 @@
       "clipboardEmpty": "Le presse-papiers est vide",
       "clipboardInvalid": "Le presse-papiers ne contient pas de variables d'environnement KEY=VALUE valides",
       "clipboardBlocked": "L'accès au presse-papiers a été bloqué. Cliquez à l'intérieur de la zone d'environnement et collez avec Cmd/Ctrl+V."
+    },
+    "reveal": {
+      "show": "Afficher les valeurs",
+      "hide": "Masquer les valeurs",
+      "error": "Impossible d’afficher les valeurs"
     }
   },
   "composeServices": {
@@ -281,7 +314,6 @@
       "successful": "Déploiement réussi",
       "deploying": "Déploiement..."
     },
-    "viewDashboard": "Voir le tableau de bord",
     "visitSite": "Visiter le site",
     "warningTitle": "Le déploiement est terminé, mais certains services nécessitent encore votre attention.",
     "productionLogs": "Journaux de production",
@@ -336,7 +368,6 @@
     "running": "en cours d'exécution",
     "buildingSuffix": "· {count} en compilation",
     "failedSuffix": "· {count} échoué(s)",
-    "viewDashboard": "Voir le tableau de bord",
     "decisionBannerTitle": "Action requise — certains services ont échoué",
     "decisionBannerDefaultMsg": "Ce déploiement s'est terminé avec des services en échec. Conservez-le et corrigez-les plus tard, ou rejetez-le pour restaurer la version précédente.",
     "review": "Examiner",

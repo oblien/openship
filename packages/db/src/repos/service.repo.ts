@@ -1,5 +1,5 @@
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { generateId, normalizeCustomHostname, type ComposeAdvanced } from "@repo/core";
+import { commandToArgv, generateId, normalizeCustomHostname, type ComposeAdvanced } from "@repo/core";
 import type { Database } from "../client";
 import { service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
@@ -34,6 +34,7 @@ export function toComposeSpec(s: {
   environment?: Record<string, string> | null;
   volumes?: string[] | null;
   command?: string | null;
+  commandArgv?: string[] | null;
   restart?: string | null;
   advanced?: ComposeAdvanced | null;
 }): ComposeServiceSpec {
@@ -46,6 +47,11 @@ export function toComposeSpec(s: {
     environment: s.environment ?? {},
     volumes: s.volumes ?? [],
     command: s.command ?? null,
+    // #332: derive argv from the text `command` when a row has no explicit
+    // `commandArgv` (legacy rows stored before the fix). This keeps drift
+    // comparison representation-stable — a legacy row and its re-parse
+    // canonicalize identically instead of flagging a phantom string↔argv change.
+    commandArgv: s.commandArgv ?? commandToArgv(s.command ?? null),
     restart: s.restart ?? "unless-stopped",
     advanced: s.advanced ?? {},
   };
@@ -80,7 +86,7 @@ export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) 
 /** Per-field diff of two specs — powers the drift UI. */
 export function composeSpecDiff(base: ComposeServiceSpec, next: ComposeServiceSpec) {
   const fields: (keyof ComposeServiceSpec)[] = [
-    "image", "build", "dockerfile", "ports", "dependsOn", "environment", "volumes", "command", "restart", "advanced",
+    "image", "build", "dockerfile", "ports", "dependsOn", "environment", "volumes", "command", "commandArgv", "restart", "advanced",
   ];
   // Compare each field key-order-insensitively (matching canonicalSpec/
   // composeSpecsEqual) so a reordered `environment` or nested `advanced` block
@@ -112,6 +118,7 @@ export type ParsedComposeService = {
   environment?: Record<string, string>;
   volumes?: string[];
   command?: string;
+  commandArgv?: string[] | null;
   restart?: string;
   advanced?: ComposeAdvanced;
   exposed?: boolean;

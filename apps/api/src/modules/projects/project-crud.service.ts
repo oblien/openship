@@ -15,12 +15,12 @@ import {
   isReleaseProvider,
   isBehind,
   GITHUB_REPO,
+  normalizeRollbackWindow,
   type ReleaseSource,
   type UpdatableIdentity,
 } from "@repo/core";
 import type { ResourceConfig } from "@repo/adapters";
 import { encodeResources } from "../../lib/resources";
-import { normalizeRollbackWindow } from "../../lib/release-retention";
 import { resolveLatestVersion, resolveLatestReleaseTag, readApiVersion } from "../../lib/release-resolver";
 import { resolveLatestImageDigest } from "../../lib/image-registry";
 import { env } from "../../config";
@@ -48,9 +48,12 @@ import { applyProjectRouting } from "../domains/routing-apply.service";
 import { syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
+import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
+import { getFolderSession } from "./folder/session-store";
 import type {
   TCreateProjectBody,
   TCreateProjectEnvironmentBody,
+  TEnsureProjectBody,
   TUpdateProjectBody,
 } from "./project.schema";
 import { UpdateProjectBody } from "./project.schema";
@@ -80,7 +83,11 @@ const GIT_SOURCE_IDENTITY_KEYS = new Set([
   "installationId",
 ]);
 
-type EnsureProjectBody = TCreateProjectBody & { projectId?: string };
+/** Derived from the route validator so the accepted fields can't drift from it. */
+type EnsureProjectBody = TEnsureProjectBody;
+
+/** One entry of the ensure body's `services` — the compose row shape on the wire. */
+type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[number];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -99,6 +106,13 @@ function readDeployMeta(dep: Deployment | null | undefined): {
     serverId: meta?.serverId ?? null,
   };
 }
+
+// The attention predicates live in a dependency-free leaf module so the
+// pending-actions aggregator can share them without importing this file's graph.
+// Imported (this file calls one below) AND re-exported, because the
+// project.service barrel is the established import surface for callers.
+import { deploymentIsBlocked, deploymentRoutingUnsynced } from "./deployment-flags";
+export { deploymentIsBlocked, deploymentRoutingUnsynced };
 
 /** The live release's human version + state, surfaced on project cards so the
  *  UI can show "which v is live" and flag a partial deploy that is still
@@ -121,7 +135,7 @@ function readActiveDeploymentSummary(dep: Deployment | null | undefined): {
     awaitingDecision: meta?.composeDeployment?.decision === "pending",
     // Live, but the free .opsh.io edge route didn't sync — surfaced as
     // "Action Required" with a Retry routing action (see routing/retry).
-    routingUnsynced: meta?.edgeUnsynced === true || typeof meta?.deployWarning === "string",
+    routingUnsynced: deploymentRoutingUnsynced(dep),
   };
 }
 
@@ -154,7 +168,11 @@ export async function enrichProject(p: Project) {
     serverId,
     serverName,
     ...readActiveDeploymentSummary(activeDep),
-    resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000),
+    // isCloud decides the fallback when nothing is configured: the metered free
+    // tier on cloud, NO limits self-hosted (the machine is the cap).
+    resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
+      isCloud: deployTarget === "cloud",
+    }),
   };
 }
 
@@ -210,7 +228,11 @@ export async function enrichProjectsBatch(
       serverId,
       serverName,
       ...readActiveDeploymentSummary(activeDep),
-      resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000),
+      // isCloud decides the fallback when nothing is configured: the metered
+      // free tier on cloud, NO limits self-hosted (the machine is the cap).
+      resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
+        isCloud: deployTarget === "cloud",
+      }),
     };
   });
 }
@@ -272,6 +294,17 @@ function resolveProjectSource(
 
 function normalizeEnvironmentSlug(input?: string | null, fallback = "production") {
   return slugify(input || fallback) || fallback;
+}
+
+/**
+ * The compose pin as it should hit the column: a trimmed path, or NULL to go back
+ * to detecting the root. Blank-means-null in ONE place, because every write path
+ * needs it — the settings form sends `""` for a blanked field, and the deploy
+ * wizard sends `""` when the user clears the pin. Returning `""` instead would
+ * leave a falsy-but-present value that still counts as "declared" downstream.
+ */
+function normalizeComposePath(value: string | null | undefined): string | null {
+  return value?.trim() ? value.trim() : null;
 }
 
 function environmentNameFromSlug(slug: string) {
@@ -342,7 +375,11 @@ function buildProductionProjectInput(
     buildCommand: data.buildCommand,
     outputDirectory: data.outputDirectory,
     productionPaths: data.productionPaths,
+    // undefined (not declared) leaves the column NULL, which resolves to the
+    // stack's persistentPaths at deploy — that's what makes it zero-config.
+    volumes: data.volumes,
     rootDirectory: data.rootDirectory,
+    composePath: normalizeComposePath(data.composePath),
     startCommand: data.startCommand,
     buildImage: data.buildImage,
     productionMode: data.productionMode ?? (data.hasServer === false ? "static" : "host"),
@@ -360,6 +397,10 @@ function buildProductionProjectInput(
     // Edge→app upstream addressing. Omitted → schema default "auto" (loopback-
     // port). The wizard seeds this from the user's route-strategy default.
     routeStrategy: data.routeStrategy ?? undefined,
+    // Deploy-time readiness gate. Omitted → null → OFF: the deploy does no
+    // post-start waiting. Only set when the wizard's Health section (or
+    // openship.json's `readiness`) opted in.
+    readiness: data.readiness ?? null,
     isApp: data.isApp ?? false,
     appTemplateId: data.appTemplateId ?? null,
     // Services / docker(-compose) projects can only run on the Docker runtime, so
@@ -378,6 +419,17 @@ async function persistMonorepoApps(
   data: TCreateProjectBody,
 ): Promise<void> {
   if (data.projectType !== "monorepo" || !data.monorepoApps?.length) return;
+
+  // #336: monorepo rows are masked on read too (withDrift has no kind filter),
+  // so a client echoing them back sends the sentinel — unmask-merge against the
+  // stored row before persisting, same rule as persistComposeServices, else an
+  // edit clobbers the stored secret / ships "••••••••" into the container.
+  const storedEnvByName = new Map<string, Record<string, string>>();
+  if (data.monorepoApps.some((app) => hasMaskedValue(app.environment))) {
+    for (const row of await repos.service.listByProjectKind(projectId, "monorepo").catch(() => [])) {
+      storedEnvByName.set(row.name, (row.environment as Record<string, string> | null) ?? {});
+    }
+  }
 
   await repos.service.syncMonorepoApps(
     projectId,
@@ -398,9 +450,70 @@ async function persistMonorepoApps(
       domain: app.domain ?? null,
       customDomain: app.customDomain ?? null,
       domainType: app.domainType ?? "free",
-      environment: app.environment ?? {},
+      environment: hasMaskedValue(app.environment)
+        ? unmaskEnv(app.environment, storedEnvByName.get(app.name) ?? null)
+        : app.environment ?? {},
     })),
   );
+}
+
+/**
+ * Persist the compose services carried by an ensure request — the counterpart to
+ * `persistMonorepoApps` for the OTHER multi-app shape.
+ *
+ * The folder-upload flow (folder/scan → projects/ensure → deployments/build/access)
+ * has no other step that owns the parsed compose: without this, `ensure` created
+ * the project and dropped the scan's `services`, so the first deploy ran the
+ * services pipeline against ZERO rows and failed with "No services were found
+ * for this project" (#334).
+ *
+ * `syncFromCompose` OWNS the compose rows (creates/updates listed ones, removes
+ * unlisted), so the caller must send the whole set — the same contract as
+ * POST /projects/:id/services/sync. Monorepo rows are a different `kind` and
+ * survive untouched.
+ *
+ * #336: the scan MASKS compose env on output, so a client echoing its `services`
+ * back sends the `••••••••` sentinel. Unmask-merge before persisting — same rule
+ * as every other write path (syncComposeServices, createService, build/access):
+ * restore from the upload session the scan captured pre-mask, else the stored row,
+ * else drop the key. The sentinel is never written.
+ */
+async function persistComposeServices(
+  projectId: string,
+  organizationId: string,
+  data: EnsureProjectBody,
+): Promise<void> {
+  if (!data.services?.length) return;
+
+  let services: ParsedComposeServiceInput[] = data.services;
+  if (services.some((svc) => hasMaskedValue(svc.environment))) {
+    // Same precedence as requestBuildAccess: stored rows first, then the upload
+    // session — for a fresh scan the uploaded compose is the newer truth.
+    const realEnvByName = new Map<string, Record<string, string>>();
+    for (const row of await repos.service.listByProject(projectId).catch(() => [])) {
+      realEnvByName.set(row.name, (row.environment as Record<string, string> | null) ?? {});
+    }
+    const session = data.uploadSessionId ? getFolderSession(data.uploadSessionId) : undefined;
+    if (session && session.orgId === organizationId) {
+      for (const svc of session.services ?? []) {
+        if (svc.name && svc.environment) realEnvByName.set(svc.name, svc.environment);
+      }
+    }
+    services = services.map((svc) => {
+      if (!hasMaskedValue(svc.environment)) return svc;
+      const restored = unmaskEnv(svc.environment, realEnvByName.get(svc.name) ?? null);
+      if (Object.keys(restored).length < Object.keys(svc.environment ?? {}).length) {
+        // Warn so a secret lost this way is traceable (mirrors createService).
+        console.warn(
+          `[ensureProject] service "${svc.name}": dropped masked env value(s) with no stored source` +
+            (data.uploadSessionId ? "" : " — pass uploadSessionId to restore them"),
+        );
+      }
+      return { ...svc, environment: restored };
+    });
+  }
+
+  await repos.service.syncFromCompose(projectId, services);
 }
 
 async function createProductionProject(
@@ -778,7 +891,9 @@ export async function ensureProject(
     if (data.buildCommand !== undefined) update.buildCommand = data.buildCommand;
     if (data.outputDirectory !== undefined) update.outputDirectory = data.outputDirectory;
     if (data.productionPaths !== undefined) update.productionPaths = data.productionPaths;
+    if (data.volumes !== undefined) update.volumes = data.volumes;
     if (data.rootDirectory !== undefined) update.rootDirectory = data.rootDirectory;
+    if (data.composePath !== undefined) update.composePath = normalizeComposePath(data.composePath);
     if (data.startCommand !== undefined) update.startCommand = data.startCommand;
     if (data.buildImage !== undefined) update.buildImage = data.buildImage;
     if (data.port !== undefined) update.port = data.port;
@@ -895,6 +1010,10 @@ export async function ensureProject(
     // is idempotent - adds new rows, updates existing, removes stale ones.
     await persistMonorepoApps(project.id, data);
   }
+
+  // Compose services, for BOTH branches (createProductionProject handles the
+  // monorepo shape internally; this one shape is persisted in one place).
+  await persistComposeServices(project.id, organizationId, data);
 
   return { success: true, project_id: project.id, created };
 }
@@ -1307,7 +1426,9 @@ export async function createProjectEnvironment(
     buildCommand: base.buildCommand,
     outputDirectory: base.outputDirectory,
     productionPaths: base.productionPaths,
+    volumes: base.volumes,
     rootDirectory: base.rootDirectory,
+    composePath: base.composePath,
     startCommand: base.startCommand,
     buildImage: base.buildImage,
     productionMode: base.productionMode,
@@ -1600,7 +1721,24 @@ export async function updateOptions(
   if (options.installCommand !== undefined) update.installCommand = options.installCommand;
   if (options.outputDirectory !== undefined) update.outputDirectory = options.outputDirectory;
   if (options.productionPaths !== undefined) update.productionPaths = options.productionPaths;
+  // Array-or-null only: the column feeds container mounts, and a string here
+  // would land as a single nonsense bind. null restores the stack defaults.
+  if (options.volumes !== undefined) {
+    if (options.volumes !== null && !Array.isArray(options.volumes)) {
+      throw new ValidationError("volumes must be an array of mount strings, or null");
+    }
+    update.volumes = options.volumes;
+  }
   if (options.rootDirectory !== undefined) update.rootDirectory = options.rootDirectory;
+  // String-or-null only. Empty/blank clears it: the settings form sends "" for a
+  // blanked field, and no compose path means "go back to detecting the root".
+  if (options.composePath !== undefined) {
+    const composePath = options.composePath;
+    if (composePath !== null && typeof composePath !== "string") {
+      throw new ValidationError("composePath must be a string, or null");
+    }
+    update.composePath = normalizeComposePath(composePath);
+  }
   if (options.startCommand !== undefined) update.startCommand = options.startCommand;
   if (options.productionPort !== undefined) update.port = options.productionPort;
   if (options.packageManager !== undefined) update.packageManager = options.packageManager;

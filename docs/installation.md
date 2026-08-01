@@ -70,6 +70,26 @@ Linux only (the edge needs host networking); pin `OPENSHIP_VERSION` in `.env` fo
 
 > The repo-root `docker-compose.yml` is a different file — the SaaS / from-source control plane (builds from source, ships the marketing site, no edge or Docker socket). It does not self-host your apps.
 
+### Postgres won't start (`could not write to file … Operation not permitted`)
+
+If the `postgres` container aborts during first boot with an `initdb` error like `could not write to file "pg_wal/xlogtemp.NN": Operation not permitted`, the database volume is on a filesystem that rejects the low-level operations Postgres needs (this is an `EPERM`, not a permission/uid problem). New installs already keep the data directory in a subdirectory of the volume (`PGDATA=/var/lib/postgresql/data/pgdata`) to sidestep the common variants automatically, so first clear the aborted volume and retry:
+
+```bash
+docker compose -f docker/docker-compose.yml down -v   # removes the half-initialized volume
+docker compose --env-file .env -f docker/docker-compose.yml up -d
+```
+
+> **Upgrading an older raw-`docker compose` install** whose database was created at the volume root (before this default)? Set `PGDATA=/var/lib/postgresql/data` in your `.env` before `up`, or Postgres will initialize a fresh empty database. Your old data is never deleted — it stays in the volume, unused, until you point `PGDATA` back. (The `openship up` CLI handles this automatically.)
+
+If it still fails, the incompatibility is at the host/kernel level. Check:
+
+```bash
+systemd-detect-virt                                   # openvz / lxc  => the host is the problem
+df -T "$(docker info -f '{{.DockerRootDir}}')"        # nfs/cifs/fuse/zfs => data-root is the problem
+```
+
+Fix by moving Docker's data-root to a native `ext4`/`xfs` disk (`/etc/docker/daemon.json` `"data-root"`, then restart Docker), or use a KVM-based VPS rather than an OpenVZ/LXC one. See [#350](https://github.com/oblien/openship/issues/350).
+
 ---
 
 ## Users & access (self-hosted)

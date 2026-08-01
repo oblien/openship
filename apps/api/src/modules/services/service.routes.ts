@@ -24,6 +24,7 @@ import * as ctrl from "./service.controller";
 import {
   CreateServiceBody,
   SetServiceEnvVarsBody,
+  SyncServicesBody,
   UpdateServiceBody,
 } from "./service.schema";
 
@@ -64,7 +65,14 @@ r.get(
 );
 r.post(
   "/sync",
-  { tag: "project:service:write", collection: true, mcp: { description: "Sync services from the project's docker-compose file into the service table." } },
+  {
+    tag: "project:service:write",
+    collection: true,
+    body: SyncServicesBody,
+    mcp: {
+      description: "Sync services from the project's docker-compose file into the service table.",
+    },
+  },
   cloudProjectProxy,
   ctrl.syncFromCompose,
 );
@@ -73,6 +81,15 @@ r.get(
   { tag: "project:service:read", mcp: { description: "Get one service by id." } },
   cloudProjectProxy,
   ctrl.getById,
+);
+r.get(
+  // #336: real (unmasked) compose env. Write-gated on purpose — read-only
+  // callers only ever see the masked map from GET /:serviceId. No mcp block:
+  // revealing secrets stays a dashboard action, off the automation surface.
+  "/:serviceId/env-reveal",
+  { tag: "project:service:write" },
+  cloudProjectProxy,
+  ctrl.revealEnv,
 );
 r.get(
   "/:serviceId/volume-sizes",

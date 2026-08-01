@@ -298,19 +298,55 @@
       "framework": "Framework",
       "packageManager": "Package manager",
       "runtimeIsolation": "Runtime isolation",
-      "resources": "Resources",
-      "resourcesValue": "{cpu} vCPU · {memory} MB",
       "runtimePort": "Runtime port",
       "installCommand": "Install command",
       "buildCommand": "Build command",
       "noBuildStep": "No build step",
       "outputDirectory": "Output directory",
       "rootDirectory": "Root directory",
+      "composePath": "Compose File",
       "startCommand": "Start command",
       "staticNoServer": "Static (no server)",
       "modeSandboxed": "Sandboxed (container)",
       "modeDirect": "Direct (host process)",
       "modeDefault": "Default (resolved at deploy)"
+    },
+    "storage": {
+      "title": "Persistent storage",
+      "description": "Paths kept when a new version replaces the old one. Everything else in the container is discarded on deploy.",
+      "edit": "Edit",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saved": "Storage updated. It applies on the next deploy.",
+      "reset": "Use framework defaults",
+      "empty": "Nothing is kept between deploys.",
+      "inherited": "Framework defaults for this stack.",
+      "declared": "Set for this project.",
+      "placeholder": "storage\nuploads:/app/public/uploads",
+      "hint": "One per line. A bare path is relative to the app (storage), or give a full mount (name:/app/path, /host/path:/app/path)."
+    },
+    "objectStorage": {
+      "title": "Object storage",
+      "description": "An S3 bucket for uploads — survives redeploys and works with more than one replica, unlike a local path.",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "disconnected": "Object storage disconnected.",
+      "connected": "Bucket verified and connected. It applies on the next deploy.",
+      "loading": "Checking…",
+      "empty": "No bucket connected. Uploads stay on the container's disk.",
+      "sourceLabel": "Source",
+      "externalOption": "External provider",
+      "providerLabel": "Provider",
+      "bucketLabel": "Bucket",
+      "endpointLabel": "Endpoint",
+      "regionLabel": "Region",
+      "accessKeyLabel": "Access key ID",
+      "secretKeyLabel": "Secret access key",
+      "testAndConnect": "Test & connect",
+      "cancel": "Cancel",
+      "envLabel": "Variables",
+      "envHint": "Sets:",
+      "appliesOnDeploy": "Applied on the next deploy."
     },
     "env": {
       "title": "Environment variables",
@@ -443,18 +479,29 @@
       "title": "Rollback strategy",
       "rebuild": "Rebuild (git)",
       "instant": "Instant (snapshot)",
-      "descRebuild": "Rollback re-clones & rebuilds the old commit — cheaper, but slower and can fail if that commit no longer builds.",
-      "descInstant": "Keeps each version's build artifact on disk for rollback in seconds. Uses extra disk, capped by the history limit.",
-      "toggleAria": "Toggle snapshot retention"
+      "descRebuild": "Rebuilds the old commit, unless its image is still on the host.",
+      "descInstant": "Keeps every version's image, so a restore never rebuilds. Uses more disk.",
+      "toggleAria": "Toggle snapshot retention",
+      "keepNone": "Keep no extra copies",
+      "keepCopies": "Keep a copy per version",
+      "descRebuildFiles": "Rebuilds the old commit, unless its files are still on the host.",
+      "descInstantFiles": "Keeps every version's files, so a restore never rebuilds. Uses more disk."
     },
     "rollbackHistory": {
       "title": "Rollback history",
       "valueOne": "{count} version",
       "valueOther": "{count} versions",
-      "descSnapshot": "How many recent versions keep their build artifact for rollback. Older ones are pruned to reclaim disk.",
-      "descGit": "Applies only to Instant (snapshot) mode — Git mode keeps no artifacts to retain.",
+      "descSnapshot": "Older versions are pruned to reclaim disk.",
+      "descGit": "Recent images are retained either way, so a rollback can skip the build.",
       "decreaseAria": "Decrease rollback history",
-      "increaseAria": "Increase rollback history"
+      "increaseAria": "Increase rollback history",
+      "sizeEach": "~{size} each",
+      "diskFree": "{size} free",
+      "autoBadge": "sized automatically",
+      "manualBadge": "set manually",
+      "kindFiles": "built files on disk",
+      "kindImages": "images on the host",
+      "descGitFiles": "Recent versions' files are retained either way, so a rollback can skip the build."
     },
     "commits": {
       "title": "Recent Commits",
@@ -517,53 +564,53 @@
   },
   "resources": {
     "title": "Machine Power",
-    "description": "Configure the machine power for your project.",
+    "description": "CPU and memory limits for this project's containers.",
+    "loading": "Reading the target machine…",
+    "machineCapacity": "Machine: {cpu} vCPU · {memory}",
+    "exceedsMachine": "Exceeds this machine",
+    "appliesOnNextDeploy": "Limits are applied when the container is recreated — redeploy for a change to take effect.",
     "tiers": {
-      "lightweight": {
-        "name": "Lightweight",
+      "unlimited": {
+        "name": "No limits",
+        "description": "Use the whole machine (default)",
+        "spec": "Machine capacity"
+      },
+      "micro": {
+        "name": "Micro",
+        "description": "Tiny sidecars and workers"
+      },
+      "low": {
+        "name": "Low",
         "description": "Small apps and static sites"
       },
-      "standard": {
-        "name": "Standard",
+      "medium": {
+        "name": "Medium",
         "description": "Most web applications"
       },
-      "performance": {
-        "name": "Performance",
+      "high": {
+        "name": "High",
         "description": "High-traffic applications"
-      },
-      "enterprise": {
-        "name": "Enterprise",
-        "description": "Large scale production apps"
-      },
-      "autoscale": {
-        "name": "Auto Scale",
-        "description": "Scales based on demand"
       }
     },
-    "dynamic": "Dynamic",
     "custom": {
       "name": "Custom",
-      "description": "Define your own resources",
-      "clickToConfigure": "Click to configure"
+      "description": "Set your own limits",
+      "notSet": "Not set"
     },
-    "cpuValue": "{cpu} vCPU",
     "customPanel": {
-      "title": "Configure Custom Resources",
-      "cpuCores": "CPU Cores",
-      "cpuRange": "Range: 0.25 - 4.00",
+      "boundedBy": "This machine has {cpu} vCPU and {memory}. Enter 0 for no limit.",
+      "capacityUnknown": "Could not read this machine's capacity, so no ceiling is enforced. Enter 0 for no limit.",
+      "cpuCores": "CPU cores",
       "memory": "Memory (MB)",
-      "memoryRange": "Range: 128 - 8192",
+      "zeroMeansNoLimit": "0 = no limit",
       "cancel": "Cancel",
-      "saving": "Saving...",
-      "save": "Save Configuration"
+      "saving": "Saving…",
+      "save": "Save"
     },
     "toast": {
-      "updated": "Resources updated successfully",
-      "updateFailed": "Failed to update resources",
-      "cpuRange": "CPU must be between 0.25 and 4.00 cores",
-      "memoryRange": "Memory must be between 128 MB and 8192 MB",
-      "customSaved": "Custom resources saved successfully",
-      "customSaveFailed": "Failed to save custom resources"
+      "updated": "Machine power updated",
+      "updateFailed": "Failed to update machine power",
+      "invalidValues": "CPU and memory must be 0 or a positive number"
     }
   },
   "sleep": {
@@ -719,8 +766,7 @@
       "infoPreview": "Add these records first — they don't change after adding, so propagation starts now. Then press Add domain to attach it, and finally Verify once DNS resolves.",
       "infoApply": "DNS changes can take up to 48 hours to propagate globally. Once the records resolve, click Verify below — we'll check DNS, mark the domain active, and provision SSL in the background.",
       "verifying": "Verifying...",
-      "verify": "Verify {hostname}",
-      "copy": "Copy"
+      "verify": "Verify {hostname}"
     },
     "records": {
       "toggle": "DNS records",
@@ -743,6 +789,8 @@
     "overview": {
       "primary": "Primary",
       "mappedTo": "Mapped to",
+      "redirect": "Redirect",
+      "redirectValue": "{status} → {hostname}",
       "status": "Status",
       "ssl": "SSL",
       "visit": "Visit"
@@ -846,6 +894,12 @@
       "checking": "Checking edge…",
       "recheck": "Re-check",
       "foreignProxyHint": "Another proxy holds 80/443"
+    },
+    "diagnosis": {
+      "title": "Why this isn't working",
+      "noneYet": "No check has run yet, so there's no result to show. Add the DNS records shown for this domain, then run Verify.",
+      "attempts": "{count} failed attempt(s) so far.",
+      "pillHint": "Show why"
     }
   }
 }

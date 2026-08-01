@@ -29,6 +29,7 @@ import { CloneCredentials } from "./_components/CloneCredentials";
 import { PersonalAccessTokens } from "./_components/PersonalAccessTokens";
 import { McpConnection } from "./_components/McpConnection";
 import { InstanceInfo } from "./_components/InstanceInfo";
+import { UntrackedEdgeRoutes } from "./_components/UntrackedEdgeRoutes";
 import { LanguageSetting } from "./_components/LanguageSetting";
 import { PreferencesSetting } from "./_components/PreferencesSetting";
 import { UpdatesTab } from "./_components/UpdatesTab";
@@ -143,6 +144,12 @@ function SettingsPageInner() {
               {/* Updates live under Instance (the "this install" home). Not on
                   the SaaS — the managed cloud has nothing for the user to update. */}
               {(selfHosted || deployMode === "desktop") && <UpdatesTab />}
+              {/* Hostnames the local edge still serves with no Openship record —
+                  the leftovers a record-only delete deliberately keeps running.
+                  Owner-gated inside the component, and it renders nothing when the
+                  sweep comes back clean. Self-hosted only: on the SaaS the edge
+                  isn't the operator's to reconcile. */}
+              {selfHosted && <UntrackedEdgeRoutes />}
               {/* Full-DB export/import (owner-gated inside the component);
                   self-hosted only — SaaS has no portable DB. */}
               {selfHosted && <DataTransferTab />}

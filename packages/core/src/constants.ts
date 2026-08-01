@@ -369,3 +369,13 @@ export function validatePlanPriceIds(): PlanPriceIdValidation {
 
   return { missing };
 }
+
+/**
+ * #336: the sentinel a compose-service env value is masked to on API output.
+ * Shared so the API (apps/api/src/lib/secret-env.ts) and the dashboard's env
+ * editor agree on the EXACT string — the reveal + round-trip contract (a value
+ * echoed back unchanged means "keep the stored secret") hinges on it, so the two
+ * sides must never drift.
+ */
+export const ENV_MASK = "••••••••";
+export const isMaskedValue = (value: unknown): boolean => value === ENV_MASK;

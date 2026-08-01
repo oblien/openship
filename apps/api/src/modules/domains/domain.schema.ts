@@ -30,11 +30,25 @@ export const AddDomainBody = Type.Object({
    *  only, skip certbot, serve plain HTTP. Domain need not resolve to the box. */
   externalIngress: Type.Optional(Type.Boolean({ default: false })),
   /**
-   * Also claim `www.<hostname>`. Creates a SECOND pending domain row — the SSL
-   * layer's own `includeWww` only ever acted on an existing verified www ROW, so
-   * without this the toggle was a no-op end to end (issue #289).
+   * Also claim `www.<hostname>` as a SECOND, fully independent domain row: its own
+   * DNS record (returned in `records`), its own verification, its own certificate —
+   * and its own failure. Created as a 301 to the bare hostname; the response
+   * carries its id in `www`, or the reason it couldn't be claimed in `wwwError`.
+   *
+   * Nothing downstream treats the pair as one thing any more. `manageDomainSsl`
+   * takes exactly one hostname, and `deployments/ssl/renew` runs the two
+   * independently and reports both (issue #289 and its follow-ups).
    */
   includeWww: Type.Optional(Type.Boolean({ default: false })),
+  /**
+   * Serve a canonical redirect from this hostname to another hostname of the
+   * SAME project instead of serving the app (see lib/domain-redirect.ts). This is
+   * what makes `www.<apex>` an ordinary domain that points at its apex rather
+   * than a flag on the apex row. Self-hosted only.
+   */
+  redirectTo: Type.Optional(Type.String({ minLength: 1, maxLength: 253 })),
+  /** 301 (default) | 302 | 307 | 308. Only meaningful with `redirectTo`. */
+  redirectStatus: Type.Optional(Type.Integer({ minimum: 300, maximum: 399 })),
 });
 
 /** Operator-supplied certificate (BYO / Cloudflare Origin CA) to install for a
@@ -47,6 +61,12 @@ export const UploadCertBody = Type.Object({
 /** POST /preview — side-effect-free DNS-records preview for a hostname. */
 export const PreviewDomainBody = Type.Object({
   hostname: Type.String({ minLength: 1, maxLength: 253, description: "Hostname to preview DNS records for." }),
+  includeWww: Type.Optional(
+    Type.Boolean({
+      description:
+        "Also return the records for the www.<hostname> sibling, matching the 'Include www' toggle. The toggle claims a SECOND hostname, so it needs its own record.",
+    }),
+  ),
 });
 
 // ─── Inferred types ──────────────────────────────────────────────────────────

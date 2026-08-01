@@ -80,6 +80,26 @@ export function restartPolicyForWorkload(policy?: string): "always" | "on-failur
   return "always";
 }
 
+/**
+ * Resolve the cloud workload `cmd` (#332). Cloud sets the working dir via the
+ * workload's `working_dir`, so a compose `commandArgv` runs as argv VERBATIM
+ * (no `sh -c`, no `cd`) — the entrypoint+CMD fix. A legacy string command / a
+ * built-app start command keeps the `sh -c "cd … && <cmd>"` wrap. Returns
+ * undefined → the workspace image's default process runs:
+ *   - `commandArgv` non-empty → argv verbatim
+ *   - `commandArgv` == []      → undefined (clear the compose CMD → image default)
+ *   - `commandArgv` == null    → sh -c wrap of `startCommand`, or undefined if none
+ */
+export function resolveCloudWorkloadCmd(opts: {
+  commandArgv?: string[] | null;
+  startCommand?: string;
+  workdir: string;
+}): string[] | undefined {
+  const { commandArgv, startCommand, workdir } = opts;
+  if (commandArgv != null) return commandArgv.length > 0 ? commandArgv : undefined;
+  return startCommand ? ["sh", "-c", `cd ${sq(workdir)} && ${startCommand}`] : undefined;
+}
+
 function exposeTarget(port: number, serviceName: string, slug?: string, domain: string = SYSTEM.DOMAINS.CLOUD_DOMAIN) {
   const service = `service "${serviceName}" on port ${port}`;
   return slug ? `${service} for slug "${slug}" (${slug}.${domain})` : service;
@@ -200,6 +220,13 @@ export class CloudComposeSupport {
         config.publicPort ?? firstContainerPort(config.ports) ?? builtArtifact?.runtime.exposedPort;
       const workdir = builtArtifact?.runtime.workdir ?? "/";
       const startCommand = config.command ?? builtArtifact?.runtime.startCommand;
+      // #332: see resolveCloudWorkloadCmd — compose argv runs verbatim (cwd set
+      // via working_dir, no `sh -c`); legacy/built start commands keep the wrap.
+      const workloadCmd = resolveCloudWorkloadCmd({
+        commandArgv: config.commandArgv,
+        startCommand,
+        workdir,
+      });
 
       log({
         timestamp: now(),
@@ -207,7 +234,7 @@ export class CloudComposeSupport {
         level: "info",
       });
 
-      if (startCommand) {
+      if (workloadCmd) {
         log({
           timestamp: now(),
           message: `Creating workload for service "${config.serviceName}"...\n`,
@@ -221,7 +248,7 @@ export class CloudComposeSupport {
           ws.workloads.create({
             id: "app",
             name: "app",
-            cmd: ["sh", "-c", `cd ${sq(workdir)} && ${startCommand}`],
+            cmd: workloadCmd,
             working_dir: workdir,
             env: [...toEnvArray(runtimeEnv), ...(port ? [`PORT=${port}`] : [])],
             restart_policy: restartPolicyForWorkload(config.restart),

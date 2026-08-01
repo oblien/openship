@@ -75,6 +75,31 @@ export function hostPortsFromBindings(
   return [...ports];
 }
 
+/**
+ * Is this image tag one WE built, and therefore ours to delete?
+ *
+ * Only `openship/…` tags are (see `imageTag`), and every build mints a globally
+ * unique one (`openship/<slug>:<session>`), so exactly one deployment row ever
+ * owns a given tag. Anything else is either pulled from a registry
+ * (`postgres:17`) or adopted by a docker-migration import — and those two are
+ * precisely the tags that must NOT be deleted by row:
+ *
+ *   - a migration import reuses ONE mutable, registry-less tag across every
+ *     sibling service, so untagging it for one row strands the others with a
+ *     tag that no longer resolves and cannot be re-pulled;
+ *   - a registry tag is shared with anything else on the box using it, and
+ *     deleting it buys nothing (it re-pulls).
+ *
+ * This mirrors the safety model `image-gc` already documents — it only ever
+ * considers images carrying the `openship.project` label, which `labels()`
+ * stamps on final build images and never on pulled/adopted ones. Structural, so
+ * it needs no daemon round-trip: the caller's keep-set answers "does another
+ * RETAINED release need this tag", and this answers "is it even ours".
+ */
+export function ownsBuiltImage(imageRef: string): boolean {
+  return imageRef.startsWith("openship/");
+}
+
 /** Clamp a terminal window dimension to a sane min/max with default. */
 function clampShellWindow(
   value: number | undefined,
@@ -97,8 +122,6 @@ import type {
   MultiServiceDeployConfig,
   MultiServiceDeployResult,
   DeploymentRef,
-  RollbackInput,
-  MakeActiveResult,
   DockerContainerSummary,
   DockerContainerDetail,
   DockerMount,
@@ -112,10 +135,18 @@ import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
 import { createDockerBuildContext, prepareSourceTree, resolveServiceDockerfile } from "./docker-build-context";
 import { startExecStream, daemonConnectionFrom } from "./docker-exec-stream";
+import { resolveComposeCmd } from "./compose-cmd";
 import { resolveDockerfileCandidates } from "./docker-paths";
+import type { ContainerStabilitySample } from "./stability";
 import { generateDockerfile, staticBuilderOutputPath } from "./docker-build-plan";
 import { transferLocalDirectory } from "./transfer";
 import { safeErrorMessage, type ComposeAdvanced, type ComposeHealthcheck } from "@repo/core";
+import {
+  dockerResourceLimits,
+  dockerBuildResourceLimits,
+  describeResourceLimits,
+  inspectResourceLimits,
+} from "./resource-limits";
 import {
   type DockerConnectionOptions,
   type DockerTransport,
@@ -518,6 +549,7 @@ export class DockerRuntime implements RuntimeAdapter {
     "projectContainerSweep",
     "deploymentContainerQuery",
     "hostContainerQuery",
+    "stabilityProbe",
   ]);
 
   /** Docker honors every extended compose key we currently support. */
@@ -1103,6 +1135,10 @@ export class DockerRuntime implements RuntimeAdapter {
             ...config.envVars,
             NODE_ENV: "production",
           },
+          // Omitted entirely unless the project set a build cap — a self-hosted
+          // build should be free to use the machine (a production build often
+          // needs several GB). Opt-in only; see dockerBuildResourceLimits.
+          ...dockerBuildResourceLimits(config.resources),
           forcerm: true,
         },
       );
@@ -1811,6 +1847,7 @@ export class DockerRuntime implements RuntimeAdapter {
                   sessionId: spec.config.sessionId,
                 }),
                 buildargs: { ...spec.config.envVars, NODE_ENV: "production" },
+                ...dockerBuildResourceLimits(spec.config.resources),
                 forcerm: true,
               },
             );
@@ -1918,9 +1955,36 @@ export class DockerRuntime implements RuntimeAdapter {
     const restartPolicy = resolveRestartPolicy(config.restartPolicy);
     const pinnedHostPorts = config.hostPort ? [config.hostPort] : [];
 
+    // Persistent mounts. Each deploy creates a NEW container from a NEW image,
+    // so anything the app wrote to its own filesystem is gone unless it lives on
+    // a volume that outlives the container. Named volumes are project-scoped
+    // through the same helper the multi-service path uses, so two projects can't
+    // land on one daemon-level volume; bind mounts pass through.
+    const scopedBinds = scopeVolumeBinds(
+      config.slug || config.runtimeName || config.projectId,
+      config.volumes ?? [],
+      true,
+    );
+    const binds = scopedBinds.length > 0 ? scopedBinds : undefined;
+
     log({
       timestamp: new Date().toISOString(),
       message: `Creating container ${containerName} from ${imageRef}...\n`,
+      level: "info",
+    });
+    if (binds) {
+      log({
+        timestamp: new Date().toISOString(),
+        message: `Persistent storage: ${binds.join(", ")}\n`,
+        level: "info",
+      });
+    }
+    // State the caps in the build log. A silent 512 MB cap is how #333 hid: the
+    // deploy reported ready while the container OOM-crash-looped, with nothing
+    // anywhere saying a limit had been applied.
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Resource limits: ${describeResourceLimits(config.resources)}\n`,
       level: "info",
     });
 
@@ -1949,8 +2013,10 @@ export class DockerRuntime implements RuntimeAdapter {
           ExposedPorts: { [`${config.port}/tcp`]: {} },
           HostConfig: {
             RestartPolicy: restartPolicy,
-            Memory: config.resources.memoryMb * 1024 * 1024,
-            CpuShares: Math.round(config.resources.cpuCores * 1024),
+            Binds: binds,
+            // Omitted entirely when the project has no cap (self-hosted default) —
+            // see dockerResourceLimits. Never substitute a tier here.
+            ...dockerResourceLimits(config.resources),
             // Publish on the LOOPBACK interface only — the edge (host process, or a
             // host-net OpenResty container) reaches it at 127.0.0.1:<hostPort>, and
             // it never faces the network. Binding 0.0.0.0 here would expose every
@@ -2155,62 +2221,26 @@ export class DockerRuntime implements RuntimeAdapter {
     }));
   }
 
-  // ── Rollback primitives ──────────────────────────────────────────────
+  // ── Rollback primitives (retention half only) ────────────────────────
   //
-  // Docker semantics:
-  //   makeActive — prefer `start` of the retained container (fast,
-  //     preserves PID/state). If the container was GC'd but the image
-  //     is still tagged, `run` from imageRef to provision a fresh
-  //     container. Stop the previous active as part of the swap.
-  //   archive   — `docker stop`. Image stays tagged. Container kept
-  //     for fast restart on later makeActive.
-  //   purge     — `docker rm` (force) + `docker rmi`. Past this point
-  //     rollback to this deployment is impossible.
-
-  async makeActive(input: RollbackInput): Promise<MakeActiveResult> {
-    // 1) Stop the currently-active deployment (if any) so we don't have
-    //    two containers serving the same port. Errors here are non-fatal
-    //    — if the previous container is already gone the swap continues.
-    if (input.from?.containerId) {
-      try {
-        await this.stop(input.from.containerId);
-      } catch {
-        // already stopped / gone — ignore
-      }
-    }
-
-    // 2) Try fast-start the target's existing container.
-    if (input.to.containerId) {
-      try {
-        await this.start(input.to.containerId);
-        return { containerId: input.to.containerId };
-      } catch {
-        // container missing — fall through to run-from-image
-      }
-    }
-
-    // 3) Container is gone but image is still tagged: provision a fresh
-    //    container from the retained image. Same parameters the original
-    //    deploy used — but we don't have the full DeployConfig here, so
-    //    we use minimal defaults. If the orchestrator needs richer
-    //    re-provisioning it can call `deploy()` instead.
-    if (!input.to.imageRef) {
-      throw new Error(
-        `Cannot make deployment ${input.to.id} active: container is gone and no imageRef is stored. Artifact has been purged.`,
-      );
-    }
-    const container = await this.docker.createContainer({
-      Image: input.to.imageRef,
-      name: `dep-${input.to.id}`,
-      HostConfig: { RestartPolicy: { Name: "unless-stopped" } },
-    });
-    await container.start();
-    return { containerId: container.id };
-  }
+  // Docker deliberately does NOT implement `makeActive` — see the
+  // "unitRestore" capability. A redeploy REMOVES the previous container
+  // (loopback-port routing can't overlap two containers on one host
+  // port), so there is no unit left to restart; the durable artifact is
+  // the IMAGE. Restore therefore re-materializes the container through
+  // the normal deploy step from the target's frozen snapshot + retained
+  // image (modules/deployments/rollback/restore-plan.ts), which is the
+  // only way env, published port, volumes, labels, network and routing
+  // all come back correctly.
+  //
+  //   archive — `docker stop` (usually a no-op: the container is gone).
+  //             The image stays tagged, retained by the rollback-window
+  //             keep-set in modules/deployments/image-gc.
+  //   purge   — `docker rm` (force) + `docker rmi`. Past this point an
+  //             instant restore of this deployment is impossible and
+  //             rollback degrades to a rebuild from its commit.
 
   async archive(deployment: DeploymentRef): Promise<void> {
-    // Docker archive = stop the container. Image + stopped container
-    // are preserved on the host until purge.
     if (!deployment.containerId) return; // already archived (no container) or never deployed
     try {
       await this.stop(deployment.containerId);
@@ -2230,7 +2260,7 @@ export class DockerRuntime implements RuntimeAdapter {
         // already removed
       }
     }
-    if (deployment.imageRef) {
+    if (deployment.imageRef && ownsBuiltImage(deployment.imageRef)) {
       try {
         await this.removeImage(deployment.imageRef);
       } catch {
@@ -2343,6 +2373,7 @@ export class DockerRuntime implements RuntimeAdapter {
             startPeriod: hc.StartPeriod,
           }
         : undefined,
+      resources: inspectResourceLimits(data.HostConfig),
       composeProject: labels["com.docker.compose.project"] || undefined,
       composeService: labels["com.docker.compose.service"] || undefined,
       composeConfigFiles: configFiles
@@ -2588,6 +2619,56 @@ export class DockerRuntime implements RuntimeAdapter {
       ip,
       hostPort,
       uptimeSeconds: uptimeSeconds && uptimeSeconds > 0 ? uptimeSeconds : undefined,
+    };
+  }
+
+  /**
+   * One stabilization reading for the post-deploy watch. Unlike
+   * `getContainerInfo` this keeps `restarting` distinct and carries
+   * `RestartCount` / `ExitCode` / health — the only fields that separate a
+   * container that is UP from one that is bouncing. A vanished container is a
+   * `missing` sample (not a throw): that is a verdict, not a transport error.
+   */
+  async sampleStability(containerId: string): Promise<ContainerStabilitySample> {
+    let data: Dockerode.ContainerInspectInfo;
+    try {
+      data = await this.docker.getContainer(containerId).inspect();
+    } catch (err) {
+      if (isDockerNotFoundError(err)) {
+        return {
+          state: "missing",
+          exitCode: null,
+          restartCount: 0,
+          health: null,
+          errorLine: null,
+          oomKilled: false,
+          restartPolicy: null,
+        };
+      }
+      throw err;
+    }
+
+    const rawState = (data.State?.Status ?? "").toLowerCase().trim();
+    const state: ContainerStabilitySample["state"] = (
+      ["created", "running", "restarting", "paused", "exited", "dead", "removing"] as const
+    ).includes(rawState as never)
+      ? (rawState as ContainerStabilitySample["state"])
+      : "unknown";
+
+    const rawHealth = (data.State?.Health?.Status ?? "").toLowerCase().trim();
+    const health: ContainerStabilitySample["health"] =
+      rawHealth === "healthy" || rawHealth === "unhealthy" || rawHealth === "starting"
+        ? rawHealth
+        : null;
+
+    return {
+      state,
+      exitCode: typeof data.State?.ExitCode === "number" ? data.State.ExitCode : null,
+      restartCount: typeof data.RestartCount === "number" ? data.RestartCount : 0,
+      health,
+      errorLine: data.State?.Error?.trim() ? data.State.Error.trim() : null,
+      oomKilled: data.State?.OOMKilled === true,
+      restartPolicy: data.HostConfig?.RestartPolicy?.Name ?? null,
     };
   }
 
@@ -3210,10 +3291,9 @@ export class DockerRuntime implements RuntimeAdapter {
       ...Object.entries(config.environment).map(([k, v]) => `${k}=${v}`),
     ];
 
-    // Command
-    const cmd = config.command
-      ? ["sh", "-c", config.command]
-      : undefined;
+    // Command (#332): argv Cmd, no implicit `sh -c` (that broke entrypoint+CMD
+    // images). See resolveComposeCmd.
+    const cmd = resolveComposeCmd(config);
 
     // Port bindings
     const { exposedPorts, portBindings } = parsePortBindings(config.ports);
@@ -3236,6 +3316,12 @@ export class DockerRuntime implements RuntimeAdapter {
     log({
       timestamp: new Date().toISOString(),
       message: `Creating service container ${containerName} from ${config.image}...\n`,
+      level: "info",
+    });
+    // Per-service caps, stated explicitly — see the single-app path for why.
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Resource limits: ${describeResourceLimits(config.resources)}\n`,
       level: "info",
     });
 
@@ -3282,12 +3368,7 @@ export class DockerRuntime implements RuntimeAdapter {
       ExposedPorts: exposedPorts,
       HostConfig: {
         RestartPolicy: restartPolicy,
-        ...(config.resources?.memoryMb && {
-          Memory: config.resources.memoryMb * 1024 * 1024,
-        }),
-        ...(config.resources?.cpuCores && {
-          CpuShares: Math.round(config.resources.cpuCores * 1024),
-        }),
+        ...dockerResourceLimits(config.resources),
         PortBindings: portBindings,
         Binds: binds,
         NetworkMode: group.id,

@@ -81,7 +81,7 @@ r.post(
     body: FolderSessionBody,
     mcp: {
       description:
-        "Folder-upload deploy — STEP 1/4. Opens an upload session for a local source folder and returns `upload` = { url, method, headers }. NEXT, upload the gzipped tarball yourself: POST it to `upload.url` with the returned headers and Content-Type: application/gzip. That byte upload is NOT an MCP tool (raw binary can't cross JSON-RPC) — use an HTTP client. Then call folder/scan. Sequence: session → (out-of-band tarball upload) → folder/scan → projects/ensure → deployments/build/access.",
+        "Folder-upload deploy — STEP 1/4. Opens an upload session for a local source folder and returns `upload` = { url, absoluteUrl, method, headers, requiresAuth }. NEXT, upload the gzipped tarball yourself: POST it to `upload.absoluteUrl` (or resolve the API-relative `upload.url` against your own API base) with the returned headers and Content-Type: application/gzip — and, when `upload.requiresAuth` is true, the SAME Authorization: Bearer token you used to open the session. That byte upload is NOT an MCP tool (raw binary can't cross JSON-RPC) — use an HTTP client. Then call folder/scan. Sequence: session → (out-of-band tarball upload) → folder/scan → projects/ensure → deployments/build/access.",
     },
   },
   folder.createSession,
@@ -93,10 +93,17 @@ r.post(
     collection: true,
     mcp: {
       description:
-        "Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port). Body may be empty ({}). Feed the result into projects/ensure (STEP 3).",
+        "Folder-upload deploy — STEP 2/4. Run AFTER the tarball is uploaded. Detects the uploaded source's framework/build config (stack, packageManager, install/build/start commands, outputDirectory, productionPaths, port) and, for a docker-compose folder, the `services` array. Body may be empty ({}). Feed the result into projects/ensure (STEP 3) — including `services` verbatim when present.",
     },
   },
   folder.scanSession,
+);
+r.get(
+  // #336: real (unmasked) compose env for the folder-scan wizard's reveal
+  // toggle. Write-gated (project:write); no mcp — reveal is a dashboard action.
+  "/folder/scan/:sessionId/env-reveal",
+  { tag: "project:write", collection: true },
+  folder.revealSessionEnv,
 );
 // The relay upload is SELF-HOSTED ONLY: on the SaaS the browser uploads
 // straight to the Oblien workspace, so the API never receives bytes. localOnly
@@ -123,7 +130,7 @@ r.post(
     body: EnsureProjectBody,
     mcp: {
       description:
-        "Folder-upload deploy — STEP 3/4. Create or update the project that carries the build config — deployments/build/access reads config from the PROJECT ROW, not the upload session, so this must run first. Map the folder/scan fields in (framework = the scan's stack id) and set gitProvider:'upload'. Pass projectId to update an existing project. Returns the project id for STEP 4.",
+        "Folder-upload deploy — STEP 3/4. Create or update the project that carries the build config — deployments/build/access reads config from the PROJECT ROW, not the upload session, so this must run first. Map the folder/scan fields in (framework = the scan's stack id) and set gitProvider:'upload'. For a docker-compose folder, pass the scan's `services` array through too — that persists the project's service set — AND pass `uploadSessionId` with it, since the scan masks env values (`••••••••`) and that is what restores them. Pass projectId to update an existing project. Returns the project id for STEP 4.",
     },
   },
   ctrl.ensure,
@@ -230,6 +237,20 @@ r.patch("/:id/clone-token", { tag: "project:admin" }, cloudProjectProxy, ctrl.up
 /* ─── Git ──────────────────────────────────────────────────────────────── */
 r.get("/:id/git", { tag: "project:read", mcp: { description: "Get the project's linked git repository info." } }, cloudProjectProxy, ctrl.getGitInfo);
 r.get("/:id/commit-status", { tag: "project:read", mcp: { description: "Compare the deployed commit against the remote HEAD." } }, cloudProjectProxy, ctrl.getCommitStatus);
+
+/* ─── Pending actions (everything waiting on a human) ───────────────────── */
+r.get(
+  "/:id/pending-actions",
+  {
+    tag: "project:read",
+    mcp: {
+      description:
+        "What is waiting on a human for this project, and how to resolve each item. Covers a deploy blocked on a named cause (e.g. a port already in use), a deploy HELD right now on a decision (answer it with the build-respond tool — the exact action id and body are in the item's resolveWith, and `expiresAt` is when the deploy gives up), a partial-failure release awaiting keep/reject, unsynced routing, unverified domains, and failed/expired certificates. Each item carries `resolveWith`, an array of concrete {method, path, body} calls — use those rather than guessing. Call this after starting a deploy that seems stuck, and whenever a project reads as Action Required.",
+    },
+  },
+  cloudProjectProxy,
+  ctrl.getPendingActions,
+);
 r.post("/:id/git/link", { tag: "project:write", body: LinkRepoBody, mcp: { description: "Link a git repository to the project." } }, cloudProjectProxy, ctrl.linkRepo);
 r.get("/:id/branches", { tag: "project:read", mcp: { description: "List the linked repository's branches." } }, cloudProjectProxy, ctrl.listBranches);
 r.post("/:id/auto-deploy", { tag: "project:write", body: SetAutoDeployBody, mcp: { description: "Enable/disable auto-deploy on push." } }, cloudProjectProxy, ctrl.setAutoDeploy);
@@ -247,6 +268,18 @@ r.get("/:id/webhook-deliveries", { tag: "project:read", mcp: { description: "Lis
 
 /* ─── Resources ────────────────────────────────────────────────────────── */
 r.get("/:id/resources", { tag: "project:read", mcp: { description: "Get the project's CPU/RAM/disk resource config." } }, cloudProjectProxy, ctrl.getResources);
+r.get(
+  "/:id/rollback-capacity",
+  {
+    tag: "project:read",
+    mcp: {
+      description:
+        "Get the rollback retention window in force (explicit or disk-sized), the measured per-release size, and the deploy host's free disk.",
+    },
+  },
+  cloudProjectProxy,
+  ctrl.getRollbackCapacity,
+);
 r.patch(
   "/:id/resources",
   {

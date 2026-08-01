@@ -25,14 +25,14 @@ import {
   stat as fsStat,
 } from "node:fs/promises";
 import { execFile as cpExecFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 import { dirname, join } from "node:path";
 
 import type { CommandExecutor, ManualCert, RouteConfig, SslResult } from "../types";
 import type { RoutingProvider, SslProvider } from "./types";
 import { LUA_LOGGER_PATH, RULES_GUARD_PATH, luaSourceAvailable, buildReloadCommand, detectOpenRestyPaths, ACME_HTTP01_PORT, ACME_CHALLENGE_LOCATION, type OpenRestyPaths } from "./openresty-lua";
-import { safeErrorMessage, sanitizeProxySettings, PROXY_GZIP_TYPES, type ProxySettings } from "@repo/core";
+import { safeErrorMessage, sanitizeProxySettings, resolveRedirectStatus, PROXY_GZIP_TYPES, type ProxySettings } from "@repo/core";
 import { sq } from "../system/local-shell";
 import { BOOTSTRAP_CERT_SEGMENT, validateCertFor } from "../system/proxy/cert-material";
 import { probeStaticOutput, type OutputProbeResult } from "../system/output-exists";
@@ -101,6 +101,24 @@ function renderProxyLocations(route: RouteConfig): string {
     }`;
     })
     .join("");
+}
+
+/**
+ * The `location /` body for a route that redirects to another host, or null when
+ * it serves normally.
+ *
+ * `assertValidDomain` runs on the TARGET, not just the route's own domain: the
+ * target is interpolated into the emitted config, so an unvalidated one would be
+ * a config-injection vector even though it reached us through a validating API.
+ * `resolveRedirectStatus` (shared with the API's validator, @repo/core) falls back
+ * to 301 rather than emitting `return 0` and making `openresty -t` reject the
+ * whole vhost.
+ */
+function renderHostRedirect(route: RouteConfig): string | null {
+  const redirect = route.redirectHost;
+  if (!redirect?.target) return null;
+  assertValidDomain(redirect.target);
+  return `return ${resolveRedirectStatus(redirect.statusCode)} https://${redirect.target}$request_uri;`;
 }
 
 /** Render vercel.json `redirects` as `return <code> <dest>` locations. */
@@ -698,14 +716,20 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     assertValidDomain(route.domain);
     await this._mkdir(this.sitesDir);
 
-    const slug = this.domainSlug(route.domain);
+    const slug = await this.resolveSlug(route.domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
     if ("staticRoot" in route && route.staticRoot) {
       assertValidStaticRoot(route.staticRoot, { adopted: route.staticRootAdopted });
     } else {
       assertValidUpstream((route as { targetUrl: string }).targetUrl);
     }
-    const locationBody = "staticRoot" in route && route.staticRoot
+    // A canonical host redirect REPLACES the body — this host serves no content of
+    // its own, so the upstream/root is validated above (the destination is kept so
+    // dropping the redirect restores a serving route) but never emitted.
+    const hostRedirect = renderHostRedirect(route);
+    const locationBody = hostRedirect
+      ? hostRedirect
+      : "staticRoot" in route && route.staticRoot
       ? `root ${route.staticRoot};
         index index.html;
         try_files $uri $uri/ /index.html;`
@@ -715,16 +739,23 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // Composite single-domain: extra path-prefix proxy locations (e.g. /api/ →
     // backend) + vercel.json redirects, emitted BEFORE `location /` so nginx
     // longest-prefix / exact match routes them ahead of the primary target.
-    const extraLocations = `${renderRedirects(route)}${renderProxyLocations(route)}`;
+    // Suppressed for a redirecting host: a path that proxied while everything else
+    // redirected would be a split-brain vhost, and a webhook POST would lose its
+    // body to the 301. (ACME_CHALLENGE_LOCATION is emitted separately below and
+    // deliberately KEPT — a redirecting host still issues its own certificate.)
+    const extraLocations = hostRedirect
+      ? ""
+      : `${renderRedirects(route)}${renderProxyLocations(route)}`;
     // Global response headers (vercel.json `headers` with source "/(.*)").
-    const serverHeaders = renderServerHeaders(route);
+    const serverHeaders = hostRedirect ? "" : renderServerHeaders(route);
     // Curated reverse-proxy tunables (client_max_body_size, timeouts, gzip, …).
     // Server-scope so they cover `location /` + every extra location, and
     // override the server-wide http default for this vhost.
     const proxyOpts = renderProxyOptions(route.proxy);
 
-    // Optional: webhook proxy location for GitHub push delivery
-    const webhookLocation = route.webhookProxy
+    // Optional: webhook proxy location for GitHub push delivery. Never on a
+    // redirecting host — a 30x would drop the delivery's POST body.
+    const webhookLocation = route.webhookProxy && !hostRedirect
       ? `
     location /_openship/hooks/ {
         proxy_pass ${route.webhookProxy};
@@ -756,7 +787,14 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // :80, in which case serving is the only non-looping answer (FORWARD_VARS).
     // `return` inside `if` is one of the documented-safe uses of `if`; proxy_pass
     // stays outside it.
-    const redirectOrServeLocation = `    location / {
+    //
+    // A canonical redirect skips that dance and goes straight to the target from
+    // :80 as well: bouncing to our OWN https first would cost a second round trip
+    // to reach the same place, and there's no CDN loop to avoid because the
+    // destination is a DIFFERENT host.
+    const redirectOrServeLocation = hostRedirect
+      ? serveLocation
+      : `    location / {
         if ($openship_redirect_https) {
             return 301 https://$server_name$request_uri;
         }
@@ -923,7 +961,7 @@ ${serveLocation}
    */
   async removeRoute(domain: string): Promise<void> {
     assertValidDomain(domain);
-    const slug = this.domainSlug(domain);
+    const slug = await this.resolveSlug(domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
     const statePath = this.routeStatePath(slug);
     const confSnapshot = await this._captureFile(configPath);
@@ -1015,7 +1053,7 @@ ${serveLocation}
     }
 
     // Rewrite the config with SSL now that certs exist
-    const slug = this.domainSlug(domain);
+    const slug = await this.resolveSlug(domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
 
     // Prefer the persisted RouteConfig sidecar so the re-register keeps every
@@ -1156,7 +1194,7 @@ ${serveLocation}
     // persisted RouteConfig sidecar so every location survives (same as
     // provisionCert); if there's no route yet, the next deploy's route plan
     // picks up tls:true from the manualSsl gate.
-    const slug = this.domainSlug(domain);
+    const slug = await this.resolveSlug(domain);
     try {
       const state = await this._readFile(this.routeStatePath(slug));
       const saved = JSON.parse(state) as RouteConfig;
@@ -1176,8 +1214,92 @@ ${serveLocation}
 
   // ── Helpers ──────────────────────────────────────────────────────────
 
+  /**
+   * Filename stem for a domain. NOT injective — see `resolveSlug`.
+   *
+   * Kept exactly as-is on purpose: it names every vhost file on every existing
+   * install, so changing it would rename the lot and leave the old names behind
+   * still serving. `resolveSlug` handles the collisions instead.
+   */
   private domainSlug(domain: string): string {
     return domain.replace(/[^a-zA-Z0-9-]/g, "-").replace(/-+/g, "-");
+  }
+
+  /** Deterministic per-domain disambiguator for a slug collision. */
+  private slugSuffix(domain: string): string {
+    return createHash("sha1").update(domain).digest("hex").slice(0, 8);
+  }
+
+  /** Every `server_name` token declared in a vhost body. */
+  private serverNamesIn(conf: string): string[] {
+    const names: string[] = [];
+    for (const m of conf.matchAll(/server_name\s+([^;]+);/g)) {
+      for (const tok of m[1]!.trim().split(/\s+/)) {
+        if (tok) names.push(tok.toLowerCase().replace(/\.$/, ""));
+      }
+    }
+    return names;
+  }
+
+  /**
+   * The slug THIS domain's files live under.
+   *
+   * `domainSlug` folds every non-alphanumeric to `-`, so a dot and a literal dash
+   * collapse together and two different, separately-claimable hostnames land on
+   * one filename:
+   *
+   *     staging.app.example.com  ->  staging-app-example-com
+   *     staging-app.example.com  ->  staging-app-example-com
+   *
+   * Both are ordinary hostnames and can belong to different projects — even
+   * different orgs, since one edge fronts the whole box. Whichever registered last
+   * silently overwrote the other's vhost, and the loser's traffic fell through to
+   * `default_server`: a silent outage of somebody else's domain. `removeRoute` on
+   * either one deleted the shared file and took out both.
+   *
+   * Resolution, in this order, and the order is the whole correctness argument:
+   *
+   *   1. A disambiguated file for this domain already exists → keep using it.
+   *      MUST come first. If the incumbent is later removed, step 3 would hand
+   *      this domain the now-free base name while its real conf stayed on disk
+   *      under the suffixed name — two files serving one hostname, which is the
+   *      exact orphan class this whole change exists to remove.
+   *   2. The base file exists and does NOT list this domain in its `server_name`
+   *      → it is someone else's. Take a suffixed name; the incumbent is untouched.
+   *   3. Otherwise the base name is ours (free, or already ours).
+   *
+   * Containment, not equality, in step 2 — and the reason is narrower than it
+   * looks. Everything WE write carries exactly one `server_name` (see the server
+   * blocks above), and a takeover fans out one `registerRoute` per hostname
+   * (`registerImportedSites`), so no Openship-managed conf ever lists two. The
+   * only file that can is one the operator placed in `sites-enabled` themselves.
+   *
+   * For that file, reusing it is the lesser evil, not a free win: we rewrite it
+   * with a single `server_name`, so a sibling hostname it also served stops being
+   * served. The alternative is worse — a second vhost answering a name the first
+   * one already claims makes OpenResty warn "conflicting server name" and silently
+   * keep the FIRST, so the route we were asked to create would not take effect at
+   * all. Losing the sibling is at least the outcome the caller asked for.
+   */
+  private async resolveSlug(domain: string): Promise<string> {
+    const base = this.domainSlug(domain);
+    const suffixed = `${base}-${this.slugSuffix(domain)}`;
+    const host = domain.toLowerCase().replace(/\.$/, "");
+
+    if (await this._exists(join(this.sitesDir, `${suffixed}.conf`)).catch(() => false)) {
+      return suffixed;
+    }
+
+    const basePath = join(this.sitesDir, `${base}.conf`);
+    if (await this._exists(basePath).catch(() => false)) {
+      const conf = await this._readFile(basePath).catch(() => "");
+      // Unreadable/empty → treat as ours rather than fragmenting on a read blip.
+      if (conf) {
+        const names = this.serverNamesIn(conf);
+        if (names.length > 0 && !names.includes(host)) return suffixed;
+      }
+    }
+    return base;
   }
 
   /**

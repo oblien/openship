@@ -25,7 +25,14 @@ export { endpoints } from "./endpoints";
 
 /* --- Domain services ---------------------------------------------- */
 export { projectsApi } from "./projects";
-export type { RouteRuleRow, RouteRuleInput } from "./projects";
+export type {
+  RouteRuleRow,
+  RouteRuleInput,
+  BindObjectStorageBody,
+  ObjectStorageBinding,
+  ObjectStorageProviderSpec,
+  ObjectStorageView,
+} from "./projects";
 export { appsApi } from "./apps";
 export type { AppCatalogEntry, AppCatalogField, InstallAppResult } from "./apps";
 export { deployApi } from "./deploy";
@@ -46,12 +53,14 @@ export { tokensApi } from "./tokens";
 export type { AccessToken, CreatedAccessToken, McpClient } from "./tokens";
 export { githubApi } from "./github";
 export { gitlabApi } from "./gitlab";
+export type { RepoTreeEntry } from "./github";
 export { iconsApi } from "./icons";
 export { imagesApi } from "./images";
 export type { ImageCatalogEntry, ListImagesResponse } from "./images";
 export { aiApi } from "./ai";
 export { sandboxApi } from "./sandbox";
 export { systemApi } from "./system";
+export type { EdgeOrphanScan, UntrackedEdgeSite } from "./system";
 export { migrationApi } from "./migration";
 export { dockerMigrationApi } from "./server-migration";
 export type {

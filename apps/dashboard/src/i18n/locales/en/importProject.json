@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "Directory with build output",
     "sourceFolderLabel": "Source Folder",
     "sourceFolderDesc": "Build from a subdirectory inside the repository or local project.",
+    "composePath": {
+      "title": "Compose file",
+      "subtitle": "Detected automatically at the project root",
+      "label": "Path to your compose file",
+      "description": "For repos that keep compose outside the root — give the file (deploy/stack.yml) or the folder holding it (deploy/docker-compose). Re-scans the repo and deploys the services it declares.",
+      "apply": "Scan",
+      "scanning": "Scanning…",
+      "scanFailed": "Could not scan that compose path.",
+      "subtitleOptIn": "Deploying with Docker Compose? Point to the file."
+    },
+    "healthCheck": {
+      "title": "Health checks",
+      "subtitle": "Off — the deploy finishes as soon as your app is running",
+      "subtitleOn": "On — the deploy waits for your app before going live",
+      "description": "Openship doesn't wait for your app after it starts, so a slow boot never delays or fails a deploy. Once it's live, the port is checked anyway and reported without blocking anything. Turn these on only if you want the deploy itself to refuse to go green.",
+      "probeLabel": "Wait for the app to answer",
+      "probeDesc": "After the container starts, dial the app's port and wait for it to accept a connection.",
+      "pathLabel": "HTTP path",
+      "pathPlaceholder": "/health",
+      "pathDesc": "Require a GET here to answer below 500. Leave empty to accept any TCP connection, which also works for non-HTTP services.",
+      "timeoutLabel": "Give up after (seconds)",
+      "stabilizationLabel": "Watch for restart loops",
+      "stabilizationDesc": "Watch the container after it starts and report a crash loop. Reads the runtime, so this works on remote servers too.",
+      "stabilizationWindowLabel": "Watch for (seconds)",
+      "onFailureLabel": "If a check fails",
+      "onFailureWarn": "Keep the deploy live and flag it for review",
+      "onFailureFail": "Fail the deploy and keep the previous version serving"
+    },
     "buildImageLabel": "Build Image",
     "buildImageDesc": "Builder container image for cloud or server builds. Override it when the detected base image is wrong.",
     "productionPathsLabel": "Production Paths",
@@ -123,6 +151,11 @@
       "clipboardEmpty": "Clipboard is empty",
       "clipboardInvalid": "Clipboard does not contain valid KEY=VALUE environment variables",
       "clipboardBlocked": "Clipboard access was blocked. Click inside the environment box and paste with Cmd/Ctrl+V."
+    },
+    "reveal": {
+      "show": "Show values",
+      "hide": "Hide values",
+      "error": "Couldn’t reveal values"
     }
   },
   "composeServices": {
@@ -294,7 +327,6 @@
       "successful": "Deployment Successful",
       "deploying": "Deploying..."
     },
-    "viewDashboard": "View dashboard",
     "visitSite": "Visit Site",
     "warningTitle": "Deployment finished, but some services still need attention.",
     "productionLogs": "Production Logs",
@@ -336,7 +368,6 @@
     "running": "running",
     "buildingSuffix": "· {count} building",
     "failedSuffix": "· {count} failed",
-    "viewDashboard": "View Dashboard",
     "decisionBannerTitle": "Action required — some services failed",
     "decisionBannerDefaultMsg": "This deployment finished with failed services. Keep it and fix them later, or reject it to restore the previous version.",
     "review": "Review",

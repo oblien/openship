@@ -4,6 +4,7 @@ import React from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
 import { deployApi, projectsApi, isAbortError, getApiErrorMessage } from "@/lib/api";
+import type { PendingAction } from "@/lib/api/projects";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
 import { type Service } from "@/lib/api/services";
 import { useModal } from "@/context/ModalContext";
@@ -116,6 +117,40 @@ export const Deployments = () => {
     };
     // activeDeploymentId dep → refetch after a deploy advances the live release.
   }, [projectData?.id, projectData?.activeDeploymentId, isSelfApp]);
+
+  /**
+   * A deploy blocked on something the operator can clear — today a port already
+   * in use. Fetched only when the project payload says there IS one
+   * (`latestDeploymentBlocked`), so the common case costs no request.
+   *
+   * This is the gap this banner fills: a blocked deploy fails, and a failed
+   * deploy never becomes the active one, so every other flag on this page (all
+   * derived from the ACTIVE deployment) is structurally unable to mention it.
+   */
+  const [blockedAction, setBlockedAction] = React.useState<PendingAction | null>(null);
+  const isBlocked = !!projectData?.latestDeploymentBlocked;
+
+  React.useEffect(() => {
+    if (!projectData?.id || !isBlocked) {
+      setBlockedAction(null);
+      return;
+    }
+    let cancelled = false;
+    projectsApi
+      .getPendingActions(projectData.id)
+      .then((res) => {
+        if (cancelled) return;
+        setBlockedAction(
+          res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null,
+        );
+      })
+      .catch(() => {
+        /* best-effort — the status badge already says Action Required */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectData?.id, isBlocked, projectData?.latestDeploymentId]);
 
   /**
    * Redeploy = take the project's CURRENT saved configuration + env vars, pull
@@ -246,6 +281,29 @@ export const Deployments = () => {
 
   return (
     <div className="space-y-6">
+      {/* Blocked deploy — FIRST, because nothing shipped: the newest release
+          didn't go out, whereas every other callout below is about a release that
+          did. The copy and the button both come from the API item, so the reason
+          (which process, which pid, whether it's a stale Openship deployment we
+          can safely stop) is the server's answer rather than a guess here. */}
+      {blockedAction && (
+        <WarningCallout
+          tone="danger"
+          title={blockedAction.title}
+          description={blockedAction.message}
+          actions={
+            <button
+              type="button"
+              onClick={() => void handleRedeploy()}
+              disabled={isRedeploying}
+              className="rounded-lg bg-danger-solid px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-60"
+            >
+              {isRedeploying ? t.projects.redeploy.deploying : t.projects.deployBlocked.redeploy}
+            </button>
+          }
+        />
+      )}
+
       {/* Routing-not-synced nudge — the release is live on the server but its
           free .opsh.io edge route didn't sync. A dedicated Retry re-runs just
           the edge sync (no rebuild); on success the warning clears. */}

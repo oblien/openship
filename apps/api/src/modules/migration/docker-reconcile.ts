@@ -59,8 +59,15 @@ export interface DiscoveredService {
   networks: string[];
   dependsOn: string[];
   command?: string;
+  /** #332: structured argv (from the live container's Cmd, or the declared
+   *  compose command) so adoption re-runs the real Cmd, not a `sh -c`-wrapped
+   *  string. `null` = use image CMD. */
+  commandArgv?: string[] | null;
   restart?: string;
   healthcheck?: ComposeHealthcheck;
+  /** Live cpu/memory caps the container is running with, so adoption preserves
+   *  them instead of resetting to the project default. Undefined = uncapped. */
+  resources?: { cpuCores?: number; memoryMb?: number };
   /** Reverse-proxy kind when this container IS the edge proxy (image/command
    *  matches AND it binds a host edge port). Openship's OpenResty replaces it,
    *  so it's dropped from import — importing it is the 80/443 conflict. */
@@ -344,10 +351,18 @@ export function toDiscoveredService(
     containerCmd.every((tok, i) => tok === imageCmd[i]);
   const command =
     declared?.command ?? (isImageDefaultCmd ? undefined : containerCmd?.join(" "));
+  // #332: prefer the declared compose argv, else the container's live Cmd argv
+  // (verbatim — no join/`sh -c`). Null when it merely restates the image CMD.
+  const commandArgv =
+    declared?.commandArgv ?? (isImageDefaultCmd ? null : (containerCmd ?? null));
 
   const healthcheck =
     declared?.advanced?.healthcheck ??
     (detail.healthcheck ? inspectHealthcheckToCompose(detail.healthcheck) : undefined);
+
+  // Prefer what the compose file DECLARES; fall back to the container's live
+  // HostConfig, which also captures a hand-applied `docker update --memory`.
+  const resources = declared?.advanced?.resources ?? detail.resources;
 
   const name = discoveredServiceName(detail, declared);
   const image = detail.image || declared?.image;
@@ -406,8 +421,10 @@ export function toDiscoveredService(
     networks: detail.networks,
     dependsOn: declared?.dependsOn ?? [],
     command,
+    commandArgv,
     restart: detail.restart?.name || declared?.restart,
     healthcheck,
+    resources,
     proxyKind,
     edgePorts: edgePorts.length > 0 ? edgePorts : undefined,
     existingRoute,

@@ -177,4 +177,119 @@ describe("runPreflightChecks", () => {
     expect(result.checks.some((check) => check.message?.includes("install command"))).toBe(false);
     expect(result.checks.some((check) => check.message?.includes("start command"))).toBe(false);
   });
+
+  it("warns instead of failing on a monorepo sub-app that has never been deployed and has no commands", async () => {
+    const result = await runPreflightChecks(
+      {
+        repoUrl: "https://github.com/acme/monorepo.git",
+        branch: "main",
+        hasBuild: true,
+        hasServer: true,
+        deployTarget: "server",
+        organizationId: "org-1",
+      } as any,
+      {
+        ctx: { userId: "user-1", organizationId: "org-1" } as any,
+        buildStrategy: "local",
+        multiService: true,
+        composeServices: [
+          {
+            kind: "monorepo",
+            name: "orphaned-app",
+            rootDirectory: ".",
+            enabled: true,
+            everDeployed: false,
+          },
+        ],
+      },
+    );
+
+    // "warn" is not "fail" — the deploy proceeds.
+    expect(result.ok).toBe(true);
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "config",
+          label: "Service configuration",
+          status: "warn",
+        }),
+      ]),
+    );
+    expect(
+      result.checks.find((c) => c.id === "config")?.message,
+    ).toContain("orphaned-app");
+  });
+
+  it("still hard-fails a monorepo sub-app missing commands when it HAS been deployed before", async () => {
+    const result = await runPreflightChecks(
+      {
+        repoUrl: "https://github.com/acme/monorepo.git",
+        branch: "main",
+        hasBuild: true,
+        hasServer: true,
+        deployTarget: "server",
+        organizationId: "org-1",
+      } as any,
+      {
+        ctx: { userId: "user-1", organizationId: "org-1" } as any,
+        buildStrategy: "local",
+        multiService: true,
+        composeServices: [
+          {
+            kind: "monorepo",
+            name: "live-app",
+            rootDirectory: ".",
+            enabled: true,
+            everDeployed: true,
+          },
+        ],
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "config",
+          label: "Service configuration",
+          status: "fail",
+        }),
+      ]),
+    );
+  });
+
+  it("does NOT flag a never-deployed docker sub-app as a dead row (its Dockerfile owns the build, so empty commands are correct)", async () => {
+    const result = await runPreflightChecks(
+      {
+        repoUrl: "https://github.com/acme/monorepo.git",
+        branch: "main",
+        hasBuild: true,
+        hasServer: true,
+        deployTarget: "server",
+        organizationId: "org-1",
+      } as any,
+      {
+        ctx: { userId: "user-1", organizationId: "org-1" } as any,
+        buildStrategy: "local",
+        multiService: true,
+        composeServices: [
+          {
+            kind: "monorepo",
+            name: "api",
+            framework: "docker",
+            rootDirectory: "apps/api",
+            enabled: true,
+            everDeployed: false,
+          },
+        ],
+      },
+    );
+
+    // A Dockerfile sub-app is legitimately command-less → pass, not a "dead row"
+    // warning and not a hard fail.
+    expect(result.ok).toBe(true);
+    const config = result.checks.find((c) => c.id === "config");
+    expect(config?.status).toBe("pass");
+    expect(config?.message ?? "").not.toContain("api");
+  });
 });

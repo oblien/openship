@@ -66,6 +66,7 @@
     "building": "构建中",
     "deploying": "部署中",
     "partial": "部分完成",
+    "actionRequired": "需要处理",
     "rejected": "已拒绝",
     "verifying": "验证中",
     "pending": "待处理"
@@ -150,11 +151,10 @@
     "rollbackTitle": {
       "enabled": "将项目恢复到此版本（仅代码 — 数据不变）",
       "active": "这已经是当前活跃版本",
-      "pruned": "回滚产物已被清理。请改用“重新部署此提交”从源码重新构建。",
-      "notReady": "只能回滚到就绪状态的部署"
+      "pruned": "该部署既没有保留镜像，也没有可重建的提交",
+      "notReady": "只能回滚到就绪状态的部署",
+      "rebuildOnly": "通过重新构建其提交来恢复此版本（其镜像已被清理）"
     },
-    "redeploy": "重新部署此提交",
-    "redeployTitle": "从源码重新构建此提交。比回滚慢，但在产物被清理后仍然可用。",
     "pin": "固定",
     "unpin": "取消固定",
     "pinTitle": {
@@ -163,11 +163,12 @@
       "pruned": "无法固定 — 产物已被清理"
     },
     "deleteDeployment": "删除部署",
-    "confirmRollback": "回滚到此版本？\n\n此操作仅恢复应用代码。数据库和卷数据不受影响。",
+    "confirmRollback": "回滚到此版本？\n\n仅恢复应用代码。数据库与卷数据不会更改。",
     "rollbackFailed": "回滚失败",
-    "confirmRedeploy": "重新部署提交 {hash}？\n\n从源码重新构建此提交。比回滚慢（会重新执行完整构建），但即使回滚产物已被清理仍然可用。列表中将出现一次新的部署。",
-    "redeployFailed": "重新部署失败",
     "pinFailed": "固定部署失败",
-    "unpinFailed": "取消固定部署失败"
+    "unpinFailed": "取消固定部署失败",
+    "rollbackModeInstant": "即时恢复 — 复用该版本保留的镜像，无需重新构建。",
+    "rollbackModeRebuild": "重新构建 — 该版本的镜像已不在主机上，将重新构建其提交。",
+    "rollbackModeMixed": "基本即时 — {count} 个服务的镜像已丢失，将重新构建。"
   }
 }

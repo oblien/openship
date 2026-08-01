@@ -66,6 +66,7 @@
     "building": "Wird gebaut",
     "deploying": "Wird bereitgestellt",
     "partial": "Teilweise",
+    "actionRequired": "Aktion erforderlich",
     "rejected": "Abgelehnt",
     "verifying": "Wird überprüft",
     "pending": "Ausstehend"
@@ -150,11 +151,10 @@
     "rollbackTitle": {
       "enabled": "Das Projekt auf diese Version zurücksetzen (nur Code — Daten bleiben unverändert)",
       "active": "Dies ist bereits die aktive Version",
-      "pruned": "Das Rollback-Artefakt wurde bereinigt. Verwende stattdessen „Diesen Commit erneut deployen“, um aus der Quelle neu zu bauen.",
-      "notReady": "Es kann nur auf fertige Deployments zurückgesetzt werden"
+      "pruned": "Dieses Deployment hat kein aufbewahrtes Image und keinen Commit zum Neubauen",
+      "notReady": "Es kann nur auf fertige Deployments zurückgesetzt werden",
+      "rebuildOnly": "Diese Version durch Neubau ihres Commits wiederherstellen (ihr Image wurde entfernt)"
     },
-    "redeploy": "Diesen Commit erneut deployen",
-    "redeployTitle": "Genau diesen Commit aus der Quelle neu bauen. Langsamer als ein Rollback, funktioniert aber, nachdem das Artefakt bereinigt wurde.",
     "pin": "Anheften",
     "unpin": "Lösen",
     "pinTitle": {
@@ -163,11 +163,12 @@
       "pruned": "Anheften nicht möglich — das Artefakt wurde bereits bereinigt"
     },
     "deleteDeployment": "Deployment löschen",
-    "confirmRollback": "Auf diese Version zurücksetzen?\n\nDadurch wird nur der Anwendungscode wiederhergestellt. Datenbank- und Volume-Daten bleiben unverändert.",
+    "confirmRollback": "Auf diese Version zurücksetzen?\n\nStellt nur den Anwendungscode wieder her. Datenbank- und Volume-Daten bleiben unverändert.",
     "rollbackFailed": "Rollback fehlgeschlagen",
-    "confirmRedeploy": "Commit {hash} erneut deployen?\n\nBaut genau diesen Commit aus der Quelle neu. Langsamer als ein Rollback (der vollständige Build läuft erneut), funktioniert aber auch, nachdem das Rollback-Artefakt bereinigt wurde. Ein neues Deployment erscheint in der Liste.",
-    "redeployFailed": "Erneutes Deployen fehlgeschlagen",
     "pinFailed": "Deployment konnte nicht angeheftet werden",
-    "unpinFailed": "Anheftung des Deployments konnte nicht aufgehoben werden"
+    "unpinFailed": "Anheftung des Deployments konnte nicht aufgehoben werden",
+    "rollbackModeInstant": "Sofortige Wiederherstellung — nutzt das aufbewahrte Image dieser Version, kein Neubau.",
+    "rollbackModeRebuild": "Neubau — das Image dieser Version liegt nicht mehr auf dem Host, ihr Commit wird neu gebaut.",
+    "rollbackModeMixed": "Größtenteils sofort — {count} Service(s) haben ihr Image verloren und werden neu gebaut."
   }
 }

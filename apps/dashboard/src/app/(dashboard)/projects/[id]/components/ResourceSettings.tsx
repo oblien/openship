@@ -1,338 +1,320 @@
-import React, { useState, useEffect } from 'react';
-import { generateIcon } from '@/utils/icons';
-import { useToast } from '@/context/ToastContext';
+"use client";
+
+import React, { useCallback, useEffect, useState } from "react";
+import { Cpu, Infinity as InfinityIcon, Loader2, SlidersHorizontal } from "lucide-react";
+import {
+  RESOURCE_TIER_ORDER,
+  RESOURCE_TIER_SPECS,
+  formatCpuCores,
+  formatMemoryMb,
+  type HostCapacity,
+  type ResourceTier,
+} from "@repo/core";
+import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { projectsApi } from "@/lib/api";
+import { useToast } from "@/context/ToastContext";
+import { getApiErrorMessage, projectsApi } from "@/lib/api";
 
-interface ResourceTier {
-  name: string;
-  tier: 'lightweight' | 'standard' | 'performance' | 'enterprise' | 'autoscale';
-  cpu: string;
-  memory: string;
+/**
+ * Project → machine power. Editable in place.
+ *
+ * The same tier vocabulary the cloud (Oblien) picker uses, plus two things that
+ * only make sense self-hosted:
+ *
+ *   - "No limits" is a real, DEFAULT option. The operator owns the box, so the
+ *     machine is the ceiling. Openship used to silently apply the cloud free
+ *     tier (0.5 vCPU · 512 MB) to every self-hosted container, which OOM-killed
+ *     memory-hungry images while the deploy still reported ready.
+ *   - Custom is bounded by the TARGET MACHINE's probed capacity, shown inline,
+ *     instead of a hardcoded 4-core / 8 GB ceiling that made a big box
+ *     impossible to use.
+ *
+ * Cloud keeps the presets and cannot pick "no limits" — a metered workspace has
+ * to be provisioned at a concrete size. The backend enforces that too
+ * (`requiresLimit`); this component just doesn't offer the option.
+ */
+
+interface ResourcesView {
+  production?: { cpuCores?: number; memoryMb?: number; diskMb?: number } | null;
+  build?: { cpuCores?: number; memoryMb?: number; diskMb?: number } | null;
+  tier?: ResourceTier;
+  capacity?: HostCapacity;
+  requiresLimit?: boolean;
+}
+
+function SectionCard({
+  title,
+  description,
+  actions,
+  children,
+}: {
+  title: string;
   description: string;
-  icon: string;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
+      <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-500/10 text-orange-500">
+          <Cpu className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
+        </div>
+        {actions}
+      </div>
+      <div className="px-5 py-4">{children}</div>
+    </div>
+  );
 }
 
-interface ResourceSettingsProps {
-  projectId: string;
-  currentResources?: {
-    cpu_cores: number;
-    memory_mb: number;
-    tier: string;
-  };
-}
-
-const RESOURCE_TIERS: ResourceTier[] = [
-  { 
-    name: 'Lightweight', 
-    tier: 'lightweight', 
-    cpu: '0.5 vCPU', 
-    memory: '512 MB',
-    description: 'Small apps and static sites',
-    icon: 'dollar%20down-95-1658432931.png' 
-  },
-  { 
-    name: 'Standard', 
-    tier: 'standard', 
-    cpu: '1 vCPU', 
-    memory: '1 GB',
-    description: 'Most web applications',
-    icon: 'scale-95-1691989638.png' 
-  },
-  { 
-    name: 'Performance', 
-    tier: 'performance', 
-    cpu: '2 vCPU', 
-    memory: '2 GB',
-    description: 'High-traffic applications',
-    icon: 'rocket-123-1683012680.png' 
-  },
-  { 
-    name: 'Enterprise', 
-    tier: 'enterprise', 
-    cpu: '4 vCPU', 
-    memory: '4 GB',
-    description: 'Large scale production apps',
-    icon: 'server-59-1658435258.png' 
-  },
-  { 
-    name: 'Auto Scale', 
-    tier: 'autoscale', 
-    cpu: 'Dynamic', 
-    memory: 'Dynamic',
-    description: 'Scales based on demand',
-    icon: 'ai%20network-130-1686045753.png' 
-  },
-];
-
-export const ResourceSettings: React.FC<ResourceSettingsProps> = ({ 
-  projectId, 
-  currentResources 
-}) => {
-  const { showToast } = useToast();
+export const ResourceSettings: React.FC = () => {
+  const { id } = useProjectSettings();
   const { t } = useI18n();
-  const tierMeta = (tier: ResourceTier['tier']) =>
-    t.projectSettings.resources.tiers[tier as keyof typeof t.projectSettings.resources.tiers];
-  const dynamicLabel = t.projectSettings.resources.dynamic;
-  const [loading, setLoading] = useState(false);
-  const [selectedTier, setSelectedTier] = useState(currentResources?.tier || 'lightweight');
-  const [customCpu, setCustomCpu] = useState(currentResources?.cpu_cores || 0.5);
-  const [customMemory, setCustomMemory] = useState(currentResources?.memory_mb || 512);
-  const [showCustomEdit, setShowCustomEdit] = useState(false);
+  const { showToast } = useToast();
+  const r = t.projectSettings.resources;
+
+  const [view, setView] = useState<ResourcesView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<ResourceTier | null>(null);
+  const [selected, setSelected] = useState<ResourceTier>("unlimited");
+  const [customCpu, setCustomCpu] = useState("0");
+  const [customMemory, setCustomMemory] = useState("0");
+  const [showCustom, setShowCustom] = useState(false);
+
+  /** Seed every field from a server response. The custom inputs track the SAVED
+   *  values even when a preset was chosen, so opening Custom afterwards starts
+   *  from what's live rather than from whatever was last typed. */
+  const applyView = useCallback((data: ResourcesView, fallbackTier?: ResourceTier) => {
+    setView(data);
+    setSelected(data.tier ?? fallbackTier ?? "unlimited");
+    setCustomCpu(String(data.production?.cpuCores ?? 0));
+    setCustomMemory(String(data.production?.memoryMb ?? 0));
+  }, []);
+
+  const load = useCallback(async () => {
+    const res = await projectsApi.getResources(id);
+    if (res.success && res.data) applyView(res.data as ResourcesView);
+    setLoading(false);
+  }, [id, applyView]);
 
   useEffect(() => {
-    if (currentResources) {
-      setSelectedTier(currentResources.tier);
-      setCustomCpu(currentResources.cpu_cores);
-      setCustomMemory(currentResources.memory_mb);
-      
-      // If custom tier but no values set, show edit panel
-      if (currentResources.tier === 'custom' && (!currentResources.cpu_cores || currentResources.cpu_cores === 0.5) && (!currentResources.memory_mb || currentResources.memory_mb === 512)) {
-        setShowCustomEdit(true);
-      }
-    }
-  }, [currentResources]);
+    void load();
+  }, [load]);
 
-  const handleTierSelect = async (tier: ResourceTier) => {
-    if (loading || selectedTier === tier.tier) return;
-    
-    setLoading(true);
-    setShowCustomEdit(false);
-    
-    const cpuValue = tier.tier === 'autoscale' ? -1 : parseFloat(tier.cpu);
-    const memoryValue = tier.tier === 'autoscale' ? -1 : parseInt(tier.memory);
-    
-    const response = await projectsApi.setResources(projectId, {
-      tier: tier.tier,
-      cpu_cores: cpuValue,
-      memory_mb: memoryValue
+  const capacity = view?.capacity;
+  const requiresLimit = view?.requiresLimit ?? false;
+  // An unknown capacity means the probe couldn't reach the box. We still allow
+  // the edit (blocking a save over a transient SSH failure would be worse) —
+  // there's just no ceiling to display or enforce.
+  const capacityKnown = !!capacity && capacity.source !== "unknown";
+
+  const save = async (tier: ResourceTier, values?: { cpuCores: number; memoryMb: number }) => {
+    if (saving) return;
+    setSaving(tier);
+    const res = await projectsApi.updateResources(id, {
+      production: tier === "custom" ? { tier, ...values } : { tier },
     });
-
-    if (response.success) {
-      setSelectedTier(tier.tier);
-      showToast(t.projectSettings.resources.toast.updated, 'success');
+    if (res.success) {
+      applyView(res.data as ResourcesView, tier);
+      setShowCustom(false);
+      showToast(r.toast.updated, "success");
     } else {
-      showToast(response.error || t.projectSettings.resources.toast.updateFailed, 'error');
+      showToast(getApiErrorMessage(res) || r.toast.updateFailed, "error");
     }
-    setLoading(false);
+    setSaving(null);
   };
 
-  const handleCustomSave = async () => {
-    if (loading) return;
-
-    if (customCpu < 0.25 || customCpu > 4.0) {
-      showToast(t.projectSettings.resources.toast.cpuRange, 'error');
+  const saveCustom = () => {
+    const cpuCores = Number(customCpu);
+    const memoryMb = Number(customMemory);
+    if (!Number.isFinite(cpuCores) || !Number.isFinite(memoryMb) || cpuCores < 0 || memoryMb < 0) {
+      showToast(r.toast.invalidValues, "error");
       return;
     }
-
-    if (customMemory < 128 || customMemory > 8192) {
-      showToast(t.projectSettings.resources.toast.memoryRange, 'error');
-      return;
-    }
-
-    setLoading(true);
-    const response = await projectsApi.setResources(projectId, {
-      tier: 'custom',
-      cpu_cores: customCpu,
-      memory_mb: customMemory
-    });
-
-    if (response.success) {
-      setSelectedTier('custom');
-      setShowCustomEdit(false);
-      showToast(t.projectSettings.resources.toast.customSaved, 'success');
-    } else {
-      showToast(response.error || t.projectSettings.resources.toast.customSaveFailed, 'error');
-    }
-    setLoading(false);
+    void save("custom", { cpuCores, memoryMb });
   };
 
-  const formatMemory = (mb: number) => {
-    if (mb >= 1024) return `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB`;
-    return `${mb} MB`;
+  // "unlimited" leads on self-hosted because it's the default and the honest
+  // answer for owned hardware; cloud never gets the option.
+  const tiers: ResourceTier[] = requiresLimit
+    ? [...RESOURCE_TIER_ORDER, "custom"]
+    : ["unlimited", ...RESOURCE_TIER_ORDER, "custom"];
+
+  const specLabel = (tier: ResourceTier): string => {
+    if (tier === "unlimited") return r.tiers.unlimited.spec;
+    if (tier === "custom") {
+      const cpu = Number(customCpu) || 0;
+      const mem = Number(customMemory) || 0;
+      return cpu || mem ? `${formatCpuCores(cpu)} · ${formatMemoryMb(mem)}` : r.custom.notSet;
+    }
+    const spec = RESOURCE_TIER_SPECS[tier];
+    return `${formatCpuCores(spec.cpuCores)} · ${formatMemoryMb(spec.memoryMb)}`;
   };
+
+  const tierName = (tier: ResourceTier): string =>
+    tier === "custom" ? r.custom.name : r.tiers[tier as keyof typeof r.tiers].name;
+  const tierDescription = (tier: ResourceTier): string =>
+    tier === "custom" ? r.custom.description : r.tiers[tier as keyof typeof r.tiers].description;
+
+  if (loading) {
+    return (
+      <SectionCard title={r.title} description={r.description}>
+        <div className="flex items-center gap-2 py-2 text-[13px] text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          {r.loading}
+        </div>
+      </SectionCard>
+    );
+  }
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 p-6">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-5">
-        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
-          {generateIcon('cpu%20processor%203-115-1658236937.png', 24, 'hsl(var(--primary))')}
-        </div>
-        <div>
-        <h3 className="text-lg font-semibold text-foreground">{t.projectSettings.resources.title}</h3>
-          <p className="text-xs text-muted-foreground">
-            {t.projectSettings.resources.description}
-          </p>
-        </div>
-      </div>
-
-      {/* Tier Options - Grid Layout (includes Custom) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
-        {RESOURCE_TIERS.map((tier) => {
-          const isSelected = selectedTier === tier.tier;
+    <SectionCard
+      title={r.title}
+      description={r.description}
+      actions={
+        capacityKnown ? (
+          <span className="shrink-0 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+            {interpolate(r.machineCapacity, {
+              cpu: String(capacity!.cpuCores),
+              memory: formatMemoryMb(capacity!.memoryMb),
+            })}
+          </span>
+        ) : null
+      }
+    >
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {tiers.map((tier) => {
+          const isSelected = selected === tier;
+          const isSaving = saving === tier;
+          // A preset larger than the machine can't be honored — offering it
+          // would just produce a container that never gets what it asked for.
+          const overCapacity =
+            capacityKnown &&
+            tier !== "unlimited" &&
+            tier !== "custom" &&
+            (RESOURCE_TIER_SPECS[tier].memoryMb > capacity!.memoryMb ||
+              RESOURCE_TIER_SPECS[tier].cpuCores > capacity!.cpuCores);
           return (
             <button
-              key={tier.tier}
-              onClick={() => handleTierSelect(tier)}
-              disabled={loading}
-              className={`relative flex items-center gap-3 p-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              key={tier}
+              type="button"
+              disabled={!!saving || overCapacity}
+              onClick={() => {
+                if (tier === "custom") {
+                  setSelected("custom");
+                  setShowCustom(true);
+                  return;
+                }
+                void save(tier);
+              }}
+              className={`relative flex items-start gap-3 rounded-xl border-2 p-3 text-start transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                 isSelected
-                  ? 'bg-primary/10 border-2 border-primary'
-                  : 'bg-muted/60 hover:bg-muted border-2 border-transparent'
+                  ? "border-primary bg-primary/10"
+                  : "border-transparent bg-muted/60 hover:bg-muted"
               }`}
             >
-              {isSelected && (
-                <div className="absolute top-2 end-2">
-                  <div className="w-4 h-4 bg-primary/100 rounded-full flex items-center justify-center">
-                    {generateIcon('checkmark-7-1662452248.png', 12, 'white')}
-                  </div>
-                </div>
-              )}
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-primary' : 'bg-muted'}`}>
-                {generateIcon(tier.icon, 24, isSelected ? 'white' : 'rgb(0, 0, 0, 0.5)')}
+              <div
+                className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                  isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {isSaving ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : tier === "unlimited" ? (
+                  <InfinityIcon className="size-4" />
+                ) : tier === "custom" ? (
+                  <SlidersHorizontal className="size-4" />
+                ) : (
+                  <Cpu className="size-4" />
+                )}
               </div>
-              <div className="flex-1 text-start">
-                <p className={`text-sm font-semibold mb-0.5 ${isSelected ? 'text-foreground' : 'text-foreground'}`}>
-                  {tierMeta(tier.tier).name}
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-foreground">{tierName(tier)}</p>
+                <p className={`text-[11px] ${isSelected ? "text-primary" : "text-muted-foreground"}`}>
+                  {tierDescription(tier)}
                 </p>
-                <p className={`text-xs ${isSelected ? 'text-primary' : 'text-muted-foreground'}`}>
-                  {tierMeta(tier.tier).description}
+                <p className="mt-1 text-[11px] font-medium text-foreground/70">
+                  {overCapacity ? r.exceedsMachine : specLabel(tier)}
                 </p>
-                <div className="flex items-center gap-3 mt-1.5">
-                  <div className={`text-[11px] ${isSelected ? 'text-foreground/70' : 'text-muted-foreground'}`}>
-                    <span className="font-medium">{tier.tier === 'autoscale' ? dynamicLabel : tier.cpu}</span>
-                  </div>
-                  <div className="w-1 h-1 rounded-full bg-muted-foreground/30"></div>
-                  <div className={`text-[11px] ${isSelected ? 'text-foreground/70' : 'text-muted-foreground'}`}>
-                    <span className="font-medium">{tier.tier === 'autoscale' ? dynamicLabel : tier.memory}</span>
-                  </div>
-                </div>
               </div>
             </button>
           );
         })}
-
-        {/* Custom Card */}
-        <button
-          onClick={() => {
-            if (selectedTier !== 'custom') {
-              setSelectedTier('custom');
-              setShowCustomEdit(true);
-            }
-          }}
-          disabled={loading}
-          className={`relative flex items-center gap-3 p-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-            selectedTier === 'custom'
-              ? 'bg-primary/10 border-2 border-primary'
-              : 'bg-muted/60 hover:bg-muted border-2 border-transparent'
-          }`}
-        >
-          {selectedTier === 'custom' && (
-            <div className="absolute top-2 end-2 flex items-center gap-1">
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowCustomEdit(true);
-                }}
-                className="w-7 h-7 bg-primary/100 hover:bg-primary rounded-full flex items-center justify-center transition-all cursor-pointer"
-              >
-                {generateIcon('edit-1648128800.png', 14, 'white')}
-              </div>
-              <div className="w-4 h-4 bg-primary/100 rounded-full flex items-center justify-center">
-                {generateIcon('checkmark-7-1662452248.png', 12, 'white')}
-              </div>
-            </div>
-          )}
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${selectedTier === 'custom' ? 'bg-primary' : 'bg-muted'}`}>
-            {generateIcon('setting-100-1658432731.png', 24, selectedTier === 'custom' ? 'white' : 'rgb(0, 0, 0, 0.5)')}
-          </div>
-          <div className="flex-1 text-start">
-            <p className={`text-sm font-semibold mb-0.5 ${selectedTier === 'custom' ? 'text-foreground' : 'text-foreground'}`}>
-              {t.projectSettings.resources.custom.name}
-            </p>
-            <p className={`text-xs ${selectedTier === 'custom' ? 'text-primary' : 'text-muted-foreground'}`}>
-              {t.projectSettings.resources.custom.description}
-            </p>
-            {selectedTier === 'custom' ? (
-              <div className="flex items-center gap-3 mt-1.5">
-                <div className={`text-[11px] ${selectedTier === 'custom' ? 'text-foreground/70' : 'text-muted-foreground'}`}>
-                  <span className="font-medium">{interpolate(t.projectSettings.resources.cpuValue, { cpu: String(customCpu) })}</span>
-                </div>
-                <div className="w-1 h-1 rounded-full bg-muted-foreground/30"></div>
-                <div className={`text-[11px] ${selectedTier === 'custom' ? 'text-foreground/70' : 'text-muted-foreground'}`}>
-                  <span className="font-medium">{formatMemory(customMemory)}</span>
-                </div>
-              </div>
-            ) : (
-              <div className={`text-xs mt-1.5 ${selectedTier === 'custom' ? 'text-foreground/70' : 'text-muted-foreground'}`}>
-                {t.projectSettings.resources.custom.clickToConfigure}
-              </div>
-            )}
-          </div>
-        </button>
       </div>
 
-      {/* Custom Edit Panel */}
-      {showCustomEdit && selectedTier === 'custom' && (
-        <div className="mt-3 p-4 bg-primary/10 rounded-xl border border-primary/20 space-y-4">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-semibold text-foreground">{t.projectSettings.resources.customPanel.title}</h4>
-            <button
-              onClick={() => setShowCustomEdit(false)}
-              className="w-6 h-6 rounded-md flex items-center justify-center hover:bg-primary/10 transition-all"
-            >
-              {generateIcon('x-29-1658234823.png', 14, 'hsl(var(--primary))')}
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-foreground/70 mb-2 block">{t.projectSettings.resources.customPanel.cpuCores}</label>
+      {showCustom && selected === "custom" && (
+        <div className="mt-3 space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <p className="text-[12px] text-muted-foreground">
+            {capacityKnown
+              ? interpolate(r.customPanel.boundedBy, {
+                  cpu: String(capacity!.cpuCores),
+                  memory: formatMemoryMb(capacity!.memoryMb),
+                })
+              : r.customPanel.capacityUnknown}
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-foreground/70">
+                {r.customPanel.cpuCores}
+              </span>
               <input
                 type="number"
-                min="0.25"
-                max="4.00"
+                min="0"
+                max={capacityKnown ? capacity!.cpuCores : undefined}
                 step="0.25"
                 value={customCpu}
-                onChange={(e) => setCustomCpu(parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-2 bg-card border border-primary/20 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                placeholder="0.50"
+                onChange={(e) => setCustomCpu(e.target.value)}
+                className="w-full rounded-lg border border-border/60 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
-              <p className="text-xs text-primary/60 mt-1">{t.projectSettings.resources.customPanel.cpuRange}</p>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-foreground/70 mb-2 block">{t.projectSettings.resources.customPanel.memory}</label>
+              <span className="text-[11px] text-muted-foreground">{r.customPanel.zeroMeansNoLimit}</span>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-foreground/70">
+                {r.customPanel.memory}
+              </span>
               <input
                 type="number"
-                min="128"
-                max="8192"
+                min="0"
+                max={capacityKnown ? capacity!.memoryMb : undefined}
                 step="128"
                 value={customMemory}
-                onChange={(e) => setCustomMemory(parseInt(e.target.value) || 0)}
-                className="w-full px-3 py-2 bg-card border border-primary/20 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                placeholder="512"
+                onChange={(e) => setCustomMemory(e.target.value)}
+                className="w-full rounded-lg border border-border/60 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
-              <p className="text-xs text-primary/60 mt-1">{t.projectSettings.resources.customPanel.memoryRange}</p>
-            </div>
+              <span className="text-[11px] text-muted-foreground">{r.customPanel.zeroMeansNoLimit}</span>
+            </label>
           </div>
           <div className="flex gap-3">
             <button
-              onClick={() => setShowCustomEdit(false)}
-              disabled={loading}
-              className="flex-1 px-4 py-2.5 bg-card border border-primary/20 hover:bg-primary/10 text-foreground font-medium text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button"
+              onClick={() => {
+                setShowCustom(false);
+                setSelected(view?.tier ?? "unlimited");
+              }}
+              disabled={!!saving}
+              className="flex-1 rounded-lg border border-border/60 bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
             >
-              {t.projectSettings.resources.customPanel.cancel}
+              {r.customPanel.cancel}
             </button>
             <button
-              onClick={handleCustomSave}
-              disabled={loading}
-              className="flex-1 px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button"
+              onClick={saveCustom}
+              disabled={!!saving}
+              className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
-              {loading ? t.projectSettings.resources.customPanel.saving : t.projectSettings.resources.customPanel.save}
+              {saving ? r.customPanel.saving : r.customPanel.save}
             </button>
           </div>
         </div>
       )}
-    </div>
+
+      {/* A cap only takes effect when the container is recreated. Saying so
+          avoids the "I changed it and nothing happened" reading — which is
+          exactly how the frozen-snapshot bug presented. */}
+      <p className="mt-3 text-[11px] text-muted-foreground">{r.appliesOnNextDeploy}</p>
+    </SectionCard>
   );
 };

@@ -66,6 +66,7 @@
     "building": "Derleniyor",
     "deploying": "Dağıtılıyor",
     "partial": "Kısmi",
+    "actionRequired": "İşlem gerekiyor",
     "rejected": "Reddedildi",
     "verifying": "Doğrulanıyor",
     "pending": "Beklemede"
@@ -150,11 +151,10 @@
     "rollbackTitle": {
       "enabled": "Projeyi bu sürüme geri yükle (yalnızca kod — veriler değişmez)",
       "active": "Bu zaten aktif olan sürümdür",
-      "pruned": "Geri alma arşivi temizlenmiş. Kaynaktan tekrar derlemek için 'Bu commit'i yeniden dağıt' seçeneğini kullanın.",
-      "notReady": "Yalnızca hazır durumdaki dağıtımlara geri dönülebilir"
+      "pruned": "Bu dağıtımın saklanan imajı ve yeniden derlenecek commit'i yok",
+      "notReady": "Yalnızca hazır durumdaki dağıtımlara geri dönülebilir",
+      "rebuildOnly": "Bu sürümü commit'ini yeniden derleyerek geri yükle (imajı silinmiş)"
     },
-    "redeploy": "Bu commit'i yeniden dağıt",
-    "redeployTitle": "Bu commit'i kaynaktan tekrar derler. Geri almadan daha yavaştır ancak arşiv temizlendikten sonra da çalışır.",
     "pin": "Sabitle",
     "unpin": "Sabitlemeyi Kaldır",
     "pinTitle": {
@@ -163,11 +163,12 @@
       "pruned": "Sabitlenemiyor — arşiv zaten temizlenmiş"
     },
     "deleteDeployment": "Dağıtımı Sil",
-    "confirmRollback": "Bu sürüme geri dönülsün mü?\n\nBu işlem yalnızca uygulama kodunu geri alır. Veritabanı ve kalıcı depolama birimi verileri değişmez.",
+    "confirmRollback": "Bu sürüme geri dönülsün mü?\n\nYalnızca uygulama kodu geri yüklenir. Veritabanı ve birim verileri değişmez.",
     "rollbackFailed": "Geri alma başarısız oldu",
-    "confirmRedeploy": "{hash} commit'i yeniden dağıtılsın mı?\n\nBu commit kaynaktan tekrar derlenir. Geri almaya göre daha yavaştır (tam derleme tekrar çalışır) ancak geri alma arşivi silinmiş olsa bile çalışır. Listede yeni bir dağıtım görünecektir.",
-    "redeployFailed": "Yeniden dağıtım başarısız oldu",
     "pinFailed": "Dağıtım sabitlenemedi",
-    "unpinFailed": "Dağıtım sabitlemesi kaldırılamadı"
+    "unpinFailed": "Dağıtım sabitlemesi kaldırılamadı",
+    "rollbackModeInstant": "Anında geri yükleme — bu sürümün saklanan imajı kullanılır, yeniden derleme yok.",
+    "rollbackModeRebuild": "Yeniden derleme — bu sürümün imajı sunucuda yok, commit'i tekrar derlenecek.",
+    "rollbackModeMixed": "Çoğunlukla anında — {count} servis imajını yitirdi ve yeniden derlenecek."
   }
 }

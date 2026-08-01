@@ -94,6 +94,15 @@ function validateEmail(email: string): void {
   }
 }
 
+/** Trim + lowercase an address, then validate it. Returns the normalized form. */
+function normalizeEmail(email: string): string {
+  const e = email.trim().toLowerCase();
+  if (!EMAIL_RE.test(e) || e.length > 255) {
+    throw new Error(`Invalid email: ${email}`);
+  }
+  return e;
+}
+
 function validateLocalPart(local: string): void {
   if (!LOCAL_PART_RE.test(local) || local.length === 0 || local.length > 64) {
     throw new Error(`Invalid local-part: ${local}`);
@@ -140,10 +149,10 @@ export async function listMailboxes(
 }
 
 export async function getMailbox(serverId: string, email: string): Promise<MailboxRow | null> {
-  validateEmail(email);
+  const username = normalizeEmail(email);
   return queryOne<MailboxRow>(
     serverId,
-    `SELECT${SELECT_COLUMNS} FROM mailbox WHERE username = ${q(email.toLowerCase())}`,
+    `SELECT${SELECT_COLUMNS} FROM mailbox WHERE username = ${q(username)}`,
   );
 }
 
@@ -225,8 +234,7 @@ export async function updateMailbox(
   email: string,
   patch: UpdateMailboxInput,
 ): Promise<MailboxRow> {
-  validateEmail(email);
-  const username = email.toLowerCase();
+  const username = normalizeEmail(email);
 
   const existing = await getMailbox(serverId, username);
   if (!existing) throw new MailboxNotFoundError(username);
@@ -289,8 +297,7 @@ export async function softDeleteMailbox(
   email: string,
   adminUsername: string,
 ): Promise<void> {
-  validateEmail(email);
-  const username = email.toLowerCase();
+  const username = normalizeEmail(email);
   const existing = await getMailbox(serverId, username);
   if (!existing) throw new MailboxNotFoundError(username);
 
@@ -320,8 +327,7 @@ export async function softDeleteMailbox(
  * additionally guards against any path outside /var/vmail/.
  */
 export async function hardDeleteMailbox(serverId: string, email: string): Promise<void> {
-  validateEmail(email);
-  const username = email.toLowerCase();
+  const username = normalizeEmail(email);
   const existing = await getMailbox(serverId, username);
   if (!existing) throw new MailboxNotFoundError(username);
 

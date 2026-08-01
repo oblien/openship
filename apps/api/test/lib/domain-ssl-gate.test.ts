@@ -194,24 +194,35 @@ describe("manageDomainSsl — refuses to issue what it doesn't own", () => {
     expect(res.issuer).toBe("Operator");
   });
 
-  it("gates the www leg on the www row's OWN flags", async () => {
-    // A bare domain we issue for can have an externally-terminated www.
-    domain("example.com");
-    domain("www.example.com", { externalIngress: true });
-
-    await manageDomainSsl("example.com", { action: "provision", includeWww: true });
-
-    expect(h.provisionCert).toHaveBeenCalledTimes(1);
-    expect(h.provisionCert).toHaveBeenCalledWith("example.com");
-  });
-
-  it("still issues for a www that is ours", async () => {
+  // `includeWww` is gone: the sibling used to be issued INSIDE this call, and
+  // unguarded — so a www that wasn't pointed here yet threw after the apex had
+  // already succeeded, and the caller reported the apex as broken. `www.<apex>` is
+  // its own row with its own certificate; callers ask twice and report both.
+  it("touches EXACTLY ONE hostname, never the www sibling", async () => {
     domain("example.com");
     domain("www.example.com");
 
-    await manageDomainSsl("example.com", { action: "provision", includeWww: true });
+    await manageDomainSsl("example.com", { action: "provision" });
 
-    expect(h.provisionCert.mock.calls.map(([d]) => d)).toEqual(["example.com", "www.example.com"]);
+    expect(h.provisionCert.mock.calls.map(([d]) => d)).toEqual(["example.com"]);
+  });
+
+  it("issues for the www sibling only when IT is the domain asked for", async () => {
+    domain("example.com");
+    domain("www.example.com");
+
+    await manageDomainSsl("www.example.com", { action: "provision" });
+
+    expect(h.provisionCert.mock.calls.map(([d]) => d)).toEqual(["www.example.com"]);
+  });
+
+  it("gates a www row on its OWN flags — an external-ingress www issues nothing", async () => {
+    domain("www.example.com", { externalIngress: true });
+
+    const res = await manageDomainSsl("www.example.com", { action: "provision" });
+
+    expect(h.provisionCert).not.toHaveBeenCalled();
+    expect(res.reason).toBe("not_local");
   });
 });
 

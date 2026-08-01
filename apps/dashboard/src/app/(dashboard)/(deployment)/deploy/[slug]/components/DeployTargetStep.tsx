@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Server, Cloud, Cpu, ArrowRight, Pencil, ChevronDown, ChevronUp, CheckCircle2, Loader2, Plus, Settings2, Zap, Globe, GitBranch, Search, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, Cloud, Cpu, GitBranch, Globe, Loader2, Pencil, Plus, RotateCcw, Search, Server, Settings2, ShieldAlert, ShieldCheck, Zap } from "lucide-react";
+import {
+  RESOURCE_TIER_ORDER,
+  RESOURCE_TIER_SPECS,
+  formatCpuCores,
+  formatMemoryMb,
+} from "@repo/core";
 import { BlurIp } from "@/components/BlurIp";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment } from "@/context/deployment/types";
@@ -17,6 +23,7 @@ import type { DeployTarget, BuildStrategy, CloneStrategy, RuntimeMode } from "@/
 import { createPersistedValue } from "@/lib/persisted-value";
 import { AddServerModal } from "./AddServerModal";
 import ServerRuntimePicker from "./ServerRuntimePicker";
+import { RollbackBackupPanel } from "./RollbackBackupPanel";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 // ─── Option card ─────────────────────────────────────────────────────────────
@@ -274,6 +281,12 @@ interface CompactSummaryProps {
    *  never show the Static chip even when the project-level hasServer/framework
    *  is unset (those live per-service). */
   isServices?: boolean;
+  /** Retention shown as its own chip. Rollback is configured inside the collapsed
+   *  Advanced panel, so without this the summary bar gave no hint that retention
+   *  exists at all — an operator could ship without ever learning they get
+   *  restorable versions. `null`/undefined window = the auto (disk-sized) value. */
+  rollbackWindow?: number | null;
+  rollbackStrategy?: "git" | "snapshot";
   onEdit: () => void;
 }
 
@@ -286,9 +299,12 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
   hasServer = true,
   runtimeMode,
   isServices = false,
+  rollbackWindow,
+  rollbackStrategy,
   onEdit,
 }) => {
   const { t } = useI18n();
+  const { selfHosted } = usePlatform();
   const targetLabels: Record<DeployTarget, { label: string; icon: React.ReactNode }> = {
     local: { label: t.deploy.summary.targetLocal, icon: <Cpu className="size-3.5" /> },
     server: { label: t.deploy.summary.targetServer, icon: <Server className="size-3.5" /> },
@@ -343,42 +359,69 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
     // edge-served files — regardless of the project-level hasServer/framework
     // (which are unset for compose). Show the tier on cloud, else Sandboxed.
     deployTarget === "cloud" && cloudResourceTier ? (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0">
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
         <Zap className="size-3" />
         <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
       </span>
     ) : (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-success-bg text-[11px] font-medium text-success shrink-0">
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
         <ShieldCheck className="size-3" />
         {t.deploy.summary.runtimeSandboxed}
       </span>
     )
   ) : !hasServer ? (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-info-bg text-[11px] font-medium text-info shrink-0">
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
       <Globe className="size-3" />
       {t.deploy.summary.runtimeStatic}
     </span>
   ) : deployTarget === "cloud" ? (
     cloudResourceTier ? (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0">
+      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
         <Zap className="size-3" />
         <span>{tierLabels[cloudResourceTier] ?? cloudResourceTier}</span>
       </span>
     ) : null
   ) : deployTarget === "server" && runtimeMode === "bare" ? (
     <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-warning-bg text-[11px] font-medium text-warning shrink-0"
+      className="inline-flex items-center gap-1 text-[11px] font-medium text-warning shrink-0"
       title={t.deploy.summary.runtimeDirectHint}
     >
       <ShieldAlert className="size-3" />
       {t.deploy.summary.runtimeDirectWarning}
     </span>
   ) : deployTarget === "server" && runtimeMode === "docker" ? (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-success-bg text-[11px] font-medium text-success shrink-0">
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0">
       <ShieldCheck className="size-3" />
       {t.deploy.summary.runtimeSandboxed}
     </span>
   ) : null;
+
+  // Retention lives inside the collapsed Advanced panel, so surface it here as
+  // its own chip — otherwise nothing on this bar hints that rollback exists.
+  //
+  // Gated on `selfHosted` for the same reason the Advanced panel is: on a cloud
+  // instance that panel isn't rendered at all, so a chip pointing at it would
+  // advertise a control the operator can't reach.
+  const rollbackChip = !selfHosted ? null : (
+    <span
+      className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground shrink-0"
+      title={
+        rollbackStrategy === "snapshot"
+          ? t.deploy.summary.rollbackSnapshotHint
+          : t.deploy.summary.rollbackGitHint
+      }
+    >
+      <RotateCcw className="size-3" />
+      {rollbackWindow == null
+        ? t.deploy.summary.rollbackAuto
+        : interpolate(
+            rollbackWindow === 1
+              ? t.deploy.summary.rollbackOne
+              : t.deploy.summary.rollbackOther,
+            { count: String(rollbackWindow) },
+          )}
+    </span>
+  );
 
   return (
     <button
@@ -421,6 +464,7 @@ export const DeployTargetSummary: React.FC<CompactSummaryProps> = ({
         )}
       </div>
       {runtimeChip}
+      {rollbackChip}
       <Pencil className="size-3.5 text-muted-foreground transition-opacity" />
     </button>
   );
@@ -591,6 +635,10 @@ export function useSeedDeployTarget(targets: ResolvedTargets, enabled: boolean):
 // ─── Main step ───────────────────────────────────────────────────────────────
 
 interface DeployTargetStepProps {
+  /** Existing project this deploy edits, when there is one. Enables the rollback
+   *  + backup controls in the Advanced panel (there's nothing to persist to for a
+   *  project that hasn't been created yet). */
+  projectId?: string | null;
   targets: ResolvedTargets;
   onContinue: () => void;
   /**
@@ -603,27 +651,31 @@ interface DeployTargetStepProps {
 }
 
 // ─── Cloud resource tiers ────────────────────────────────────────────────────
-// Placeholder runtime shapes for the Openship Cloud power picker. The
-// numbers here are the UX surface only — the backend owns the
-// authoritative cpu/mem/disk values per tier and translates them at
-// provision time. Billing is credits-based (no $/mo shown here).
+// DERIVED from the one tier table in @repo/core, which the backend provisioner
+// (cloud-resources.ts) and the self-hosted Machine Power card also read. These
+// used to be hand-written display strings next to a comment admitting "the
+// backend owns the authoritative values" — i.e. a copy that could silently drift
+// from what a tier actually provisions. Label + bestFor are still looked up from
+// the dictionary by `id` inside CloudPowerPicker.
 type CloudResourceTier = NonNullable<DeploymentConfig["cloudResourceTier"]>;
 
-// Specs are technical values (kept verbatim); label + bestFor are looked up
-// from the dictionary by `id` inside CloudPowerPicker.
 const CLOUD_RESOURCE_TIERS: Array<{
     id: Exclude<CloudResourceTier, "custom">;
     cpu: string;
     ram: string;
     disk: string;
-}> = [
-    { id: "micro", cpu: "0.25 vCPU", ram: "256 MB", disk: "4 GB" },
-    { id: "low", cpu: "0.5 vCPU", ram: "512 MB", disk: "8 GB" },
-    { id: "medium", cpu: "1 vCPU", ram: "1 GB", disk: "16 GB" },
-    { id: "high", cpu: "2 vCPU", ram: "2 GB", disk: "32 GB" },
-];
+}> = RESOURCE_TIER_ORDER.map((id) => {
+    const spec = RESOURCE_TIER_SPECS[id];
+    return {
+        id: id as Exclude<CloudResourceTier, "custom">,
+        cpu: formatCpuCores(spec.cpuCores),
+        ram: formatMemoryMb(spec.memoryMb),
+        disk: formatMemoryMb(spec.diskMb),
+    };
+});
 
-const CUSTOM_DEFAULTS = { cpuCores: 1, memoryMb: 1024, diskMb: 16384 };
+/** Custom starts from the middle preset rather than a second literal. */
+const CUSTOM_DEFAULTS = { ...RESOURCE_TIER_SPECS.medium };
 
 // ─── Custom-values modal ─────────────────────────────────────────────────────
 // Rendered via showModal() so the inputs get proper breathing room
@@ -910,7 +962,7 @@ const CloudPowerPicker: React.FC = () => {
     );
 };
 
-const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue, autoSkipAllowed = true }) => {
+const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue, autoSkipAllowed = true, projectId }) => {
   const { config, updateConfig } = useDeployment();
   const { requireCloud } = useCloud();
   const { selfHosted, deployMode } = usePlatform();
@@ -1331,14 +1383,6 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
     if (config.cloneStrategy == null) updateConfig({ cloneStrategy: "server" });
   }, [config.projectId, showCloneStrategy, config.cloneStrategy, updateConfig]);
 
-  // Advanced-panel summary line (build location). Clone location has its own
-  // right-panel picker, so it isn't summarized here.
-  const advancedSummary = showBuildStrategy
-    ? interpolate(ts.build.advancedSummary, {
-        action: config.options.hasBuild ? ts.build.actionBuild : ts.build.actionPrepare,
-        location: visibleBuildOptions.find((o) => o.value === config.buildStrategy)?.label ?? "—",
-      })
-    : ts.build.options;
 
   const hasAnyDeployTarget = deployTargetOptions.length > 0;
   const canContinue = ready && (
@@ -1457,6 +1501,21 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
   // runtime detail expands into the space only when asked for. Cloud keeps its own
   // right-hand power panel; single-column onboarding is untouched.
   const serverLayout = showServerAdvanced;
+
+  // Advanced-panel summary line. Says WHAT'S INSIDE, not just the build location:
+  // a collapsed panel labelled only "Build on Remote" hides the rollback window
+  // and the clone location, so there's no way to know they're in there.
+  const advancedSections = [
+    showRuntimeIsolation ? t.deploy.runtime.heading : null,
+    showBuildStrategy
+      ? interpolate(ts.build.advancedSummary, {
+          action: config.options.hasBuild ? ts.build.actionBuild : ts.build.actionPrepare,
+          location: visibleBuildOptions.find((o) => o.value === config.buildStrategy)?.label ?? "—",
+        })
+      : null,
+    ts.rollbackTitle,
+    showCloneStrategy ? ts.clone.heading : null,
+  ].filter(Boolean) as string[];
 
   // Action controls (extracted so they can live in the left column on a single-
   // column layout, or move into the right column — above the Advanced/Cloud
@@ -1692,7 +1751,20 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-foreground">{ts.build.advanced}</p>
-                    <p className="truncate text-xs text-muted-foreground">{advancedSummary}</p>
+                    {/* Each section as its own wrapping chip, NOT one joined line.
+                        Joined + `truncate` in this narrow column cut the list off
+                        mid-word ("Rollback & backups · Cl…"), so the panel hid the
+                        very sections the summary exists to advertise. */}
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {advancedSections.map((section) => (
+                        <span
+                          key={section}
+                          className="rounded-md bg-muted/50 px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground"
+                        >
+                          {section}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 {advancedOpen ? (
@@ -1749,6 +1821,17 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ targets, onContinue
                       </div>
                     </div>
                   )}
+
+                  {/* Rollback window + backup summary for the chosen target. The
+                      same retention controls the project's Git settings show. */}
+                  <RollbackBackupPanel
+                    projectId={projectId}
+                    enabled={advancedOpen}
+                    // A static project (nothing runs as a process) retains built
+                    // FILES, not images — the same distinction the "Static ·
+                    // edge-served" chip on the summary makes.
+                    artifactKind={!config.options.hasServer && !isServiceDeployment ? "files" : "image"}
+                  />
 
                   {/* Clone location — docker/compose server deploys (sandboxed). */}
                   {showCloneStrategy && (

@@ -42,6 +42,7 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
     framework: { type: 'string (enum)', description: 'Stack slug — nextjs, vite, django, go, docker, …. Overrides detection.' },
     packageManager: { type: 'string (enum)', description: 'npm, yarn, pnpm, bun, go, cargo, pip, poetry, pipenv, uv, bundler, composer, maven, gradle, dotnet, mix.' },
     rootDirectory: { type: 'string', description: 'App directory relative to the repo root (e.g. "./", "apps/web").' },
+    composePath: { type: 'string', description: 'Compose file kept outside the detected root — the file ("deploy/stack.yml") or the folder holding it ("deploy/docker-compose"). Makes this a compose deploy.' },
     installCommand: { type: 'string', description: 'Command that installs dependencies.' },
     buildCommand: { type: 'string', description: 'Command that builds the app.' },
     startCommand: { type: 'string', description: 'Command that starts the server in production.' },
@@ -58,8 +59,34 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
     runtime: { type: '"bare" | "docker"', description: 'Runtime isolation for a single app. Services/docker projects are always "docker".' },
     productionMode: { type: '"host" | "static" | "standalone"', description: '"static" ⇒ served as files, no server.' },
     port: { type: 'integer', description: 'Port the server listens on (1–65535).' },
+    volumes: { type: 'string[]', description: 'Paths kept across deploys. Omit to inherit the framework defaults; [] turns persistence off.' },
   }}
 />
+
+## Persistent storage
+
+Everything a container writes is discarded when the next version replaces it. `volumes`
+names the paths to keep.
+
+A bare path is relative to the app; full compose syntax works too, so you can point a
+mount at a specific volume name or a host directory:
+
+```json
+{
+  "volumes": ["storage", "uploads:/app/public/uploads", "/srv/data:/app/var"]
+}
+```
+
+Omit the field to inherit the framework's own defaults (a Laravel app keeps `storage/`
+with no configuration). Declare `[]` to turn persistence off entirely — that is
+different from omitting it.
+
+Named volumes are scoped per project, so two projects that both declare `storage` never
+share one. On a bare (non-container) deploy the same paths are kept outside the release
+directory and symlinked in. Openship Cloud has no volume primitive: a declared mount is
+reported and skipped there, so use object storage for uploads instead.
+
+Compose services declare their own mounts under [`services[].volumes`](#services).
 
 ## Environment variables
 
@@ -109,22 +136,47 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
 
 ## Resources
 
-Cloud sizing — a named tier, **or** explicit values (which become the `custom` tier). Ignored on
-self-hosted instances. See [Sleep mode & resources](/docs/guides/sleep-mode-resources).
+CPU/memory limits for the project's containers — a named tier, **or** explicit values (which become
+the `custom` tier). See [Sleep mode & resources](/docs/guides/sleep-mode-resources).
+
+<Callout title="Self-hosted defaults to no limits">
+On a self-hosted instance the default is **`unlimited`** — the machine is the ceiling, because it's
+your hardware. Set a tier or explicit values only when you deliberately want to cap a container.
+A non-zero value is validated against the **target machine's real capacity**, so a 64 GB box can
+hand a container 64 GB.
+
+On Openship Cloud a workspace is metered and must be sized, so `unlimited` isn't available there and
+an omitted value falls back to the `low` tier.
+</Callout>
 
 <TypeTable
   type={{
-    tier: { type: '"micro" | "low" | "medium" | "high"', description: 'Named sizing tier.' },
-    cpuCores: { type: 'number', description: 'Fractional vCPU cores (0.25–4).' },
-    memoryMb: { type: 'integer', description: 'RAM in MB (128–8192).' },
-    diskMb: { type: 'integer', description: 'Disk in MB (64–204800).' },
+    tier: { type: '"unlimited" | "micro" | "low" | "medium" | "high"', description: 'Named sizing tier. "unlimited" = no caps (self-hosted only).' },
+    cpuCores: { type: 'number', description: 'Fractional vCPU cores. 0 = no limit.' },
+    memoryMb: { type: 'integer', description: 'RAM in MB. 0 = no limit.' },
+    diskMb: { type: 'integer', description: 'Disk in MB (cloud workspaces only). 0 = no limit.' },
   }}
 />
+
+```json
+{
+  "resources": { "cpuCores": 4, "memoryMb": 8192 }
+}
+```
 
 ## Services (compose)
 
 Declaring `services` makes the project a multi-service (Docker) project — see
 [Compose / multi-service](/docs/guides/compose-multi-service). Each entry requires a `name`.
+
+Already have a compose file? Don't re-declare it here — point `composePath` at it and leave
+`services` out. That works for a compose file anywhere in the repo (`deploy/docker-compose/`),
+under any filename (`stack.yml`), and keeps the file the single source of truth: its services are
+re-read on every deploy, and `build:` contexts resolve relative to it, exactly as compose does.
+
+```json
+{ "composePath": "deploy/docker-compose/docker-compose.yml" }
+```
 
 ```json
 {
@@ -152,8 +204,13 @@ Declaring `services` makes the project a multi-service (Docker) project — see
     exposedPort: { type: 'string', description: 'Which container port is exposed.' },
     domain: { type: 'string', description: 'Public hostname for this service.' },
     healthcheck: { type: 'object', description: '{ test, interval, timeout, retries, startPeriod, disable }.' },
+    resources: { type: 'object', description: 'Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits.' },
   }}
 />
+
+A compose file's own limits are honored too — Openship reads `mem_limit` / `cpus` and
+`deploy.resources.limits.{memory,cpus}` off each service and applies them over the project-wide
+setting.
 
 ## Monorepo
 
@@ -195,6 +252,7 @@ dashboard for now.
 |---|---|
 | `framework`, `packageManager`, `*Command`, `outputDirectory`, `buildImage`, `productionPaths`, `rootDirectory` | Build settings |
 | `port`, `productionMode`, `runtime` | Runtime settings (`hasServer`, runtime isolation) |
+| `volumes` | Configuration → Persistent storage |
 | `env` | Environment variables (seeded as editable rows) |
 | `domains` | Public endpoints / custom domains |
 | `routes` | Reverse-proxy routing (`routingConfig`) |

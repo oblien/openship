@@ -12,6 +12,30 @@ export interface BrowseResult {
   directories: BrowseEntry[];
 }
 
+/**
+ * A vhost the edge serves with no Openship record behind it.
+ *
+ * `static` is the case that matters: it keeps returning 200 with a removed
+ * project's built files. A dead `proxy` vhost 502s and announces itself.
+ */
+export interface UntrackedEdgeSite {
+  hostname: string;
+  hostnames: string[];
+  kind: "proxy" | "static";
+  /** Static docroot, or proxy upstream. */
+  target: string;
+  ssl: boolean;
+  source?: string;
+}
+
+export interface EdgeOrphanScan {
+  /** False = could not compare (no edge / foreign proxy). Not the same as zero orphans. */
+  scanned: boolean;
+  reason?: string;
+  orphans: UntrackedEdgeSite[];
+  knownCount: number;
+}
+
 export interface InstanceSettings {
   configured: boolean;
   authMode?: "none" | "cloud" | "local";
@@ -267,6 +291,22 @@ export interface TunnelInfo {
 }
 
 export const systemApi = {
+  /**
+   * Vhosts the local edge serves that Openship no longer tracks.
+   *
+   * `scanned: false` is NOT "all clear" — it means we couldn't compare (no edge,
+   * or a foreign proxy). Render the reason, never an empty success state.
+   */
+  listUntrackedEdgeSites: () =>
+    api.get<{ data: EdgeOrphanScan }>(endpoints.system.edgeUntracked),
+
+  /** Stop serving ONE untracked hostname. Owner-only; refuses anything still tracked. */
+  removeUntrackedEdgeSite: (hostname: string) =>
+    api.post<{ data: { removed: boolean; hostname: string } }>(
+      endpoints.system.edgeUntrackedRemove,
+      { hostname },
+    ),
+
   /** List child directories at a given path (backend browse) */
   browse: (path?: string) =>
     api.get<BrowseResult>(endpoints.system.browse, {

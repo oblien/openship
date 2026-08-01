@@ -280,6 +280,9 @@
     "success": "Encaminhamento do domínio gratuito sincronizado.",
     "failed": "Não foi possível sincronizar o encaminhamento do domínio gratuito."
   },
+  "deployBlocked": {
+    "redeploy": "Reimplementar"
+  },
   "redeploy": {
     "deployStartedLong": "Implementação iniciada — está a demorar mais do que o habitual, a abrir as implementações.",
     "deployingTitle": "A implementar",

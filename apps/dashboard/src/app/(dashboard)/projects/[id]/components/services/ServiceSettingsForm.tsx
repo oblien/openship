@@ -4,12 +4,14 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { useI18n } from "@/components/i18n-provider";
+import ReadinessSection from "@/components/project-settings/ReadinessSection";
 import {
   serviceKind,
   type Service,
   type ServiceInput,
-  type ComposeAdvanced,
+  type ComposeAdvancedPatch,
   type ComposeHealthcheck,
+  type OpenshipReadiness,
 } from "@/lib/api/services";
 
 /**
@@ -53,6 +55,9 @@ export function ServiceSettingsForm({ service, onSubmit }: ServiceSettingsFormPr
   const [hcTimeout, setHcTimeout] = useState("");
   const [hcRetries, setHcRetries] = useState("");
   const [hcStartPeriod, setHcStartPeriod] = useState("");
+  /** Per-service readiness gate. undefined = inherit the project's (which is
+   *  itself off by default). */
+  const [readiness, setReadiness] = useState<OpenshipReadiness | undefined>(undefined);
   const [enabled, setEnabled] = useState(true);
   const [rootDirectory, setRootDirectory] = useState("");
   const [framework, setFramework] = useState("");
@@ -84,6 +89,7 @@ export function ServiceSettingsForm({ service, onSubmit }: ServiceSettingsFormPr
     setHcTimeout(hc?.timeout ?? "");
     setHcRetries(hc?.retries != null ? String(hc.retries) : "");
     setHcStartPeriod(hc?.startPeriod ?? "");
+    setReadiness(service.advanced?.readiness);
     setEnabled(service.enabled ?? true);
     setRootDirectory(service.rootDirectory ?? "");
     setFramework(service.framework ?? "");
@@ -131,16 +137,26 @@ export function ServiceSettingsForm({ service, onSubmit }: ServiceSettingsFormPr
     setSaving(true);
     setError(null);
 
-    const buildAdvanced = (): ComposeAdvanced => {
+    /**
+     * Only the two keys this form owns. `advanced` is MERGED server-side, so the
+     * keys we don't mention (`files` from an app template, per-service `resources`)
+     * are preserved without being echoed back — and an explicit `null` is how we
+     * say "the user cleared this one".
+     */
+    const buildAdvanced = (): ComposeAdvancedPatch => {
       const test = hcTest.trim();
-      if (!test) return {};
-      const hc: ComposeHealthcheck = { test };
-      if (hcInterval.trim()) hc.interval = hcInterval.trim();
-      if (hcTimeout.trim()) hc.timeout = hcTimeout.trim();
-      if (hcStartPeriod.trim()) hc.startPeriod = hcStartPeriod.trim();
-      const retries = Number(hcRetries);
-      if (hcRetries.trim() && Number.isInteger(retries) && retries >= 0) hc.retries = retries;
-      return { healthcheck: hc };
+      let healthcheck: ComposeHealthcheck | null = null;
+      if (test) {
+        healthcheck = { test };
+        if (hcInterval.trim()) healthcheck.interval = hcInterval.trim();
+        if (hcTimeout.trim()) healthcheck.timeout = hcTimeout.trim();
+        if (hcStartPeriod.trim()) healthcheck.startPeriod = hcStartPeriod.trim();
+        const retries = Number(hcRetries);
+        if (hcRetries.trim() && Number.isInteger(retries) && retries >= 0) {
+          healthcheck.retries = retries;
+        }
+      }
+      return { healthcheck, readiness: readiness ?? null };
     };
 
     // Environment is intentionally omitted — it's owned by the Env tab, so this
@@ -433,6 +449,12 @@ export function ServiceSettingsForm({ service, onSubmit }: ServiceSettingsFormPr
             )}
           </Field>
         )}
+
+        {/* Deploy-time readiness gate for THIS service, overriding the project's.
+            Collapsed and off unless opened — the field above is the daemon-run
+            HEALTHCHECK (custom command, on a loop); this is the pipeline's one-shot
+            "did it come up?", and the only one that can fail a deploy. */}
+        <ReadinessSection value={readiness} onChange={setReadiness} />
 
         <label
           htmlFor="service-enabled"

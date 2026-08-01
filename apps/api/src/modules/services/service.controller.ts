@@ -54,6 +54,24 @@ export async function getById(c: Context) {
   }
 }
 
+// ─── Reveal real env (#336) — write-gated, backs the "show values" toggle ─────
+
+export async function revealEnv(c: Context) {
+  const ctx = getRequestContext(c);
+  const projectId = param(c, "id");
+  const serviceId = param(c, "serviceId");
+
+  try {
+    const environment = await serviceService.revealServiceEnv(ctx, projectId, serviceId);
+    return c.json({ success: true, environment });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to reveal service env";
+    const status =
+      (err instanceof AppError && err.statusCode === 404) || message === "service-not-found" ? 404 : 400;
+    return c.json({ success: false, error: message }, status);
+  }
+}
+
 // ─── Volume disk usage ───────────────────────────────────────────────────────
 
 export async function volumeSizes(c: Context) {

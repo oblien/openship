@@ -24,6 +24,7 @@ import {
   safeErrorMessage,
   getRuntimeImage,
   isReleaseProvider,
+  resolveProjectVolumes,
   type StackId,
   type DeployTarget,
   type BuildStrategy,
@@ -42,8 +43,10 @@ import { getLatestCommit, getRepository } from "../github/github.service";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { firePreDeployBackups } from "../backups/triggers/pre-deploy";
 import { resolveSmartRoute } from "./smart-route";
+import { snapshotNeedsGitSource, withoutPinnedArtifacts } from "./pinned-artifacts";
 import { resolveProjectInfo } from "./prepare.service";
 import { getFolderSession } from "../projects/folder/session-store";
+import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
 import { type RequestContext } from "../../lib/request-context";
 import { type PortCheckResult } from "../../lib/deployment-runtime";
 import * as sessionManager from "./session-manager";
@@ -183,6 +186,10 @@ export interface DeploymentConfigSnapshot {
   buildCommand: string;
   outputDirectory: string;
   productionPaths: string[];
+  /** Resolved persistent mounts (compose syntax) — the project's declaration or
+   *  the stack default. Snapshotted so a redeploy of an OLD deployment mounts
+   *  what that deployment mounted, not what the project says today. */
+  volumes: string[];
   rootDirectory: string;
   port: number;
   startCommand: string;
@@ -236,11 +243,18 @@ export interface DeploymentConfigSnapshot {
    * same pipeline, discriminated by `kind`. See `DeployableService`.
    */
   composeServices?: DeployableService[];
-  /** ONE-TIME migration image handover: serviceName → an already-present image
-   *  ref. Set only on the migration's first deploy so mapped services deploy from
-   *  their transferred/running image (no build, no pull); a later Redeploy has no
-   *  handover and rebuilds/pulls natively. Consumed by buildComposeImages. */
+  /** PINNED ARTIFACTS: serviceName → an already-present image ref that deploys
+   *  verbatim (no build, no pull). Two producers: the migration cutover's
+   *  one-time handover, and a rollback restoring a past release's retained
+   *  images. A plain Redeploy strips them so it rebuilds natively. Read through
+   *  `pinned-artifacts.ts`, consumed by buildComposeImages. */
   handoverImages?: Record<string, string>;
+  /** Single-app twin of `handoverImages` — the whole release is this one image.
+   *  Set by a rollback restore; consumed by the single-app build phase. */
+  handoverAppImage?: string;
+  /** STATIC twin: a retained release DIRECTORY on the host to promote again
+   *  (static releases have no image). Set by a rollback restore. */
+  handoverStaticDir?: string;
   /** Summary of a compose deployment fan-out, when applicable. */
   composeDeployment?: {
     totalServices: number;
@@ -346,6 +360,7 @@ export function buildConfigSnapshot(
     buildCommand: project.buildCommand!,
     outputDirectory: project.outputDirectory!,
     productionPaths: parseProductionPaths(project.productionPaths, project.framework),
+    volumes: resolveProjectVolumes(project.volumes as string[] | null, project.framework),
     rootDirectory: project.rootDirectory || "",
     port: project.port ?? 3000,
     startCommand: project.startCommand!,
@@ -488,6 +503,10 @@ async function reconcileComposeDrift(
       repo: project.gitRepo,
       branch,
       ctx,
+      // Without this, a subpath compose project re-scans at the DETECTED root and
+      // finds no compose (or the wrong one), so `services` comes back empty and
+      // the reconcile below silently stops tracking upstream changes forever.
+      composePath: project.composePath ?? undefined,
     });
     const services = info.services ?? [];
     if (services.length === 0) return;
@@ -884,6 +903,34 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
 
   await checkNoActiveBuild(project.id);
 
+  // Folder-upload: resolve the session UP FRONT — its scanned compose services
+  // feed the service-mode decision below. The snapshot mutations it drives still
+  // happen further down, after target resolution (which the upload mode overrides).
+  const uploadSession = input.uploadSessionId
+    ? getFolderSession(input.uploadSessionId)
+    : undefined;
+  if (input.uploadSessionId && (!uploadSession || uploadSession.orgId !== ctx.organizationId)) {
+    throw new AppError("Upload session not found or expired — re-upload the folder.", 400);
+  }
+
+  // The uploaded folder's compose file is the ONLY description a folder deploy
+  // has of its service set, and the scan already parsed it — so adopt those
+  // services when the caller didn't forward them itself (the documented
+  // session → scan → ensure → deploy flow has no step that does, so a
+  // multi-service upload deployed with ZERO service rows and failed with "No
+  // services were found for this project"). Narrow on purpose: only for a project
+  // with no service rows yet, so an existing services project keeps its own rows
+  // and any operator edits, and an explicit "single" request is left alone.
+  let effectiveServices: DeployableService[] | undefined = services;
+  if (
+    !effectiveServices?.length &&
+    serviceDeploymentMode !== "single" &&
+    uploadSession?.services?.length &&
+    (await listProjectComposeServices(project.id)).length === 0
+  ) {
+    effectiveServices = uploadSession.services;
+  }
+
   const resolvedBranch = await resolveProjectBranch(ctx, project, branch);
 
   // Reconcile the repo's compose BEFORE resolving the service set — the third
@@ -896,6 +943,28 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // services reuse their running image (no rebuild) and everything else in the
   // compose is taken from the repo. Best-effort; self-guards to compose+git projects.
   await reconcileComposeDrift(ctx, project, resolvedBranch);
+
+  // #336: the wizard sees compose env MASKED, so a deploy request can echo the
+  // "••••••••" sentinel back. Recover the real values before they're persisted
+  // to the snapshot / service rows (else containers launch with KEY=••••••••).
+  // Recovery sources, all plaintext: the staged upload's scan (session.services,
+  // captured pre-mask) and the stored service rows — which reconcileComposeDrift
+  // above just refreshed from a git repo's compose, so this also covers a git
+  // first-deploy. A revealed-and-edited value arrives real and passes through.
+  if (effectiveServices?.length && effectiveServices.some((s) => hasMaskedValue(s.environment))) {
+    const realEnvByName = new Map<string, Record<string, string>>();
+    for (const s of await listProjectComposeServices(project.id)) {
+      realEnvByName.set(s.name, (s.environment as Record<string, string> | null) ?? {});
+    }
+    for (const s of uploadSession?.services ?? []) {
+      if (s.name && s.environment) realEnvByName.set(s.name, s.environment);
+    }
+    effectiveServices = effectiveServices.map((s) =>
+      s.environment && hasMaskedValue(s.environment)
+        ? { ...s, environment: unmaskEnv(s.environment, realEnvByName.get(s.name) ?? null) }
+        : s,
+    );
+  }
 
   const projectDomains = await listProjectRouteRows(project.id);
   let routeState = await resolveProjectRouteState(project, { projectDomains });
@@ -922,7 +991,14 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // default. An internal-only services stack (e.g. a migrated postgres/redis)
   // must deploy with no public route — defaulting a free .opsh.io project domain
   // here made self-hosted migration fail preflight (free domains need cloud edge).
-  const isServicesDeploy = serviceDeploymentMode === "services" || !!services?.length;
+  // A service-FIRST project (docker-compose / services framework) is a services
+  // deploy even when this request carries no service list — its rows already
+  // describe the set. Keyed on the project's own framework, so a normal app that
+  // merely had a sidecar service added still defaults its project domain below.
+  const isServicesDeploy =
+    serviceDeploymentMode === "services" ||
+    !!effectiveServices?.length ||
+    (serviceDeploymentMode !== "single" && isMultiServiceProject(project));
   let nextPublicEndpoints = publicEndpoints;
   if (
     nextPublicEndpoints === undefined &&
@@ -944,7 +1020,7 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   const requestedServiceMode =
     serviceDeploymentMode === "single"
       ? "single"
-      : serviceDeploymentMode === "services" || services?.length
+      : serviceDeploymentMode === "services" || effectiveServices?.length
         ? "services"
         : undefined;
 
@@ -957,8 +1033,8 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   if (handoverImages && Object.keys(handoverImages).length > 0) {
     snapshot.handoverImages = handoverImages;
   }
-  if (requestedServiceMode === "services" && services?.length) {
-    snapshot.composeServices = services;
+  if (requestedServiceMode === "services" && effectiveServices?.length) {
+    snapshot.composeServices = effectiveServices;
     // Persist compose services to the canonical service table NOW, at
     // deploy-request time — not only deep inside the compose pipeline. A build
     // that FAILS before the pipeline's own sync (clone/prepare error, image
@@ -968,7 +1044,7 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
     // is idempotent and strictly owns compose rows, so filter out monorepo
     // entries (they'd create ghost compose rows) exactly like the pipeline does.
     // Best-effort: a persist failure must never block the deploy.
-    const composeOnly = services.filter((s) => serviceKind(s) === "compose");
+    const composeOnly = effectiveServices.filter((s) => serviceKind(s) === "compose");
     if (composeOnly.length) {
       await repos.service
         .syncFromCompose(project.id, composeOnly)
@@ -998,17 +1074,13 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   //   - self-hosted (api-relay): build from the staging dir like a local folder.
   // The session/workspace outlive this call (session TTL; workspace made
   // permanent on deploy), so nothing is disposed here.
-  if (input.uploadSessionId) {
-    const session = getFolderSession(input.uploadSessionId);
-    if (!session || session.orgId !== ctx.organizationId) {
-      throw new AppError("Upload session not found or expired — re-upload the folder.", 400);
-    }
-    if (session.mode === "oblien-direct") {
-      snapshot.uploadWorkspaceId = session.workspaceId;
+  if (uploadSession) {
+    if (uploadSession.mode === "oblien-direct") {
+      snapshot.uploadWorkspaceId = uploadSession.workspaceId;
       snapshot.sourceStaged = true;
       snapshot.deployTarget = "cloud";
     } else {
-      snapshot.localPath = session.stagingDir;
+      snapshot.localPath = uploadSession.stagingDir;
     }
   }
 
@@ -1264,6 +1336,17 @@ export async function redeployBuildSession(
   const meta = frozenMeta ?? buildConfigSnapshot(project, resolvedBranch, { gitlabBaseUrl });
   const branch = meta.branch || resolvedBranch;
 
+  // Resources are a RUNTIME knob, not part of the build identity, so they must be
+  // re-read from the project on every redeploy. Freezing them meant a
+  // PATCH /projects/:id/resources was silently ignored forever: the container was
+  // recreated from the original snapshot each time (and a manual
+  // `docker update --memory` got wiped along with it). Reuse of the frozen
+  // *source* (commit, build config) is still intentional — only these two fields
+  // are refreshed. Rollback goes through triggerDeployment's reuseSnapshot path,
+  // not here, so restoring an exact prior state is unaffected.
+  meta.resources = (project.resources as ResourceConfig) || null;
+  meta.buildResources = (project.buildResources as ResourceConfig) || null;
+
   if (!frozenMeta) {
     const t = await resolveSnapshotTarget(project);
     meta.deployTarget = t.deployTarget;
@@ -1325,13 +1408,12 @@ export async function redeployBuildSession(
   const currentComposeServices = projectServicesToDeployableServices(
     currentComposeRows.filter((s) => s.enabled),
   );
-  // Strip the migration image handover: it is a ONE-TIME cutover input on the
-  // migration's first deploy. Carrying it forward on a Redeploy would keep
-  // reusing the transferred/stale image and never reclone+rebuild (and 404 if
-  // that tag was pruned) — the migrated project must behave like a native repo
-  // project from the second deploy on. `meta.handoverImages` is intentionally
-  // dropped here (a real rollback restores its own artifact via its own meta).
-  const { handoverImages: _handoverImages, ...forwardedMeta } = meta;
+  // Strip PINNED ARTIFACTS: they are inputs to one specific deploy (a migration
+  // cutover, or a rollback restoring a retained release). Carrying them onto a
+  // Redeploy would keep re-deploying that stale image and never reclone+rebuild
+  // (and 404 once the tag is reclaimed) — a redeployed project must behave like
+  // a native repo project. A real rollback re-pins from its OWN target's meta.
+  const forwardedMeta = withoutPinnedArtifacts(meta);
   const refreshedMeta: DeploymentConfigSnapshot = {
     ...forwardedMeta,
     composeServices: currentComposeServices.length > 0 ? currentComposeServices : undefined,
@@ -1391,8 +1473,17 @@ export async function startBuild(deploymentId: string) {
   // auto-triggers the build, but the existing main-deploy UI still POSTs
   // /:id/build right after to attach its SSE stream - we want that POST to
   // succeed (so SSE attaches to the running session) instead of 400'ing.
-  // Terminal states (ready/failed/cancelled) are also "do nothing, return ok".
-  if (["building", "deploying", "ready", "failed", "cancelled"].includes(dep.status)) {
+  // Terminal states (ready/failed/cancelled/action_required) are also "do
+  // nothing, return ok". `action_required` MUST be here: it is a settled failure
+  // whose artifact is already gone, so without it this would re-run the build on
+  // the existing row instead of no-op'ing, and the row's recorded blocker would
+  // be overwritten mid-flight. Resolving a blocker creates a NEW deployment
+  // (redeploy), it never restarts this one.
+  if (
+    ["building", "deploying", "ready", "failed", "cancelled", "action_required"].includes(
+      dep.status,
+    )
+  ) {
     return {
       success: true,
       deployment_id: dep.id,
@@ -1508,10 +1599,26 @@ export async function triggerDeployment(
   // Org-membership verified at the route boundary. No userId equality
   // check here — that would block team members.
 
+  // Refuse for MISSING SOURCE only when this deploy actually needs source.
+  //
   // A release/dist-source project has neither a git URL nor a stored localPath —
   // its dist dir is resolved per-deploy by applyReleaseSourceToSnapshot below.
+  // Two more kinds legitimately have neither: a registry-image-only stack (an
+  // adopted Docker migration, which builds nothing — the exemption preflight
+  // already makes), and a ROLLBACK replaying pinned artifacts. Both used to be
+  // refused here, before preflight could apply its own, smarter rule.
   if (!project.gitUrl && !project.localPath && !isReleaseProvider(project.gitProvider)) {
-    throw new ForbiddenError("Project has no git repository or local path configured");
+    const sourceless = data.reuseSnapshot
+      ? snapshotNeedsGitSource(data.reuseSnapshot.meta)
+      : snapshotNeedsGitSource(
+          { hasBuild: project.hasBuild ?? undefined },
+          projectServicesToDeployableServices(
+            (await listProjectComposeServices(project.id).catch(() => [])).filter((s) => s.enabled),
+          ),
+        );
+    if (sourceless) {
+      throw new ForbiddenError("Project has no git repository or local path configured");
+    }
   }
   // GitHub access gate (default-deny; webhook ctx is the org owner and
   // passes). Covers manual trigger / redeploy paths routed through here.
@@ -1648,8 +1755,12 @@ export async function triggerDeployment(
     commitSha = active.commitSha ?? commitSha;
     commitMessage = commitMessage ?? active.commitMessage ?? undefined;
   }
-  // Fetch HEAD only for a real (build) deploy — a refresh must never touch git.
-  if (!commitSha && !data.refresh) {
+  // Fetch HEAD only for a deploy that actually needs SOURCE. A refresh must
+  // never touch git; neither must a restore whose artifacts are all pinned (its
+  // release may predate any commit at all — a local-path or folder-upload
+  // project — and reaching for GitHub there would fail a rollback that has
+  // everything it needs on disk).
+  if (!commitSha && !data.refresh && snapshotNeedsGitSource(snapshot)) {
     const head = await resolveLatestCommitInfo(ctx, project, branch);
     commitSha = head.commitSha;
     commitMessage = commitMessage ?? head.commitMessage;

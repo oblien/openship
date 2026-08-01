@@ -15,6 +15,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/context/ToastContext";
 import { useTheme } from "@/components/theme-provider";
 import { deployApi } from "@/lib/api";
+import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import type { DeploymentStatus, ServiceDeployStatus } from "@/context/deployment/types";
 import { encodeRepoSlug, encodeLocalSlug } from "@/utils/repoSlug";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
@@ -279,7 +280,11 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
   }, [showDecision, state.deploymentId]);
 
   const handleViewDashboard = () => {
-    if (state.projectId) router.push(`/projects/${state.projectId}`);
+    if (!state.projectId) return;
+    // See DeploymentProcessing: invalidate at the navigation point so a stale
+    // draft snapshot can't outlive the deploy that replaced it.
+    invalidateProjectCaches(state.projectId);
+    router.push(`/projects/${state.projectId}`);
   };
 
   // Re-open the deploy wizard rehydrated from THIS project's saved config
@@ -338,14 +343,10 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
             </div>
           </div>
 
-          {deploymentStatus === "ready" && (
-            <button
-              onClick={handleViewDashboard}
-              className="flex items-center gap-2 text-primary-foreground font-medium bg-primary rounded-xl px-4 py-2 text-sm hover:bg-primary/90 shadow-md hover:shadow-lg transition-all"
-            >
-              {cd.viewDashboard}
-            </button>
-          )}
+          {/* No header dashboard button: the details column below already has the
+              primary "Open Dashboard" on the same screen, wired to this exact
+              handler. Two buttons for one destination — same duplication the
+              single-app DeploymentProcessing header had. */}
         </div>
       </div>
 
