@@ -13,8 +13,8 @@ import { templatesRouter } from './routes/templates';
 import { userRouter } from './routes/user';
 import { cookiePreferencesRouter } from './routes/cookies';
 import { brandingRouter } from './routes/branding';
+import { aiRouter } from './routes/ai';
 import {
-  aiRouter,
   brainRouter,
   bimiRouter,
   connectionsRouter,
@@ -33,8 +33,9 @@ export const appRouter = router({
   cookiePreferences: cookiePreferencesRouter,
   branding: brandingRouter,
 
-  // Stubs - see `routes/stubs.ts`.
   ai: aiRouter,
+
+  // Stubs - see `routes/stubs.ts`.
   brain: brainRouter,
   bimi: bimiRouter,
   connections: connectionsRouter,

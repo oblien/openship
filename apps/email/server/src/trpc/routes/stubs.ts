@@ -1,9 +1,8 @@
 /**
- * Stub routers for features we removed when self-hosting Zero
- * (AI compose/summarize, Gmail/Microsoft connections, BIMI lookups,
- * Notes, Meet, etc.). The client still references them via
- * `trpc.ai.*`, `trpc.brain.*`, etc., so we keep the shape - but every
- * procedure throws `NOT_IMPLEMENTED` at runtime.
+ * Stub routers for features that are not included in self-hosted Zero.
+ * The client still references them via
+ * `trpc.brain.*`, `trpc.bimi.*`, etc., so we keep compatible shapes with
+ * inert responses or explicit `NOT_IMPLEMENTED` errors.
  *
  * When/if any of these features come back, replace the stub with a
  * real router file. The client never needs to change.
@@ -23,30 +22,6 @@ function gone(name: string): never {
     message: `${name} is not available on the self-hosted build.`,
   });
 }
-
-// AI-assisted compose/search/summarize. We stripped the LLM integration,
-// so each procedure returns a typed empty result. The UI silently does
-// nothing if the response is empty.
-export interface WebSearchResult {
-  text: string;
-  sources: Array<{ id: string; title: string; url: string }>;
-}
-export interface ComposeResult {
-  newBody: string;
-}
-
-export const aiRouter = router({
-  compose: protectedProcedure.input(z.any()).mutation((): ComposeResult => ({ newBody: '' })),
-  generateEmailSubject: protectedProcedure
-    .input(z.any())
-    .mutation((): { subject: string } => ({ subject: '' })),
-  generateSearchQuery: protectedProcedure
-    .input(z.any())
-    .mutation((): { query: string } => ({ query: '' })),
-  webSearch: protectedProcedure
-    .input(z.object({ query: z.string() }))
-    .mutation((): WebSearchResult => ({ text: '', sources: [] })),
-});
 
 // Brain = the AI assistant (compose, summarize, label suggestions). We
 // stripped the LLM integration, so reads return empty shapes (UI silently
