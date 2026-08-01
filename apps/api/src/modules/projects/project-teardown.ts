@@ -197,7 +197,9 @@ export async function getActiveProjectState(projectId: string): Promise<Prefligh
     activeBackupRestoreIds: restores.map((r) => r.id),
     blocking: parts.length > 0,
     summary:
-      parts.length === 0 ? "No active work" : `Cannot delete while in-flight: ${parts.join(", ")}`,
+      parts.length === 0
+        ? "No active work"
+        : `Cannot delete while in-flight: ${parts.join(", ")}`,
   };
 }
 

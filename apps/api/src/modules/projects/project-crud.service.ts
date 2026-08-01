@@ -21,11 +21,7 @@ import {
 } from "@repo/core";
 import type { ResourceConfig } from "@repo/adapters";
 import { encodeResources } from "../../lib/resources";
-import {
-  resolveLatestVersion,
-  resolveLatestReleaseTag,
-  readApiVersion,
-} from "../../lib/release-resolver";
+import { resolveLatestVersion, resolveLatestReleaseTag, readApiVersion } from "../../lib/release-resolver";
 import { resolveLatestImageDigest } from "../../lib/image-registry";
 import { env } from "../../config";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
@@ -75,7 +71,12 @@ const PROJECT_UPDATE_KEYS = Object.keys(UpdateProjectBody.properties);
  * intentionally excluded (stays editable, parity with setBranch); gitUrl is
  * derived by the linker and never set via PATCH.
  */
-const GIT_SOURCE_IDENTITY_KEYS = new Set(["gitProvider", "gitOwner", "gitRepo", "installationId"]);
+const GIT_SOURCE_IDENTITY_KEYS = new Set([
+  "gitProvider",
+  "gitOwner",
+  "gitRepo",
+  "installationId",
+]);
 
 /** Derived from the route validator so the accepted fields can't drift from it. */
 type EnsureProjectBody = TEnsureProjectBody;
@@ -248,8 +249,7 @@ function resolveProjectSource(data: TCreateProjectBody) {
   if (isRelease && env.CLOUD_MODE) {
     throw new ForbiddenError("Release/dist source projects are not available in cloud mode");
   }
-  const safeLocalPath =
-    !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
+  const safeLocalPath = !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
   const gitOwner = isRelease || safeLocalPath ? undefined : data.gitOwner;
   const gitRepo = isRelease || safeLocalPath ? undefined : data.gitRepo;
 
@@ -288,7 +288,11 @@ function environmentNameFromSlug(slug: string) {
   );
 }
 
-async function ensureProjectApp(data: TCreateProjectBody, slug: string, organizationId: string) {
+async function ensureProjectApp(
+  data: TCreateProjectBody,
+  slug: string,
+  organizationId: string,
+) {
   let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
   if (app) return { app, created: false };
 
@@ -352,7 +356,9 @@ function buildProductionProjectInput(
     hasServer: data.hasServer ?? true,
     hasBuild: data.hasBuild ?? true,
     workspacePrepareCommand:
-      data.projectType === "monorepo" ? (data.monorepoWorkspace?.prepareCommand ?? null) : null,
+      data.projectType === "monorepo"
+        ? data.monorepoWorkspace?.prepareCommand ?? null
+        : null,
     routingConfig: data.routingConfig ?? null,
     rollbackWindow:
       data.rollbackWindow !== undefined ? normalizeRollbackWindow(data.rollbackWindow) : null,
@@ -372,11 +378,15 @@ function buildProductionProjectInput(
     // deploy resolves to "bare", and a compose deploy fails with "services are
     // not supported on the bare runtime". Git apps/monorepos stay null (chosen at
     // deploy time).
-    runtimeMode: data.projectType === "services" || data.projectType === "docker" ? "docker" : null,
+    runtimeMode:
+      data.projectType === "services" || data.projectType === "docker" ? "docker" : null,
   };
 }
 
-async function persistMonorepoApps(projectId: string, data: TCreateProjectBody): Promise<void> {
+async function persistMonorepoApps(
+  projectId: string,
+  data: TCreateProjectBody,
+): Promise<void> {
   if (data.projectType !== "monorepo" || !data.monorepoApps?.length) return;
 
   // #336: monorepo rows are masked on read too (withDrift has no kind filter),
@@ -385,9 +395,7 @@ async function persistMonorepoApps(projectId: string, data: TCreateProjectBody):
   // edit clobbers the stored secret / ships "••••••••" into the container.
   const storedEnvByName = new Map<string, Record<string, string>>();
   if (data.monorepoApps.some((app) => hasMaskedValue(app.environment))) {
-    for (const row of await repos.service
-      .listByProjectKind(projectId, "monorepo")
-      .catch(() => [])) {
+    for (const row of await repos.service.listByProjectKind(projectId, "monorepo").catch(() => [])) {
       storedEnvByName.set(row.name, (row.environment as Record<string, string> | null) ?? {});
     }
   }
@@ -413,7 +421,7 @@ async function persistMonorepoApps(projectId: string, data: TCreateProjectBody):
       domainType: app.domainType ?? "free",
       environment: hasMaskedValue(app.environment)
         ? unmaskEnv(app.environment, storedEnvByName.get(app.name) ?? null)
-        : (app.environment ?? {}),
+        : app.environment ?? {},
     })),
   );
 }
@@ -495,15 +503,12 @@ async function createProductionProject(
     );
   }
   const { app, created: appCreated } = await ensureProjectApp(data, slug, organizationId);
-  const routing = deriveNextProjectRouteState(
-    {
-      slug,
-    },
-    {
-      nextPublicEndpoints: data.publicEndpoints,
-      slug,
-    },
-  );
+  const routing = deriveNextProjectRouteState({
+    slug,
+  }, {
+    nextPublicEndpoints: data.publicEndpoints,
+    slug,
+  });
 
   try {
     const created = await repos.project.create(
@@ -615,8 +620,7 @@ export async function linkProjectRepo(
   const { organizationId } = ctx;
   const owner = input.owner?.trim();
   const repo = input.repo?.trim();
-  if (!owner || !repo)
-    return { ok: false, code: "invalid", message: "owner and repo are required" };
+  if (!owner || !repo) return { ok: false, code: "invalid", message: "owner and repo are required" };
 
   const project = await repos.project.findById(projectId);
   try {
@@ -673,7 +677,7 @@ export async function linkProjectRepo(
   await repos.project.update(projectId, gitFields);
   if (project!.groupId) {
     const sharedGitFields = {
-      gitProvider: "github",
+      gitProvider,
       gitOwner: owner,
       gitRepo: repo,
       gitUrl,
@@ -681,7 +685,7 @@ export async function linkProjectRepo(
       ...(typeof gitFields.webhookId === "number" ? { webhookId: gitFields.webhookId } : {}),
     };
     await repos.projectGroup.update(project!.groupId, {
-      gitProvider: "github",
+      gitProvider,
       gitOwner: owner,
       gitRepo: repo,
       gitUrl,
@@ -695,14 +699,7 @@ export async function linkProjectRepo(
     );
   }
 
-  return {
-    ok: true,
-    owner,
-    repo,
-    branch: defaultBranch,
-    strategy,
-    autoDeploy: !!gitFields.autoDeploy,
-  };
+  return { ok: true, owner, repo, branch: defaultBranch, strategy, autoDeploy: !!gitFields.autoDeploy };
 }
 
 async function uniqueProjectSlug(organizationId: string, baseSlug: string) {
@@ -723,8 +720,7 @@ async function uniqueProjectSlug(organizationId: string, baseSlug: string) {
  * image apps → the running image tag. Null for git projects (they keep branch).
  */
 async function resolveEnvVersion(row: Project, latest: Deployment | null): Promise<string | null> {
-  if (row.appTemplateId === "openship" || row.appTemplateId === "mail-webmail")
-    return readApiVersion();
+  if (row.appTemplateId === "openship" || row.appTemplateId === "mail-webmail") return readApiVersion();
   if (isReleaseProvider(row.gitProvider)) {
     const pinned = (row.releaseSource as ReleaseSource | null)?.pinnedVersion;
     return latest?.releaseVersion ?? pinned ?? null;
@@ -802,7 +798,9 @@ async function findProjectByAppSlug(
  * can't bypass it.
  */
 async function assertProjectQuota(organizationId: string): Promise<void> {
-  const cap = env.CLOUD_MODE ? env.CLOUD_MAX_PROJECTS_PER_USER : SYSTEM.PROJECTS.MAX_PER_USER;
+  const cap = env.CLOUD_MODE
+    ? env.CLOUD_MAX_PROJECTS_PER_USER
+    : SYSTEM.PROJECTS.MAX_PER_USER;
   const { total } = await repos.projectGroup.listByOrganization(organizationId, {
     page: 1,
     perPage: 1,
@@ -812,7 +810,10 @@ async function assertProjectQuota(organizationId: string): Promise<void> {
   }
 }
 
-export async function ensureProject(data: EnsureProjectBody, organizationId: string) {
+export async function ensureProject(
+  data: EnsureProjectBody,
+  organizationId: string,
+) {
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
 
@@ -834,7 +835,11 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     // No existing match → this ensure will create. Enforce the cap here too
     // (the folder-upload deploy flow reaches creation only through ensure).
     await assertProjectQuota(organizationId);
-    project = await createProductionProject(data, desiredSlug, organizationId);
+    project = await createProductionProject(
+      data,
+      desiredSlug,
+      organizationId,
+    );
     created = true;
   } else {
     // Defensive: if we matched an existing project but its org_id doesn't
@@ -962,10 +967,10 @@ export async function listProjects(
 
   // organizationId is required across the codebase — the route-level
   // requirePermission middleware ensures it's set before the controller runs.
-  const { rows: projects } = await repos.project.listByOrganization(organizationId, {
-    page: 1,
-    perPage: 1000,
-  });
+  const { rows: projects } = await repos.project.listByOrganization(
+    organizationId,
+    { page: 1, perPage: 1000 },
+  );
 
   const byGroup = new Map<string, Project[]>();
   for (const p of projects) {
@@ -996,7 +1001,10 @@ export async function getProject(projectId: string, organizationId: string) {
 // ─── Create project ──────────────────────────────────────────────────────────
 
 /** @scope org — only reads organizationId as a DB key. */
-export async function createProject(data: TCreateProjectBody, organizationId: string) {
+export async function createProject(
+  data: TCreateProjectBody,
+  organizationId: string,
+) {
   const slug = slugify(data.name);
 
   await assertProjectQuota(organizationId);
@@ -1075,7 +1083,9 @@ export async function updateProject(
     update.routeStrategy !== undefined &&
     !["auto", "loopback-port", "container-ip"].includes(update.routeStrategy as string)
   ) {
-    throw new ValidationError("routeStrategy must be 'auto', 'loopback-port', or 'container-ip'");
+    throw new ValidationError(
+      "routeStrategy must be 'auto', 'loopback-port', or 'container-ip'",
+    );
   }
 
   // ── monorepoSharedPaths validation ──────────────────────────────────
@@ -1084,8 +1094,11 @@ export async function updateProject(
   // deployable service would force-rebuild every service on every push
   // to web (defeating the point of smart per-service deploys).
   if (data.monorepoSharedPaths !== undefined && data.monorepoSharedPaths !== null) {
-    const normalize = (s: string) => s.trim().replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
-    const prefixes = data.monorepoSharedPaths.map(normalize).filter((s) => s.length > 0);
+    const normalize = (s: string) =>
+      s.trim().replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
+    const prefixes = data.monorepoSharedPaths
+      .map(normalize)
+      .filter((s) => s.length > 0);
     if (prefixes.length > 0) {
       const services = await repos.service.listByProject(projectId).catch(() => []);
       const serviceRoots = services
@@ -1093,8 +1106,7 @@ export async function updateProject(
         .filter((s) => s.length > 0);
       const overlap = prefixes.find((prefix) =>
         serviceRoots.some(
-          (root) =>
-            root === prefix || root.startsWith(`${prefix}/`) || prefix.startsWith(`${root}/`),
+          (root) => root === prefix || root.startsWith(`${prefix}/`) || prefix.startsWith(`${root}/`),
         ),
       );
       if (overlap) {
@@ -1110,7 +1122,9 @@ export async function updateProject(
   // ── defaultRollbackStrategy ────────────────────────────────────────
   if (data.defaultRollbackStrategy !== undefined) {
     if (data.defaultRollbackStrategy !== "git" && data.defaultRollbackStrategy !== "snapshot") {
-      throw new ValidationError(`defaultRollbackStrategy must be "git" or "snapshot"`);
+      throw new ValidationError(
+        `defaultRollbackStrategy must be "git" or "snapshot"`,
+      );
     }
     update.defaultRollbackStrategy = data.defaultRollbackStrategy;
   }
@@ -1143,7 +1157,10 @@ export async function updateProject(
       // (the latter also covers a PENDING route that has no domain row yet), so a
       // remaining pending route is never mistaken for net-new.
       const priorHosts = new Set(
-        [...previousHostnames, ...(beforeState?.publicEndpoints ?? []).map((e) => e.hostname)]
+        [
+          ...previousHostnames,
+          ...(beforeState?.publicEndpoints ?? []).map((e) => e.hostname),
+        ]
           .filter((h): h is string => typeof h === "string" && h.length > 0)
           .map((h) => h.trim().toLowerCase()),
       );
@@ -1230,7 +1247,10 @@ export async function updateProject(
 
 // ─── Project environments ───────────────────────────────────────────────────
 
-export async function listProjectEnvironments(projectId: string, organizationId: string) {
+export async function listProjectEnvironments(
+  projectId: string,
+  organizationId: string,
+) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -1287,13 +1307,7 @@ export async function createProjectEnvironment(
   if (!productionBranch && environmentType === "production" && base.gitOwner && base.gitRepo) {
     // userId here is the actor who triggered the action — used to authorize
     // the GitHub call against their installation token.
-    productionBranch = (
-      await VcsStrategyFactory.getStrategy(base.gitProvider).getRepository(
-        ctx,
-        base.gitOwner,
-        base.gitRepo,
-      )
-    ).default_branch;
+    productionBranch = (await VcsStrategyFactory.getStrategy("github").getRepository(ctx, base.gitOwner, base.gitRepo)).default_branch;
   }
 
   const gitBranch =
@@ -1301,16 +1315,10 @@ export async function createProjectEnvironment(
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
   if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
-    const branches = await VcsStrategyFactory.getStrategy(base.gitProvider).getBranches(
-      ctx,
-      base.gitOwner,
-      base.gitRepo,
-    );
+    const branches = await VcsStrategyFactory.getStrategy("github").getBranches(ctx, base.gitOwner, base.gitRepo);
     const exists = branches.some((branch) => branch.name === gitBranch);
     if (!exists) {
-      throw new ValidationError(
-        `Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`,
-      );
+      throw new ValidationError(`Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`);
     }
   }
 
@@ -1422,9 +1430,7 @@ export async function getProjectCommitStatus(
 
   const branch = p.gitBranch?.trim() || "main";
   const head = ctx
-    ? await VcsStrategyFactory.getStrategy(p.gitProvider || "github")
-        .getLatestCommit(ctx, p.gitOwner, p.gitRepo, branch)
-        .catch(() => null)
+    ? await VcsStrategyFactory.getStrategy(p.gitProvider || "github").getLatestCommit(ctx, p.gitOwner, p.gitRepo, branch).catch(() => null)
     : null;
 
   let deployedSha: string | null = null;
@@ -1439,10 +1445,9 @@ export async function getProjectCommitStatus(
   // Is the latest commit already being deployed? If so the dashboard suppresses
   // the "new commit available — redeploy" nudge: there's nothing to redeploy,
   // it's in flight. (Only worth checking when we're actually behind.)
-  const latestInProgress =
-    behind && latestSha
-      ? Boolean(await repos.deployment.findInProgressByCommit(projectId, latestSha))
-      : false;
+  const latestInProgress = behind && latestSha
+    ? Boolean(await repos.deployment.findInProgressByCommit(projectId, latestSha))
+    : false;
 
   return {
     supported: true as const,
@@ -1515,9 +1520,7 @@ async function getSelfReleaseDrift(p: Project) {
   const latestInProgress =
     behind && latest
       ? Boolean(
-          await repos.deployment
-            .findInProgressByReleaseVersion(p.id, latest)
-            .catch(() => undefined),
+          await repos.deployment.findInProgressByReleaseVersion(p.id, latest).catch(() => undefined),
         )
       : false;
   return {
@@ -1615,7 +1618,11 @@ export async function getGitInfo(projectId: string, organizationId: string) {
   };
 }
 
-export async function setBranch(projectId: string, branch: string, organizationId: string) {
+export async function setBranch(
+  projectId: string,
+  branch: string,
+  organizationId: string,
+) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -1707,7 +1714,10 @@ export async function listProjectDeployments(
 
 // ─── Deployment session ──────────────────────────────────────────────────────
 
-export async function getLatestDeploymentSession(projectId: string, organizationId: string) {
+export async function getLatestDeploymentSession(
+  projectId: string,
+  organizationId: string,
+) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -1727,3 +1737,4 @@ export async function getLatestDeploymentSession(projectId: string, organization
       : null,
   };
 }
+

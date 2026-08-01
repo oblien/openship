@@ -462,11 +462,7 @@ async function reconcileComposeDrift(
 ) {
   try {
     if (!project.gitOwner || !project.gitRepo) return; // local/no-git source → nothing to re-parse
-    if (
-      changedPaths &&
-      changedPaths.length > 0 &&
-      !changedPaths.some((p) => COMPOSE_PATH_RE.test(p))
-    ) {
+    if (changedPaths && changedPaths.length > 0 && !changedPaths.some((p) => COMPOSE_PATH_RE.test(p))) {
       return; // this push didn't touch the compose file → no drift possible
     }
     const composeRows = await listProjectComposeServices(project.id);
@@ -877,7 +873,9 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // Folder-upload: resolve the session UP FRONT — its scanned compose services
   // feed the service-mode decision below. The snapshot mutations it drives still
   // happen further down, after target resolution (which the upload mode overrides).
-  const uploadSession = input.uploadSessionId ? getFolderSession(input.uploadSessionId) : undefined;
+  const uploadSession = input.uploadSessionId
+    ? getFolderSession(input.uploadSessionId)
+    : undefined;
   if (input.uploadSessionId && (!uploadSession || uploadSession.orgId !== ctx.organizationId)) {
     throw new AppError("Upload session not found or expired — re-upload the folder.", 400);
   }

@@ -8,8 +8,14 @@ import type {
   GitHubPushPayload as VcsPushPayload,
   GitHubTreeResponse as VcsTreeResponse,
   GitHubWebhook as VcsWebhook,
-  GitHubCheckRun as VcsCheckRun,
 } from "../github/github.types";
+
+export interface VcsCheckRun {
+  id: number;
+  status: string;
+  conclusion: string | null;
+  htmlUrl?: string;
+}
 
 import type { WebhookStrategy } from "./vcs.types";
 

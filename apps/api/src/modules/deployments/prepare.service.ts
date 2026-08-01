@@ -5,14 +5,10 @@
  * No database writes, no deployment logic.
  */
 
-import { VcsStrategyFactory } from "../vcs/vcs.factory";
+import * as githubService from "../github/github.service";
 import type { RequestContext } from "../../lib/request-context";
 import { MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
-import {
-  parseComposeEnvFile,
-  parseComposeFile,
-  type ComposeService,
-} from "../../lib/compose-parser";
+import { parseComposeEnvFile, parseComposeFile, type ComposeService } from "../../lib/compose-parser";
 import { maskEnv, maskScanService } from "../../lib/secret-env";
 import {
   applyWorkspaceContext,
@@ -56,12 +52,8 @@ const PREPARE_FILE_CONTENTS = [
   "nx.json",
   "rush.json",
 ] as const;
-const COMPOSE_FILES = [
-  "docker-compose.yml",
-  "docker-compose.yaml",
-  "compose.yml",
-  "compose.yaml",
-] as const;
+const COMPOSE_FILES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"] as const;
+
 
 export type Source =
   | {
@@ -252,9 +244,7 @@ function extractRootRouting(fileContents: Record<string, string>): RoutingConfig
  * Its build-shaping subset flows separately through the metadata parser fold.
  */
 function extractOpenshipConfig(fileContents: Record<string, string>): OpenshipConfig | undefined {
-  const entry = Object.entries(fileContents).find(
-    ([name]) => name.toLowerCase() === "openship.json",
-  );
+  const entry = Object.entries(fileContents).find(([name]) => name.toLowerCase() === "openship.json");
   if (!entry?.[1]) return undefined;
   return parseOpenshipConfigJson(entry[1]).config ?? undefined;
 }
@@ -290,11 +280,7 @@ function envMapToRecord(envMap: OpenshipEnv): Record<string, string> {
 }
 
 /** Split a declared hostname into the (customDomain|domain, domainType) pair. */
-function splitDomain(host: string): {
-  domain?: string;
-  customDomain?: string;
-  domainType: "free" | "custom";
-} {
+function splitDomain(host: string): { domain?: string; customDomain?: string; domainType: "free" | "custom" } {
   return host.includes(".")
     ? { customDomain: host, domainType: "custom" }
     : { domain: host, domainType: "free" };
@@ -364,11 +350,10 @@ function openshipServicesToCompose(services: OpenshipService[]): ComposeService[
  * detected value; unmatched declarations are ignored (declaring apps the
  * detector didn't find is out of scope — use per-sub-app config instead).
  */
-function mergeMonorepoApps(
-  detected: MonorepoApp[],
-  declared: OpenshipMonorepoApp[],
-): MonorepoApp[] {
-  const byRoot = new Map(declared.map((d) => [normalizeProjectRootDirectory(d.rootDirectory), d]));
+function mergeMonorepoApps(detected: MonorepoApp[], declared: OpenshipMonorepoApp[]): MonorepoApp[] {
+  const byRoot = new Map(
+    declared.map((d) => [normalizeProjectRootDirectory(d.rootDirectory), d]),
+  );
   return detected.map((app) => {
     const d = byRoot.get(normalizeProjectRootDirectory(app.rootDirectory));
     if (!d) return app;
@@ -472,8 +457,7 @@ export function projectInfoToScanResponse(result: ProjectInfo) {
     ...(result.publicEndpoints && { publicEndpoints: result.publicEndpoints }),
     ...(result.resources && { resources: result.resources }),
     ...(result.readiness && { readiness: result.readiness }),
-    ...(result.rootEnv &&
-      Object.keys(result.rootEnv).length > 0 && { rootEnv: maskEnv(result.rootEnv) }),
+    ...(result.rootEnv && Object.keys(result.rootEnv).length > 0 && { rootEnv: maskEnv(result.rootEnv) }),
     ...(result.routing && { routing: result.routing }),
     ...(result.monorepoWorkspace && { monorepoWorkspace: result.monorepoWorkspace }),
     ...(result.monorepoApps && { monorepoApps: result.monorepoApps }),
@@ -492,20 +476,18 @@ async function readProjectSnapshot(
 ): Promise<ProjectRootSnapshotInput> {
   const normalizedRootDirectory = normalizeProjectRootDirectory(rootDirectory);
   const files = await reader.listDirectory(normalizedRootDirectory);
-  const packageJson = await reader.readJson(
-    joinProjectPath(normalizedRootDirectory, "package.json"),
-  );
+  const packageJson = await reader.readJson(joinProjectPath(normalizedRootDirectory, "package.json"));
   const fileContents: Record<string, string> = {};
 
   await Promise.all(
-    PREPARE_FILE_CONTENTS.filter((name) =>
-      files.some((file) => file.name.toLowerCase() === name.toLowerCase()),
-    ).map(async (name) => {
-      const content = await reader.readText(joinProjectPath(normalizedRootDirectory, name));
-      if (content) {
-        fileContents[name] = content;
-      }
-    }),
+    PREPARE_FILE_CONTENTS
+      .filter((name) => files.some((file) => file.name.toLowerCase() === name.toLowerCase()))
+      .map(async (name) => {
+        const content = await reader.readText(joinProjectPath(normalizedRootDirectory, name));
+        if (content) {
+          fileContents[name] = content;
+        }
+      }),
   );
 
   // Workspace/project manifests with dynamic basenames - PREPARE_FILE_CONTENTS
@@ -564,11 +546,9 @@ async function selectProjectSnapshot(
     rootSnapshot.packageJson,
   );
 
-  const candidates = (
-    await Promise.all(
-      hints.map((hint) => loadCandidateSnapshot(reader, hint.rootDirectory, hint.source)),
-    )
-  ).filter((candidate): candidate is ProjectRootSnapshotInput => Boolean(candidate));
+  const candidates = (await Promise.all(
+    hints.map((hint) => loadCandidateSnapshot(reader, hint.rootDirectory, hint.source)),
+  )).filter((candidate): candidate is ProjectRootSnapshotInput => Boolean(candidate));
 
   const selected = applyWorkspaceContext(
     rootSnapshot,
@@ -578,6 +558,7 @@ async function selectProjectSnapshot(
 
   return { selected, monorepo };
 }
+
 
 async function readProjectText(
   reader: ProjectReader,
@@ -744,13 +725,14 @@ async function resolveFromGitHub(
   branch?: string,
   opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
-  const vcs = VcsStrategyFactory.getStrategy("github");
-  const repository = await vcs.getRepository(ctx, owner, repo);
+  const repository = await githubService.getRepository(ctx, owner, repo, {
+    withBranches: true,
+  });
   const requestedBranch = branch?.trim();
   const selectedBranch = requestedBranch || repository.default_branch;
 
   if (requestedBranch) {
-    const head = await vcs.getLatestCommit(ctx, owner, repo, selectedBranch);
+    const head = await githubService.getLatestCommit(ctx, owner, repo, selectedBranch);
     if (!head) {
       throw new Error(`Branch "${selectedBranch}" was not found for ${owner}/${repo}`);
     }

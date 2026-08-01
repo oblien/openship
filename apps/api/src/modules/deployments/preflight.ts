@@ -47,7 +47,7 @@ import {
 } from "../github/github.auth";
 import { canResolveTokenFor } from "../github/github.token";
 import { canResolveServerGitCredential } from "../github/server-github.service";
-import { VcsStrategyFactory } from "../vcs/vcs.factory";
+import { parseRepoUrl } from "../github/github.service";
 import { resolveRecords, lookupAddresses } from "../../lib/dns-resolver";
 import { type RequestContext } from "../../lib/request-context";
 import { repos } from "@repo/db";
@@ -156,8 +156,7 @@ function parseGithubOwnerRepo(
   repoHint?: string | null,
 ): { owner: string; repo: string } | null {
   if (ownerHint && repoHint) return { owner: ownerHint, repo: repoHint };
-  const vcs = VcsStrategyFactory.getStrategy("github");
-  const parsed = vcs.parseRepoUrl(repoUrl);
+  const parsed = parseRepoUrl(repoUrl);
   if (!parsed) return null;
   return { owner: ownerHint || parsed.owner, repo: parsed.repo };
 }
@@ -496,7 +495,10 @@ async function checkPublicEndpoints(
 
   // Collection-level rule: a cloud static deploy supports at most one
   // explicit path-targeted endpoint.
-  if (isCloudStatic && endpoints.filter((e) => typeof e.targetPath === "string").length > 1) {
+  if (
+    isCloudStatic &&
+    endpoints.filter((e) => typeof e.targetPath === "string").length > 1
+  ) {
     checks.push(
       fail(
         "endpoint-static-cloud-shape",
@@ -571,21 +573,13 @@ async function checkPublicEndpoints(
       const hostname = endpoint.customDomain ? normalizeCustomHostname(endpoint.customDomain) : "";
       if (!hostname) {
         checks.push(
-          fail(
-            idOf("domain"),
-            `Endpoint domain (${label})`,
-            "Custom endpoint domains cannot be empty.",
-          ),
+          fail(idOf("domain"), `Endpoint domain (${label})`, "Custom endpoint domains cannot be empty."),
         );
         return;
       }
       if (seenHostnames.has(hostname)) {
         checks.push(
-          fail(
-            idOf("domain"),
-            `Endpoint domain (${label})`,
-            `Duplicate domain configured: ${hostname}`,
-          ),
+          fail(idOf("domain"), `Endpoint domain (${label})`, `Duplicate domain configured: ${hostname}`),
         );
         return;
       }
@@ -597,11 +591,7 @@ async function checkPublicEndpoints(
     const slug = endpoint.domain?.trim().toLowerCase();
     if (!slug) {
       checks.push(
-        fail(
-          idOf("slug"),
-          `Endpoint subdomain (${label})`,
-          "Free endpoint subdomains cannot be empty.",
-        ),
+        fail(idOf("slug"), `Endpoint subdomain (${label})`, "Free endpoint subdomains cannot be empty."),
       );
       return;
     }
@@ -613,11 +603,7 @@ async function checkPublicEndpoints(
     const hostname = `${slug}.${baseDomain}`;
     if (seenHostnames.has(hostname)) {
       checks.push(
-        fail(
-          idOf("domain"),
-          `Endpoint domain (${label})`,
-          `Duplicate domain configured: ${hostname}`,
-        ),
+        fail(idOf("domain"), `Endpoint domain (${label})`, `Duplicate domain configured: ${hostname}`),
       );
       return;
     }
@@ -638,11 +624,7 @@ async function checkPublicEndpoints(
           ? await requestCloudPreflight(snapshot, { customDomain: lk.hostname })
           : cloud;
         const result = await checkCustomDomain(lk.hostname, endpointCloud, snapshot);
-        return {
-          ...result,
-          id: `endpoint-${lk.index}-domain`,
-          label: `Endpoint domain (${lk.label})`,
-        };
+        return { ...result, id: `endpoint-${lk.index}-domain`, label: `Endpoint domain (${lk.label})` };
       }
       // Redeploy reclaiming a subdomain this project already holds live is not
       // a conflict — skip the cloud availability probe entirely for it.
@@ -785,7 +767,8 @@ async function resolveCloudPreflight(
   // to ping cloud preflight. Cloud-target deploys obviously need it
   // too (cloud IS doing the deploy). Single authority shared with the pipeline.
   const usesManagedRouting = usesManagedRoutingFor(plat.target, effectiveTarget);
-  const hasManagedPublicEndpoints = endpointsNeedCloud(opts?.publicEndpoints);
+  const hasManagedPublicEndpoints =
+    endpointsNeedCloud(opts?.publicEndpoints);
   // The project-level free-domain slug is a routable web hostname only for a
   // single-app project. In services mode there is no project domain — each
   // service routes via its own endpoint (needsManagedComposeDomains), so an
@@ -795,7 +778,8 @@ async function resolveCloudPreflight(
   const needsManagedProjectDomain =
     (!opts?.multiService && !!opts?.slug && !opts?.customDomain && usesManagedRouting) ||
     (usesManagedRouting && hasManagedPublicEndpoints);
-  const needsManagedComposeDomains = servicesNeedCloud(opts?.composeServices);
+  const needsManagedComposeDomains =
+    servicesNeedCloud(opts?.composeServices);
   const needsCloudPreflight =
     effectiveTarget === "cloud" || needsManagedProjectDomain || needsManagedComposeDomains;
   const requestInput = opts?.publicEndpoints?.length
@@ -1196,7 +1180,9 @@ async function checkCustomDomainSelfHosted(
  * at the cloud edge directly. Non-blocking; the .opsh.io free domain
  * stays attached so the deploy still ships.
  */
-async function checkCustomDomainCloudCname(customDomain: string): Promise<PreflightCheck> {
+async function checkCustomDomainCloudCname(
+  customDomain: string,
+): Promise<PreflightCheck> {
   const records = await resolveRecords(customDomain, "CNAME", {
     timeoutMs: DOMAIN_CHECK_TIMEOUT_MS,
   });
@@ -1334,12 +1320,11 @@ export async function runPreflightChecks(
   const hasEndpointRouting = !!opts?.publicEndpoints?.length;
   const hasManagedProjectDomain =
     !opts?.multiService &&
-    !hasEndpointRouting &&
-    !!opts?.slug &&
-    !opts?.customDomain &&
-    usesManagedRouting;
-  const hasManagedPublicEndpoints = endpointsNeedCloud(opts?.publicEndpoints);
-  const hasManagedComposeDomains = servicesNeedCloud(opts?.composeServices);
+    !hasEndpointRouting && !!opts?.slug && !opts?.customDomain && usesManagedRouting;
+  const hasManagedPublicEndpoints =
+    endpointsNeedCloud(opts?.publicEndpoints);
+  const hasManagedComposeDomains =
+    servicesNeedCloud(opts?.composeServices);
   const cloudRequirement =
     effectiveTarget === "cloud"
       ? "cloud-runtime"
@@ -1402,7 +1387,9 @@ export async function runPreflightChecks(
   // cloud App installation is irrelevant — skip it. This mirrors the
   // remote-clone-token check below, which already passes for local builds.
   if (!repoIsPublic && getGitHubAuthMode() === "app" && effectiveBuildStrategy !== "local") {
-    checks.push(await checkGitHubAppInstallation(githubCtx, opts?.gitOwner));
+    checks.push(
+      await checkGitHubAppInstallation(githubCtx, opts?.gitOwner),
+    );
   }
 
   // A remote clone credential is only needed when the repo is actually cloned
@@ -1492,25 +1479,12 @@ export async function runPreflightChecks(
 
   if (opts?.composeServices?.length) {
     checks.push(
-      ...(await checkComposeServiceDomains(
-        opts.composeServices,
-        opts.slug,
-        cloudPreflight,
-        snapshot,
-      )),
+      ...(await checkComposeServiceDomains(opts.composeServices, opts.slug, cloudPreflight, snapshot)),
     );
   }
 
   if (opts?.publicEndpoints?.length) {
-    checks.push(
-      ...(await checkPublicEndpoints(
-        snapshot,
-        opts.publicEndpoints,
-        cloudPreflight,
-        opts.ctx,
-        opts.projectId,
-      )),
-    );
+    checks.push(...(await checkPublicEndpoints(snapshot, opts.publicEndpoints, cloudPreflight, opts.ctx, opts.projectId)));
   }
 
   // Catch the "this deploy will have no public URL" foot-gun: self-hosted,
@@ -1524,7 +1498,9 @@ export async function runPreflightChecks(
   const hasAnyEndpointDomain = (opts?.publicEndpoints ?? []).some(
     (endpoint) => !!endpoint.domain || !!endpoint.customDomain,
   );
-  const hasAnyComposeExposed = (opts?.composeServices ?? []).some((service) => service.exposed);
+  const hasAnyComposeExposed = (opts?.composeServices ?? []).some(
+    (service) => service.exposed,
+  );
   const willHavePublicUrl =
     effectiveTarget === "cloud" ||
     cloudRequirement !== "none" ||

@@ -29,21 +29,15 @@ export async function preCreateServiceDeployments(
     targetServiceIds?: string[];
     forceAll: boolean;
   },
-): Promise<
-  Map<string, { id: string | null; serviceId: string; serviceName: string; targeted: boolean }>
-> {
+): Promise<Map<string, { id: string | null; serviceId: string; serviceName: string; targeted: boolean }>> {
   const services = await repos.service.listByProject(projectId).catch(() => []);
   const enabled = services.filter((s) => s.enabled);
-  const map = new Map<
-    string,
-    { id: string | null; serviceId: string; serviceName: string; targeted: boolean }
-  >();
+  const map = new Map<string, { id: string | null; serviceId: string; serviceName: string; targeted: boolean }>();
   if (enabled.length === 0) return map;
 
-  const targetSet =
-    opts.targetServiceIds && opts.targetServiceIds.length > 0
-      ? new Set(opts.targetServiceIds)
-      : null;
+  const targetSet = opts.targetServiceIds && opts.targetServiceIds.length > 0
+    ? new Set(opts.targetServiceIds)
+    : null;
 
   // Compute (targeted? per service) up front so the caller can drive
   // per-service Checks events even before the compose pipeline runs.
@@ -126,7 +120,7 @@ export async function emitServiceCheckRun(opts: {
       await repos.serviceDeployment
         .update(serviceDeploymentId, {
           checkRunId: result.id,
-          checkRunUrl: result.html_url,
+          checkRunUrl: result.htmlUrl,
         })
         .catch(() => {});
     }
@@ -160,7 +154,7 @@ export async function emitServiceCheckRun(opts: {
       await repos.serviceDeployment
         .update(serviceDeploymentId, {
           checkRunId: result.id,
-          checkRunUrl: result.html_url,
+          checkRunUrl: result.htmlUrl,
         })
         .catch(() => {});
     }

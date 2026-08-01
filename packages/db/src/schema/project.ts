@@ -303,7 +303,9 @@ export const project = pgTable(
      * is available either way — images are retained by the rollback-window keep
      * set regardless of this setting.
      */
-    defaultRollbackStrategy: text("default_rollback_strategy").notNull().default("git"),
+    defaultRollbackStrategy: text("default_rollback_strategy")
+      .notNull()
+      .default("git"),
     /**
      * One-shot "rebuild every service on the next deploy regardless of
      * what changed" flag. Used by the dashboard's force-deploy toggle.

@@ -184,8 +184,9 @@ setupWebSocket(app);
 // exec via the Docker runtime adapter. The controller picks via
 // resolveDeploymentRuntime() from the service's active deployment.
 {
-  const { serviceTerminalRoutes } =
-    await import("./modules/service-terminal/service-terminal.routes");
+  const { serviceTerminalRoutes } = await import(
+    "./modules/service-terminal/service-terminal.routes"
+  );
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
@@ -262,12 +263,9 @@ if (env.CLOUD_MODE) {
   // died mid-flight (no teardown outlives a restart), so clear stuck locks at
   // boot — otherwise the project refuses all deletes forever ("Another delete
   // is already running"). Fire-and-forget; logs the count if any were stuck.
-  void repos.project
-    .clearStaleDeletions()
-    .then((n) => {
-      if (n > 0) console.log(`[boot] cleared ${n} stale project deletion lock(s)`);
-    })
-    .catch((err) => console.warn("[boot] clearStaleDeletions failed:", err));
+  void repos.project.clearStaleDeletions().then((n) => {
+    if (n > 0) console.log(`[boot] cleared ${n} stale project deletion lock(s)`);
+  }).catch((err) => console.warn("[boot] clearStaleDeletions failed:", err));
   // A Docker migration is an in-memory FSM that quiesces (stops) the source
   // containers before the target deploy — a restart mid-migration would strand
   // a stopped production stack forever. Restart the originals + roll back any

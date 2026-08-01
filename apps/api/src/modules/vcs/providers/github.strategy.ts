@@ -1,4 +1,4 @@
-import { VcsProviderStrategy } from "../vcs.strategy";
+import { VcsProviderStrategy, VcsCheckRun } from "../vcs.strategy";
 import type { WebhookStrategy } from "../vcs.types";
 import type { RequestContext } from "../../../lib/request-context";
 import * as githubService from "../../github/github.service";
@@ -8,7 +8,6 @@ import type {
   GitHubFileContent as VcsFileContent,
   GitHubTreeResponse as VcsTreeResponse,
   GitHubWebhook as VcsWebhook,
-  GitHubCheckRun as VcsCheckRun,
 } from "../../github/github.types";
 
 export class GitHubStrategy implements VcsProviderStrategy {
@@ -132,7 +131,7 @@ export class GitHubStrategy implements VcsProviderStrategy {
       headSha: opts.headSha,
       status: opts.status,
       conclusion: opts.conclusion,
-      detailsUrl: opts.detailsUrl,
+      // detailsUrl: opts.detailsUrl,
       output: opts.output,
     });
     if (!result) return null;
@@ -140,7 +139,7 @@ export class GitHubStrategy implements VcsProviderStrategy {
       id: result.id,
       status: opts.status,
       conclusion: opts.conclusion ?? null,
-      html_url: result.htmlUrl,
+      htmlUrl: result.htmlUrl,
     };
   }
 
@@ -167,7 +166,7 @@ export class GitHubStrategy implements VcsProviderStrategy {
     return githubService.updateCheckRun(ctx, owner, repo, checkRunId, {
       status: opts.status as any,
       conclusion: opts.conclusion as any,
-      detailsUrl: opts.detailsUrl,
+      // detailsUrl: opts.detailsUrl,
       output: opts.output,
     });
   }

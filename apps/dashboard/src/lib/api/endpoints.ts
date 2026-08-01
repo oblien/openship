@@ -190,19 +190,25 @@ export const endpoints = {
   },
 
   /* ---------------------------------------------------------------- */
+  /*  VCS                                                             */
+  /* ---------------------------------------------------------------- */
+  vcs: {
+    orgRepos: (provider: string, owner: string) => `vcs/${provider}/orgs/${encodeURIComponent(owner)}/repos`,
+    userRepos: (provider: string) => `vcs/${provider}/repos`,
+    cloneToken: (provider: string, owner: string, repo: string) =>
+      `vcs/${provider}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/clone-token`,
+    repoBranches: (provider: string, owner: string, repo: string) =>
+      `vcs/${provider}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
+    /** Recursive path list, for the source-access path picker. */
+    repoTree: (provider: string, owner: string, repo: string) =>
+      `vcs/${provider}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree`,
+  },
+
+  /* ---------------------------------------------------------------- */
   /*  GitHub                                                          */
   /* ---------------------------------------------------------------- */
   github: {
     userHome: "github/home",
-    orgRepos: (owner: string) => `github/orgs/${owner}/repos`,
-    userRepos: "github/repos",
-    cloneToken: (owner: string, repo: string) =>
-      `github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/clone-token`,
-    repoBranches: (owner: string, repo: string) =>
-      `github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
-    /** Recursive path list, for the source-access path picker. */
-    repoTree: (owner: string, repo: string) =>
-      `github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tree`,
     status: "github/status",
     connect: "github/connect",
     connectRedirect: "github/connect/redirect",

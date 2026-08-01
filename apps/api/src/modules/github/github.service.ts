@@ -6,7 +6,10 @@
  */
 
 import { randomBytes } from "crypto";
-import { githubFetch, getGitHubAuthMode } from "./github.auth";
+import {
+  githubFetch,
+  getGitHubAuthMode,
+} from "./github.auth";
 import { ghFetch } from "./github.http";
 import { mapRepositories } from "./sources/mappers";
 import { isIgnoredRepoPath } from "../../lib/project-root-detector";
@@ -52,7 +55,7 @@ export const WEBHOOK_SECRET_BYTES = 32;
  * Source: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps
  */
 export const PAT_SCOPE_WARN_PATTERNS: readonly RegExp[] = [
-  /^admin:/i, // admin:org, admin:repo_hook, admin:public_key, …
+  /^admin:/i,        // admin:org, admin:repo_hook, admin:public_key, …
   /^delete_repo$/i,
   /^write:packages$/i,
   /^write:org$/i,
@@ -133,7 +136,9 @@ export async function inspectPatScope(token: string): Promise<PatScopeReport> {
  */
 export function classifyPatScope(
   report: PatScopeReport,
-): { ok: false; reason: string } | { ok: true; warning?: string } {
+):
+  | { ok: false; reason: string }
+  | { ok: true; warning?: string } {
   const scopeSet = new Set(report.scopes);
 
   // Fine-grained PATs report no classic scopes — pass without warning.
@@ -148,7 +153,9 @@ export function classifyPatScope(
     };
   }
 
-  const broad = report.scopes.filter((s) => PAT_SCOPE_WARN_PATTERNS.some((re) => re.test(s)));
+  const broad = report.scopes.filter((s) =>
+    PAT_SCOPE_WARN_PATTERNS.some((re) => re.test(s)),
+  );
   if (broad.length > 0) {
     return {
       ok: true,
@@ -224,11 +231,7 @@ export async function listUserOwnedRepos(
     const data = await githubFetch<GitHubRepository[]>({
       ctx,
       url: "https://api.github.com/user/repos",
-      params: {
-        per_page: 100,
-        sort: "updated",
-        affiliation: "owner,collaborator,organization_member",
-      },
+      params: { per_page: 100, sort: "updated", affiliation: "owner,collaborator,organization_member" },
     });
     return mapRepositories(Array.isArray(data) ? data : []);
   }
@@ -309,7 +312,7 @@ export async function getRepository(
 export async function createRepository(
   ctx: RequestContext,
   name: string,
-  opts: { description?: string; private?: boolean; owner?: string } = {},
+  opts: { description?: string; private?: boolean; owner?: string; } = {},
 ): Promise<GitHubRepository> {
   const url = opts.owner
     ? `https://api.github.com/orgs/${encodeURIComponent(opts.owner)}/repos`
@@ -334,7 +337,7 @@ export async function createRepository(
 export async function deleteRepository(
   ctx: RequestContext,
   owner: string,
-  repo: string,
+  repo: string
 ): Promise<void> {
   await githubFetch({
     ctx,
@@ -392,7 +395,7 @@ export async function revokeDeployKey(
 export async function listBranches(
   ctx: RequestContext,
   owner: string,
-  repo: string,
+  repo: string
 ): Promise<GitHubBranch[]> {
   return githubFetch<GitHubBranch[]>({
     ctx,
@@ -432,28 +435,24 @@ export async function getRecentCommits(
   repo: string,
   branch: string,
   perPage = 10,
-): Promise<
-  Array<{
-    sha: string;
-    message: string;
-    author: string;
-    authorAvatar: string;
-    date: string;
-    url: string;
-  }>
-> {
+): Promise<Array<{
+  sha: string;
+  message: string;
+  author: string;
+  authorAvatar: string;
+  date: string;
+  url: string;
+}>> {
   try {
-    const data = await githubFetch<
-      Array<{
-        sha: string;
-        html_url: string;
-        commit: {
-          message: string;
-          author: { name: string; date: string } | null;
-        };
-        author: { login: string; avatar_url: string } | null;
-      }>
-    >({
+    const data = await githubFetch<Array<{
+      sha: string;
+      html_url: string;
+      commit: {
+        message: string;
+        author: { name: string; date: string } | null;
+      };
+      author: { login: string; avatar_url: string } | null;
+    }>>({
       ctx,
       owner,
       url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits`,
@@ -489,7 +488,7 @@ export async function compareCommits(
   owner: string,
   repo: string,
   base: string,
-  head: string,
+  head: string
 ): Promise<{ files: string[] } | null> {
   try {
     const data = await githubFetch<{
@@ -519,7 +518,7 @@ export async function listFiles(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { branch?: string; path?: string } = {},
+  opts: { branch?: string; path?: string; } = {},
 ): Promise<GitHubFileContent[]> {
   const filePath = opts.path ?? "";
   return githubFetch<GitHubFileContent[]>({
@@ -558,9 +557,7 @@ export async function listRepositoryTree(
     return tree;
   }
 
-  const fallbackTree = await listRepositoryTreeViaContents(ctx, owner, repo, opts).catch(
-    () => tree,
-  );
+  const fallbackTree = await listRepositoryTreeViaContents(ctx, owner, repo, opts).catch(() => tree);
   return fallbackTree.length > 0 ? fallbackTree : tree;
 }
 
@@ -572,7 +569,7 @@ export async function getFileContent(
   owner: string,
   repo: string,
   file: string,
-  opts: { branch?: string; json?: boolean } = {},
+  opts: { branch?: string; json?: boolean; } = {},
 ): Promise<{
   sha: string;
   size: number;
@@ -612,7 +609,7 @@ export async function getFileContent(
 export async function listWebhooks(
   ctx: RequestContext,
   owner: string,
-  repo: string,
+  repo: string
 ): Promise<GitHubWebhook[]> {
   return githubFetch<GitHubWebhook[]>({
     ctx,
@@ -688,7 +685,7 @@ export async function deleteWebhook(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  hookId: number,
+  hookId: number
 ): Promise<void> {
   await githubFetch({
     ctx,
@@ -753,7 +750,6 @@ export async function updateCheckRun(
     status: "completed";
     conclusion: "success" | "failure" | "cancelled" | "neutral" | "skipped";
     output?: { title: string; summary: string; text?: string };
-    detailsUrl?: string;
   },
 ): Promise<void> {
   try {
@@ -767,7 +763,6 @@ export async function updateCheckRun(
         completed_at: new Date().toISOString(),
         conclusion: opts.conclusion,
         ...(opts.output ? { output: opts.output } : {}),
-        ...(opts.detailsUrl ? { details_url: opts.detailsUrl } : {}),
       },
     });
   } catch {
@@ -816,9 +811,9 @@ export function getWebhookStrategy(): WebhookStrategy {
  *   3. "repo"   - current API target is public
  *   4. "none"   - no way to receive webhooks
  */
-export async function resolveWebhookStrategy(project?: {
-  webhookDomain?: string | null;
-}): Promise<WebhookStrategy> {
+export async function resolveWebhookStrategy(
+  project?: { webhookDomain?: string | null },
+): Promise<WebhookStrategy> {
   const base = getWebhookStrategy();
   if (base === "app") return "app";
 
@@ -887,7 +882,11 @@ function isLocalUrl(url: string): boolean {
 
     // DNS sentinel cases. `.local` is mDNS (Bonjour) — reachable only on
     // the local link, never from the public internet.
-    if (hostname === "localhost" || hostname === "0.0.0.0" || hostname.endsWith(".local")) {
+    if (
+      hostname === "localhost" ||
+      hostname === "0.0.0.0" ||
+      hostname.endsWith(".local")
+    ) {
       return true;
     }
 
@@ -895,8 +894,9 @@ function isLocalUrl(url: string): boolean {
     // Same hostname can also arrive un-bracketed if the caller passed a
     // bare IP. fe80::/10 → fe80..febf (first byte top 10 bits); fc00::/7
     // → fc00..fdff (first byte top 7 bits, fc or fd).
-    const v6 =
-      hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+    const v6 = hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
     if (v6 === "::1") return true;
     if (/^fe[89ab][0-9a-f]?:/i.test(v6)) return true; // link-local
     if (/^f[cd][0-9a-f]{2}:/i.test(v6)) return true; // ULA
@@ -905,11 +905,11 @@ function isLocalUrl(url: string): boolean {
     // (Not collapsed into a single regex — readability beats brevity here,
     // and each /8|/12|/16 has a different intent that benefits from being
     // named in the source.)
-    if (/^127\./.test(hostname)) return true; // loopback /8
-    if (/^10\./.test(hostname)) return true; // RFC1918 /8
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return true; // RFC1918 /12
-    if (/^192\.168\./.test(hostname)) return true; // RFC1918 /16
-    if (/^169\.254\./.test(hostname)) return true; // link-local /16
+    if (/^127\./.test(hostname)) return true;                       // loopback /8
+    if (/^10\./.test(hostname)) return true;                        // RFC1918 /8
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return true;   // RFC1918 /12
+    if (/^192\.168\./.test(hostname)) return true;                  // RFC1918 /16
+    if (/^169\.254\./.test(hostname)) return true;                  // link-local /16
 
     return false;
   } catch {
@@ -935,7 +935,10 @@ export function mintWebhookSecret(): string {
  * (first-time registration) and rotateProjectWebhookSecret (operator-
  * initiated rotation).
  */
-async function persistProjectWebhookSecret(projectId: string, secret: string): Promise<void> {
+async function persistProjectWebhookSecret(
+  projectId: string,
+  secret: string,
+): Promise<void> {
   await dbRepos.project.update(projectId, {
     webhookSecret: encrypt(secret),
   });
@@ -1024,14 +1027,22 @@ export async function registerWebhook(
     : env.GITHUB_WEBHOOK_SECRET || undefined;
 
   try {
-    const result = await createWebhook(ctx, owner, repo, webhookUrl, secret || undefined);
+    const result = await createWebhook(
+      ctx,
+      owner,
+      repo,
+      webhookUrl,
+      secret || undefined,
+    );
     return { hookId: result.hookId, events: result.events };
   } catch (err) {
     /* 422 = webhook already exists - find it */
     if (err instanceof Error && err.message.includes("422")) {
       const existing = await listWebhooks(ctx, owner, repo);
       const targetUrl = normalizeWebhookUrl(webhookUrl);
-      const match = existing.find((h) => normalizeWebhookUrl(h.config?.url) === targetUrl);
+      const match = existing.find((h) =>
+        normalizeWebhookUrl(h.config?.url) === targetUrl,
+      );
       if (!match) return { hookId: null, events: [] };
 
       const config = secret
