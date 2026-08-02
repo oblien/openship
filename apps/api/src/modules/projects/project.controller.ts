@@ -25,6 +25,7 @@ import { getRouteStrategy } from "../settings/settings.service";
 import { checkProjectPorts } from "./port-check.service";
 import { checkProjectOutput } from "./output-check.service";
 import { AppError, resolveProjectVolumes, safeErrorMessage } from "@repo/core";
+import { resolveUserGitlabBaseUrl } from "../gitlab/gitlab.auth";
 import type {
   TCreateProjectBody,
   TCreateProjectEnvironmentBody,
@@ -108,7 +109,13 @@ export async function ensure(c: Context) {
   }
 
   try {
-    const result = await projectService.ensureProject(body, ctx.organizationId);
+    const gitlabBaseUrl =
+      body.gitProvider === "gitlab"
+        ? await resolveUserGitlabBaseUrl(ctx.userId)
+        : undefined;
+    const result = await projectService.ensureProject(body, ctx.organizationId, {
+      gitlabBaseUrl,
+    });
     audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
       eventType: result.created ? "project.created" : "project.updated",
       resourceType: "project",
@@ -375,7 +382,13 @@ export async function create(c: Context) {
     const routeDefault = await getRouteStrategy(userId).catch(() => "auto" as const);
     if (routeDefault !== "auto") body.routeStrategy = routeDefault;
   }
-  const project = await projectService.createProject(body, organizationId);
+  const gitlabBaseUrl =
+    body.gitProvider === "gitlab"
+      ? await resolveUserGitlabBaseUrl(userId)
+      : undefined;
+  const project = await projectService.createProject(body, organizationId, {
+    gitlabBaseUrl,
+  });
   audit.recordAsync(auditContextFrom(c, organizationId, userId), {
     eventType: "project.created",
     resourceType: "project",
@@ -463,7 +476,13 @@ export async function update(c: Context) {
   const id = param(c, "id");
   await permission.assert(getRequestContext(c), { resourceType: "project", resourceId: id, action: "write" });
   const body = await c.req.json<TUpdateProjectBody>();
-  const project = await projectService.updateProject(id, body, organizationId);
+  const gitlabBaseUrl =
+    body.gitProvider === "gitlab" || body.gitOwner || body.gitRepo
+      ? await resolveUserGitlabBaseUrl(userId)
+      : undefined;
+  const project = await projectService.updateProject(id, body, organizationId, {
+    gitlabBaseUrl,
+  });
   audit.recordAsync(auditContextFrom(c, organizationId, userId), {
     eventType: "project.updated",
     resourceType: "project",
@@ -1347,13 +1366,52 @@ export async function getGitInfo(c: Context) {
     .filter((d) => d.verified)
     .map((d) => ({ hostname: d.hostname, ssl: d.sslStatus === "active" }));
 
+  const isGitlab = info.gitProvider === "gitlab";
+  const gitlabProjectId =
+    isGitlab && info.installationId != null ? Number(info.installationId) : NaN;
+
   let branch = info.gitBranch ?? "";
-  if (!branch && info.gitOwner && info.gitRepo) {
-    branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
+  let commits: Array<{
+    sha: string;
+    message: string;
+    author: string;
+    authorAvatar: string;
+    date: string;
+    url: string;
+  }> = [];
+
+  if (isGitlab && Number.isFinite(gitlabProjectId)) {
+    const gitlab = await import("../gitlab/gitlab.service");
+    if (!branch) {
+      try {
+        const glProject = await gitlab.getProject(ctx, gitlabProjectId);
+        branch = glProject.defaultBranch || "main";
+      } catch {
+        branch = "main";
+      }
+    }
+    if (branch) {
+      commits = await gitlab.getRecentCommits(ctx, gitlabProjectId, branch, 10);
+    }
+  } else {
+    if (!branch && info.gitOwner && info.gitRepo) {
+      branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
+    }
+    if (branch && info.gitOwner && info.gitRepo) {
+      commits = await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10);
+    }
   }
-  const commits = branch
-    ? await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
-    : [];
+
+  // Prefer the stored clone URL (covers self-hosted GitLab); fall back to a
+  // constructed https URL for the Source tab's "open on provider" link.
+  const gitUrl = info.gitUrl ?? null;
+  const htmlUrl = gitUrl
+    ? gitUrl.replace(/\.git$/i, "").replace(/^git@([^:]+):/, "https://$1/")
+    : info.gitOwner && info.gitRepo
+      ? isGitlab
+        ? `${(await resolveUserGitlabBaseUrl(ctx.userId)).replace(/\/$/, "")}/${info.gitOwner}/${info.gitRepo}`
+        : `https://github.com/${info.gitOwner}/${info.gitRepo}`
+      : null;
 
   return c.json({
     success: true,
@@ -1361,6 +1419,8 @@ export async function getGitInfo(c: Context) {
     repo: info.gitRepo,
     branch,
     provider: info.gitProvider ?? "github",
+    git_url: gitUrl,
+    html_url: htmlUrl,
     commits: commits.map((c) => ({
       sha: c.sha,
       message: c.message,
@@ -1392,6 +1452,26 @@ export async function listBranches(c: Context) {
     return c.json({ success: false, error: "No repository connected" }, 400);
   }
 
+  if (info.gitProvider === "gitlab") {
+    const gitlabProjectId = info.installationId != null ? Number(info.installationId) : NaN;
+    if (!Number.isFinite(gitlabProjectId)) {
+      return c.json(
+        { success: false, error: "GitLab project id missing — re-link the repository" },
+        400,
+      );
+    }
+    const { listBranches: listGitlabBranches } = await import("../gitlab/gitlab.service");
+    const branches = await listGitlabBranches(ctx, gitlabProjectId);
+    return c.json({
+      success: true,
+      data: branches.map((branch) => ({
+        name: branch.name,
+        sha: branch.sha,
+        protected: branch.protected,
+      })),
+    });
+  }
+
   const branches = await listGitHubBranches(ctx, info.gitOwner, info.gitRepo);
   return c.json({
     success: true,
@@ -1410,17 +1490,47 @@ export async function listBranches(c: Context) {
  */
 export async function linkRepo(c: Context) {
   const ctx = getRequestContext(c);
+  const { userId, organizationId } = ctx;
   const id = param(c, "id");
   await permission.assert(ctx, { resourceType: "project", resourceId: id, action: "write" });
-  const { owner, repo, branch, installationId } = await c.req.json<{
+  const body = await c.req.json<{
     owner: string;
     repo: string;
     branch?: string;
     installationId?: number;
+    provider?: string;
+    gitUrl?: string;
   }>();
+  const { owner, repo, branch, installationId, gitUrl: bodyGitUrl } = body;
+  const provider = body.provider === "gitlab" ? "gitlab" : "github";
 
-  const result = await projectService.linkProjectRepo(ctx, id, { owner, repo, branch, installationId });
+  if (provider === "gitlab") {
+    const project = await repos.project.findById(id);
+    try {
+      assertResourceInOrg(project, "Project", organizationId, id);
+    } catch {
+      return c.json({ error: "Project not found" }, 404);
+    }
+    return linkGitlabRepo(c, {
+      ctx,
+      userId,
+      organizationId,
+      id,
+      project: project!,
+      owner: owner.trim(),
+      repo: repo.trim(),
+      branch,
+      installationId,
+      gitUrl: bodyGitUrl,
+    });
+  }
 
+  const result = await projectService.linkProjectRepo(ctx, id, {
+    owner,
+    repo,
+    branch,
+    installationId,
+  });
   if (!result.ok) {
     if (result.code === "not_found") return c.json({ error: "Project not found" }, 404);
     if (result.code === "app_not_installed") {
@@ -1461,6 +1571,133 @@ export async function linkRepo(c: Context) {
   });
 }
 
+async function linkGitlabRepo(
+  c: Context,
+  args: {
+    ctx: RequestContext;
+    userId: string;
+    organizationId: string;
+    id: string;
+    project: Project;
+    owner: string;
+    repo: string;
+    branch?: string;
+    installationId?: number;
+    gitUrl?: string;
+  },
+) {
+  const { ctx, userId, organizationId, id, project, owner, repo, branch, installationId } =
+    args;
+
+  if (!installationId || !Number.isFinite(installationId)) {
+    return c.json(
+      {
+        success: false,
+        error: "installationId (GitLab project id) is required when provider is gitlab",
+      },
+      400,
+    );
+  }
+
+  const { getProject: getGitlabProject, registerWebhook: registerGitlabWebhook } =
+    await import("../gitlab/gitlab.service");
+  const { sharedGitlabWebhookUrl, domainGitlabWebhookUrl } = await import("../../lib/public-url");
+  const { gitlabWebBase } = await import("../gitlab/gitlab.http");
+
+  const glProject = await getGitlabProject(ctx, installationId);
+  const defaultBranch = branch?.trim() || glProject.defaultBranch || "main";
+  const gitUrl =
+    args.gitUrl?.trim() ||
+    glProject.cloneUrl ||
+    `${gitlabWebBase()}/${owner}/${repo}.git`;
+
+  const gitFields: Record<string, unknown> = {
+    gitProvider: "gitlab",
+    gitOwner: owner,
+    gitRepo: repo,
+    gitBranch: defaultBranch,
+    gitUrl,
+    installationId,
+  };
+
+  const strategy = await resolveWebhookStrategy(project);
+  // GitLab has no App install dance — register a project Push Hook whenever a
+  // reachable webhook URL exists (domain / repo / cloud shared endpoint).
+  if (strategy === "app" || strategy === "repo") {
+    try {
+      const result = await registerGitlabWebhook(ctx, installationId, sharedGitlabWebhookUrl(), {
+        projectId: project.id,
+      });
+      gitFields.webhookId = result.hookId;
+      gitFields.autoDeploy = true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Webhook registration failed";
+      return c.json({ success: false, error: message }, 400);
+    }
+  } else if (strategy === "domain") {
+    try {
+      const webhookUrl = domainGitlabWebhookUrl(project.webhookDomain!);
+      const result = await registerGitlabWebhook(ctx, installationId, webhookUrl, {
+        projectId: project.id,
+      });
+      gitFields.webhookId = result.hookId;
+      gitFields.autoDeploy = true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Webhook registration failed";
+      return c.json({ success: false, error: message }, 400);
+    }
+  }
+
+  await repos.project.update(id, gitFields);
+  if (project.groupId) {
+    await repos.projectGroup.update(project.groupId, {
+      gitProvider: "gitlab",
+      gitOwner: owner,
+      gitRepo: repo,
+      gitUrl,
+      installationId,
+    });
+    const sharedGitFields = {
+      gitProvider: "gitlab",
+      gitOwner: owner,
+      gitRepo: repo,
+      gitUrl,
+      installationId,
+      ...(typeof gitFields.webhookId === "number" ? { webhookId: gitFields.webhookId } : {}),
+    };
+    const siblings = await repos.project.listByGroup(project.groupId);
+    await Promise.all(
+      siblings
+        .filter((sibling) => sibling.id !== id)
+        .map((sibling) => repos.project.update(sibling.id, sharedGitFields)),
+    );
+  }
+
+  audit.recordAsync(auditContextFrom(c, organizationId, userId), {
+    eventType: "project.updated",
+    resourceType: "project",
+    resourceId: id,
+    after: {
+      action: "git.linked",
+      gitProvider: "gitlab",
+      gitOwner: owner,
+      gitRepo: repo,
+      gitBranch: defaultBranch,
+      webhookStrategy: strategy,
+      autoDeploy: !!gitFields.autoDeploy,
+    },
+  });
+
+  return c.json({
+    success: true,
+    provider: "gitlab",
+    owner,
+    repo,
+    branch: defaultBranch,
+    webhook_strategy: strategy,
+    auto_deploy: !!gitFields.autoDeploy,
+  });
+}
 async function disableSharedWebhookIfUnused(
   ctx: RequestContext,
   organizationId: string,
@@ -1468,7 +1705,7 @@ async function disableSharedWebhookIfUnused(
   repo: string,
   webhookId: number | null,
 ) {
-  const repoProjects = await repos.project.findByGitRepo(owner, repo);
+  const repoProjects = await repos.project.findByGitRepo(owner, repo, "github");
   if (repoProjects.some((p) => p.autoDeploy)) return;
 
   const projects = repoProjects.filter((p) => p.organizationId === organizationId);
@@ -1517,14 +1754,44 @@ export async function setAutoDeploy(c: Context) {
   }
 
   try {
-    if (strategy === "app") {
+    if (project.gitProvider === "gitlab") {
+      // GitLab has no App install dance — register a project Push Hook whenever
+      // we can reach a webhook URL. Prefer the project's webhookDomain when set
+      // (even if resolveWebhookStrategy short-circuits to "app" in GitHub App mode).
+      if (!enabled) {
+        await repos.project.update(id, { autoDeploy: false });
+      } else {
+        const gitlabProjectId = project.installationId;
+        if (!gitlabProjectId || !Number.isFinite(gitlabProjectId)) {
+          return c.json(
+            {
+              success: false,
+              error:
+                "GitLab project id is missing. Re-link the repository from Git settings, then try again.",
+            },
+            400,
+          );
+        }
+        const { registerWebhook: registerGitlabWebhook } = await import("../gitlab/gitlab.service");
+        const { sharedGitlabWebhookUrl, domainGitlabWebhookUrl } = await import(
+          "../../lib/public-url"
+        );
+        const webhookUrl = project.webhookDomain
+          ? domainGitlabWebhookUrl(project.webhookDomain)
+          : sharedGitlabWebhookUrl();
+        const result = await registerGitlabWebhook(ctx, gitlabProjectId, webhookUrl, {
+          projectId: project.id,
+        });
+        await repos.project.update(id, { autoDeploy: true, webhookId: result.hookId });
+      }
+    } else if (strategy === "app") {
       // GitHub App handles push events natively - just toggle the DB flag
       await repos.project.update(id, { autoDeploy: enabled });
     } else if (strategy === "domain") {
       // User has a verified domain - direct webhook delivery
       if (enabled) {
         // strategy === "domain" ⟹ webhookDomain is set (resolveWebhookStrategy).
-    const webhookUrl = domainWebhookUrl(project.webhookDomain!);
+        const webhookUrl = domainWebhookUrl(project.webhookDomain!);
         const webhookId = await ensureSharedWebhook(ctx, project, owner, repo, webhookUrl);
         if (!webhookId) {
           return c.json(
@@ -1568,17 +1835,29 @@ export async function setAutoDeploy(c: Context) {
         401,
       );
     }
+    if (msg.includes("No GitLab token")) {
+      return c.json(
+        {
+          success: false,
+          error: "GitLab is not connected. Connect GitLab in Settings (OAuth or PAT) first.",
+        },
+        401,
+      );
+    }
     if (msg.includes("404")) {
       await repos.project.update(id, { webhookId: null, autoDeploy: false });
       return c.json(
         {
           success: false,
-          error: "Webhook was deleted on GitHub. Try disabling and re-enabling auto-deploy.",
+          error:
+            project.gitProvider === "gitlab"
+              ? "Webhook was deleted on GitLab. Try disabling and re-enabling auto-deploy."
+              : "Webhook was deleted on GitHub. Try disabling and re-enabling auto-deploy.",
         },
         410,
       );
     }
-    if (msg.includes("403")) {
+    if (msg.includes("403") || msg.includes("lacks permission to register webhooks")) {
       return c.json(
         {
           success: false,
@@ -1681,8 +1960,12 @@ export async function setWebhookDomain(c: Context) {
 
   await repos.project.update(id, { webhookDomain: hostname });
 
-  const scheme = dom.sslStatus === "active" ? "https" : "http";
-  const webhookUrl = domainWebhookUrl(hostname, scheme);
+  const scheme = dom.sslStatus === "active" || dom.sslStatus === "external" ? "https" : "http";
+  const { domainGitlabWebhookUrl } = await import("../../lib/public-url");
+  const webhookUrl =
+    project.gitProvider === "gitlab"
+      ? domainGitlabWebhookUrl(hostname, scheme)
+      : domainWebhookUrl(hostname, scheme);
 
   audit.recordAsync(auditContextFrom(c, organizationId, userId), {
     eventType: "project.updated",

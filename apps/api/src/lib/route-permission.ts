@@ -100,6 +100,7 @@ const ROOT_RESOURCES = new Set<string>([
   "audit",
   "analytics",
   "github",
+  "gitlab",
   "permissions",
   "domain",
   "settings",

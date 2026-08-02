@@ -575,6 +575,20 @@
       "when": 1786054907324,
       "tag": "0081_project_readiness_repair",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1786141307324,
+      "tag": "0082_gitlab_webhook_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1786227707324,
+      "tag": "0083_gitlab_base_url",
+      "breakpoints": true
     }
   ]
 }

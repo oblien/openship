@@ -790,6 +790,17 @@ describe("detectStack - port detection", () => {
     expect(result.port).toBe(9000);
   });
 
+  it("does not synthesize install/build/start when a Dockerfile owns the build", () => {
+    const result = detectStack(files("package.json", "Dockerfile"), {
+      name: "api",
+      scripts: { build: "tsc", start: "node dist/index.js" },
+    });
+    expect(result.stack).toBe("docker");
+    expect(result.installCommand).toBe("");
+    expect(result.buildCommand).toBe("");
+    expect(result.startCommand).toBe("");
+  });
+
   it("script port wins over Dockerfile EXPOSE", () => {
     const result = detectStack(files("package.json", "Dockerfile"), {
       dependencies: { express: "^5.0.0" },

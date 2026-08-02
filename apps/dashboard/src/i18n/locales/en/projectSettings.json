@@ -402,6 +402,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "viewOnGithub": "View on GitHub",
+    "viewOnGitlab": "View on GitLab",
     "recentCommits": "Recent Commits",
     "totalCommits": "{count} total",
     "noCommits": "No commits yet",
@@ -421,7 +422,8 @@
       "title": "Connect GitHub first",
       "description": "Link your GitHub account to connect a repository to this project.",
       "connecting": "Connecting…",
-      "connect": "Connect GitHub"
+      "connect": "Connect GitHub",
+      "connectGitlab": "Connect GitLab"
     },
     "link": {
       "title": "Link a Repository",

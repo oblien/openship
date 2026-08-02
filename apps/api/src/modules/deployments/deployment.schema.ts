@@ -155,17 +155,22 @@ export const BuildAccessBody = Type.Object({
 
 // POST /prepare — detect stack/build config before deploying. All optional:
 // the controller resolves source from (owner,repo) vs path and enforces the
-// conditional requireds (owner+repo for github, path for local).
+// conditional requireds (owner+repo for github/gitlab, path for local,
+// projectId/installationId for gitlab).
 export const PrepareDeployBody = Type.Object({
   source: Type.Optional(
-    Type.Union([Type.Literal("github"), Type.Literal("local")], {
+    Type.Union([Type.Literal("github"), Type.Literal("gitlab"), Type.Literal("local")], {
       description: "Source kind; inferred from owner/repo vs path when omitted.",
     }),
   ),
-  owner: Type.Optional(Type.String({ description: "GitHub repo owner (github source)." })),
-  repo: Type.Optional(Type.String({ description: "GitHub repo name (github source)." })),
-  branch: Type.Optional(Type.String({ description: "Git branch (github source)." })),
+  owner: Type.Optional(Type.String({ description: "Repo owner / namespace (github or gitlab source)." })),
+  repo: Type.Optional(Type.String({ description: "Repo / project name (github or gitlab source)." })),
+  branch: Type.Optional(Type.String({ description: "Git branch (github or gitlab source)." })),
   path: Type.Optional(Type.String({ description: "Local filesystem path (local source; self-hosted only)." })),
+  /** GitLab numeric project id. */
+  projectId: Type.Optional(Type.Number({ description: "GitLab project id (gitlab source)." })),
+  /** Alias for projectId — dashboard passes GitLab project id as installationId. */
+  installationId: Type.Optional(Type.Number({ description: "Alias for projectId (gitlab source)." })),
   composePath: Type.Optional(
     Type.String({
       maxLength: 300,

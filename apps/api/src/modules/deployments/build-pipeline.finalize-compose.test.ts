@@ -25,6 +25,8 @@ vi.mock("../../lib/openship-manifest-sync", () => ({
 
 vi.mock("../github/clone-auth", () => ({ resolveBuildGitToken: vi.fn() }));
 
+vi.mock("../gitlab/clone-auth", () => ({ resolveBuildGitToken: vi.fn() }));
+
 vi.mock("../../lib/git-forwarding", () => ({ openDeployRelay: vi.fn() }));
 
 vi.mock("./service-checks", () => ({

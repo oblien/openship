@@ -369,8 +369,9 @@ const TABLES: ReadonlyArray<TableSpec> = [
 // demand, so shipping them across a migration adds risk without value:
 // build_session, deployment_check_run, orphaned_resource, terminal_sessions,
 // service_terminal_sessions, verification, github_install_state,
-// webhook_delivery, oblien_webhook_event, cloud_handoff_code, and all
-// billing_* / credit_pack / stripe_* (CLOUD_MODE-only, absent on self-hosted).
+// webhook_delivery, gitlab_webhook_event, oblien_webhook_event,
+// cloud_handoff_code, and all billing_* / credit_pack / stripe_*
+// (CLOUD_MODE-only, absent on self-hosted).
 
 // Restore order = TABLES order (parents before children). Truncate uses reverse.
 
@@ -408,6 +409,7 @@ export interface EncryptedColumnSpec {
 export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "user_settings", column: "cloudSessionToken" },
   { table: "user_settings", column: "cloneTokenEncrypted" },
+  { table: "user_settings", column: "gitlabCloneTokenEncrypted" },
   { table: "project", column: "cloneTokenEncrypted" },
   { table: "project", column: "webhookSecret" },
   { table: "cloud_webhook_binding", column: "webhookSecret" },

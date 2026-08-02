@@ -249,6 +249,7 @@ export async function runBuildPipeline(
           const { cloneUrl, gitEnv: GIT_ENV, credFlag: CRED } = assembleGitClone({
             repoUrl: config.repoUrl,
             gitToken: config.gitToken,
+            gitTokenUsername: config.gitTokenUsername,
             gitCredentialHelperPath: config.gitCredentialHelperPath,
             ssh: sshMaterial,
             ambient: config.gitAmbient,
@@ -399,7 +400,13 @@ export function parseLogLevel(message: string): LogEntry["level"] {
 export function detectBuildKillHint(output: string): string | null {
   if (!output) return null;
   const tail = output.slice(-4096);
-  if (/\bsigkill\b|\bKilled\b|out of memory|JavaScript heap out of memory|Allocation failed/i.test(tail)) {
+  if (/JavaScript heap out of memory|Allocation failed/i.test(tail)) {
+    return (
+      "Build ran out of JavaScript heap memory. " +
+      "Increase build RAM, or set NODE_OPTIONS=--max-old-space-size=6144 in the project's environment and redeploy."
+    );
+  }
+  if (/\bsigkill\b|\bKilled\b|out of memory/i.test(tail)) {
     return (
       "Build process was killed - typically because the target ran out of memory during the build. " +
       "Increase RAM on the target, add swap, or build locally and ship the dist."

@@ -129,6 +129,7 @@
     "local2": "Manifestler okunuyor",
     "local3": "Framework tespit ediliyor",
     "repo1": "GitHub'a bağlanılıyor",
+    "repo1Gitlab": "GitLab'a bağlanılıyor",
     "repo2": "Depo getiriliyor",
     "repo3": "Yapı analiz ediliyor"
   },

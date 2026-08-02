@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Link2, ArrowRight } from "lucide-react";
-import { encodeRepoSlug } from "@/utils/repoSlug";
+import { encodeRepoSlug, extractOwnerRepoFromUrl } from "@/utils/repoSlug";
 import { useI18n } from "@/components/i18n-provider";
 
 export function UrlImport() {
@@ -16,17 +16,17 @@ export function UrlImport() {
     e.preventDefault();
     setError("");
 
-    const match = url.match(
-      /(?:https?:\/\/)?(?:www\.)?github\.com\/([^/]+)\/([^/.]+)/
-    );
-    if (!match) {
+    const parsed = extractOwnerRepoFromUrl(url.trim());
+    if (!parsed) {
       setError(t.library.urlImport.invalidUrl);
       return;
     }
 
-    const [, owner, repo] = match;
-    const slug = encodeRepoSlug(owner!, repo!);
-    router.push(`/deploy/${slug}`);
+    const { owner, repo, provider } = parsed;
+    const slug = encodeRepoSlug(owner, repo);
+    // Tag GitLab imports so the deploy wizard resolves the repo through the
+    // GitLab source instead of defaulting to GitHub.
+    router.push(provider === "gitlab" ? `/deploy/${slug}?provider=gitlab` : `/deploy/${slug}`);
   };
 
   return (
@@ -49,7 +49,7 @@ export function UrlImport() {
                 type="url"
                 value={url}
                 onChange={(e) => { setUrl(e.target.value); setError(""); }}
-                placeholder="https://github.com/username/repository"
+                placeholder="https://github.com/username/repository or https://gitlab.com/group/project"
                 className={`w-full px-4 py-3 bg-background border rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 transition-all ${
                   error
                     ? "border-danger-border focus:ring-danger-border"

@@ -54,6 +54,7 @@ const GRANTABLE_ROOTS: ResourceType[] = [
   // installation-level + single-repo, alongside the org-wide "github".
   "github_installation",
   "github_repository",
+  "gitlab",
   "permissions",
   "settings",
   "job",
@@ -78,6 +79,7 @@ export const ORG_SINGLETON_RESOURCES = new Set<string>([
   "audit",
   "analytics",
   "github",
+  "gitlab",
   "permissions",
   "settings",
   "job",

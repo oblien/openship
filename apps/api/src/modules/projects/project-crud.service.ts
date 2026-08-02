@@ -237,11 +237,30 @@ export async function enrichProjectsBatch(
   });
 }
 
-function projectGitUrl(owner?: string | null, repo?: string | null) {
-  return owner && repo ? `https://github.com/${owner}/${repo}.git` : undefined;
+/**
+ * HTTPS clone URL for a git-backed project. GitLab must use the user's
+ * instance origin (or GITLAB_BASE_URL) — hardcoding github.com here made every
+ * GitLab ensure/create write a GitHub URL, so deploys authenticated with a
+ * GitLab PAT against github.com and failed with "Invalid username or token".
+ */
+function projectGitUrl(
+  owner?: string | null,
+  repo?: string | null,
+  provider?: string | null,
+  gitlabBaseUrl?: string | null,
+) {
+  if (!owner || !repo) return undefined;
+  if (provider === "gitlab") {
+    const base = (gitlabBaseUrl ?? env.GITLAB_BASE_URL).replace(/\/$/, "");
+    return `${base}/${owner}/${repo}.git`;
+  }
+  return `https://github.com/${owner}/${repo}.git`;
 }
 
-function resolveProjectSource(data: TCreateProjectBody) {
+function resolveProjectSource(
+  data: TCreateProjectBody,
+  gitlabBaseUrl?: string | null,
+) {
   // Release/dist source: a prebuilt dist, no git repo and no stored localPath
   // (its dir is resolved per-deploy). The source repo, if any, lives in
   // releaseSource — the project-level gitOwner/gitRepo columns stay null so the
@@ -257,13 +276,18 @@ function resolveProjectSource(data: TCreateProjectBody) {
   const safeLocalPath = !isRelease && data.localPath && !env.CLOUD_MODE ? data.localPath : undefined;
   const gitOwner = isRelease || safeLocalPath ? undefined : data.gitOwner;
   const gitRepo = isRelease || safeLocalPath ? undefined : data.gitRepo;
+  const gitProvider = isRelease
+    ? "release"
+    : safeLocalPath
+      ? "local"
+      : (data.gitProvider ?? "github");
 
   return {
     safeLocalPath,
     gitOwner,
     gitRepo,
-    gitProvider: isRelease ? "release" : safeLocalPath ? "local" : (data.gitProvider ?? "github"),
-    gitUrl: projectGitUrl(gitOwner, gitRepo),
+    gitProvider,
+    gitUrl: projectGitUrl(gitOwner, gitRepo, gitProvider, gitlabBaseUrl),
     releaseSource: isRelease ? ((data.releaseSource as ReleaseSource | undefined) ?? null) : null,
   };
 }
@@ -297,11 +321,12 @@ async function ensureProjectApp(
   data: TCreateProjectBody,
   slug: string,
   organizationId: string,
+  gitlabBaseUrl?: string | null,
 ) {
   let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
   if (app) return { app, created: false };
 
-  const source = resolveProjectSource(data);
+  const source = resolveProjectSource(data, gitlabBaseUrl);
 
   app = await repos.projectGroup.create({
     organizationId,
@@ -323,8 +348,9 @@ function buildProductionProjectInput(
   slug: string,
   routing: ProjectRouteState,
   organizationId: string,
+  gitlabBaseUrl?: string | null,
 ): Omit<NewProject, "id"> {
-  const source = resolveProjectSource(data);
+  const source = resolveProjectSource(data, gitlabBaseUrl);
 
   return {
     organizationId,
@@ -494,6 +520,7 @@ async function createProductionProject(
   data: TCreateProjectBody,
   slug: string,
   organizationId: string,
+  gitlabBaseUrl?: string | null,
 ) {
   // Atomic free-domain gate — same rule and shape as updateProject. When the
   // caller EXPLICITLY sends endpoints, a free (*.opsh.io) route only resolves
@@ -507,7 +534,12 @@ async function createProductionProject(
       normalizeStoredPublicEndpoints(data.publicEndpoints),
     );
   }
-  const { app, created: appCreated } = await ensureProjectApp(data, slug, organizationId);
+  const { app, created: appCreated } = await ensureProjectApp(
+    data,
+    slug,
+    organizationId,
+    gitlabBaseUrl,
+  );
   const routing = deriveNextProjectRouteState({
     slug,
   }, {
@@ -517,7 +549,7 @@ async function createProductionProject(
 
   try {
     const created = await repos.project.create(
-      buildProductionProjectInput(app.id, data, slug, routing, organizationId),
+      buildProductionProjectInput(app.id, data, slug, routing, organizationId, gitlabBaseUrl),
     );
     await persistProjectRouteState(created.id, routing.publicEndpoints);
     await persistMonorepoApps(created.id, data);
@@ -559,6 +591,9 @@ export async function createServicesProjectWithId(opts: {
   await assertProjectQuota(opts.organizationId);
   const slug = await uniqueProjectSlug(opts.organizationId, opts.slug);
 
+  const gitProvider = opts.gitProvider ?? "github";
+  const gitUrl = projectGitUrl(opts.gitOwner, opts.gitRepo, gitProvider);
+
   const group = await repos.projectGroup.create({
     organizationId: opts.organizationId,
     name: opts.name,
@@ -566,7 +601,7 @@ export async function createServicesProjectWithId(opts: {
     gitProvider: opts.gitProvider ?? undefined,
     gitOwner: opts.gitOwner ?? undefined,
     gitRepo: opts.gitRepo ?? undefined,
-    gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+    gitUrl,
   });
 
   try {
@@ -580,11 +615,11 @@ export async function createServicesProjectWithId(opts: {
       environmentName: "Production",
       environmentSlug: "production",
       environmentType: "production",
-      gitProvider: opts.gitProvider ?? "github",
+      gitProvider,
       gitOwner: opts.gitOwner ?? undefined,
       gitRepo: opts.gitRepo ?? undefined,
       gitBranch: opts.gitBranch ?? "main",
-      gitUrl: projectGitUrl(opts.gitOwner, opts.gitRepo),
+      gitUrl,
       autoDeploy: !!opts.autoDeploy,
       framework: "unknown", // services project — the stack lives on each service row
       packageManager: "npm",
@@ -810,9 +845,11 @@ async function assertProjectQuota(organizationId: string): Promise<void> {
 export async function ensureProject(
   data: EnsureProjectBody,
   organizationId: string,
+  opts?: { gitlabBaseUrl?: string | null },
 ) {
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
+  const gitlabBaseUrl = opts?.gitlabBaseUrl;
 
   let project: Project | null = null;
   if (data.projectId) {
@@ -836,6 +873,7 @@ export async function ensureProject(
       data,
       desiredSlug,
       organizationId,
+      gitlabBaseUrl,
     );
     created = true;
   } else {
@@ -895,6 +933,24 @@ export async function ensureProject(
         update.gitUrl = null;
       }
     }
+    // Keep git source fields in sync when the wizard re-ensures (first GitLab
+    // deploys used to leave a github.com gitUrl behind — rewrite it here).
+    if (!update.localPath && (data.gitOwner || data.gitRepo || data.gitProvider || data.installationId !== undefined)) {
+      if (typeof data.gitProvider === "string") update.gitProvider = data.gitProvider;
+      if (typeof data.gitOwner === "string") update.gitOwner = data.gitOwner;
+      if (typeof data.gitRepo === "string") update.gitRepo = data.gitRepo;
+      if (typeof data.gitBranch === "string") update.gitBranch = data.gitBranch;
+      if (typeof data.installationId === "number") update.installationId = data.installationId;
+      const owner =
+        (typeof update.gitOwner === "string" ? update.gitOwner : null) ?? project.gitOwner;
+      const repo =
+        (typeof update.gitRepo === "string" ? update.gitRepo : null) ?? project.gitRepo;
+      const provider =
+        (typeof update.gitProvider === "string" ? update.gitProvider : null) ??
+        project.gitProvider;
+      const nextUrl = projectGitUrl(owner, repo, provider, gitlabBaseUrl);
+      if (nextUrl && nextUrl !== project.gitUrl) update.gitUrl = nextUrl;
+    }
     if (data.rollbackWindow !== undefined) {
       update.rollbackWindow =
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
@@ -905,6 +961,25 @@ export async function ensureProject(
 
     if (Object.keys(update).length > 0) {
       await repos.project.update(project.id, update);
+    }
+
+    if (
+      project.groupId &&
+      (typeof update.gitUrl === "string" ||
+        typeof update.gitProvider === "string" ||
+        typeof update.gitOwner === "string" ||
+        typeof update.gitRepo === "string" ||
+        typeof update.installationId === "number")
+    ) {
+      await repos.projectGroup.update(project.groupId, {
+        ...(typeof update.gitProvider === "string" ? { gitProvider: update.gitProvider } : {}),
+        ...(typeof update.gitOwner === "string" ? { gitOwner: update.gitOwner } : {}),
+        ...(typeof update.gitRepo === "string" ? { gitRepo: update.gitRepo } : {}),
+        ...(typeof update.gitUrl === "string" ? { gitUrl: update.gitUrl } : {}),
+        ...(typeof update.installationId === "number"
+          ? { installationId: update.installationId }
+          : {}),
+      });
     }
 
     // Reconcile routes AFTER persisting the project (best-effort) so a route-sync
@@ -1001,6 +1076,7 @@ export async function getProject(projectId: string, organizationId: string) {
 export async function createProject(
   data: TCreateProjectBody,
   organizationId: string,
+  opts?: { gitlabBaseUrl?: string | null },
 ) {
   const slug = slugify(data.name);
 
@@ -1020,14 +1096,16 @@ export async function createProject(
   // the App on that owner, drop it (null) so the project can never match — and
   // thus never join — another org's push delivery. (linkProjectRepo already
   // resolves it server-side; this closes the direct-create path.)
-  if (env.CLOUD_MODE) {
+  // GitLab uses installationId for its numeric project id, so this GitHub-only
+  // security normalization must not overwrite it.
+  if (env.CLOUD_MODE && data.gitProvider !== "gitlab") {
     const owner = data.gitOwner?.trim();
     data.installationId = owner
       ? ((await getInstallationIdByOrg(organizationId, owner)) ?? undefined)
       : undefined;
   }
 
-  const p = await createProductionProject(data, slug, organizationId);
+  const p = await createProductionProject(data, slug, organizationId, opts?.gitlabBaseUrl);
 
   return enrichProject(p);
 }
@@ -1038,6 +1116,7 @@ export async function updateProject(
   projectId: string,
   data: TUpdateProjectBody,
   organizationId: string,
+  opts?: { gitlabBaseUrl?: string | null },
 ) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);

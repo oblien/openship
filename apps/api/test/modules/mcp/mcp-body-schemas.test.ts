@@ -24,9 +24,19 @@ describe("MCP write-tool body schemas", () => {
     expect(ok(SetSleepModeBody, {})).toBe(false);
   });
 
-  it("LinkRepoBody: owner+repo required, branch/installationId optional", () => {
+  it("LinkRepoBody: owner+repo required, branch/installationId/provider/gitUrl optional", () => {
     expect(ok(LinkRepoBody, { owner: "acme", repo: "web" })).toBe(true);
     expect(ok(LinkRepoBody, { owner: "acme", repo: "web", branch: "main", installationId: 42 })).toBe(true);
+    expect(
+      ok(LinkRepoBody, {
+        owner: "group/sub",
+        repo: "web",
+        provider: "gitlab",
+        installationId: 99,
+        gitUrl: "https://gitlab.example.com/group/sub/web.git",
+      }),
+    ).toBe(true);
+    expect(ok(LinkRepoBody, { owner: "acme", repo: "web", provider: "bitbucket" })).toBe(false);
     expect(ok(LinkRepoBody, { owner: "acme" })).toBe(false); // repo missing
     expect(ok(LinkRepoBody, { owner: "acme", repo: "web", installationId: "42" })).toBe(false); // wrong type
   });
@@ -62,6 +72,15 @@ describe("MCP write-tool body schemas", () => {
   it("deploy prepare/respond: prepare all-optional, respond needs action", () => {
     expect(ok(PrepareDeployBody, {})).toBe(true);
     expect(ok(PrepareDeployBody, { source: "github", owner: "a", repo: "b", branch: "main" })).toBe(true);
+    expect(
+      ok(PrepareDeployBody, {
+        source: "gitlab",
+        owner: "a",
+        repo: "b",
+        installationId: 42,
+        branch: "main",
+      }),
+    ).toBe(true);
     expect(ok(PrepareDeployBody, { source: "svn" })).toBe(false);
     expect(ok(BuildRespondBody, { action: "approve" })).toBe(true);
     expect(ok(BuildRespondBody, {})).toBe(false);

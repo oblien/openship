@@ -338,20 +338,23 @@ export async function buildRespond(c: Context) {
 }
 
 /**
- * POST /deployments/prepare - resolve project info from GitHub or local path.
+ * POST /deployments/prepare - resolve project info from GitHub, GitLab, or local path.
  *
  * Body (GitHub): { source: "github", owner, repo, branch? }
+ * Body (GitLab): { source: "gitlab", owner, repo, projectId, branch? }
  * Body (local):  { source: "local", path: "/abs/path" }
  * Callers may omit `source` and send { owner, repo }; treated as GitHub.
  */
 export async function prepare(c: Context) {
   const ctx = getRequestContext(c);
   const body = await c.req.json<{
-    source?: "github" | "local";
+    source?: "github" | "gitlab" | "local";
     owner?: string;
     repo?: string;
     branch?: string;
     path?: string;
+    projectId?: number;
+    installationId?: number;
     composePath?: string;
   }>();
 
@@ -374,6 +377,23 @@ export async function prepare(c: Context) {
         ctx,
         composePath,
       };
+    } else if (source === "gitlab") {
+      if (!body.owner || !body.repo) {
+        return c.json({ error: "owner and repo are required" }, 400);
+      }
+      const projectId = body.projectId ?? body.installationId;
+      if (!projectId || !Number.isFinite(projectId)) {
+        return c.json({ error: "projectId (GitLab project id) is required" }, 400);
+      }
+      input = {
+        source: "gitlab",
+        owner: body.owner,
+        repo: body.repo,
+        projectId,
+        branch: body.branch,
+        ctx,
+        composePath,
+      };
     } else if (source === "local") {
       if (env.CLOUD_MODE) {
         return c.json({ error: "Local projects are not available in cloud mode" }, 403);
@@ -383,7 +403,7 @@ export async function prepare(c: Context) {
       }
       input = { source: "local", path: body.path, composePath };
     } else {
-      return c.json({ error: "source must be 'github' or 'local'" }, 400);
+      return c.json({ error: "source must be 'github', 'gitlab', or 'local'" }, 400);
     }
 
     const info = await prepareService.resolveProjectInfo(input);

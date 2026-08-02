@@ -30,6 +30,7 @@ export interface SecretColumn {
 const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> = {
   "user_settings.cloudSessionToken": { table: schema.userSettings, scheme: "scalar" },
   "user_settings.cloneTokenEncrypted": { table: schema.userSettings, scheme: "scalar" },
+  "user_settings.gitlabCloneTokenEncrypted": { table: schema.userSettings, scheme: "scalar" },
   "project.cloneTokenEncrypted": { table: schema.project, scheme: "scalar" },
   "project.webhookSecret": { table: schema.project, scheme: "scalar" },
   "cloud_webhook_binding.webhookSecret": { table: schema.cloudWebhookBinding, scheme: "scalar" },

@@ -15,7 +15,7 @@ import { getWebhookProvider } from "./webhook.service";
 import type { WebhookProviderName } from "./webhook.types";
 
 /** Allowed provider names - rejects anything else at the route level. */
-const ALLOWED_PROVIDERS = new Set<string>(["github"]);
+const ALLOWED_PROVIDERS = new Set<string>(["github", "gitlab"]);
 
 /**
  * Generic webhook handler - looks up the provider by route param

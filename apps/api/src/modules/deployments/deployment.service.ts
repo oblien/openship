@@ -47,6 +47,7 @@ export async function assertGitHubAccessForDeployment(
   await assertGitHubRepoAccess(ctx, {
     owner: project.gitOwner,
     repo: project.gitRepo,
+    provider: project.gitProvider,
   });
 }
 

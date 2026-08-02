@@ -52,6 +52,7 @@ export {
 export { tokensApi } from "./tokens";
 export type { AccessToken, CreatedAccessToken, McpClient } from "./tokens";
 export { githubApi } from "./github";
+export { gitlabApi } from "./gitlab";
 export type { RepoTreeEntry } from "./github";
 export { iconsApi } from "./icons";
 export { imagesApi } from "./images";

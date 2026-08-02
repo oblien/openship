@@ -14,6 +14,22 @@ type DecodedSlug =
   | { kind: "upload"; sessionId: string }
   | { kind: "project"; projectId: string };
 
+/**
+ * Splits a decoded "owner/.../repo" payload into { owner, repo }, treating the
+ * LAST segment as the repo and everything before it as the owner. GitHub
+ * owners are always a single segment, but GitLab namespaces can nest
+ * arbitrarily deep (group/subgroup/subsubgroup/project) — a naive first-"/"
+ * split would truncate those to the top-level group and drop the rest.
+ */
+function splitOwnerRepo(decoded: string): { owner: string; repo: string } | null {
+  const parts = decoded.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  const repo = parts.pop() as string;
+  const owner = parts.join("/");
+  if (!owner || !repo) return null;
+  return { owner, repo };
+}
+
 function encodeBase64Url(data: string): string {
   const base64 = Buffer.from(data).toString('base64');
   return base64
@@ -102,44 +118,54 @@ export function decodeSlug(slug: string): DecodedSlug | null {
       };
     }
 
-    const [owner, repo] = decoded.split('/');
-    if (!owner || !repo) return null;
-    return { kind: "repo", owner, repo };
+    const split = splitOwnerRepo(decoded);
+    if (!split) return null;
+    return { kind: "repo", owner: split.owner, repo: split.repo };
   } catch {
     return null;
   }
 }
 
 /**
- * Extracts owner and repo from a GitHub URL
- * @param url - GitHub repository URL
- * @returns Object with owner and repo, or null if invalid
+ * Extracts owner, repo, and provider from a GitHub or GitLab URL.
+ * @param url - GitHub or GitLab repository URL
+ * @returns Object with owner, repo, and provider, or null if invalid
  */
-export function extractOwnerRepoFromUrl(url: string): { owner: string; repo: string } | null {
+export function extractOwnerRepoFromUrl(
+  url: string,
+): { owner: string; repo: string; provider: "github" | "gitlab" } | null {
   try {
-    // Handle various GitHub URL formats
-    // https://github.com/owner/repo
-    // https://github.com/owner/repo.git
+    // GitHub — always a single-segment owner.
+    // https://github.com/owner/repo(.git)?
+    const githubHttpsMatch = url.match(/github\.com\/([^\/]+)\/(.+?)(?:\.git)?$/);
+    if (githubHttpsMatch) {
+      return { owner: githubHttpsMatch[1], repo: githubHttpsMatch[2], provider: "github" };
+    }
     // git@github.com:owner/repo.git
-    
-    // Match HTTPS URLs - allow dots in repo name, optionally strip .git suffix
-    const httpsMatch = url.match(/github\.com\/([^\/]+)\/(.+?)(?:\.git)?$/);
-    if (httpsMatch) {
-      return {
-        owner: httpsMatch[1],
-        repo: httpsMatch[2],
-      };
+    const githubSshMatch = url.match(/github\.com:([^\/]+)\/(.+?)(?:\.git)?$/);
+    if (githubSshMatch) {
+      return { owner: githubSshMatch[1], repo: githubSshMatch[2], provider: "github" };
     }
-    
-    // Match SSH URLs - allow dots in repo name, optionally strip .git suffix
-    const sshMatch = url.match(/github\.com:([^\/]+)\/(.+?)(?:\.git)?$/);
-    if (sshMatch) {
-      return {
-        owner: sshMatch[1],
-        repo: sshMatch[2],
-      };
+
+    // GitLab — namespace can nest arbitrarily (group/subgroup/.../project), so
+    // take everything up to the last path segment as the owner. Matches
+    // gitlab.com and self-hosted hosts (any non-github.com HTTPS/SSH forge URL).
+    const gitlabHttpsMatch = url.match(
+      /^https?:\/\/(?!github\.com)([^\/]+)\/([^?#]+?)(?:\.git)?\/?$/i,
+    );
+    if (gitlabHttpsMatch) {
+      const split = splitOwnerRepo(gitlabHttpsMatch[2]!);
+      if (split) return { ...split, provider: "gitlab" };
     }
-    
+    // git@host:group/subgroup/project.git (not github.com)
+    const gitlabSshMatch = url.match(
+      /^git@(?!github\.com)([^:]+):([^?#]+?)(?:\.git)?\/?$/i,
+    );
+    if (gitlabSshMatch) {
+      const split = splitOwnerRepo(gitlabSshMatch[2]!);
+      if (split) return { ...split, provider: "gitlab" };
+    }
+
     return null;
   } catch (error) {
     console.error('Failed to extract owner/repo from URL:', error);

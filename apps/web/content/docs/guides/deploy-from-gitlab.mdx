@@ -1,0 +1,93 @@
+---
+title: Deploy from GitLab
+description: Connect a GitLab account or personal access token and put a project online — including push-to-deploy.
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+Openship can deploy from GitLab the same way it deploys from GitHub: connect once, pick a project, deploy,
+and optionally redeploy on every push. Self-hosted GitLab works too when you set `GITLAB_BASE_URL`.
+
+<Callout title="What you need first">
+- An Openship account.
+- A GitLab project (gitlab.com or self-hosted).
+- Either a GitLab OAuth Application configured on the API (`GITLAB_CLIENT_ID` / `GITLAB_CLIENT_SECRET`),
+  or a personal access token with the `api` scope.
+</Callout>
+
+## The click-by-click way
+
+<Steps>
+
+<Step>
+
+### Connect GitLab (once)
+
+Go to **Settings → General** and find the **GitLab** card.
+
+- **OAuth** — press **Connect GitLab** and approve the popup (requires `GITLAB_CLIENT_ID` /
+  `GITLAB_CLIENT_SECRET` on the API).
+- **Personal access token** — paste a PAT with `api` scope and save.
+
+When the card shows your GitLab username, you're connected.
+
+</Step>
+
+<Step>
+
+### Pick the project
+
+Open **Library**, switch the provider picker to **GitLab**, and choose a project. Nested group paths
+(for example `group/subgroup/project`) are supported.
+
+</Step>
+
+<Step>
+
+### Deploy
+
+Choose where it should run (local / server / cloud), confirm the detected settings, and press **Deploy**.
+Openship clones with your GitLab credential (`oauth2:<token>` over HTTPS) and runs the same build pipeline
+used for GitHub projects.
+
+</Step>
+
+</Steps>
+
+## Auto-deploy on push
+
+When you bind a GitLab project, Openship registers a **Push Hook** on that project (when a public webhook
+URL is available). Pushes to the project's tracked branch trigger a redeploy.
+
+If webhook registration fails because the token lacks `api` scope, Openship returns a clear error —
+it does **not** silently claim push-to-deploy is active.
+
+## Self-hosted GitLab
+
+Two options:
+
+1. **Per-user (Settings → GitLab)** — when connecting with a personal access token, set the **GitLab URL** to your instance origin (e.g. `https://gitlab.example.com`). Openship stores it with the PAT and uses it for API calls and clone URLs.
+
+2. **Instance-wide** — set on the API (applies to OAuth and as the default when a user leaves the URL blank):
+
+```bash
+GITLAB_BASE_URL=https://gitlab.example.com
+GITLAB_CLIENT_ID=...
+GITLAB_CLIENT_SECRET=...
+# optional fallback for webhook verification:
+GITLAB_WEBHOOK_SECRET=...
+```
+
+OAuth redirect URIs and webhook callbacks must reach your Openship public API URL.
+
+## If something goes wrong
+
+See [Troubleshooting → GitLab](/docs/troubleshooting/gitlab).
+
+## What next?
+
+<Cards>
+  <Card title="GitLab API" href="/docs/api/gitlab" description="Connect, list projects, and manage webhooks via the HTTP API." />
+  <Card title="Deploy from GitHub" href="/docs/guides/deploy-from-github" description="The same flow for GitHub-backed projects." />
+  <Card title="Auto-deploy on push" href="/docs/guides/auto-deploy" description="How push-triggered deploys work." />
+</Cards>

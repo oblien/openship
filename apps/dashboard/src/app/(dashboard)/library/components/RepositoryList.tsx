@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Github,
+  Gitlab,
   Plus,
   AlertTriangle,
 } from "lucide-react";
@@ -84,6 +85,8 @@ interface RepositoryListProps {
   onSelect?: (owner: string, repo: GitHubRepo) => void;
   /** GitHub App install URL - shown when connected but no installations */
   installUrl?: string | null;
+  /** Controls fallback account/empty-state icons (GitHub App install UI stays GitHub-only). */
+  provider?: "github" | "gitlab";
   /** Opt into server-side pagination (Library). Omit for client-side lists. */
   server?: RepoServerPagination;
 }
@@ -97,6 +100,7 @@ export function RepositoryList({
   loadingRepos,
   onSelect,
   installUrl,
+  provider = "github",
   server,
 }: RepositoryListProps) {
   const { t } = useI18n();
@@ -113,6 +117,7 @@ export function RepositoryList({
   const setVisibility = server ? server.onVisibility : setLocalVisibility;
   const sortBy = server ? server.sort : localSortBy;
   const setSortBy = server ? server.onSort : setLocalSortBy;
+  const ProviderIcon = provider === "gitlab" ? Gitlab : Github;
 
   const filtered = useMemo(() => {
     if (!Array.isArray(repos)) return [];
@@ -178,7 +183,7 @@ export function RepositoryList({
                   />
                 ) : (
                   <span className="flex w-5 h-5 items-center justify-center rounded-full bg-muted">
-                    <Github className="size-3" />
+                    <ProviderIcon className="size-3" />
                   </span>
                 )}
                 {acc.login}

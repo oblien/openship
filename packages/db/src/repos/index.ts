@@ -59,6 +59,11 @@ export {
   type WebhookDeliveryResult,
 } from "./webhook-delivery.repo";
 export {
+  createGitlabWebhookEventRepo,
+  type GitlabWebhookEvent,
+  type NewGitlabWebhookEvent,
+} from "./gitlab-webhook-event.repo";
+export {
   createServiceRepo,
   normalizeRoutingFields,
   toComposeSpec,
@@ -216,6 +221,7 @@ import { createCloudWebhookBindingRepo } from "./cloud-webhook-binding.repo";
 import { createProjectConnectionRepo } from "./project-connection.repo";
 import { createCustomAppTemplateRepo } from "./custom-app-template.repo";
 import { createWebhookDeliveryRepo } from "./webhook-delivery.repo";
+import { createGitlabWebhookEventRepo } from "./gitlab-webhook-event.repo";
 import { createServiceRepo } from "./service.repo";
 import { createServiceDeploymentRepo } from "./service-deployment.repo";
 import { createSettingsRepo } from "./settings.repo";
@@ -287,6 +293,7 @@ export const repos = {
   projectConnection: createProjectConnectionRepo(db),
   customAppTemplate: createCustomAppTemplateRepo(db),
   webhookDelivery: createWebhookDeliveryRepo(db),
+  gitlabWebhookEvent: createGitlabWebhookEventRepo(db),
   service: createServiceRepo(db),
   serviceDeployment: createServiceDeploymentRepo(db),
   settings: createSettingsRepo(db),

@@ -27,6 +27,17 @@ export type PrepareProjectSource =
       /** Pin the compose file location (file or directory) instead of detecting the root. */
       composePath?: string;
     }
+  // GitLab: pass numeric project id as installationId (or projectId).
+  | {
+      source: "gitlab";
+      owner: string;
+      repo: string;
+      branch?: string;
+      projectId?: number;
+      installationId?: number;
+      force?: string | boolean;
+      composePath?: string;
+    }
   | { source: "local"; path: string; composePath?: string };
 
 export interface PrepareComposeService {

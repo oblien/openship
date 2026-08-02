@@ -87,6 +87,41 @@ export const BUILD_ENV_VARS: Record<string, string> = {
 };
 
 /**
+ * Node heap (MB) for a build given the build machine's RAM.
+ * Uses 75% of available memory, floored at 2048 MB, and leaves at least
+ * 512 MB for native/OS so Nuxt/Next/webpack don't OOM at Node's ~2GB default.
+ */
+export function buildNodeMaxOldSpaceMb(memoryMb: number): number {
+  const ram = Number.isFinite(memoryMb) && memoryMb > 0 ? memoryMb : 2048;
+  const fromRatio = Math.floor(ram * 0.75);
+  const withHeadroom = Math.max(0, Math.floor(ram - 512));
+  const capped = Math.min(fromRatio, withHeadroom);
+  return Math.max(2048, capped);
+}
+
+const MAX_OLD_SPACE_RE = /--max-old-space-size(?:=|\s+)\d+/i;
+
+/**
+ * Ensure `NODE_OPTIONS` includes `--max-old-space-size` sized from build RAM.
+ * Leaves an existing `--max-old-space-size` alone; appends when other flags
+ * are already present.
+ */
+export function withBuildNodeOptions(
+  env: Record<string, string>,
+  memoryMb: number,
+): Record<string, string> {
+  const existing = env.NODE_OPTIONS?.trim() ?? "";
+  if (MAX_OLD_SPACE_RE.test(existing)) {
+    return env;
+  }
+  const flag = `--max-old-space-size=${buildNodeMaxOldSpaceMb(memoryMb)}`;
+  return {
+    ...env,
+    NODE_OPTIONS: existing ? `${existing} ${flag}` : flag,
+  };
+}
+
+/**
  * Re-export from stacks registry - OUTPUT_DIRECTORIES is derived from STACKS.
  */
 export { OUTPUT_DIRECTORIES } from "./stacks";

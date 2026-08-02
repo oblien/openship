@@ -25,6 +25,11 @@ describe("injectGitToken", () => {
       "https://x-access-token:tok123@github.com/owner/repo.git",
     );
   });
+  it("accepts a custom username (GitLab oauth2)", () => {
+    expect(
+      injectGitToken("https://gitlab.com/g/p.git", "tok123", "oauth2"),
+    ).toBe("https://oauth2:tok123@gitlab.com/g/p.git");
+  });
   it("returns the URL unchanged when no token", () => {
     expect(injectGitToken("https://github.com/owner/repo.git")).toBe(
       "https://github.com/owner/repo.git",

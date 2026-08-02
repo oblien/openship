@@ -5,7 +5,7 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { useI18n } from "@/components/i18n-provider";
 
 type LoadingSource =
-  | { kind: "repo"; owner: string; repo: string; branch?: string }
+  | { kind: "repo"; owner: string; repo: string; branch?: string; provider?: "github" | "gitlab" }
   | { kind: "local"; path: string }
   | { kind: "settings"; label?: string }
   | null;
@@ -59,12 +59,14 @@ const StatusHeader = ({ source }: { source: LoadingSource }) => {
   const s = t.deploy.skeleton;
   // Config-edit hydrates from saved data (settings); local scans the folder;
   // otherwise we're pulling from the remote repo.
+  const repoConnecting =
+    source?.kind === "repo" && source.provider === "gitlab" ? s.repo1Gitlab : s.repo1;
   const phases =
     source?.kind === "settings"
       ? [s.settings1, s.settings2]
       : source?.kind === "local"
         ? [s.local1, s.local2, s.local3]
-        : [s.repo1, s.repo2, s.repo3];
+        : [repoConnecting, s.repo2, s.repo3];
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {

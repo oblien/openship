@@ -488,14 +488,17 @@ export function detectStack(
     }
   }
 
-  // A Dockerfile owns its own build — the runtime builds straight from it
-  // (requireRepositoryDockerfile), so nothing is synthesized around it.
-  // buildCommand/startCommand already come out empty via the registry defaults
-  // on the `docker` stack, but installCommand is derived from the package
-  // manager alone, which has no way to know that. A Dockerfile sub-app that
-  // also carries a package.json for workspace membership (the Railway-style
-  // monorepo layout) would otherwise be handed a bogus `npm i --force`.
+  // A Dockerfile / compose file owns its own build — the runtime builds
+  // straight from it (requireRepositoryDockerfile), so nothing is synthesized
+  // around it. buildCommand/startCommand already come out empty via the
+  // registry defaults on the `docker` stack, but installCommand is derived
+  // from the package manager alone, which has no way to know that. A
+  // Dockerfile sub-app that also carries a package.json for workspace
+  // membership (the Railway-style monorepo layout) would otherwise be handed
+  // a bogus `npm i --force`. Same for docker-compose: don't synthesize
+  // buildpack commands from a co-located package.json.
   const projectType = getProjectType(matched);
+  const dockerfileOwned = projectType === "docker" || matched === "docker-compose";
 
   const result: StackResult = {
     stack: matched,
@@ -503,9 +506,9 @@ export function detectStack(
     category: stackDef.category,
     dependencies: deps,
     packageManager: pm,
-    installCommand: projectType === "docker" ? "" : getInstallCommand(pm),
-    buildCommand: getBuildCommand(pm, matched, packageJson, files),
-    startCommand,
+    installCommand: dockerfileOwned ? "" : getInstallCommand(pm),
+    buildCommand: dockerfileOwned ? "" : getBuildCommand(pm, matched, packageJson, files),
+    startCommand: dockerfileOwned ? "" : startCommand,
     buildImage: getBuildImage(matched, pm),
     outputDirectory: OUTPUT_DIRECTORIES[matched] ?? "dist",
     productionPaths,

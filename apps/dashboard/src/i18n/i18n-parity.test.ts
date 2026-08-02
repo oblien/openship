@@ -19,7 +19,7 @@ import { checkI18nParity, defaultLocalesDir } from "../../scripts/check-i18n.mjs
  * goal is for every entry here to reach 0 and this map to be `{}`.
  */
 const MISSING_BASELINE: Record<string, number> = {
-  projectSettings: 1058,
+  projectSettings: 1074,
   jobs: 876,
   migration: 1237,
   // +64: the GitHub card's credential-health strings — 8 English-first keys for
@@ -40,7 +40,10 @@ const MISSING_BASELINE: Record<string, number> = {
   // else, and that built files stay on disk. A mistranslation is somebody taking a
   // live site offline, or leaving a forgotten one serving. English falls through via
   // deepMerge, so the card is correct in every locale, just not localised.
-  settings: 1136,
+  //
+  // +296: GitLab connect/settings strings from feat/gitlab-phase1 that are still
+  // English-first in the other locales (same deepMerge fallback).
+  settings: 1432,
   emailsAdmin: 628,
   // +360: permissions.sourceAccess — 45 keys for the source access modal and its
   // repository path tree,
@@ -52,7 +55,7 @@ const MISSING_BASELINE: Record<string, number> = {
   widgets: 498,
   // +40: mcpAuthorize gained 5 English-first keys — two digest lines that answer
   // "can it read my source?" either way, and three level tooltips.
-  misc: 163,
+  misc: 145,
   overview: 120,
   servers: 113,
   importProject: 81,
@@ -60,7 +63,7 @@ const MISSING_BASELINE: Record<string, number> = {
   emails: 42,
   projectDetail: 42,
   brand: 40,
-  library: 119,
+  library: 144,
   billing: 6,
 
 };

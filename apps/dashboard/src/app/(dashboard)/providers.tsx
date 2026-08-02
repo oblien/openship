@@ -1,6 +1,7 @@
 "use client";
 
 import { GitHubProvider } from "@/context/GitHubContext";
+import { GitLabProvider } from "@/context/GitLabContext";
 import { CloudProvider } from "@/context/CloudContext";
 import { PlatformProvider } from "@/context/PlatformContext";
 import { AuthProvider, type AuthUser } from "@/context/AuthContext";
@@ -45,9 +46,11 @@ export function DashboardProviders({
         hostDomain={hostDomain}
       >
         <GitHubProvider initialData={initialGithubData}>
-          <CloudProvider>
-            {children}
-          </CloudProvider>
+          <GitLabProvider>
+            <CloudProvider>
+              {children}
+            </CloudProvider>
+          </GitLabProvider>
         </GitHubProvider>
       </PlatformProvider>
     </AuthProvider>

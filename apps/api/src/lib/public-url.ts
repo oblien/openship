@@ -218,6 +218,11 @@ export function sharedWebhookUrl(): string {
   return `${resolveApiPublicUrl()}/api/webhooks/github`;
 }
 
+/** Shared GitLab webhook callback — peer of `sharedWebhookUrl` for GitHub. */
+export function sharedGitlabWebhookUrl(): string {
+  return `${resolveApiPublicUrl()}/api/webhooks/gitlab`;
+}
+
 /**
  * The delivery URL for a generic per-project incoming webhook — where the
  * external caller POSTs to fire the hook's action. Public URL when configured
@@ -234,6 +239,14 @@ export function incomingWebhookUrl(id: string): string {
  */
 export function domainWebhookUrl(hostname: string, scheme: "http" | "https" = "https"): string {
   return `${scheme}://${hostname}/_openship/hooks/github`;
+}
+
+/** Domain-strategy GitLab webhook callback (peer of domainWebhookUrl). */
+export function domainGitlabWebhookUrl(
+  hostname: string,
+  scheme: "http" | "https" = "https",
+): string {
+  return `${scheme}://${hostname}/_openship/hooks/gitlab`;
 }
 
 /**

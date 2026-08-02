@@ -79,6 +79,10 @@ interface GitData {
   recentCommits: any[];
   isLoading: boolean;
   error: string | null;
+  /** Which git host this project's repo lives on — drives GitHub vs GitLab
+   *  labels/icons/URLs across GitSettings and GitInfo. Defaults to "github"
+   *  for pre-GitLab projects (undefined `provider` in the API response). */
+  gitProvider?: "github" | "gitlab";
   autoDeployEnabled?: boolean;
   webhookActive?: boolean;
   webhookStrategy?: "app" | "domain" | "repo" | "none";
@@ -506,16 +510,23 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           url: commit.url,
         }));
 
+        const gitProvider = response.provider === "gitlab" ? "gitlab" : "github";
+        const htmlUrl =
+          (typeof response.html_url === "string" && response.html_url) ||
+          (typeof response.git_url === "string" && response.git_url.replace(/\.git$/i, "")) ||
+          (gitProvider === "gitlab"
+            ? `https://gitlab.com/${response.owner}/${response.repo}`
+            : `https://github.com/${response.owner}/${response.repo}`);
         setGitData({
           repository: {
             name: `${response.owner}/${response.repo}`,
-            // `full_name` is the GitHub-canonical field the Source tab's
-            // auto-deploy switch gates on; without it that control was hidden
-            // for every git project.
+            // `full_name` is the canonical field the Source tab's auto-deploy
+            // switch gates on.
             full_name: `${response.owner}/${response.repo}`,
-            provider: "GitHub",
-            url: `https://github.com/${response.owner}/${response.repo}`,
+            provider: gitProvider === "gitlab" ? "GitLab" : "GitHub",
+            url: htmlUrl,
           },
+          gitProvider,
           branch: response.branch || "main",
           recentCommits: mappedCommits,
           isLoading: false,

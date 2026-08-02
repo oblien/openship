@@ -1,4 +1,4 @@
 {
   "title": "Troubleshooting",
-  "pages": ["index", "deployments", "domains-ssl", "github", "servers-ssh", "desktop-data", "common-errors"]
+  "pages": ["index", "deployments", "domains-ssl", "github", "gitlab", "servers-ssh", "desktop-data", "common-errors"]
 }

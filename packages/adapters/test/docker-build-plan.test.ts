@@ -89,3 +89,17 @@ describe("generateDockerfile - static EXTRACT-ONLY (edge serves the files)", () 
     expect(df).toContain('CMD ["nginx", "-g", "daemon off;"]');
   });
 });
+
+describe("generateDockerfile - NODE_OPTIONS heap for Node builds", () => {
+  it("inlines NODE_OPTIONS with max-old-space-size into the install/build RUN", () => {
+    const df = generateDockerfile(
+      baseConfig({
+        isStatic: false,
+        startCommand: "node .output/server/index.mjs",
+        envVars: { NODE_OPTIONS: "--max-old-space-size=6144" },
+      }),
+    );
+    expect(df).toMatch(/NODE_OPTIONS='--max-old-space-size=6144'/);
+    expect(df).toContain("npm run build");
+  });
+});

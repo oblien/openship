@@ -5,6 +5,7 @@ import { repos, type Project, type Deployment, type Domain } from "@repo/db";
 import {
   BUILD_ENV_VARS,
   safeErrorMessage,
+  withBuildNodeOptions,
 } from "@repo/core";
 import type {
   BuildResult,
@@ -58,7 +59,11 @@ import {
 } from "../../lib/routing-domains";
 import { normalizeTargetPath } from "../../lib/public-endpoints";
 import { resolveRuntimeResources, resolveBuildResources } from "../../lib/resources";
-import { resolveBuildGitToken } from "../github/clone-auth";
+import {
+  resolveBuildGitToken,
+  type BuildGitCredential,
+} from "../github/clone-auth";
+import { resolveBuildGitToken as resolveGitlabBuildGitToken } from "../gitlab/clone-auth";
 import { openDeployRelay } from "../../lib/git-forwarding";
 import { resolveOrgOwner } from "../../lib/org-actor";
 import {
@@ -97,10 +102,17 @@ import * as settingsService from "../settings/settings.service";
 // to control via their project env vars. Forcing it (e.g. NODE_ENV=production)
 // makes npm/pnpm omit devDependencies, which breaks any build whose tooling
 // (tailwind, postcss, typescript, …) lives in devDependencies.
-function buildScopedEnvVars(envVars: Record<string, string>): {
+// NODE_OPTIONS gets --max-old-space-size from build RAM unless the customer
+// already set one (Nuxt/Next often need >2GB; Node's default OOMs otherwise).
+function buildScopedEnvVars(
+  envVars: Record<string, string>,
+  buildMemoryMb: number,
+): {
   envVars: Record<string, string>;
 } {
-  return { envVars: { ...BUILD_ENV_VARS, ...envVars } };
+  return {
+    envVars: withBuildNodeOptions({ ...BUILD_ENV_VARS, ...envVars }, buildMemoryMb),
+  };
 }
 
 function resolveStaticOutputDirectory(outputDirectory: string, targetPath?: string): string {
@@ -608,7 +620,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       snapshot.buildStrategy,
       { deployTarget: snapshot.deployTarget },
     );
-    const buildEnv = buildScopedEnvVars(envMap);
+    const buildEnv = buildScopedEnvVars(envMap, buildResources.memoryMb);
 
     // Resolve a fresh GitHub token for cloning private repos.
     // Policy lives in resolveBuildGitToken - local builds keep the broad
@@ -676,31 +688,45 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // snapshotNeedsGitSource owns both answers — see pinned-artifacts.ts.
     const needsGitSource = snapshotNeedsGitSource(snapshot);
 
-    const gitCred: Awaited<ReturnType<typeof resolveBuildGitToken>> = needsGitSource
-      ? await resolveBuildGitToken({
-          ctx: buildBackgroundContext({
-            userId: actorUserId,
-            organizationId: dep.organizationId,
-            label: "build:resolve-git-token",
-          }),
-          projectId: project.id,
-          owner: project.gitOwner ?? undefined,
-          repo: project.gitRepo ?? undefined,
-          buildStrategy: clonePlan.cloneBuildStrategy,
-          // Only meaningful for an on-server clone — lets a per-server GitHub auth
-          // config (device token / PAT / SSH key) win for that server.
-          serverId: clonePlan.runsOnServer ? resolved.serverId : null,
-          allowRelayFallback,
-          // Docker clone-on-server can degrade to an api-host clone, so resolve
-          // gracefully (a LOCAL fallback credential, flagged apiHostFallback) instead
-          // of hard-failing at token resolution after the server is provisioned.
-          allowApiHostFallback: clonePlan.dockerClonesOnServer,
-          // Lets the chain ask the target server whether it already reaches this
-          // repo on its own — only consulted for a clone that runs THERE.
-          serverExecutor: clonePlan.runsOnServer ? targetExecutor : null,
-          repoUrl: snapshot.repoUrl,
-          onLog: (message) => logger.log(message),
-        })
+    const isGitlab = project.gitProvider === "gitlab";
+    const gitCred: BuildGitCredential = needsGitSource
+      ? isGitlab
+        ? await resolveGitlabBuildGitToken({
+            ctx: buildBackgroundContext({
+              userId: actorUserId,
+              organizationId: dep.organizationId,
+              label: "build:resolve-git-token",
+            }),
+            projectId: project.id,
+            owner: project.gitOwner ?? undefined,
+            repo: project.gitRepo ?? undefined,
+            gitlabProjectId: project.installationId ?? undefined,
+            buildStrategy: clonePlan.cloneBuildStrategy,
+            allowApiHostFallback: clonePlan.dockerClonesOnServer,
+          })
+        : await resolveBuildGitToken({
+            ctx: buildBackgroundContext({
+              userId: actorUserId,
+              organizationId: dep.organizationId,
+              label: "build:resolve-git-token",
+            }),
+            projectId: project.id,
+            owner: project.gitOwner ?? undefined,
+            repo: project.gitRepo ?? undefined,
+            buildStrategy: clonePlan.cloneBuildStrategy,
+            // Only meaningful for an on-server clone — lets a per-server GitHub auth
+            // config (device token / PAT / SSH key) win for that server.
+            serverId: clonePlan.runsOnServer ? resolved.serverId : null,
+            allowRelayFallback,
+            // Docker clone-on-server can degrade to an api-host clone, so resolve
+            // gracefully instead of hard-failing after the server is provisioned.
+            allowApiHostFallback: clonePlan.dockerClonesOnServer,
+            // Ask the target server whether it already reaches this exact repo
+            // with its own identity before shipping any credential.
+            serverExecutor: clonePlan.runsOnServer ? targetExecutor : null,
+            repoUrl: snapshot.repoUrl,
+            onLog: (message) => logger.log(message),
+          })
       : {};
 
     // Clone-on-server needs a credential the build host can actually AUTHENTICATE
@@ -748,6 +774,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       envVars: buildEnv.envVars,
       resources: buildResources,
       gitToken: gitCred.token,
+      gitTokenUsername: isGitlab ? "oauth2" : undefined,
     });
     // A static app builds via the minimal nginx image (generateStaticDockerfile);
     // only this flag selects it. Bare builds ignore it.
@@ -780,7 +807,7 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
       scriptPath: string;
       close: () => Promise<void>;
     } | null> => {
-      if (!gitCred.relay) return null;
+      if (!("relay" in gitCred) || !gitCred.relay) return null;
       if (!targetExecutor || !resolved.serverId) {
         throw new Error(
           "Git credential forwarding is enabled, but no SSH executor is available for this server.",

@@ -8,9 +8,17 @@ import generateIcon from "@/utils/icons";
 import { formatDate } from "@/utils/date";
 
 export const GitInfo = () => {
-  const { projectData, id, updateProjectData } = useProjectSettings();
+  const { projectData, gitData, id, updateProjectData } = useProjectSettings();
   const { showToast } = useToast();
   const { t } = useI18n();
+  const isGitlab = (gitData.gitProvider ?? projectData?.gitProvider) === "gitlab";
+  const repoUrl =
+    gitData.repository?.url ||
+    projectData?.repositoryUrl ||
+    (isGitlab ? "https://gitlab.com/" : "https://github.com/") +
+      (projectData?.owner || gitData.repository?.full_name?.split("/")[0] || "") +
+      "/" +
+      (projectData?.repo || gitData.repository?.full_name?.split("/").slice(1).join("/") || "");
   
   const [isEditingBranch, setIsEditingBranch] = useState(false);
   const [tempBranch, setTempBranch] = useState(projectData?.branch || 'main');
@@ -26,9 +34,12 @@ export const GitInfo = () => {
       // Fetch available branches
       const response = await projectsApi.getBranches(projectData.id);
       if (response.success) {
-        setBranches(response.branches || []);
+        const rows = (response.data ?? response.branches ?? []) as Array<
+          string | { name: string }
+        >;
+        setBranches(rows.map((b) => (typeof b === "string" ? b : b.name)).filter(Boolean));
         setIsEditingBranch(true);
-        setTempBranch(projectData.branch || 'main');
+        setTempBranch(projectData.branch || "main");
       } else {
         showToast(t.projectSettings.gitInfo.toast.fetchBranchesFailed, 'error', t.projectSettings.gitInfo.toast.errorTitle);
       }
@@ -97,7 +108,9 @@ export const GitInfo = () => {
       {/* Git Repository Card */}
       <div className="bg-card rounded-2xl border border-border/50 p-5">
         <div className="flex items-center gap-3 mb-5">
-          {generateIcon('https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg', 24, 'white', {}, true)}
+          {isGitlab
+            ? generateIcon('https://upload.wikimedia.org/wikipedia/commons/1/18/GitLab_Logo.svg', 24, 'white', {}, true)
+            : generateIcon('https://upload.wikimedia.org/wikipedia/commons/9/91/Octicons-mark-github.svg', 24, 'white', {}, true)}
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-base text-foreground truncate">{projectData?.owner + '/' + projectData?.repo || t.projectSettings.gitInfo.repository}</p>
             <p className="text-sm text-muted-foreground">{projectData?.branch || 'main'}</p>
@@ -208,13 +221,13 @@ export const GitInfo = () => {
         {/* Action Buttons */}
         <div className="space-y-2">
           <a
-            href={projectData?.repositoryUrl || 'https://github.com/' + projectData?.owner + '/' + projectData?.repo}
+            href={repoUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="w-full px-4 py-2.5 bg-muted/60 hover:bg-muted text-foreground rounded-full font-medium text-sm transition-all flex items-center justify-center gap-2"
           >
             {generateIcon('External_link_HtLszLDBXqHilHK674zh2aKoSL7xUhyboAzP.png', 16, 'currentColor')}
-            {t.projectSettings.gitInfo.viewOnGithub}
+            {isGitlab ? t.projectSettings.gitInfo.viewOnGitlab : t.projectSettings.gitInfo.viewOnGithub}
           </a>
         </div>
       </div>

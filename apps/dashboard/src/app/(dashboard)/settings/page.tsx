@@ -22,10 +22,9 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 
 import { BuildPreferences } from "./_components/BuildPreferences";
-import { RoutePreferences } from "./_components/RoutePreferences";
-import { DeployDefaults } from "./_components/DeployDefaults";
 import { CloudConnection } from "./_components/CloudConnection";
 import { GitHubConnection } from "./_components/GitHubConnection";
+import { GitLabConnection } from "./_components/GitLabConnection";
 import { CloneCredentials } from "./_components/CloneCredentials";
 import { PersonalAccessTokens } from "./_components/PersonalAccessTokens";
 import { McpConnection } from "./_components/McpConnection";
@@ -71,9 +70,6 @@ function SettingsPageInner() {
 
   // Build preferences: only self-hosted — SaaS manages builds.
   const showBuildPreferences = selfHosted;
-  // Deploy defaults: only meaningful where the picker exists (desktop / self-hosted)
-  const showDeployDefaults = selfHosted;
-
   /* ── Cloud callback (redirect after connect) ── */
   useEffect(() => {
     if (searchParams.get("cloud") === "connected") {
@@ -113,12 +109,11 @@ function SettingsPageInner() {
           {activeTab === "general" && (
             <>
               <GitHubConnection />
+              <GitLabConnection />
               {/* Deploy Defaults + Routing hidden for now — advanced/rarely-needed,
                   reduces general-settings noise. The edge defaults to loopback-port
                   and both keep a per-project override; re-enable by uncommenting. */}
-              {/* {showDeployDefaults && <DeployDefaults />} */}
               {showBuildPreferences && <BuildPreferences />}
-              {/* {showBuildPreferences && <RoutePreferences />} */}
               <LanguageSetting />
               <PreferencesSetting />
             </>

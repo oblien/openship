@@ -98,7 +98,7 @@ describe("githubWebhookProvider", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(findByGitRepo).toHaveBeenCalledWith("acme", "site");
+    expect(findByGitRepo).toHaveBeenCalledWith("acme", "site", "github");
     expect(triggerDeployment).toHaveBeenCalledTimes(1);
     expect(triggerDeployment).toHaveBeenCalledWith("user-1", {
       projectId: "project-1",

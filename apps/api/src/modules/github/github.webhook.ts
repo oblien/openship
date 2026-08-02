@@ -86,7 +86,7 @@ async function collectDeliverySecrets(
 
   const secrets = new Set<string>();
 
-  const projects = await repos.project.findByGitRepo(owner, repo).catch(() => []);
+  const projects = await repos.project.findByGitRepo(owner, repo, "github").catch(() => []);
   for (const p of projects) {
     if (!p.webhookSecret) continue;
     try {

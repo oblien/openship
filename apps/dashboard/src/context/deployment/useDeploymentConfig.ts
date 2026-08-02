@@ -37,6 +37,8 @@ interface PreparedConfigArgs {
   projectId?: string;
   localPath?: string;
   uploadSessionId?: string;
+  gitProvider?: "github" | "gitlab";
+  installationId?: number;
 }
 
 interface PreparedProjectContext {
@@ -654,6 +656,8 @@ export function useDeploymentConfig() {
         projectId,
         localPath,
         uploadSessionId,
+        gitProvider,
+        installationId,
       } = args;
       const preparedContext = resolvePreparedProjectContext(response, newEndpointDomainType);
       const routingState = resolvePreparedRoutingState(
@@ -675,6 +679,8 @@ export function useDeploymentConfig() {
         projectId,
         repo: repoName,
         owner,
+        gitProvider: gitProvider ?? "github",
+        installationId,
         localPath,
         uploadSessionId,
         projectName: project?.name || repoName,
@@ -757,7 +763,16 @@ export function useDeploymentConfig() {
       owner: string,
       repo: string,
       force?: string,
-      context?: { branch?: string; projectId?: string; composePath?: string },
+      context?: {
+        branch?: string;
+        projectId?: string;
+        /** Git host to resolve the repo from. Defaults to "github". */
+        provider?: "github" | "gitlab";
+        /** GitLab numeric project id — carried through to config for the
+         *  eventual git/link call once the project is created. */
+        installationId?: number;
+        composePath?: string;
+      },
     ): Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }> => {
       try {
         let project: PersistedProject = null;
@@ -779,14 +794,34 @@ export function useDeploymentConfig() {
         const sourceRepo = project?.gitRepo || repo;
         const projectBranch = typeof project?.gitBranch === "string" ? project.gitBranch : "";
         const requestedBranch = (projectBranch || context?.branch || "").trim() || undefined;
+        // An EXISTING project's saved provider wins over the URL hint — a
+        // gitlab-linked project must keep resolving through GitLab even if
+        // this deploy/[slug] visit didn't carry `?provider=gitlab` (e.g. a
+        // bookmarked/legacy link).
+        const provider: "github" | "gitlab" =
+          (project?.gitProvider === "gitlab" ? "gitlab" : undefined) ??
+          (context?.provider === "gitlab" ? "gitlab" : "github");
+        const installationId = project?.installationId ?? context?.installationId;
 
-        const response = await deployApi.prepare({
-          owner: sourceOwner,
-          repo: sourceRepo,
-          branch: requestedBranch,
-          force,
-          ...scanComposePath(context?.composePath, project),
-        });
+        const response = await deployApi.prepare(
+          provider === "gitlab"
+            ? {
+                source: "gitlab",
+                owner: sourceOwner,
+                repo: sourceRepo,
+                branch: requestedBranch,
+                installationId,
+                force,
+                ...scanComposePath(context?.composePath, project),
+              }
+            : {
+                owner: sourceOwner,
+                repo: sourceRepo,
+                branch: requestedBranch,
+                force,
+                ...scanComposePath(context?.composePath, project),
+              },
+        );
 
         if (response?.error) {
           return { success: false, error: response.error, errorType: "api_error" };
@@ -815,6 +850,8 @@ export function useDeploymentConfig() {
           branch: selectedBranch,
           branches: branchOptions,
           projectId: context?.projectId,
+          gitProvider: provider,
+          installationId,
         }));
 
         return { success: true };
@@ -1097,6 +1134,8 @@ export function useDeploymentConfig() {
               branches: branch ? [branch] : [],
               projectId,
               localPath: project.localPath || undefined,
+              gitProvider: project.gitProvider === "gitlab" ? "gitlab" : "github",
+              installationId: project.installationId,
             }),
             // buildPreparedConfig (shared with detection) doesn't load production
             // env — overlay the saved values we fetched above.
