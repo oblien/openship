@@ -74,7 +74,9 @@ export interface PrepareAppConfig {
   stack: StackId;
   projectType: "app" | "docker" | "services" | "monorepo";
   category: string;
-  packageManager: string;
+  /** Absent when the source has none — a stock Compose project carries neither
+   *  a manifest nor a lockfile. Every read falls back to npm. */
+  packageManager?: string;
   buildCommand: string;
   installCommand: string;
   startCommand: string;
