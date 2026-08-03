@@ -93,7 +93,7 @@
   "prepare": [
     {
       "service": "seaweedfs",
-      "command": "weed shell -master=127.0.0.1:9333 -filer=127.0.0.1:8888 -command \"s3.bucket.create -name=$S3_BUCKET\" > /dev/null 2>&1 || true; printf '%s' \"$S3_BUCKET\"",
+      "command": "printf 's3.bucket.create -name=%s\n' \"$S3_BUCKET\" | weed shell -master=127.0.0.1:9333 -filer=127.0.0.1:8888 > /dev/null 2>&1 || true; printf '%s' \"$S3_BUCKET\"",
       "capture": "bucket",
       "phase": "post-ready",
       "readiness": {
