@@ -68,6 +68,20 @@ describe("scanNginx", () => {
     expect(res.warnings.some((w) => w.includes("variable"))).toBe(true);
   });
 
+  test("refuses a unix-socket upstream reached through an `upstream` block", async () => {
+    const conf = `
+      upstream app { server unix:/run/app.sock; }
+      upstream tcp { server 127.0.0.1:9000; }
+      server { server_name sock.example.com; location / { proxy_pass http://app; } }
+      server { server_name tcp.example.com;  location / { proxy_pass http://tcp; } }
+    `;
+    const res = await scanNginx(makeExecutor([["nginx -T", conf]]));
+    expect(res.sites.some((s) => s.serverNames.includes("sock.example.com"))).toBe(false);
+    expect(res.warnings.some((w) => w.includes("unix socket"))).toBe(true);
+    const tcp = res.sites.find((s) => s.serverNames.includes("tcp.example.com"));
+    expect(tcp?.target).toEqual({ kind: "proxy", url: "http://127.0.0.1:9000" });
+  });
+
   test("path-routing: keeps EVERY location upstream in `routes`, primary stays `/`", async () => {
     // `location /` is declared AFTER `/api` — the primary must still be `/`, and
     // the extra upstream is RETAINED (not dropped to a warning) so the edge can

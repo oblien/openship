@@ -45,8 +45,9 @@ function parseUpstreams(config: string): Map<string, string> {
 /**
  * Turn a raw proxy_pass value into a concrete Openship route target, or reject
  * it (so the caller warns and skips) when it can't be resolved to a real
- * host:port — an unknown/undeclared upstream, an nginx variable, or a unix
- * socket would otherwise produce a vhost that fails `openresty -t`.
+ * host:port — an unknown/undeclared upstream or an nginx variable would
+ * otherwise produce a vhost that fails `openresty -t`, and a unix socket one
+ * that passes it but points at a path the edge can't reach.
  */
 function resolveProxyTarget(
   proxyPass: string,
@@ -60,7 +61,13 @@ function resolveProxyTarget(
   const scheme = m[1];
   const authority = m[2];
   const host = authority.replace(/:\d+$/, "");
-  if (upstreams.has(host)) return { url: `${scheme}${upstreams.get(host)}` };
+  const upstream = upstreams.get(host);
+  if (upstream) {
+    if (/^unix:/i.test(upstream)) {
+      return { reason: `proxy_pass "${raw}" resolves to upstream "${host}", a unix socket` };
+    }
+    return { url: `${scheme}${upstream}` };
+  }
   const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   // `localhost` is NOT safe to carry over verbatim: nginx resolves it to ::1
   // first, and most app servers bind IPv4 only — so an adopted
