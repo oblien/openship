@@ -1789,6 +1789,36 @@
           }
         ]
       }
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "otel-collector",
+      "name": "OpenTelemetry Collector",
+      "description": "Vendor-neutral telemetry pipeline — receive traces, metrics, and logs over OTLP from your other apps. Ships with the upstream default config; point it at your own backend by editing the collector config after install.",
+      "kind": "template",
+      "logo": "otel-collector",
+      "category": "analytics",
+      "tags": [
+        "observability",
+        "opentelemetry",
+        "otel",
+        "tracing",
+        "metrics",
+        "logs"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "otel-collector",
+          "image": "otel/opentelemetry-collector-contrib:latest",
+          "ports": [
+            "4317:4317",
+            "4318:4318"
+          ],
+          "restart": "unless-stopped"
+        }
+      ]
     }
   ]
 }

@@ -33,6 +33,7 @@ export const APP_LOGO: Record<
   nocodb: { slug: "nocodb" },
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
+  "otel-collector": { slug: "opentelemetry" },
   gitea: { slug: "gitea" },
   minio: { slug: "minio" },
   freshrss: { slug: "freshrss" },
