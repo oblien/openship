@@ -24,6 +24,7 @@ import {
   type RepoTreeEntry,
 } from "../../lib/project-root-detector";
 import {
+  ALL_PACKAGE_MANAGERS,
   parseDeploymentMetadata,
   parseOpenshipConfigJson,
   METADATA_FILES,
@@ -187,10 +188,12 @@ export interface ProjectInfo {
   /**
    * Absent when the source carries no package manager at all — a stock Compose
    * project has neither a manifest nor a lockfile, and `detectPackageManager`
-   * reports the `"unknown"` sentinel for it. That sentinel is not one of
-   * `ALL_PACKAGE_MANAGERS`, so echoing it back into `POST /projects/ensure`
-   * (which is exactly what the wizard does with a scan) fails validation and
-   * the deploy 400s (#389). Omitted instead, which the field being optional on
+   * reports the `"unknown"` sentinel for it. Only values in
+   * `ALL_PACKAGE_MANAGERS` are surfaced, which is the same list every write
+   * body's `packageManager` is generated from: a scan echoed back into
+   * `POST /projects/ensure` (exactly what the wizard does) is then valid by
+   * construction rather than because the one sentinel we know about was
+   * filtered out (#389). Omitted is the shape the field being optional on
    * every write body already allows.
    */
   packageManager?: string;
@@ -847,7 +850,9 @@ function toProjectInfo(
     stack: stack.stack,
     projectType,
     category: stack.category,
-    ...(stack.packageManager !== "unknown" && { packageManager: stack.packageManager }),
+    ...(ALL_PACKAGE_MANAGERS.includes(stack.packageManager) && {
+      packageManager: stack.packageManager,
+    }),
     buildCommand: stack.buildCommand,
     installCommand: stack.installCommand,
     startCommand: stack.startCommand,

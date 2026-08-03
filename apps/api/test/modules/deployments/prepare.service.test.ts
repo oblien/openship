@@ -118,7 +118,8 @@ describe("resolveProjectInfo", () => {
     // #389: a stock Compose project has no package.json and no lockfile, so
     // detection reports the "unknown" sentinel. The wizard echoes the scan
     // straight back into POST /projects/ensure, whose packageManager is drawn
-    // from the real package-manager list, and the deploy 400s.
+    // from ALL_PACKAGE_MANAGERS, and the deploy 400s. The scan must only ever
+    // surface a value from that same list, whatever detection reports.
     await writeFile(
       join(tempDir, "docker-compose.yml"),
       ["services:", "  immich-server:", "    image: ghcr.io/immich-app/immich-server:release"].join(
