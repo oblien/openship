@@ -11,7 +11,7 @@
  *          via executor.pipeIntoCommand. Drops + recreates the schema
  *          atomically inside the dump's transaction (pg_restore --clean).
  *
- * Detection: service.image matches ^(postgres|postgis/postgis):.* and
+ * Detection: service.image matches ^(postgres|postgis/postgis)(:|$) and
  * we can read POSTGRES_USER + POSTGRES_DB from the service env. If
  * either is missing, this producer DOES NOT match — the volume
  * producer fallback runs instead with a "no postgres creds in env"
@@ -30,7 +30,7 @@ import type {
   ServiceHandle,
 } from "../types";
 
-const POSTGRES_IMAGE_RE = /^(postgres|postgis\/postgis):/i;
+const POSTGRES_IMAGE_RE = /^(postgres|postgis\/postgis)(:|$)/i;
 
 function envOr(service: ServiceHandle, key: string, fallback: string): string {
   return service.env[key] ?? fallback;
