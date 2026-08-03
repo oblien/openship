@@ -5,6 +5,8 @@ import {
   calculateDeploymentStats,
   filterDeployments,
   getStatusConfig,
+  isDeploymentRollbackEligible,
+  mapRowToDeployment,
 } from "@/app/(dashboard)/deployments/utils";
 import type { Deployment } from "@/app/(dashboard)/deployments/types";
 
@@ -97,5 +99,28 @@ describe("deployments list — a blocked deploy is visible and counted", () => {
     ]);
     expect(stats.failed).toBe(2);
     expect(stats.success).toBe(1);
+  });
+});
+
+describe("deployment rollback eligibility — list status normalization", () => {
+  it("accepts success, the display status mapRowToDeployment emits for ready rows", () => {
+    const mapped = mapRowToDeployment({
+      id: "d1",
+      status: "ready",
+      commitSha: "abc1234567890",
+      artifactRetainedAt: "2026-08-03T00:00:00Z",
+      isActive: false,
+    });
+    expect(mapped.status).toBe("success");
+    expect(isDeploymentRollbackEligible(mapped.status)).toBe(true);
+  });
+
+  it("still accepts the raw ready status when a caller skips mapRowToDeployment", () => {
+    expect(isDeploymentRollbackEligible("ready")).toBe(true);
+  });
+
+  it("rejects in-flight and failed statuses", () => {
+    expect(isDeploymentRollbackEligible("building")).toBe(false);
+    expect(isDeploymentRollbackEligible("failed")).toBe(false);
   });
 });

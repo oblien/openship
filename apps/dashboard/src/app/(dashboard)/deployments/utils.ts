@@ -1,6 +1,13 @@
 import type { Deployment } from "./types";
 import type { Dictionary } from "@/i18n";
 
+/** Terminal success statuses eligible for rollback/pin in the dashboard.
+ *  The API persists `ready`, but `mapRowToDeployment` normalizes that to
+ *  `success` for list rendering — menu gating must accept both shapes. */
+export function isDeploymentRollbackEligible(status: string): boolean {
+  return status === "ready" || status === "success" || status === "partial_failure";
+}
+
 export const mapRowToDeployment = (row: any): Deployment => {
   const statusMap: Record<string, Deployment["status"]> = {
     ready: "success",
