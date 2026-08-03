@@ -305,7 +305,7 @@ function pickComposePrimary(
     const primary: SingleAppPrimary = {
       framework: candidate.stack as FrameworkId,
       detectedFramework: candidate.stack as FrameworkId,
-      packageManager: candidate.packageManager,
+      packageManager: candidate.packageManager || "npm",
       buildImage: candidate.buildImage,
       rootDirectory: candidate.rootDirectory,
       installCommand: candidate.installCommand,
