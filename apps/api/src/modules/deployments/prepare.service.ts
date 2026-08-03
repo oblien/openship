@@ -184,7 +184,16 @@ export interface ProjectInfo {
   stack: StackResult["stack"];
   projectType: ProjectType;
   category: string;
-  packageManager: string;
+  /**
+   * Absent when the source carries no package manager at all — a stock Compose
+   * project has neither a manifest nor a lockfile, and `detectPackageManager`
+   * reports the `"unknown"` sentinel for it. That sentinel is not one of
+   * `ALL_PACKAGE_MANAGERS`, so echoing it back into `POST /projects/ensure`
+   * (which is exactly what the wizard does with a scan) fails validation and
+   * the deploy 400s (#389). Omitted instead, which the field being optional on
+   * every write body already allows.
+   */
+  packageManager?: string;
   buildCommand: string;
   installCommand: string;
   startCommand: string;
@@ -838,7 +847,7 @@ function toProjectInfo(
     stack: stack.stack,
     projectType,
     category: stack.category,
-    packageManager: stack.packageManager,
+    ...(stack.packageManager !== "unknown" && { packageManager: stack.packageManager }),
     buildCommand: stack.buildCommand,
     installCommand: stack.installCommand,
     startCommand: stack.startCommand,

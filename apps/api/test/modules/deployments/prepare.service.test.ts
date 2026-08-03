@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Value } from "@sinclair/typebox/value";
 
 import { resolveProjectInfo } from "../../../src/modules/deployments/prepare.service";
+import { EnsureProjectBody } from "../../../src/modules/projects/project.schema";
 
 describe("resolveProjectInfo", () => {
   const tempDirs: string[] = [];
@@ -107,6 +109,29 @@ describe("resolveProjectInfo", () => {
     expect(result.stack).toBe("docker-compose");
     expect(result.services?.map((service) => service.name)).toEqual(["web"]);
     expect(result.rootEnv).toEqual({ PORT: "9090" });
+  });
+
+  it("omits the package manager when the source has none, so the scan stays a valid project body", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
+    tempDirs.push(tempDir);
+
+    // #389: a stock Compose project has no package.json and no lockfile, so
+    // detection reports the "unknown" sentinel. The wizard echoes the scan
+    // straight back into POST /projects/ensure, whose packageManager is drawn
+    // from the real package-manager list, and the deploy 400s.
+    await writeFile(
+      join(tempDir, "docker-compose.yml"),
+      ["services:", "  immich-server:", "    image: ghcr.io/immich-app/immich-server:release"].join(
+        "\n",
+      ),
+    );
+
+    const result = await resolveProjectInfo({ source: "local", path: tempDir });
+
+    expect(result.packageManager).toBeUndefined();
+    expect(
+      Value.Check(EnsureProjectBody, { name: "immich", packageManager: result.packageManager }),
+    ).toBe(true);
   });
 
   // ── Declared compose path (issue #330) ────────────────────────────────────
