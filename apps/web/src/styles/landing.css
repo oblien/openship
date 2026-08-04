@@ -3291,3 +3291,88 @@ details[open] .pp-faq-icon { transform: rotate(180deg); background: var(--th-sf-
   .hiw-step { grid-template-columns: 46px 1fr; gap: 16px; }
   .hiw-step::before { left: 22px; }
 }
+/* ══════════════════════════════════════════════════════════════
+   WINDOW FRAME - shared by every product shot
+   ══════════════════════════════════════════════════════════════ */
+
+/* A drawn window, not a bare screenshot. Rounded because a real one is:
+   this is the single place the ruled system's hard corners give way, and
+   squaring it made the shot read as a cropped image rather than an app.
+   The inner hairline sits inside the radius so the corner stays clean. */
+.win {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #17171a;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.09),
+    0 1px 1px rgba(0,0,0,.16),
+    0 12px 28px -8px rgba(0,0,0,.42),
+    0 40px 80px -24px rgba(0,0,0,.55);
+}
+
+/* Title bar reads as glass over the app rather than a solid strip: a
+   lighter top edge, a darker body, and a hairline to close it off. */
+.win-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding-inline: 14px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  background:
+    linear-gradient(rgba(255,255,255,.05), rgba(255,255,255,0));
+}
+.win-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  /* An inset ring keeps the lights from looking like flat stickers. */
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.22);
+}
+.win-dot:nth-child(1) { background: #ff5f57; }
+.win-dot:nth-child(2) { background: #febc2e; }
+.win-dot:nth-child(3) { background: #28c840; }
+
+/* Centred on the bar the way a real title is, rather than pushed to one
+   side, so the traffic lights stay the only thing anchored left. */
+.win-title {
+  position: absolute;
+  inset-inline: 0;
+  text-align: center;
+  pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,.42);
+}
+.win-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-inline-start: auto;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,.62);
+}
+.win-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #28c840;
+  box-shadow: 0 0 0 3px rgba(40,200,64,.16);
+}
+.win-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+
