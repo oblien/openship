@@ -74,7 +74,9 @@
   },
   "sidebar": {
     "expand": "Seitenleiste ausklappen",
-    "collapse": "Seitenleiste einklappen"
+    "collapse": "Seitenleiste einklappen",
+    "openMenu": "Menü öffnen",
+    "closeMenu": "Menü schließen"
   },
   "user": {
     "logout": "Abmelden",

@@ -78,21 +78,26 @@ export const DeploymentsFilters: React.FC<DeploymentsFiltersProps> = React.memo(
         />
       )}
 
-      {/* Status switch — same line as the search (shrink-0 so the input yields). */}
-      <div className="inline-flex max-w-full shrink-0 flex-wrap items-center gap-1 rounded-xl bg-muted/35 p-1">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => onFilterChange(f.value)}
-            className={`inline-flex h-8 items-center rounded-lg px-3.5 text-[12px] font-medium transition-colors ${
-              filter === f.value
-                ? "border border-border/60 bg-card text-foreground"
-                : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
-            }`}
-          >
-            {t.deployments.filters[f.value]}
-          </button>
-        ))}
+      {/* Status switch — same line as the search (shrink-0 so the input yields).
+          Chips scroll horizontally instead of wrapping - on a narrow screen
+          wrapping made the pill row jump to two ragged lines; a single
+          scrollable row keeps the control's height constant. */}
+      <div className="max-w-full shrink-0 overflow-x-auto rounded-xl bg-muted/35 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="inline-flex items-center gap-1">
+          {FILTERS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => onFilterChange(f.value)}
+              className={`inline-flex h-8 shrink-0 items-center rounded-lg px-3.5 text-[12px] font-medium whitespace-nowrap transition-colors ${
+                filter === f.value
+                  ? "border border-border/60 bg-card text-foreground"
+                  : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+              }`}
+            >
+              {t.deployments.filters[f.value]}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

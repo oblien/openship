@@ -74,7 +74,9 @@
   },
   "sidebar": {
     "expand": "Kenar çubuğunu genişlet",
-    "collapse": "Kenar çubuğunu daralt"
+    "collapse": "Kenar çubuğunu daralt",
+    "openMenu": "Menüyü aç",
+    "closeMenu": "Menüyü kapat"
   },
   "user": {
     "logout": "Çıkış Yap",

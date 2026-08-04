@@ -74,7 +74,9 @@
   },
   "sidebar": {
     "expand": "サイドバーを展開",
-    "collapse": "サイドバーを折りたたむ"
+    "collapse": "サイドバーを折りたたむ",
+    "openMenu": "メニューを開く",
+    "closeMenu": "メニューを閉じる"
   },
   "user": {
     "logout": "ログアウト",
