@@ -41,8 +41,8 @@
 /* ── Grid - slightly cooler tint to match the aurora ───────── */
 .dl-hero .hero-grid {
   background-image:
-    linear-gradient(rgba(10, 25, 40, .04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(10, 25, 40, .04) 1px, transparent 1px);
+    linear-gradient(var(--th-on-05) 1px, transparent 1px),
+    linear-gradient(90deg, var(--th-on-05) 1px, transparent 1px);
 }
 
 /* ── Second headline - desaturated seafoam vs home's grey ──── */

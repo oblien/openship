@@ -2,19 +2,19 @@
 
 import { useState } from "react";
 
-const STACKS = [
-  { name: 'Next.js',     icon: 'https://cdn.simpleicons.org/nextdotjs/000000' },
+const STACKS: { name: string; icon: string; darkIcon?: string }[] = [
+  { name: 'Next.js',     icon: 'https://cdn.simpleicons.org/nextdotjs/000000', darkIcon: 'https://cdn.simpleicons.org/nextdotjs/FFFFFF' },
   { name: 'Node',        icon: 'https://cdn.simpleicons.org/nodedotjs/5FA04E' },
   { name: 'Python',      icon: 'https://cdn.simpleicons.org/python/3776AB' },
   { name: 'Go',          icon: 'https://cdn.simpleicons.org/go/00ADD8' },
-  { name: 'Rust',        icon: 'https://cdn.simpleicons.org/rust/000000' },
+  { name: 'Rust',        icon: 'https://cdn.simpleicons.org/rust/000000', darkIcon: 'https://cdn.simpleicons.org/rust/FFFFFF' },
   { name: 'Docker',      icon: 'https://cdn.simpleicons.org/docker/2496ED' },
   { name: 'Postgres',    icon: 'https://cdn.simpleicons.org/postgresql/4169E1' },
   { name: 'Redis',       icon: 'https://cdn.simpleicons.org/redis/FF4438' },
   { name: 'Rails',       icon: 'https://cdn.simpleicons.org/rubyonrails/D30001' },
   { name: 'Laravel',     icon: 'https://cdn.simpleicons.org/laravel/FF2D20' },
-  { name: 'Django',      icon: 'https://cdn.simpleicons.org/django/092E20' },
-  { name: 'Bun',         icon: 'https://cdn.simpleicons.org/bun/000000' },
+  { name: 'Django',      icon: 'https://cdn.simpleicons.org/django/092E20', darkIcon: 'https://cdn.simpleicons.org/django/44B78B' },
+  { name: 'Bun',         icon: 'https://cdn.simpleicons.org/bun/000000', darkIcon: 'https://cdn.simpleicons.org/bun/FBF0DF' },
 ];
 
 export function Hero() {
@@ -92,8 +92,11 @@ export function Hero() {
                     <div key={i} className="flex shrink-0 items-center gap-12">
                       {STACKS.map((s) => (
                         <div key={`${i}-${s.name}`} className="lp-hero-stack-item">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={s.icon} alt={s.name} className="h-[34px] w-[34px] object-contain" loading="lazy" />
+                          <picture className="h-[34px] w-[34px] shrink-0">
+                            {s.darkIcon && <source media="(prefers-color-scheme: dark)" srcSet={s.darkIcon} />}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={s.icon} alt={s.name} className="h-full w-full object-contain" loading="lazy" />
+                          </picture>
                           <span className="whitespace-nowrap">{s.name}</span>
                         </div>
                       ))}
