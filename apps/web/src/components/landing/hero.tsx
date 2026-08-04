@@ -100,6 +100,13 @@ export function Hero() {
             </div>
           </div>
         </div>
+
+        {/* ── Brand band ───────────────────────────────────────────── */}
+        {/* data-section marks it for the navbar's contrast switch, the same
+            way the other dark plates on the site do. */}
+        <div className="lp-hero-row">
+          <div className="lp-hero-band" data-section="dark" aria-hidden="true" />
+        </div>
       </div>
     </section>
   );

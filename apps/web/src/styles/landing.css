@@ -331,6 +331,21 @@
   opacity: 0.42;
 }
 
+/* ── Brand band - closes the hero on the dark plate ──────────── */
+/* Rail to rail rather than edge to edge: it reads as a panel drawn inside
+   the grid instead of an image the grid happens to sit on. Background
+   rather than an <img> because it carries no information the copy does
+   not already state. The artwork is dithered in the file; the login
+   screen's shader pass is not needed for a still panel. */
+.lp-hero-band {
+  height: clamp(300px, 34vw, 520px);
+  background:
+    #000
+    url("/openship-astronaut-vortex-mono-dither.webp")
+    50% 38% / cover
+    no-repeat;
+}
+
 /* ── Aurora container - sits at the bottom, bleeds beyond viewport ── */
 .hero-aurora {
   position: absolute;
