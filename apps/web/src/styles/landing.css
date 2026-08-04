@@ -134,10 +134,11 @@
 
 .lp-ruled {
   position: relative;
-  /* Exactly the navbar's height, so the first rule lands on its baseline
-     and the two read as one grid rather than as a bar above a box. */
+  /* Exactly the navbar's height, so the page starts on its baseline and
+     the two read as one grid rather than as a bar above a box. No rule of
+     its own: the navbar's bottom border already draws that line, and
+     stacking a second one under it produced a 2px double. */
   margin-top: var(--lp-nav-h);
-  border-top: 1px solid var(--lp-rule);
   background-color: var(--th-bg-page);
 }
 
@@ -186,6 +187,37 @@
 .lp-band::after  { top:    calc(var(--lp-node) / -2); }
 .lp-ruled::before,
 .lp-ruled::after { bottom: calc(var(--lp-node) / -2); }
+
+
+/* ── Surfaces ────────────────────────────────────────────────── */
+/* Flat white on white gives a card an outline and nothing else. These two
+   fills are what the reference uses to make a panel read as a made thing:
+   a soft raking gradient so the surface has a light direction, and a
+   slightly deeper one for panels that need to sit behind the rest. */
+/* The fills themselves live with the rest of the ruled-system tokens in
+   theme.css, because the footer uses the ink one and sits outside .lp-ruled. */
+
+/* Corner ticks - four marks where a panel's own corners would be, drawn
+   outside its border so the panel reads as pinned to the grid rather than
+   drawn on top of it. The element needs `position: relative`. */
+.lp-ticked::before,
+.lp-ticked::after,
+.lp-ticked > .lp-tick {
+  pointer-events: none;
+}
+.lp-ticked::before,
+.lp-ticked::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  background:
+    linear-gradient(var(--th-text-heading), var(--th-text-heading)) 50% 50% / 100% 1px no-repeat,
+    linear-gradient(var(--th-text-heading), var(--th-text-heading)) 50% 50% / 1px 100% no-repeat;
+}
+.lp-ticked::before { top: -5px; inset-inline-start: -5px; }
+.lp-ticked::after  { bottom: -5px; inset-inline-end: -5px; }
 
 
 /* ══════════════════════════════════════════════════════════════
@@ -579,6 +611,41 @@
     box-shadow: none;
   }
 }
+
+/* Subtle ambient wash - no gray haze, no competing gradient.
+ * Just a faint violet bleed from the bottom edge for depth.
+ * The base color (#0c0d12) carries the actual dark tone. */
+.dark-section__inner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(70% 50% at 50% 100%, rgba(139,92,246,.045) 0%, transparent 65%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* All direct children sit above the texture */
+.dark-section__inner > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* Top edge glow line */
+.dark-section__edge-glow {
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+  z-index: 3;
+}
+
+
+
+
 
 /* ══════════════════════════════════════════════════════════════
    DASHBOARD - image-only hero showcase (right below Hero)

@@ -94,19 +94,40 @@
   --th-divider:        #f0f0f0;
 
   /* ── Ruled system - page-level grid metrics ───────────────── */
+  /* The widest the ruled column is ever allowed to get, rails included.
+     A measure, not a container: past this the lines stop reading as a
+     drawn grid and start reading as a page with no margins. */
+  --lp-measure: 1232px;
   /* The gutter the vertical rails sit on. Every converted section must use
      this or its rails will not line up with the ones above it. The navbar
-     aligns its content to it too, so the wordmark meets the hero headline. */
-  --lp-gutter: clamp(16px, 5.2vw, 78px);
+     aligns its content to it too, so the wordmark meets the hero headline.
+     Below the measure it is a proportional margin; above it, whatever it
+     takes to hold the column at --lp-measure and centre it. */
+  --lp-gutter: max(
+    clamp(16px, 5.2vw, 78px),
+    calc((100% - var(--lp-measure)) / 2)
+  );
   /* Inset from the rail to the first glyph. */
   --lp-inset: clamp(20px, 2.2vw, 30px);
   /* Navbar height doubles as the hero's top padding, so the hero's top rule
      lands exactly on the navbar's baseline. One value, or they drift.
-     Measured off the reference at a 1497px viewport, where the bar is 70px. */
-  --lp-nav-h: 76px;
-  /* Deliberately darker than --th-bd-default: at #e8e8e8 the grid reads as
-     a faint suggestion, and the point of this layout is drawn lines. */
-  --lp-rule: var(--th-bd-strong);
+     71px is the reference's own bar height, border included. */
+  --lp-nav-h: 71px;
+  /* Deliberately darker than --th-bd-strong. At #d0d0d0 the grid reads as a
+     faint suggestion you have to look for; the point of this layout is
+     drawn lines, so the rails have to survive being glanced at. The
+     reference gets the same presence out of a lighter value by tinting it
+     blue - monochrome has to buy it with contrast instead. */
+  --lp-rule: #c2c2c2;
+  /* Panel fills. Flat white on white gives a card an outline and nothing
+     else; a raking gradient gives the surface a light direction, which is
+     what makes it read as a made thing rather than a gap in the page.
+     --lp-paper-deep is for panels that sit behind other content. */
+  --lp-paper:      linear-gradient(157deg, #f2f3f4 0%, #fcfcfb 62%, #fafaf9 100%);
+  --lp-paper-deep: linear-gradient(157deg, #ebecee 0%, #f7f7f6 62%, #f4f4f3 100%);
+  /* Every dark plate on the page is this plate - sections, product-shot
+     chrome, footer. One value, so they cannot drift into three blacks. */
+  --lp-ink: #0a0a0c;
   /* Every joint where a rule crosses a rail gets a crosshair this wide,
      drawn in --lp-node-rule so the joint is the only part that darkens. */
   --lp-node: 52px;
