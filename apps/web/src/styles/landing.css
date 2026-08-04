@@ -14,7 +14,8 @@
  *    • radius 0 everywhere; hard corners are the point
  *    • 1px --th-bd-default hairlines divide the layout into cells
  *    • labels are mono, uppercase, ~0.1em tracking
- *    • --th-accent-electric carries the primary action
+ *    • primary actions use --th-btn-*, the same black the rest of the
+ *      site already uses - the ruled system has no colour of its own
  *
  *  SOFT (original) - every other section, until converted.
  *    • Full-width sections (DarkSection)  → clamp(32px, 5vw, 56px)
@@ -145,26 +146,6 @@
 .lp-hero::before { inset-inline-start: var(--lp-gutter); }
 .lp-hero::after  { inset-inline-end: var(--lp-gutter); }
 
-/* Dot field for the two margins outside the rails. Its own element because
-   the mask that limits it to those strips would otherwise clip the hero's
-   text along with it. */
-.lp-hero-dots {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: radial-gradient(var(--th-on-16) 1px, transparent 1px);
-  background-size: 13px 13px;
-  --lp-dots-mask: linear-gradient(
-    90deg,
-    #000 0 var(--lp-gutter),
-    transparent var(--lp-gutter) calc(100% - var(--lp-gutter)),
-    #000 calc(100% - var(--lp-gutter)) 100%
-  );
-  -webkit-mask-image: var(--lp-dots-mask);
-  mask-image: var(--lp-dots-mask);
-}
-
 .lp-hero-frame {
   position: relative;
   z-index: 1;
@@ -209,8 +190,62 @@
 .lp-hero-frame::before,
 .lp-hero-frame::after  { bottom: calc(var(--lp-node) / -2); }
 
+/* ── Corner dither ───────────────────────────────────────────── */
+/* Sits inside the rails, in the two bottom corners of the copy row, the
+   way the reference anchors its texture. Animated by stepping the dot
+   grid off its own phase, which is what makes it read as dither noise
+   rather than as a pattern sliding. */
+.lp-hero-dither {
+  position: absolute;
+  inset-inline: var(--lp-gutter);
+  bottom: 0;
+  height: 62%;
+  z-index: 0;
+  pointer-events: none;
+}
+.lp-hero-dither::before,
+.lp-hero-dither::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: min(40%, 440px);
+  height: 100%;
+  background-image: radial-gradient(var(--th-on-20) 1px, transparent 1px);
+  background-size: 9px 9px;
+  animation: lp-dither 2.4s steps(1, end) infinite;
+}
+.lp-hero-dither::before {
+  inset-inline-start: 0;
+  -webkit-mask-image: radial-gradient(115% 100% at 0% 100%, #000 0%, transparent 70%);
+  mask-image: radial-gradient(115% 100% at 0% 100%, #000 0%, transparent 70%);
+}
+.lp-hero-dither::after {
+  inset-inline-end: 0;
+  animation-delay: -1.2s;
+  -webkit-mask-image: radial-gradient(115% 100% at 100% 100%, #000 0%, transparent 70%);
+  mask-image: radial-gradient(115% 100% at 100% 100%, #000 0%, transparent 70%);
+}
+
+@keyframes lp-dither {
+  0%   { background-position: 0 0; }
+  25%  { background-position: 4px 5px; }
+  50%  { background-position: 7px 2px; }
+  75%  { background-position: 2px 6px; }
+}
+
+/* The whole effect is decoration; nothing is lost by holding it still. */
+@media (prefers-reduced-motion: reduce) {
+  .lp-hero-dither::before,
+  .lp-hero-dither::after { animation: none; }
+}
+
 /* ── Copy ────────────────────────────────────────────────────── */
 .lp-hero-copy {
+  /* Both the button pair and the command bar below it measure this, so
+     the three controls read as one stack. */
+  --lp-hero-stack-w: 520px;
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -236,17 +271,21 @@
   color: var(--th-text-body);
 }
 
+/* Both buttons and the command below them are one stack of the same
+   width, as in the reference - the buttons share an edge rather than
+   floating at their own content widths. */
 .lp-hero-cta-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  max-width: var(--lp-hero-stack-w);
   margin-top: 36px;
 }
 
 .lp-hero-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 13px 24px;
   font-size: 14px;
@@ -255,15 +294,18 @@
   transition: background-color .15s, border-color .15s, color .15s;
 }
 .lp-hero-btn--primary {
-  background: var(--th-accent-electric);
-  color: #fff;
+  background: var(--th-btn-bg);
+  color: var(--th-btn-text);
 }
-.lp-hero-btn--primary:hover { background: var(--th-accent-electric-hover); }
+.lp-hero-btn--primary:hover { background: var(--th-btn-bg-hover); }
 .lp-hero-btn--ghost {
-  background: var(--th-sf-05);
+  /* Bordered rather than filled, so the seam between the two buttons
+     reads as one drawn edge instead of two blocks touching. */
+  background: var(--th-card-bg);
+  border-color: var(--lp-rule);
   color: var(--th-text-strong);
 }
-.lp-hero-btn--ghost:hover { background: var(--th-sf-08); }
+.lp-hero-btn--ghost:hover { background: var(--th-sf-04); }
 .lp-hero-btn-arrow {
   height: 14px;
   width: 14px;
@@ -278,8 +320,8 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  max-width: 520px;
-  margin-top: 14px;
+  max-width: var(--lp-hero-stack-w);
+  margin-top: 6px;
   border: 1px solid var(--lp-rule);
   background: var(--th-sf-03);
   padding: 13px 16px;

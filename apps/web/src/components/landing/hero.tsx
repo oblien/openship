@@ -28,11 +28,10 @@ export function Hero() {
 
   return (
     <section className="lp-hero">
-      <div className="lp-hero-dots" aria-hidden="true" />
-
       <div className="lp-hero-frame">
         {/* ── Copy, centred under the navbar ───────────────────────── */}
         <div className="lp-hero-row">
+          <div className="lp-hero-dither" aria-hidden="true" />
           <div className="lp-hero-copy">
             <h1 className="lp-hero-headline animate-fade-in-up">
               <span className="block">Deploy anything.</span>
