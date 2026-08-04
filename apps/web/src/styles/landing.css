@@ -111,6 +111,74 @@
 
 
 /* ══════════════════════════════════════════════════════════════
+   RULED GRID - page-level primitives
+   ══════════════════════════════════════════════════════════════
+
+   Three classes carry the whole grid. Any section opts in by using
+   them; a section that has not been converted yet simply does not,
+   and nothing above or below it has to know.
+
+     .lp-ruled     wraps every converted section. Draws the grid's
+                   first rule and the nodes on its last, so no
+                   section has to know whether it is first or last.
+     .lp-band      one horizontal band. Draws the rule beneath it
+                   and the two nodes on the rule above it.
+     .lp-band-in   the content box between the rails.
+
+   Rails are real borders on .lp-band-in rather than absolutely
+   positioned lines on the section. That is what lets them continue
+   from one band to the next with nothing to keep in sync - the same
+   reason the reference applies its edge class per block instead of
+   once at the page level. Rules stay full bleed, so they cross the
+   rails and read as a drawn grid rather than as a bordered box. */
+
+.lp-ruled {
+  position: relative;
+  border-top: 1px solid var(--lp-rule);
+  background-color: var(--th-bg-page);
+}
+
+.lp-band {
+  position: relative;
+  border-bottom: 1px solid var(--lp-rule);
+}
+
+.lp-band-in {
+  margin-inline: var(--lp-gutter);
+  border-inline: 1px solid var(--lp-rule);
+  padding-inline: var(--lp-inset);
+}
+
+/* ── Nodes - the crosshair where a rule crosses a rail ───────── */
+/* Drawn as an overlay instead of thickening the lines themselves, so
+   rails and rules stay hairlines and only the joint reads darker.
+   Offsetting by half a node from each side keeps it centred on the
+   rail without a transform, which is what makes it survive RTL. */
+.lp-ruled::before,
+.lp-ruled::after,
+.lp-band::before,
+.lp-band::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  width: var(--lp-node);
+  height: var(--lp-node);
+  pointer-events: none;
+  background:
+    linear-gradient(var(--lp-node-rule), var(--lp-node-rule)) 50% 50% / 100% 1.5px no-repeat,
+    linear-gradient(var(--lp-node-rule), var(--lp-node-rule)) 50% 50% / 1.5px 100% no-repeat;
+}
+.lp-ruled::before,
+.lp-band::before { inset-inline-start: calc(var(--lp-gutter) - var(--lp-node) / 2); }
+.lp-ruled::after,
+.lp-band::after  { inset-inline-end:   calc(var(--lp-gutter) - var(--lp-node) / 2); }
+.lp-band::before,
+.lp-band::after  { top:    calc(var(--lp-node) / -2); }
+.lp-ruled::before,
+.lp-ruled::after { bottom: calc(var(--lp-node) / -2); }
+
+
+/* ══════════════════════════════════════════════════════════════
    HERO - ruled grid, hard edges
    ══════════════════════════════════════════════════════════════ */
 
