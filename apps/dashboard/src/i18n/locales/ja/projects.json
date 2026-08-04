@@ -230,6 +230,9 @@
     "waitingRequests": "リクエストを待機中",
     "noTransfer": "まだ転送がありません"
   },
+  "analytics": {
+    "loadFailed": "トラフィック分析を読み込めませんでした"
+  },
   "monitoring": {
     "noDataTitle": "まだモニタリングデータがありません",
     "noDataDescription": "デプロイされたアプリがトラフィックを受信し始めると、ここにアナリティクスが表示されます。",

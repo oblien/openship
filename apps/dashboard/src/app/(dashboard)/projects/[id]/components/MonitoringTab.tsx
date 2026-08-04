@@ -15,12 +15,13 @@
  *   useAnalyticsData       — per-MINUTE series for the traffic chart.
  *
  * The geo/overview split isn't arbitrary: countries, visitors and paths are only
- * aggregated daily at the edge (per-minute would multiply its shared-dict cardinality
- * by ~1440 and evict the request counters they annotate), so they can't come from the
+ * aggregated daily at the edge (per-minute would multiply the shared-dict cardinality
+ * by ~1440 and evict the counters they annotate), so they can't come from the
  * same fetch as the minute series.
  */
 
 import React, { useMemo, useState } from "react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { TrafficChart, TopPaths } from "./general";
 import { MonitoringView } from "@/components/monitoring/MonitoringView";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -32,6 +33,7 @@ import {
   useAnalyticsData,
   useAnalyticsGeo,
   useProjectUsageHistory,
+  invalidateProjectCaches,
 } from "@/hooks/useProjectEndpoints";
 import { useProjectUsageStream } from "@/hooks/useProjectUsageStream";
 import { MOCK_VARIANTS, type MockVariant } from "@/components/monitoring/fixtures";
@@ -47,7 +49,7 @@ const PREVIEW_ALLOWED = process.env.NODE_ENV !== "production";
  * rather than `useSearchParams()`.
  *
  * Deliberate: `useSearchParams` is empty during prerender and only fills after
- * hydration, and this needs to be right on the FIRST client render or the tab
+ * hydration, and this needs to be right on the FIRST client render or the URL
  * flashes its empty state. Reading `window.location` in a lazy `useState`
  * initializer runs exactly once, on the client, after the URL is final.
  *
@@ -96,9 +98,15 @@ export const MonitoringTab = () => {
   // Hooks always run — calling them conditionally would break the hook order. The
   // mock swaps their RESULTS, and passes `null` id so no request is made.
   const liveId = mock ? null : id;
-  const { data: liveAnalytics, isLoading: isLoadingAnalytics } = useAnalyticsData(liveId, domainScope);
+  const {
+    data: liveAnalytics,
+    isLoading: isLoadingAnalytics,
+    error: liveAnalyticsError,
+  } = useAnalyticsData(liveId, domainScope);
   const { data: liveGeo, isLoading: isLoadingGeo } = useAnalyticsGeo(liveId, domainScope);
   const { usage: liveUsage, isConnected, error: usageError, reconnect } = useProjectUsageStream(liveId);
+
+  const showAnalyticsError = !!liveAnalyticsError && !isLoadingAnalytics;
 
   /** Scope for the history read. Held here rather than in the view because it keys the
    *  fetch — the view raises changes through `onServiceKeyChange`. */
@@ -291,6 +299,26 @@ export const MonitoringTab = () => {
   const dateRange = analytics
     ? `${new Date(analytics.summary.firstRequest).toLocaleDateString()} - ${new Date(analytics.summary.lastRequest).toLocaleDateString()}`
     : undefined;
+
+  if (showAnalyticsError) {
+    return (
+      <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
+        <AlertCircle className="size-8 text-danger mx-auto mb-3" />
+        <p className="text-sm font-medium text-foreground mb-1">
+          {t.projects.analytics.loadFailed}
+        </p>
+        <p className="text-xs text-muted-foreground mb-4">{liveAnalyticsError}</p>
+        <button
+          type="button"
+          onClick={() => id && invalidateProjectCaches(id)}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
+        >
+          <RefreshCw className="size-3.5" />
+          {t.projects.services.retry}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <MonitoringView

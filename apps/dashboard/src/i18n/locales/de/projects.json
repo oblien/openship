@@ -230,6 +230,9 @@
     "waitingRequests": "Warten auf Anfragen",
     "noTransfer": "Noch keine Übertragung"
   },
+  "analytics": {
+    "loadFailed": "Traffic-Analysen konnten nicht geladen werden"
+  },
   "monitoring": {
     "noDataTitle": "Noch keine Monitoring-Daten",
     "noDataDescription": "Analysen erscheinen hier, sobald die bereitgestellte App Traffic erhält.",

@@ -6,7 +6,11 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { ConnectionCard } from "./ConnectionCard";
 import { ConnectedServicesCard } from "./ConnectedServicesCard";
 import { UsedByCard } from "./UsedByCard";
-import { useProjectInfo, useAnalyticsData } from "@/hooks/useProjectEndpoints";
+import {
+  useProjectInfo,
+  useAnalyticsData,
+  invalidateProjectCaches,
+} from "@/hooks/useProjectEndpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import {
@@ -21,6 +25,8 @@ import {
   Layers,
   ChevronRight,
   Container,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 
 export const OverviewTab = () => {
@@ -50,6 +56,8 @@ export const OverviewTab = () => {
   const projectInfoQuery = useProjectInfo(id);
   const analytics = useAnalyticsData(id, selectedDomain);
   const analyticsData = analytics.data;
+  const analyticsError = analytics.error;
+  const showAnalyticsError = !!analyticsError && !analytics.isLoading;
   const services = servicesData.services;
   const serviceCount = servicesData.isLoading
     ? (projectData.serviceCount ?? services.length)
@@ -292,6 +300,24 @@ export const OverviewTab = () => {
       {/* ── Monitoring (only with a domain — no domain ⇒ no traffic) ── */}
       {hasDomain && (
         <>
+      {showAnalyticsError ? (
+        <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
+          <AlertCircle className="size-8 text-danger mx-auto mb-3" />
+          <p className="text-sm font-medium text-foreground mb-1">
+            {t.projects.analytics.loadFailed}
+          </p>
+          <p className="text-xs text-muted-foreground mb-4">{analyticsError}</p>
+          <button
+            type="button"
+            onClick={() => id && invalidateProjectCaches(id)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
+          >
+            <RefreshCw className="size-3.5" />
+            {t.projects.services.retry}
+          </button>
+        </div>
+      ) : (
+        <>
       {/* Compact stats row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stats.map((s) => (
@@ -411,6 +437,8 @@ export const OverviewTab = () => {
           </div>
         )}
       </div>
+        </>
+      )}
         </>
       )}
 
