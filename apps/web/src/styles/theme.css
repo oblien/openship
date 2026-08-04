@@ -2,7 +2,7 @@
  * ─────────────────────────────────────────────────────────────────
  *  OPENSHIP LANDING - THEME TOKENS
  *  Follows the dashboard's --th-* pattern exactly.
- *  Light-mode by default for the marketing site.
+ *  System-aware light and dark palettes for the marketing site.
  *
  *  System:
  *    --th-on-{N}    Foreground at N% opacity (text, icons, borders)
@@ -20,6 +20,8 @@
  */
 
 :root {
+
+  color-scheme: light;
 
   /* ── Foreground scale - black on white ────────────────────── */
   --th-on-05: rgba(0,0,0,.05);
@@ -188,6 +190,114 @@
   --th-terminal-red:   #f87171;
   --th-terminal-blue:  #60a5fa;
   --th-terminal-yellow:#facc15;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    /* ── Foreground scale - white on dark ───────────────────── */
+    --th-on-05: rgba(255,255,255,.05);
+    --th-on-06: rgba(255,255,255,.06);
+    --th-on-08: rgba(255,255,255,.08);
+    --th-on-10: rgba(255,255,255,.10);
+    --th-on-12: rgba(255,255,255,.12);
+    --th-on-16: rgba(255,255,255,.16);
+    --th-on-20: rgba(255,255,255,.20);
+    --th-on-30: rgba(255,255,255,.30);
+    --th-on-40: rgba(255,255,255,.40);
+    --th-on-50: rgba(255,255,255,.50);
+    --th-on-60: rgba(255,255,255,.60);
+    --th-on-70: rgba(255,255,255,.70);
+    --th-on-80: rgba(255,255,255,.80);
+    --th-on-90: rgba(255,255,255,.90);
+    --th-on-95: rgba(255,255,255,.95);
+    --th-on-100: rgba(255,255,255,1);
+
+    /* ── Surface fill scale ─────────────────────────────────── */
+    --th-sf-01: rgba(255,255,255,.01);
+    --th-sf-02: rgba(255,255,255,.02);
+    --th-sf-03: rgba(255,255,255,.03);
+    --th-sf-04: rgba(255,255,255,.04);
+    --th-sf-05: rgba(255,255,255,.05);
+    --th-sf-06: rgba(255,255,255,.06);
+    --th-sf-08: rgba(255,255,255,.08);
+
+    /* ── Text ───────────────────────────────────────────────── */
+    --th-text-heading:   rgba(255,255,255,1);
+    --th-text-title:     rgba(255,255,255,.92);
+    --th-text-strong:    rgba(255,255,255,.82);
+    --th-text-body:      rgba(255,255,255,.66);
+    --th-text-secondary: rgba(255,255,255,.56);
+    --th-text-muted:     rgba(255,255,255,.44);
+    --th-text-label:     rgba(255,255,255,.48);
+    --th-text-hint:      rgba(255,255,255,.38);
+    --th-text-ghost:     rgba(255,255,255,.20);
+
+    /* ── Page / layout ──────────────────────────────────────── */
+    --th-bg-page:        #0f0f10;
+    --th-bg-card:        #161618;
+    --th-bg-subtle:      rgba(255,255,255,.03);
+    --th-bg-hover:       rgba(255,255,255,.05);
+    --th-bg-inset:       rgba(255,255,255,.02);
+
+    /* ── Borders ────────────────────────────────────────────── */
+    --th-bd-default:     #303034;
+    --th-bd-subtle:      #252528;
+    --th-bd-strong:      #45454a;
+    --th-bd-card:        #2a2a2e;
+
+    /* ── Buttons ────────────────────────────────────────────── */
+    --th-btn-bg:         #f4f4f5;
+    --th-btn-text:       #0a0a0c;
+    --th-btn-bg-hover:   #dedee2;
+    --th-btn-ghost-bd:         #35353a;
+    --th-btn-ghost-text:       rgba(255,255,255,.68);
+    --th-btn-ghost-bd-hover:   #505057;
+    --th-btn-ghost-text-hover: rgba(255,255,255,.88);
+    --th-btn-ghost-bg-hover:   rgba(255,255,255,.05);
+
+    /* ── Cards / dividers ───────────────────────────────────── */
+    --th-card-bg:        #151517;
+    --th-card-bd:        #2a2a2e;
+    --th-card-bd-hover:  #3b3b40;
+    --th-card-shadow:    0 1px 3px rgba(0,0,0,.35);
+    --th-divider:        #28282c;
+
+    /* ── Ruled system ───────────────────────────────────────── */
+    --lp-rule: #3f3f44;
+    --lp-paper:      linear-gradient(157deg, #1b1c1f 0%, #141416 62%, #171719 100%);
+    --lp-paper-deep: linear-gradient(157deg, #222328 0%, #18181b 62%, #1b1b1e 100%);
+    --lp-ink: #060607;
+
+    /* ── Semantic accents ───────────────────────────────────── */
+    --th-clr-plum:       #a78bfa;
+    --th-clr-plum-soft:  #c4b5fd;
+    --th-clr-plum-wash:  rgba(167,139,250,.10);
+    --th-clr-plum-bg:    rgba(167,139,250,.14);
+    --th-clr-plum-blob:  rgba(167,139,250,.11);
+    --th-clr-plum-bdr:   rgba(167,139,250,.32);
+    --th-clr-plum-tag:   rgba(196,181,253,.72);
+
+    --th-clr-terra:      #fb7185;
+    --th-clr-terra-soft: #fda4af;
+    --th-clr-terra-wash: rgba(251,113,133,.10);
+    --th-clr-terra-bg:   rgba(251,113,133,.14);
+    --th-clr-terra-blob: rgba(251,113,133,.11);
+    --th-clr-terra-bdr:  rgba(251,113,133,.32);
+    --th-clr-terra-tag:  rgba(253,164,175,.72);
+
+    --th-clr-sea:        #34d399;
+    --th-clr-sea-soft:   #6ee7b7;
+    --th-clr-sea-wash:   rgba(52,211,153,.10);
+    --th-clr-sea-bg:     rgba(52,211,153,.14);
+    --th-clr-sea-blob:   rgba(52,211,153,.11);
+    --th-clr-sea-bdr:    rgba(52,211,153,.32);
+    --th-clr-sea-tag:    rgba(110,231,183,.72);
+
+    --th-clr-amber:      #fde68a;
+    --th-clr-amber-wash: rgba(253,230,138,.12);
+  }
 }
 
 
