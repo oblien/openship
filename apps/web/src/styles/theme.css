@@ -101,8 +101,9 @@
   /* Inset from the rail to the first glyph. */
   --lp-inset: clamp(20px, 2.2vw, 30px);
   /* Navbar height doubles as the hero's top padding, so the hero's top rule
-     lands exactly on the navbar's baseline. One value, or they drift. */
-  --lp-nav-h: 92px;
+     lands exactly on the navbar's baseline. One value, or they drift.
+     Measured off the reference at a 1497px viewport, where the bar is 70px. */
+  --lp-nav-h: 76px;
   /* Deliberately darker than --th-bd-default: at #e8e8e8 the grid reads as
      a faint suggestion, and the point of this layout is drawn lines. */
   --lp-rule: var(--th-bd-strong);

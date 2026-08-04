@@ -71,12 +71,12 @@
   gap: 0;
 }
 .lp-nav-item {
-  padding: 11px 24px;
+  padding: 9px 17px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -242,20 +242,24 @@
 /* ── Copy ────────────────────────────────────────────────────── */
 .lp-hero-copy {
   /* Both the button pair and the command bar below it measure this, so
-     the three controls read as one stack. */
-  --lp-hero-stack-w: 520px;
+     the three controls read as one stack. The reference runs 400px at a
+     1497px viewport, which is where the rest of these numbers come from. */
+  --lp-hero-stack-w: 400px;
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: clamp(56px, 7vw, 104px) var(--lp-inset);
+  padding: clamp(44px, 4.8vw, 72px) var(--lp-inset);
 }
 
 .lp-hero-headline {
   text-transform: uppercase;
-  font-size: clamp(2.4rem, 7vw, 5.6rem);
+  /* Caps at 64px, matching the reference's optical size. Uppercase at 700
+     already carries more weight per em than its sentence-case setting, so
+     matching on cap height rather than font-size would run too large. */
+  font-size: clamp(2.1rem, 5vw, 4rem);
   font-weight: 700;
   line-height: 0.95;
   letter-spacing: -0.035em;
@@ -264,22 +268,23 @@
 .lp-hero-headline-second { color: var(--th-on-30); }
 
 .lp-hero-sub {
-  margin-top: 26px;
-  max-width: 60ch;
-  font-size: 16px;
-  line-height: 1.65;
+  margin-top: 22px;
+  max-width: 56ch;
+  font-size: 15px;
+  line-height: 1.6;
   color: var(--th-text-body);
 }
 
 /* Both buttons and the command below them are one stack of the same
-   width, as in the reference - the buttons share an edge rather than
-   floating at their own content widths. */
+   width, as in the reference - not two buttons floating at their own
+   content widths above a wider bar. */
 .lp-hero-cta-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: 10px;
   width: 100%;
   max-width: var(--lp-hero-stack-w);
-  margin-top: 36px;
+  margin-top: 30px;
 }
 
 .lp-hero-btn {
@@ -287,8 +292,8 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 13px 24px;
-  font-size: 14px;
+  padding: 11px 18px;
+  font-size: 13.5px;
   font-weight: 500;
   border: 1px solid transparent;
   transition: background-color .15s, border-color .15s, color .15s;
@@ -299,8 +304,8 @@
 }
 .lp-hero-btn--primary:hover { background: var(--th-btn-bg-hover); }
 .lp-hero-btn--ghost {
-  /* Bordered rather than filled, so the seam between the two buttons
-     reads as one drawn edge instead of two blocks touching. */
+  /* Bordered rather than filled: with a gap between the two buttons a
+     grey fill would read as a disabled block. */
   background: var(--th-card-bg);
   border-color: var(--lp-rule);
   color: var(--th-text-strong);
@@ -321,11 +326,11 @@
   gap: 10px;
   width: 100%;
   max-width: var(--lp-hero-stack-w);
-  margin-top: 6px;
+  margin-top: 16px;
   border: 1px solid var(--lp-rule);
   background: var(--th-sf-03);
-  padding: 13px 16px;
-  font-size: 13px;
+  padding: 10px 14px;
+  font-size: 12.5px;
   letter-spacing: 0.01em;
   color: var(--th-text-secondary);
   transition: border-color .15s, color .15s, background-color .15s;
