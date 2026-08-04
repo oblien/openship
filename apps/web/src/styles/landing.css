@@ -52,6 +52,32 @@
   letter-spacing: 0.005em;
 }
 
+
+/* ══════════════════════════════════════════════════════════════
+   NAVBAR - ruled variant, squared and aligned to the page rails
+   ══════════════════════════════════════════════════════════════ */
+
+/* Not a centered max-width: the wordmark has to land on the same optical
+   line as the hero headline, which is set by the rail, not by the viewport. */
+.lp-nav-bar {
+  position: relative;
+  height: var(--lp-nav-h);
+  padding-inline: calc(var(--lp-gutter) + var(--lp-inset));
+}
+
+/* Square, hairline, no shadow - a drawn box, not a floating pill. */
+.lp-nav-box {
+  gap: 0;
+}
+.lp-nav-item {
+  padding: 11px 24px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 /* ══════════════════════════════════════════════════════════════
    HERO KIT - shared by /features, /roadmap and /download
    Still the SOFT system. The landing hero no longer uses these;
@@ -91,15 +117,13 @@
   /* The gutter the whole ruled system hangs off. Sections converted after
      the hero must reuse this value or their rails will not line up with
      these. Horizontal rules run full bleed; only the rails are inset. */
-  --lp-gutter: clamp(16px, 5.2vw, 78px);
-  /* Every rule in the ruled system, one knob. Deliberately darker than
-     --th-bd-default: at #e8e8e8 the grid reads as a faint suggestion, and
-     the whole point of this layout is that the lines are drawn. */
-  --lp-rule: var(--th-bd-strong);
+  /* --lp-gutter / --lp-inset / --lp-rule live in theme.css: the navbar sits
+     outside this section and has to align to the same rails. */
   position: relative;
   background-color: var(--th-bg-page);
-  /* Clears the fixed navbar, which is not part of this grid yet. */
-  padding-top: 78px;
+  /* Exactly the navbar height, so the frame's top rule lands on the navbar
+     baseline and reads as one continuous grid. */
+  padding-top: var(--lp-nav-h);
   /* Rails carry on past the last rule, as in the reference. Sections below
      have not been converted yet, so this is where they currently stop. */
   padding-bottom: 96px;
@@ -167,7 +191,7 @@
   justify-content: center;
   /* Tight against the rail - the reference insets copy ~28px, not a wide
      gutter, which is what keeps the cell reading as a drawn box. */
-  padding: clamp(40px, 6vw, 88px) clamp(20px, 2.2vw, 30px);
+  padding: clamp(40px, 6vw, 88px) var(--lp-inset);
 }
 
 .lp-hero-install {
@@ -270,7 +294,7 @@
   flex-direction: column;
   justify-content: center;
   gap: 16px;
-  padding: 20px clamp(20px, 2.2vw, 30px);
+  padding: 20px var(--lp-inset);
   min-height: 120px;
   overflow: hidden;
 }
