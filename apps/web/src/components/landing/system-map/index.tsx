@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
-import { DarkSection } from "../dark-section";
+import { SectionHeader } from "../section-header";
 import {
   BEATS,
   BEAT_HOT,
@@ -45,7 +45,7 @@ const TOTAL = BEATS.length * BEAT;
 /** How long a connection takes to draw. Its dot rides the drawing head. */
 const DRAW = BEAT * 0.62;
 
-export function SystemMap() {
+export function SystemMap({ index, total }: { index: number; total: number }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const chipsRef = useRef<(HTMLButtonElement | null)[]>([]);
@@ -273,11 +273,12 @@ export function SystemMap() {
   const [vbX, , vbW] = layout.viewBox.split(" ").map(Number);
 
   return (
-    <section id="features" className="smap-outer">
-      <DarkSection>
-        <div className="smap-container" ref={rootRef}>
+    <section id="features" className="lp-sec">
+      <SectionHeader label="The system" index={index} total={total} />
+
+      <div className="lp-band">
+        <div className="lp-band-in">
           <header className="smap-head">
-            <p className="smap-eyebrow">The system</p>
             <h2 className="smap-title">
               One system.
               <br />
@@ -288,8 +289,13 @@ export function SystemMap() {
               takes, and every box on it is something Openship runs for you.
             </p>
           </header>
+        </div>
+      </div>
 
-          <div className="smap-stage">
+      <div className="lp-band">
+        <div className="lp-band-in lp-band-in--flush">
+          <div className="smap-container" ref={rootRef} data-section="dark">
+            <div className="smap-stage">
             <svg
               ref={svgRef}
               className="smap-svg"
@@ -551,8 +557,9 @@ export function SystemMap() {
               </p>
             ))}
           </div>
+          </div>
         </div>
-      </DarkSection>
+      </div>
     </section>
   );
 }

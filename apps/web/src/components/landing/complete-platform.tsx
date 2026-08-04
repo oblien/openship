@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import {
   GitCommitVertical, Eye, Terminal, Boxes, Wand2, Undo2,
   TrendingUp, Scale, Activity, ScrollText, CalendarClock, RefreshCw,
@@ -8,22 +11,32 @@ import {
   Building2, UserCog, KeySquare, Mailbox, ClipboardList, ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
-import { DarkSection } from "./dark-section";
+import { SectionHeader } from "./section-header";
 
 /**
- * Complete platform - dark section, alternating with the light Features
- * section above. Six capability groups with big numbered anchors and an
- * abstract category mark composed of exactly six elements (matching the
- * six items in that group).
+ * Complete platform - the catalog.
+ *
+ * Seven capability groups, one on screen at a time. The left rail carries
+ * the whole set as a numbered spine so the reader can see the shape of the
+ * platform without scrolling; the right column shows only the group they
+ * are on. That is the trade the old six-by-six grid could not make: it had
+ * to show forty-two things at once, so none of them got any room.
+ *
+ * The spine advances itself on a timer and yields to a click. Both write to
+ * the same `active` index, so there is one source of truth for what is lit,
+ * on the rail and on the plinth alike.
  */
 
 type Item = { name: string; desc: string; icon: LucideIcon };
 type Group = { n: string; heading: string; mark: React.ReactNode; items: Item[] };
 
+/** How long a group holds before the spine moves on. */
+const DWELL_MS = 6000;
+
 /* ─── Category marks - each contains exactly 6 elements ─────────
- * Refined line-art for the dark surface. Generous viewBox margins,
- * consistent visual weight across all six categories. Color comes
- * from the .cp-group-mark class - a soft lavender, not raw white.
+ * Line-art for the dark plinth. Generous viewBox margins, consistent
+ * visual weight across all seven categories. Colour comes from
+ * .cat-mark, so the plate owns the palette and the marks stay neutral.
  */
 const MARKS = {
   /* Deploy - 6 dots on a smooth ascending bezier (trajectory) */
@@ -219,69 +232,127 @@ const GROUPS: Group[] = [
   },
 ];
 
-export function CompletePlatform() {
+export function CompletePlatform({ index, total }: { index: number; total: number }) {
+  const [active, setActive] = useState(0);
+  /* Set once the reader takes over. The timer is a way in for someone who
+     is not driving; it has no business fighting someone who is. */
+  const [held, setHeld] = useState(false);
+
+  useEffect(() => {
+    if (held) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const id = setInterval(
+      () => setActive((i) => (i + 1) % GROUPS.length),
+      DWELL_MS,
+    );
+    return () => clearInterval(id);
+  }, [held]);
+
   return (
-    <section className="cp-outer">
-      <DarkSection>
-        <div className="cp-container">
-          <header className="cp-head">
-            <p className="cp-eyebrow">The full platform</p>
-            <h2 className="cp-title">
-              Forty-two capabilities,<br />one platform.
-            </h2>
-            <p className="cp-sub">
-              No add-on stores, no plugin marketplaces, no &ldquo;requires an integration with&hellip;&rdquo;.
-            </p>
-          </header>
+    <section className="lp-sec">
+      <SectionHeader label="The full platform" index={index} total={total} />
 
-          <div className="cp-stack">
-            {GROUPS.map((g) => (
-              <section key={g.n} className="cp-group">
-                <div className="cp-group-rail">
-                  <span className="cp-group-n">{g.n}</span>
-                  <h3 className="cp-group-heading">{g.heading}</h3>
+      <div className="lp-band">
+        <div className="lp-band-in lp-band-in--flush">
+          <div className="cat-grid">
+            {/* ── Left rail: the claim, then the whole set as a spine ── */}
+            <div className="cat-left">
+              <div className="cat-heading">
+                <h2 className="cat-title">
+                  Forty-two capabilities,<br />one platform.
+                </h2>
+                <p className="cat-sub">
+                  No add-on stores, no plugin marketplaces, no &ldquo;requires an integration with&hellip;&rdquo;.
+                </p>
+              </div>
 
-                  <svg
-                    className="cp-group-mark"
-                    viewBox="0 0 100 100"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    {g.mark}
-                  </svg>
+              <ol className="cat-spine" role="tablist" aria-label="Capability groups">
+                {GROUPS.map((g, i) => (
+                  <li key={g.n} className="cat-spine-row">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-current={i === active}
+                      aria-selected={i === active}
+                      className="cat-spine-item"
+                      onClick={() => {
+                        setActive(i);
+                        setHeld(true);
+                      }}
+                    >
+                      <span className="cat-spine-n">{g.n}</span>
+                      <span className="cat-spine-title">{g.heading}</span>
+                      <span className="cat-spine-dot" aria-hidden="true" />
+                      <span className="cat-spine-progress" aria-hidden="true">
+                        {/* Mounted fresh each time the group changes, which is
+                            what restarts the fill without touching the DOM. */}
+                        {i === active && !held && (
+                          <span key={active} className="cat-spine-progress-fill" />
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
 
-                  <span className="cp-group-count">
-                    <span className="cp-group-count-n">{g.items.length}</span>
-                    <span className="cp-group-count-label">capabilities</span>
-                  </span>
-                </div>
-                <div className="cp-grid">
-                  {g.items.map((it) => {
-                    const Icon = it.icon;
-                    return (
-                      <article key={it.name} className="cp-item">
-                        <div className="cp-item-head">
-                          <Icon
-                            className="cp-item-icon"
-                            strokeWidth={1.75}
-                            aria-hidden="true"
-                          />
-                          <h4 className="cp-item-name">{it.name}</h4>
-                        </div>
-                        <p className="cp-item-desc">{it.desc}</p>
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
+            {/* ── Right: the plinth, then the group's six capabilities ── */}
+            <div className="cat-right">
+              <div className="cat-stage">
+                {GROUPS.map((g, i) => (
+                  <div key={g.n} className="cat-card" aria-hidden={i !== active}>
+                    <div className="cat-plinth" data-section="dark">
+                      <svg
+                        className="cat-mark"
+                        viewBox="0 0 100 100"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        {g.mark}
+                      </svg>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="cat-text-stage">
+                {GROUPS.map((g, i) => (
+                  <div key={g.n} className="cat-text-card" aria-hidden={i !== active}>
+                    <div className="cat-text-head">
+                      <span className="cat-text-eyebrow">
+                        {g.n} &middot; {g.heading}
+                      </span>
+                      <span className="cat-text-count">
+                        {g.items.length} capabilities
+                      </span>
+                    </div>
+
+                    <div className="cat-items">
+                      {g.items.map((it) => {
+                        const Icon = it.icon;
+                        return (
+                          <article key={it.name} className="cat-item">
+                            <div className="cat-item-head">
+                              <Icon className="cat-item-icon" strokeWidth={1.75} aria-hidden="true" />
+                              <h3 className="cat-item-name">{it.name}</h3>
+                            </div>
+                            <p className="cat-item-desc">{it.desc}</p>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
-      </DarkSection>
+      </div>
     </section>
   );
 }

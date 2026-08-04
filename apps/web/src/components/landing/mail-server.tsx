@@ -1,121 +1,110 @@
+import { SectionHeader } from "./section-header";
+
 /**
- * Mail server spotlight - editorial copy on the left, dashboard preview on
- * the right. Layout is symmetric: the left column's heading + body + points +
- * stats and the right column's image + status row + CTAs balance to roughly
- * equal heights so the two columns center as a single composition.
+ * Mail server spotlight - claim and actions on one line, the product shot
+ * full-bleed between the rails, then the argument as a rail of cards.
+ *
+ * The lead card is the only drenched surface in the section and carries the
+ * paragraph plus the authentication chain it sets up, because that is the
+ * claim; the three cards after it are what backs the claim up. Reading order
+ * and visual weight agree, which is what the old two-column split could not
+ * do with a paragraph this long.
  */
-export function MailServer() {
+export function MailServer({ index, total }: { index: number; total: number }) {
   return (
-    <section className="ms-section">
-      <div className="ms-container">
-        <div className="ms-grid">
-          {/* Text side */}
-          <div className="ms-lead">
-            <p className="ms-eyebrow">Built-in mail server</p>
-            <h2 className="ms-title">
+    <section className="lp-sec">
+      <SectionHeader label="Built-in mail server" index={index} total={total} />
+
+      <div className="lp-band">
+        <div className="lp-band-in">
+          <div className="uc-headline">
+            <h2 className="uc-headline-title">
               Transactional email,<br />
-              <span className="ms-title-soft">unlimited domains.</span>
+              <span className="uc-headline-soft">unlimited domains.</span>
             </h2>
-            <p className="ms-body">
-              A real mail server on your own box - not a send-only API. Outbound relays through a
-              trusted provider (Amazon SES or any SMTP) so mail lands with a warmed, high-reputation
-              IP, while every mailbox, message, and byte stays on your server. One click sets up the
-              domains, certificates, and SPF/DKIM/DMARC chain.
-            </p>
 
-            <ul className="ms-points">
-              {POINTS.map((p, i) => (
-                <li key={p.name}>
-                  <span className="ms-point-num">{String(i + 1).padStart(2, '0')}</span>
-                  <div className="ms-point-text">
-                    <span className="ms-point-name">{p.name}</span>
-                    <span className="ms-point-desc">{p.desc}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Image side - image + status row + CTAs */}
-          <div className="ms-right">
-            <figure className="ms-shot">
-              <div className="ms-shot-frame">
-                <span className="ms-shot-chrome" aria-hidden="true">
-                  <span className="ms-shot-dot" />
-                  <span className="ms-shot-dot" />
-                  <span className="ms-shot-dot" />
-                  <span className="ms-shot-chrome-live">
-                    <span className="ms-shot-chrome-live-dot" />
-                    Live · 247 sending
-                  </span>
-                </span>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/email-preview.png"
-                  alt="Openship mail dashboard"
-                  loading="lazy"
-                  decoding="async"
-                  width={1920}
-                  height={1080}
-                  className="ms-shot-img"
-                />
-              </div>
-            </figure>
-
-            {/* Status row - DNS records auto-configured */}
-            <div className="ms-status-row">
-              <div className="ms-status-head">
-                <svg
-                  className="ms-status-check"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <circle cx="8" cy="8" r="7.25" stroke="currentColor" strokeWidth="1.4" />
-                  <path
-                    d="M4.5 8.25 L7 10.5 L11.5 5.5"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                </svg>
-                <span>Auto-configured</span>
-              </div>
-              <div className="ms-status-pills">
-                <span className="ms-status-pill">SPF</span>
-                <span className="ms-status-pill">DKIM</span>
-                <span className="ms-status-pill">DMARC</span>
-                <span className="ms-status-pill">TLS</span>
-              </div>
-            </div>
-
-            <div className="ms-cta-row">
-              <a href="/login" className="th-btn group rounded-full px-6 py-2.5 text-[14px] font-medium">
-                Get started
-                <svg
-                  className="ml-1 -mr-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              </a>
-              <a href="/mail" className="th-btn-ghost group rounded-full px-6 py-2.5 text-[14px] font-medium">
+            <div className="uc-cta-cluster">
+              <a href="/mail" className="uc-cta">
                 See more
-                <svg
-                  className="ml-1 -mr-1 h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                <svg viewBox="0 0 14 14" aria-hidden="true">
+                  <path d="M3 7h8m0 0L7.5 3.5M11 7l-3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                 </svg>
               </a>
+              <a href="/login" className="uc-cta uc-cta--primary">
+                Get started
+                <svg viewBox="0 0 14 14" aria-hidden="true">
+                  <path d="M3 7h8m0 0L7.5 3.5M11 7l-3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                </svg>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="lp-band">
+        <div className="lp-band-in lp-band-in--flush">
+          <figure className="win">
+            <div className="win-bar">
+              <span className="win-dot" aria-hidden="true" />
+              <span className="win-dot" aria-hidden="true" />
+              <span className="win-dot" aria-hidden="true" />
+              <span className="win-status">
+                <span className="win-status-dot" aria-hidden="true" />
+                Live &middot; 247 sending
+              </span>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/email-preview.png"
+              alt="Openship mail dashboard"
+              loading="lazy"
+              decoding="async"
+              width={1920}
+              height={1080}
+              className="win-img"
+            />
+          </figure>
+        </div>
+      </div>
+
+      <div className="lp-band">
+        <div className="lp-band-in lp-band-in--flush">
+          <div className="uc-rail">
+            <div className="uc-rail-row">
+            <article className="uc-card uc-card--drenched" data-section="dark">
+              <span className="uc-eyebrow">
+                <span className="uc-eyebrow-dot" aria-hidden="true" />
+                Auto-configured
+              </span>
+
+              <p className="uc-card-lead">
+                A real mail server on your own box - not a send-only API. Outbound relays through a
+                trusted provider (Amazon SES or any SMTP) so mail lands with a warmed, high-reputation
+                IP, while every mailbox, message, and byte stays on your server. One click sets up the
+                domains, certificates, and SPF/DKIM/DMARC chain.
+              </p>
+
+              <div className="uc-card-foot">
+                <span className="uc-card-foot-label">Verified for you</span>
+                <div className="uc-pills">
+                  <span className="uc-pill">SPF</span>
+                  <span className="uc-pill">DKIM</span>
+                  <span className="uc-pill">DMARC</span>
+                  <span className="uc-pill">TLS</span>
+                </div>
+              </div>
+            </article>
+
+            {POINTS.map((p, i) => (
+              <article key={p.name} className="uc-card">
+                <span className="uc-eyebrow">
+                  <span className="uc-eyebrow-dot" aria-hidden="true" />
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <h3 className="uc-card-title">{p.name}</h3>
+                <p className="uc-card-desc">{p.desc}</p>
+              </article>
+            ))}
             </div>
           </div>
         </div>

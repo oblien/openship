@@ -3,7 +3,6 @@ export { Hero } from "./hero";
 export { SectionHeader } from "./section-header";
 export { SystemMap } from "./system-map";
 export { HowItWorks } from "./how-it-works";
-export { Dashboard } from "./dashboard";
 export { DeploymentModels } from "./deployment-models";
 export { CompletePlatform } from "./complete-platform";
 export { MailServer } from "./mail-server";
