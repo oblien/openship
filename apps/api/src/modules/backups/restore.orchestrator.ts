@@ -23,7 +23,7 @@
  */
 
 import crypto from "node:crypto";
-import { repos, type BackupRun, type BackupRestoreStatus } from "@repo/db";
+import { repos, type BackupRun, type BackupRestore, type BackupRestoreStatus } from "@repo/db";
 import { liveContainerIdForService } from "../services/service-container";
 import {
   resolveDestination,
@@ -36,7 +36,7 @@ import {
 } from "@repo/adapters";
 import { decryptEnvMap } from "../../lib/encryption";
 import { resolveDeploymentPlatform, resolveTargetPlatform } from "../../lib/deployment-runtime";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, withTimeout } from "@repo/core";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { toAdapterRow } from "../backup-destinations/hydrate-server";
@@ -44,6 +44,7 @@ import { restoreRunBus } from "./restore.sse";
 import { notification } from "../../lib/notification-dispatcher";
 
 const TRUNCATE_ERROR = 4096;
+const STOP_START_TIMEOUT_MS = 60_000;
 
 export interface PrepareRestoreInput {
   /** Source backup run to restore from. */
@@ -124,11 +125,7 @@ export class RestoreOrchestrator {
    * stops, target volume is wiped + replaced, service restarts.
    * Verifies the confirmation token from beginPrepare.
    */
-  async apply(
-    ctx: RequestContext,
-    restoreId: string,
-    confirmationToken: string,
-  ): Promise<void> {
+  async apply(ctx: RequestContext, restoreId: string, confirmationToken: string): Promise<void> {
     const restore = await repos.backupRestore.findById(restoreId);
     try {
       assertResourceInOrg(restore, "Restore", ctx.organizationId, restoreId);
@@ -153,9 +150,7 @@ export class RestoreOrchestrator {
       throw new Error("Confirmation token mismatch");
     }
     if (restore.status !== "prepared") {
-      throw new Error(
-        `Restore is in status=${restore.status}, must be 'prepared' to apply`,
-      );
+      throw new Error(`Restore is in status=${restore.status}, must be 'prepared' to apply`);
     }
 
     setImmediate(() => {
@@ -167,7 +162,7 @@ export class RestoreOrchestrator {
     });
   }
 
-  /** Cancel a prepared (or queued) restore. Cleans up staging. */
+  /** Cancel a queued, preparing, prepared or applying restore. */
   async cancel(ctx: RequestContext, restoreId: string): Promise<void> {
     const restore = await repos.backupRestore.findById(restoreId);
     try {
@@ -176,10 +171,21 @@ export class RestoreOrchestrator {
       throw new Error("Restore not found");
     }
     void ctx.userId;
-    if (!["queued", "preparing", "prepared"].includes(restore.status)) {
+    const allowed: BackupRestoreStatus[] = ["queued", "preparing", "prepared", "applying"];
+    if (!allowed.includes(restore.status as BackupRestoreStatus)) {
       throw new Error(`Cannot cancel a ${restore.status} restore`);
     }
+    const wasApplying = restore.status === "applying";
     await this.transition(restoreId, "cancelled");
+    if (wasApplying) {
+      setImmediate(() => {
+        void this.bestEffortStart(restore).catch((err) =>
+          console.error(
+            `[restore-orchestrator] best-effort start after cancel ${restoreId} failed: ${safeErrorMessage(err)}`,
+          ),
+        );
+      });
+    }
   }
 
   // ── Internal phases ──────────────────────────────────────────────
@@ -213,9 +219,7 @@ export class RestoreOrchestrator {
       const sourceRun = await repos.backupRun.findById(restore.runId);
       if (!sourceRun) throw new Error("Source backup run disappeared");
 
-      const destinationRow = await repos.backupDestination.findById(
-        restore.destinationId,
-      );
+      const destinationRow = await repos.backupDestination.findById(restore.destinationId);
       if (!destinationRow) throw new Error("Destination disappeared");
       this.assertDestinationOrg(destinationRow, restore.organizationId);
 
@@ -289,38 +293,35 @@ export class RestoreOrchestrator {
       // Resolve the TARGET — a deployed service, or a bare mail server. A
       // mail restore can go in-place (onto the source) or to_fork (onto a
       // DIFFERENT mail server = migrate A→B).
-      let executor: BackupExecutor;
-      let serviceHandle: ServiceHandle;
-      if (sourceRun.sourceKind === "mail_server") {
-        const targetMailServerId =
-          restore.mode === "to_fork" ? restore.forkMailServerId : sourceRun.mailServerId;
-        if (!targetMailServerId) {
-          throw new Error("Mail restore has no target mail server");
+      const { executor, serviceHandle } = await this.buildApplyTarget(
+        restore,
+        sourceRun,
+        destinationRow.organizationId,
+      );
+
+      if (sourceRun.sourceKind !== "mail_server" && executor.runtimeName !== "bare") {
+        if (!serviceHandle.containerId) {
+          throw new Error(
+            `Service ${serviceHandle.name} has no live managed container to restore into. ` +
+              `Restore-apply can only stop and start service-managed containers ` +
+              `(e.g. containers created by Openship compose deployments). ` +
+              `Deployment-managed app containers are not a valid restore target.`,
+          );
         }
-        const built = await this.buildMailTarget(
-          targetMailServerId,
-          destinationRow.organizationId,
-        );
-        executor = built.executor;
-        serviceHandle = built.handle;
-      } else {
-        if (!sourceRun.serviceId) throw new Error("Source run has no serviceId");
-        const serviceRow = await repos.service.findById(sourceRun.serviceId);
-        if (!serviceRow) throw new Error("Target service disappeared");
-        const project = await repos.project.findById(serviceRow.projectId);
-        if (!project) throw new Error("Project disappeared");
-        const platform = await resolveDeploymentPlatform(
-          (await this.activeDeploymentMeta(project.id)) as Parameters<
-            typeof resolveDeploymentPlatform
-          >[0],
-          { organizationId: destinationRow.organizationId },
-        );
-        executor = resolveExecutor(platform.platform.runtime.name, platform.platform.runtime);
-        serviceHandle = await this.buildServiceHandle(serviceRow);
       }
 
+      if (await this.isCancelled(restoreId)) return;
+
       // Stop the service so volume swap is safe. (No-op for bare/mail.)
-      await executor.stopService(serviceHandle);
+      // Some Docker/SSH calls can hang without a client-side timeout; bound
+      // this so a stuck stop fails the restore instead of freezing in applying.
+      await withTimeout(
+        executor.stopService(serviceHandle),
+        STOP_START_TIMEOUT_MS,
+        `stopService(${serviceHandle.name}) timed out after ${STOP_START_TIMEOUT_MS}ms`,
+      );
+
+      if (await this.isCancelled(restoreId)) return;
 
       try {
         const artifacts = Array.isArray(sourceRun.artifacts)
@@ -352,21 +353,32 @@ export class RestoreOrchestrator {
           bytesRestored += recorded.sizeBytes;
         }
 
+        if (await this.isCancelled(restoreId)) return;
+
         // Start service back up.
-        await executor.startService(serviceHandle);
+        await withTimeout(
+          executor.startService(serviceHandle),
+          STOP_START_TIMEOUT_MS,
+          `startService(${serviceHandle.name}) timed out after ${STOP_START_TIMEOUT_MS}ms`,
+        );
 
         await this.transition(restoreId, "succeeded", { bytesRestored });
       } catch (innerErr) {
         // Try to bring the service back up so the user isn't stuck
         // with a stopped container after a failed restore.
         try {
-          await executor.startService(serviceHandle);
+          await withTimeout(
+            executor.startService(serviceHandle),
+            STOP_START_TIMEOUT_MS,
+            `startService(${serviceHandle.name}) timed out after ${STOP_START_TIMEOUT_MS}ms`,
+          );
         } catch {
           // best-effort
         }
         throw innerErr;
       }
     } catch (err) {
+      if (await this.isCancelled(restoreId)) return;
       const message = safeErrorMessage(err);
       console.error(`[restore-orchestrator] apply ${restoreId} failed: ${message}`);
       await this.transition(restoreId, "failed", {
@@ -387,15 +399,9 @@ export class RestoreOrchestrator {
       restoreRunBus.publish(restoreId, {
         type: "transition",
         status,
-        bytesRestored:
-          typeof patch?.bytesRestored === "number" ? patch.bytesRestored : undefined,
+        bytesRestored: typeof patch?.bytesRestored === "number" ? patch.bytesRestored : undefined,
       });
-      const TERMINAL: BackupRestoreStatus[] = [
-        "succeeded",
-        "failed",
-        "cancelled",
-        "server_error",
-      ];
+      const TERMINAL: BackupRestoreStatus[] = ["succeeded", "failed", "cancelled", "server_error"];
       if (TERMINAL.includes(status)) {
         restoreRunBus.publish(restoreId, {
           type: "complete",
@@ -417,7 +423,8 @@ export class RestoreOrchestrator {
           const project = await repos.project.findById(row.projectId).catch(() => null);
           notification.emit({
             organizationId: row.organizationId,
-            eventType: status === "succeeded" ? "backup_restore.completed" : "backup_restore.failed",
+            eventType:
+              status === "succeeded" ? "backup_restore.completed" : "backup_restore.failed",
             resourceType: "backup_restore",
             resourceId: restoreId,
             payload: {
@@ -429,9 +436,81 @@ export class RestoreOrchestrator {
           });
         }
       } catch (err) {
-        console.error(`[restore-orchestrator] notify failed for ${restoreId}: ${safeErrorMessage(err)}`);
+        console.error(
+          `[restore-orchestrator] notify failed for ${restoreId}: ${safeErrorMessage(err)}`,
+        );
       }
     }
+  }
+
+  private async isCancelled(restoreId: string): Promise<boolean> {
+    const row = await repos.backupRestore.findById(restoreId);
+    return row?.status === "cancelled";
+  }
+
+  /**
+   * Build the executor + ServiceHandle for an apply. Shared by runApply
+   * and the best-effort restart path after a mid-apply cancel.
+   */
+  private async buildApplyTarget(
+    restore: BackupRestore,
+    sourceRun: BackupRun,
+    organizationId: string,
+  ): Promise<{ executor: BackupExecutor; serviceHandle: ServiceHandle }> {
+    if (sourceRun.sourceKind === "mail_server") {
+      const targetMailServerId =
+        restore.mode === "to_fork" ? restore.forkMailServerId : sourceRun.mailServerId;
+      if (!targetMailServerId) {
+        throw new Error("Mail restore has no target mail server");
+      }
+      const built = await this.buildMailTarget(targetMailServerId, organizationId);
+      return { executor: built.executor, serviceHandle: built.handle };
+    }
+
+    if (!sourceRun.serviceId) throw new Error("Source run has no serviceId");
+    const serviceRow = await repos.service.findById(sourceRun.serviceId);
+    if (!serviceRow) throw new Error("Target service disappeared");
+    const project = await repos.project.findById(serviceRow.projectId);
+    if (!project) throw new Error("Project disappeared");
+    const platform = await resolveDeploymentPlatform(
+      (await this.activeDeploymentMeta(project.id)) as Parameters<
+        typeof resolveDeploymentPlatform
+      >[0],
+      { organizationId },
+    );
+    const executor = resolveExecutor(platform.platform.runtime.name, platform.platform.runtime);
+    const serviceHandle = await this.buildServiceHandle(serviceRow);
+    return { executor, serviceHandle };
+  }
+
+  /**
+   * After cancelling a restore that was already in applying, make a
+   * best-effort attempt to start the service back up. Never awaits in the
+   * caller: if it hangs, the cancel is still accepted and the in-flight
+   * runApply will see the cancelled status when it wakes up.
+   */
+  private async bestEffortStart(restore: BackupRestore): Promise<void> {
+    const sourceRun = await repos.backupRun.findById(restore.runId);
+    if (!sourceRun) return;
+
+    const destinationRow = await repos.backupDestination.findById(restore.destinationId);
+    if (!destinationRow) return;
+    this.assertDestinationOrg(destinationRow, restore.organizationId);
+
+    const { executor, serviceHandle } = await this.buildApplyTarget(
+      restore,
+      sourceRun,
+      destinationRow.organizationId,
+    );
+
+    if (sourceRun.sourceKind === "mail_server" || executor.runtimeName === "bare") return;
+    if (!serviceHandle.containerId) return;
+
+    await withTimeout(
+      executor.startService(serviceHandle),
+      STOP_START_TIMEOUT_MS,
+      `startService(${serviceHandle.name}) timed out after ${STOP_START_TIMEOUT_MS}ms`,
+    );
   }
 
   /**
@@ -456,10 +535,7 @@ export class RestoreOrchestrator {
       mailServerId,
       organizationId,
     );
-    const executor = resolveExecutor(
-      targetPlatform.runtime.name,
-      targetPlatform.runtime,
-    );
+    const executor = resolveExecutor(targetPlatform.runtime.name, targetPlatform.runtime);
 
     const handle: ServiceHandle = {
       id: mailServerId,
@@ -488,8 +564,7 @@ export class RestoreOrchestrator {
     const project = await repos.project.findById(serviceRow.projectId);
     if (!project) throw new Error(`Project ${serviceRow.projectId} not found`);
 
-    const envFromService =
-      (serviceRow.environment as Record<string, string> | null) ?? {};
+    const envFromService = (serviceRow.environment as Record<string, string> | null) ?? {};
     const envFromProjectEncrypted = await repos.project
       .listEnvVars(serviceRow.projectId)
       .then((vars) => {
