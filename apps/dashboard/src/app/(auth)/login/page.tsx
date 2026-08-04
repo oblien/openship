@@ -146,7 +146,7 @@ function LoginPageInner() {
     return (
       <AuthShell onBack={handleBack}>
         <div className="mb-6 text-center">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
             {t.auth.login.title}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -181,7 +181,7 @@ function LoginPageInner() {
   return (
     <AuthShell onBack={handleBack}>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
           {t.auth.login.title}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">

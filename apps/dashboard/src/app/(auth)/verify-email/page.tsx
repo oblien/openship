@@ -150,7 +150,7 @@ function VerifyEmailContent() {
       <AuthShell>
         <div className="flex flex-col items-center text-center">
           <Loader2 className="mb-4 size-8 animate-spin text-muted-foreground" />
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
             {t.auth.verifyEmail.verifyingTitle}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -168,7 +168,7 @@ function VerifyEmailContent() {
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-success-bg">
             <CheckCircle2 className="size-6 text-success" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
             {t.auth.verifyEmail.verifiedTitle}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -189,7 +189,7 @@ function VerifyEmailContent() {
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-destructive/10">
             <XCircle className="size-6 text-destructive" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
             {t.auth.verifyEmail.errorTitle}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -218,7 +218,7 @@ function VerifyEmailContent() {
         <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-secondary">
           <Mail className="size-6 text-foreground" />
         </div>
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
           {t.auth.verifyEmail.pendingTitle}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">

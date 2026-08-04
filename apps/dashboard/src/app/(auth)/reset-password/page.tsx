@@ -77,7 +77,7 @@ function ResetPasswordForm() {
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-success-bg">
             <CheckCircle2 className="size-6 text-success" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
             {t.auth.resetPassword.doneTitle}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -94,7 +94,7 @@ function ResetPasswordForm() {
   return (
     <AuthShell>
       <div className="mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
           {t.auth.resetPassword.title}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
