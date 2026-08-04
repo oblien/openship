@@ -106,6 +106,10 @@
   /* Deliberately darker than --th-bd-default: at #e8e8e8 the grid reads as
      a faint suggestion, and the point of this layout is drawn lines. */
   --lp-rule: var(--th-bd-strong);
+  /* Every joint where a rule crosses a rail gets a crosshair this wide,
+     drawn in --lp-node-rule so the joint is the only part that darkens. */
+  --lp-node: 52px;
+  --lp-node-rule: var(--th-on-40);
 
   /* ── Accent - electric, the ruled system's primary action ─── */
   --th-accent-electric:       #1f1fe0;
