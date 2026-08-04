@@ -134,6 +134,9 @@
 
 .lp-ruled {
   position: relative;
+  /* Exactly the navbar's height, so the first rule lands on its baseline
+     and the two read as one grid rather than as a bar above a box. */
+  margin-top: var(--lp-nav-h);
   border-top: 1px solid var(--lp-rule);
   background-color: var(--th-bg-page);
 }
@@ -144,10 +147,17 @@
 }
 
 .lp-band-in {
+  /* Positioned so a band can lay decoration behind its own content
+     without reaching outside the rails to do it. */
+  position: relative;
   margin-inline: var(--lp-gutter);
   border-inline: 1px solid var(--lp-rule);
   padding-inline: var(--lp-inset);
 }
+
+/* For bands whose content is a plate rather than copy - images, tables,
+   anything that should meet the rails instead of sitting off them. */
+.lp-band-in--flush { padding-inline: 0; }
 
 /* ── Nodes - the crosshair where a rule crosses a rail ───────── */
 /* Drawn as an overlay instead of thickening the lines themselves, so
@@ -182,82 +192,6 @@
    HERO - ruled grid, hard edges
    ══════════════════════════════════════════════════════════════ */
 
-.lp-hero {
-  /* The gutter the whole ruled system hangs off. Sections converted after
-     the hero must reuse this value or their rails will not line up with
-     these. Horizontal rules run full bleed; only the rails are inset. */
-  /* --lp-gutter / --lp-inset / --lp-rule live in theme.css: the navbar sits
-     outside this section and has to align to the same rails. */
-  position: relative;
-  background-color: var(--th-bg-page);
-  /* Exactly the navbar height, so the frame's top rule lands on the navbar
-     baseline and reads as one continuous grid. */
-  padding-top: var(--lp-nav-h);
-  /* Rails carry on past the last rule, as in the reference. Sections below
-     have not been converted yet, so this is where they currently stop. */
-  padding-bottom: 96px;
-}
-
-/* Rails span the section's whole height, navbar clearance included, and are
-   taken out of flow so no cell has to reserve width for them. */
-.lp-hero::before,
-.lp-hero::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--lp-rule);
-  pointer-events: none;
-  z-index: 1;
-}
-.lp-hero::before { inset-inline-start: var(--lp-gutter); }
-.lp-hero::after  { inset-inline-end: var(--lp-gutter); }
-
-.lp-hero-frame {
-  position: relative;
-  z-index: 1;
-  border-block: 1px solid var(--lp-rule);
-}
-
-/* Full width so the border-bottom bleeds past the rails; the padding puts
-   content inside them. */
-.lp-hero-row {
-  position: relative;
-  padding-inline: var(--lp-gutter);
-  border-bottom: 1px solid var(--lp-rule);
-}
-.lp-hero-row:last-child { border-bottom: 0; }
-
-/* ── Nodes - the crosshair where a rule crosses a rail ───────── */
-/* Drawn as an overlay instead of thickening the lines themselves, so rails
-   and rules stay hairlines and only the joint reads darker. Rows carry the
-   nodes for the rule above them; the frame carries the bottom pair.
-   Offsetting by half the node from each side keeps it centred on the rail
-   without a transform, which is what makes it survive RTL. */
-.lp-hero-row::before,
-.lp-hero-row::after,
-.lp-hero-frame::before,
-.lp-hero-frame::after {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  width: var(--lp-node);
-  height: var(--lp-node);
-  pointer-events: none;
-  background:
-    linear-gradient(var(--lp-node-rule), var(--lp-node-rule)) 50% 50% / 100% 1.5px no-repeat,
-    linear-gradient(var(--lp-node-rule), var(--lp-node-rule)) 50% 50% / 1.5px 100% no-repeat;
-}
-.lp-hero-row::before,
-.lp-hero-frame::before { inset-inline-start: calc(var(--lp-gutter) - var(--lp-node) / 2); }
-.lp-hero-row::after,
-.lp-hero-frame::after  { inset-inline-end:   calc(var(--lp-gutter) - var(--lp-node) / 2); }
-.lp-hero-row::before,
-.lp-hero-row::after    { top:    calc(var(--lp-node) / -2); }
-.lp-hero-frame::before,
-.lp-hero-frame::after  { bottom: calc(var(--lp-node) / -2); }
-
 /* ── Corner dither ───────────────────────────────────────────── */
 /* Sits inside the rails, in the two bottom corners of the copy row, the
    way the reference anchors its texture. Animated by stepping the dot
@@ -265,7 +199,7 @@
    rather than as a pattern sliding. */
 .lp-hero-dither {
   position: absolute;
-  inset-inline: var(--lp-gutter);
+  inset-inline: 0;
   bottom: 0;
   height: 62%;
   z-index: 0;
@@ -319,7 +253,7 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding: clamp(44px, 4.8vw, 72px) var(--lp-inset);
+  padding-block: clamp(44px, 4.8vw, 72px);
 }
 
 .lp-hero-headline {
@@ -423,7 +357,7 @@
   flex-direction: column;
   align-items: center;
   gap: 20px;
-  padding: 32px var(--lp-inset);
+  padding-block: 32px;
   overflow: hidden;
 }
 .lp-hero-stacks-label {
@@ -452,7 +386,7 @@
    rather than an <img> because it carries no information the copy does
    not already state. The artwork is dithered in the file; the login
    screen's shader pass is not needed for a still panel. */
-.lp-hero-band {
+.lp-hero-plate {
   height: clamp(300px, 34vw, 520px);
   background:
     #000

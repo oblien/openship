@@ -27,10 +27,10 @@ export function Hero() {
   };
 
   return (
-    <section className="lp-hero">
-      <div className="lp-hero-frame">
-        {/* ── Copy, centred under the navbar ───────────────────────── */}
-        <div className="lp-hero-row">
+    <section>
+      {/* ── Copy, centred under the navbar ─────────────────────────── */}
+      <div className="lp-band">
+        <div className="lp-band-in">
           <div className="lp-hero-dither" aria-hidden="true" />
           <div className="lp-hero-copy">
             <h1 className="lp-hero-headline animate-fade-in-up">
@@ -77,34 +77,36 @@ export function Hero() {
             </button>
           </div>
         </div>
+      </div>
 
-        {/* ── Stack ticker ─────────────────────────────────────────── */}
-        <div className="lp-hero-row">
-          <div className="lp-hero-stacks">
-            <p className="lp-hero-stacks-label">Designed for your favorite stack</p>
-            <div className="hero-ticker-mask overflow-hidden">
-              <div className="hero-ticker flex w-max items-center gap-12">
-                {[0, 1].map((i) => (
-                  <div key={i} className="flex shrink-0 items-center gap-12">
-                    {STACKS.map((s) => (
-                      <div key={`${i}-${s.name}`} className="lp-hero-stack-item">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={s.icon} alt={s.name} className="h-[32px] w-[32px] object-contain" loading="lazy" />
-                        <span className="whitespace-nowrap">{s.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
+      {/* ── Stack ticker ───────────────────────────────────────────── */}
+      <div className="lp-band">
+        <div className="lp-band-in lp-hero-stacks">
+          <p className="lp-hero-stacks-label">Designed for your favorite stack</p>
+          <div className="hero-ticker-mask overflow-hidden">
+            <div className="hero-ticker flex w-max items-center gap-12">
+              {[0, 1].map((i) => (
+                <div key={i} className="flex shrink-0 items-center gap-12">
+                  {STACKS.map((s) => (
+                    <div key={`${i}-${s.name}`} className="lp-hero-stack-item">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={s.icon} alt={s.name} className="h-[32px] w-[32px] object-contain" loading="lazy" />
+                      <span className="whitespace-nowrap">{s.name}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           </div>
         </div>
+      </div>
 
-        {/* ── Brand band ───────────────────────────────────────────── */}
-        {/* data-section marks it for the navbar's contrast switch, the same
-            way the other dark plates on the site do. */}
-        <div className="lp-hero-row">
-          <div className="lp-hero-band" data-section="dark" aria-hidden="true" />
+      {/* ── Brand band ─────────────────────────────────────────────── */}
+      {/* data-section marks it for the navbar's contrast switch, the same
+          way the other dark plates on the site do. */}
+      <div className="lp-band">
+        <div className="lp-band-in lp-band-in--flush">
+          <div className="lp-hero-plate" data-section="dark" aria-hidden="true" />
         </div>
       </div>
     </section>
