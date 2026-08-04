@@ -365,7 +365,7 @@ export function UseInProjectModal({
             </div>
 
             <div className="mt-auto space-y-2">
-              <p className="text-[11px] text-muted-foreground/70">{c.redeployHint}</p>
+              <p className="text-[11px] text-muted-foreground">{c.redeployHint}</p>
               <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"

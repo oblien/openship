@@ -265,7 +265,7 @@ function OutputRow({
           </button>
         )}
       </div>
-      {output.help && <p className="mt-1 text-[11px] text-muted-foreground/70">{output.help}</p>}
+      {output.help && <p className="mt-1 text-[11px] text-muted-foreground">{output.help}</p>}
     </div>
   );
 }

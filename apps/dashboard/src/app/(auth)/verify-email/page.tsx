@@ -257,7 +257,7 @@ function VerifyEmailContent() {
           </Button>
         )}
 
-        <p className="mt-4 text-xs text-muted-foreground/70">
+        <p className="mt-4 text-xs text-muted-foreground">
           {t.auth.verifyEmail.spamHint}
         </p>
 

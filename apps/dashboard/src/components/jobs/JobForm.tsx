@@ -193,7 +193,7 @@ export function JobForm({
           {scheduleType === "once" && (
             <Field label={c.runAt}><input type="datetime-local" value={runAt} onChange={(e) => setRunAt(e.target.value)} className={inputCls} /></Field>
           )}
-          {scheduleType === "manual" && <p className="text-sm text-muted-foreground/70">{c.manualHint}</p>}
+          {scheduleType === "manual" && <p className="text-sm text-muted-foreground">{c.manualHint}</p>}
         </Section>
 
         {/* Environment + secrets (right after Schedule) */}
@@ -334,7 +334,7 @@ export function JobForm({
       <div className="space-y-4 lg:sticky lg:top-6 lg:self-start">
         <div className="rounded-2xl border border-border/60 bg-card p-5">
           <div className="mb-4 flex items-center gap-2">
-            <ListChecks className="size-4 text-muted-foreground/70" />
+            <ListChecks className="size-4 text-muted-foreground" />
             <h3 className="text-[14px] font-medium text-foreground">{c.summary.title}</h3>
           </div>
           <div className="space-y-2.5">
@@ -353,7 +353,7 @@ export function JobForm({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-foreground">{c.docsLink}</p>
-            <p className="truncate text-xs text-muted-foreground/70">{c.docsBody}</p>
+            <p className="truncate text-xs text-muted-foreground">{c.docsBody}</p>
           </div>
           <ArrowRight className="size-4 shrink-0 text-muted-foreground/40" />
         </a>

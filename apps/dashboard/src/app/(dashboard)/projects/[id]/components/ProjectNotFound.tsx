@@ -63,7 +63,7 @@ export const ProjectNotFound: React.FC = () => {
             >
               {nf.documentation}
             </a>
-            <span className="text-muted-foreground/70">·</span>
+            <span className="text-muted-foreground">·</span>
             <a
               href="mailto:support@oblien.com"
               className="font-semibold text-foreground transition-colors hover:text-primary"

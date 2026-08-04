@@ -150,7 +150,7 @@ export const GitInfo = () => {
               <button
                 onClick={handleEditBranch}
                 disabled={loadingBranch}
-                className="p-1.5 text-muted-foreground/70 hover:text-primary transition-colors disabled:opacity-50"
+                className="p-1.5 text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
               >
                 {loadingBranch ? (
                   <div className="w-4 h-4 border-2 border-muted-foreground/30 border-t-black/60 rounded-full animate-spin" />

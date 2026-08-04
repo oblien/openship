@@ -73,31 +73,33 @@ export function DataTable<T>({
   }
 
   return (
-    <div className="bg-card rounded-2xl border border-border/50 overflow-hidden">
+    <div className="bg-card rounded-2xl border border-border/50 overflow-hidden" role="table">
       {/* Header row */}
-      <div
-        className="grid items-center gap-4 px-5 py-3 bg-muted/30 border-b border-border/50"
-        style={{ gridTemplateColumns: gridTemplate }}
-        role="row"
-      >
-        {columns.map((c) => (
-          <div
-            key={c.key}
-            className={cn(
-              "text-[11px] font-semibold text-muted-foreground uppercase tracking-wide",
-              alignClass(c.align),
-              hideBelowClass(c.hideBelow),
-            )}
-            role="columnheader"
-          >
-            {c.header}
-          </div>
-        ))}
-        {rowActions && <div />}
+      <div role="rowgroup">
+        <div
+          className="grid items-center gap-4 px-5 py-3 bg-muted/30 border-b border-border/50"
+          style={{ gridTemplateColumns: gridTemplate }}
+          role="row"
+        >
+          {columns.map((c) => (
+            <div
+              key={c.key}
+              className={cn(
+                "text-[11px] font-semibold text-muted-foreground uppercase tracking-wide",
+                alignClass(c.align),
+                hideBelowClass(c.hideBelow),
+              )}
+              role="columnheader"
+            >
+              {c.header}
+            </div>
+          ))}
+          {rowActions && <div role="columnheader" />}
+        </div>
       </div>
 
       {/* Body */}
-      <div className="divide-y divide-border/40">
+      <div className="divide-y divide-border/40" role="rowgroup">
         {loading
           ? Array.from({ length: skeletonRows }).map((_, i) => (
               <DataTableRowSkeleton
@@ -161,6 +163,7 @@ function DataTableRow<T>({
       ))}
       {rowActions && (
         <div
+          role="cell"
           className="flex items-center justify-end gap-1"
           onClick={(e) => e.stopPropagation()}
         >

@@ -99,21 +99,25 @@ export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: Mai
   const [showWelcome, setShowWelcome] = useState(false);
 
   // One-shot welcome modal: first time the admin panel mounts for this
-  // serverId, show the celebratory test-email modal. The flag is keyed by
-  // serverId so each new mail server gets its own welcome moment.
+  // serverId + domain pair, show the celebratory test-email modal. Keyed by
+  // BOTH (not just serverId) so it comes back for a newly added domain on an
+  // already-welcomed server, instead of staying permanently silenced the
+  // moment any domain on that server was dismissed. Guarded on `primaryDomain`
+  // being non-empty so the transient pre-load state (status still fetching,
+  // domain not resolved yet) can't register a bogus "" key.
   useEffect(() => {
-    if (!serverId || typeof window === "undefined") return;
-    const key = `${WELCOME_SEEN_PREFIX}${serverId}`;
+    if (!serverId || !primaryDomain || typeof window === "undefined") return;
+    const key = `${WELCOME_SEEN_PREFIX}${serverId}:${primaryDomain}`;
     if (window.localStorage.getItem(key)) return;
     setShowWelcome(true);
-  }, [serverId]);
+  }, [serverId, primaryDomain]);
 
   const dismissWelcome = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(`${WELCOME_SEEN_PREFIX}${serverId}`, "1");
+    if (typeof window !== "undefined" && primaryDomain) {
+      window.localStorage.setItem(`${WELCOME_SEEN_PREFIX}${serverId}:${primaryDomain}`, "1");
     }
     setShowWelcome(false);
-  }, [serverId]);
+  }, [serverId, primaryDomain]);
 
   const tab = useMemo<TabKey>(() => {
     const raw = searchParams.get("tab") as TabKey | null;

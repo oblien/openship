@@ -176,7 +176,7 @@ export function CloudConnection() {
             </a>
           </div>
 
-          <p className="mt-3.5 text-xs text-muted-foreground/70">{pitch.noLockIn}</p>
+          <p className="mt-3.5 text-xs text-muted-foreground">{pitch.noLockIn}</p>
         </div>
       )}
     </div>

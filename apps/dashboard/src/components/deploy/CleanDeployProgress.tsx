@@ -84,7 +84,7 @@ function TerminalLogs({ logs, live, label }: { logs: string; live: boolean; labe
         className="max-h-72 overflow-auto p-3.5 font-mono text-[11.5px] leading-relaxed"
       >
         {lines.length === 0 ? (
-          <span className="text-muted-foreground/70">Waiting for output…</span>
+          <span className="text-muted-foreground">Waiting for output…</span>
         ) : (
           lines.map((l, i) => (
             <div key={i} className="flex gap-3">
@@ -182,7 +182,7 @@ export function CleanDeployProgressCard({
             </div>
             <h2 className="mt-4 text-base font-semibold text-foreground">{w.progressLive}</h2>
             {liveHost && (
-              <p className="mt-1 break-all font-mono text-xs text-muted-foreground/70">
+              <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
                 {liveHost}
               </p>
             )}

@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             {interpolate(t.auth.forgotPassword.sentDescription, { email })}
           </p>
-          <p className="mt-2 text-xs text-muted-foreground/70">
+          <p className="mt-2 text-xs text-muted-foreground">
             {t.auth.forgotPassword.spamHint}
           </p>
           <Button

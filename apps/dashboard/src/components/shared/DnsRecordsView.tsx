@@ -110,12 +110,12 @@ export function DnsRecordCard({
           {rec.type}
         </span>
         {rec.type === "MX" && rec.priority !== undefined && (
-          <span className="text-xs text-muted-foreground/70">
+          <span className="text-xs text-muted-foreground">
             {interpolate(w.priority, { n: String(rec.priority) })}
           </span>
         )}
         {rec.required === false && (
-          <span className="text-xs text-muted-foreground/70 ms-auto">
+          <span className="text-xs text-muted-foreground ms-auto">
             {w.recommended}
           </span>
         )}
@@ -153,7 +153,7 @@ function DnsRecordField({
   const { t } = useI18n();
   return (
     <div className="flex items-start gap-2">
-      <span className="text-xs text-muted-foreground/70 font-sans w-10 shrink-0 mt-0.5">
+      <span className="text-xs text-muted-foreground font-sans w-10 shrink-0 mt-0.5">
         {fieldLabel}
       </span>
       <div className="flex-1 min-w-0 bg-muted/40 rounded-md px-2 py-1.5 text-foreground/90 break-all">
@@ -161,7 +161,7 @@ function DnsRecordField({
       </div>
       <button
         onClick={onCopy}
-        className="text-muted-foreground/70 hover:text-foreground transition-colors p-1.5"
+        className="text-muted-foreground hover:text-foreground transition-colors p-1.5"
         title={t.widgets.shared.dnsRecords.copy}
       >
         {copied ? (

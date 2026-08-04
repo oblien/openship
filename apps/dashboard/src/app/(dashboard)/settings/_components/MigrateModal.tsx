@@ -313,7 +313,7 @@ function PathCard({
       <div className="flex-1 min-w-0">
         <h3 className="text-sm font-medium text-foreground">{title}</h3>
         <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{body}</p>
-        <p className="text-[11px] uppercase tracking-wider text-muted-foreground/70 mt-2">
+        <p className="text-[11px] uppercase tracking-wider text-muted-foreground mt-2">
           {meta}
         </p>
         {warn && (
@@ -322,7 +322,7 @@ function PathCard({
           </p>
         )}
       </div>
-      <ChevronRight className="size-4 text-muted-foreground/70 mt-1 rtl:rotate-180" />
+      <ChevronRight className="size-4 text-muted-foreground mt-1 rtl:rotate-180" />
     </button>
   );
 }

@@ -110,7 +110,7 @@ export function MailProgress({
         <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <h3 className="text-sm font-medium text-foreground">{t.emails.progress.liveLogs}</h3>
-            <span className="text-xs text-muted-foreground/70 tabular-nums">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {interpolate(
                 logs.length === 1 ? t.emails.progress.lineOne : t.emails.progress.lineOther,
                 { count: String(logs.length) },

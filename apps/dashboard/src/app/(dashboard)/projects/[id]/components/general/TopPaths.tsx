@@ -49,7 +49,7 @@ export const TopPaths: React.FC<Props> = ({ paths }) => {
                 style={{ width: `${path.percentage}%` }}
               ></div>
             </div>
-            <p className="text-xs text-muted-foreground/70 mt-1">{interpolate(t.projectDetail.general.topPaths.requests, { count: String(path.count) })}</p>
+            <p className="text-xs text-muted-foreground mt-1">{interpolate(t.projectDetail.general.topPaths.requests, { count: String(path.count) })}</p>
           </div>
         ))}
       </div>

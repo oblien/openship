@@ -639,7 +639,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                             <div className="flex-1 max-w-md">
                                 <div className="flex items-center gap-2">
                                     <div className="relative flex-1">
-                                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
+                                        <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                                         <input
                                             type="text"
                                             placeholder={t.projectDetail.logs.terminal.searchPlaceholder}
@@ -655,7 +655,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                                                     }
                                                 }
                                             }}
-                                            className="w-full ps-9 pe-8 py-1.5 bg-muted border-border text-foreground placeholder:text-muted-foreground/70 focus:bg-card border rounded-lg text-xs focus:outline-none transition-all"
+                                            className="w-full ps-9 pe-8 py-1.5 bg-muted border-border text-foreground placeholder:text-muted-foreground focus:bg-card border rounded-lg text-xs focus:outline-none transition-all"
                                         />
                                         {searchQuery && (
                                             <button
@@ -663,7 +663,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
                                                     setSearchQuery("");
                                                     setHasMatches(false);
                                                 }}
-                                                className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+                                                className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground transition-colors"
                                             >
                                                 <X className="w-3.5 h-3.5" />
                                             </button>

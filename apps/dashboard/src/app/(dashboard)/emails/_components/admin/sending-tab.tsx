@@ -254,7 +254,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
           </p>
           {scope === "selected" && (
             <div className="mt-1 flex flex-wrap gap-1.5">
-              {domainList.length === 0 && <span className="text-xs text-muted-foreground/70">{s.noDomains}</span>}
+              {domainList.length === 0 && <span className="text-xs text-muted-foreground">{s.noDomains}</span>}
               {domainList.map((d) => {
                 const on = selectedDomains.includes(d.domain);
                 return (

@@ -104,7 +104,7 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
                 </div>
                 <div>
                   <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-                  <p className="text-sm text-muted-foreground/70 mt-0.5">{subtitle}</p>
+                  <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>
                 </div>
               </div>
             </div>
@@ -157,7 +157,7 @@ export default function ErrorState({ error = {}, type = "repo-not-found" }: Erro
               </div>
               <div>
                 <h3 className="text-sm font-medium text-foreground mb-1">{w.needHelp}</h3>
-                <p className="text-xs text-muted-foreground/70 mb-2.5">
+                <p className="text-xs text-muted-foreground mb-2.5">
                   {w.needHelpDesc}
                 </p>
                 <div className="flex gap-4">
