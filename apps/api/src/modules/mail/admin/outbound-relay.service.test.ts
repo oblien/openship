@@ -64,12 +64,14 @@ beforeEach(() => {
 describe("configureOutboundRelay", () => {
   const base = { provider: "ses" as const, region: "us-east-1", port: 587, username: "AKIASMTPUSER", password: "s3cr3tPass" };
 
-  test("writes creds via SFTP writeFile, NEVER through a shell command", async () => {
+  test("writes creds + per-destination TLS policy via SFTP, NEVER through a shell command", async () => {
     const { exec, execCalls, writes } = makeExec();
     await configureOutboundRelay(exec, base);
 
     expect(writes[0].path).toBe("/etc/postfix/sasl_passwd");
     expect(writes[0].content).toContain("[email-smtp.us-east-1.amazonaws.com]:587 AKIASMTPUSER:s3cr3tPass");
+    expect(writes[1].path).toBe("/etc/postfix/tls_policy");
+    expect(writes[1].content).toContain("[email-smtp.us-east-1.amazonaws.com]:587 encrypt");
 
     // SECURITY INVARIANT: no shell command may contain the password or username.
     for (const cmd of execCalls) {
@@ -83,10 +85,16 @@ describe("configureOutboundRelay", () => {
     await configureOutboundRelay(exec, base);
     const joined = execCalls.join("\n");
     expect(joined).toContain("postmap /etc/postfix/sasl_passwd");
+    expect(joined).toContain("postmap /etc/postfix/tls_policy");
     expect(joined).toContain("postconf -e");
     expect(joined).toContain("relayhost=[email-smtp.us-east-1.amazonaws.com]:587");
     expect(joined).toContain("smtp_sasl_auth_enable=yes");
     expect(joined).toContain("smtp_sasl_password_maps=hash:/etc/postfix/sasl_passwd");
+    expect(joined).toContain("smtp_tls_security_level=may");
+    expect(joined).toContain("smtp_tls_policy_maps=hash:/etc/postfix/tls_policy");
+    expect(joined).toContain("postconf -P");
+    expect(joined).toContain("smtp-amavis/unix/smtp_tls_security_level=none");
+    expect(joined).not.toContain("smtp_tls_security_level=encrypt");
     expect(joined).toMatch(/reload postfix|postfix reload/);
   });
 
@@ -132,6 +140,14 @@ describe("configureOutboundRelay", () => {
       configureOutboundRelay(makeExec().exec, { provider: "ses", port: 587, username: "u", password: "p" }),
     ).rejects.toThrow();
   });
+
+  test("port 465 uses implicit TLS wrapper for the relay but not for Amavis", async () => {
+    const { exec, execCalls } = makeExec();
+    await configureOutboundRelay(exec, { ...base, port: 465 });
+    const joined = execCalls.join("\n");
+    expect(joined).toContain("smtp_tls_wrappermode=yes");
+    expect(joined).toContain("smtp-amavis/unix/smtp_tls_wrappermode=no");
+  });
 });
 
 describe("disableOutboundRelay", () => {
@@ -149,7 +165,10 @@ describe("disableOutboundRelay", () => {
     await disableOutboundRelay(exec);
     const joined = execCalls.join("\n");
     expect(joined).toContain("postconf -X relayhost");
+    expect(joined).toMatch(/postconf -X .*smtp_tls_policy_maps/);
+    expect(joined).toContain("postconf -e smtp_tls_security_level=may");
     expect(joined).toContain("rm -f /etc/postfix/sasl_passwd");
+    expect(joined).toContain("/etc/postfix/tls_policy");
     expect(joined).toMatch(/reload postfix|postfix reload/);
     expect((fakeState as { outboundRelay?: unknown }).outboundRelay).toBeUndefined();
     const dns = (fakeState as { dnsRecords: { spf: { value: string }; extraRecords?: unknown } }).dnsRecords;

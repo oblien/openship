@@ -7,10 +7,16 @@
  *
  * Postfix config applied over SSH:
  *   /etc/postfix/sasl_passwd  =  [<host>]:<port> <user>:<pass>
+ *   /etc/postfix/tls_policy   =  [<host>]:<port> encrypt
+ *   postmap sasl_passwd tls_policy
  *   postconf -e relayhost=[<host>]:<port> smtp_sasl_auth_enable=yes
  *              smtp_sasl_password_maps=hash:/etc/postfix/sasl_passwd
  *              smtp_sasl_security_options=noanonymous
- *              smtp_tls_security_level=encrypt
+ *              smtp_tls_security_level=may
+ *              smtp_tls_policy_maps=hash:/etc/postfix/tls_policy
+ *              (port 465: smtp_tls_wrappermode=yes)
+ *   postconf -P smtp-amavis/unix/smtp_tls_security_level=none
+ *             smtp-amavis/unix/smtp_tls_wrappermode=no
  *   postmap + systemctl reload postfix
  *
  * SECURITY (see security-invariants): the SASL credentials are operator-
@@ -34,6 +40,7 @@ import {
 import { execute, q } from "./psql-runner";
 
 const SASL_PASSWD_PATH = "/etc/postfix/sasl_passwd";
+const TLS_POLICY_PATH = "/etc/postfix/tls_policy";
 const SES_INCLUDE = "include:amazonses.com";
 
 /** Single-quote-wrap for the one shell-interpolated value (the validated host). */
@@ -252,33 +259,37 @@ export async function configureOutboundRelay(
   const scope: "all" | "selected" = input.scope === "selected" ? "selected" : "all";
   const nexthop = `[${host}]:${input.port}`;
 
-  // 1) Write the SASL map via SFTP (creds never touch a shell string). One
-  //    entry per relay host covers both global and per-sender routing.
+  // 1) Write the SASL + TLS policy maps via SFTP (creds never touch a shell).
+  //    The TLS policy is per-destination, so only the relay host requires
+  //    TLS; local delivery to Amavis keeps using the global "may" default.
   await exec.writeFile(SASL_PASSWD_PATH, `${nexthop} ${input.username}:${input.password}\n`);
+  await exec.writeFile(TLS_POLICY_PATH, `${nexthop} encrypt\n`);
 
-  // 2) Lock down + hash the map (fixed paths, no interpolation).
+  // 2) Lock down + hash the maps (fixed paths, no interpolation).
   await exec.exec(
-    `chmod 600 ${SASL_PASSWD_PATH} && postmap ${SASL_PASSWD_PATH} && chmod 600 ${SASL_PASSWD_PATH}.db`,
+    `chmod 600 ${SASL_PASSWD_PATH} ${TLS_POLICY_PATH} && ` +
+      `postmap ${SASL_PASSWD_PATH} && postmap ${TLS_POLICY_PATH} && ` +
+      `chmod 600 ${SASL_PASSWD_PATH}.db ${TLS_POLICY_PATH}.db`,
   );
 
-  // 3) SASL/TLS client directives always; the GLOBAL relayhost only in "all"
-  //    scope. In "selected" scope we clear the global relayhost so unmatched
-  //    domains deliver direct, and route the chosen domains via `sender_relayhost`.
-  const sasl = [
+  // 3) Client directives: SASL + opportunistic TLS globally; the mandatory
+  //    "encrypt" level is scoped to the relay destination via smtp_tls_policy_maps.
+  const clientDirectives = [
     "smtp_sasl_auth_enable=yes",
     `smtp_sasl_password_maps=hash:${SASL_PASSWD_PATH}`,
     "smtp_sasl_security_options=noanonymous",
-    "smtp_tls_security_level=encrypt",
+    "smtp_tls_security_level=may",
+    `smtp_tls_policy_maps=hash:${TLS_POLICY_PATH}`,
   ];
-  if (input.port === 465) sasl.push("smtp_tls_wrappermode=yes"); // implicit-TLS submission
+  if (input.port === 465) clientDirectives.push("smtp_tls_wrappermode=yes"); // implicit-TLS submission
 
   if (scope === "all") {
-    await exec.exec(`postconf -e ${[`relayhost=${nexthop}`, ...sasl].map(sq).join(" ")}`);
+    await exec.exec(`postconf -e ${[`relayhost=${nexthop}`, ...clientDirectives].map(sq).join(" ")}`);
     // No per-sender rows for this relay host when routing everything globally.
     await execute(exec, `DELETE FROM sender_relayhost WHERE relayhost = ${q(nexthop)}`).catch(() => {});
   } else {
     await exec.exec("postconf -X relayhost 2>/dev/null || true");
-    await exec.exec(`postconf -e ${sasl.map(sq).join(" ")}`);
+    await exec.exec(`postconf -e ${clientDirectives.map(sq).join(" ")}`);
     const selected = (input.domains ?? []).map((d) => `@${d}`);
     for (const account of selected) {
       await execute(
@@ -292,10 +303,17 @@ export async function configureOutboundRelay(
     await execute(exec, `DELETE FROM sender_relayhost WHERE relayhost = ${q(nexthop)}${notIn}`).catch(() => {});
   }
 
-  // 4) Reload Postfix.
+  // 4) Pin the Amavis client transport to "none" so it cannot inherit a global
+  //    "encrypt" or wrapper setting.
+  await exec.exec(
+    'postconf -P "smtp-amavis/unix/smtp_tls_security_level=none" ' +
+      '"smtp-amavis/unix/smtp_tls_wrappermode=no" 2>/dev/null || true',
+  );
+
+  // 5) Reload Postfix.
   await exec.exec("systemctl reload postfix 2>/dev/null || postfix reload");
 
-  // 5) Persist the relay block (encrypted password) + fan DNS across every
+  // 6) Persist the relay block (encrypted password) + fan DNS across every
   //    relayed domain (primary + additional).
   const state = await readState(exec);
   if (!state) throw new Error("Mail server state not found — is mail provisioned on this server?");
@@ -327,12 +345,13 @@ export async function configureOutboundRelay(
 
 /** Disable the outbound relay — revert Postfix to direct-to-MX + clear state. */
 export async function disableOutboundRelay(exec: CommandExecutor): Promise<MailServerState | null> {
-  // Remove the relay-specific directives (leave smtp_tls_security_level — it's
-  // good hygiene for direct delivery too and reverting it could weaken TLS).
+  // Remove the relay-specific directives and the per-destination TLS policy map,
+  // but keep smtp_tls_security_level at "may" so direct-to-MX stays opportunistic.
   await exec.exec(
-    "postconf -X relayhost smtp_sasl_auth_enable smtp_sasl_password_maps smtp_sasl_security_options smtp_tls_wrappermode 2>/dev/null || true",
+    "postconf -X relayhost smtp_sasl_auth_enable smtp_sasl_password_maps smtp_sasl_security_options smtp_tls_policy_maps smtp_tls_wrappermode 2>/dev/null || true",
   );
-  await exec.exec(`rm -f ${SASL_PASSWD_PATH} ${SASL_PASSWD_PATH}.db`);
+  await exec.exec("postconf -e smtp_tls_security_level=may");
+  await exec.exec(`rm -f ${SASL_PASSWD_PATH} ${SASL_PASSWD_PATH}.db ${TLS_POLICY_PATH} ${TLS_POLICY_PATH}.db`);
 
   // Delete the per-sender rows we own for this relay host (no `active` column —
   // presence = active, so disable must DELETE rather than deactivate).
