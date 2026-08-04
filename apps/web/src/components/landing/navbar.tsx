@@ -115,8 +115,8 @@ export function Navbar() {
             href="/download"
             className="hidden px-5 py-2.5 text-[14px] font-medium transition-all sm:inline-block"
             style={{
-              background: dark ? "#fff" : "var(--th-accent-electric)",
-              color: dark ? "#000" : "#fff",
+              background: dark ? "#fff" : "var(--th-btn-bg)",
+              color: dark ? "#000" : "var(--th-btn-text)",
             }}
           >
             Download
@@ -189,7 +189,7 @@ export function Navbar() {
             <Link
               href="/download"
               onClick={() => setMobileOpen(false)}
-              className="mt-1 bg-[var(--th-accent-electric)] px-4 py-3 text-center text-[15px] font-medium text-white"
+              className="mt-1 bg-[var(--th-btn-bg)] px-4 py-3 text-center text-[15px] font-medium text-[var(--th-btn-text)]"
             >
               Download
             </Link>

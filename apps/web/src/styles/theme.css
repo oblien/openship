@@ -111,10 +111,6 @@
   --lp-node: 52px;
   --lp-node-rule: var(--th-on-40);
 
-  /* ── Accent - electric, the ruled system's primary action ─── */
-  --th-accent-electric:       #1f1fe0;
-  --th-accent-electric-hover: #1717bd;
-
   /* ── Accent - gradient blob & highlight colors ────────────── */
   --th-accent-indigo:  #818cf8;
   --th-accent-violet:  #a78bfa;
