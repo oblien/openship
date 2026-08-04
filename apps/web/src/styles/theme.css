@@ -93,6 +93,20 @@
   /* ── Divider ──────────────────────────────────────────────── */
   --th-divider:        #f0f0f0;
 
+  /* ── Ruled system - page-level grid metrics ───────────────── */
+  /* The gutter the vertical rails sit on. Every converted section must use
+     this or its rails will not line up with the ones above it. The navbar
+     aligns its content to it too, so the wordmark meets the hero headline. */
+  --lp-gutter: clamp(16px, 5.2vw, 78px);
+  /* Inset from the rail to the first glyph. */
+  --lp-inset: clamp(20px, 2.2vw, 30px);
+  /* Navbar height doubles as the hero's top padding, so the hero's top rule
+     lands exactly on the navbar's baseline. One value, or they drift. */
+  --lp-nav-h: 92px;
+  /* Deliberately darker than --th-bd-default: at #e8e8e8 the grid reads as
+     a faint suggestion, and the point of this layout is drawn lines. */
+  --lp-rule: var(--th-bd-strong);
+
   /* ── Accent - electric, the ruled system's primary action ─── */
   --th-accent-electric:       #1f1fe0;
   --th-accent-electric-hover: #1717bd;
