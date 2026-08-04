@@ -27,7 +27,7 @@ import {
 import { execFile as cpExecFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
-import { dirname, join } from "node:path";
+import { dirname, join } from "node:path/posix";
 
 import type { CommandExecutor, ManualCert, RouteConfig, SslResult } from "../types";
 import type { RoutingProvider, SslProvider } from "./types";
