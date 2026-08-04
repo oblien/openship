@@ -99,7 +99,13 @@ vi.mock("../../lib/openship-manifest-sync", () => ({
 vi.mock("../deployments/build.service", () => ({
   cancelBuildSession: h.cancelBuildSession,
 }));
-vi.mock("../github/github.service", () => ({ deleteWebhook: h.deleteGitHubWebhook }));
+vi.mock("../vcs/vcs.factory", () => ({
+  VcsStrategyFactory: {
+    getStrategy: vi.fn().mockReturnValue({
+      deleteWebhook: h.deleteGitHubWebhook,
+    }),
+  },
+}));
 vi.mock("../mail/webmail/webmail-project.service", () => ({
   cleanupWebmailInstall: h.cleanupWebmailInstall,
   mailServerIdFromWebmailSlug: () => "mail-1",

@@ -31,6 +31,7 @@ import { analyticsRoutes } from "./modules/analytics/analytics.routes";
 import { billingPlansRoutes } from "./modules/billing/billing.routes";
 import { webhookRoutes } from "./modules/webhooks/webhook.routes";
 import { healthRoutes } from "./modules/health/health.routes";
+import { vcsRoutes } from "./modules/vcs/vcs.routes";
 import { githubRoutes } from "./modules/github";
 import * as githubAuth from "./modules/github/github.auth";
 import { settingsRoutes } from "./modules/settings/settings.routes";
@@ -127,6 +128,7 @@ app.route("/api/projects/:id/storage", projectStorageRoutes);
 app.route("/api/deployments", deploymentRoutes);
 app.route("/api/domains", domainRoutes);
 app.route("/api/webhooks", webhookRoutes);
+app.route("/api/vcs", vcsRoutes);
 app.route("/api/github", githubRoutes);
 app.route("/api/analytics", analyticsRoutes);
 app.route("/api/settings", settingsRoutes);
@@ -243,9 +245,7 @@ if (env.CLOUD_MODE) {
 // desktop installs. The runner is module-singleton; first access
 // here triggers Redis detection.
 {
-  const sweepStale = repos.backupRun.sweepStaleRuns(
-    "API restart while backup in flight",
-  );
+  const sweepStale = repos.backupRun.sweepStaleRuns("API restart while backup in flight");
   const sweepStaleRestores = repos.backupRestore.sweepStaleRestores(
     "API restart while restore in flight",
   );
@@ -287,9 +287,7 @@ if (env.CLOUD_MODE) {
   // prunes, deployment reconcile) into the `job` table and register every
   // enabled row on the runner. Operator cron/enabled overrides survive restarts.
   void reconcileJobs()
-    .then((stats) =>
-      console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`),
-    )
+    .then((stats) => console.log(`[boot] jobs: ${stats.registered}/${stats.total} scheduled`))
     .catch((err) => console.warn("[boot] reconcileJobs failed:", err));
 
   // Self-hosted (single box): any job_run still "running" at boot was orphaned
@@ -335,9 +333,7 @@ if (env.CLOUD_MODE) {
 
   void Promise.all([sweepStale, sweepStaleRestores]).then(([runs, restores]) => {
     if (runs > 0 || restores > 0) {
-      console.log(
-        `[boot] swept ${runs} stale backup runs + ${restores} stale restores`,
-      );
+      console.log(`[boot] swept ${runs} stale backup runs + ${restores} stale restores`);
     }
   });
 }

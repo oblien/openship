@@ -2,7 +2,7 @@ import { repos, type Project, type Deployment } from "@repo/db";
 import { isServiceSuccessStatus, isServiceFailureStatus } from "@repo/core";
 import { runtimeTarget } from "../../config";
 import { buildBackgroundContext } from "../../lib/request-context";
-import { createCheckRun, updateCheckRun } from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 
 // Per-service GitHub-Checks + service_deployment fan-out for a multi-service
 // deploy. Extracted from build-pipeline; all best-effort (never blocks a deploy).
@@ -109,7 +109,8 @@ export async function emitServiceCheckRun(opts: {
   });
 
   if (phase === "start") {
-    const result = await createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
+    const vcs = VcsStrategyFactory.getStrategy(project.gitProvider);
+    const result = await vcs.createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
       name: `build:${serviceName}`,
       headSha: dep.commitSha,
       status: "in_progress",
@@ -128,8 +129,9 @@ export async function emitServiceCheckRun(opts: {
 
   // phase === "complete"
   const sd = await repos.serviceDeployment.findById(serviceDeploymentId).catch(() => null);
+  const vcs = VcsStrategyFactory.getStrategy(project.gitProvider);
   if (sd?.checkRunId) {
-    await updateCheckRun(actorCtx, project.gitOwner, project.gitRepo, sd.checkRunId, {
+    await vcs.updateCheckRun(actorCtx, project.gitOwner, project.gitRepo, sd.checkRunId, {
       status: "completed",
       conclusion: conclusion ?? "neutral",
       output,
@@ -137,13 +139,16 @@ export async function emitServiceCheckRun(opts: {
   } else if (conclusion === "neutral") {
     // Skipped services were never started — create-and-complete in one
     // call so they still show up as a `neutral` check on the PR.
-    const result = await createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
+    const result = await vcs.createCheckRun(actorCtx, project.gitOwner, project.gitRepo, {
       name: `build:${serviceName}`,
       headSha: dep.commitSha,
       status: "completed",
       conclusion,
       detailsUrl: `${runtimeTarget.dashboard.replace(/\/$/, "")}/build/${dep.id}`,
-      output: output ?? { title: "Skipped — no changes", summary: "Files under this service's root were unchanged." },
+      output: output ?? {
+        title: "Skipped — no changes",
+        summary: "Files under this service's root were unchanged.",
+      },
     });
     if (result?.id) {
       await repos.serviceDeployment
@@ -186,7 +191,10 @@ export async function emitInitialServiceChecks(
         serviceName: entry.serviceName,
         phase: "complete",
         conclusion: "neutral",
-        output: { title: "Skipped — no changes", summary: "Files under this service's root were unchanged." },
+        output: {
+          title: "Skipped — no changes",
+          summary: "Files under this service's root were unchanged.",
+        },
       }).catch(() => {});
     }
   }

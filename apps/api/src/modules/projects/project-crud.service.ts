@@ -26,12 +26,7 @@ import { resolveLatestImageDigest } from "../../lib/image-registry";
 import { env } from "../../config";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
-import {
-  resolveDefaultBranch,
-  listBranches as listGitHubBranches,
-  getLatestCommit,
-  resolveWebhookStrategy,
-} from "../github/github.service";
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 import { getInstallationIdByOrg, getInstallUrl } from "../github/github.auth";
 import { domainWebhookUrl } from "../../lib/public-url";
 import { ensureSharedWebhook } from "./project-git-webhook";
@@ -635,17 +630,25 @@ export async function linkProjectRepo(
   }
 
   const gitUrl = projectGitUrl(owner, repo);
-  const defaultBranch = await resolveDefaultBranch(ctx, owner, repo, input.branch);
+  const gitProvider = (input as any).gitProvider || "github";
+  const defaultBranch = (
+    await VcsStrategyFactory.getStrategy(gitProvider).getRepository(ctx, owner, repo)
+  ).default_branch;
 
   const gitFields: Record<string, unknown> = {
-    gitProvider: "github",
+    gitProvider,
     gitOwner: owner,
     gitRepo: repo,
     gitBranch: defaultBranch,
     gitUrl,
   };
 
-  const strategy = await resolveWebhookStrategy(project!);
+  const strategy = await VcsStrategyFactory.getStrategy(gitProvider).resolveWebhookStrategy({
+    id: project!.id,
+    webhookDomain: project!.webhookDomain,
+    gitOwner: owner,
+    gitRepo: repo,
+  });
 
   if (strategy === "app") {
     const resolvedInstId = await getInstallationIdByOrg(organizationId, owner);
@@ -674,7 +677,7 @@ export async function linkProjectRepo(
   await repos.project.update(projectId, gitFields);
   if (project!.groupId) {
     const sharedGitFields = {
-      gitProvider: "github",
+      gitProvider,
       gitOwner: owner,
       gitRepo: repo,
       gitUrl,
@@ -682,7 +685,7 @@ export async function linkProjectRepo(
       ...(typeof gitFields.webhookId === "number" ? { webhookId: gitFields.webhookId } : {}),
     };
     await repos.projectGroup.update(project!.groupId, {
-      gitProvider: "github",
+      gitProvider,
       gitOwner: owner,
       gitRepo: repo,
       gitUrl,
@@ -1304,7 +1307,7 @@ export async function createProjectEnvironment(
   if (!productionBranch && environmentType === "production" && base.gitOwner && base.gitRepo) {
     // userId here is the actor who triggered the action — used to authorize
     // the GitHub call against their installation token.
-    productionBranch = await resolveDefaultBranch(ctx, base.gitOwner, base.gitRepo);
+    productionBranch = (await VcsStrategyFactory.getStrategy("github").getRepository(ctx, base.gitOwner, base.gitRepo)).default_branch;
   }
 
   const gitBranch =
@@ -1312,7 +1315,7 @@ export async function createProjectEnvironment(
     (environmentType === "production" ? (productionBranch ?? "main") : environmentSlug);
 
   if ((data.sourceMode ?? "branch") === "branch" && base.gitOwner && base.gitRepo && gitBranch) {
-    const branches = await listGitHubBranches(ctx, base.gitOwner, base.gitRepo);
+    const branches = await VcsStrategyFactory.getStrategy("github").getBranches(ctx, base.gitOwner, base.gitRepo);
     const exists = branches.some((branch) => branch.name === gitBranch);
     if (!exists) {
       throw new ValidationError(`Branch "${gitBranch}" was not found for ${base.gitOwner}/${base.gitRepo}`);
@@ -1427,7 +1430,7 @@ export async function getProjectCommitStatus(
 
   const branch = p.gitBranch?.trim() || "main";
   const head = ctx
-    ? await getLatestCommit(ctx, p.gitOwner, p.gitRepo, branch).catch(() => null)
+    ? await VcsStrategyFactory.getStrategy(p.gitProvider || "github").getLatestCommit(ctx, p.gitOwner, p.gitRepo, branch).catch(() => null)
     : null;
 
   let deployedSha: string | null = null;

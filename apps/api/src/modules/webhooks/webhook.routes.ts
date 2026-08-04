@@ -16,7 +16,7 @@
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { secureRouter } from "../../lib/secure-router";
-import { handleWebhook } from "./webhook.controller";
+import { handleWebhook, handleLegacyWebhook } from "./webhook.controller";
 import { webhookRawBody } from "./webhook.middleware";
 import { triggerHook as triggerIncomingHook } from "../incoming-webhooks/incoming.controller";
 import { triggerBackupViaWebhook } from "../backups/triggers/webhook";
@@ -36,7 +36,10 @@ const PUBLIC = { rateLimit: "webhook-ingress" as const };
 r.public(
   "post",
   "/incoming/:id",
-  { ...PUBLIC, reason: "Incoming webhook - per-hook token/HMAC/none credential verified in handler" },
+  {
+    ...PUBLIC,
+    reason: "Incoming webhook - per-hook token/HMAC/none credential verified in handler",
+  },
   bodyCap,
   webhookRawBody,
   triggerIncomingHook,
@@ -65,11 +68,21 @@ r.public(
   },
 );
 
-/** Signed provider webhooks (GitHub) — HMAC/signature verified in the handler. */
+/** Legacy GitHub redirect - ensures existing GitHub App webhooks don't break. */
 r.public(
   "post",
-  "/:provider",
-  { ...PUBLIC, reason: "Provider webhook (GitHub) - HMAC/signature verified in handler" },
+  "/github",
+  { ...PUBLIC, reason: "Legacy GitHub webhook - HMAC/signature verified in handler" },
+  bodyCap,
+  webhookRawBody,
+  handleLegacyWebhook,
+);
+
+/** Signed provider webhooks (e.g. GitHub, GitLab, Self-hosted) — HMAC/signature verified in the handler. */
+r.public(
+  "post",
+  "/vcs/:provider",
+  { ...PUBLIC, reason: "Provider webhook - HMAC/signature verified in handler" },
   bodyCap,
   webhookRawBody,
   handleWebhook,

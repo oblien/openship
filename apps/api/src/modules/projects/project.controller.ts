@@ -1,3 +1,4 @@
+import { VcsStrategyFactory } from "../vcs/vcs.factory";
 /**
  * Project controller - Hono request handlers.
  *
@@ -1312,7 +1313,7 @@ export async function getGitInfo(c: Context) {
     return c.json({ success: false, error: "No repository connected", code: "NO_REPOSITORY" });
   }
 
-  const strategy = await resolveWebhookStrategy(info);
+  const strategy = await VcsStrategyFactory.getStrategy(info.gitProvider || "github").resolveWebhookStrategy(info as any);
 
   // Cloud projects (deployTarget=cloud) need the GitHub App installed - regardless
   // of whether this server is the SaaS or a local instance connected to cloud.
@@ -1339,7 +1340,7 @@ export async function getGitInfo(c: Context) {
           : false;
 
   // Get available strategies for the UI
-  const strategies = await getAvailableStrategies(ctx, info);
+  const strategies = await VcsStrategyFactory.getStrategy(info.gitProvider).getAvailableStrategies(ctx, info as any);
 
   // Get project domains for webhook domain picker
   const domains = await repos.domain.listByProject(id);
@@ -1352,7 +1353,7 @@ export async function getGitInfo(c: Context) {
     branch = await resolveDefaultBranch(ctx, info.gitOwner, info.gitRepo);
   }
   const commits = branch
-    ? await getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
+    ? await VcsStrategyFactory.getStrategy(info.gitProvider).getRecentCommits(ctx, info.gitOwner, info.gitRepo, branch, 10)
     : [];
 
   return c.json({
@@ -1361,7 +1362,7 @@ export async function getGitInfo(c: Context) {
     repo: info.gitRepo,
     branch,
     provider: info.gitProvider ?? "github",
-    commits: commits.map((c) => ({
+    commits: commits.map((c: any) => ({
       sha: c.sha,
       message: c.message,
       author: c.author,
@@ -1501,7 +1502,7 @@ export async function setAutoDeploy(c: Context) {
     return c.json({ success: false, error: "No repository linked" }, 400);
   }
 
-  const strategy = await resolveWebhookStrategy(project);
+  const strategy = await VcsStrategyFactory.getStrategy(project?.gitProvider || "github").resolveWebhookStrategy(project as any);
 
   // In "none" mode, auto-deploy can't work - suggest options
   if (strategy === "none" && enabled) {
