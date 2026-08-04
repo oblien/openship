@@ -8,6 +8,8 @@ import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Moon, Sun, SunMoon } from "lucide-react";
 
+const ASIDE_IMAGE = "/openship-astronaut-vortex-mono-dither.webp";
+
 /* ------------------------------------------------------------------ */
 /*  Brand panel — the source image, ordered-dithered on the GPU        */
 /* ------------------------------------------------------------------ */
@@ -304,15 +306,21 @@ function DitherImage({ src }: { src: string }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Shell                                                              */
+/* ------------------------------------------------------------------ */
+
 /**
  * Shared wrapper for auth pages (login, register, forgot-password, etc.).
- * Provides centered layout, brand, and theme toggle.
+ * Split layout: the brand panel beside the form, brand and theme toggle in
+ * the top bar.
  */
 export function AuthShell({
   children,
-  maxWidth = "max-w-[400px]",
+  maxWidth = "max-w-[440px]",
   align = "center",
   onBack,
+  aside = true,
 }: {
   children: React.ReactNode;
   maxWidth?: string;
@@ -325,52 +333,89 @@ export function AuthShell({
   align?: "center" | "start";
   /** When provided, renders a back button in the top bar */
   onBack?: () => void;
+  /**
+   * The brand panel. Pass `false` for pages wider than half a screen (they'd be
+   * squeezed into the remaining column) — the form then centers on a full-width
+   * page and the brand moves into the top bar.
+   */
+  aside?: boolean;
 }) {
   const { resolvedTheme, toggle } = useTheme();
   const { t } = useI18n();
 
   return (
     <div
-      className={`flex min-h-dvh flex-col items-center px-4 ${
-        align === "start" ? "justify-start pb-12 pt-20" : "justify-center py-12"
+      className={`grid min-h-dvh w-full ${
+        aside
+          ? "grid-rows-[200px_1fr] lg:h-dvh lg:grid-cols-2 lg:grid-rows-1 lg:overflow-hidden"
+          : ""
       }`}
     >
-      {/* Top bar - logo left, controls right */}
-      <div
-        data-app-topinset
-        className="fixed inset-x-0 top-0 flex items-center justify-between px-5 py-4"
-      >
-        <div className="flex items-center gap-2.5">
-          {onBack && (
+      {aside && (
+        <aside className="relative overflow-hidden bg-black">
+          <DitherImage src={ASIDE_IMAGE} />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/10" />
+          <div className="absolute start-6 top-6 flex items-center gap-2.5 lg:start-10 lg:top-9">
+            <Logo size={24} className="border-white!" />
+            <span className="text-[16px] font-semibold tracking-tight text-white">
+              {t.brand}
+            </span>
+          </div>
+        </aside>
+      )}
+
+      <div className="flex min-h-0 min-w-0 flex-col">
+        {/* Top bar - back + brand left, controls right */}
+        <div
+          data-app-topinset
+          className="flex shrink-0 items-center justify-between px-5 py-4"
+        >
+          <div className="flex items-center gap-2.5">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onBack}
+                aria-label={t.auth.back ?? "Back"}
+                className="me-1"
+              >
+                <ArrowLeft className="size-4 rtl:rotate-180" />
+              </Button>
+            )}
+            {/* With the panel up, it already carries the brand. */}
+            {!aside && (
+              <>
+                <Logo size={24} />
+                <span className="text-[16px] font-semibold tracking-tight text-foreground">
+                  {t.brand}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              onClick={onBack}
-              aria-label={t.auth.back ?? "Back"}
-              className="me-1"
+              onClick={toggle}
+              aria-label={t.auth.toggleTheme}
             >
-              <ArrowLeft className="size-4 rtl:rotate-180" />
+              {resolvedTheme === "light" ? <Sun /> : resolvedTheme === "dim" ? <SunMoon /> : <Moon />}
             </Button>
-          )}
-          <Logo size={24} />
-          <span className="text-[16px] font-semibold tracking-tight text-foreground">
-            {t.brand}
-          </span>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggle}
-            aria-label={t.auth.toggleTheme}
-          >
-            {resolvedTheme === "light" ? <Sun /> : resolvedTheme === "dim" ? <SunMoon /> : <Moon />}
-          </Button>
-        </div>
-      </div>
 
-      <div className={`w-full ${maxWidth}`}>
-        {children}
+        <div className="flex flex-1 flex-col px-4 lg:overflow-y-auto">
+          {/* `m-auto`, not `justify-center`: a flex box centering content taller
+              than itself puts the top edge above the scroll origin, out of reach.
+              Auto margins collapse instead of overflowing. */}
+          <div
+            className={`w-full ${maxWidth} ${
+              align === "start" ? "mx-auto mb-12 mt-4" : "m-auto py-12"
+            }`}
+          >
+            {children}
+          </div>
+        </div>
       </div>
     </div>
   );
