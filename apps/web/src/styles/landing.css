@@ -32,52 +32,238 @@
 
 
 /* ══════════════════════════════════════════════════════════════
-   NAVBAR - floating pill
+   NAVBAR - solid bar on the page's own rules
    ══════════════════════════════════════════════════════════════ */
 
-.nav-pill {
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  background: rgba(255,255,255,.72);
-  box-shadow:
-    0 0 0 1px rgba(0,0,0,.03),
-    0 2px 8px rgba(0,0,0,.04);
-  transition: box-shadow .25s, background .25s;
-}
-.nav-pill:hover {
-  box-shadow:
-    0 0 0 1px rgba(0,0,0,.04),
-    0 4px 16px rgba(0,0,0,.06);
-}
-.nav-pill-item {
-  letter-spacing: 0.005em;
+/* Opaque, so nothing scrolling underneath can change how it reads. Its
+   bottom rule is the grid's first rule, which is why .lp-ruled starts
+   exactly --lp-nav-h down the page. */
+.lp-nav {
+  position: fixed;
+  top: 0;
+  inset-inline: 0;
+  z-index: 50;
+  border-bottom: 1px solid var(--lp-rule);
+  background: color-mix(in srgb, var(--th-bg-page) 95%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
-
-/* ══════════════════════════════════════════════════════════════
-   NAVBAR - ruled variant, squared and aligned to the page rails
-   ══════════════════════════════════════════════════════════════ */
-
-/* Not a centered max-width: the wordmark has to land on the same optical
-   line as the hero headline, which is set by the rail, not by the viewport. */
+/* Side columns at 1fr each put the links on the bar's true centre. With a
+   centred flex row they land optically left, because the wordmark is wider
+   than the cluster opposite it. Padding is the rail inset, not the
+   reference's own smaller one, so the wordmark starts on the same line as
+   every section header below it. */
 .lp-nav-bar {
-  position: relative;
-  height: var(--lp-nav-h);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: calc(var(--lp-nav-h) - 1px);
   padding-inline: calc(var(--lp-gutter) + var(--lp-inset));
 }
 
-/* Square, hairline, no shadow - a drawn box, not a floating pill. */
-.lp-nav-box {
-  gap: 0;
+/* ── Brand ───────────────────────────────────────────────────── */
+.lp-nav-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: start;
 }
-.lp-nav-item {
-  padding: 9px 17px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
+.lp-nav-brand-mark {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 2.5px solid var(--th-text-heading);
+  border-radius: 50%;
+}
+.lp-nav-brand-word {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--th-text-heading);
+}
+
+/* ── Centre links ────────────────────────────────────────────── */
+.lp-nav-links {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+@media (min-width: 1024px) {
+  .lp-nav-links { display: flex; }
+}
+
+.lp-nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+  color: var(--th-text-heading);
+  transition: color .18s cubic-bezier(.22,1,.36,1),
+              transform .12s cubic-bezier(.22,1,.36,1);
 }
+/* Widens the tap target to the 40px minimum without changing the layout
+   the label sits in. */
+.lp-nav-link::after {
+  content: "";
+  position: absolute;
+  inset: -10px -8px;
+  min-height: 40px;
+}
+.lp-nav-link:hover  { color: var(--th-text-muted); }
+.lp-nav-link:active { transform: scale(.97); }
+.lp-nav-link:focus-visible {
+  outline: 2px solid var(--th-text-heading);
+  outline-offset: 4px;
+}
+.lp-nav-link-icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* ── Actions ─────────────────────────────────────────────────── */
+.lp-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-self: end;
+}
+
+.lp-nav-btn {
+  display: none;
+  align-items: center;
+  height: 36px;
+  padding-inline: 18px;
+  border: 1px solid var(--lp-rule);
+  background: var(--th-bg-card);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--th-text-heading);
+  transition: background .18s cubic-bezier(.22,1,.36,1),
+              transform .12s cubic-bezier(.22,1,.36,1);
+}
+@media (min-width: 1024px) {
+  .lp-nav-btn { display: inline-flex; }
+}
+.lp-nav-btn:hover  { background: var(--th-bg-hover); }
+.lp-nav-btn:active { transform: scale(.97); }
+
+/* Split control: label and arrow are separate cells divided by a hairline,
+   so the rule belongs to the button instead of being padding around an
+   icon. */
+.lp-nav-cta {
+  display: none;
+  align-items: stretch;
+  height: 36px;
+  overflow: hidden;
+  border: 1px solid var(--th-btn-bg);
+  background: var(--th-btn-bg);
+  color: var(--th-btn-text);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: transform .12s cubic-bezier(.22,1,.36,1);
+}
+@media (min-width: 1024px) {
+  .lp-nav-cta { display: inline-flex; }
+}
+.lp-nav-cta:active { transform: scale(.985); }
+.lp-nav-cta-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 16px;
+  border-right: 1px solid rgba(255,255,255,.18);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.lp-nav-cta-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  flex-shrink: 0;
+  transition: transform .2s cubic-bezier(.22,1,.36,1);
+}
+.lp-nav-cta-arrow svg { width: 14px; height: 14px; }
+.lp-nav-cta:hover .lp-nav-cta-arrow { transform: translateX(2px); }
+
+.lp-nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-inline-end: -8px;
+  color: var(--th-text-heading);
+}
+.lp-nav-toggle svg { width: 20px; height: 20px; }
+@media (min-width: 1024px) {
+  .lp-nav-toggle { display: none; }
+}
+
+/* ── Mobile sheet ────────────────────────────────────────────── */
+.lp-nav-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+@media (min-width: 1024px) {
+  .lp-nav-sheet { display: none; }
+}
+.lp-nav-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.3);
+  backdrop-filter: blur(4px);
+}
+.lp-nav-sheet-panel {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  padding: calc(var(--lp-nav-h) + 16px) 24px 24px;
+  border-left: 1px solid var(--lp-rule);
+  background: var(--th-bg-page);
+}
+.lp-nav-sheet-link {
+  padding: 12px 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--th-text-heading);
+  transition: color .18s cubic-bezier(.22,1,.36,1);
+}
+.lp-nav-sheet-link:hover { color: var(--th-text-muted); }
+.lp-nav-sheet-rule {
+  height: 1px;
+  margin-block: 12px;
+  background: var(--lp-rule);
+}
+.lp-nav-sheet-cta {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--th-btn-bg);
+  color: var(--th-btn-text);
+  text-align: center;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-nav-link,
+  .lp-nav-btn,
+  .lp-nav-cta,
+  .lp-nav-cta-arrow { transition: none; }
+}
+
 
 /* ══════════════════════════════════════════════════════════════
    HERO KIT - shared by /features, /roadmap and /download
