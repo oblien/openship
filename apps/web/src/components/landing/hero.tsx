@@ -27,11 +27,16 @@ export function Hero() {
   };
 
   return (
-    <section>
+    /* The hero opts out of the drawn grid entirely - no rails, no
+       crosshairs, no rules. The ruled document starts at the first section
+       header; the hero is an open field the copy floats in. */
+    <section className="lp-hero-sec">
       {/* ── Copy, centred under the navbar ─────────────────────────── */}
       <div className="lp-band">
+        {/* Outside .lp-band-in on purpose: the dither runs the full width of
+            the viewport, not the width of the measure the copy sits in. */}
+        <div className="lp-hero-dither" aria-hidden="true" />
         <div className="lp-band-in">
-          <div className="lp-hero-dither" aria-hidden="true" />
           <div className="lp-hero-copy">
             <h1 className="lp-hero-headline animate-fade-in-up">
               <span className="block">Deploy anything.</span>
@@ -75,39 +80,38 @@ export function Hero() {
                 )}
               </span>
             </button>
-          </div>
-        </div>
-      </div>
 
-      {/* ── Stack ticker ───────────────────────────────────────────── */}
-      <div className="lp-band">
-        <div className="lp-band-in lp-hero-stacks">
-          <p className="lp-hero-stacks-label">Designed for your favorite stack</p>
-          <div className="hero-ticker-mask overflow-hidden">
-            <div className="hero-ticker flex w-max items-center gap-12">
-              {[0, 1].map((i) => (
-                <div key={i} className="flex shrink-0 items-center gap-12">
-                  {STACKS.map((s) => (
-                    <div key={`${i}-${s.name}`} className="lp-hero-stack-item">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={s.icon} alt={s.name} className="h-[32px] w-[32px] object-contain" loading="lazy" />
-                      <span className="whitespace-nowrap">{s.name}</span>
+            {/* Inside the hero rather than in a band of its own, the way the
+                reference carries its logo wall: it is the hero's proof line,
+                so it belongs to the same composition as the copy above it. */}
+            <div className="lp-hero-stacks animate-fade-in-up animate-delay-400">
+              <p className="lp-hero-stacks-label">Designed for your favorite stack</p>
+              <div className="hero-ticker-mask overflow-hidden">
+                <div className="hero-ticker flex w-max items-center gap-12">
+                  {[0, 1].map((i) => (
+                    <div key={i} className="flex shrink-0 items-center gap-12">
+                      {STACKS.map((s) => (
+                        <div key={`${i}-${s.name}`} className="lp-hero-stack-item">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={s.icon} alt={s.name} className="h-[34px] w-[34px] object-contain" loading="lazy" />
+                          <span className="whitespace-nowrap">{s.name}</span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* ── Brand band ─────────────────────────────────────────────── */}
-      {/* data-section marks it for the navbar's contrast switch, the same
-          way the other dark plates on the site do. */}
+      {/* Edge to edge, with no .lp-band-in around it: in the reference the
+          plate under the hero bleeds to both sides of the window rather
+          than stopping on the measure. */}
       <div className="lp-band">
-        <div className="lp-band-in lp-band-in--flush">
-          <div className="lp-hero-plate" data-section="dark" aria-hidden="true" />
-        </div>
+        <div className="lp-hero-plate" data-section="dark" aria-hidden="true" />
       </div>
     </section>
   );

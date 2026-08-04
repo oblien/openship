@@ -475,16 +475,35 @@
    HERO - ruled grid, hard edges
    ══════════════════════════════════════════════════════════════ */
 
-/* ── Corner dither ───────────────────────────────────────────── */
-/* Sits inside the rails, in the two bottom corners of the copy row, the
-   way the reference anchors its texture. Animated by stepping the dot
-   grid off its own phase, which is what makes it read as dither noise
-   rather than as a pattern sliding. */
+/* ── Hero: an open field, not a ruled cell ───────────────────── */
+/* The grid's crosshairs and hard rails belong to the document that starts
+   at the first section header. Drawing them here boxed the hero in, which
+   the reference's never is. */
+.lp-hero-sec .lp-band::before,
+.lp-hero-sec .lp-band::after { content: none; }
+
+/* No rails at all. The measure still positions the copy, but nothing draws
+   its edges - the reference's hero has no vertical boundary of any kind. */
+.lp-hero-sec .lp-band-in { border-inline: 0; }
+
+/* The plate closes the hero, so its band keeps a real rule; the copy band
+   above it must not draw one across the middle of the composition. */
+.lp-hero-sec .lp-band:first-child { border-bottom: 0; }
+
+/* ── Dither field ────────────────────────────────────────────── */
+/* Two corner halftones, bottom-left and bottom-right, exactly where the
+   reference puts them - dense in the corner and thinning as it climbs
+   inward. Not a full-bleed field: masking a hole in the middle of one
+   left dots along the top edge that the reference does not have.
+
+   Held still. The reference's is static, and a texture that flickers
+   behind a headline reads as a rendering fault rather than as noise.
+
+   Dot weight stays under the reference's: its dots are pale blue, and the
+   same coverage in black would read as a screen door. */
 .lp-hero-dither {
   position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  height: 62%;
+  inset: 0;
   z-index: 0;
   pointer-events: none;
 }
@@ -493,35 +512,25 @@
   content: "";
   position: absolute;
   bottom: 0;
-  width: min(40%, 440px);
-  height: 100%;
-  background-image: radial-gradient(var(--th-on-20) 1px, transparent 1px);
-  background-size: 9px 9px;
-  animation: lp-dither 2.4s steps(1, end) infinite;
+  width: min(46%, 520px);
+  height: min(78%, 460px);
+  /* Two grids offset by half a cell, so the field breaks up rather than
+     moiring into rows. */
+  background-image:
+    radial-gradient(var(--th-on-20) 1px, transparent 1.4px),
+    radial-gradient(var(--th-on-10) 1px, transparent 1.4px);
+  background-size: 9px 9px, 9px 9px;
+  background-position: 0 0, 4.5px 4.5px;
 }
 .lp-hero-dither::before {
   inset-inline-start: 0;
-  -webkit-mask-image: radial-gradient(115% 100% at 0% 100%, #000 0%, transparent 70%);
-  mask-image: radial-gradient(115% 100% at 0% 100%, #000 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(125% 118% at 0% 100%, #000 0%, rgba(0,0,0,.45) 46%, transparent 74%);
+  mask-image: radial-gradient(125% 118% at 0% 100%, #000 0%, rgba(0,0,0,.45) 46%, transparent 74%);
 }
 .lp-hero-dither::after {
   inset-inline-end: 0;
-  animation-delay: -1.2s;
-  -webkit-mask-image: radial-gradient(115% 100% at 100% 100%, #000 0%, transparent 70%);
-  mask-image: radial-gradient(115% 100% at 100% 100%, #000 0%, transparent 70%);
-}
-
-@keyframes lp-dither {
-  0%   { background-position: 0 0; }
-  25%  { background-position: 4px 5px; }
-  50%  { background-position: 7px 2px; }
-  75%  { background-position: 2px 6px; }
-}
-
-/* The whole effect is decoration; nothing is lost by holding it still. */
-@media (prefers-reduced-motion: reduce) {
-  .lp-hero-dither::before,
-  .lp-hero-dither::after { animation: none; }
+  -webkit-mask-image: radial-gradient(125% 118% at 100% 100%, #000 0%, rgba(0,0,0,.45) 46%, transparent 74%);
+  mask-image: radial-gradient(125% 118% at 100% 100%, #000 0%, rgba(0,0,0,.45) 46%, transparent 74%);
 }
 
 /* ── Copy ────────────────────────────────────────────────────── */
@@ -535,8 +544,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   text-align: center;
   padding-block: clamp(44px, 4.8vw, 72px);
+  /* Scales with the viewport the way the reference's does, instead of
+     being whatever the copy happens to measure. On a laptop this is
+     within a few pixels of the content height, so nothing moves; on a
+     tall display the hero keeps filling the screen rather than leaving
+     the plate below it half in view. */
+  min-height: calc(78dvh - var(--lp-nav-h));
 }
 
 .lp-hero-headline {
@@ -635,12 +651,15 @@
 .lp-hero-install:hover .lp-hero-install-icon { opacity: .6; }
 
 /* ── Stack ticker ────────────────────────────────────────────── */
+/* Sits inside the copy stack now, so it owns only the space between the
+   command bar and the hero's floor - no band, no rule of its own. */
 .lp-hero-stacks {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  padding-block: 32px;
+  gap: 18px;
+  width: 100%;
+  margin-top: 40px;
   overflow: hidden;
 }
 .lp-hero-stacks-label {
@@ -650,25 +669,32 @@
   letter-spacing: 0.1em;
   color: var(--th-text-muted);
 }
+/* In colour, and only lightly held back. The reference runs its logo wall
+   at full colour and 0.85 opacity - desaturating it was reading the
+   reference wrong, and a grey logo wall proves nothing. */
 .lp-hero-stack-item {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 13px;
-  font-size: 16px;
+  gap: 12px;
+  /* Sized off the reference's logo wall, which runs its marks and wordmarks
+     at the same 22px ink height rather than a small icon beside large text. */
+  font-size: 20px;
   font-weight: 500;
-  color: var(--th-text-secondary);
-  /* Reference sits its logo wall back as light grey, not near-black. */
-  filter: grayscale(1);
-  opacity: 0.42;
+  letter-spacing: -0.03em;
+  color: var(--th-text-heading);
+  opacity: 0.85;
+  transition: opacity .22s cubic-bezier(.22,1,.36,1);
 }
+.lp-hero-stack-item:hover { opacity: 1; }
 
 /* ── Brand band - closes the hero on the dark plate ──────────── */
-/* Rail to rail rather than edge to edge: it reads as a panel drawn inside
-   the grid instead of an image the grid happens to sit on. Background
-   rather than an <img> because it carries no information the copy does
-   not already state. The artwork is dithered in the file; the login
-   screen's shader pass is not needed for a still panel. */
+/* Edge to edge, matching the reference: the hero has no rails for a panel
+   to stop against, so a plate inset to the measure would read as a stray
+   band rather than as the floor of the section. Background rather than an
+   <img> because it carries no information the copy does not already
+   state. The artwork is dithered in the file; the login screen's shader
+   pass is not needed for a still panel. */
 .lp-hero-plate {
   height: clamp(300px, 34vw, 520px);
   background:
