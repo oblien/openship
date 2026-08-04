@@ -6,7 +6,7 @@ description: Manage delivery channels, per-event subscriptions, org defaults, an
 import { TypeTable } from "fumadocs-ui/components/type-table";
 
 The Notifications API decides who hears about events like a failed deploy or an expiring SSL cert, and how.
-You register **channels** (where alerts go — email, webhook, Slack, Discord, Microsoft Teams, or the in-app bell), toggle
+You register **channels** (where alerts go — email, webhook, Slack, Discord, Microsoft Teams, Telegram, or the in-app bell), toggle
 **subscriptions** (which event categories reach each channel), set org-wide **defaults** for new members, and
 read **deliveries** (the alert feed behind the bell icon). In the dashboard this is the **Settings →
 Notifications** page. Channels, subscriptions, and deliveries are per-user; defaults are per-org.
@@ -71,7 +71,7 @@ POST /api/notifications/channels
 <TypeTable
   type={{
     kind: {
-      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams"',
+      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams" | "telegram"',
       description: "The channel type. Any other value is rejected.",
       required: true,
     },
@@ -118,6 +118,14 @@ The `config` shape depends on `kind`:
       type: "string",
       description: 'A Microsoft Teams incoming-webhook URL. Required for kind "msteams".',
     },
+    "telegram.token": {
+      type: "string",
+      description: 'A Telegram bot token from @BotFather. Required for kind "telegram".',
+    },
+    "telegram.chatId": {
+      type: "string",
+      description: 'A numeric Telegram chat ID (user, group, or channel). Required for kind "telegram".',
+    },
   }}
 />
 
@@ -125,6 +133,14 @@ The `config` shape depends on `kind`:
   In Teams, create a **Workflow** with the **"When a Teams webhook request is received"** trigger
   and use the URL it generates. Legacy `webhook.office.com` connector URLs are also accepted. The
   URL is stored encrypted and comes back as `webhookUrlConfigured` in responses, never in full.
+</Callout>
+
+<Callout title="Getting a Telegram bot token" type="info">
+  Chat with [@BotFather](https://t.me/botfather) on Telegram to create a new bot and get its
+  token (a string like `1234567890:ABCdef...`). To find your chat ID, message
+  [@userinfobot](https://t.me/userinfobot) and it will reply with your numeric ID. For group or
+  channel IDs, add the bot to the group and check the `getUpdates` response. The token is stored
+  encrypted and comes back as `tokenConfigured` in responses, never in full.
 </Callout>
 
 ```bash
@@ -219,7 +235,7 @@ PUT /api/notifications/defaults
       required: true,
     },
     defaultChannelKind: {
-      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams"',
+      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams" | "telegram"',
       description: "Which channel kind the default routes to.",
       default: '"email"',
     },
@@ -259,7 +275,7 @@ curl "https://your-host/api/notifications/deliveries?unseen=true&limit=20" \
 ## Errors you might see
 
 <Callout title="400 — invalid channel or missing fields" type="warn">
-  The `kind` isn't one of `email`/`webhook`/`in_app`/`slack`/`discord`/`msteams`, `label` is
+  The `kind` isn't one of `email`/`webhook`/`in_app`/`slack`/`discord`/`msteams`/`telegram`, `label` is
   missing, or the `config` failed its per-kind check (a malformed email, a non-`http(s)` webhook
   URL, a Slack URL that isn't `https://hooks.slack.com/...`, a Discord URL that isn't
   `https://discord.com/api/webhooks/...`, or a Teams URL that isn't an https Workflow or

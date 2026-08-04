@@ -19,9 +19,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, Mail, Webhook, MessageSquare, MessageCircle, MessagesSquare, Smartphone, Plus, Trash2, Loader2, AlertTriangle, Send, Check, ChevronDown, type LucideIcon } from "lucide-react";
-import { AppLogo } from "@/components/AppLogo";
-import { PillSwitcher } from "@/components/ui/PillSwitcher";
+import {
+  Bell,
+  Mail,
+  Webhook,
+  MessageSquare,
+  MessageCircle,
+  MessagesSquare,
+  Smartphone,
+  Plus,
+  Trash2,
+  Loader2,
+  Send,
+  AlertTriangle,
+} from "lucide-react";
 import { systemApi } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { SettingsSection } from "./SettingsSection";
@@ -44,6 +55,7 @@ const CHANNEL_ICONS: Record<ChannelKind, LucideIcon> = {
   slack: MessageSquare,
   discord: MessageCircle,
   msteams: MessagesSquare,
+  telegram: Send,
   in_app: Smartphone,
 };
 
@@ -60,6 +72,7 @@ const CHANNEL_LABELS: Record<ChannelKind, string> = {
   webhook: "Webhook",
   slack: "Slack",
   discord: "Discord",
+  telegram: "Telegram",
   msteams: "Microsoft Teams",
   in_app: "In-app",
 };
@@ -391,7 +404,7 @@ function ChannelsCard({
 
 function describeChannel(
   ch: NotificationChannel,
-  labels: { slackWebhook: string; discordWebhook: string; msteamsWebhook: string; inApp: string },
+  labels: { slackWebhook: string; discordWebhook: string; msteamsWebhook: string; telegramChat: string; inApp: string },
 ): string {
   switch (ch.kind) {
     case "email":
@@ -406,6 +419,8 @@ function describeChannel(
       return labels.discordWebhook;
     case "msteams":
       return labels.msteamsWebhook;
+    case "telegram":
+      return labels.telegramChat;
     case "in_app":
       return labels.inApp;
     default:
@@ -427,6 +442,8 @@ function NewChannelForm({
   const [address, setAddress] = useState("");
   const [url, setUrl] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [botToken, setBotToken] = useState("");
+  const [chatId, setChatId] = useState("");
   const [busy, setBusy] = useState(false);
   // Whether the instance can send email at all (instance SMTP / mail server /
   // env). null = unknown (not yet loaded, or no permission to read). When false
@@ -462,6 +479,8 @@ function NewChannelForm({
     else if (kind === "webhook") config = { url: url.trim() };
     else if (kind === "slack" || kind === "discord" || kind === "msteams")
       config = { webhookUrl: webhookUrl.trim() };
+    else if (kind === "telegram")
+      config = { token: botToken.trim(), chatId: chatId.trim() };
 
     setBusy(true);
     try {
@@ -481,25 +500,28 @@ function NewChannelForm({
 
   return (
     <div className="border border-border/50 rounded-xl p-4 space-y-3">
-      {/* Kind picker — one reusable switcher (real brand logos; scrolls with
-          edge-fade + chevrons once the kinds outgrow the width). */}
-      <PillSwitcher
-        options={(["email", "webhook", "slack", "discord", "msteams"] as ChannelKind[]).map((k) => ({
-          value: k,
-          label: t.settings.notifications.kinds[k],
-          logo: CHANNEL_LOGOS[k],
-          icon: CHANNEL_ICONS[k],
-        }))}
-        value={kind}
-        onChange={setKind}
-      />
-      <input
-        type="text"
-        placeholder={t.settings.notifications.form.labelPlaceholder}
-        value={label}
-        onChange={(e) => setLabel(e.target.value)}
-        className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
-      />
+      <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as ChannelKind)}
+          className="bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+        >
+          <option value="email">{t.settings.notifications.kinds.email}</option>
+          <option value="webhook">{t.settings.notifications.kinds.webhook}</option>
+          <option value="slack">{t.settings.notifications.kinds.slack}</option>
+          <option value="discord">{t.settings.notifications.kinds.discord}</option>
+          <option value="msteams">{t.settings.notifications.kinds.msteams}</option>
+          <option value="telegram">{t.settings.notifications.kinds.telegram}</option>
+          <option value="in_app">{t.settings.notifications.kinds.in_app}</option>
+        </select>
+        <input
+          type="text"
+          placeholder={t.settings.notifications.form.labelPlaceholder}
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className="bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
 
       {kind === "email" && (
         <input
@@ -559,6 +581,35 @@ function NewChannelForm({
           onChange={(e) => setWebhookUrl(e.target.value)}
           className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
         />
+      )}
+      {kind === "telegram" && (
+        <>
+          <input
+            type="password"
+            placeholder={t.settings.notifications.form.telegramTokenPlaceholder}
+            value={botToken}
+            onChange={(e) => setBotToken(e.target.value)}
+            className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Get a token from{" "}
+            <a href="https://t.me/botfather" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground transition-colors">
+              @BotFather
+            </a>
+          </p>
+          <input
+            type="text"
+            placeholder={t.settings.notifications.form.telegramChatPlaceholder}
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+            className="w-full bg-background border border-border/50 rounded-lg px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Send a message to your bot, then visit{" "}
+            <code className="text-[11px] bg-foreground/[0.06] px-1 rounded">https://api.telegram.org/bot&lt;token&gt;/getUpdates</code>
+            {" "}to find your chat ID.
+          </p>
+        </>
       )}
 
       <div className="flex items-center gap-2">
@@ -673,88 +724,46 @@ function EventNotificationsCard({
       title={t.settings.notifications.subscriptions.title}
       description={t.settings.notifications.subscriptions.description}
     >
-      <div className="overflow-x-auto -mx-5">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-start text-xs uppercase tracking-wide text-muted-foreground">
-              {/* EVENT takes all the free width (`w-full`); `pe-8` keeps the
-                  description text off the controls so it reads full-bleed. */}
-              <th className="w-full px-5 py-2.5 pe-8 font-medium">
-                {t.settings.notifications.subscriptions.eventHeader}
-              </th>
-              <th className="px-4 py-2.5 font-medium text-start min-w-[160px]">
-                {t.settings.notifications.channels.title}
-              </th>
-              <th className="px-5 py-2.5 font-medium text-center min-w-[112px]">
-                {t.settings.notifications.orgDefaults.title}
-              </th>
-              <th className="px-5 py-2.5 pe-6 font-medium text-center min-w-[80px]">
-                {t.settings.notifications.subscriptions.notifyMe}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {categories.map((cat) => {
-              const def = defIndex.get(cat.id);
-              const enabled = def?.defaultEnabled ?? cat.defaultEnabled;
-              const kinds = (def?.defaultChannelKinds?.length
-                ? def.defaultChannelKinds
-                : ["email"]) as ChannelKind[];
-              const isBusy = busyCat === cat.id;
-              // Checked when the user explicitly opted in, OR when they've made
-              // no explicit choice and the category is default-enabled (the
-              // dispatcher delivers to them in that case too).
-              const notifyMe = enabledCats.has(cat.id) || (!rowCats.has(cat.id) && enabled);
-              return (
-                <tr
-                  key={cat.id}
-                  className={`border-t border-border/30 transition-opacity ${isBusy ? "opacity-50" : ""}`}
-                >
-                  <td className="px-5 py-3.5 pe-8 align-top">
-                    <p className="font-medium text-foreground">{cat.label}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{cat.description}</p>
-                  </td>
-                  {/* Org default (admin-only): which channel kinds + on/off for new members. */}
-                  <td className="px-4 py-3.5 align-top">
-                    <ChannelMultiSelect
-                      value={kinds}
-                      disabled={isBusy || !isAdmin}
-                      onChange={(next) => setDefault(cat.id, enabled, next)}
-                    />
-                  </td>
-                  <td className="px-5 py-3.5 align-middle text-center">
-                    <Toggle
-                      checked={enabled}
-                      disabled={isBusy || !isAdmin}
-                      onChange={(v: boolean) => setDefault(cat.id, v, kinds)}
-                      aria-label={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
-                        category: cat.label,
-                      })}
-                    />
-                  </td>
-                  {/* Per-user opt-in — anyone can set their own, across their channels. */}
-                  <td className="px-5 pe-6 py-3.5 align-middle text-center">
-                    <input
-                      type="checkbox"
-                      disabled={isBusy || noChannels}
-                      checked={notifyMe}
-                      onChange={(e) => setNotifyMe(cat.id, e.target.checked)}
-                      className="size-4 rounded border-border/50 cursor-pointer accent-foreground disabled:opacity-40 disabled:cursor-not-allowed"
-                      aria-label={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
-                        category: cat.label,
-                      })}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {noChannels && (
-          <p className="px-5 pt-3 text-sm text-muted-foreground">
-            {t.settings.notifications.subscriptions.empty}
-          </p>
-        )}
+      <div className="space-y-2">
+        {categories.map((cat) => {
+          const def = defIndex.get(cat.id);
+          const enabled = def?.defaultEnabled ?? cat.defaultEnabled;
+          const kind = (def?.defaultChannelKind ?? "email") as ChannelKind;
+          const isBusy = busyCat === cat.id;
+          return (
+            <div
+              key={cat.id}
+              className={`flex items-center gap-4 py-2 border-b border-border/30 last:border-0 transition-opacity ${isBusy ? "opacity-50" : ""}`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-foreground">{cat.label}</p>
+                <p className="text-xs text-muted-foreground">{cat.description}</p>
+              </div>
+              <select
+                value={kind}
+                disabled={isBusy}
+                onChange={(e) => set(cat.id, enabled, e.target.value as ChannelKind)}
+                className="bg-background border border-border/50 rounded-lg px-2 py-1.5 text-sm"
+              >
+                <option value="email">{t.settings.notifications.kinds.email}</option>
+                <option value="webhook">{t.settings.notifications.kinds.webhook}</option>
+                <option value="slack">{t.settings.notifications.kinds.slack}</option>
+                <option value="discord">{t.settings.notifications.kinds.discord}</option>
+                <option value="msteams">{t.settings.notifications.kinds.msteams}</option>
+                <option value="telegram">{t.settings.notifications.kinds.telegram}</option>
+                <option value="in_app">{t.settings.notifications.kinds.in_app}</option>
+              </select>
+              <Toggle
+                checked={enabled}
+                disabled={isBusy}
+                onChange={(v: boolean) => set(cat.id, v, kind)}
+                aria-label={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
+                  category: cat.label,
+                })}
+              />
+            </div>
+          );
+        })}
       </div>
     </SettingsSection>
   );
