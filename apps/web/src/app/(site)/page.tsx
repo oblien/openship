@@ -61,7 +61,7 @@ export default function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareLd) }}
       />
       <Navbar />
-      <main>
+      <main className="lp-ruled">
         <Hero />
         <Dashboard />
         <SystemMap />
