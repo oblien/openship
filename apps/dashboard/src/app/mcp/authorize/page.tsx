@@ -622,7 +622,9 @@ export default function McpAuthorizePage() {
     // `align="start"`: this page is taller than the viewport, and AuthShell's
     // default vertical centering would push its top above the scroll origin and
     // break the sticky rail.
-    <AuthShell maxWidth="max-w-6xl" align="start">
+    // `aside={false}`: a max-w-6xl consent screen has no room to share the
+    // viewport with the brand panel.
+    <AuthShell maxWidth="max-w-6xl" align="start" aside={false}>
       <Suspense
         fallback={
           <div className="flex items-center justify-center py-10 text-muted-foreground">
