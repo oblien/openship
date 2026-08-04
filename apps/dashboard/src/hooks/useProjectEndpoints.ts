@@ -400,6 +400,9 @@ async function fetchProjectInfo(id: string): Promise<ProjectInfoData> {
 // first domain's cached numbers; `fetchOverview` splits it back apart.
 const OVERVIEW_KEY_SEP = "::";
 
+/** Analytics overview aggregates traffic server-side; high-traffic projects can exceed the 15s default. */
+const ANALYTICS_OVERVIEW_TIMEOUT_MS = 60_000;
+
 function overviewCacheKey(id: string, domain?: string | null): string {
   return domain ? `${id}${OVERVIEW_KEY_SEP}${domain}` : id;
 }
@@ -410,7 +413,10 @@ async function fetchOverview(key: string): Promise<AnalyticsOverviewResponse> {
   const domain = sepIndex === -1 ? undefined : key.slice(sepIndex + OVERVIEW_KEY_SEP.length);
   const response = await api.get<{ data: AnalyticsOverviewResponse; success?: boolean; error?: string }>(
     endpoints.analytics.overview,
-    { params: { projectId, ...(domain ? { domain } : {}) } },
+    {
+      params: { projectId, ...(domain ? { domain } : {}) },
+      timeout: ANALYTICS_OVERVIEW_TIMEOUT_MS,
+    },
   );
   if (response.success === false || !response.data) {
     throw new Error(response.error || "Failed to load analytics");

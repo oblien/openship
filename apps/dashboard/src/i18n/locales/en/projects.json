@@ -284,6 +284,9 @@
     "waitingRequests": "Waiting for requests",
     "noTransfer": "No transfer yet"
   },
+  "analytics": {
+    "loadFailed": "Couldn't load traffic analytics"
+  },
   "monitoring": {
     "noDataTitle": "No monitoring data yet",
     "noDataDescription": "Analytics will appear here after the deployed app starts receiving traffic.",
