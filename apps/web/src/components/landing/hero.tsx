@@ -17,6 +17,85 @@ const STACKS = [
   { name: 'Bun',         icon: 'https://cdn.simpleicons.org/bun/000000' },
 ];
 
+/**
+ * One isometric cube as three rhombus faces. `s` is the half-width of the
+ * top face, so the drawn cube is 2*0.866*s wide and 3*s tall. Each face takes
+ * a different dither density, which is what reads as shading — there is no
+ * lighting model here, just three fixed dot patterns.
+ */
+function IsoCube({ x, y, s }: { x: number; y: number; s: number }) {
+  const w = s * 0.866;
+  const h = s * 0.5;
+  return (
+    <g>
+      <polygon
+        points={`${x},${y - s} ${x + w},${y - h} ${x},${y} ${x - w},${y - h}`}
+        fill="url(#hero-dither-1)"
+        stroke="currentColor"
+        strokeWidth="0.6"
+      />
+      <polygon
+        points={`${x - w},${y - h} ${x},${y} ${x},${y + s} ${x - w},${y + h}`}
+        fill="url(#hero-dither-3)"
+        stroke="currentColor"
+        strokeWidth="0.6"
+      />
+      <polygon
+        points={`${x + w},${y - h} ${x},${y} ${x},${y + s} ${x + w},${y + h}`}
+        fill="url(#hero-dither-2)"
+        stroke="currentColor"
+        strokeWidth="0.6"
+      />
+    </g>
+  );
+}
+
+/** Satellites are drawn first so the main cube overlaps them. */
+const SATELLITES = [
+  { x: 200, y: 96,  s: 26 },
+  { x: 200, y: 318, s: 24 },
+  { x: 98,  y: 152, s: 22 },
+  { x: 302, y: 152, s: 22 },
+  { x: 98,  y: 262, s: 20 },
+  { x: 302, y: 262, s: 20 },
+  { x: 142, y: 100, s: 15 },
+  { x: 264, y: 330, s: 18 },
+  { x: 332, y: 216, s: 16 },
+];
+
+function DitherCluster() {
+  return (
+    <svg
+      className="lp-hero-cluster"
+      viewBox="0 0 400 400"
+      fill="none"
+      role="img"
+      aria-label="Isometric diagram of stacked deployment units"
+    >
+      <defs>
+        {/* Three fixed densities. Dots are on a 4x4 cell so the pattern stays
+            aligned across faces and the seams do not shimmer when scaled. */}
+        <pattern id="hero-dither-1" width="4" height="4" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.5" fill="currentColor" />
+        </pattern>
+        <pattern id="hero-dither-2" width="4" height="4" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.62" fill="currentColor" />
+          <circle cx="3" cy="3" r="0.62" fill="currentColor" />
+        </pattern>
+        <pattern id="hero-dither-3" width="3" height="3" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.8" fill="currentColor" />
+          <circle cx="2.5" cy="2.5" r="0.5" fill="currentColor" />
+        </pattern>
+      </defs>
+
+      {SATELLITES.map((c) => (
+        <IsoCube key={`${c.x}-${c.y}`} {...c} />
+      ))}
+      <IsoCube x={200} y={206} s={76} />
+    </svg>
+  );
+}
+
 export function Hero() {
   const [copied, setCopied] = useState(false);
 
@@ -27,117 +106,92 @@ export function Hero() {
   };
 
   return (
-    <section className="hero-section relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden">
-      {/* ═══════════════ Background layers ═══════════════ */}
-      <div className="hero-grain absolute inset-0" aria-hidden="true" />
-      <div className="hero-grid absolute inset-0" aria-hidden="true" />
+    <section className="lp-hero">
+      <div className="lp-hero-frame">
+        {/* ── Rail: sets the grid before any content. Hatch runs diagonally,
+               top-left and bottom-right, so the two blank cells never sit
+               side by side. The reference fills this right cell with headline
+               stats; Openship has no such copy, so it stays empty. ── */}
+        <div className="lp-hero-row lp-hero-row--rail">
+          <div className="lp-hero-cell lp-hero-cell--hatch" aria-hidden="true" />
+          <div className="lp-hero-cell" aria-hidden="true" />
+        </div>
 
-      {/* ── Bottom aurora glow ── */}
-      <div className="hero-aurora" aria-hidden="true">
-        <div className="hero-aurora-core" />
-        <div className="hero-aurora-wing hero-aurora-wing--left" />
-        <div className="hero-aurora-wing hero-aurora-wing--right" />
-      </div>
-
-      {/* ═══════════════ Content ═══════════════ */}
-      <div className="relative z-20 mx-auto w-full max-w-[860px] px-6 text-center">
-        {/* Install command */}
-        <button
-          onClick={handleCopy}
-          className="animate-fade-in-up group mb-7 inline-flex items-center gap-2 font-mono text-[13px] tracking-[0.01em] th-text-muted transition-colors hover:th-text-secondary"
-        >
-          <span className="opacity-50">$</span>
-          <span>npm i -g openship</span>
-          <span className="ml-0.5 opacity-0 transition-opacity group-hover:opacity-50">
-            {copied ? (
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            ) : (
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
-              </svg>
-            )}
-          </span>
-        </button>
-
-        {/* Headline */}
-        <h1 className="animate-fade-in-up animate-delay-100">
-          <span className="block text-[clamp(2.5rem,5.5vw,4.25rem)] font-medium leading-[1.08] tracking-[-0.02em] th-text-heading">
-            Deploy anything.
-          </span>
-          <span className="hero-headline-second block text-[clamp(2.5rem,5.5vw,4.25rem)] font-light italic leading-[1.08] tracking-[-0.015em]">
-            Own everything.
-          </span>
-        </h1>
-
-        {/* Sub */}
-        <p className="animate-fade-in-up animate-delay-200 mx-auto mt-6 max-w-[520px] text-[16px] leading-[1.65] th-text-body">
-          Push your code - builds, config, and deployment are handled automatically. Use our cloud or connect your own servers. Zero&nbsp;lock&#8209;in, completely&nbsp;open&#8209;source.
-        </p>
-
-        {/* CTAs */}
-        <div className="animate-fade-in-up animate-delay-300 mt-9 flex flex-col items-center gap-5">
-          <div className="flex items-center justify-center gap-3.5">
-            <a
-              href="/login"
-              className="th-btn group rounded-full px-7 py-3 text-[15px] font-medium"
+        {/* ── Main: copy beside the cluster ────────────────────────── */}
+        <div className="lp-hero-row lp-hero-row--main">
+          <div className="lp-hero-cell lp-hero-copy">
+            <button
+              onClick={handleCopy}
+              className="lp-hero-install animate-fade-in-up group font-mono"
             >
-              Get started
-              <svg
-                className="ml-1.5 -mr-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-            </a>
-            <a
-              href="/docs/getting-started/quickstart"
-              className="th-btn-ghost group rounded-full px-7 py-3 text-[15px] font-medium"
-            >
-              Self host
-              <svg
-                className="ml-1.5 -mr-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.2}
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-            </a>
+              <span className="lp-hero-install-sigil">$</span>
+              <span>npm i -g openship</span>
+              <span className="lp-hero-install-icon">
+                {copied ? (
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                ) : (
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                  </svg>
+                )}
+              </span>
+            </button>
+
+            <h1 className="lp-hero-headline animate-fade-in-up animate-delay-100">
+              <span className="block">Deploy anything.</span>
+              <span className="lp-hero-headline-second block">Own everything.</span>
+            </h1>
+
+            <p className="lp-hero-sub animate-fade-in-up animate-delay-200">
+              Push your code - builds, config, and deployment are handled automatically. Use our cloud or connect your own servers. Zero&nbsp;lock&#8209;in, completely&nbsp;open&#8209;source.
+            </p>
+
+            <div className="lp-hero-cta-row animate-fade-in-up animate-delay-300">
+              <a href="/login" className="lp-hero-btn lp-hero-btn--primary group">
+                Get started
+                <svg className="lp-hero-btn-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7m0 0H9m8 0v8" />
+                </svg>
+              </a>
+              <a href="/docs/getting-started/quickstart" className="lp-hero-btn lp-hero-btn--ghost group">
+                Self host
+                <svg className="lp-hero-btn-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7m0 0H9m8 0v8" />
+                </svg>
+              </a>
+            </div>
+          </div>
+
+          <div className="lp-hero-cell lp-hero-visual">
+            <DitherCluster />
           </div>
         </div>
-      </div>
 
-      {/* ═══════════════ Stack ticker ═══════════════ */}
-      <div className="animate-fade-in-up animate-delay-500 relative z-10 mt-16 w-full max-w-[820px] px-6">
-        <p className="mb-6 text-center text-[13px] font-medium uppercase tracking-[0.1em] th-text-muted">
-          Designed for your favorite stack
-        </p>
-        <div className="hero-ticker-mask overflow-hidden">
-          <div className="hero-ticker flex w-max items-center gap-12">
-            {[0, 1].map((i) => (
-              <div key={i} className="flex shrink-0 items-center gap-12">
-                {STACKS.map((s) => (
-                  <div key={`${i}-${s.name}`} className="flex shrink-0 items-center gap-2.5 opacity-50" style={{ filter: 'grayscale(1) brightness(0.45) contrast(1.1)' }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={s.icon} alt={s.name} className="h-[26px] w-[26px] object-contain" loading="lazy" />
-                    <span className="whitespace-nowrap text-[14px] font-medium th-text-secondary">{s.name}</span>
+        {/* ── Foot: stack ticker beside texture ────────────────────── */}
+        <div className="lp-hero-row lp-hero-row--foot">
+          <div className="lp-hero-cell lp-hero-stacks">
+            <p className="lp-hero-stacks-label">Designed for your favorite stack</p>
+            <div className="hero-ticker-mask overflow-hidden">
+              <div className="hero-ticker flex w-max items-center gap-12">
+                {[0, 1].map((i) => (
+                  <div key={i} className="flex shrink-0 items-center gap-12">
+                    {STACKS.map((s) => (
+                      <div key={`${i}-${s.name}`} className="lp-hero-stack-item">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={s.icon} alt={s.name} className="h-[32px] w-[32px] object-contain" loading="lazy" />
+                        <span className="whitespace-nowrap">{s.name}</span>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
-            ))}
+            </div>
           </div>
+          <div className="lp-hero-cell lp-hero-cell--hatch" aria-hidden="true" />
         </div>
       </div>
-
-      {/* Edge fades */}
-      <div className="hero-edge-fade-top absolute top-0 left-0 right-0 h-20" aria-hidden="true" />
-      <div className="hero-edge-fade-bottom absolute bottom-0 left-0 right-0 h-40" aria-hidden="true" />
     </section>
   );
 }
