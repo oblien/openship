@@ -14,6 +14,7 @@ import {
 import { generateIcon } from "@/utils/icons";
 import { deployApi, getApiErrorMessage } from "@/lib/api";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { isDeploymentRollbackEligible } from "../utils";
 
 interface Deployment {
   id: string;
@@ -77,7 +78,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
   // "Redeploy this commit" fallback is gone: it was the same operation behind a
   // second label.
   const canRollback =
-    (deployment.status === "ready" || deployment.status === "partial_failure") &&
+    isDeploymentRollbackEligible(deployment.status) &&
     !deployment.isActive &&
     !isInFlight &&
     (!!deployment.artifactRetainedAt || hasCommit);
@@ -261,7 +262,7 @@ export const DeploymentMenu: React.FC<DeploymentMenuProps> = ({
 
           {/* Pin / Unpin — toggles the artifact's exemption from
               retention prune. Available for any ready deployment. */}
-          {!isInFlight && deployment.status === "ready" && (
+          {!isInFlight && isDeploymentRollbackEligible(deployment.status) && (
             <button
               onClick={handleTogglePin}
               disabled={!deployment.pinned && !deployment.artifactRetainedAt}
