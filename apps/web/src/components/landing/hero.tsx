@@ -17,85 +17,6 @@ const STACKS = [
   { name: 'Bun',         icon: 'https://cdn.simpleicons.org/bun/000000' },
 ];
 
-/**
- * One isometric cube as three rhombus faces. `s` is the half-width of the
- * top face, so the drawn cube is 2*0.866*s wide and 3*s tall. Each face takes
- * a different dither density, which is what reads as shading — there is no
- * lighting model here, just three fixed dot patterns.
- */
-function IsoCube({ x, y, s }: { x: number; y: number; s: number }) {
-  const w = s * 0.866;
-  const h = s * 0.5;
-  return (
-    <g>
-      <polygon
-        points={`${x},${y - s} ${x + w},${y - h} ${x},${y} ${x - w},${y - h}`}
-        fill="url(#hero-dither-1)"
-        stroke="currentColor"
-        strokeWidth="0.6"
-      />
-      <polygon
-        points={`${x - w},${y - h} ${x},${y} ${x},${y + s} ${x - w},${y + h}`}
-        fill="url(#hero-dither-3)"
-        stroke="currentColor"
-        strokeWidth="0.6"
-      />
-      <polygon
-        points={`${x + w},${y - h} ${x},${y} ${x},${y + s} ${x + w},${y + h}`}
-        fill="url(#hero-dither-2)"
-        stroke="currentColor"
-        strokeWidth="0.6"
-      />
-    </g>
-  );
-}
-
-/** Satellites are drawn first so the main cube overlaps them. */
-const SATELLITES = [
-  { x: 200, y: 96,  s: 26 },
-  { x: 200, y: 318, s: 24 },
-  { x: 98,  y: 152, s: 22 },
-  { x: 302, y: 152, s: 22 },
-  { x: 98,  y: 262, s: 20 },
-  { x: 302, y: 262, s: 20 },
-  { x: 142, y: 100, s: 15 },
-  { x: 264, y: 330, s: 18 },
-  { x: 332, y: 216, s: 16 },
-];
-
-function DitherCluster() {
-  return (
-    <svg
-      className="lp-hero-cluster"
-      viewBox="0 0 400 400"
-      fill="none"
-      role="img"
-      aria-label="Isometric diagram of stacked deployment units"
-    >
-      <defs>
-        {/* Three fixed densities. Dots are on a 4x4 cell so the pattern stays
-            aligned across faces and the seams do not shimmer when scaled. */}
-        <pattern id="hero-dither-1" width="4" height="4" patternUnits="userSpaceOnUse">
-          <circle cx="1" cy="1" r="0.5" fill="currentColor" />
-        </pattern>
-        <pattern id="hero-dither-2" width="4" height="4" patternUnits="userSpaceOnUse">
-          <circle cx="1" cy="1" r="0.62" fill="currentColor" />
-          <circle cx="3" cy="3" r="0.62" fill="currentColor" />
-        </pattern>
-        <pattern id="hero-dither-3" width="3" height="3" patternUnits="userSpaceOnUse">
-          <circle cx="1" cy="1" r="0.8" fill="currentColor" />
-          <circle cx="2.5" cy="2.5" r="0.5" fill="currentColor" />
-        </pattern>
-      </defs>
-
-      {SATELLITES.map((c) => (
-        <IsoCube key={`${c.x}-${c.y}`} {...c} />
-      ))}
-      <IsoCube x={200} y={206} s={76} />
-    </svg>
-  );
-}
-
 export function Hero() {
   const [copied, setCopied] = useState(false);
 
@@ -107,22 +28,39 @@ export function Hero() {
 
   return (
     <section className="lp-hero">
-      <div className="lp-hero-frame">
-        {/* ── Rail: sets the grid before any content. Hatch runs diagonally,
-               top-left and bottom-right, so the two blank cells never sit
-               side by side. The reference fills this right cell with headline
-               stats; Openship has no such copy, so it stays empty. ── */}
-        <div className="lp-hero-row lp-hero-row--rail">
-          <div className="lp-hero-cell lp-hero-cell--hatch" aria-hidden="true" />
-          <div className="lp-hero-cell" aria-hidden="true" />
-        </div>
+      <div className="lp-hero-dots" aria-hidden="true" />
 
-        {/* ── Main: copy beside the cluster ────────────────────────── */}
-        <div className="lp-hero-row lp-hero-row--main">
-          <div className="lp-hero-cell lp-hero-copy">
+      <div className="lp-hero-frame">
+        {/* ── Copy, centred under the navbar ───────────────────────── */}
+        <div className="lp-hero-row">
+          <div className="lp-hero-copy">
+            <h1 className="lp-hero-headline animate-fade-in-up">
+              <span className="block">Deploy anything.</span>
+              <span className="lp-hero-headline-second block">Own everything.</span>
+            </h1>
+
+            <p className="lp-hero-sub animate-fade-in-up animate-delay-100">
+              Push your code - builds, config, and deployment are handled automatically. Use our cloud or connect your own servers. Zero&nbsp;lock&#8209;in, completely&nbsp;open&#8209;source.
+            </p>
+
+            <div className="lp-hero-cta-row animate-fade-in-up animate-delay-200">
+              <a href="/login" className="lp-hero-btn lp-hero-btn--primary">
+                Get started
+                <svg className="lp-hero-btn-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7m0 0H9m8 0v8" />
+                </svg>
+              </a>
+              <a href="/docs/getting-started/quickstart" className="lp-hero-btn lp-hero-btn--ghost">
+                Self host
+                <svg className="lp-hero-btn-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7m0 0H9m8 0v8" />
+                </svg>
+              </a>
+            </div>
+
             <button
               onClick={handleCopy}
-              className="lp-hero-install animate-fade-in-up group font-mono"
+              className="lp-hero-install animate-fade-in-up animate-delay-300 font-mono"
             >
               <span className="lp-hero-install-sigil">$</span>
               <span>npm i -g openship</span>
@@ -138,40 +76,12 @@ export function Hero() {
                 )}
               </span>
             </button>
-
-            <h1 className="lp-hero-headline animate-fade-in-up animate-delay-100">
-              <span className="block">Deploy anything.</span>
-              <span className="lp-hero-headline-second block">Own everything.</span>
-            </h1>
-
-            <p className="lp-hero-sub animate-fade-in-up animate-delay-200">
-              Push your code - builds, config, and deployment are handled automatically. Use our cloud or connect your own servers. Zero&nbsp;lock&#8209;in, completely&nbsp;open&#8209;source.
-            </p>
-
-            <div className="lp-hero-cta-row animate-fade-in-up animate-delay-300">
-              <a href="/login" className="lp-hero-btn lp-hero-btn--primary group">
-                Get started
-                <svg className="lp-hero-btn-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7m0 0H9m8 0v8" />
-                </svg>
-              </a>
-              <a href="/docs/getting-started/quickstart" className="lp-hero-btn lp-hero-btn--ghost group">
-                Self host
-                <svg className="lp-hero-btn-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7m0 0H9m8 0v8" />
-                </svg>
-              </a>
-            </div>
-          </div>
-
-          <div className="lp-hero-cell lp-hero-visual">
-            <DitherCluster />
           </div>
         </div>
 
-        {/* ── Foot: stack ticker beside texture ────────────────────── */}
-        <div className="lp-hero-row lp-hero-row--foot">
-          <div className="lp-hero-cell lp-hero-stacks">
+        {/* ── Stack ticker ─────────────────────────────────────────── */}
+        <div className="lp-hero-row">
+          <div className="lp-hero-stacks">
             <p className="lp-hero-stacks-label">Designed for your favorite stack</p>
             <div className="hero-ticker-mask overflow-hidden">
               <div className="hero-ticker flex w-max items-center gap-12">
@@ -189,7 +99,6 @@ export function Hero() {
               </div>
             </div>
           </div>
-          <div className="lp-hero-cell lp-hero-cell--hatch" aria-hidden="true" />
         </div>
       </div>
     </section>

@@ -145,111 +145,110 @@
 .lp-hero::before { inset-inline-start: var(--lp-gutter); }
 .lp-hero::after  { inset-inline-end: var(--lp-gutter); }
 
+/* Dot field for the two margins outside the rails. Its own element because
+   the mask that limits it to those strips would otherwise clip the hero's
+   text along with it. */
+.lp-hero-dots {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--th-on-16) 1px, transparent 1px);
+  background-size: 13px 13px;
+  --lp-dots-mask: linear-gradient(
+    90deg,
+    #000 0 var(--lp-gutter),
+    transparent var(--lp-gutter) calc(100% - var(--lp-gutter)),
+    #000 calc(100% - var(--lp-gutter)) 100%
+  );
+  -webkit-mask-image: var(--lp-dots-mask);
+  mask-image: var(--lp-dots-mask);
+}
+
 .lp-hero-frame {
+  position: relative;
+  z-index: 1;
   border-block: 1px solid var(--lp-rule);
 }
 
-/* Single column until there is room for two, so the cluster never gets
-   squeezed into a strip beside the headline. The row is full width so its
-   border-bottom bleeds past the rails; the padding puts content inside them. */
+/* Full width so the border-bottom bleeds past the rails; the padding puts
+   content inside them. */
 .lp-hero-row {
-  display: grid;
-  grid-template-columns: 1fr;
+  position: relative;
   padding-inline: var(--lp-gutter);
   border-bottom: 1px solid var(--lp-rule);
 }
 .lp-hero-row:last-child { border-bottom: 0; }
 
-@media (min-width: 900px) {
-  .lp-hero-row { grid-template-columns: 1fr 1fr; }
-  .lp-hero-cell + .lp-hero-cell { border-inline-start: 1px solid var(--lp-rule); }
+/* ── Nodes - the crosshair where a rule crosses a rail ───────── */
+/* Drawn as an overlay instead of thickening the lines themselves, so rails
+   and rules stay hairlines and only the joint reads darker. Rows carry the
+   nodes for the rule above them; the frame carries the bottom pair.
+   Offsetting by half the node from each side keeps it centred on the rail
+   without a transform, which is what makes it survive RTL. */
+.lp-hero-row::before,
+.lp-hero-row::after,
+.lp-hero-frame::before,
+.lp-hero-frame::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  width: var(--lp-node);
+  height: var(--lp-node);
+  pointer-events: none;
+  background:
+    linear-gradient(var(--lp-node-rule), var(--lp-node-rule)) 50% 50% / 100% 1.5px no-repeat,
+    linear-gradient(var(--lp-node-rule), var(--lp-node-rule)) 50% 50% / 1.5px 100% no-repeat;
 }
+.lp-hero-row::before,
+.lp-hero-frame::before { inset-inline-start: calc(var(--lp-gutter) - var(--lp-node) / 2); }
+.lp-hero-row::after,
+.lp-hero-frame::after  { inset-inline-end:   calc(var(--lp-gutter) - var(--lp-node) / 2); }
+.lp-hero-row::before,
+.lp-hero-row::after    { top:    calc(var(--lp-node) / -2); }
+.lp-hero-frame::before,
+.lp-hero-frame::after  { bottom: calc(var(--lp-node) / -2); }
 
-/* ── Hatch texture - fills the cells that carry no copy ──────── */
-.lp-hero-cell--hatch {
-  background-image: repeating-linear-gradient(
-    45deg,
-    var(--th-on-16) 0 1px,
-    transparent 1px 10px
-  );
-}
-.lp-hero-row--rail .lp-hero-cell { min-height: 118px; }
-
-/* The rail's second cell and the foot's hatch are decorative only, so on
-   narrow screens they are dead weight above the fold. */
-@media (max-width: 899px) {
-  .lp-hero-row--rail .lp-hero-cell + .lp-hero-cell,
-  .lp-hero-row--foot .lp-hero-cell--hatch { display: none; }
-  .lp-hero-row--rail .lp-hero-cell { min-height: 48px; }
-}
-
-/* ── Copy cell ───────────────────────────────────────────────── */
+/* ── Copy ────────────────────────────────────────────────────── */
 .lp-hero-copy {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  /* Tight against the rail - the reference insets copy ~28px, not a wide
-     gutter, which is what keeps the cell reading as a drawn box. */
-  padding: clamp(40px, 6vw, 88px) var(--lp-inset);
-}
-
-.lp-hero-install {
-  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid var(--lp-rule);
-  background: var(--th-sf-03);
-  padding: 7px 12px;
-  font-size: 12.5px;
-  letter-spacing: 0.01em;
-  color: var(--th-text-secondary);
-  transition: border-color .15s, color .15s, background-color .15s;
+  text-align: center;
+  padding: clamp(56px, 7vw, 104px) var(--lp-inset);
 }
-.lp-hero-install:hover {
-  border-color: var(--th-bd-strong);
-  background: var(--th-sf-05);
-  color: var(--th-text-strong);
-}
-.lp-hero-install-sigil { opacity: .45; }
-.lp-hero-install-icon {
-  display: inline-flex;
-  opacity: 0;
-  transition: opacity .15s;
-}
-.lp-hero-install:hover .lp-hero-install-icon { opacity: .5; }
 
 .lp-hero-headline {
-  margin-top: 28px;
   text-transform: uppercase;
-  font-size: clamp(2.15rem, 5vw, 4.5rem);
+  font-size: clamp(2.4rem, 7vw, 5.6rem);
   font-weight: 700;
   line-height: 0.95;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.035em;
   color: var(--th-text-heading);
 }
 .lp-hero-headline-second { color: var(--th-on-30); }
 
 .lp-hero-sub {
-  margin-top: 22px;
-  max-width: 46ch;
-  font-size: 15px;
-  line-height: 1.6;
+  margin-top: 26px;
+  max-width: 60ch;
+  font-size: 16px;
+  line-height: 1.65;
   color: var(--th-text-body);
 }
 
 .lp-hero-cta-row {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
-  margin-top: 32px;
+  margin-top: 36px;
 }
 
 .lp-hero-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 20px;
+  padding: 13px 24px;
   font-size: 14px;
   font-weight: 500;
   border: 1px solid transparent;
@@ -272,30 +271,44 @@
 }
 .lp-hero-btn:hover .lp-hero-btn-arrow { transform: translate(1.5px, -1.5px); }
 
-/* ── Visual cell ─────────────────────────────────────────────── */
-.lp-hero-visual {
-  display: grid;
-  place-items: center;
-  padding: clamp(20px, 2.5vw, 36px);
-  min-height: 560px;
-}
-.lp-hero-cluster {
-  /* ~77% of the cell, matching the reference. Capped rather than fluid so
-     the cluster keeps the same optical weight as the headline beside it. */
+/* Sits under the buttons as a full bar, not a chip, so the command reads as
+   the third way in rather than a label above the headline. */
+.lp-hero-install {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  max-width: 540px;
-  height: auto;
-  color: var(--th-accent-electric);
+  max-width: 520px;
+  margin-top: 14px;
+  border: 1px solid var(--lp-rule);
+  background: var(--th-sf-03);
+  padding: 13px 16px;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: var(--th-text-secondary);
+  transition: border-color .15s, color .15s, background-color .15s;
 }
+.lp-hero-install:hover {
+  border-color: var(--th-bd-strong);
+  background: var(--th-sf-05);
+  color: var(--th-text-strong);
+}
+.lp-hero-install-sigil { opacity: .45; }
+.lp-hero-install-icon {
+  display: inline-flex;
+  margin-inline-start: auto;
+  opacity: .3;
+  transition: opacity .15s;
+}
+.lp-hero-install:hover .lp-hero-install-icon { opacity: .6; }
 
 /* ── Stack ticker ────────────────────────────────────────────── */
 .lp-hero-stacks {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 16px;
-  padding: 20px var(--lp-inset);
-  min-height: 120px;
+  align-items: center;
+  gap: 20px;
+  padding: 32px var(--lp-inset);
   overflow: hidden;
 }
 .lp-hero-stacks-label {
