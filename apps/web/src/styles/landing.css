@@ -220,6 +220,71 @@
 .lp-ticked::after  { bottom: -5px; inset-inline-end: -5px; }
 
 
+/* ── Section header - the grid's chapter marker ──────────────── */
+/* Sticky, and scoped to its own section, so each header rides down under
+   the navbar until the next one arrives and pushes it out. That handover
+   is the whole point: it is what turns a column of sections into a
+   numbered document rather than a stack of unrelated blocks. */
+
+.lp-sechead {
+  position: sticky;
+  /* Overlaps the navbar's own bottom hairline by 1px, so the two never
+     read as a double rule while the header is parked. */
+  top: calc(var(--lp-nav-h) - 1px);
+  z-index: 20;
+  background-color: var(--th-bg-page);
+  transition: box-shadow .24s cubic-bezier(.22,1,.36,1);
+}
+
+/* A header that has left its resting place lifts off the copy beneath it.
+   Set by an IntersectionObserver rather than a scroll handler - the state
+   is "is this pinned", which is exactly what a sentinel threshold is. */
+.lp-sechead[data-pinned="true"] {
+  box-shadow:
+    0 1px var(--th-on-05),
+    0 6px 16px -10px var(--th-on-20);
+}
+
+/* The header floats, so it must not stamp nodes onto a rule it is no
+   longer sitting on. The band below it draws that joint instead. */
+.lp-sechead::before,
+.lp-sechead::after { content: none; }
+
+.lp-sechead-in {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-block: 11px;
+}
+
+.lp-sechead-label,
+.lp-sechead-count {
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--th-text-muted);
+  text-transform: uppercase;
+}
+.lp-sechead-label { letter-spacing: 0.18em; }
+.lp-sechead-count { letter-spacing: 0.06em; }
+
+/* Chevron and the current index are the only two marks that carry ink.
+   The ruled system has no colour, so emphasis here is weight, not hue. */
+.lp-sechead-chevron,
+.lp-sechead-count-n { color: var(--th-text-heading); }
+.lp-sechead-chevron { margin-inline-end: 5px; }
+
+/* Fills the middle so the label and the counter are pushed to the rails,
+   which is what makes the row read as a ruled line rather than a caption. */
+.lp-sechead-rule { flex: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-sechead { transition: none; }
+}
+
+
 /* ══════════════════════════════════════════════════════════════
    HERO - ruled grid, hard edges
    ══════════════════════════════════════════════════════════════ */
