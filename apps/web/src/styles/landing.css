@@ -3376,3 +3376,186 @@ details[open] .pp-faq-icon { transform: rotate(180deg); background: var(--th-sf-
 }
 
 
+/* ══════════════════════════════════════════════════════════════
+   FOOTER - full-bleed drenched plate
+   ══════════════════════════════════════════════════════════════ */
+
+.ft {
+  position: relative;
+  z-index: 10;
+  overflow: clip;
+  padding-bottom: 16px;
+  background: var(--lp-ink);
+  color: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Editorial takes ~40% and the columns the rest, so the statement has
+   room to be a statement and the links stay a directory. */
+.ft-top {
+  display: flex;
+  gap: 48px;
+  padding: clamp(48px, 5vw, 64px) clamp(20px, 4vw, 64px) 0;
+}
+@media (max-width: 900px) {
+  .ft-top { flex-direction: column; gap: 40px; }
+}
+
+.ft-editorial {
+  flex: 1.4 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 380px;
+}
+.ft-h2 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  color: #fff;
+}
+.ft-sub {
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255,255,255,.65);
+}
+
+.ft-cols {
+  flex: 2 1 0;
+  display: flex;
+  gap: 48px;
+}
+@media (max-width: 700px) {
+  .ft-cols { flex-wrap: wrap; gap: 32px 48px; }
+}
+.ft-col {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 120px;
+}
+.ft-col-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.5);
+}
+.ft-col-links {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* Underline grows from the left on hover instead of appearing at once -
+   the same easing the rest of the page uses for state changes. */
+.ft-link {
+  position: relative;
+  display: inline-block;
+  width: fit-content;
+  font-size: 14px;
+  line-height: 1.35;
+  color: #fff;
+}
+.ft-link::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -2px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform .22s cubic-bezier(.22,1,.36,1);
+}
+.ft-link:hover::after { transform: scaleX(1); }
+
+.ft-socials {
+  display: flex;
+  gap: 14px;
+}
+.ft-social {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  color: #fff;
+  transition: opacity .18s cubic-bezier(.22,1,.36,1),
+              transform .2s cubic-bezier(.22,1,.36,1);
+}
+.ft-social svg { width: 100%; height: 100%; }
+.ft-social:hover { opacity: .82; transform: translateY(-1px); }
+
+.ft-copy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 32px clamp(20px, 4vw, 64px) 0;
+}
+.ft-copy,
+.ft-oblien {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: rgba(255,255,255,.5);
+}
+.ft-oblien {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.06em;
+  transition: color .18s ease;
+}
+.ft-oblien:hover { color: rgba(255,255,255,.85); }
+.ft-oblien-mark {
+  display: inline-block;
+  width: 60px;
+  height: 16px;
+  background-color: currentColor;
+  -webkit-mask: url(/oblien.svg) center / contain no-repeat;
+  mask: url(/oblien.svg) center / contain no-repeat;
+}
+
+/* ── Giant wordmark ──────────────────────────────────────────── */
+/* Sized in vw so it spans the plate at any viewport. Geist Pixel on its
+   circle shape: ELSH is the family's shape axis, and 25 is the circle
+   stop - 0 is square, which is what it falls back to if the variable
+   cut fails to load. The pixel grid is coarse, so this needs to be huge
+   to read as letterforms at all. */
+.ft-wordmark-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 32px;
+  /* Tuned so the eight glyphs span the plate rather than sitting in the
+     middle of it. Geist Pixel's advance gives a width of ~4.29em for
+     "Openship", so 100vw / 4.29 ≈ 23.3vw fills exactly; 22vw leaves a
+     small margin on each side instead of touching the edges. */
+  font-size: 22vw;
+}
+.ft-wordmark {
+  width: 100%;
+  font-family: 'Geist Pixel', ui-monospace, monospace;
+  font-variation-settings: "ELSH" 25;
+  font-size: 1em;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: .82;
+  text-align: center;
+  white-space: nowrap;
+  color: rgba(255,255,255,.22);
+  user-select: none;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ft-link::after,
+  .ft-social { transition: none; }
+}
