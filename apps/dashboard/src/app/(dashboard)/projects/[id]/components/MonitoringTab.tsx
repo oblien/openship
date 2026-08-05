@@ -21,7 +21,6 @@
  */
 
 import React, { useMemo, useState } from "react";
-import { AlertCircle, RefreshCw } from "lucide-react";
 import { TrafficChart, TopPaths } from "./general";
 import { MonitoringView } from "@/components/monitoring/MonitoringView";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
@@ -126,8 +125,6 @@ export const MonitoringTab = () => {
     error: usageError,
     reconnect,
   } = useProjectUsageStream(liveId);
-
-  const showAnalyticsError = !!liveAnalyticsError && !isLoadingAnalytics;
 
   /** Scope for the history read. Held here rather than in the view because it keys the
    *  fetch — the view raises changes through `onServiceKeyChange`. */
@@ -328,26 +325,6 @@ export const MonitoringTab = () => {
     ? `${new Date(analytics.summary.firstRequest).toLocaleDateString()} - ${new Date(analytics.summary.lastRequest).toLocaleDateString()}`
     : undefined;
 
-  if (showAnalyticsError) {
-    return (
-      <div className="bg-card rounded-2xl border border-border/50 p-8 text-center">
-        <AlertCircle className="size-8 text-danger mx-auto mb-3" />
-        <p className="text-sm font-medium text-foreground mb-1">
-          {t.projects.analytics.loadFailed}
-        </p>
-        <p className="text-xs text-muted-foreground mb-4">{liveAnalyticsError}</p>
-        <button
-          type="button"
-          onClick={() => id && invalidateProjectCaches(id)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-medium bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] transition-colors"
-        >
-          <RefreshCw className="size-3.5" />
-          {t.projects.services.retry}
-        </button>
-      </div>
-    );
-  }
-
   return (
     <MonitoringView
       analytics={analytics}
@@ -363,6 +340,8 @@ export const MonitoringTab = () => {
       isUsageConnected={fixture ? true : isConnected}
       usageError={fixture ? null : usageError}
       onReconnectUsage={reconnect}
+      analyticsError={fixture ? null : liveAnalyticsError}
+      onRetryAnalytics={() => id && invalidateProjectCaches(id)}
       serviceKey={serviceKey}
       onServiceKeyChange={setServiceKey}
       // Shown on the traffic block's fold line, so a collapsed block still states the
