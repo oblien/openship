@@ -170,6 +170,23 @@ else
   rm -rf "$PWORK"
 fi
 
+# ── C7: node-entry.js shebang guard (Windows npm launcher regression) ───────
+# If someone changes the tsup.config.ts banner for node-entry back to the
+# polyglot shebang (#!/usr/bin/env sh), npm would again generate broken
+# Windows launchers. This check catches the regression before publish.
+NODE_ENTRY="$CLI_DIR/dist/node-entry.js"
+group "C7 — node-entry.js shebang (Windows npm launcher guard)"
+if [ ! -f "$NODE_ENTRY" ]; then
+  fail "dist/node-entry.js not found — was the second tsup config built?"
+else
+  SHEBANG="$(head -n1 "$NODE_ENTRY")"
+  if [ "$SHEBANG" = "#!/usr/bin/env node" ]; then
+    pass "node-entry.js shebang is #!/usr/bin/env node — npm will generate correct Windows launchers"
+  else
+    fail "node-entry.js shebang is '$SHEBANG' — must be '#!/usr/bin/env node' or Windows npm installs will break"
+  fi
+fi
+
 # ── verdict ─────────────────────────────────────────────────────────────
 echo
 if [ "$FAILED" -eq 0 ]; then
