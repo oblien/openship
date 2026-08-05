@@ -414,10 +414,23 @@ export async function resolveTargetPlatform(
     // server-host mode): local host executor, host docker socket (DooD),
     // everything on-box.
     if (isLocal) {
+      // This row represents the control plane's own host. In compose edge mode
+      // the API and edge share the vhost/certificate mounts and the Docker
+      // socket, even though workload/system commands may still need the pooled
+      // HOST executor (especially for a bare runtime). Tell the platform about
+      // that edge topology explicitly: inferring it from `!executor` made SSL
+      // run certbot inside the edge but verify/write files as the unprivileged
+      // host SSH user, yielding a false "certificate is missing" and no TLS
+      // vhost after a successful issuance.
+      const localEdgeContainer =
+        process.env.OPENSHIP_EDGE_MODE === "docker"
+          ? process.env.OPENSHIP_EDGE_CONTAINER?.trim() || "openship-edge"
+          : undefined;
       return createPlatform({
         target: "selfhosted",
         runtime: runtimeMode,
         executor,
+        localEdgeContainer,
         docker: runtimeMode === "docker" ? { transport: "socket" as const } : undefined,
         nginx: resolveAcmeProviderOptions(),
         provisionLock: createProvisionLock("provision:local"),

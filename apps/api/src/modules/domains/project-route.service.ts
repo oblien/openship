@@ -1,5 +1,5 @@
 import { repos, type Domain, type Project } from "@repo/db";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, ValidationError } from "@repo/core";
 import { resolveServedStaticPath } from "@repo/adapters";
 import {
   isLoopbackHost,
@@ -11,11 +11,14 @@ import {
   type StoredPublicEndpoint,
 } from "../../lib/public-endpoints";
 import { assertValidCustomDomain, assertValidCustomDomains } from "../../lib/custom-domain-guard";
-import { resolveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
+import { buildUpstreamUrl, resolveUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
 import { deregisterManagedEdgeRoutes, syncManagedEdgeRoutes } from "../../lib/managed-edge-proxy";
 import { syncProjectPublicRoutes } from "../../lib/project-route-store";
 import { resolveRouteRedirect } from "../../lib/domain-redirect";
 import { resolveDeploymentRuntime, resolveDeploymentStaticRoot } from "../../lib/deployment-runtime";
+import { buildServiceRouteDomains } from "../../lib/routing-domains";
+import { isStaticService } from "../../lib/deployable-service";
+import { applyProjectRouting } from "./routing-apply.service";
 import { pushProjectRules } from "../route-rules/route-rule.service";
 import { pushProjectAnalyticsConfig } from "../analytics/analytics-config.service";
 import {
@@ -260,8 +263,8 @@ export async function syncProjectRouteState(
  * upstream from the active deployment's container (docker) or the host (bare).
  * Cloud re-applies via the runtime's page/workspace primitives.
  *
- * Static-path routes (served straight from the web root) are left to the next
- * deploy — they have no live upstream to point at here.
+ * Static-path routes reuse the deployment's persisted served root, so edits and
+ * verification can restore them without a redeploy.
  */
 export interface ReapplyProjectLiveRoutesOptions {
   /**
@@ -292,6 +295,12 @@ export interface ReapplyProjectLiveRoutesOptions {
    * correct by default.
    */
   managedEdgeSyncedByCaller?: boolean;
+
+  /** Fail unless every requested local route is actually written. */
+  strict?: boolean;
+
+  /** Limit a recovery reconcile to one hostname instead of coupling siblings. */
+  onlyHostname?: string;
 }
 
 /**
@@ -332,10 +341,23 @@ export async function reapplyProjectLiveRoutes(
   opts: ReapplyProjectLiveRoutesOptions = {},
 ): Promise<void> {
   const isCloud = !!project.cloudWorkspaceId;
-  if (!isCloud && !project.activeDeploymentId) return;
+  if (!isCloud && !project.activeDeploymentId) {
+    if (opts.strict) throw new ValidationError("No active deployment is available for this domain route");
+    return;
+  }
 
-  const state = await resolveProjectRouteState({ id: project.id, slug: project.slug });
-  const current = normalizeProjectRouteRows(state.projectDomains);
+  const allDomainRows = await listProjectRouteRows(project.id);
+  const state = await resolveProjectRouteState(
+    { id: project.id, slug: project.slug },
+    { projectDomains: allDomainRows },
+  );
+  const allCurrent = normalizeProjectRouteRows(state.projectDomains);
+  const current = allCurrent.filter(
+    (domain) => !opts.onlyHostname || domain.hostname.toLowerCase() === opts.onlyHostname.toLowerCase(),
+  );
+  if (opts.strict && opts.onlyHostname && current.length === 0) {
+    throw new ValidationError(`No project route is configured for ${opts.onlyHostname}`);
+  }
   const currentHostnames = new Set(current.map((d) => d.hostname.toLowerCase()));
   // domainType isn't retained for a dropped row — infer managed vs custom from
   // the base-domain suffix so cloud teardown targets the right primitive.
@@ -386,6 +408,7 @@ export async function reapplyProjectLiveRoutes(
   // resolver deploy/delete use), then compute each upstream from the container.
   const deployment = await repos.deployment.findById(project.activeDeploymentId!);
   if (!deployment) {
+    if (opts.strict) throw new ValidationError("The active deployment could not be found for this domain route");
     console.warn(
       `[project-route] ${project.slug}: no active deployment row — skipping live route re-apply`,
     );
@@ -442,7 +465,10 @@ export async function reapplyProjectLiveRoutes(
     console.warn(
       `[project-route] ${project.slug}: deployment ${deployment.id} has no containerId (target=${effectiveTarget}) — skipping single-app route registration`,
     );
-    await reconcileProjectRoutes(project, { routing, removes });
+    if (opts.strict && current.length > 0) {
+      throw new ValidationError("The active deployment has no routable application container");
+    }
+    await reconcileProjectRoutes(project, { routing, removes, strict: opts.strict });
     await pushProjectRules(project.id, serverId ?? null, previousHostnames).catch(() => {});
     // Shared-dict state is RAM: the analytics collection switches have to be re-pushed
     // whenever routing is applied, or an nginx restart silently reverts them to off.
@@ -488,13 +514,15 @@ export async function reapplyProjectLiveRoutes(
 
   // A redirect only goes live when its target is one of the hostnames this
   // project currently routes — see resolveRouteRedirect.
-  const liveHostnames = current.map((domain) => domain.hostname);
+  const liveHostnames = allDomainRows.map((domain) => domain.hostname);
   const registers: RouteRegister[] = [];
   for (const domain of current) {
     const redirectHost = resolveRouteRedirect(domain, liveHostnames);
     const common = {
       hostname: domain.hostname,
       isCustomDomain: domain.domainType === "custom",
+      tls: !domain.externalIngress || domain.manualSsl,
+      terminatesTlsLocally: domain.domainType === "custom" && !domain.externalIngress,
       ...(redirectHost ? { redirectHost } : {}),
     };
 
@@ -537,7 +565,10 @@ export async function reapplyProjectLiveRoutes(
 
   // The webhook-proxy location is re-attached automatically for the project's
   // webhookDomain inside reconcileProjectRoutes.
-  await reconcileProjectRoutes(project, { routing, registers, removes });
+  if (opts.strict && registers.length !== current.length) {
+    throw new ValidationError("One or more project domain routes have no live upstream");
+  }
+  await reconcileProjectRoutes(project, { routing, registers, removes, strict: opts.strict });
 
   // Re-sync per-route edge rules (rate-limit / ban / allow-deny) for the current
   // hostnames. Best-effort — the DB is the source of truth; a failure defers to
@@ -551,4 +582,114 @@ export async function reapplyProjectLiveRoutes(
   // of the edit; dropped slugs were deregistered above). Per-route — unchanged
   // hostnames are not re-synced.
   syncAddedManagedEdge();
+}
+
+/**
+ * Converge the exact live route that backs a domain before verification reports
+ * it active. Project domains reuse the full single-app route compiler; service
+ * domains resolve their live compose row and register the service upstream on
+ * the deployment's actual edge (local, remote, bare or Docker).
+ */
+export async function convergeVerifiedDomainRoute(domain: Domain, project: Project): Promise<void> {
+  if (!domain.serviceId) {
+    await reapplyProjectLiveRoutes(project, [], {
+      managedEdgeSyncedByCaller: true,
+      onlyHostname: domain.hostname,
+      strict: true,
+    });
+    return;
+  }
+
+  if (!project.activeDeploymentId) {
+    throw new ValidationError("No active deployment is available for this service domain");
+  }
+
+  const [service, deployment] = await Promise.all([
+    repos.service.findById(domain.serviceId),
+    repos.deployment.findById(project.activeDeploymentId),
+  ]);
+  if (!service || service.projectId !== project.id) {
+    throw new ValidationError("The service for this domain could not be found");
+  }
+  if (!service.enabled || !service.exposed) {
+    throw new ValidationError("The service for this domain is not enabled and exposed");
+  }
+  if (!deployment) {
+    throw new ValidationError("The active deployment could not be found for this service domain");
+  }
+
+  const { routing, runtime } = await resolveDeploymentRuntime(deployment);
+  if (await applyProjectRouting(project.id, { strict: true, onlyHostname: domain.hostname })) {
+    return;
+  }
+  const planned = buildServiceRouteDomains({
+    project,
+    service,
+    runtimeName: runtime.name,
+    usesManagedRouting: true,
+    domainByHostname: new Map([[domain.hostname.toLowerCase(), domain]]),
+  }).find((route) => route.hostname.toLowerCase() === domain.hostname.toLowerCase());
+  if (!planned?.targetPort) {
+    throw new ValidationError("The service domain has no configured target port");
+  }
+
+  const liveRows = await repos.service.listByDeployment(project.activeDeploymentId);
+  const live = liveRows.find((row) => row.serviceId === service.id);
+  const staticRoot = isStaticService(service) && live?.imageRef?.startsWith("/")
+    ? live.imageRef
+    : null;
+  const targetUrl = staticRoot
+    ? null
+    : buildUpstreamUrl({
+        strategy: resolveRouteStrategy(project.routeStrategy),
+        ip: live?.ip,
+        hostPort: live?.hostPort,
+        containerPort: planned.targetPort,
+      });
+  if (!staticRoot && !targetUrl) {
+    throw new ValidationError("The service domain has no live deployment upstream");
+  }
+
+  const allDomains = await repos.domain.listByProject(project.id);
+  const redirectHost = resolveRouteRedirect(domain, allDomains.map((row) => row.hostname));
+
+  await reconcileProjectRoutes(project, {
+    deployment,
+    routing,
+    strict: true,
+    registers: [{
+      hostname: planned.hostname,
+      ...(staticRoot ? { staticRoot } : { targetUrl: targetUrl! }),
+      port: planned.targetPort,
+      isCustomDomain: planned.domainType === "custom",
+      tls: planned.tls,
+      terminatesTlsLocally: planned.terminatesTlsLocally,
+      ...(redirectHost ? { redirectHost } : {}),
+    }],
+  });
+}
+
+/**
+ * Strictly converge every configured hostname for a project. Used only before
+ * clearing the deployment-wide routing warning: repairing one verified
+ * hostname must not hide a pending sibling route that is still unsynchronised.
+ */
+export async function convergeAllProjectRoutes(project: Project): Promise<void> {
+  const domains = await repos.domain.listByProject(project.id);
+  const projectDomains = domains.filter((domain) => !domain.serviceId);
+  if (projectDomains.length > 0) {
+    await reapplyProjectLiveRoutes(project, [], {
+      managedEdgeSyncedByCaller: true,
+      strict: true,
+    });
+  }
+  for (const domain of domains) {
+    if (!domain.serviceId) continue;
+    const service = await repos.service.findById(domain.serviceId);
+    // Domain rows intentionally survive an expose/pause toggle. They are not
+    // expected to have a live vhost until the service is enabled + exposed
+    // again, so they must not permanently pin a project routing warning.
+    if (service && (!service.enabled || !service.exposed)) continue;
+    await convergeVerifiedDomainRoute(domain, project);
+  }
 }

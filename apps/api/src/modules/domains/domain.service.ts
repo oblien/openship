@@ -6,12 +6,9 @@
  *
  * verifyDomain checks DNS and, on success, kicks off SSL provisioning
  * + promotes the domain to primary if no other custom primary exists.
- * The SSL provisioner (nginx.ts) reads the existing HTTP-only route
- * config off disk and re-registers it with TLS once the cert lands,
- * so no route registration is needed here — the existing infra is
- * reused. SSL provisioning runs in the background; the verify response
- * stays fast and a failed cert (rate-limit, ACME outage) shows up
- * in the SSL status pill on the next read.
+ * A successful self-hosted verification strictly re-applies the live route
+ * before the row becomes verified. Certificate presence alone is not proof
+ * that the edge has a vhost for the hostname.
  */
 
 import { repos, normalizeRoutingFields, type Domain, type Project } from "@repo/db";
@@ -29,6 +26,11 @@ import { getRoutingBaseDomain } from "../../lib/routing-domains";
 import { resolveRecords } from "../../lib/dns-resolver";
 import { resolveProjectServerHost, resolveLocalServerHost, resolveInstancePublicIp, isLoopbackHost } from "../../lib/server-target";
 import { reconcileProjectRoutes } from "../../lib/route-apply.service";
+import {
+  convergeAllProjectRoutes,
+  convergeVerifiedDomainRoute,
+} from "./project-route.service";
+import { syncProjectManagedEdge } from "../projects/project-runtime.service";
 import { generateToken } from "../../lib/domain-token";
 import { untrackedSiteFor } from "../../lib/edge-orphans.service";
 import { publicEndpointHostname, resolveServicePublicEndpoints } from "../../lib/public-endpoints";
@@ -482,6 +484,25 @@ async function markDomainVerifiedActive(
 }
 
 /**
+ * Clear the project-level Action Required flag only when every verified route
+ * can be strictly re-applied. A sibling failure keeps the warning visible but
+ * does not undo this domain's successful certificate + vhost verification.
+ */
+async function clearRoutingWarningAfterFullConvergence(project: Project): Promise<void> {
+  try {
+    await convergeAllProjectRoutes(project);
+    const result = await syncProjectManagedEdge(project, project.organizationId);
+    if (!result.ok) {
+      throw new Error(`managed edge sync failed for ${result.failures.join(", ")}`);
+    }
+  } catch (err) {
+    console.warn(
+      `[DOMAIN] project ${project.id} still has unsynchronised routes: ${safeErrorMessage(err)}`,
+    );
+  }
+}
+
+/**
  * Bare-metal edge, but the SSL executor lands INSIDE a container: every SSL op
  * (certbot, cert read, vhost write) then hits the container's own (empty)
  * `/etc/letsencrypt`, not the host's bare OpenResty — so it silently no-ops.
@@ -582,11 +603,13 @@ export async function reuseServerCertForDomain(ctx: RequestContext, domainId: st
         projectId: domain.projectId ?? undefined,
         allowUnverified: true,
       });
+      await convergeVerifiedDomainRoute(domain, project);
       await markDomainVerifiedActive(domain, domainId, {
         issuer: cert.renewable ? "reused" : cert.issuer,
         ...(cert.renewable ? {} : { manualSsl: true }),
         expiresAt: result.expiresAt || cert.expiresAt,
       });
+      await clearRoutingWarningAfterFullConvergence(project);
       console.log(
         `[DOMAIN] adopted cert for ${domain.hostname} from ${cert.source} ` +
           `(issuer "${cert.issuer}", expires ${cert.expiresAt}, ` +
@@ -600,10 +623,12 @@ export async function reuseServerCertForDomain(ctx: RequestContext, domainId: st
       projectId: domain.projectId ?? undefined,
     }).catch(() => null);
     if (existing?.verified) {
+      await convergeVerifiedDomainRoute(domain, project);
       await markDomainVerifiedActive(domain, domainId, {
         issuer: existing.issuer,
         expiresAt: existing.expiresAt || undefined,
       });
+      await clearRoutingWarningAfterFullConvergence(project);
       return true;
     }
 
@@ -684,10 +709,10 @@ async function certbotLineageDirs(exec: CommandExecutor, hostname: string): Prom
 
 // ─── Verify ──────────────────────────────────────────────────────────────────
 //
-// Checks DNS records and, on success, marks verified + active, promotes
-// to primary (when no other custom primary exists), and fires SSL
-// provisioning in the background. The SSL provider re-registers the
-// route with TLS internally, so no explicit route reconciler is needed.
+// Checks ownership/certificate state and strictly converges the authoritative
+// live route before a self-hosted domain may become verified + active. A retry
+// for an already-verified row repairs routing but preserves its current SSL
+// status; only a real certificate check/issuance may promote TLS to active.
 
 export async function verifyDomain(
   ctx: RequestContext,
@@ -696,18 +721,39 @@ export async function verifyDomain(
 ) {
   const log = (line: string) => opts.onLog?.(line);
   const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
+  const { target } = platform();
 
   if (domain.verified) {
+    if (target !== "cloud" && !domain.externalIngress) {
+      try {
+        log(`Re-applying the live route for ${domain.hostname}…`);
+        await convergeVerifiedDomainRoute(domain, project);
+        await repos.domain.markVerified(domainId);
+        await clearRoutingWarningAfterFullConvergence(project);
+      } catch (err) {
+        const message = `The certificate is valid, but the live route could not be applied: ${safeErrorMessage(err)}`;
+        const attempts = await repos.domain.recordVerifyFailure(domainId, message);
+        return {
+          verified: false,
+          recordVerified: true,
+          cnameVerified: true,
+          txtVerified: true,
+          attempts,
+          message,
+          sslStatus: domain.sslStatus,
+        };
+      }
+    }
     return {
       verified: true,
       cnameVerified: true,
       txtVerified: true,
-      message: "Already verified",
+      message: target !== "cloud" && !domain.externalIngress
+        ? "Already verified — live route re-applied."
+        : "Already verified",
       sslStatus: domain.sslStatus,
     };
   }
-
-  const { target } = platform();
   const external = domain.externalIngress;
 
   const promoteToPrimary = () => promoteCustomDomainToPrimary(domain, domainId);
@@ -785,10 +831,27 @@ export async function verifyDomain(
         log(
           `A valid certificate is already present for ${domain.hostname} (expires ${existing.expiresAt.slice(0, 10)}) — reusing it. No new certificate requested.`,
         );
-        await markDomainVerifiedActive(domain, domainId, {
-          issuer: existing.issuer,
-          expiresAt: existing.expiresAt,
-        });
+        try {
+          await convergeVerifiedDomainRoute(domain, project);
+          await markDomainVerifiedActive(domain, domainId, {
+            issuer: existing.issuer,
+            expiresAt: existing.expiresAt,
+          });
+          await clearRoutingWarningAfterFullConvergence(project);
+        } catch (err) {
+          const message = `A valid certificate exists, but the live route could not be applied: ${safeErrorMessage(err)}`;
+          log(message);
+          const attempts = await repos.domain.recordVerifyFailure(domainId, message);
+          return {
+            verified: false,
+            recordVerified: true,
+            cnameVerified: true,
+            txtVerified: true,
+            attempts,
+            message,
+            sslStatus: existing.verified ? "active" : domain.sslStatus,
+          };
+        }
         return {
           verified: true,
           recordVerified: true,
@@ -808,9 +871,14 @@ export async function verifyDomain(
         force: opts.force,
       });
       if (result.verified) {
-        log("Certificate issued — marking the domain verified and SSL active.");
-        await repos.domain.markVerified(domainId);
-        await promoteToPrimary();
+        log("Certificate issued — applying the live HTTPS route.");
+        await convergeVerifiedDomainRoute(domain, project);
+        log("Live route applied — marking the domain verified and SSL active.");
+        await markDomainVerifiedActive(domain, domainId, {
+          issuer: result.issuer,
+          expiresAt: result.expiresAt || undefined,
+        });
+        await clearRoutingWarningAfterFullConvergence(project);
         return {
           verified: true,
           recordVerified: true,
@@ -1007,11 +1075,27 @@ export async function renewDomainSsl(ctx: RequestContext, domainId: string) {
  * means a transient read failure leaves an "active" domain untouched.
  */
 export async function verifyDomainSsl(ctx: RequestContext, domainId: string) {
-  const { domain } = await getDomainWithAuth(domainId, ctx.organizationId);
+  const { domain, project } = await getDomainWithAuth(domainId, ctx.organizationId);
 
   const result = await manageDomainSsl(domain.hostname, {
     action: "verify",
   });
+
+  // A valid certificate is only half of a working HTTPS route. Rechecking SSL
+  // is the always-available recovery action for an already-verified row, so on
+  // self-hosted TLS also converge the vhost before reporting success. This
+  // makes the dashboard's "Recheck SSL" repair cert-present/vhost-missing drift
+  // without reissuing the certificate or rebuilding the workload.
+  const { target } = platform();
+  if (
+    result.verified &&
+    target !== "cloud" &&
+    !project.cloudWorkspaceId &&
+    !domain.externalIngress
+  ) {
+    await convergeVerifiedDomainRoute(domain, project);
+    await clearRoutingWarningAfterFullConvergence(project);
+  }
 
   // Re-read the persisted row so the response reflects the no-clobber outcome
   // (a transient read failure leaves an existing "active" untouched).

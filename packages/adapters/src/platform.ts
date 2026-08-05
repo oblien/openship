@@ -105,6 +105,16 @@ export interface PlatformConfig {
    */
   executor?: CommandExecutor;
   /**
+   * Name of an edge container whose routing state is mounted into this process.
+   *
+   * This is deliberately independent from `executor`: an API running in the
+   * compose stack may still need a host executor to run a bare workload on its
+   * own server, while vhost/certificate files must be read through the API's
+   * shared mounts and edge commands through the local Docker socket. Remote
+   * servers leave this unset and keep using their host/SSH edge provider.
+   */
+  localEdgeContainer?: string;
+  /**
    * Custom state store for caching setup results.
    * Defaults to FileStateStore. The API layer can provide a DB-backed store.
    */
@@ -310,9 +320,13 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   // it needs the dockerode executor. A REMOTE box's container edge is resolved by
   // probing that box (createInfraProvider) — not from this env, which describes
   // the control plane and says nothing about the target.
-  const useDockerEdge =
+  const implicitLocalDockerEdge =
     !config.executor && !config.ssh && process.env.OPENSHIP_EDGE_MODE === "docker";
-  const edgeContainer = process.env.OPENSHIP_EDGE_CONTAINER?.trim() || "openship-edge";
+  const localEdgeContainer =
+    config.localEdgeContainer?.trim() ||
+    (implicitLocalDockerEdge
+      ? process.env.OPENSHIP_EDGE_CONTAINER?.trim() || "openship-edge"
+      : undefined);
 
   // Executor - use injected (managed/pooled) executor, or create a fresh one
   let executor: CommandExecutor;
@@ -323,16 +337,19 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     executor = createExecutor(config.ssh);
   }
 
-  // System - runtime mode determines all required components. In docker-edge
-  // mode the stack provides docker (socket) + OpenResty/certbot (edge image), so
-  // the api installs nothing on its container/host.
+  // System - runtime mode determines all required components. In the implicit
+  // local compose case the stack provides docker + OpenResty/certbot, so the API
+  // installs nothing in its own container. An EXPLICIT local edge can coexist
+  // with a host executor (notably for bare workloads), whose prerequisites must
+  // still be managed on that host — edge location and workload location are
+  // separate topology decisions.
   const { SystemManager } = await import("./system/setup");
   const system = new SystemManager(runtimeMode, {
     executor,
     stateStore: config.stateStore,
     installerConfig: config.installerConfig,
     provisionLock: config.provisionLock,
-    assumeInstalled: useDockerEdge,
+    assumeInstalled: implicitLocalDockerEdge,
   });
 
   // Runtime
@@ -350,7 +367,7 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     runtimeMode,
     config,
     executor,
-    useDockerEdge ? edgeContainer : undefined,
+    localEdgeContainer,
   );
 
   return {

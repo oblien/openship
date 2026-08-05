@@ -4,7 +4,7 @@
  * the exact engine (`ensureEdge` → `ensureEdgeClear` → `runEdgeTakeover`) and the
  * generic prompt transport, so the SAME consent modal appears — but WITHOUT a
  * container redeploy: it installs/owns the edge on the project's server, then
- * re-applies the project's routes reload-free via `applyProjectRouting`.
+ * re-applies the project's routes reload-free via the strict retry reconciler.
  *
  * Used by the Domains tab (first route / "set up edge") instead of forcing a
  * full deploy — which matters for migrated attach-live stacks whose containers
@@ -32,7 +32,7 @@ import { streamSSE } from "../../lib/sse";
 import { sshManager } from "../../lib/ssh-manager";
 import { withPinnedEdgeImage } from "../../lib/edge-image";
 import { resolveAcmeProviderOptions } from "../../lib/acme-config";
-import { applyProjectRouting } from "./routing-apply.service";
+import { retryProjectRouting } from "../projects/project-runtime.service";
 import {
   createEdgeConsentSession,
   getEdgeConsentSession,
@@ -251,9 +251,10 @@ export async function ensureEdgeStream(c: Context) {
           onLog: (m) => appendEdgeLog(session.id, m.trim(), "warn"),
         });
       })().catch(() => {});
-      await applyProjectRouting(id).catch((e) =>
-        appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn"),
-      );
+      const retry = await retryProjectRouting(id, ctx.organizationId);
+      if (!retry.ok) {
+        throw new Error(retry.warning || "Edge is ready, but one or more routes could not be applied.");
+      }
       appendEdgeLog(session.id, "Done — routes are live.");
       finishEdgeConsentSession(session.id, "completed");
     } catch (err) {

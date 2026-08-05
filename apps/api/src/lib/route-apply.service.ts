@@ -70,6 +70,10 @@ export interface RouteRegister {
   /** Cloud target port (workspace expose / domains.connect). */
   port?: number;
   isCustomDomain: boolean;
+  /** Override whether this vhost listens with TLS (external ingress may not). */
+  tls?: boolean;
+  /** Override where TLS terminates; defaults to local for custom domains. */
+  terminatesTlsLocally?: boolean;
   /**
    * Force (`true`) or suppress (`false`) the `/_openship/hooks/` webhook-proxy
    * location. Omit to auto-detect from the project's `webhookDomain` — callers
@@ -108,6 +112,14 @@ export async function reconcileProjectRoutes(
     routing?: Platform["routing"];
     registers?: RouteRegister[];
     removes?: RouteRemove[];
+    /**
+     * Require the requested edge state to be applied before returning.
+     *
+     * Mutation paths keep the default best-effort behaviour because their DB
+     * write is already committed. Verification/recovery paths opt into strict
+     * mode so they never report a domain as live when no vhost was written.
+     */
+    strict?: boolean;
   },
 ): Promise<void> {
   const registers = opts.registers ?? [];
@@ -152,6 +164,11 @@ export async function reconcileProjectRoutes(
       }
     }
     if (registers.length > 0) {
+      if (opts.strict) {
+        throw new Error(
+          `[route-apply] no deployment routing resolved — ${registers.length} route(s) not applied`,
+        );
+      }
       console.warn(
         `[route-apply] no deployment routing resolved — ${registers.length} route(s) not applied (redeploy to re-sync)`,
       );
@@ -166,32 +183,36 @@ export async function reconcileProjectRoutes(
   const proxy = sanitizeProxySettings(project.routingConfig?.proxy);
 
   for (const r of removes) {
-    await routing
-      .removeRoute(r.hostname)
-      .catch((err) =>
-        console.warn(`[route-apply] removeRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`),
-      );
+    try {
+      await routing.removeRoute(r.hostname);
+    } catch (err) {
+      if (opts.strict) throw err;
+      console.warn(`[route-apply] removeRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`);
+    }
   }
 
   for (const r of registers) {
     // A route serves `/` from ONE of two things: a host directory (static, files
     // on disk) or an upstream. Neither → nothing to serve.
     if (!r.staticRoot && !r.targetUrl) {
+      if (opts.strict) {
+        throw new Error(`[route-apply] no upstream or static root resolved for ${r.hostname}`);
+      }
       console.warn(
         `[route-apply] no upstream or static root resolved for ${r.hostname} — route not applied (redeploy to re-sync)`,
       );
       continue;
     }
     const isWebhook = r.webhook ?? (!!webhookHost && r.hostname.toLowerCase() === webhookHost);
-    await routing
-      .registerRoute({
+    try {
+      await routing.registerRoute({
         domain: r.hostname,
-        tls: true,
+        tls: r.tls ?? true,
         // A custom domain's TLS is ours to terminate, so the edge must keep a :443
         // listener up for it even before its cert exists — otherwise the origin
         // refuses the handshake and a proxied domain shows Cloudflare 525 (#308).
         // A free *.opsh.io host is fronted by Cloud's edge; not ours.
-        terminatesTlsLocally: r.isCustomDomain,
+        terminatesTlsLocally: r.terminatesTlsLocally ?? r.isCustomDomain,
         // staticRoot wins when present: it is the more specific instruction, and a
         // caller that resolved a doc root has already decided this domain serves
         // files. registerRoute keys off which one is set.
@@ -205,9 +226,10 @@ export async function reconcileProjectRoutes(
         ...(r.redirects?.length ? { redirects: r.redirects } : {}),
         ...(r.headerRules?.length ? { headerRules: r.headerRules } : {}),
         ...(r.redirectHost ? { redirectHost: r.redirectHost } : {}),
-      })
-      .catch((err) =>
-        console.warn(`[route-apply] registerRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`),
-      );
+      });
+    } catch (err) {
+      if (opts.strict) throw err;
+      console.warn(`[route-apply] registerRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`);
+    }
   }
 }

@@ -11,7 +11,7 @@ import { assertResourceInOrg } from "../../lib/controller-helpers";
 import { syncManagedEdgeRoutes, edgeUnsyncedWarning } from "../../lib/managed-edge-proxy";
 import { resolveManagedHostname } from "../../lib/routing-domains";
 import { sshManager } from "../../lib/ssh-manager";
-import { applyProjectRouting } from "../domains/routing-apply.service";
+import { convergeAllProjectRoutes } from "../domains/project-route.service";
 
 // ─── Runtime logs ────────────────────────────────────────────────────────────
 
@@ -154,9 +154,12 @@ export async function retryProjectRouting(
   const serverId = p.serverId ?? (dep?.meta as { serverId?: string } | null)?.serverId ?? undefined;
   await restoreCustomPortsFromEdge(p, serverId).catch(() => {});
 
-  // Live re-apply is best-effort, but its failure must NOT clear the warning.
+  // Retry is an explicit recovery action: strictly converge every currently
+  // routable project + service hostname before any warning may be cleared.
+  // The older routing-config helper is deliberately best-effort and can return
+  // false without throwing, which previously produced a false "Live" state.
   let applyOk = true;
-  await applyProjectRouting(projectId).catch(() => {
+  await convergeAllProjectRoutes(p).catch(() => {
     applyOk = false;
   });
 
@@ -314,5 +317,3 @@ async function markRoutingWarning(
   meta.deployWarning = warning;
   await repos.deployment.updateStatus(dep.id, dep.status, { meta });
 }
-
-
