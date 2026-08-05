@@ -151,4 +151,31 @@ describe("createDockerBuildContext", () => {
     expect(context.dockerfileName).toBe("Dockerfile");
     expect(context.usesRepositoryDockerfile).toBe(true);
   });
+
+  /**
+   * dockerode's tar-fs pack `lstat`s every name in `contextEntries` and emits an
+   * unhandled 'error' event on a miss — which kills the API process, not just the
+   * build. A wide `.dockerignore` prunes many paths right before this list is
+   * read, so every returned name must still resolve.
+   */
+  it("only lists context entries that still exist after pruning", async () => {
+    const repo = await makeRepo("*.md\n.gitignore\ndocs\n");
+    await writeFile(join(repo, "README.md"), "# readme\n");
+    await writeFile(join(repo, "NOTES.md"), "# notes\n");
+    await writeFile(join(repo, ".gitignore"), "nothing\n");
+    await mkdir(join(repo, "docs"), { recursive: true });
+    await writeFile(join(repo, "docs", "guide.md"), "# guide\n");
+    await exec("git", ["-C", repo, "add", "-A", "-f"]);
+    await exec("git", ["-C", repo, "commit", "-q", "-m", "pruned files"]);
+
+    const context = await createDockerBuildContext(config(repo), {
+      requireRepositoryDockerfile: true,
+    });
+    cleanups.push(context.cleanup);
+
+    const onDisk = new Set(await readdir(context.contextDir));
+    for (const entry of context.contextEntries) expect(onDisk.has(entry)).toBe(true);
+    expect(context.contextEntries).not.toContain("NOTES.md");
+    expect(context.contextEntries).not.toContain("docs");
+  });
 });
