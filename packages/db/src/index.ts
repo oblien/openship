@@ -62,6 +62,7 @@ export {
   toComposeSpec,
   composeSpecsEqual,
   composeSpecDiff,
+  hasLegacyFlattenedCommandArgvAmbiguity,
   createSettingsRepo,
   createServerRepo,
   createServerGithubAuthRepo,

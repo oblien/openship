@@ -2,7 +2,16 @@
  * Service business logic - CRUD and compose sync.
  */
 
-import { normalizeRoutingFields, repos, composeSpecDiff, type Project, type Service, type ServicePublicEndpoint } from "@repo/db";
+import {
+  composeSpecDiff,
+  hasLegacyFlattenedCommandArgvAmbiguity,
+  normalizeRoutingFields,
+  repos,
+  toComposeSpec,
+  type Project,
+  type Service,
+  type ServicePublicEndpoint,
+} from "@repo/db";
 import { aliasConflictsWithSiblings, ForbiddenError, getProjectType, mergeAdvanced, normalizeServiceLabel, normalizeAliasStrict, withTimeout, type ComposeAdvanced, type ServiceContainerState, type StackId } from "@repo/core";
 import {
   BuildLogger,
@@ -186,10 +195,18 @@ export async function validateServiceName(
 export { aliasConflictsWithSiblings };
 
 function withDrift(svc: Service) {
+  const driftBase =
+    svc.driftSpec &&
+    hasLegacyFlattenedCommandArgvAmbiguity(
+      { command: svc.command, commandArgv: svc.commandArgv },
+      svc.driftSpec,
+    )
+      ? toComposeSpec(svc)
+      : (svc.importedSpec ?? {});
   return {
     ...maskServiceEnv(svc),
     drift: svc.driftSpec
-      ? { changes: maskDriftChanges(composeSpecDiff(svc.importedSpec ?? {}, svc.driftSpec)) }
+      ? { changes: maskDriftChanges(composeSpecDiff(driftBase, svc.driftSpec)) }
       : null,
   };
 }
@@ -248,6 +265,7 @@ export async function acceptServiceDrift(
     environment: theirs.environment ?? {},
     volumes: theirs.volumes ?? [],
     command: theirs.command ?? null,
+    commandArgv: theirs.commandArgv ?? null,
     restart: theirs.restart ?? "unless-stopped",
     advanced: theirs.advanced ?? {},
     importedSpec: theirs,
@@ -1650,4 +1668,3 @@ export async function streamServiceRuntimeLogs(
   };
   return { cleanup, serverId };
 }
-

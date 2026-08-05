@@ -81,6 +81,7 @@ export {
   toComposeSpec,
   composeSpecsEqual,
   composeSpecDiff,
+  hasLegacyFlattenedCommandArgvAmbiguity,
   type Service,
   type NewService,
   type ServiceDeployment,

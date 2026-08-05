@@ -53,7 +53,12 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
   return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
 });
 
-import { createService, updateService } from "../../../src/modules/services/service.service";
+import {
+  acceptServiceDrift,
+  createService,
+  listServices,
+  updateService,
+} from "../../../src/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = { id: "proj_1", organizationId: "org_1", slug: "acme" };
@@ -108,6 +113,47 @@ describe("service routing patch", () => {
     domainService.ensurePendingServiceDomain.mockReset().mockResolvedValue({ created: false });
     domainService.removeServiceDomain.mockReset().mockResolvedValue(undefined);
     domainService.reuseServerCertForDomain.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("accepting Compose drift promotes its structured command argv", async () => {
+    const commandArgv = ["/bin/sh", "-ec", "echo one argument"];
+    serviceRepo.findById.mockResolvedValue({
+      ...multiRouteService(),
+      driftSpec: {
+        command: "/bin/sh -ec echo one argument",
+        commandArgv,
+      },
+    });
+
+    await acceptServiceDrift(ctx, project.id, "svc_1");
+
+    expect(writtenPatch()).toMatchObject({
+      command: "/bin/sh -ec echo one argument",
+      commandArgv,
+      driftSpec: null,
+    });
+  });
+
+  it("exposes an actionable argv diff for an ambiguity-only review", async () => {
+    const command = "/bin/sh -ec echo grouped script";
+    const incomingArgv = ["/bin/sh", "-ec", "echo grouped script"];
+    serviceRepo.listByProject.mockResolvedValue([{
+      ...multiRouteService(),
+      command,
+      commandArgv: ["/bin/sh", "-ec", "echo", "grouped", "script"],
+      importedSpec: { command, commandArgv: incomingArgv },
+      driftSpec: { command, commandArgv: incomingArgv },
+    }]);
+
+    const [service] = await listServices(ctx, project.id);
+
+    expect(service.drift?.changes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        field: "commandArgv",
+        from: ["/bin/sh", "-ec", "echo", "grouped", "script"],
+        to: incomingArgv,
+      }),
+    ]));
   });
 
   /** What the edge was asked to stop serving on this save. */

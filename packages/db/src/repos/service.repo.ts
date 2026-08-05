@@ -79,6 +79,36 @@ const canonicalize = (value: unknown): unknown => {
 const canonicalSpec = (s: ComposeServiceSpec): string =>
   JSON.stringify(canonicalize(toComposeSpec(s)));
 
+const argvEqual = (a: string[] | null | undefined, b: string[] | null | undefined) =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * Detect the exact representation written by pre-#332 Compose imports: a list
+ * command was first joined for display and that display string was then split
+ * back into argv, losing argument boundaries (most visibly the script passed to
+ * `sh -c`). A current parse of the same Compose file has the same display text
+ * but a different, authoritative structured argv.
+ *
+ * This is deliberately narrower than "stored argv differs from Compose". Even
+ * this exact shape can be an intentional operator override, so callers must
+ * surface it for explicit review rather than auto-repairing it.
+ */
+export function hasLegacyFlattenedCommandArgvAmbiguity(
+  stored: Pick<ComposeServiceSpec, "command" | "commandArgv">,
+  parsed: Pick<ComposeServiceSpec, "command" | "commandArgv">,
+): boolean {
+  const command = stored.command ?? null;
+  const parsedCommand = parsed.command ?? null;
+  const storedArgv = stored.commandArgv;
+  const parsedArgv = parsed.commandArgv;
+
+  if (!command || command !== parsedCommand) return false;
+  if (!Array.isArray(storedArgv) || !Array.isArray(parsedArgv)) return false;
+  if (argvEqual(storedArgv, parsedArgv)) return false;
+
+  return argvEqual(storedArgv, commandToArgv(command));
+}
+
 /** Compose-field equality (ignores routing + ordering-insensitive env). */
 export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) =>
   canonicalSpec(a) === canonicalSpec(b);
@@ -580,6 +610,7 @@ export function createServiceRepo(db: Database) {
       const existingByName = new Map(composeExisting.map((s) => [s.name, s]));
       const incomingNames = new Set(composeParsed.map((s) => s.name));
       const driftedNames: string[] = [];
+      const commandArgvReviewNames: string[] = [];
 
       for (let i = 0; i < composeParsed.length; i++) {
         const p = composeParsed[i];
@@ -612,11 +643,45 @@ export function createServiceRepo(db: Database) {
         const base = ex.importedSpec ?? null;
         const ours = toComposeSpec(ex);
 
+        // A pre-#332 importer flattened list-form commands before persisting
+        // them. That representation is indistinguishable from an operator who
+        // intentionally supplied the same tokenized argv, so NEVER auto-repair
+        // it. Surface the authoritative structured Compose value as drift and
+        // require the operator to accept it explicitly.
+        //
+        // Use the raw row, not `ours`: toComposeSpec normalizes a null argv from
+        // the display string and would erase the only provenance we still have.
+        const commandArgvNeedsReview = hasLegacyFlattenedCommandArgvAmbiguity(
+          { command: ex.command, commandArgv: ex.commandArgv },
+          theirs,
+        );
+
         // Bootstrap: no baseline yet → adopt theirs as baseline, keep ours.
         // sortOrder is NEVER reset by reconcile — it's user-editable (dashboard
         // reordering) and the compose file has no ordering to authoritatively sync.
         if (base === null) {
-          await this.update(ex.id, { importedSpec: theirs, driftSpec: null });
+          await this.update(ex.id, {
+            importedSpec: theirs,
+            driftSpec: commandArgvNeedsReview ? theirs : null,
+          });
+          if (commandArgvNeedsReview) {
+            driftedNames.push(p.name);
+            commandArgvReviewNames.push(p.name);
+          }
+          continue;
+        }
+
+        // Ambiguous command provenance always wins over the ordinary 3-way
+        // branches below. Even if the repo changed another field and the rest
+        // of the row is unedited, spreading `theirs` would silently choose one
+        // meaning for the argv collision. Keep the whole row untouched and ask
+        // the operator to accept the authoritative Compose spec explicitly.
+        if (commandArgvNeedsReview) {
+          if (!ex.driftSpec || !composeSpecsEqual(ex.driftSpec, theirs)) {
+            await this.update(ex.id, { driftSpec: theirs });
+          }
+          driftedNames.push(p.name);
+          commandArgvReviewNames.push(p.name);
           continue;
         }
 
@@ -624,7 +689,9 @@ export function createServiceRepo(db: Database) {
         // reverted to base); otherwise skip entirely so we don't churn updatedAt
         // on every deploy.
         if (composeSpecsEqual(theirs, base)) {
-          if (ex.driftSpec) await this.update(ex.id, { driftSpec: null });
+          if (ex.driftSpec) {
+            await this.update(ex.id, { driftSpec: null });
+          }
           continue;
         }
 
@@ -669,7 +736,7 @@ export function createServiceRepo(db: Database) {
       }
 
       const services = await this.listByProject(projectId);
-      return { services, driftedNames };
+      return { services, driftedNames, commandArgvReviewNames };
     },
 
     // ── Service Deployments ────────────────────────────────────────────
