@@ -116,6 +116,9 @@ jobs:
     name: E2E (real Docker, ${{ matrix.scope }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -158,7 +161,7 @@ jobs:
       # GHCR), so today this step skips and nothing changes; set
       # DOCKERHUB_USERNAME/DOCKERHUB_TOKEN and the flake class disappears.
       - name: Log in to Docker Hub (raises the pull rate limit)
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
+        if: ${{ env.DOCKERHUB_USERNAME != '' }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
