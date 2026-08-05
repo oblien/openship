@@ -32,13 +32,15 @@
  */
 
 import { safeErrorMessage } from "@repo/core";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EMBEDDED_LUA } from "./lua-embedded";
 import type { CommandExecutor } from "../types";
 import { EDGE_REAL_IP_CONF_NAME, edgeRealIpConf } from "./edge-real-ip";
+import { EDGE_NOT_FOUND_LOCATION } from "./edge-not-found";
+import { sq } from "../system/local-shell";
 
 // ── Paths & constants ────────────────────────────────────────────────────────
 
@@ -171,6 +173,39 @@ export const OPENRESTY_DEFAULT_PATHS: OpenRestyPaths = {
   sitesDir: "/usr/local/openresty/nginx/conf/sites-enabled",
   pidPath: "/usr/local/openresty/nginx/logs/nginx.pid",
 };
+
+/**
+ * Directory (relative to the conf dir) holding the placeholder certificate the
+ * :443 catch-all presents for a hostname we do NOT route, so the handshake
+ * completes and the visitor gets a page instead of a TLS error (#431).
+ *
+ * Beside `sites-enabled`, and pointedly NOT under `/etc/letsencrypt`: that path is
+ * a bind mount that `certsExist()` / `readCertInfo()` / the migrate proxy scan all
+ * read, and a self-signed cert sitting in it would be reported as a domain's
+ * active certificate — satisfying the renewal scheduler and the verify-pending
+ * sweep while the real cert never gets issued. Here it is invisible to all of them.
+ *
+ * The conf dir is not a mount, so in the container this resolves to the copy baked
+ * into the image and nothing on the host can mask or delete it.
+ */
+export const EDGE_DEFAULT_CERT_DIRNAME = "openship-default-cert";
+
+/** The placeholder cert/key pair for a given OpenResty conf dir. */
+export function edgeDefaultCertPaths(confDir: string): {
+  dir: string;
+  certPath: string;
+  keyPath: string;
+} {
+  const dir = `${confDir}/${EDGE_DEFAULT_CERT_DIRNAME}`;
+  return { dir, certPath: `${dir}/fullchain.pem`, keyPath: `${dir}/privkey.pem` };
+}
+
+/**
+ * Common name on that placeholder. Not a hostname on purpose — it is presented
+ * only for names we do not serve, and giving it one would make it look, to anyone
+ * reading a scan or a browser warning, like a cert we meant to use for that name.
+ */
+export const EDGE_DEFAULT_CERT_CN = "openship-edge-default";
 
 // ── Containerized edge ───────────────────────────────────────────────────────
 
@@ -329,6 +364,86 @@ ${paths.bin}`;
 }
 
 /**
+ * Ensure the placeholder certificate the :443 catch-all presents for unrouted
+ * hostnames exists, creating it if not. Returns null when it could not be produced.
+ *
+ * Only the BARE/legacy edge needs this: the container edge gets the same pair baked
+ * into its image at build time, where it cannot be missing.
+ *
+ * Never throws, and returning null is a real outcome rather than a formality — the
+ * caller then writes the `ssl_reject_handshake` catch-all instead. Naming a
+ * certificate that is not on disk does not degrade the page, it stops OpenResty
+ * loading the config at all: `openresty -t` fails, so the deploy's reload is
+ * refused and every subsequent route change on the box is refused with it. A box
+ * with no openssl keeps the unfriendly TLS error; it does not lose routing.
+ *
+ * 10 years, like the per-domain bootstrap cert in nginx.ts: nothing trusts this
+ * cert, so a short life buys no security, while an EXPIRED one would put the box
+ * back to a hard TLS failure on a date nobody is watching.
+ *
+ * EC P-256 rather than the RSA-2048 used per-domain, because this key signs a
+ * DIFFERENT kind of traffic. `ssl_reject_handshake` aborted in the servername
+ * callback, before any asymmetric work; presenting a certificate means every
+ * connection to an unrouted host now costs a real signature — and the case #431 is
+ * about is wildcard DNS aimed at the box, i.e. unbounded distinct hostnames all
+ * landing here. P-256 signing is roughly an order of magnitude cheaper than
+ * RSA-2048, so the page does not come with a cheap amplifier attached. (It also
+ * keygens in milliseconds instead of seconds, which matters on the bare path where
+ * this runs inline in a deploy.)
+ */
+async function ensureEdgeDefaultCert(
+  executor: CommandExecutor,
+  confDir: string,
+): Promise<{ certPath: string; keyPath: string } | null> {
+  const { dir, certPath, keyPath } = edgeDefaultCertPaths(confDir);
+  try {
+    if ((await executor.exists(certPath)) && (await executor.exists(keyPath))) {
+      return { certPath, keyPath };
+    }
+  } catch {
+    return null;
+  }
+
+  // Unique per attempt, like ensureBootstrapCert's. A shared `${dir}.staging` that
+  // we pre-clear is a race between two concurrent deploys to the same box: the
+  // second one's cleanup deletes the first one's staging mid-openssl, so the first
+  // writes the `ssl_reject_handshake` fallback and the box silently regresses to a
+  // TLS error until some later deploy happens to win.
+  const staging = `${dir}.staging-${process.pid}-${randomBytes(4).toString("hex")}`;
+  try {
+    await executor.mkdir(staging);
+    // Remote executors run through a login shell, so every argument is quoted even
+    // though these are all derived from our own constants.
+    await executor.exec(
+      `openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 ` +
+        `-subj ${sq(`/CN=${EDGE_DEFAULT_CERT_CN}`)} ` +
+        `-keyout ${sq(`${staging}/privkey.pem`)} -out ${sq(`${staging}/fullchain.pem`)} 2>/dev/null`,
+    );
+    // Before the move, so the key is never readable at its final path. OpenSSL 3
+    // already writes `-keyout` 0600, but that has not always been true and this
+    // runs on whatever openssl a legacy box happens to have.
+    await executor.exec(`chmod 600 ${sq(`${staging}/privkey.pem`)}`);
+    await executor.mkdir(dir);
+    // Move the pair together: OpenResty must never see a cert beside a key that
+    // does not open it, which is what a reload racing a half-written dir would get.
+    await executor.exec(
+      `mv -f ${sq(`${staging}/fullchain.pem`)} ${sq(`${staging}/privkey.pem`)} ${sq(dir)}/`,
+    );
+    if (!(await executor.exists(certPath)) || !(await executor.exists(keyPath))) return null;
+    return { certPath, keyPath };
+  } catch (err) {
+    console.warn(
+      `[openresty] could not create the edge's default certificate — an unrouted HTTPS host ` +
+        `will get a TLS error instead of the "service not found" page ` +
+        `(is openssl installed?): ${safeErrorMessage(err)}`,
+    );
+    return null;
+  } finally {
+    await executor.rm(staging).catch(() => undefined);
+  }
+}
+
+/**
  * Ensure OpenResty config is ready for routing.
  *
  * Idempotent - safe to call on every platform init. Creates the
@@ -348,12 +463,16 @@ export async function ensureOpenRestyConfig(
   await executor.mkdir(pidDir);
 
   // Base server blocks: the loopback management API and the default catch-all
-  // (incl. the 443 unknown-SNI reject). Written here - not just at install - so
-  // an already-deployed box self-heals the catch-all on its next deploy and no
-  // longer cross-serves an unrouted HTTPS host. Idempotent overwrite of static
-  // content; a stale copy is replaced. The deploy's route reload applies it.
+  // (incl. the 443 default that owns unmatched SNI). Written here - not just at
+  // install - so an already-deployed box self-heals the catch-all on its next
+  // deploy and no longer cross-serves an unrouted HTTPS host. Idempotent overwrite
+  // of static content; a stale copy is replaced. The deploy's route reload applies
+  // it, and that reload is why the cert is resolved FIRST: a config naming a
+  // missing ssl_certificate fails `openresty -t`, which rejects the reload and
+  // freezes every later route change on the box.
+  const defaultCert = await ensureEdgeDefaultCert(executor, paths.confDir);
   await executor.writeFile(`${paths.sitesDir}/_management.conf`, MANAGEMENT_BLOCK);
-  await executor.writeFile(`${paths.sitesDir}/_default.conf`, DEFAULT_BLOCK);
+  await executor.writeFile(`${paths.sitesDir}/_default.conf`, edgeDefaultCatchAllConf(defaultCert));
 
   // Bootstrap: if nginx.conf doesn't exist (e.g. after a reinstall that
   // removed the old config), write a minimal working config.
@@ -613,25 +732,116 @@ export const EDGE_CHALLENGE_LOCATION = `\
     }`;
 
 /**
- * The HTTPS catch-all — shared by the bare edge's `DEFAULT_BLOCK` and the baked
- * container config, comment included, because the RATIONALE is the part that must
- * not drift: a future reader who thinks this block is decorative will delete it
- * from whichever copy they happen to be holding.
+ * The HTTPS catch-all with NO certificate to present — the fallback, kept for the
+ * one case that can still reach it: a bare box where we could not produce the
+ * placeholder cert (no openssl, unwritable conf dir).
+ *
+ * Shared with the baked container config comment included, because the RATIONALE is
+ * the part that must not drift: a future reader who thinks this block is
+ * decorative will delete it from whichever copy they happen to be holding.
  */
 export const EDGE_HTTPS_REJECT_BLOCK = `\
 # HTTPS catch-all. WITHOUT a 443 default_server, nginx serves the first-loaded
 # 443 vhost to any request whose SNI matches no server_name - so a domain we do
 # NOT route (removed / never-added / just pointed at this IP) silently gets some
 # other app's cert + backend. That is cross-serving, a security hole. Owning the
-# 443 default and rejecting unknown SNI closes it: an unrouted host gets a TLS
-# handshake failure, never a fallthrough. ssl_reject_handshake (OpenResty/nginx
-# >= 1.19.4; our installer pulls the newest LTS) needs no certificate.
+# 443 default closes it: an unrouted host is answered HERE, never by a fallthrough.
+#
+# This is the no-certificate variant, used only when the placeholder cert could not
+# be created. It refuses the handshake, so the visitor gets a raw TLS error and a
+# Cloudflare-proxied host gets error 525 - correct, but unfriendly. See
+# edgeHttpsDefaultBlock. ssl_reject_handshake (OpenResty/nginx >= 1.19.4; our
+# installer pulls the newest LTS) needs no certificate.
 server {
     listen 443 ssl default_server;
     ssl_reject_handshake on;
 }`;
 
-const DEFAULT_BLOCK = `\
+/**
+ * The HTTPS catch-all, serving the branded not-found page (#431).
+ *
+ * Rejecting the handshake was right about the security question and wrong about the
+ * visitor: a mistyped subdomain, or a wildcard DNS record aimed at this box, got
+ * `ERR_SSL_UNRECOGNIZED_NAME_ALERT` — and behind Cloudflare, whose "Full" mode does
+ * not validate the origin certificate, it got error 525 on a page CF served in our
+ * name. Presenting a self-signed placeholder lets the handshake complete so the
+ * request reaches a page that says what is actually wrong.
+ *
+ * The cross-serving hole this block exists to close stays closed, and the reason is
+ * structural rather than a property of the certificate: we still OWN
+ * `443 ssl default_server`, so an unmatched SNI can never fall through to some
+ * other app's vhost. What it now gets is our own dead-end block — one
+ * `ssl_certificate` that belongs to no domain, no `proxy_pass`, no `root`, nothing
+ * but a `return`. Nothing trusts the placeholder, so possessing its key
+ * impersonates nothing: a direct visitor still sees a browser warning, exactly as
+ * they do today for a domain whose real cert has not been issued yet.
+ *
+ * Stated precisely, because "closed" is doing narrower work than it was: nginx picks
+ * the virtual server twice for HTTPS — by SNI for the handshake, then by `Host:` for
+ * the request. Completing a handshake here therefore lets a client go on to name any
+ * vhost on the box by `Host:` and reach it. That is not an escalation (the same
+ * client could have sent that name as its SNI and been routed there properly, and
+ * the per-vhost `access_by_lua_file` rules still run in the access phase, after the
+ * Host-selected server is set) — but it does mean the guarantee is now about the
+ * CERTIFICATE, not the backend. Never add an `ssl_certificate` at `http` scope: this
+ * block would inherit a real domain's cert and the guarantee would be gone.
+ *
+ * Two things this does not fix, so nobody promises them: Cloudflare "Full (Strict)"
+ * validates the origin certificate and will reject the placeholder, turning error
+ * 525 into 526 — same class of unfriendly page, and the only answers remain Full,
+ * grey-cloud, or a CF Origin CA cert. And a browser holding an HSTS pin for a
+ * hostname that once had a real cert hard-fails on the placeholder with no
+ * click-through. (Which is why this block must never send HSTS itself.)
+ */
+export function edgeHttpsDefaultBlock(
+  cert?: { certPath: string; keyPath: string } | null,
+): string {
+  if (!cert) return EDGE_HTTPS_REJECT_BLOCK;
+  return `\
+# HTTPS catch-all. WITHOUT a 443 default_server, nginx serves the first-loaded
+# 443 vhost to any request whose SNI matches no server_name - so a domain we do
+# NOT route (removed / never-added / just pointed at this IP) silently gets some
+# other app's cert + backend. That is cross-serving, a security hole. Owning the
+# 443 default closes it: an unrouted host is answered HERE, never by a fallthrough.
+#
+# The cert below belongs to no domain and is trusted by nothing - it exists so the
+# handshake COMPLETES and the request can be answered with a page instead of
+# ERR_SSL_UNRECOGNIZED_NAME_ALERT (Cloudflare "Full" reports the refusal as error
+# 525; "Full (Strict)" validates the cert and will still show 526). Keep this block a
+# dead end: no proxy_pass, no root, no HSTS, no reuse of a real certificate - that is
+# what stops it from becoming the cross-serving it prevents. And never set
+# ssl_certificate at http scope: this block would inherit a real domain's cert.
+server {
+    listen 443 ssl default_server;
+    server_name _;
+
+    ssl_certificate ${cert.certPath};
+    ssl_certificate_key ${cert.keyPath};
+
+${EDGE_NOT_FOUND_LOCATION}
+}`;
+}
+
+/**
+ * The bare edge's catch-all pair, written to `sites-enabled/_default.conf`.
+ *
+ * Takes the placeholder cert rather than baking a path in, because on a bare box
+ * the file may not exist: nginx refuses to load a config whose `ssl_certificate` is
+ * missing, and refusing to load means `openresty -t` fails, the reload is rejected,
+ * and NO route change lands on that box again. Passing null falls back to
+ * `ssl_reject_handshake`, which is where this box already was.
+ *
+ * Exported so the `sanitizeEdgeVhosts` guard can be tested against the bytes we
+ * actually write. That pairing is load-bearing: a bare→container conversion copies
+ * this file into the edge's mounted sites-enabled, where a SECOND
+ * `443 ssl default_server` beside the image's own is `[emerg] a duplicate default
+ * server` — a permanent crash loop. It survives only because both blocks here are
+ * `server_name _;`, which is what the sanitizer drops on.
+ */
+export function edgeDefaultCatchAllConf(
+  cert?: { certPath: string; keyPath: string } | null,
+): string {
+  return `\
 # Openship default catch-all - prevents the stock OpenResty welcome page AND
 # stops an unmatched Host/SNI from being served the first real vhost by default.
 # Auto-generated - do not edit manually
@@ -641,13 +851,12 @@ server {
 
 ${ACME_CHALLENGE_LOCATION}
 
-    location / {
-        return 404;
-    }
+${EDGE_NOT_FOUND_LOCATION}
 }
 
-${EDGE_HTTPS_REJECT_BLOCK}
+${edgeHttpsDefaultBlock(cert)}
 `;
+}
 
 // ── Deployment ───────────────────────────────────────────────────────────────
 

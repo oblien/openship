@@ -4,8 +4,8 @@
  * The conf is COPYed into the edge image and so can't read a TS constant at
  * runtime; this is how the shared values (dict sizes, the ACME loopback port, the
  * challenge docroot, the sites-enabled path) get into it without a hand-kept copy.
- * `apps/api/src/lib/edge-config.test.ts` fails if the checked-in file drifts from
- * this output, so run it after touching any of those constants.
+ * `src/infra/edge-baked-conf.test.ts` fails if the checked-in file drifts from this
+ * output, so run it after touching any of those constants.
  *
  *   bun run edge:conf        # from packages/adapters
  */

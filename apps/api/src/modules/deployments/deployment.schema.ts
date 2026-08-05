@@ -173,6 +173,12 @@ export const PrepareDeployBody = Type.Object({
         "Where the compose file lives when it is not at the auto-detected root — the file itself (\"deploy/stack.yml\", which also covers non-standard filenames) or the directory holding it (\"deploy/docker-compose\"). Detects the project as a compose/services deploy; errors when no compose file is there.",
     }),
   ),
+  env: Type.Optional(
+    Type.Record(Type.String(), Type.String(), {
+      description:
+        "Env already configured for this deploy. Compose interpolation resolves against these on top of the repo .env, so a file declaring ${VAR:?...} scans once the user has supplied VAR.",
+    }),
+  ),
 });
 
 // POST /:id/build/respond — answer a build gate/prompt.

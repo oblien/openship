@@ -152,18 +152,29 @@ const DeployRepository: React.FC = () => {
     const appliedLastPickRef = useRef(false);
 
     const applyLastPick = useCallback(() => {
-        if (!canPickTarget || appliedLastPickRef.current) return;
+        // Don't override a SAVED project's hydrated target (same gate as
+        // useSeedDeployTarget) — the last-pick memory is for NEW deploys only.
+        if (!canPickTarget || isExistingProject || appliedLastPickRef.current) return;
         const last = typeof window !== "undefined" ? lastPickStore.read() : null;
         if (!last) return;
-        appliedLastPickRef.current = true;
-        if (last.target === "server" && last.serverId) {
+        if (last.target === "server") {
+            // lastPickStore is a browser-GLOBAL key, so this serverId may be from
+            // another project/org or a since-removed server. Replay it ONLY when
+            // it's a live target in THIS org's list (mirrors useSeedDeployTarget's
+            // gate) — otherwise leave appliedLastPickRef UNconsumed so pass-2 (after
+            // targets load) can retry, and fall through to the validated seed rather
+            // than submitting a serverId the deploy's org doesn't own.
+            if (!last.serverId || !targets.servers.some((s) => s.id === last.serverId)) return;
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "server", serverId: last.serverId });
         } else if (last.target === "cloud") {
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         } else if (last.target === "local") {
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "local", serverId: undefined });
         }
-    }, [canPickTarget, updateConfig]);
+    }, [canPickTarget, isExistingProject, targets.servers, updateConfig]);
 
     useLayoutEffect(() => {
         applyLastPick();

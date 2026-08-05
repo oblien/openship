@@ -50,8 +50,16 @@ export type PrepareProjectSource =
       force?: string | boolean;
       /** Pin the compose file location (file or directory) instead of detecting the root. */
       composePath?: string;
+      /** Env already configured for this deploy, for compose interpolation. */
+      env?: Record<string, string>;
     }
-  | { source: "local"; path: string; composePath?: string };
+  | {
+      source: "local";
+      path: string;
+      composePath?: string;
+      /** Env already configured for this deploy, for compose interpolation. */
+      env?: Record<string, string>;
+    };
 
 export interface PrepareComposeService {
   name: string;

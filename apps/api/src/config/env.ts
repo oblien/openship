@@ -123,8 +123,19 @@ const envSchema = z.object({
   OPENSHIP_MANAGED_EDGE: envBool("false"),
   /** Loopback dashboard port the managed edge proxies to (defaults 3001). */
   OPENSHIP_DASHBOARD_PORT: z.coerce.number().int().positive().catch(3001),
-  /** Let's Encrypt contact email for the managed edge (defaults to the admin). */
+  /** ACME account contact email (defaults to the admin during guided setup). */
   OPENSHIP_ACME_EMAIL: z.string().optional(),
+  /** Alternate ACME directory URL. Unset keeps Certbot's Let's Encrypt default. */
+  OPENSHIP_ACME_DIRECTORY_URL: z.string().url().optional(),
+  /** External Account Binding credentials (must be configured as a pair). */
+  OPENSHIP_ACME_EAB_KID: z.string().optional(),
+  OPENSHIP_ACME_EAB_HMAC_KEY: z.string().optional(),
+  /** Certificate private-key algorithm and size. */
+  OPENSHIP_ACME_KEY_TYPE: z.enum(["ec256", "ec384", "rsa2048", "rsa4096"]).optional(),
+  /** CA root bundle path as seen by the Certbot process. */
+  OPENSHIP_ACME_CA_BUNDLE: z.string().optional(),
+  /** Non-interactive issuance requires explicit terms acceptance; historic default is true. */
+  OPENSHIP_ACME_TOS_AGREED: envBool("true"),
   /**
    * How long a deploy may HOLD waiting for a user decision (port conflict, edge
    * 80/443 takeover) before it gives up and aborts. Milliseconds; default 5 min
@@ -417,6 +428,42 @@ const envSchema = z.object({
     .min(16 * 1024)
     .max(8 * 1024 * 1024)
     .default(512 * 1024),
+}).superRefine((cfg, ctx) => {
+  // Fail ACME misconfiguration HERE, at boot, with the variable named — not at
+  // the first deploy, where NginxProvider's constructor re-checks the same rules
+  // (that check stays: the adapter also serves non-env callers). Empty/whitespace
+  // values count as unset, matching resolveAcmeProviderOptions.
+  const kid = cfg.OPENSHIP_ACME_EAB_KID?.trim();
+  const hmac = cfg.OPENSHIP_ACME_EAB_HMAC_KEY?.trim();
+  const bundle = cfg.OPENSHIP_ACME_CA_BUNDLE?.trim();
+  if (!!kid !== !!hmac) {
+    ctx.addIssue({
+      code: "custom",
+      path: [kid ? "OPENSHIP_ACME_EAB_HMAC_KEY" : "OPENSHIP_ACME_EAB_KID"],
+      message: "OPENSHIP_ACME_EAB_KID and OPENSHIP_ACME_EAB_HMAC_KEY must be set together",
+    });
+  }
+  if (kid && (!/^[\x20-\x7E]+$/.test(kid) || kid.length > 512)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["OPENSHIP_ACME_EAB_KID"],
+      message: "must be printable ASCII (maximum 512 characters)",
+    });
+  }
+  if (hmac && !/^[A-Za-z0-9_-]+={0,2}$/.test(hmac)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["OPENSHIP_ACME_EAB_HMAC_KEY"],
+      message: "must be the base64url-encoded value supplied by the CA",
+    });
+  }
+  if (bundle && !bundle.startsWith("/")) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["OPENSHIP_ACME_CA_BUNDLE"],
+      message: "must be an absolute path in the Certbot environment",
+    });
+  }
 });
 
 type Env = z.infer<typeof envSchema>;

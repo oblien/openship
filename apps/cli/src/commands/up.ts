@@ -9,11 +9,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ensureDashboard } from "../lib/dashboard";
-import { installAndStart, preview } from "../lib/service";
+import { installAndStart } from "../lib/service";
 import {
   composeUp,
   composePrefetch,
-  composeIsViableDefault,
   ensureDocker,
   composeInternalToken,
   composeTrustedOriginUrls,
@@ -21,13 +20,8 @@ import {
   resolveComposePorts,
   sourceBuildDir,
 } from "../lib/compose";
-import {
-  DEFAULT_API_PORT,
-  DEFAULT_DASHBOARD_PORT,
-  portMoveNotice,
-  readInstanceUrl,
-  resolvePorts,
-} from "../lib/ports";
+import { planMethod, planUp, renderUpPlan } from "../lib/up-plan";
+import { portMoveNotice, readInstanceUrl, resolvePorts } from "../lib/ports";
 import { prepareFromSource, type FromSourceRun } from "../lib/from-source";
 import {
   markStoppedProxyImported,
@@ -44,7 +38,8 @@ import {
   headlessProvision,
   HeadlessInputError,
 } from "../lib/instance-provision";
-import { OS_DIR, ensureInternalToken } from "../lib/loopback-api";
+import { ensureInternalToken } from "../lib/loopback-api";
+import { AUTH_SECRET_FILE, DATA_DIR, LOG_DIR, OS_DIR } from "../lib/paths";
 import type { ImportedSite } from "@repo/adapters/proxy";
 
 const EDGE_ACTIONS: EdgeAction[] = ["migrate", "takeover", "cancel"];
@@ -150,14 +145,14 @@ declare const __CLI_VERSION__: string;
 const DIST_DIR = dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = join(DIST_DIR, "server");
 
-// OS_DIR + ensureInternalToken live in lib/loopback-api (shared with the wizard +
-// headless installer — single copy, imported above). Re-exported so existing
-// importers of `ensureInternalToken` from "./up" (reset-admin, repair) keep working.
+// ensureInternalToken lives in lib/loopback-api (shared with the wizard + headless
+// installer — single copy, imported above). Re-exported so existing importers of
+// `ensureInternalToken` from "./up" (reset-admin, repair) keep working.
 export { ensureInternalToken };
 
 /** Persist a stable auth secret so sessions survive restarts. */
 function ensureAuthSecret(): string {
-  const path = join(OS_DIR, "auth-secret");
+  const path = AUTH_SECRET_FILE;
   if (existsSync(path)) return readFileSync(path, "utf8").trim();
   mkdirSync(OS_DIR, { recursive: true, mode: 0o700 });
   const secret = randomBytes(32).toString("hex");
@@ -179,7 +174,10 @@ export const upCommand = new Command("up")
   .option("--no-ui", "Run the API only — don't download/serve the dashboard")
   .option("--ui-version <tag>", "Dashboard release tag to run (default: this CLI's version)")
   .option("-f, --foreground", "Run attached in this terminal instead of as a background service")
-  .option("--dry-run", "Print the service definition that would be installed, then exit")
+  .option(
+    "--dry-run",
+    "Preview only: print what `up` would install (method, ports, files, commands, the service definition / compose file) and exit WITHOUT changing this machine",
+  )
   .option(
     "--public-url <url>",
     "Serve remotely at this public URL (VPS): binds the dashboard to all interfaces, proxies the API same-origin, and requires login",
@@ -217,44 +215,48 @@ export const upCommand = new Command("up")
   .option("--hostname <host>", "Domain/hostname for --domain-kind byo|custom (or derived from --public-url)")
   .option("--slug <slug>", "Free .opsh.io subdomain for --domain-kind free (box must already be Cloud-connected)")
   .action(async (opts: UpOpts & { yes?: boolean }) => {
+    // FIRST, before any branch that can touch the box. Every mode below has side
+    // effects on the way to deciding what it would do — the install-method choice
+    // alone runs `ensureDocker()`, which on a fresh Linux box installs Docker and
+    // enables its daemon (#436). A preview that has to install something to tell
+    // you what it would install is not a preview.
+    if (opts.dryRun) {
+      console.log(renderUpPlan(await planUp({ ...opts, publicUrl: effectivePublicUrl(opts.publicUrl) })));
+      return;
+    }
     // From-source + foreground are bare-only (attached / dev preview).
     if (opts.fromSource || opts.source) return runFromSource(opts);
     if (opts.foreground) return runForeground(opts);
     const headless = !!(opts.nonInteractive || opts.yes);
     // Install method: Compose is the default when it can actually work (Docker on
-    // Linux — the edge container needs host networking); else bare.
+    // Linux — the edge container needs host networking); else bare. `planMethod`
+    // owns the decision so `--dry-run` predicts the same one.
     //
     // Docker is INSTALLED if missing, the same way the interactive wizard does it
     // (ensureDocker → systemCatalog.installs.docker → get.docker.com). Without
     // this, `openship up` on a fresh Linux box silently degraded to the bare
     // install — a different topology than the docs promise — and `--compose` died
     // on a raw "docker: not found" instead of just installing it.
-    let method: "bare" | "compose";
-    if (opts.bare) {
-      method = "bare";
-    } else if (opts.compose) {
-      // Explicitly asked for compose: install Docker or fail loudly. Falling back
-      // to bare here would quietly ignore the flag.
-      if (!(await ensureDocker())) {
-        console.error(
-          chalk.red("\n  --compose needs Docker + docker compose, and they couldn't be installed automatically.") +
-            chalk.dim(
-              "\n  Install Docker (https://docs.docker.com/engine/install/) and re-run, or use --bare.\n",
-            ),
-        );
-        process.exit(1);
-      }
-      method = "compose";
-    } else if (process.platform === "linux") {
-      method = (await ensureDocker()) ? "compose" : "bare";
-    } else {
-      // macOS/Windows: Docker Desktop can't be installed unattended and its edge
-      // container has no host networking.
-      method = composeIsViableDefault() ? "compose" : "bare";
+    //
+    // Only ASK about Docker when the answer can change the method: --bare never
+    // needs it, and on macOS/Windows the compose default is off regardless.
+    const needsDocker = !opts.bare && (Boolean(opts.compose) || process.platform === "linux");
+    const dockerUsable = needsDocker ? await ensureDocker() : false;
+    const { method } = planMethod(opts, dockerUsable);
+    if (method === "compose" && !dockerUsable) {
+      // Explicitly asked for compose (the only way to get here): install Docker or
+      // fail loudly. Falling back to bare would quietly ignore the flag.
+      console.error(
+        chalk.red("\n  --compose needs Docker + docker compose, and they couldn't be installed automatically.") +
+          chalk.dim(
+            "\n  Install Docker (https://docs.docker.com/engine/install/) and re-run, or use --bare.\n",
+          ),
+      );
+      process.exit(1);
     }
     if (method === "compose") {
       const started = await runCompose(opts);
-      if (headless && !opts.dryRun) {
+      if (headless) {
         // The compose api container boots with the token from compose/.env (NOT
         // the bare ~/.openship token file) — authenticate the setup calls with it.
         const token = composeInternalToken();
@@ -275,7 +277,7 @@ export const upCommand = new Command("up")
       return;
     }
     const started = await startService(opts);
-    if (headless && !opts.dryRun) await runHeadlessProvision(opts, started, { method: "bare" });
+    if (headless) await runHeadlessProvision(opts, started, { method: "bare" });
   });
 
 /**
@@ -548,29 +550,9 @@ export async function startService(
 ): Promise<{ port: string; dashPort: string; publicUrl?: string }> {
   const publicUrl = effectivePublicUrl(opts.publicUrl);
 
-  // Dry-run only previews the unit file — don't probe or persist ports.
-  if (opts.dryRun) {
-    const p = preview({
-      port: opts.port,
-      dataDir: opts.dataDir,
-      dashboardPort: opts.dashboardPort,
-      ui: opts.ui,
-      uiVersion: opts.uiVersion,
-      publicUrl,
-      trustProxy: opts.trustProxy || opts.managedEdge,
-      host: opts.host,
-      managedEdge: opts.managedEdge,
-      acmeEmail: opts.acmeEmail,
-    });
-    console.log(
-      chalk.dim(`\n  service manager: ${p.kind}\n  path: ${p.path}\n\n`) + p.content + "\n",
-    );
-    return {
-      port: String(opts.port || DEFAULT_API_PORT),
-      dashPort: String(opts.dashboardPort || DEFAULT_DASHBOARD_PORT),
-      publicUrl,
-    };
-  }
+  // NOTE: no `--dry-run` branch here. The preview is built + printed by the `up`
+  // action before it reaches any install path (lib/up-plan.ts), because deciding
+  // WHICH path to preview used to install Docker on the way (#436).
 
   // No permanent port: switch off any occupied default / flag / remembered port
   // BEFORE writing the service unit, so the chosen ports are baked into its args.
@@ -662,16 +644,15 @@ async function runForeground(opts: UpOpts, source?: FromSourceRun): Promise<void
     const dashPort = String(resolved.dashboard);
     const publicUrl = effectivePublicUrl(opts.publicUrl);
     const managedEdge = Boolean(opts.managedEdge && publicUrl);
-    const dataDir: string = opts.dataDir || join(OS_DIR, "data");
+    const dataDir: string = opts.dataDir || DATA_DIR;
     mkdirSync(dataDir, { recursive: true });
 
     // Instance log: tee the API + dashboard child output to one file so the
     // control-plane self-app can serve it back through the normal deployment
     // logs API (see deployment.service getDeploymentLogs adopt branch). Fresh
     // per run ("w") to bound size; the current run's logs answer "is it healthy".
-    const logDir = join(OS_DIR, "logs");
-    mkdirSync(logDir, { recursive: true });
-    const instanceLogPath = join(logDir, "instance.log");
+    mkdirSync(LOG_DIR, { recursive: true });
+    const instanceLogPath = join(LOG_DIR, "instance.log");
     const instanceLog = createWriteStream(instanceLogPath, { flags: "w" });
 
     const env: NodeJS.ProcessEnv = {

@@ -13,6 +13,13 @@
  * So the file on disk is output, `bakedEdgeNginxConf()` is the source, and a test
  * asserts the two are equal. Regenerate with `bun run edge:conf` in this package.
  *
+ * ONE thing here is not self-contained: the :443 catch-all names the placeholder
+ * certificate at `edgeDefaultCertPaths(confDir)`, and OpenResty will not load a
+ * config whose `ssl_certificate` is absent — so the image MUST create that pair at
+ * build time. `apps/edge/Dockerfile` does, `RUN openresty -t` in the same file
+ * proves it before the image is published, and a test asserts the Dockerfile and
+ * this generator still name the same path.
+ *
  * The comments are emitted INTO the conf on purpose. Whoever reads this file is
  * usually inside a container with no repo checkout, debugging routing at the worst
  * possible moment; a bare directive with its rationale left behind in a `.ts` file
@@ -20,15 +27,17 @@
  */
 
 import { edgeRealIpConf } from "./edge-real-ip";
+import { EDGE_NOT_FOUND_LOCATION } from "./edge-not-found";
 import {
   ACME_CHALLENGE_LOCATION,
   EDGE_CHALLENGE_LOCATION,
-  EDGE_HTTPS_REJECT_BLOCK,
   EDGE_LUA_PACKAGE_PATH,
   EDGE_MGMT_SERVER_BLOCK,
   EDGE_SERVER_NAMES_HASH_BUCKET_SIZE,
   EDGE_SHARED_DICTS,
   OPENRESTY_DEFAULT_PATHS,
+  edgeDefaultCertPaths,
+  edgeHttpsDefaultBlock,
 } from "./openresty-lua";
 
 /**
@@ -107,8 +116,9 @@ ${indent(edgeRealIpConf().trimEnd(), 4)}
     include ${OPENRESTY_DEFAULT_PATHS.sitesDir}/*.conf;
 
     # Default catch-all. Answers the two probes that arrive addressed to a bare IP
-    # (so \`Host:\` matches no server_name and only \`_\` is left), 404s every other
-    # unrouted host, and keeps the stock OpenResty welcome page away.
+    # (so \`Host:\` matches no server_name and only \`_\` is left), serves the branded
+    # "service not found" page to every other unrouted host, and keeps the stock
+    # OpenResty welcome page away.
     server {
         listen 80 default_server;
         server_name _;
@@ -124,12 +134,10 @@ ${indent(ACME_CHALLENGE_LOCATION, 4)}
         # THEIR target and prove control with our own reply.
 ${indent(EDGE_CHALLENGE_LOCATION, 4)}
 
-        location / {
-            return 404;
-        }
+${indent(EDGE_NOT_FOUND_LOCATION, 4)}
     }
 
-${indent(EDGE_HTTPS_REJECT_BLOCK, 4)}
+${indent(edgeHttpsDefaultBlock(edgeDefaultCertPaths(OPENRESTY_DEFAULT_PATHS.confDir)), 4)}
 
     # Internal analytics + live-log streaming API (loopback only). Queried by the
     # api over the Docker network / exec; never publicly exposed.

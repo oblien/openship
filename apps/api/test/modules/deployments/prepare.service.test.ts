@@ -32,6 +32,61 @@ describe("resolveProjectInfo", () => {
     );
   });
 
+  it("interpolates required Compose variables from the configured deploy env", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
+    tempDirs.push(tempDir);
+
+    // #383: compose lives outside the repo root (#330) and declares a required
+    // variable. The user supplied it in the Openship deploy configuration, so
+    // the scan must interpolate it instead of reporting the file as unparseable.
+    await mkdir(join(tempDir, "deploy", "docker-compose"), { recursive: true });
+    await writeFile(
+      join(tempDir, "deploy", "docker-compose", "docker-compose.yaml"),
+      [
+        "services:",
+        "  db:",
+        "    image: postgres:16-alpine",
+        "    environment:",
+        "      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}",
+      ].join("\n"),
+    );
+
+    const info = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      composePath: "deploy/docker-compose",
+      env: { POSTGRES_PASSWORD: "s3cret" },
+    });
+
+    expect(info.services?.find((s) => s.name === "db")?.environment).toMatchObject({
+      POSTGRES_PASSWORD: "s3cret",
+    });
+  });
+
+  it("normalizes an undetected package manager to \"npm\" instead of the internal \"unknown\" sentinel (#415)", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
+    tempDirs.push(tempDir);
+
+    // A compose-only subfolder with no manifest anywhere (package.json, go.mod,
+    // requirements.txt, ...) — detectPackageManager() legitimately falls back to
+    // "unknown" here, but that's an internal sentinel PackageManagerEnum never
+    // accepted. Echoing it back verbatim let the dashboard round-trip it
+    // straight into project creation and 400 with "Expected union value".
+    await mkdir(join(tempDir, "infra", "9router"), { recursive: true });
+    await writeFile(
+      join(tempDir, "infra", "9router", "docker-compose.yml"),
+      ["services:", "  9router:", "    image: decolua/9router:latest"].join("\n"),
+    );
+
+    const info = await resolveProjectInfo({
+      source: "local",
+      path: tempDir,
+      composePath: "infra/9router",
+    });
+
+    expect(info.packageManager).toBe("npm");
+  });
+
   it("reports invalid Compose YAML instead of returning no services", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "openship-prepare-"));
     tempDirs.push(tempDir);

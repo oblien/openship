@@ -68,8 +68,16 @@ export type Source =
       ctx?: RequestContext;
       /** See {@link ResolveOptions.composePath}. */
       composePath?: string;
+      /** See {@link ResolveOptions.env}. */
+      env?: Record<string, string>;
     }
-  | { source: "local"; path: string; composePath?: string };
+  | {
+      source: "local";
+      path: string;
+      composePath?: string;
+      /** See {@link ResolveOptions.env}. */
+      env?: Record<string, string>;
+    };
 
 export interface ResolveOptions {
   /**
@@ -84,6 +92,14 @@ export interface ResolveOptions {
    * buildpack build (the confusing behaviour this option exists to replace).
    */
   composePath?: string;
+  /**
+   * Env the caller already holds for this deploy (the values configured on the
+   * project / entered in the wizard). Compose interpolation resolves against
+   * these on top of the repo `.env`, so a file declaring `${VAR:?...}` scans
+   * cleanly once the user has supplied VAR — without it the scan reports the
+   * file as unparseable even though the deploy would have succeeded (#383).
+   */
+  env?: Record<string, string>;
 }
 
 /** Thrown when a declared `composePath` has no compose file behind it. */
@@ -602,6 +618,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     }
     return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch, {
       composePath: input.composePath,
+      env: input.env,
     });
   }
 
@@ -611,7 +628,7 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
 
   // Dynamic import keeps local-source (node:fs) out of the cloud module graph.
   const { resolveFromLocal } = await import("./local-source");
-  return resolveFromLocal(input.path, { composePath: input.composePath });
+  return resolveFromLocal(input.path, { composePath: input.composePath, env: input.env });
 }
 
 type RepoMeta = Parameters<typeof toProjectInfo>[0];
@@ -704,7 +721,7 @@ export async function resolveFromReader(
     composeEnvContent,
     root.monorepo,
     routing,
-    { declaredCompose: !!root.declaredComposePath },
+    { declaredCompose: !!root.declaredComposePath, env: opts.env },
   );
   const overlaid = applyOpenshipOverlay(info, openshipConfig);
 
@@ -769,6 +786,8 @@ function toProjectInfo(
      *  services project even when stack detection wouldn't say so on its own
      *  (a non-standard filename like `stack.yml` matches no root marker). */
     declaredCompose?: boolean;
+    /** See {@link ResolveOptions.env}. */
+    env?: Record<string, string>;
   },
 ): ProjectInfo {
   const stack = projectRoot.stack;
@@ -777,7 +796,10 @@ function toProjectInfo(
   let services: ComposeService[] | undefined;
   if (composeContent && (opts?.declaredCompose || stack.projectType === "services")) {
     try {
-      const parsed = parseComposeFile(composeContent, { envFileContent: composeEnvContent });
+      const parsed = parseComposeFile(composeContent, {
+        envFileContent: composeEnvContent,
+        env: opts?.env,
+      });
       services = parsed.services;
     } catch (err) {
       // Surface the broken file. Swallowing it returns a services project with
@@ -816,7 +838,14 @@ function toProjectInfo(
     stack: stack.stack,
     projectType,
     category: stack.category,
-    packageManager: stack.packageManager,
+    // detectPackageManager()'s "unknown" fallback (no manifest anywhere in this
+    // root) is an internal sentinel, not a real package manager — PackageManagerEnum
+    // (project.schema.ts) never included it, so echoing it back verbatim here let
+    // the client round-trip it straight into project creation and 400 with
+    // "Expected union value" (issue #415). "npm" mirrors the client's own
+    // `|| "npm"` fallback default (DEFAULT_DEPLOYMENT_CONFIG) — same reasonable
+    // default, now applied where the value is actually produced.
+    packageManager: stack.packageManager === "unknown" ? "npm" : stack.packageManager,
     buildCommand: stack.buildCommand,
     installCommand: stack.installCommand,
     startCommand: stack.startCommand,

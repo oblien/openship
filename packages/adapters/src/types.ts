@@ -468,10 +468,11 @@ interface BaseRouteConfig {
    *
    * When set, the routing provider guarantees a :443 listener for the host from
    * the moment the route exists — serving a temporary self-signed cert until the
-   * real one is issued. Without a listener, an unmatched SNI hits the edge's
-   * `ssl_reject_handshake` default, so the origin REFUSES the handshake for a
-   * domain we route (Cloudflare reports that as error 525, and it deadlocks
-   * issuance — see #308).
+   * real one is issued. Without a listener, an unmatched SNI falls through to the
+   * edge's :443 catch-all, which answers a domain we route with the "service not
+   * found" page under a certificate valid for no hostname — and deadlocks issuance,
+   * because the catch-all carries no ACME location on :443 (see #308, and #431 for
+   * why the symptom is now a wrong page rather than error 525).
    *
    * Left unset for `externalIngress` hosts and managed `*.opsh.io` hosts, whose
    * TLS is someone else's: presenting a placeholder cert for those would be wrong,

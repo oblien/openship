@@ -355,6 +355,17 @@ export function toDiscoveredService(
     }
   }
 
+  // Coolify injects every runtime variable explicitly and its Nixpacks builds
+  // bake the same values into the image, so subtracting image defaults dropped
+  // real configuration — often all of it. `coolify.managed` is stamped on every
+  // container it manages (bootstrap/helpers/docker.php).
+  const coolifyManaged = "coolify.managed" in detail.labels;
+  if (coolifyManaged) {
+    warnings.push(
+      "Coolify build-time variables (and any BuildKit secrets) are absent from a running container, so they cannot be imported — re-enter them before rebuilding. Runtime variables, including shared, linked-resource and secret values, were imported.",
+    );
+  }
+
   // Drop the container's command when it merely restates the image's default
   // CMD (and compose didn't declare one). Re-specifying it means the deploy
   // re-runs it wrapped as `sh -c "<cmd>"`, which defeats entrypoints that drop
@@ -430,7 +441,12 @@ export function toDiscoveredService(
     if (routes.length > 0) existingRoute = routes;
   }
 
-  const { record: env, droppedImageDefaults } = envArrayToRecord(detail.env, imageDefaults);
+  // Coolify containers subtract nothing (see `coolifyManaged` above), so they also
+  // have nothing to report as dropped.
+  const { record: env, droppedImageDefaults } = envArrayToRecord(
+    detail.env,
+    coolifyManaged ? undefined : imageDefaults,
+  );
   if (droppedImageDefaults.length > 0) {
     // Not carried as explicit config because they matched the image's baked-in
     // default (still supplied at runtime by the same image). Surfaced so the
@@ -478,7 +494,8 @@ export function reconcileStack(opts: {
   networks: DockerNetworkInfo[];
   declared: Map<string, ComposeService>;
   alreadyManaged: number;
-  /** image ref → its baked-in "KEY=VALUE" env, subtracted from container env. */
+  /** image ref → its baked-in "KEY=VALUE" env, subtracted from container env
+   *  (skipped for Coolify-managed containers — see toDiscoveredService). */
   imageDefaults?: Map<string, Set<string>>;
   /** image ref → its baked-in default CMD tokens, dropped when the container
    *  only restates it (see toDiscoveredService). */

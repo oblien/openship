@@ -174,6 +174,48 @@ export async function planAndApplyHostEdge(
   return action === "migrate" ? { proceed: true, action, sites, certPems } : { proceed: true, action };
 }
 
+/** What `previewHostEdge` found on :80/:443. */
+export interface EdgePreview {
+  /** Human label of what holds the ports; null when they're free or already ours. */
+  owner: string | null;
+  /** A FOREIGN proxy holds them, so `up` would have to migrate or take over. */
+  blocked: boolean;
+  /** Sites parsed off that proxy — what "migrate" would carry across. */
+  sites: ImportedSite[];
+  /** Config items that wouldn't migrate automatically. */
+  warnings: string[];
+}
+
+/**
+ * Who holds :80/:443 right now, and what a real `up` would offer to do about it —
+ * for `--dry-run`. STRICTLY read-only.
+ *
+ * Not `planAndApplyHostEdge` with a flag: that flow's first act is
+ * `recoverInterruptedTakeover` (it restarts a proxy an earlier crashed run left
+ * stopped), and it ends by journaling and STOPPING the occupant. A preview must do
+ * neither — it only probes and parses, so it is safe on a box the operator is
+ * merely evaluating.
+ */
+export async function previewHostEdge(
+  overrides: Partial<Pick<EdgePreflightDeps, "platform" | "makeExecutor" | "foreignProxyOnEdge" | "importSites">> = {},
+): Promise<EdgePreview> {
+  const deps = { ...defaultDeps(), ...overrides };
+  const empty: EdgePreview = { owner: null, blocked: false, sites: [], warnings: [] };
+  // Host networking (and thus the :80/:443 contention) is a Linux concept.
+  if (deps.platform !== "linux") return empty;
+  try {
+    const executor = deps.makeExecutor();
+    const { status, blocked, owner } = await deps.foreignProxyOnEdge(executor);
+    if (!blocked) return { ...empty, owner: owner || null };
+    const { sites, warnings } = await deps.importSites(executor, status);
+    return { owner: owner || null, blocked: true, sites, warnings };
+  } catch {
+    // A probe that can't run (no `ss`, no docker, no permission) must not fail the
+    // preview — the rest of the plan is still worth printing.
+    return empty;
+  }
+}
+
 /**
  * Restore the proxy `planAndApplyHostEdge` stopped. Call this on ANY failure
  * between the takeover and a serving edge (compose up failed, API never became

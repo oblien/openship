@@ -35,6 +35,11 @@ describe("EnsureProjectBody — outputDirectory blank default (#427)", () => {
     expect(Value.Check(EnsureProjectBody, wizardPayload)).toBe(true);
   });
 
+  it("accepts human-readable framework display labels like 'Static Site' and 'Next.js' (#427)", () => {
+    expect(Value.Check(EnsureProjectBody, { name: "my-app", framework: "Static Site" })).toBe(true);
+    expect(Value.Check(EnsureProjectBody, { name: "my-app", framework: "Next.js" })).toBe(true);
+  });
+
   it("still accepts a real outputDirectory", () => {
     expect(Value.Check(EnsureProjectBody, { name: "x", outputDirectory: "dist" })).toBe(true);
     expect(Value.Check(EnsureProjectBody, { name: "x", outputDirectory: "apps/web/.next" })).toBe(true);

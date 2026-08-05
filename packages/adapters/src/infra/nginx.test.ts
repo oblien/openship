@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { NginxProvider, renderProxyOptions, renderProxyTlsOptions } from "./nginx";
+import {
+  NginxProvider,
+  renderProxyOptions,
+  renderProxyTlsOptions,
+  type NginxProviderOptions,
+} from "./nginx";
 import {
   PROXY_DIRECTIVES,
   PROXY_GZIP_TYPES,
@@ -8,7 +13,8 @@ import {
   type ProxySettings,
 } from "@repo/core";
 import { scanOpenshipEdge } from "../system/proxy/import/nginx";
-import { OPENRESTY_DEFAULT_PATHS, luaSourceAvailable, RULES_GUARD_PATH, ACME_HTTP01_PORT, EDGE_CHALLENGE_DIR, EDGE_CHALLENGE_ROOT, EDGE_CHALLENGE_URL_PREFIX, ensureOpenRestyConfig } from "./openresty-lua";
+import { OPENRESTY_DEFAULT_PATHS, luaSourceAvailable, RULES_GUARD_PATH, ACME_HTTP01_PORT, EDGE_CHALLENGE_DIR, EDGE_CHALLENGE_ROOT, EDGE_CHALLENGE_URL_PREFIX, ensureOpenRestyConfig, edgeDefaultCertPaths } from "./openresty-lua";
+import { EDGE_NOT_FOUND_HTML } from "./edge-not-found";
 import type { CommandExecutor, RouteConfig } from "../types";
 
 // L1 — config GENERATION. Proves NginxProvider emits the right nginx directives
@@ -26,6 +32,8 @@ interface FakeOpts {
   certDomains?: string[];
   /** Simulate an edge with no `openssl` CLI (bootstrap cert can't be produced). */
   noOpenssl?: boolean;
+  provider?: Partial<NginxProviderOptions>;
+  certbotFailure?: string;
 }
 
 /** Stateful fake executor: in-memory file map + atomic-rename (`mv`) handling.
@@ -35,6 +43,7 @@ function makeExecutor(
   opts: FakeOpts,
   calls: string[],
   removed: string[] = [],
+  writes: Array<{ path: string; content: string }> = [],
 ): CommandExecutor {
   const exec = async (command: string): Promise<string> => {
     calls.push(command);
@@ -46,6 +55,9 @@ function makeExecutor(
       // the `mv` below has something to move.
       for (const m of command.matchAll(/'([^']*\.pem)'/g)) files.set(m[1], "PEM");
       return "";
+    }
+    if ((command.startsWith("certbot ") || command.startsWith("env ")) && opts.certbotFailure) {
+      throw new Error(opts.certbotFailure);
     }
     if (command.startsWith("mv -f ")) {
       // Pair swap: `mv -f 'staging/fullchain.pem' 'staging/privkey.pem' 'dir'/`
@@ -72,7 +84,7 @@ function makeExecutor(
   };
   return {
     exec,
-    writeFile: async (p: string, c: string) => { files.set(p, c); },
+    writeFile: async (p: string, c: string) => { writes.push({ path: p, content: c }); files.set(p, c); },
     readFile: async (p: string) => {
       const c = files.get(p);
       if (c === undefined) throw new Error(`ENOENT ${p}`);
@@ -89,8 +101,13 @@ function setup(opts: FakeOpts = {}) {
   const files = new Map<string, string>();
   const calls: string[] = [];
   const removed: string[] = [];
-  const nginx = new NginxProvider({ paths: PATHS, executor: makeExecutor(files, opts, calls, removed) });
-  return { nginx, files, calls, removed, conf: (slug: string) => files.get(`${SITES}/${slug}.conf`) };
+  const writes: Array<{ path: string; content: string }> = [];
+  const nginx = new NginxProvider({
+    ...opts.provider,
+    paths: PATHS,
+    executor: makeExecutor(files, opts, calls, removed, writes),
+  });
+  return { nginx, files, calls, removed, writes, conf: (slug: string) => files.get(`${SITES}/${slug}.conf`) };
 }
 
 const PROXY: RouteConfig = { domain: "app.example.com", tls: true, targetUrl: "http://127.0.0.1:3009" };
@@ -102,8 +119,9 @@ const BOOTSTRAP_DIR = "/etc/letsencrypt/openship-bootstrap/app.example.com";
  * Openship Cloud's shared edge proves this box controls a routing target by fetching
  * a token over plain HTTP from the target. Every `:80` shape must answer it, because
  * any of them can be the vhost the probe lands on — and a `:443` block must NOT,
- * since the target is always schemed `http://` and there is no HTTPS catch-all
- * (the 443 default is `ssl_reject_handshake` with no locations).
+ * since the target is always schemed `http://`. The 443 catch-all is not an
+ * exception: it answers unmatched SNI with the "service not found" page and carries
+ * no challenge location, so an HTTPS probe there is a 404, never a proxied request.
  *
  * The location must also out-prefix `location /`: without it, a probe for a hostname
  * target served by a TENANT's app would be proxied INTO that app, which could then
@@ -332,6 +350,129 @@ describe("NginxProvider config generation", () => {
     expect(certbot).toContain(String(ACME_HTTP01_PORT));
     expect(certbot).toContain("--cert-name");
     expect(certbot).not.toContain("--webroot");
+  });
+
+  test("alternate ACME directory, CA bundle, and key type reach certbot", async () => {
+    const { nginx, calls } = setup({
+      provider: {
+        acmeDirectoryUrl: "https://acme.example.test/directory",
+        acmeCaBundle: "/etc/ssl/private/acme-root.pem",
+        acmeKeyType: "ec384",
+      },
+    });
+    await expect(nginx.provisionCert("app.example.com")).rejects.toThrow();
+    const certbot = calls.find((c) => c.startsWith("env ") && c.includes("certbot"));
+    expect(certbot).toContain("REQUESTS_CA_BUNDLE=/etc/ssl/private/acme-root.pem");
+    expect(certbot).toContain("--server");
+    expect(certbot).toContain("https://acme.example.test/directory");
+    expect(certbot).toContain("--key-type");
+    expect(certbot).toContain("ecdsa");
+    expect(certbot).toContain("secp384r1");
+  });
+
+  test("EAB HMAC is passed through an ephemeral 0600 config and never argv or errors", async () => {
+    const hmac = "c3VwZXItc2VjcmV0LWhtYWM";
+    const { nginx, calls, writes, removed } = setup({
+      provider: { acmeEabKid: "kid-123", acmeEabHmacKey: hmac },
+      certbotFailure: `CA rejected EAB key ${hmac}`,
+    });
+    let error: Error | undefined;
+    try {
+      await nginx.provisionCert("app.example.com");
+    } catch (err) {
+      error = err as Error;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).not.toContain(hmac);
+    expect(error?.message).toContain("[REDACTED]");
+
+    const secretWrite = writes.find((w) => w.path.includes(".openship-eab-"));
+    expect(secretWrite?.content).toContain("eab-kid = kid-123");
+    expect(secretWrite?.content).toContain(`eab-hmac-key = ${hmac}`);
+    const certbot = calls.find((c) => c.startsWith("certbot "));
+    expect(certbot).toContain("--config");
+    expect(certbot).not.toContain(hmac);
+    const configPath = certbot?.match(/'--config' '([^']+)'/)?.[1];
+    expect(configPath).toBeDefined();
+    // git-ssh-material layout: the ini lives in its own 0700 directory (locked
+    // down BEFORE any secret bytes land, covering even the staged temp file),
+    // the file itself is chmod 600 before the rename publishes it, and cleanup
+    // removes the whole directory as a unit.
+    const secretDir = configPath!.replace(/\/eab\.ini$/, "");
+    expect(secretDir).toContain(".openship-eab-");
+    const dirChmodIdx = calls.findIndex((c) => c.startsWith("chmod ") && c.includes("'700'") && c.includes(secretDir));
+    const fileChmodIdx = calls.findIndex((c) => c.startsWith("chmod ") && c.includes("'600'") && c.includes(`${configPath}.tmp-`));
+    const publishIdx = calls.findIndex((c) => c.startsWith("mv ") && c.includes(`'${configPath}'`));
+    expect(dirChmodIdx).toBeGreaterThanOrEqual(0);
+    expect(fileChmodIdx).toBeGreaterThan(dirChmodIdx);
+    expect(publishIdx).toBeGreaterThan(fileChmodIdx);
+    expect(removed).toContain(secretDir);
+  });
+
+  test("rejects incomplete or malformed EAB configuration before issuance", () => {
+    expect(() => setup({ provider: { acmeEabKid: "kid-only" } })).toThrow(/requires both/i);
+    expect(() => setup({
+      provider: { acmeEabKid: "kid", acmeEabHmacKey: "not standard base64/+" },
+    })).toThrow(/base64url/i);
+  });
+
+  test("renewing a lineage issued by a DIFFERENT directory reissues under the configured CA", async () => {
+    const { nginx, files, calls } = setup({
+      certDomains: ["app.example.com"],
+      provider: { acmeDirectoryUrl: "https://acme.example.test/directory" },
+    });
+    // Pre-switch lineage: certbot's renewal conf records the OLD issuing server,
+    // which `renew` holds no account for after the operator changed CAs.
+    files.set(
+      "/etc/letsencrypt/renewal/app.example.com.conf",
+      "[renewalparams]\nserver = https://acme-v02.api.letsencrypt.org/directory\n",
+    );
+    await nginx.renewCert("app.example.com").catch(() => undefined);
+    const certonly = calls.find((c) => c.includes("certonly"));
+    expect(certonly).toContain("--force-renewal");
+    expect(certonly).toContain("--server");
+    expect(certonly).toContain("https://acme.example.test/directory");
+    expect(calls.find((c) => c.includes("'renew'"))).toBeUndefined();
+  });
+
+  test("renewing a lineage issued by the SAME directory renews plainly, without --server", async () => {
+    const { nginx, files, calls } = setup({
+      certDomains: ["app.example.com"],
+      provider: { acmeDirectoryUrl: "https://acme.example.test/directory" },
+    });
+    files.set(
+      "/etc/letsencrypt/renewal/app.example.com.conf",
+      "[renewalparams]\nserver = https://acme.example.test/directory\n",
+    );
+    await nginx.renewCert("app.example.com").catch(() => undefined);
+    const renew = calls.find((c) => c.startsWith("certbot ") && c.includes("'renew'"));
+    expect(renew).toContain("--cert-name");
+    expect(renew).not.toContain("--server");
+    expect(calls.find((c) => c.includes("certonly"))).toBeUndefined();
+  });
+
+  test("a renew failure never leaks the EAB HMAC in the thrown error", async () => {
+    const hmac = "c3VwZXItc2VjcmV0LWhtYWM";
+    const { nginx, files } = setup({
+      certDomains: ["app.example.com"],
+      provider: { acmeEabKid: "kid-123", acmeEabHmacKey: hmac },
+      certbotFailure: `CA rejected EAB key ${hmac}`,
+    });
+    // Matching lineage (no custom directory → certbot's Let's Encrypt default),
+    // so the PLAIN renew path runs — the one with no redacting catch of its own.
+    files.set(
+      "/etc/letsencrypt/renewal/app.example.com.conf",
+      "[renewalparams]\nserver = https://acme-v02.api.letsencrypt.org/directory\n",
+    );
+    let error: Error | undefined;
+    try {
+      await nginx.renewCert("app.example.com");
+    } catch (err) {
+      error = err as Error;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).not.toContain(hmac);
+    expect(error?.message).toContain("[REDACTED]");
   });
 
   test("webhook proxy adds the /_openship/hooks/ location", async () => {
@@ -972,29 +1113,62 @@ describe("canonical host redirect", () => {
 
 // Security: an HTTPS request whose SNI matches no vhost must NOT fall through to
 // the first-loaded 443 server block (cross-serving another app's cert+backend).
-// The default catch-all owns `443 ssl default_server` and rejects unknown SNI.
-describe("default catch-all rejects unmatched HTTPS hosts", () => {
-  test("ensureOpenRestyConfig writes a 443 default_server that rejects unknown SNI", async () => {
+// The default catch-all owns `443 ssl default_server` and answers there itself.
+describe("default catch-all owns unmatched HTTPS hosts", () => {
+  test("ensureOpenRestyConfig writes a 443 default_server serving the not-found page", async () => {
     const files = new Map<string, string>();
     const calls: string[] = [];
     // nginx.conf already present → exercises the steady-state path (not bootstrap).
     files.set(PATHS.confPath, `http {\n    include ${SITES}/*.conf;\n}\n`);
+    // openssl succeeds here, so the placeholder cert exists and the handshake can
+    // complete — the point of #431.
     await ensureOpenRestyConfig(makeExecutor(files, {}, calls), PATHS);
     const def = files.get(`${SITES}/_default.conf`);
     expect(def).toBeDefined();
     expect(def).toContain("listen 443 ssl default_server;");
-    expect(def).toContain("ssl_reject_handshake on;");
-    // and the HTTP catch-all stays a default_server too (no fallthrough on :80).
+    const { certPath, keyPath } = edgeDefaultCertPaths(PATHS.confDir);
+    expect(def).toContain(`ssl_certificate ${certPath};`);
+    expect(def).toContain(`ssl_certificate_key ${keyPath};`);
+    expect(def).toContain(EDGE_NOT_FOUND_HTML);
+    // and the HTTP catch-all stays a default_server too (no fallthrough on :80),
+    // now answering with the same page instead of a bare `return 404`.
     expect(def).toContain("listen 80 default_server;");
+    expect(calls.some((c) => c.includes("openssl req -x509"))).toBe(true);
+  });
+
+  test("falls back to refusing the handshake when the cert cannot be made", async () => {
+    // The fail-safe that matters most: naming an ssl_certificate that is not on disk
+    // does not cost us a page, it stops OpenResty loading the config at all — so
+    // `openresty -t` fails, the deploy's reload is refused, and every later route
+    // change on the box is refused with it. A box with no openssl keeps the
+    // unfriendly TLS error; it does not lose routing.
+    const files = new Map<string, string>();
+    files.set(PATHS.confPath, `http {\n    include ${SITES}/*.conf;\n}\n`);
+    await ensureOpenRestyConfig(makeExecutor(files, { noOpenssl: true }, []), PATHS);
+    const def = files.get(`${SITES}/_default.conf`)!;
+    expect(def).toContain("ssl_reject_handshake on;");
+    expect(def).not.toContain("ssl_certificate ");
+    // The :80 half still lands — it needs no certificate.
+    expect(def).toContain(EDGE_NOT_FOUND_HTML);
+  });
+
+  test("the 443 catch-all is a dead end — it never proxies or serves a real cert", async () => {
+    const files = new Map<string, string>();
+    files.set(PATHS.confPath, `http {\n    include ${SITES}/*.conf;\n}\n`);
+    await ensureOpenRestyConfig(makeExecutor(files, {}, []), PATHS);
+    const def = files.get(`${SITES}/_default.conf`)!;
+    const https = def.slice(def.indexOf("listen 443 ssl default_server;"));
+    expect(https).not.toContain("proxy_pass");
+    expect(https).not.toContain("/etc/letsencrypt");
   });
 
   test("catch-all is re-written on every ensure (self-heals a stale 80-only copy)", async () => {
     const files = new Map<string, string>();
     files.set(PATHS.confPath, `http {\n    include ${SITES}/*.conf;\n}\n`);
-    // Simulate an already-deployed box whose _default.conf predates the 443 reject.
+    // Simulate an already-deployed box whose _default.conf predates the 443 default.
     files.set(`${SITES}/_default.conf`, "server {\n    listen 80 default_server;\n}\n");
     await ensureOpenRestyConfig(makeExecutor(files, {}, []), PATHS);
-    expect(files.get(`${SITES}/_default.conf`)).toContain("ssl_reject_handshake on;");
+    expect(files.get(`${SITES}/_default.conf`)).toContain("listen 443 ssl default_server;");
   });
 
   test("does NOT carry the edge-target challenge — that block is never evaluated", async () => {

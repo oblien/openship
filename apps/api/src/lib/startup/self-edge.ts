@@ -14,6 +14,7 @@
 
 import { env } from "../../config/env";
 import { pinnedEdgeImage, withPinnedEdgeImage } from "../edge-image";
+import { resolveAcmeProviderOptions } from "../acme-config";
 
 export interface SelfEdgeInfraProgress {
   onLog?: (message: string, level?: "info" | "warn" | "error") => void;
@@ -105,6 +106,7 @@ async function runEnsure(
         status,
         sites: scan.sites,
         acmeEmail: env.OPENSHIP_ACME_EMAIL,
+        nginx: resolveAcmeProviderOptions(),
         extraRoutes: [],
         // Pin the edge the takeover installs. `setDefaultEdgeImage` at boot already
         // covers this, but state it here too: this is the ONE caller of

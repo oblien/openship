@@ -31,6 +31,7 @@ import { param } from "../../lib/controller-helpers";
 import { streamSSE } from "../../lib/sse";
 import { sshManager } from "../../lib/ssh-manager";
 import { withPinnedEdgeImage } from "../../lib/edge-image";
+import { resolveAcmeProviderOptions } from "../../lib/acme-config";
 import { applyProjectRouting } from "./routing-apply.service";
 import {
   createEdgeConsentSession,
@@ -225,7 +226,7 @@ export async function ensureEdgeStream(c: Context) {
         const edge = await ensureEdge(
           executor,
           (p) => installer(executor, onLog, withPinnedEdgeImage({ promptUser: p })),
-          { promptUser, onLog },
+          { promptUser, onLog, nginx: resolveAcmeProviderOptions() },
         );
         if (edge.migrated && !edge.ok) {
           throw new Error("Edge takeover failed — rolled back to the previous proxy.");

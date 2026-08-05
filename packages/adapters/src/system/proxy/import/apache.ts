@@ -44,9 +44,16 @@ async function loadApacheConfig(executor: CommandExecutor): Promise<string> {
   return cat ?? "";
 }
 
+/** Drop the `"`/`'` httpd reads as argument delimiters (`DocumentRoot "/srv/x"`). */
+function unquote(value: string): string {
+  return value.replace(/^["']|["']$/g, "");
+}
+
+/** The single argument of a one-argument directive, unquoted. */
 function directive(body: string, name: string): string | undefined {
   const m = body.match(new RegExp(`(?:^|\\n)\\s*${name}\\s+([^\\n]+)`, "i"));
-  return m?.[1]?.trim();
+  const value = m?.[1]?.trim();
+  return value === undefined ? undefined : unquote(value);
 }
 
 /** All values of a directive that may appear on multiple lines (e.g. ServerAlias). */
@@ -80,7 +87,53 @@ function isHttpsRedirectOnly(body: string): boolean {
  *  hostname, and carrying it through produced `server_name example.com:443`,
  *  which matches nothing. */
 function hostOnly(name: string): string {
-  return name.trim().replace(/^https?:\/\//i, "").replace(/:\d+$/, "");
+  return unquote(name.trim())
+    .replace(/^https?:\/\//i, "")
+    .replace(/:\d+$/, "");
+}
+
+/**
+ * Every `ProxyPass` mapping in a vhost, as `<path> → <upstream>`.
+ *
+ * Read line by line so a mapping can't run past its own line, and both documented
+ * argument forms are accepted: `ProxyPass <path> <url>` at vhost level, and the
+ * one-argument `ProxyPass <url>` whose path is the enclosing `<Location>`. A
+ * `<LocationMatch>` path is a regex no single prefix can express, so its mappings
+ * are dropped and reported through `regexScoped` instead.
+ */
+function proxyRoutes(body: string): {
+  routes: Array<{ path: string; url: string }>;
+  regexScoped: boolean;
+} {
+  const routes: Array<{ path: string; url: string }> = [];
+  const scopes: Array<{ path: string | null; regex: boolean }> = [];
+  let regexScoped = false;
+  for (const line of body.split("\n")) {
+    const open = line.match(/^\s*<Location(Match)?\s+([^>]*)>/i);
+    if (open) {
+      const regex = Boolean(open[1]);
+      const arg = unquote(open[2].trim());
+      scopes.push({ path: !regex && arg.startsWith("/") ? arg : null, regex });
+      continue;
+    }
+    if (/^\s*<\/Location(?:Match)?\s*>/i.test(line)) {
+      scopes.pop();
+      continue;
+    }
+    const m = line.match(/^\s*ProxyPass\s+(\S+)(?:\s+(\S+))?/i);
+    if (!m) continue;
+    const first = unquote(m[1]);
+    if (first.startsWith("/")) {
+      routes.push({ path: first, url: m[2] ? unquote(m[2]) : "" });
+      continue;
+    }
+    // The one-argument form is only legal inside a <Location>, which is the only
+    // place a path for it exists.
+    const scope = scopes[scopes.length - 1];
+    if (scope?.path) routes.push({ path: scope.path, url: first });
+    else if (scope?.regex) regexScoped = true;
+  }
+  return { routes, regexScoped };
 }
 
 function parseVhost(body: string, portHint: string): ImportedSite | { warning: string } | null {
@@ -101,10 +154,9 @@ function parseVhost(body: string, portHint: string): ImportedSite | { warning: s
 
   // ProxyPass <path> http://upstream — keep ALL non-"!" mappings (path fan-out);
   // primary = the "/" mapping if present, else the first.
-  const routes = [...body.matchAll(/(?:^|\n)\s*ProxyPass\s+(\S+)\s+(\S+)/gi)]
-    .map((m) => ({ path: m[1], url: m[2] }))
-    .filter((p) => p.url && p.url !== "!");
-  const docRoot = directive(body, "DocumentRoot")?.replace(/^["']|["']$/g, "");
+  const proxy = proxyRoutes(body);
+  const routes = proxy.routes.filter((p) => p.url && p.url !== "!");
+  const docRoot = directive(body, "DocumentRoot");
   // `ProxyPassMatch … fcgi://` / `…php-fpm.sock` — a PHP application, whatever its
   // DocumentRoot says.
   const fcgiMatch = /(?:^|\n)\s*ProxyPassMatch\s+[^\n]*(fcgi:|php-fpm|php\d*-fpm|\.sock)/i.test(body);
@@ -138,6 +190,10 @@ function parseVhost(body: string, portHint: string): ImportedSite | { warning: s
     // Regex-keyed proxying with no docroot has no single upstream either.
     return {
       warning: `apache: ${names[0]} uses ProxyPassMatch (regex proxying) — re-add it manually`,
+    };
+  } else if (proxy.regexScoped) {
+    return {
+      warning: `apache: ${names[0]} proxies from inside a <LocationMatch> (regex proxying) — re-add it manually`,
     };
   } else {
     return { warning: `apache: ${names[0]} has neither ProxyPass nor DocumentRoot — skipped` };

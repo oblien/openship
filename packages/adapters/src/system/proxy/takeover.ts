@@ -20,7 +20,7 @@ import { collectProxyCerts, edgeProxy } from "./api";
 import { isSafeCertPath, readDeclaredPair, validateCertFor } from "./cert-material";
 import { buildJournal, clearJournal, rollback, writeJournal } from "./takeover-journal";
 import { installContainerEdge } from "../installer";
-import { containerEdgeProvider } from "./ensure-container-edge";
+import { containerEdgeProvider, type EdgeProviderOptions } from "./ensure-container-edge";
 import { checkEdge } from "../checks";
 import { NginxProvider } from "../../infra/nginx";
 import { detectOpenRestyPaths } from "../../infra/openresty-lua";
@@ -36,6 +36,7 @@ export interface EdgeTakeoverOptions {
   status: EdgeStatus;
   sites: ImportedSite[];
   acmeEmail?: string;
+  nginx?: EdgeProviderOptions;
   /** Extra routes to register beyond the imported sites (e.g. the control plane's own hostname). */
   extraRoutes?: Array<{ domain: string; targetUrl: string; tls: boolean }>;
   /** Pinned edge image; the API always supplies its own (never a caller's value). */
@@ -266,12 +267,13 @@ export async function runEdgeTakeover(
     // migrated vhost where the container never reads — with the foreign proxy
     // already stopped.
     const container = await resolveOurEdgeContainer(executor, { fresh: true });
+    const providerOptions = { ...opts.nginx, acmeEmail: opts.acmeEmail ?? opts.nginx?.acmeEmail };
     const nginx = container
-      ? await containerEdgeProvider(executor, container, { acmeEmail: opts.acmeEmail })
+      ? await containerEdgeProvider(executor, container, providerOptions)
       : new NginxProvider({
           paths: await detectOpenRestyPaths(executor),
           executor,
-          acmeEmail: opts.acmeEmail,
+          ...providerOptions,
         });
 
     const registered = await registerImportedSites(nginx, nginx, executor, opts.sites, {

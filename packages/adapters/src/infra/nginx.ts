@@ -34,6 +34,7 @@ import type { RoutingProvider, SslProvider } from "./types";
 import { LUA_LOGGER_PATH, RULES_GUARD_PATH, luaSourceAvailable, buildReloadCommand, detectOpenRestyPaths, ACME_HTTP01_PORT, ACME_CHALLENGE_LOCATION, EDGE_CHALLENGE_DIR, EDGE_CHALLENGE_LOCATION, EDGE_CHALLENGE_URL_PREFIX, type OpenRestyPaths } from "./openresty-lua";
 import { safeErrorMessage, sanitizeProxySettings, resolveRedirectStatus, PROXY_DIRECTIVES, parseProxyValue, resolveProxyDirectives, type NginxVersion, type ProxySettings } from "@repo/core";
 import { sq } from "../system/local-shell";
+import { EDGE_UNROUTED_SENTINEL } from "./edge-not-found";
 import { edgeDownExplanation } from "../system/edge-exec-error";
 import { BOOTSTRAP_CERT_SEGMENT, validateCertFor } from "../system/proxy/cert-material";
 import { probeStaticOutput, type OutputProbeResult } from "../system/output-exists";
@@ -262,6 +263,18 @@ export interface NginxProviderOptions {
    * ACME email for certbot certificate registration.
    */
   acmeEmail?: string;
+  /** Alternate ACME directory. Unset preserves Certbot's Let's Encrypt default. */
+  acmeDirectoryUrl?: string;
+  /** EAB key identifier. Must be supplied together with acmeEabHmacKey. */
+  acmeEabKid?: string;
+  /** Base64url-encoded EAB HMAC key. Written only to a short-lived 0600 file. */
+  acmeEabHmacKey?: string;
+  /** Certificate private-key algorithm/size. Unset preserves Certbot's default. */
+  acmeKeyType?: "ec256" | "ec384" | "rsa2048" | "rsa4096";
+  /** Trust bundle visible to the Certbot execution environment. */
+  acmeCaBundle?: string;
+  /** Whether to accept the selected CA's terms. Defaults to the historic true. */
+  acmeTosAgreed?: boolean;
   /**
    * Path to Let's Encrypt live certificate directory.
    * Default: /etc/letsencrypt/live
@@ -306,6 +319,48 @@ export interface NginxProviderOptions {
 }
 
 const DEFAULT_CERT_DIR = "/etc/letsencrypt/live";
+
+/** Certbot's implicit default when no `--server` is passed — what every lineage
+ * issued before alternate-CA support (or with no directory configured) records. */
+const LETSENCRYPT_PRODUCTION_DIRECTORY = "https://acme-v02.api.letsencrypt.org/directory";
+
+export type AcmeKeyType = NonNullable<NginxProviderOptions["acmeKeyType"]>;
+
+function assertValidAcmeOptions(opts: NginxProviderOptions): void {
+  if (!!opts.acmeEabKid !== !!opts.acmeEabHmacKey) {
+    throw new Error("ACME EAB requires both a key identifier and an HMAC key");
+  }
+  if (opts.acmeDirectoryUrl) {
+    let directory: URL;
+    try {
+      directory = new URL(opts.acmeDirectoryUrl);
+    } catch {
+      throw new Error("ACME directory must be a valid http(s) URL");
+    }
+    if (directory.protocol !== "https:" && directory.protocol !== "http:") {
+      throw new Error("ACME directory must use http or https");
+    }
+  }
+  if (opts.acmeEabKid && (!/^[\x20-\x7E]+$/.test(opts.acmeEabKid) || opts.acmeEabKid.length > 512)) {
+    throw new Error("ACME EAB key identifier must be printable ASCII (maximum 512 characters)");
+  }
+  if (opts.acmeEabHmacKey && !/^[A-Za-z0-9_-]+={0,2}$/.test(opts.acmeEabHmacKey)) {
+    throw new Error("ACME EAB HMAC key must be base64url encoded");
+  }
+  if (opts.acmeCaBundle && !opts.acmeCaBundle.startsWith("/")) {
+    throw new Error("ACME CA bundle must be an absolute path in the Certbot environment");
+  }
+}
+
+export function acmeKeyArgs(keyType?: AcmeKeyType): string[] {
+  switch (keyType) {
+    case "ec256": return ["--key-type", "ecdsa", "--elliptic-curve", "secp256r1"];
+    case "ec384": return ["--key-type", "ecdsa", "--elliptic-curve", "secp384r1"];
+    case "rsa2048": return ["--key-type", "rsa", "--rsa-key-size", "2048"];
+    case "rsa4096": return ["--key-type", "rsa", "--rsa-key-size", "4096"];
+    default: return [];
+  }
+}
 
 /** Only allow valid domain characters - prevents shell injection. */
 const DOMAIN_RE = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/;
@@ -459,6 +514,24 @@ function certbotDiagnosis(output: string, domain: string): string | undefined {
       `of three ways — set SSL/TLS → Overview to "Full" (not "Full (strict)") until the first ` +
       `certificate is issued, or turn the orange cloud off for this record until it is, or upload a ` +
       `Cloudflare Origin CA certificate from the Domains tab and skip Let's Encrypt entirely.`;
+  } else if (text.includes(EDGE_UNROUTED_SENTINEL)) {
+    // MUST precede the 40x branch, for the same reason the 52x branch does — and
+    // this branch is why the 52x one no longer catches this case.
+    //
+    // Our own edge answered, with the "service not found" page it serves for a
+    // hostname it has no vhost for (#431). Before that page existed the same
+    // situation surfaced as 525 (the :443 catch-all refused the handshake, so
+    // Cloudflare reported an origin TLS failure) and the branch above explained it.
+    // Now Cloudflare "Full" accepts the catch-all's placeholder cert, fetches the
+    // challenge, and gets this page — a 404, which the branch below would blame on
+    // "another web server is still serving :80" and answer with take-over / migrate.
+    // That remediation rewrites a working proxy config for a problem it cannot fix.
+    diagnosis =
+      `This server's edge answered the challenge for ${domain} with its "service not found" page: ` +
+      `nothing here is routing that hostname on the port the request arrived on. Either the domain ` +
+      `doesn't point at this server (check its A record), or it isn't registered here yet — add it ` +
+      `from the Domains tab and retry. Nothing else is occupying :80, so take-over / migrate will ` +
+      `not help.`;
   } else if (/404|invalid response|unauthorized|"?status"?:?\s*40\d/i.test(text)) {
     diagnosis =
       `Port 80 answered but not with our ACME challenge — another web server is still serving :80, so ` +
@@ -482,6 +555,12 @@ interface FileSnapshot {
 export class NginxProvider implements RoutingProvider, SslProvider {
   private sitesDir: string;
   private readonly acmeEmail: string | undefined;
+  private readonly acmeDirectoryUrl: string | undefined;
+  private readonly acmeEabKid: string | undefined;
+  private readonly acmeEabHmacKey: string | undefined;
+  private readonly acmeKeyType: AcmeKeyType | undefined;
+  private readonly acmeCaBundle: string | undefined;
+  private readonly acmeTosAgreed: boolean;
   private readonly certDir: string;
   private readonly executor: CommandExecutor | null;
   private reloadCommand: string;
@@ -496,9 +575,16 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private nginxVersion: NginxVersion | undefined;
 
   constructor(opts: NginxProviderOptions) {
+    assertValidAcmeOptions(opts);
     this.sitesDir = opts.paths.sitesDir;
     this.nginxVersion = opts.paths.nginxVersion;
     this.acmeEmail = opts.acmeEmail;
+    this.acmeDirectoryUrl = opts.acmeDirectoryUrl;
+    this.acmeEabKid = opts.acmeEabKid;
+    this.acmeEabHmacKey = opts.acmeEabHmacKey;
+    this.acmeKeyType = opts.acmeKeyType;
+    this.acmeCaBundle = opts.acmeCaBundle;
+    this.acmeTosAgreed = opts.acmeTosAgreed ?? true;
     this.certDir = opts.certDir ?? DEFAULT_CERT_DIR;
     this.executor = opts.executor ?? null;
     this.containerEdge = opts.containerEdge ?? false;
@@ -509,7 +595,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
 
   // ── File operation helpers (dual-path: local or remote) ──────────────
 
-  private async _writeFile(path: string, content: string): Promise<void> {
+  private async _writeFile(path: string, content: string, mode?: number): Promise<void> {
     // Random suffix (not just pid+ms) so two same-ms writes to the same conf
     // can't collide on the temp path and defeat the atomic rename.
     const tmpPath = `${path}.tmp-${process.pid}-${Date.now()}-${randomBytes(4).toString("hex")}`;
@@ -517,6 +603,12 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     if (this.executor) {
       try {
         await this.executor.writeFile(tmpPath, content);
+        // Tighten perms on the TEMP file, before the rename publishes it — rename
+        // preserves the source's mode, so the final path never exists more open
+        // than requested. (executor.writeFile has no mode parameter.)
+        if (mode !== undefined) {
+          await this.executor.exec(`chmod ${sq(mode.toString(8))} ${sq(tmpPath)}`);
+        }
         // `rename` (a FILE op), not `exec("mv")`. On a container edge, commands run
         // INSIDE the container while file ops land on the HOST — so the mv renamed a
         // path the container can't see and failed with ENOENT on the file we had just
@@ -535,7 +627,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     } else {
       await fsMkdir(dirname(path), { recursive: true });
       try {
-        await fsWriteFile(tmpPath, content, "utf-8");
+        // `mode` applies at creation, so the content is never on disk more open
+        // than requested (no chmod-after-write window).
+        await fsWriteFile(tmpPath, content, { encoding: "utf-8", mode });
         await fsRename(tmpPath, path);
       } catch (err) {
         await fsRm(tmpPath).catch(() => undefined);
@@ -637,14 +731,22 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    * issued anything.
    *
    * Why a missing :443 block is a hard failure, not a soft one: an unmatched SNI
-   * falls through to the edge's `ssl_reject_handshake` default (correct — it stops
-   * unrouted hosts being cross-served someone else's cert). But that means the
-   * origin REFUSES the handshake for a domain we do route. Behind Cloudflare's
-   * proxy every visitor sees error 525, and issuance deadlocks: Cloudflare answers
-   * the HTTP-01 challenge with a 301 to https, then can't reach an origin that
-   * refuses TLS, so the challenge fails and the vhost stays HTTP-only — forever
-   * (#308). A placeholder breaks the loop: Cloudflare "Full" accepts it, the
-   * challenge completes, and the real cert takes over.
+   * falls through to the edge's :443 catch-all, which answers with the "service not
+   * found" page (#431) under a placeholder certificate that belongs to no domain.
+   * For a domain we DO route that is a broken site: the visitor is told nothing is
+   * deployed here, and behind Cloudflare "Full" — which accepts any origin cert —
+   * they get that page rather than the app. Issuance deadlocks with it: Cloudflare
+   * answers the HTTP-01 challenge with a 301 to https, the catch-all deliberately
+   * carries no ACME location on :443, so the challenge 404s and the vhost stays
+   * HTTP-only — forever (#308). A per-domain placeholder breaks the loop: the
+   * domain gets its OWN name-bound :443 block, the challenge completes, and the
+   * real cert takes over.
+   *
+   * So the :443 catch-all having gained a certificate of its own does NOT make this
+   * redundant — it only changed the symptom from a raw TLS error (#431's old error
+   * 525) into a wrong page. The catch-all's cert is deliberately valid for nothing;
+   * serving it for a domain we route is the cross-serving that block exists to
+   * prevent.
    *
    * Deliberately NOT written under `certDir`: `certsExist()` / `readCertInfo()`
    * read that path, so a self-signed cert there would short-circuit provisionCert
@@ -766,19 +868,74 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    * still sees the real cause.
    */
   private async _execCertbot(args: string[], onLog?: (line: string) => void): Promise<string> {
+    const command = this.acmeCaBundle ? "env" : "certbot";
+    const commandArgs = this.acmeCaBundle
+      ? [`REQUESTS_CA_BUNDLE=${this.acmeCaBundle}`, "certbot", ...args]
+      : args;
     if (!onLog || !this.executor) {
-      const out = await this._exec("certbot", args);
-      if (out) onLog?.(out);
-      return out;
+      let out: string;
+      try {
+        out = await this._exec(command, commandArgs);
+      } catch (err) {
+        // Redact HERE, not only in callers' catches — renewCert has none, and a
+        // new caller must not be able to leak the EAB key by forgetting one.
+        throw new Error(this.redactAcmeSecrets(safeErrorMessage(err)));
+      }
+      const redacted = this.redactAcmeSecrets(out);
+      if (redacted) onLog?.(redacted);
+      return redacted;
     }
-    const full = `certbot ${args.map(sq).join(" ")}`;
+    const full = `${command} ${commandArgs.map(sq).join(" ")}`;
+    // Accumulate RAW output and redact the whole buffer at each use: per-chunk
+    // redaction alone misses a secret split across a chunk boundary.
     let output = "";
     const { code } = await this.executor.streamExec(full, (log) => {
       output += log.message;
-      onLog(log.message);
+      onLog(this.redactAcmeSecrets(log.message));
     });
-    if (code !== 0) throw new Error(output.trim() || `certbot exited ${code}`);
-    return output;
+    if (code !== 0) {
+      throw new Error(this.redactAcmeSecrets(output).trim() || `certbot exited ${code}`);
+    }
+    return this.redactAcmeSecrets(output);
+  }
+
+  private redactAcmeSecrets(value: string): string {
+    return this.acmeEabHmacKey
+      ? value.split(this.acmeEabHmacKey).join("[REDACTED]")
+      : value;
+  }
+
+  /**
+   * Keep EAB HMAC material out of argv/process listings and remove it after use.
+   *
+   * Same layout contract as runtime/git-ssh-material.ts (the repo's other
+   * ephemeral-secret-on-disk site): the material lives in its OWN 0700 directory
+   * with the file at 0600, the bytes never travel through a shell command line,
+   * and cleanup removes the directory as a unit. The 0700 parent goes first, so
+   * even the temp file _writeFile stages is born unreadable to other users.
+   */
+  private async createEphemeralEabConfig(): Promise<string | null> {
+    if (!this.acmeEabKid || !this.acmeEabHmacKey) return null;
+    const dir = join(dirname(this.certDir), `.openship-eab-${randomBytes(12).toString("hex")}`);
+    const path = join(dir, "eab.ini");
+    if (this.executor) {
+      await this.executor.mkdir(dir);
+      await this._exec("chmod", ["700", dir]);
+    } else {
+      await fsMkdir(dir, { recursive: true, mode: 0o700 });
+    }
+    try {
+      await this._writeFile(
+        path,
+        `eab-kid = ${this.acmeEabKid}\neab-hmac-key = ${this.acmeEabHmacKey}\n`,
+        0o600,
+      );
+    } catch (err) {
+      // A partial write must not leave key material behind (git-ssh-material rule).
+      await this._rm(dir).catch(() => undefined);
+      throw err;
+    }
+    return path;
   }
 
   private async _captureFile(path: string): Promise<FileSnapshot> {
@@ -1263,6 +1420,7 @@ ${EDGE_CHALLENGE_LOCATION}
       : ["--register-unsafely-without-email"];
 
     let certonlyOut = "";
+    const eabConfig = await this.createEphemeralEabConfig();
     try {
       // ACME via certbot's STANDALONE authenticator on a loopback alt-port; the
       // edge proxies /.well-known/acme-challenge/ → 127.0.0.1:<port> (see
@@ -1279,16 +1437,25 @@ ${EDGE_CHALLENGE_LOCATION}
       // "missing", and a re-run just prints "not due for renewal" (exit 0). Pinning
       // the name makes the on-disk path deterministic and self-heals that state.
       certonlyOut = await this._execCertbot([
+        ...(eabConfig ? ["--config", eabConfig] : []),
         "certonly", "--standalone", "--http-01-port", String(ACME_HTTP01_PORT),
         "--cert-name", domain, "-d", domain,
-        ...emailArgs, "--agree-tos", "--non-interactive",
+        ...(this.acmeDirectoryUrl ? ["--server", this.acmeDirectoryUrl] : []),
+        ...acmeKeyArgs(this.acmeKeyType),
+        ...emailArgs,
+        ...(this.acmeTosAgreed ? ["--agree-tos"] : []),
+        "--non-interactive",
         // Forced reissue: certbot would otherwise print "not due for renewal"
         // (exit 0) when a lineage exists, leaving the stale cert in place.
         ...(opts?.force ? ["--force-renewal"] : []),
       ], opts?.onLog);
     } catch (err) {
       // Replace certbot's opaque opener with the real, actionable cause.
-      throw new Error(summarizeCertbotFailure(safeErrorMessage(err), domain));
+      throw new Error(summarizeCertbotFailure(this.redactAcmeSecrets(safeErrorMessage(err)), domain));
+    } finally {
+      // Remove the whole 0700 directory, not just the ini — one unit, like
+      // git-ssh-material's cleanup.
+      if (eabConfig) await this._rm(dirname(eabConfig)).catch(() => undefined);
     }
 
     // Rewrite the config with SSL now that certs exist
@@ -1402,7 +1569,21 @@ ${EDGE_CHALLENGE_LOCATION}
       return this.provisionCert(domain, { force: true });
     }
 
-    await this._exec("certbot", ["renew", "--cert-name", domain, "--non-interactive"]);
+    // A lineage issued by a DIFFERENT directory than the one now configured can't
+    // be renewed against the new CA — `renew` won't register the account the new
+    // server requires (or carry EAB). Reissue instead: certonly registers under
+    // the configured CA and rewrites the lineage, so this heals itself once.
+    if (!(await this.lineageServerMatches(domain))) {
+      return this.provisionCert(domain, { force: true });
+    }
+
+    // No `--server` here: the matched lineage's conf already records it, and the
+    // mismatch case above never reaches this call.
+    await this._execCertbot([
+      "renew", "--cert-name", domain,
+      ...acmeKeyArgs(this.acmeKeyType),
+      "--non-interactive",
+    ]);
     await this.reload();
 
     return this.readCertInfo(domain);
@@ -1414,11 +1595,35 @@ ${EDGE_CHALLENGE_LOCATION}
    * reads on every `renew`, so its presence is the authoritative answer — the cert
    * FILES existing is not (they can be adopted, or copied in by hand).
    */
-  private async hasCertbotLineage(domain: string): Promise<boolean> {
+  private renewalConfPath(domain: string): string {
     // Derived from certDir so a custom cert root (tests, container edge) stays
     // consistent: /etc/letsencrypt/live → /etc/letsencrypt/renewal.
-    const renewalPath = join(dirname(this.certDir), "renewal", `${domain}.conf`);
-    return this._exists(renewalPath);
+    return join(dirname(this.certDir), "renewal", `${domain}.conf`);
+  }
+
+  private async hasCertbotLineage(domain: string): Promise<boolean> {
+    return this._exists(this.renewalConfPath(domain));
+  }
+
+  /**
+   * Was this lineage issued by the CURRENTLY configured ACME directory? The
+   * renewal conf records the issuing `server`, and `certbot renew` only holds an
+   * account for THAT server — after the operator points at a different CA, renewing
+   * a pre-switch lineage would need an account registration `renew` cannot perform
+   * (and EAB material it is never given). An unreadable/unparsable conf answers
+   * `true` so the plain renew still runs and surfaces certbot's own error.
+   */
+  private async lineageServerMatches(domain: string): Promise<boolean> {
+    let conf: string;
+    try {
+      conf = await this._readFile(this.renewalConfPath(domain));
+    } catch {
+      return true;
+    }
+    const recorded = conf.match(/^\s*server\s*=\s*(\S+)\s*$/m)?.[1];
+    if (!recorded) return true;
+    const effective = this.acmeDirectoryUrl ?? LETSENCRYPT_PRODUCTION_DIRECTORY;
+    return recorded === effective;
   }
 
   /**

@@ -197,6 +197,22 @@ describe("a mail policy's payloadConfig reaches the producer", () => {
     expect(String(recorded()[0].metadata.produceCommand)).toContain("pg_dump");
   });
 
+  it("keeps a multiline command out of the upload's headers, not out of the record", async () => {
+    // S3 carries object metadata as `x-amz-meta-*` HTTP headers, which may not
+    // contain newlines — so a policy whose restoreCommand spans lines failed the
+    // upload itself. Only the PUT is filtered: restore reads the RECORDED
+    // metadata, so the command has to survive there verbatim or this is just the
+    // D5 defect again by another route.
+    const multiline = "set -e\npsql -U postgres < /tmp/dump.sql";
+    h.payloadConfig = { ...mail.payloadConfig, restoreCommand: multiline };
+
+    await new BackupOrchestrator().execute("bkr_live");
+
+    expect(h.row.status).toBe("succeeded");
+    expect((h.puts[0]!.opts.metadata as Record<string, unknown>).restoreCommand).toBeUndefined();
+    expect(recorded()[0].metadata.restoreCommand).toBe(multiline);
+  });
+
   it("honors artifactName in the destination key", async () => {
     await new BackupOrchestrator().execute("bkr_live");
 

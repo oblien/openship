@@ -30,6 +30,8 @@ import {
   BuildLogger,
   DockerRuntime,
   allocateHostPort,
+  elevatedExecutor,
+  resolveEnvironment,
   runDeployPipeline,
   type CommandExecutor,
   type DeployConfig,
@@ -946,6 +948,32 @@ export async function deployComposeServices(
     if (prev.hostPort) usedHostPorts.add(prev.hostPort);
   }
 
+  // #438: app-template config files (`advanced.files`) are host-side state living
+  // under `/var/lib/openship`, the root-owned tree the edge's own vhosts sit in.
+  // The deploy executor connects to the host as an UNPRIVILEGED user (e.g.
+  // `ubuntu` over host.docker.internal on a Compose install), which cannot
+  // `mkdir` under root-owned `/var/lib/openship` — so a plain `writeFile` fails
+  // with the reported "No such file". Write these through an elevated (`sudo -n`)
+  // executor when the target is a non-root user with passwordless sudo — exactly
+  // how the edge writes its own root-owned config. Resolved lazily and cached, so
+  // privilege detection is skipped entirely for deploys that ship no config files
+  // and never re-run per service.
+  let hostConfigWriter: Promise<CommandExecutor> | null = null;
+  const resolveHostConfigWriter = (executor: CommandExecutor): Promise<CommandExecutor> => {
+    hostConfigWriter ??= (async () => {
+      try {
+        const env = await resolveEnvironment(executor);
+        if (!env.isRoot && env.canSudo) return elevatedExecutor(executor);
+      } catch {
+        // Privilege probe failed — fall back to the plain executor. A root or
+        // already-writable target still succeeds; a locked-down one fails loudly
+        // at write time, exactly as it did before this guard.
+      }
+      return executor;
+    })();
+    return hostConfigWriter;
+  };
+
   for (const svc of ordered) {
     // Ownership guard - ensure this service actually belongs to the project
     if (svc.projectId !== project.id) continue;
@@ -1303,6 +1331,7 @@ export async function deployComposeServices(
           { serviceName: svc.name },
         );
       } else {
+        const writer = await resolveHostConfigWriter(opts.executor);
         for (const file of advancedFiles) {
           // Token-local on purpose: one unresolved URL must not blank the whole
           // file (the mount is required — a missing kong.yml is a dead service),
@@ -1317,7 +1346,7 @@ export async function deployComposeServices(
             );
           }
           const hostPath = appConfigHostPath(project.id, svc.name, file.path);
-          await opts.executor.writeFile(hostPath, resolved.value);
+          await writer.writeFile(hostPath, resolved.value);
           serviceRuntimeConfig.volumes = [
             ...serviceRuntimeConfig.volumes,
             `${hostPath}:${file.path}:ro`,

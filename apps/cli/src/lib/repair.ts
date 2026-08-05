@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { OS_DIR } from "./paths";
+import { LOG_DIR, OS_DIR } from "./paths";
 import chalk from "chalk";
 import { spinner, log, select, confirm, isCancel, cancel } from "@clack/prompts";
 import { serviceStatus, stop as stopService, type ServiceKind } from "./service";
@@ -34,8 +34,6 @@ import {
   hasResetwal,
   deepHeal,
 } from "./heal";
-
-const LOG_DIR = join(OS_DIR, "logs");
 
 /** Narrow clack's cancel symbol; Ctrl-C/Esc exits cleanly. Copied from wizard.ts
  *  (that copy isn't exported) so both callers share one behaviour. */

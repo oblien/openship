@@ -16,11 +16,10 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { readCliInstall } from "./cli-install";
-import { IS_ALT_HOME, OS_DIR } from "./paths";
+import { IS_ALT_HOME, LOG_DIR, OS_DIR } from "./paths";
 import { readStoredPorts } from "./ports";
 
 const HOME = homedir();
-const LOG_DIR = join(OS_DIR, "logs");
 /** Where the tarball install's stable launcher + PATH entry live. */
 const OPENSHIP_BIN = join(OS_DIR, "bin");
 
@@ -224,6 +223,27 @@ export interface ServiceResult {
   kind: ServiceKind;
   /** Human note about what happened / how to inspect it. */
   detail: string;
+}
+
+/**
+ * How `installAndStart` enables + starts the service on this manager, as one line
+ * for `up --dry-run`. Lives beside the code that runs it so the preview and the
+ * commands below can't drift.
+ */
+export function installStepFor(kind: ServiceKind): string {
+  switch (kind) {
+    case "launchd":
+      return "launchctl bootstrap  (starts it now and at login)";
+    case "systemd-user":
+      return "systemctl --user enable --now + loginctl enable-linger  (starts it now, on boot, without a login session)";
+    case "systemd-system":
+      return "systemctl enable --now  (starts it now and on boot)";
+    case "schtasks":
+      return "schtasks /Create /SC ONLOGON  (starts it at logon)";
+    default:
+      // detectKind found nothing to install into — installAndStart throws here.
+      return "nothing — no supported service manager on this box (needs systemd on Linux); `up --foreground` or `up --compose` instead";
+  }
 }
 
 /** Return (don't write) the service definition — for `--dry-run`/debugging. */

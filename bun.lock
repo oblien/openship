@@ -186,6 +186,7 @@
         "ignore": "^7.0.5",
         "oblien": "^2.2.45",
         "ssh2": "^1.17.0",
+        "tar-fs": "^2.1.4",
       },
       "devDependencies": {
         "@types/dockerode": "^4.0.1",

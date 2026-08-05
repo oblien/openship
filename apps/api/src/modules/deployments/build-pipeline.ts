@@ -64,6 +64,7 @@ import { resolveRuntimeResources, resolveBuildResources } from "../../lib/resour
 import { resolveBuildGitToken } from "../github/clone-auth";
 import { openDeployRelay } from "../../lib/git-forwarding";
 import { resolveOrgOwner } from "../../lib/org-actor";
+import { resolveAcmeProviderOptions } from "../../lib/acme-config";
 import {
   preCreateServiceDeployments,
   emitServiceCheckRun,
@@ -1256,7 +1257,7 @@ function buildDeployEnvironment(
                       onLog: systemLog,
                       promptUser: p,
                     }),
-                  { promptUser, onLog: systemLog },
+                  { promptUser, onLog: systemLog, nginx: resolveAcmeProviderOptions() },
                 );
                 if (edge.migrated && !edge.ok) {
                   // ensureEdge already rolled back to the previous proxy — we
@@ -1454,6 +1455,32 @@ async function executeServerDeploy(phase: DeployPhaseInputs): Promise<void> {
         ensurePorts: async (cfg, promptUser) => {
           const executor = phase.targetExecutor;
           if (!executor) return;
+          // A published container binds exactly ONE host port — the loopback pin.
+          // Its own port lives in the container's network namespace and can never
+          // collide on the host, so probing it there compares an unrelated number
+          // against the host's listeners: an app on 80 behind the edge reported a
+          // conflict with the edge itself, and the only "continue" action offered
+          // would have freed the edge — taking every routed site down to publish
+          // one. Probe what the workload actually binds, which is also the
+          // backstop `allocateHostPort` documents.
+          if (cfg.hostPort !== undefined) {
+            // The outgoing deployment still holds the pin at preflight time: the
+            // loopback-port strategy can't overlap, so the pipeline stops it in
+            // the very next step. Prompting the operator about our own container
+            // would stall every redeploy on a conflict that resolves itself.
+            const previousHostPort = prevDep?.containerId
+              ? await previousRuntime
+                  .getContainerInfo(prevDep.containerId)
+                  .then((info) => info?.hostPort)
+                  .catch(() => undefined)
+              : undefined;
+            if (previousHostPort !== cfg.hostPort) {
+              await ensurePortAvailable(executor, cfg.hostPort, logger, promptUser);
+            }
+            return;
+          }
+          // Bare: the app owns 127.0.0.1:<port> on the host, so its declared
+          // ports are the ones to check.
           const ports = Array.from(
             new Set(
               (routeState.publicEndpoints.length > 0

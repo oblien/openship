@@ -136,6 +136,13 @@ const CONFIGURED = {
   OPENSHIP_IMAGE_REGISTRY: "registry.internal/oblien",
   OPENSHIP_HOST_CONTROL: "false",
   OPENSHIP_VERSION: "0.4.5",
+  OPENSHIP_ACME_EMAIL: "ops@example.test",
+  OPENSHIP_ACME_DIRECTORY_URL: "https://acme.example.test/directory",
+  OPENSHIP_ACME_EAB_KID: "kid-123",
+  OPENSHIP_ACME_EAB_HMAC_KEY: "c2VjcmV0",
+  OPENSHIP_ACME_KEY_TYPE: "ec384",
+  OPENSHIP_ACME_CA_BUNDLE: "/etc/ssl/private/acme-root.pem",
+  OPENSHIP_ACME_TOS_AGREED: "true",
 };
 
 beforeEach(() => {
@@ -232,6 +239,13 @@ describe("composeUp — re-run on a configured install", () => {
     // Secrets keep their existing values, as before.
     expect(env.INTERNAL_TOKEN).toBe("internal-secret");
     expect(env.POSTGRES_PASSWORD).toBe("pg-secret");
+    expect(env.OPENSHIP_ACME_EMAIL).toBe("ops@example.test");
+    expect(env.OPENSHIP_ACME_DIRECTORY_URL).toBe("https://acme.example.test/directory");
+    expect(env.OPENSHIP_ACME_EAB_KID).toBe("kid-123");
+    expect(env.OPENSHIP_ACME_EAB_HMAC_KEY).toBe("c2VjcmV0");
+    expect(env.OPENSHIP_ACME_KEY_TYPE).toBe("ec384");
+    expect(env.OPENSHIP_ACME_CA_BUNDLE).toBe("/etc/ssl/private/acme-root.pem");
+    expect(env.OPENSHIP_ACME_TOS_AGREED).toBe("true");
   });
 
   it("reports the EFFECTIVE ports, not the defaults", async () => {

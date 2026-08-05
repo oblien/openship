@@ -56,6 +56,45 @@ COPY apps/edge/nginx.conf /usr/local/openresty/nginx/conf/nginx.conf
 # anything) still validates + starts.
 RUN mkdir -p /usr/local/openresty/nginx/conf/sites-enabled /var/www/acme /etc/letsencrypt
 
+# The placeholder certificate the :443 catch-all presents for hostnames this box
+# does NOT route, so the handshake completes and the visitor gets the branded
+# "service not found" page instead of ERR_SSL_UNRECOGNIZED_NAME_ALERT (Cloudflare
+# reports that refusal as error 525). Nothing trusts this cert and nothing is meant
+# to: it belongs to no domain, and the block that serves it is a dead end with no
+# proxy_pass and no root, so it cannot become the cross-serving the 443
+# default_server exists to prevent.
+#
+# Built HERE rather than at container start because nginx refuses to LOAD a config
+# whose ssl_certificate is missing — a generate-on-boot step that failed would not
+# degrade one page, it would crash-loop the whole edge and take every routed site on
+# the box down with it. Baked into the image filesystem (not one of the bind mounts),
+# so nothing on the host can mask or delete it either.
+#
+# EC P-256, not the RSA-2048 used for per-domain placeholders: refusing the
+# handshake cost no asymmetric work at all, so serving a certificate here turns every
+# connection to an unrouted host into a real signature — and the scenario this is for
+# is wildcard DNS aimed at the box, i.e. unbounded hostnames all landing on this one
+# block. P-256 keeps that ~10x cheaper than RSA. Kept identical to the bare edge's
+# ensureEdgeDefaultCert so both paths present the same kind of key.
+#
+# The path is generated into nginx.conf from edgeDefaultCertPaths() in
+# packages/adapters/src/infra/openresty-lua.ts — a test asserts this file still
+# agrees with it.
+RUN mkdir -p /usr/local/openresty/nginx/conf/openship-default-cert && \
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
+      -subj /CN=openship-edge-default \
+      -keyout /usr/local/openresty/nginx/conf/openship-default-cert/privkey.pem \
+      -out /usr/local/openresty/nginx/conf/openship-default-cert/fullchain.pem && \
+    chmod 600 /usr/local/openresty/nginx/conf/openship-default-cert/privkey.pem
+
+# Fail the BUILD on a config the edge could not boot with, rather than shipping it.
+# The catch-all's not-found page is a ~1.6 KB HTML body inlined in a `return`
+# directive: one stray quote in it ends the token early and the whole config is
+# invalid, which at runtime means a crash-looping edge (fresh container) or a
+# reload that `openresty -t` refuses forever (existing one). This is the gate that
+# turns both into a red build.
+RUN openresty -t
+
 EXPOSE 80 443
 # Graceful OpenResty stop.
 STOPSIGNAL SIGQUIT

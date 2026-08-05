@@ -26,7 +26,6 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("../../src/lib/compose", () => ({
   hasDockerCompose: () => h.hasDocker,
-  composeIsViableDefault: () => true,
   // Host ports are resolved ONCE before `.env` is written, then passed to both
   // compose steps — a busy 4000/3001 fails `up` outright, so it has to move.
   resolveComposePorts: async (p: { api?: string; dashboard?: string }) => {

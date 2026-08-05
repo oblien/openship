@@ -23,7 +23,15 @@
  *   - TCP: mutual TLS (client cert + CA) - no plaintext TCP.
  */
 
+// `tar-fs` ships no types and `@types/tar-fs` isn't vendored; this reference
+// pulls in our local ambient declaration so tsc sees it whether the adapters
+// package compiles itself (its `src/**` glob) OR a consumer (the API) reaches
+// this file only through import resolution and never scans our src for stray
+// `.d.ts` files (#448).
+/// <reference path="./tar-fs.d.ts" />
 import Dockerode from "dockerode";
+import * as tarFs from "tar-fs";
+import { createGzip } from "node:zlib";
 
 import type {
   BuildConfig,
@@ -401,6 +409,44 @@ export function parsePortBindings(portSpecs: string[]): {
     }
   }
   return { exposedPorts, portBindings };
+}
+
+/**
+ * Build the Docker build-context tar stream OURSELVES, mirroring dockerode's own
+ * `prepareBuildContext` (tar-fs pack → gzip) but with an `'error'` handler
+ * dockerode never attaches.
+ *
+ * When you pass `{ context, src }`, dockerode builds this pack internally and
+ * pipes it into the request with NO error listener (its lib/util.js). tar-fs
+ * walks the tree readdir → lstat; if a file listed by readdir is gone by its
+ * lstat — an antivirus/editor/temp-cleaner racing the walk, or (the #448 repro)
+ * our own premature context cleanup — the Pack emits an `'error'`, and because
+ * `pipe()` does not forward source errors it is unhandled and takes down the
+ * ENTIRE API process. Owning the pack lets us capture that, abort the in-flight
+ * build request so it can't hang on a truncated body, and fail only the deploy.
+ *
+ * Passing the resulting STREAM (not `{ context }`) to buildImage routes through
+ * dockerode's pass-through branch, so the bytes on the wire are identical to
+ * what it would have produced.
+ */
+export function packBuildContext(
+  contextDir: string,
+  entries: string[],
+): { body: NodeJS.ReadableStream; abortSignal: AbortSignal; takeError: () => Error | null } {
+  const controller = new AbortController();
+  const pack = tarFs.pack(contextDir, { entries });
+  const body = pack.pipe(createGzip());
+  let contextError: Error | null = null;
+  const capture = (err: unknown) => {
+    contextError ??= err instanceof Error ? err : new Error(String(err));
+    if (!controller.signal.aborted) controller.abort();
+  };
+  // pipe() does NOT forward source errors, so a tar-fs walk failure is only
+  // observable on the pack itself — this listener is what keeps it from killing
+  // the process. Guard the gzip side too for completeness.
+  pack.once("error", capture);
+  body.once("error", capture);
+  return { body, abortSignal: controller.signal, takeError: () => contextError };
 }
 
 const DURATION_UNITS_NS: Record<string, number> = {
@@ -1267,32 +1313,45 @@ export class DockerRuntime implements RuntimeAdapter {
   ): Promise<void> {
     log.log(`Streaming build context to Docker daemon - image tag: ${tag}`);
 
-    let stream: NodeJS.ReadableStream;
+    const { body, abortSignal, takeError } = packBuildContext(
+      buildContext.contextDir,
+      buildContext.contextEntries,
+    );
+
     try {
-      stream = await this.docker.buildImage(
-        { context: buildContext.contextDir, src: buildContext.contextEntries },
-        {
-          t: tag,
-          dockerfile: buildContext.dockerfileName,
-          labels: this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
-          buildargs: {
-            ...config.envVars,
-            NODE_ENV: "production",
-          },
-          // Omitted entirely unless the project set a build cap — a self-hosted
-          // build should be free to use the machine (a production build often
-          // needs several GB). Opt-in only; see dockerBuildResourceLimits.
-          ...dockerBuildResourceLimits(config.resources),
-          forcerm: true,
+      const stream = await this.docker.buildImage(body, {
+        t: tag,
+        dockerfile: buildContext.dockerfileName,
+        labels: this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
+        buildargs: {
+          ...config.envVars,
+          NODE_ENV: "production",
         },
-      );
+        // Omitted entirely unless the project set a build cap — a self-hosted
+        // build should be free to use the machine (a production build often
+        // needs several GB). Opt-in only; see dockerBuildResourceLimits.
+        ...dockerBuildResourceLimits(config.resources),
+        forcerm: true,
+        abortSignal,
+      });
+
+      log.log("Connected to Docker daemon. Build output follows:");
+      await this.streamDockerodeBuild(stream, log);
+      log.log("Docker daemon finished streaming build output. Finalizing image...\n");
+    } catch (err) {
+      // A context-pack failure aborts the request, so the rejection here is the
+      // abort, not the real cause — prefer the captured pack error.
+      const contextErr = takeError();
+      throw contextErr
+        ? new Error(`Failed to read Docker build context: ${safeErrorMessage(contextErr)}`, { cause: contextErr })
+        : err;
     } finally {
+      // Clean up only AFTER the daemon has fully consumed the context. dockerode's
+      // buildImage promise resolves as soon as the response starts, while tar-fs
+      // may still be walking contextDir — deleting it here (the old `finally`
+      // around buildImage alone) is exactly what raced the pack in #448.
       await buildContext.cleanup();
     }
-
-    log.log("Connected to Docker daemon. Build output follows:");
-    await this.streamDockerodeBuild(stream, log);
-    log.log("Docker daemon finished streaming build output. Finalizing image...\n");
   }
 
   /**
@@ -1981,9 +2040,16 @@ export class DockerRuntime implements RuntimeAdapter {
               spec.logger,
             );
           } else {
-            const stream = await this.docker.buildImage(
-              { context: tree!.contextDir, src: contextEntries ?? [] },
-              {
+            // Own the pack (error handler + abort) so a build-context read
+            // failure fails just this service instead of crashing the API — see
+            // packBuildContext (#448). tree.cleanup() only runs after the whole
+            // loop (outer finally), so the context stays put while tar-fs walks.
+            const { body, abortSignal, takeError } = packBuildContext(
+              tree!.contextDir,
+              contextEntries ?? [],
+            );
+            try {
+              const stream = await this.docker.buildImage(body, {
                 t: tag,
                 dockerfile: dockerfileName,
                 labels: this.labels({
@@ -1993,9 +2059,15 @@ export class DockerRuntime implements RuntimeAdapter {
                 buildargs: { ...spec.config.envVars, NODE_ENV: "production" },
                 ...dockerBuildResourceLimits(spec.config.resources),
                 forcerm: true,
-              },
-            );
-            await this.streamDockerodeBuild(stream, spec.logger);
+                abortSignal,
+              });
+              await this.streamDockerodeBuild(stream, spec.logger);
+            } catch (err) {
+              const contextErr = takeError();
+              throw contextErr
+                ? new Error(`Failed to read Docker build context: ${safeErrorMessage(contextErr)}`, { cause: contextErr })
+                : err;
+            }
           }
 
           await this.verifyImageBuilt(tag);

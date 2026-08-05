@@ -18,6 +18,7 @@ import {
   normalizeRollbackWindow,
   normalizeAliasStrict,
   aliasConflictsWithSiblings,
+  normalizeFramework,
   type ReleaseSource,
   type UpdatableIdentity,
 } from "@repo/core";
@@ -357,7 +358,7 @@ function buildProductionProjectInput(
     releaseSource: source.releaseSource,
     installationId: data.installationId,
     autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
-    framework: data.framework ?? "unknown",
+    framework: normalizeFramework(data.framework),
     packageManager: data.packageManager ?? "npm",
     installCommand: data.installCommand,
     buildCommand: data.buildCommand,
@@ -890,7 +891,7 @@ export async function ensureProject(
       throw new NotFoundError("Project", data.projectId ?? desiredSlug);
     }
     const update: Record<string, unknown> = {};
-    if (data.framework !== undefined) update.framework = data.framework;
+    if (data.framework !== undefined) update.framework = normalizeFramework(data.framework);
     if (data.packageManager !== undefined) update.packageManager = data.packageManager;
     if (data.installCommand !== undefined) update.installCommand = data.installCommand;
     if (data.buildCommand !== undefined) update.buildCommand = data.buildCommand;

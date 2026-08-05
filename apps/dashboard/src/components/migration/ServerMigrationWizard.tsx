@@ -3144,6 +3144,14 @@ function ServiceConfigCard({
         </span>
       </div>
 
+      {/* What discovery could not carry over: build-time vars, bind mounts, dropped ports */}
+      {service.warnings.map((warning) => (
+        <p key={warning} className="flex items-start gap-1.5 text-xs text-warning">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          {warning}
+        </p>
+      ))}
+
       {/* Route: Free / Custom / None (+ Keep when a route was already detected) */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">

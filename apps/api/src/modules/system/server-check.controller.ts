@@ -33,6 +33,7 @@ import {
 import { formatDuration, systemDebug } from "@/lib/system-debug";
 import { sshManager, buildSshConfig } from "../../lib/ssh-manager";
 import { withPinnedEdgeImage } from "../../lib/edge-image";
+import { resolveAcmeProviderOptions } from "../../lib/acme-config";
 import { runConnectivityCheck } from "../../lib/connectivity";
 import "../../lib/connectivity-checks"; // registers ssh / ssh-server / backup-destination
 import { repos } from "@repo/db";
@@ -597,7 +598,15 @@ export async function installStream(c: Context) {
             const edge = await ensureEdge(
               executor,
               (p) => installerFn(executor, onLog, { ...config, promptUser: p }),
-              { promptUser, onLog, acmeEmail: config?.acmeEmail },
+              {
+                promptUser,
+                onLog,
+                acmeEmail: config?.acmeEmail,
+                nginx: {
+                  ...resolveAcmeProviderOptions(),
+                  ...(config?.acmeEmail ? { acmeEmail: config.acmeEmail } : {}),
+                },
+              },
             );
             if (!edge.migrated) return edge.value;
             return {

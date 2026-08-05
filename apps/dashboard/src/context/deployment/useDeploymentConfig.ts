@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { FrameworkId } from "@/components/import-project/types";
+import type { EnvironmentVariable, FrameworkId } from "@/components/import-project/types";
 import { deployApi, projectsApi, servicesApi, serviceKind } from "@/lib/api";
 import { folderApi } from "@/lib/api/folder";
 import type { PrepareProjectResponse, PrepareComposeService, PrepareMonorepoApp } from "@/lib/api/deploy";
@@ -138,6 +138,24 @@ function scanComposePath(
     (typeof project?.composePath === "string" ? project.composePath : undefined);
   const trimmed = declared?.trim();
   return trimmed ? { composePath: trimmed } : {};
+}
+
+/**
+ * The env the scan should interpolate the compose file against (#383). A compose
+ * file declaring `${VAR:?...}` is unparseable until VAR has a value, so a re-scan
+ * has to carry what the user already entered — otherwise the wizard reports the
+ * file as broken even though the deploy itself would resolve the same variable.
+ *
+ * Returns an `{ env }` fragment to spread into the prepare body, empty when
+ * nothing is set so a blank map never reaches the API.
+ */
+function scanEnv(envVars: EnvironmentVariable[]): { env?: Record<string, string> } {
+  const env: Record<string, string> = {};
+  for (const { key, value } of envVars) {
+    const name = key.trim();
+    if (name) env[name] = value;
+  }
+  return Object.keys(env).length > 0 ? { env } : {};
 }
 
 function hasSavedProjectPort(project: PersistedProject) {
@@ -757,7 +775,12 @@ export function useDeploymentConfig() {
       owner: string,
       repo: string,
       force?: string,
-      context?: { branch?: string; projectId?: string; composePath?: string },
+      context?: {
+        branch?: string;
+        projectId?: string;
+        composePath?: string;
+        env?: Record<string, string>;
+      },
     ): Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }> => {
       try {
         let project: PersistedProject = null;
@@ -786,6 +809,7 @@ export function useDeploymentConfig() {
           branch: requestedBranch,
           force,
           ...scanComposePath(context?.composePath, project),
+          ...(context?.env ? { env: context.env } : {}),
         });
 
         if (response?.error) {
@@ -835,7 +859,7 @@ export function useDeploymentConfig() {
   const initializeFromLocal = useCallback(
     async (
       path: string,
-      context?: { projectId?: string; composePath?: string },
+      context?: { projectId?: string; composePath?: string; env?: Record<string, string> },
     ): Promise<{ success: boolean; error?: string; errorType?: string }> => {
       try {
         let project: PersistedProject = null;
@@ -849,6 +873,7 @@ export function useDeploymentConfig() {
           source: "local",
           path,
           ...scanComposePath(context?.composePath, project),
+          ...(context?.env ? { env: context.env } : {}),
         });
 
         if (response?.error) {
@@ -891,11 +916,15 @@ export function useDeploymentConfig() {
       // "" clears the pin: the initialize* paths drop a blank value, so the scan
       // falls back to ordinary root detection.
       const trimmed = composePath.trim();
+      // Carry the env the user has already entered so a compose file with
+      // required variables re-scans instead of erroring as unparseable (#383).
+      const env = scanEnv(config.envVars);
 
       if (config.localPath) {
         return initializeFromLocal(config.localPath, {
           projectId: config.projectId,
           composePath: trimmed,
+          ...env,
         });
       }
       if (!config.owner || !config.repo) {
@@ -909,6 +938,7 @@ export function useDeploymentConfig() {
         branch: config.branch,
         projectId: config.projectId,
         composePath: trimmed,
+        ...env,
       });
       return { success: result.success, error: result.error, errorType: result.errorType };
     },
@@ -918,6 +948,7 @@ export function useDeploymentConfig() {
       config.repo,
       config.branch,
       config.projectId,
+      config.envVars,
       initializeFromLocal,
       initializeFromRepo,
     ],

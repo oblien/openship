@@ -34,6 +34,7 @@ r.post(
   "/custom",
   {
     tag: "project:write",
+    collection: true,
     body: AddCustomAppBody,
     mcp: { description: "Add a custom app from an uploaded JSON definition (stored per-org, unverified)." },
   },

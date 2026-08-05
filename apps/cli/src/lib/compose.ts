@@ -165,15 +165,6 @@ export function hasDockerCompose(): boolean {
   return dockerGap() === null;
 }
 
-/**
- * Compose is the default install method when it can actually work: docker +
- * compose present AND Linux (the `edge` container needs host networking, which
- * Docker Desktop on mac/win doesn't provide — those fall back to bare).
- */
-export function composeIsViableDefault(): boolean {
-  return process.platform === "linux" && hasDockerCompose();
-}
-
 /** `cmd` is on PATH (probes `cmd --version`). */
 function hasCmd(cmd: string): boolean {
   return spawnSync(cmd, ["--version"], { stdio: "ignore" }).status === 0;
@@ -182,6 +173,54 @@ function hasCmd(cmd: string): boolean {
 /** Single-quote a string for `sh -c`. */
 function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+export interface EnsureDockerOpts {
+  /** Where narration goes. Defaults to stderr; the wizard passes clack's log so
+   *  the lines match the rest of its output. */
+  onNotice?: (line: string) => void;
+}
+
+/** What a Docker install would look like here — see `dockerInstallPreview`. */
+export interface DockerInstallPreview {
+  state: DockerState;
+  /** Why Docker isn't usable; null when it already is. */
+  gap: DockerGap | null;
+  /** True when a real run would execute `installCommand` on this box. */
+  wouldInstall: boolean;
+  /** The exact installer command (get.docker.com), when there is one to run. */
+  installCommand?: string;
+  /** Best-effort daemon start that follows the install. */
+  startCommand?: string;
+}
+
+/**
+ * What `ensureDocker` WOULD do on this box, without doing any of it.
+ *
+ * `--dry-run` is why this exists: calling `ensureDocker` merely to find out
+ * whether Docker was needed installed ~150 MB of packages and enabled a system
+ * daemon on the machine the operator was only previewing (#436). `ensureDocker`
+ * is implemented on top of this, so the preview and the run can't disagree about
+ * whether an install happens or which command performs it.
+ */
+export function dockerInstallPreview(state: DockerState = dockerState()): DockerInstallPreview {
+  const gap = dockerGap(state);
+  if (!gap) return { state, gap: null, wouldInstall: false };
+  // Docker Desktop can't be installed unattended, and an unreachable daemon is
+  // not an installation problem (see dockerGap) — neither runs the installer.
+  if (process.platform !== "linux" || !gap.installable) return { state, gap, wouldInstall: false };
+  const plan = systemCatalog.installs.docker({
+    os: "linux",
+    serviceManager: "systemd",
+  } as unknown as EnvironmentProfile);
+  if (!plan.supported || !plan.installCommand) return { state, gap, wouldInstall: false };
+  return {
+    state,
+    gap,
+    wouldInstall: true,
+    installCommand: plan.installCommand,
+    ...(plan.startCommand ? { startCommand: plan.startCommand } : {}),
+  };
 }
 
 /**
@@ -194,17 +233,13 @@ function shQuote(s: string): string {
  * unattended (and its edge container lacks host networking), so those return
  * false and the caller falls back to the bare service. The installer's own
  * output is inherited (that's the real progress the operator sees).
+ *
+ * MUTATES the box. Anything that only needs to know WHETHER it would install
+ * (`--dry-run`) must call `dockerInstallPreview` instead.
  */
-export interface EnsureDockerOpts {
-  /** Where narration goes. Defaults to stderr; the wizard passes clack's log so
-   *  the lines match the rest of its output. */
-  onNotice?: (line: string) => void;
-}
-
 export async function ensureDocker(opts: EnsureDockerOpts = {}): Promise<boolean> {
   const notice = opts.onNotice ?? ((line: string) => process.stderr.write(`  ${line}\n`));
-  const state = dockerState();
-  const gap = dockerGap(state);
+  const { state, gap, wouldInstall, installCommand, startCommand } = dockerInstallPreview();
   if (!gap) return true;
   if (process.platform !== "linux") return false;
   // An unreachable daemon is not an installation problem — say what to do and
@@ -214,12 +249,7 @@ export async function ensureDocker(opts: EnsureDockerOpts = {}): Promise<boolean
     if (gap.hint) notice(gap.hint);
     return false;
   }
-
-  const plan = systemCatalog.installs.docker({
-    os: "linux",
-    serviceManager: "systemd",
-  } as unknown as EnvironmentProfile);
-  if (!plan.supported || !plan.installCommand) return false;
+  if (!wouldInstall || !installCommand) return false;
 
   const asRoot = typeof process.getuid === "function" && process.getuid() === 0;
   const sudo = !asRoot && hasCmd("sudo") ? "sudo " : "";
@@ -255,9 +285,9 @@ export async function ensureDocker(opts: EnsureDockerOpts = {}): Promise<boolean
       child.on("close", (code) => done(code ?? 1));
     });
 
-  if ((await sh(plan.installCommand)) !== 0) return false;
+  if ((await sh(installCommand)) !== 0) return false;
   // Best-effort daemon start (get.docker.com already enables it on systemd).
-  if (plan.startCommand) await sh(plan.startCommand);
+  if (startCommand) await sh(startCommand);
 
   const after = dockerGap();
   if (!after) {
@@ -488,12 +518,37 @@ export function rewriteHostAuthorizedKeys(existing: string, pub: string): string
   return [...kept, hostKeyAuthLine(pub)].join("\n") + "\n";
 }
 
-function provisionHostSshChannel(): { user: string; keyPath: string } | null {
-  if (process.platform !== "linux") return null; // host.docker.internal SSH is the Linux compose path
+/**
+ * The container→host SSH channel a run WOULD use: where its key lives and which
+ * host user it logs in as — or null when there won't be one (`--no-host-control`,
+ * or a non-Linux box: host.docker.internal SSH is the Linux compose path).
+ *
+ * THE rule, and pure. `provisionHostSshChannel` creates what this names, and
+ * `composePlan` previews it, so a dry run can't describe a channel the install
+ * wouldn't provision (or miss one it would).
+ */
+function plannedHostChannel(hostControl: boolean): { user: string; keyPath: string } | null {
+  if (!hostControl || process.platform !== "linux") return null;
+  // `userInfo()` rather than $USER: os.homedir() and $USER can disagree under sudo
+  // (HOME=/root with USER preserved, or vice versa), which would write the key into
+  // one account's authorized_keys while telling the container to log in as another —
+  // host ops then fail with a bare "auth failed". userInfo() is the same passwd
+  // entry homedir() resolves from, so the two can't drift.
+  let user: string;
   try {
-    const sshDir = join(COMPOSE_DIR, "host-ssh");
-    mkdirSync(sshDir, { recursive: true, mode: 0o700 });
-    const keyPath = join(sshDir, "id_ed25519");
+    user = userInfo().username;
+  } catch {
+    user = process.env.USER || process.env.LOGNAME || "root";
+  }
+  return { user, keyPath: join(COMPOSE_DIR, "host-ssh", "id_ed25519") };
+}
+
+function provisionHostSshChannel(hostControl: boolean): { user: string; keyPath: string } | null {
+  const target = plannedHostChannel(hostControl);
+  if (!target) return null;
+  const { user, keyPath } = target;
+  try {
+    mkdirSync(join(COMPOSE_DIR, "host-ssh"), { recursive: true, mode: 0o700 });
     if (!existsSync(keyPath)) {
       const g = spawnSync(
         "ssh-keygen",
@@ -505,20 +560,8 @@ function provisionHostSshChannel(): { user: string; keyPath: string } | null {
     const pub = readFileSync(`${keyPath}.pub`, "utf8").trim();
     if (!pub) return null;
 
-    // Authorize the key for the host user the container SSHes in as. `userInfo()`
-    // rather than $USER: os.homedir() and $USER can disagree under sudo (HOME=/root
-    // with USER preserved, or vice versa), which would write the key into one
-    // account's authorized_keys while telling the container to log in as another —
-    // host ops then fail with a bare "auth failed". userInfo() is the same passwd
-    // entry homedir() resolves from, so the two can't drift.
-    const user = (() => {
-      try {
-        return userInfo().username;
-      } catch {
-        return process.env.USER || process.env.LOGNAME || "root";
-      }
-    })();
-
+    // Authorize the key for the host user the container SSHes in as (see
+    // plannedHostChannel for why that user comes from the passwd entry).
     const userSshDir = join(homedir(), ".ssh");
     mkdirSync(userSshDir, { recursive: true, mode: 0o700 });
     const authKeys = join(userSshDir, "authorized_keys");
@@ -826,6 +869,26 @@ function keepConfig(
   return carried || undefined;
 }
 
+const ACME_ENV_KEYS = [
+  "OPENSHIP_ACME_EMAIL",
+  "OPENSHIP_ACME_DIRECTORY_URL",
+  "OPENSHIP_ACME_EAB_KID",
+  "OPENSHIP_ACME_EAB_HMAC_KEY",
+  "OPENSHIP_ACME_KEY_TYPE",
+  "OPENSHIP_ACME_CA_BUNDLE",
+  "OPENSHIP_ACME_TOS_AGREED",
+] as const;
+
+/** Preserve operator-owned ACME settings, with the current shell overriding .env. */
+function renderAcmeEnv(prev: Record<string, string>): string[] {
+  return ACME_ENV_KEYS.flatMap((key) => {
+    const value = process.env[key]?.trim() || prev[key]?.trim();
+    if (!value) return [];
+    if (/[\r\n]/.test(value)) throw new Error(`${key} must be a single-line value`);
+    return [`${key}=${value}`];
+  });
+}
+
 /** The effective config for this run: flags over previous `.env` over defaults. */
 export function resolveEnvConfig(
   prev: Record<string, string>,
@@ -947,17 +1010,23 @@ export function composeHeldPorts(): number[] {
  * reclaimable makes a busy box behave like the desktop app: pick another port and
  * carry on, while a plain re-run keeps the ports the install already uses.
  */
-export async function resolveComposePorts(prefs: {
-  api?: string;
-  dashboard?: string;
-}): Promise<ResolvedPorts> {
-  return resolvePorts({
-    api: toPort(prefs.api),
-    dashboard: toPort(prefs.dashboard),
-    previous: composeEnvPorts(),
-    bindAddr: composeBindAddr(),
-    reclaimable: composeHeldPorts(),
-  });
+export async function resolveComposePorts(
+  prefs: {
+    api?: string;
+    dashboard?: string;
+  },
+  opts: { persist?: boolean } = {},
+): Promise<ResolvedPorts> {
+  return resolvePorts(
+    {
+      api: toPort(prefs.api),
+      dashboard: toPort(prefs.dashboard),
+      previous: composeEnvPorts(),
+      bindAddr: composeBindAddr(),
+      reclaimable: composeHeldPorts(),
+    },
+    opts,
+  );
 }
 
 function renderEnv(
@@ -990,6 +1059,9 @@ function renderEnv(
     // silently defaults to 3001 when unset. Ports are dynamic now, so leaving it
     // out publishes a domain routed to a port nothing is listening on.
     `OPENSHIP_DASHBOARD_PORT=${cfg.dashPort}`,
+    // Alternate CA/EAB values are operator configuration (including one secret),
+    // so a routine `openship up`/upgrade must not silently discard them.
+    ...renderAcmeEnv(prev),
   ];
   if (cfg.bindAddr) lines.push(`OPENSHIP_BIND_ADDR=${cfg.bindAddr}`);
   // The origin allowlist. Losing either of these is the ORIGIN_REJECTED failure
@@ -1064,7 +1136,7 @@ function materialize(opts: ComposeUpOpts): {
   // --no-host-control: never generate/authorize a host key in the first place.
   // Not just "don't use it" — there is nothing on disk to steal. Resolved through
   // cfg so a plain re-run keeps the install's original choice.
-  const host = cfg.hostControl ? provisionHostSshChannel() : null;
+  const host = provisionHostSshChannel(cfg.hostControl);
   let before = "";
   try {
     before = readFileSync(ENV_FILE, "utf8");
@@ -1080,6 +1152,76 @@ function materialize(opts: ComposeUpOpts): {
   // `before === ""` is a first install: the containers don't exist yet and will be
   // created with this env, so there is nothing to force.
   return { buildDir, cfg, envChanged: before !== "" && rendered !== before };
+}
+
+/** `.env` keys whose VALUE must never be printed. Suffix-matched so a key added
+ *  to renderEnv later is masked by default rather than leaked by omission. */
+const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|HMAC_KEY)$/;
+
+/**
+ * `materialize` WITHOUT the writes — everything a `--dry-run` needs to describe
+ * the stack this run would install.
+ *
+ * The `.env` is rendered by `renderEnv` itself (masked), not re-listed here: a
+ * hand-kept copy of the interesting keys is exactly how a preview starts lying —
+ * a key added to the writer would silently go missing from the plan.
+ */
+export interface ComposePlan {
+  composeFile: string;
+  envFile: string;
+  /** Marker `stop`/`update`/`status` route on, written once the stack is up. */
+  installMethodFile: string;
+  /** Build override, written only for a from-source install. */
+  buildFile?: string;
+  /** The compose file that would be written, verbatim. */
+  yaml: string;
+  /** The `.env` that would be written, with secret values masked. */
+  settings: Array<{ key: string; value: string }>;
+  /** Secret keys this run would GENERATE (absent from the current `.env`). */
+  newSecrets: string[];
+  /** True when a `.env` is already there — this would be a re-run, not a fresh install. */
+  existing: boolean;
+  /** Host directories the edge's bind mounts need (created on a real run). */
+  mountDirs: string[];
+  /** From-source checkout the images would be BUILT from (null = pull published). */
+  buildDir: string | null;
+  /** The container→host SSH channel this run would provision, if any. */
+  hostChannel: { user: string; keyPath: string } | null;
+}
+
+export function composePlan(opts: ComposeUpOpts): ComposePlan {
+  const prev = readEnvFile();
+  const cfg = resolveEnvConfig(prev, opts);
+  const buildDir = opts.build === false ? null : sourceBuildDir();
+  const hostChannel = plannedHostChannel(cfg.hostControl);
+  const settings: Array<{ key: string; value: string }> = [];
+  const newSecrets: string[] = [];
+  for (const line of renderEnv(opts, hostChannel, cfg).split("\n")) {
+    const at = line.indexOf("=");
+    if (at < 1 || line.startsWith("#")) continue;
+    const key = line.slice(0, at);
+    if (!SECRET_ENV_KEY.test(key)) {
+      settings.push({ key, value: line.slice(at + 1) });
+      continue;
+    }
+    // Generated once and preserved (see keepSecret) — say WHICH, never the value.
+    const minted = !prev[key];
+    if (minted) newSecrets.push(key);
+    settings.push({ key, value: minted ? "<generated on this run>" : "<preserved>" });
+  }
+  return {
+    composeFile: COMPOSE_FILE,
+    envFile: ENV_FILE,
+    installMethodFile: INSTALL_METHOD_FILE,
+    ...(buildDir ? { buildFile: BUILD_FILE } : {}),
+    yaml: COMPOSE_YAML,
+    settings,
+    newSecrets,
+    existing: Object.keys(prev).length > 0,
+    mountDirs: EDGE_CONTAINER_MOUNTS.map((m) => m.host),
+    buildDir,
+    hostChannel,
+  };
 }
 
 /** Does this project's postgres data volume already exist (i.e. predate this run)? */
