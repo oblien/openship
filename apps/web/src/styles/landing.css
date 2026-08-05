@@ -44,9 +44,7 @@
   inset-inline: 0;
   z-index: 50;
   border-bottom: 1px solid var(--lp-rule);
-  background: color-mix(in srgb, var(--th-bg-page) 95%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: var(--th-bg-page);
 }
 
 /* Side columns at 1fr each put the links on the bar's true centre. With a
@@ -304,19 +302,19 @@
    them; a section that has not been converted yet simply does not,
    and nothing above or below it has to know.
 
-     .lp-ruled     wraps every converted section. Draws the grid's
-                   first rule and the nodes on its last, so no
-                   section has to know whether it is first or last.
-     .lp-band      one horizontal band. Draws the rule beneath it
-                   and the two nodes on the rule above it.
-     .lp-band-in   the content box between the rails.
+     .lp-ruled     wraps every converted section.
+     .lp-band      one horizontal band.
+     .lp-band-in   the content box between the rails, which draws
+                   both rails and the rule beneath the band.
 
-   Rails are real borders on .lp-band-in rather than absolutely
-   positioned lines on the section. That is what lets them continue
-   from one band to the next with nothing to keep in sync - the same
-   reason the reference applies its edge class per block instead of
-   once at the page level. Rules stay full bleed, so they cross the
-   rails and read as a drawn grid rather than as a bordered box. */
+   Rails and rules are real borders on .lp-band-in rather than
+   absolutely positioned lines on the section. That is what lets them
+   continue from one band to the next with nothing to keep in sync -
+   the same reason the reference applies its edge class per block
+   instead of once at the page level. Nothing bleeds past the rails:
+   the reference's rules stop at the measure, so the page reads as one
+   ruled column on an open field rather than as bars across the
+   viewport. */
 
 .lp-ruled {
   position: relative;
@@ -330,7 +328,6 @@
 
 .lp-band {
   position: relative;
-  border-bottom: 1px solid var(--lp-rule);
 }
 
 .lp-band-in {
@@ -338,42 +335,16 @@
      without reaching outside the rails to do it. */
   position: relative;
   margin-inline: var(--lp-gutter);
-  border-inline: 1px solid var(--lp-rule);
+  /* Rails and the rule beneath the band are one border on this box, so the
+     rule stops at the rails instead of bleeding to the viewport edge. */
+  border: 1px solid var(--lp-rule);
+  border-top: 0;
   padding-inline: var(--lp-inset);
 }
 
 /* For bands whose content is a plate rather than copy - images, tables,
    anything that should meet the rails instead of sitting off them. */
 .lp-band-in--flush { padding-inline: 0; }
-
-/* ── Nodes - the crosshair where a rule crosses a rail ───────── */
-/* Drawn as an overlay instead of thickening the lines themselves, so
-   rails and rules stay hairlines and only the joint reads darker.
-   Offsetting by half a node from each side keeps it centred on the
-   rail without a transform, which is what makes it survive RTL. */
-.lp-ruled::before,
-.lp-ruled::after,
-.lp-band::before,
-.lp-band::after {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  width: var(--lp-node);
-  height: var(--lp-node);
-  pointer-events: none;
-  background:
-    linear-gradient(var(--lp-node-rule), var(--lp-node-rule)) 50% 50% / 100% 1.5px no-repeat,
-    linear-gradient(var(--lp-node-rule), var(--lp-node-rule)) 50% 50% / 1.5px 100% no-repeat;
-}
-.lp-ruled::before,
-.lp-band::before { inset-inline-start: calc(var(--lp-gutter) - var(--lp-node) / 2); }
-.lp-ruled::after,
-.lp-band::after  { inset-inline-end:   calc(var(--lp-gutter) - var(--lp-node) / 2); }
-.lp-band::before,
-.lp-band::after  { top:    calc(var(--lp-node) / -2); }
-.lp-ruled::before,
-.lp-ruled::after { bottom: calc(var(--lp-node) / -2); }
-
 
 /* ── Surfaces ────────────────────────────────────────────────── */
 /* Flat white on white gives a card an outline and nothing else. These two
@@ -419,16 +390,6 @@
   top: calc(var(--lp-nav-h) - 1px);
   z-index: 20;
   background-color: var(--th-bg-page);
-  transition: box-shadow .24s cubic-bezier(.22,1,.36,1);
-}
-
-/* A header that has left its resting place lifts off the copy beneath it.
-   Set by an IntersectionObserver rather than a scroll handler - the state
-   is "is this pinned", which is exactly what a sentinel threshold is. */
-.lp-sechead[data-pinned="true"] {
-  box-shadow:
-    0 1px var(--th-on-05),
-    0 6px 16px -10px var(--th-on-20);
 }
 
 /* The header floats, so it must not stamp nodes onto a rule it is no
@@ -476,19 +437,10 @@
    ══════════════════════════════════════════════════════════════ */
 
 /* ── Hero: an open field, not a ruled cell ───────────────────── */
-/* The grid's crosshairs and hard rails belong to the document that starts
-   at the first section header. Drawing them here boxed the hero in, which
-   the reference's never is. */
-.lp-hero-sec .lp-band::before,
-.lp-hero-sec .lp-band::after { content: none; }
-
-/* No rails at all. The measure still positions the copy, but nothing draws
-   its edges - the reference's hero has no vertical boundary of any kind. */
-.lp-hero-sec .lp-band-in { border-inline: 0; }
-
-/* The plate closes the hero, so its band keeps a real rule; the copy band
-   above it must not draw one across the middle of the composition. */
-.lp-hero-sec .lp-band:first-child { border-bottom: 0; }
+/* No rails and no rule. The measure still positions the copy, but nothing
+   draws its edges - the reference's hero has no boundary of any kind, and
+   the plate below closes the hero with its own edge. */
+.lp-hero-sec .lp-band-in { border: 0; }
 
 /* ── Dither field ────────────────────────────────────────────── */
 /* Two corner halftones, bottom-left and bottom-right, exactly where the
@@ -620,7 +572,13 @@
 .lp-hero-btn:hover .lp-hero-btn-arrow { transform: translate(1.5px, -1.5px); }
 
 /* Sits under the buttons as a full bar, not a chip, so the command reads as
-   the third way in rather than a label above the headline. */
+   the third way in rather than a label above the headline.
+
+   Dashed, and on the page's own white rather than a grey fill: a solid box
+   reads as a third button next to the two above it, which is exactly what
+   this is not. The dashes mark it as something to copy - the same move the
+   reference makes - and the command itself carries full text weight so the
+   line you are meant to take is the darkest thing in the bar. */
 .lp-hero-install {
   display: flex;
   align-items: center;
@@ -628,27 +586,28 @@
   width: 100%;
   max-width: var(--lp-hero-stack-w);
   margin-top: 16px;
-  border: 1px solid var(--lp-rule);
-  background: var(--th-sf-03);
-  padding: 10px 14px;
-  font-size: 12.5px;
+  border: 1px dashed var(--lp-rule);
+  background: var(--th-bg-page);
+  padding: 13px 16px;
+  font-size: 13px;
   letter-spacing: 0.01em;
-  color: var(--th-text-secondary);
-  transition: border-color .15s, color .15s, background-color .15s;
+  color: var(--th-text-title);
+  transition: border-color .15s, background-color .15s;
 }
 .lp-hero-install:hover {
-  border-color: var(--th-bd-strong);
-  background: var(--th-sf-05);
-  color: var(--th-text-strong);
+  border-color: var(--th-text-hint);
+  background: var(--th-sf-02);
 }
-.lp-hero-install-sigil { opacity: .45; }
+/* The prompt is punctuation, not content - it stays a shade back so the
+   command reads first. */
+.lp-hero-install-sigil { color: var(--th-text-muted); }
 .lp-hero-install-icon {
   display: inline-flex;
   margin-inline-start: auto;
-  opacity: .3;
-  transition: opacity .15s;
+  color: var(--th-text-hint);
+  transition: color .15s;
 }
-.lp-hero-install:hover .lp-hero-install-icon { opacity: .6; }
+.lp-hero-install:hover .lp-hero-install-icon { color: var(--th-text-strong); }
 
 /* ── Stack ticker ────────────────────────────────────────────── */
 /* Sits inside the copy stack now, so it owns only the space between the
@@ -1832,12 +1791,20 @@
 }
 .uc-cta svg { width: 13px; height: 13px; }
 .uc-cta:hover { background: var(--th-bg-hover); }
-.uc-cta--primary {
-  border-color: transparent;
-  background: var(--th-btn-bg);
-  color: var(--th-btn-text);
+.uc-rail-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--lp-rule);
+  background: var(--th-bg-page);
+  color: var(--th-text-heading);
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease;
 }
-.uc-cta--primary:hover { background: var(--th-btn-bg-hover); }
+.uc-rail-control:hover { background: var(--th-bg-hover); }
+.uc-rail-control svg { width: 14px; height: 14px; }
 
 /* ── Product shot ────────────────────────────────────────────── */
 /* The window frame lives in one place and both product shots use it -
@@ -1849,8 +1816,31 @@
    you can move through, and a 2x2 grid of the same cards does not. */
 /* Two elements, because one cannot do both jobs: the outer box clips and
    scrolls at the rails, the inner row sizes to its cards. */
+.uc-rail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: clamp(24px, 3vw, 36px) var(--lp-inset) 0;
+}
+.uc-rail-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--th-text-muted);
+}
+.uc-rail-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .uc-rail {
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: inline proximity;
   scrollbar-width: none;
 }
 .uc-rail::-webkit-scrollbar { display: none; }
@@ -1862,7 +1852,7 @@
   width: max-content;
   /* Trailing inset is wider than the leading one so the last card stops
      short of the rail, which is what signals there is more to scroll. */
-  padding: clamp(36px, 4.4vw, 56px) calc(var(--lp-inset) * 2)
+  padding: 18px calc(var(--lp-inset) * 2)
            clamp(44px, 5vw, 72px) var(--lp-inset);
 }
 
@@ -1870,20 +1860,22 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 24px;
   flex-shrink: 0;
-  width: 340px;
-  min-height: 440px;
+  width: 360px;
+  min-height: 460px;
   padding: 28px;
   border: 1px solid var(--lp-rule);
   background: var(--lp-paper);
+  overflow: clip;
+  scroll-snap-align: start;
 }
 @media (max-width: 560px) {
   .uc-card { width: 84vw; min-height: 380px; }
 }
 
-/* The only drenched card. It carries the claim; the rest carry evidence. */
-.uc-card--drenched {
+/* The lead card carries the claim; the rest carry evidence. */
+.uc-card--featured {
   border-color: transparent;
   background: var(--lp-ink);
 }
@@ -1905,7 +1897,8 @@
   height: 6px;
   background: currentColor;
 }
-.uc-card--drenched .uc-eyebrow { color: #fff; }
+.uc-card--featured .uc-eyebrow,
+.uc-card--featured .uc-card-title { color: #fff; }
 
 .uc-card-title {
   font-size: clamp(22px, 2.2vw, 28px);
@@ -1941,7 +1934,7 @@
   line-height: 1;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(255,255,255,.5);
+  color: var(--th-text-muted);
 }
 .uc-pills {
   display: flex;
@@ -1952,17 +1945,22 @@
   display: inline-flex;
   align-items: center;
   padding: 5px 10px;
-  border: 1px solid rgba(255,255,255,.18);
+  border: 1px solid var(--th-on-16);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10.5px;
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0.1em;
+  color: var(--th-text-body);
+}
+.uc-card--featured .uc-card-foot-label { color: rgba(255,255,255,.5); }
+.uc-card--featured .uc-pill {
+  border-color: rgba(255,255,255,.18);
   color: rgba(255,255,255,.85);
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   STRAIGHT COMPARISON - scoreboard, Openship column lifted out
+   STRAIGHT COMPARISON - flat scoreboard
    ═══════════════════════════════════════════════════════════════ */
 
 .bench-headline {
@@ -2002,16 +2000,11 @@
 }
 
 /* ── Board ───────────────────────────────────────────────────── */
-/* The tinted column has to escape the board's top and bottom rules, so
-   the board keeps vertical room for it rather than clipping. */
 .bench-board {
   --bench-tint: var(--lp-paper-deep);
   --bench-ring: var(--th-on-20);
-  position: relative;
   display: flex;
   flex-direction: column;
-  padding-block: 12px;
-  overflow: visible;
 }
 
 .bench-row {
@@ -2020,7 +2013,6 @@
   align-items: stretch;
   border-top: 1px solid var(--lp-rule);
 }
-.bench-row[data-last="true"] { border-bottom: 1px solid var(--lp-rule); }
 
 .bench-cell {
   display: flex;
@@ -2045,41 +2037,8 @@
   color: var(--th-text-heading);
 }
 
-/* Cap and foot are pseudo-elements that overhang the board's padding, so
-   the column reads as one card passing behind the rules rather than as a
-   stack of separately tinted cells. */
-.bench-cell--sm-head,
-.bench-cell--sm-foot {
-  position: relative;
-  z-index: 2;
-  background: transparent;
-  box-shadow: none;
-}
-.bench-cell--sm-head::before,
-.bench-cell--sm-foot::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  background: var(--bench-tint);
-  pointer-events: none;
-}
-.bench-cell--sm-head::before {
-  inset: -12px 0 -2px;
-  box-shadow:
-    inset  1px 0 0 var(--bench-ring),
-    inset -1px 0 0 var(--bench-ring),
-    inset  0 1px 0 var(--bench-ring);
-}
-.bench-cell--sm-foot::before {
-  inset: -2px 0 -12px;
-  box-shadow:
-    inset  1px 0 0 var(--bench-ring),
-    inset -1px 0 0 var(--bench-ring),
-    inset  0 -1px 0 var(--bench-ring);
-}
-
 /* ── Header row ──────────────────────────────────────────────── */
-.bench-row--head { border-top: 1px solid var(--lp-rule); }
+.bench-row--head { border-top: 0; }
 .bench-row--head .bench-cell {
   align-items: flex-end;
   padding-block: 14px;
@@ -2197,9 +2156,6 @@
     background: transparent;
     box-shadow: inset 2px 0 0 var(--th-text-heading);
   }
-  .bench-cell--sm-head::before,
-  .bench-cell--sm-foot::before { content: none; }
-
   .bench-cell--sm::after,
   .bench-cell:nth-child(3)::after,
   .bench-cell:nth-child(4)::after {
@@ -2391,10 +2347,6 @@
   width: min(100%, 880px);
   margin: clamp(56px, 6vw, 88px) auto calc(-1 * clamp(120px, 16vw, 260px));
   text-align: start;
-  /* Square off the bottom corners only: the plate crops that edge, so a
-     radius there would round a corner that is never actually seen. */
-  border-end-start-radius: 0;
-  border-end-end-radius: 0;
 }
 .fcta-title {
   font-size: clamp(2.75rem, 7vw, 5rem);
@@ -3176,165 +3128,18 @@ details[open] .pp-faq-icon { transform: rotate(180deg); background: var(--th-sf-
 }
 .legal-foot a:hover { border-bottom-color: var(--th-bd-strong); }
 
-/* ── How it works ──────────────────────────────────────────────────────── */
-
-/* Claim on the left, qualifier on the right, both sitting on the same
-   baseline. Aligning to the bottom rather than the top is what keeps the
-   two blocks reading as one line of argument at any title length. */
-.hiw-headline {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 48px;
-  padding-block: clamp(44px, 5.4vw, 64px) clamp(36px, 4.2vw, 52px);
-}
-@media (max-width: 900px) {
-  .hiw-headline {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 18px;
-  }
-}
-
-.hiw-headline-title {
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 660px;
-  font-size: clamp(30px, 4vw, 52px);
-  font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1.02;
-  color: var(--th-text-heading);
-}
-.hiw-headline-sub {
-  flex-shrink: 0;
-  max-width: 340px;
-  font-size: 16px;
-  line-height: 1.55;
-  text-wrap: pretty;
-  color: var(--th-text-body);
-}
-@media (max-width: 900px) {
-  .hiw-headline-sub { max-width: 100%; }
-}
-
-/* ── Bento ───────────────────────────────────────────────────── */
-/* Cells draw their own right and bottom rules rather than the grid
-   drawing them, so the payoff plate can span both columns without
-   leaving a stub of hairline behind it. */
-.hiw-bento {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  overflow: clip;
-  border-top: 1px solid var(--lp-rule);
-}
-@media (max-width: 768px) {
-  .hiw-bento { grid-template-columns: 1fr; }
-}
-
-.hiw-cell {
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid var(--lp-rule);
-}
-.hiw-cell:nth-child(odd) { border-inline-end: 1px solid var(--lp-rule); }
-@media (max-width: 768px) {
-  .hiw-cell:nth-child(odd) { border-inline-end: 0; }
-}
-
-/* Fixed ratio, so the four schematics occupy identical frames and the
-   copy blocks below them start on the same line. */
-.hiw-illo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  aspect-ratio: 2840 / 2123;
-  overflow: hidden;
-  border-bottom: 1px solid var(--lp-rule);
-  background-image:
-    radial-gradient(var(--th-on-05) 1px, transparent 1px),
-    var(--lp-paper-deep);
-  background-size: 8px 8px, auto;
-}
-.hiw-mark {
-  width: min(62%, 340px);
-  height: auto;
-  color: var(--th-on-60);
-}
-
-.hiw-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 28px clamp(20px, 2.4vw, 36px) 36px;
-}
-.hiw-copy-eyebrow {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--th-text-heading);
-}
-.hiw-copy-desc {
-  font-size: 15.5px;
-  line-height: 1.6;
-  text-wrap: pretty;
-  color: var(--th-text-body);
-}
-
-/* ── Payoff ──────────────────────────────────────────────────── */
-/* The only drenched cell in the section, and the only one that spans:
-   both are the same statement, that steps 01-04 exist to make this work. */
-.hiw-payoff {
-  grid-column: 1 / -1;
-  position: relative;
-  overflow: clip;
-  background: var(--lp-ink);
-}
-.hiw-payoff-text {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 16px;
-  max-width: 680px;
-  padding: clamp(36px, 4.4vw, 56px) clamp(20px, 2.4vw, 36px);
-}
-.hiw-payoff-eyebrow {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #fff;
-}
-/* Sized for a full sentence rather than a two-word headline: the payoff's
-   copy is one long claim, and at display size it would wrap to five lines. */
-.hiw-payoff-title {
-  max-width: 600px;
-  font-size: clamp(22px, 2.6vw, 34px);
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1.12;
-  text-wrap: balance;
-  color: rgba(255,255,255,.96);
-}
-
 /* ══════════════════════════════════════════════════════════════
    WINDOW FRAME - shared by every product shot
    ══════════════════════════════════════════════════════════════ */
 
-/* A drawn window, not a bare screenshot. Rounded because a real one is:
-   this is the single place the ruled system's hard corners give way, and
-   squaring it made the shot read as a cropped image rather than an app.
-   The inner hairline sits inside the radius so the corner stays clean. */
+/* A drawn window, not a bare screenshot. Square, like everything else on
+   the page: the radius was the one exception in the ruled system, and one
+   rounded box among hard-cornered cells reads as a foreign element rather
+   than as an app. The inner hairline draws the edge instead. */
 .win {
   position: relative;
   display: block;
   overflow: hidden;
-  border-radius: 12px;
   background: #17171a;
   box-shadow:
     inset 0 0 0 1px rgba(255,255,255,.09),

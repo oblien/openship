@@ -130,11 +130,6 @@
   /* Every dark plate on the page is this plate - sections, product-shot
      chrome, footer. One value, so they cannot drift into three blacks. */
   --lp-ink: #0a0a0c;
-  /* Every joint where a rule crosses a rail gets a crosshair this wide,
-     drawn in --lp-node-rule so the joint is the only part that darkens. */
-  --lp-node: 52px;
-  --lp-node-rule: var(--th-on-40);
-
   /* ── Accent - gradient blob & highlight colors ────────────── */
   --th-accent-indigo:  #818cf8;
   --th-accent-violet:  #a78bfa;

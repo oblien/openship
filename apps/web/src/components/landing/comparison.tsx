@@ -255,9 +255,6 @@ function StatusMark({ status }: { status: Status }) {
   );
 }
 
-/** Flattened so the board can tell which row is the last one overall - the
- *  Openship column's tint has to close on it, and a per-group last row
- *  would close it four times. */
 const ROWS = GROUPS.flatMap((g) =>
   g.rows.map((r, i) => ({ ...r, group: i === 0 ? g.title : null })),
 );
@@ -284,9 +281,8 @@ export function Comparison({ index, total }: { index: number; total: number }) {
 
       <div className="lp-band">
         <div className="lp-band-in">
-          {/* The Openship column is one connected card that lifts above and
-              below the surrounding hairlines, so the eye finds the verdict
-              before it starts reading rows. */}
+          {/* The Openship tint stays inside the same grid as every other
+              column so the comparison reads as one table. */}
           <div className="bench-board">
             <div className="bench-row bench-row--head">
               <div className="bench-cell bench-cell--label">
@@ -304,7 +300,7 @@ export function Comparison({ index, total }: { index: number; total: number }) {
               </div>
             </div>
 
-            {ROWS.map((r, i) => (
+            {ROWS.map((r) => (
               <Fragment key={r.feature}>
                 {r.group && (
                   <div className="bench-row bench-row--group">
@@ -317,18 +313,11 @@ export function Comparison({ index, total }: { index: number; total: number }) {
                   </div>
                 )}
 
-                <div
-                  className="bench-row"
-                  data-last={i === ROWS.length - 1 ? "true" : undefined}
-                >
+                <div className="bench-row">
                   <div className="bench-cell bench-cell--label">
                     <span className="bench-feature">{r.feature}</span>
                   </div>
-                  <div
-                    className={`bench-cell bench-cell--sm${
-                      i === ROWS.length - 1 ? " bench-cell--sm-foot" : ""
-                    }`}
-                  >
+                  <div className="bench-cell bench-cell--sm">
                     <StatusMark status={r.openship.status} />
                     <span>{r.openship.text}</span>
                   </div>
