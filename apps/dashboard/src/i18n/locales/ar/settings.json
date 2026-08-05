@@ -102,7 +102,8 @@
       "disconnectPrefix": "لقطع الاتصال، شغّل",
       "disconnectSuffix": "في طرفيتك.",
       "use": "استخدام gh CLI"
-    }
+    },
+    "removeFromOpenship": "إزالة من Openship"
   },
   "deployDefaults": {
     "title": "إعدادات النشر الافتراضية",

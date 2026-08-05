@@ -20,7 +20,11 @@ export {
   type CreatePatInput,
 } from "./personal-access-token.repo";
 export { createOAuthRepo } from "./oauth.repo";
-export { createProjectGroupRepo, type ProjectGroup, type NewProjectGroup } from "./project-group.repo";
+export {
+  createProjectGroupRepo,
+  type ProjectGroup,
+  type NewProjectGroup,
+} from "./project-group.repo";
 export {
   createProjectRepo,
   type Project,
@@ -37,10 +41,26 @@ export {
 } from "./deployment.repo";
 export { createDomainRepo, type Domain, type NewDomain } from "./domain.repo";
 export { createRouteRuleRepo, type RouteRule, type NewRouteRule } from "./route-rule.repo";
-export { createWebhookSourceRepo, type WebhookSource, type NewWebhookSource } from "./webhook-source.repo";
-export { createIncomingWebhookRepo, type IncomingWebhook, type NewIncomingWebhook } from "./incoming-webhook.repo";
-export { createSystemNoticeRepo, type SystemNotice, type NewSystemNotice } from "./system-notice.repo";
-export { createUpdateStatusRepo, type UpdateStatus, type NewUpdateStatus } from "./update-status.repo";
+export {
+  createWebhookSourceRepo,
+  type WebhookSource,
+  type NewWebhookSource,
+} from "./webhook-source.repo";
+export {
+  createIncomingWebhookRepo,
+  type IncomingWebhook,
+  type NewIncomingWebhook,
+} from "./incoming-webhook.repo";
+export {
+  createSystemNoticeRepo,
+  type SystemNotice,
+  type NewSystemNotice,
+} from "./system-notice.repo";
+export {
+  createUpdateStatusRepo,
+  type UpdateStatus,
+  type NewUpdateStatus,
+} from "./update-status.repo";
 export {
   createServerModuleStatusRepo,
   type ServerModuleStatus,
@@ -81,6 +101,7 @@ export {
   toComposeSpec,
   composeSpecsEqual,
   composeSpecDiff,
+  hasLegacyFlattenedCommandArgvAmbiguity,
   type Service,
   type NewService,
   type ServiceDeployment,
@@ -112,11 +133,7 @@ export {
   type ServerTunnel,
   type NewServerTunnel,
 } from "./server-tunnel.repo";
-export {
-  createMailServerRepo,
-  type MailServer,
-  type NewMailServer,
-} from "./mail-server.repo";
+export { createMailServerRepo, type MailServer, type NewMailServer } from "./mail-server.repo";
 export {
   createAnalyticsRepo,
   type ServerAnalyticsRow,

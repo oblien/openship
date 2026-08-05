@@ -102,7 +102,8 @@
       "disconnectPrefix": "切断するには、次を実行してください:",
       "disconnectSuffix": "ターミナルで実行します。",
       "use": "gh CLI を使用"
-    }
+    },
+    "removeFromOpenship": "Openship から削除"
   },
   "deployDefaults": {
     "title": "デプロイのデフォルト",

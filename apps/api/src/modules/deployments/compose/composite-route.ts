@@ -122,6 +122,8 @@ export function buildCompositeRegistration(input: {
    * host directory to serve.
    */
   resolveStaticRoot?: (serviceId: string) => string | null | undefined;
+  /** Canonical host redirect attached to this vhost, when configured. */
+  resolveRedirectHost?: (hostname: string) => RouteRegister["redirectHost"] | null | undefined;
 }): CompositeRegistration | null {
   const routing = input.routingConfig ?? undefined;
   const plan = planCompositeRoute(input.services, { rewrites: routing?.rewrites });
@@ -143,6 +145,7 @@ export function buildCompositeRegistration(input: {
     compiled && compiled.proxyLocations.length > 0
       ? compiled.proxyLocations
       : buildCompositeProxyLocations(plan, backendUrl);
+  const redirectHost = input.resolveRedirectHost?.(domain.hostname);
 
   return {
     frontendServiceId: plan.frontendServiceId,
@@ -155,6 +158,7 @@ export function buildCompositeRegistration(input: {
       proxyLocations,
       ...(compiled?.redirects.length ? { redirects: compiled.redirects } : {}),
       ...(compiled?.headerRules.length ? { headerRules: compiled.headerRules } : {}),
+      ...(redirectHost ? { redirectHost } : {}),
     },
   };
 }
@@ -172,6 +176,8 @@ export function buildCompositeRegistration(input: {
 export function buildDomainFanoutRegistrations(input: {
   routes: ProjectCompositeRoute[] | null | undefined;
   resolveTargetUrl: (serviceId: string) => string | null | undefined;
+  /** Canonical host redirect attached to each compiled vhost, when configured. */
+  resolveRedirectHost?: (hostname: string) => RouteRegister["redirectHost"] | null | undefined;
 }): RouteRegister[] {
   const out: RouteRegister[] = [];
   for (const route of input.routes ?? []) {
@@ -182,11 +188,13 @@ export function buildDomainFanoutRegistrations(input: {
       const url = input.resolveTargetUrl(loc.serviceId);
       if (url) proxyLocations.push({ pathPrefix: loc.pathPrefix, targetUrl: url });
     }
+    const redirectHost = input.resolveRedirectHost?.(route.hostname);
     out.push({
       hostname: route.hostname,
       isCustomDomain: route.isCustomDomain,
       targetUrl: rootUrl,
       ...(proxyLocations.length ? { proxyLocations } : {}),
+      ...(redirectHost ? { redirectHost } : {}),
     });
   }
   return out;

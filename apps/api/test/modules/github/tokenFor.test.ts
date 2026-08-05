@@ -55,11 +55,17 @@ const withOwner = { projectId: "p1", owner: "acme", repo: "app" };
 function setProjectPat(tok: string | null) {
   findProjectById.mockResolvedValue(tok ? { cloneTokenEncrypted: `ENC:${tok}` } : null);
 }
-function setSettings(opts: { userPat?: string | null; asDefault?: boolean; ghOptIn?: boolean }) {
+function setSettings(opts: {
+  userPat?: string | null;
+  asDefault?: boolean;
+  ghOptIn?: boolean;
+  ghDisabled?: boolean;
+}) {
   findSettingsByUser.mockResolvedValue({
     cloneTokenEncrypted: opts.userPat ? `ENC:${opts.userPat}` : null,
     cloneTokenAsDefault: opts.asDefault ?? true,
     ghCliOperatorOptedIn: opts.ghOptIn ?? false,
+    githubCliDisabled: opts.ghDisabled ?? false,
   });
 }
 function setApp(present: boolean) {
@@ -183,6 +189,13 @@ describe("tokenFor — gh-CLI authorization gate (HIGH #7)", () => {
     envMock.GITHUB_AUTH_MODE = "cli";
     setGh("ghtok");
     expect(await tokenFor(ctxOrg, "local", withOwner)).toEqual({ token: "ghtok", source: "gh-cli" });
+  });
+
+  it("refuses gh after the user disconnects it, including instance-wide cli mode", async () => {
+    envMock.GITHUB_AUTH_MODE = "cli";
+    setGh("ghtok");
+    setSettings({ ghOptIn: true, ghDisabled: true });
+    expect(await tokenFor(ctxOrg, "local", withOwner)).toBeNull();
   });
 });
 

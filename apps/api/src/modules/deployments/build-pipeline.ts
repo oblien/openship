@@ -660,15 +660,21 @@ async function executeBuildAndDeploy(project: Project, dep: Deployment, buildSes
     // persisted) is opted into per deploy via snapshot.forwardGitCredentials.
     const clonePlan = resolveClonePlan({
       effectiveTarget: resolved.effectiveTarget,
-      serverId: resolved.serverId,
       runtimeIsBare: runtime.name === "bare",
       cloneStrategy: snapshot.cloneStrategy,
       buildStrategy,
       isDesktop: plat.target === "desktop",
       forwardGitCredentials: snapshot.forwardGitCredentials,
-      repoIsGithub: !!project.gitOwner,
+      targetSourceCloneSupported: runtime.supports("targetSourceClone"),
     });
     const cloneOnServer = clonePlan.runsOnServer;
+    if (clonePlan.targetCloneUnavailable) {
+      logger.log(
+        "Clone-on-server was requested, but the selected Docker transport stages source on the API host. " +
+          "Cloning on the API host and transferring the build context instead.",
+        "warn",
+      );
+    }
     // The relay needs a real SSH reverse tunnel — `reverseForward` exists on every
     // SSH executor and is absent only on a LocalExecutor (relay.ts). This is the
     // TRUE capability gate (not the server's SSH auth method); combined with the

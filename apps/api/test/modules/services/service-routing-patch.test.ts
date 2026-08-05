@@ -53,7 +53,12 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
   return { ...actual, platform: () => ({ runtime: { name: "docker" } }) };
 });
 
-import { createService, updateService } from "../../../src/modules/services/service.service";
+import {
+  acceptServiceDrift,
+  createService,
+  listServices,
+  updateService,
+} from "../../../src/modules/services/service.service";
 
 const ctx = { organizationId: "org_1" } as never;
 const project = { id: "proj_1", organizationId: "org_1", slug: "acme" };
@@ -110,10 +115,57 @@ describe("service routing patch", () => {
     domainService.reuseServerCertForDomain.mockReset().mockResolvedValue(undefined);
   });
 
+  it("accepting Compose drift promotes its structured command argv", async () => {
+    const commandArgv = ["/bin/sh", "-ec", "echo one argument"];
+    serviceRepo.findById.mockResolvedValue({
+      ...multiRouteService(),
+      driftSpec: {
+        command: "/bin/sh -ec echo one argument",
+        commandArgv,
+      },
+    });
+
+    await acceptServiceDrift(ctx, project.id, "svc_1");
+
+    expect(writtenPatch()).toMatchObject({
+      command: "/bin/sh -ec echo one argument",
+      commandArgv,
+      driftSpec: null,
+    });
+  });
+
+  it("exposes an actionable argv diff for an ambiguity-only review", async () => {
+    const command = "/bin/sh -ec echo grouped script";
+    const incomingArgv = ["/bin/sh", "-ec", "echo grouped script"];
+    serviceRepo.listByProject.mockResolvedValue([
+      {
+        ...multiRouteService(),
+        command,
+        commandArgv: ["/bin/sh", "-ec", "echo", "grouped", "script"],
+        importedSpec: { command, commandArgv: incomingArgv },
+        driftSpec: { command, commandArgv: incomingArgv },
+      },
+    ]);
+
+    const [service] = await listServices(ctx, project.id);
+
+    expect(service.drift?.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "commandArgv",
+          from: ["/bin/sh", "-ec", "echo", "grouped", "script"],
+          to: incomingArgv,
+        }),
+      ]),
+    );
+  });
+
   /** What the edge was asked to stop serving on this save. */
   const removedHosts = () =>
-    ((reconcileProjectRoutes.mock.calls.at(-1)?.[1] as { removes?: Array<{ hostname: string }> })
-      ?.removes ?? []).map((r) => r.hostname);
+    (
+      (reconcileProjectRoutes.mock.calls.at(-1)?.[1] as { removes?: Array<{ hostname: string }> })
+        ?.removes ?? []
+    ).map((r) => r.hostname);
 
   it("persists a scalar custom-domain patch and keeps the sibling route", async () => {
     await updateService(ctx, project.id, "svc_1", {
@@ -212,10 +264,11 @@ describe("service routing patch", () => {
 
     await updateService(ctx, project.id, "svc_1", { exposed: false } as never);
 
-    expect(removedHosts().map((h) => h.split(".")[0]).sort()).toEqual([
-      "acme-backend",
-      "acme-backend-http",
-    ]);
+    expect(
+      removedHosts()
+        .map((h) => h.split(".")[0])
+        .sort(),
+    ).toEqual(["acme-backend", "acme-backend-http"]);
     // Config is untouched, so nothing is de-configured — a mere pause must never
     // delete a domain row the operator verified.
     expect(domainService.removeServiceDomain).not.toHaveBeenCalled();
@@ -246,9 +299,9 @@ describe("service routing patch", () => {
   });
 
   it("refuses a cleared subdomain instead of dropping the sibling route", async () => {
-    await expect(
-      updateService(ctx, project.id, "svc_1", { domain: "" } as never),
-    ).rejects.toThrow(/free route needs a subdomain/i);
+    await expect(updateService(ctx, project.id, "svc_1", { domain: "" } as never)).rejects.toThrow(
+      /free route needs a subdomain/i,
+    );
 
     expect(serviceRepo.update).not.toHaveBeenCalled();
     expect(reconcileProjectRoutes).not.toHaveBeenCalled();
@@ -337,7 +390,7 @@ describe("service routing patch", () => {
       expect(serviceRepo.create).not.toHaveBeenCalled();
     });
 
-    it("create: a normalized-duplicate name is rejected (\"My DB\" vs \"my-db\")", async () => {
+    it('create: a normalized-duplicate name is rejected ("My DB" vs "my-db")', async () => {
       serviceRepo.listByProject.mockResolvedValue([{ id: "svc_2", name: "My DB" }]);
 
       await expect(

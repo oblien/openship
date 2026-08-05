@@ -4,7 +4,7 @@
  * the exact engine (`ensureEdge` → `ensureEdgeClear` → `runEdgeTakeover`) and the
  * generic prompt transport, so the SAME consent modal appears — but WITHOUT a
  * container redeploy: it installs/owns the edge on the project's server, then
- * re-applies the project's routes reload-free via `applyProjectRouting`.
+ * re-applies the project's routes reload-free via the strict retry reconciler.
  *
  * Used by the Domains tab (first route / "set up edge") instead of forcing a
  * full deploy — which matters for migrated attach-live stacks whose containers
@@ -32,7 +32,7 @@ import { streamSSE } from "../../lib/sse";
 import { sshManager } from "../../lib/ssh-manager";
 import { withPinnedEdgeImage } from "../../lib/edge-image";
 import { resolveAcmeProviderOptions } from "../../lib/acme-config";
-import { applyProjectRouting } from "./routing-apply.service";
+import { retryProjectRouting } from "../projects/project-runtime.service";
 import {
   createEdgeConsentSession,
   getEdgeConsentSession,
@@ -75,13 +75,18 @@ async function isLocalHostServer(serverId: string, organizationId: string): Prom
 export async function resolveProjectServer(
   projectId: string,
   organizationId: string,
-): Promise<{ project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>; serverId: string } | { error: string; status: 400 | 404 }> {
+): Promise<
+  | { project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>; serverId: string }
+  | { error: string; status: 400 | 404 }
+> {
   const project = await repos.project.findById(projectId);
-  if (!project || project.organizationId !== organizationId) return { error: "Project not found", status: 404 };
+  if (!project || project.organizationId !== organizationId)
+    return { error: "Project not found", status: 404 };
   if (project.cloudWorkspaceId) {
     return { error: "Cloud projects manage routing at the edge automatically", status: 400 };
   }
-  if (!project.activeDeploymentId) return { error: "Deploy the project before setting up its edge", status: 400 };
+  if (!project.activeDeploymentId)
+    return { error: "Deploy the project before setting up its edge", status: 400 };
   // Prefer the durable binding; fall back to the active deployment's snapshot for
   // legacy rows not yet backfilled.
   const dep = await repos.deployment.findById(project.activeDeploymentId);
@@ -251,9 +256,12 @@ export async function ensureEdgeStream(c: Context) {
           onLog: (m) => appendEdgeLog(session.id, m.trim(), "warn"),
         });
       })().catch(() => {});
-      await applyProjectRouting(id).catch((e) =>
-        appendEdgeLog(session.id, `Route apply warning: ${safeErrorMessage(e)}`, "warn"),
-      );
+      const retry = await retryProjectRouting(id, ctx.organizationId);
+      if (!retry.ok) {
+        throw new Error(
+          retry.warning || "Edge is ready, but one or more routes could not be applied.",
+        );
+      }
       appendEdgeLog(session.id, "Done — routes are live.");
       finishEdgeConsentSession(session.id, "completed");
     } catch (err) {

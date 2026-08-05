@@ -57,7 +57,10 @@ import {
   toRoutedDomainInputs,
   type PlannedRouteDomain,
 } from "../../../lib/routing-domains";
-import { resolveServiceEndpointUrls, resolveServicePublicEndpoints } from "../../../lib/public-endpoints";
+import {
+  resolveServiceEndpointUrls,
+  resolveServicePublicEndpoints,
+} from "../../../lib/public-endpoints";
 import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 import { ensureRoutingReady } from "../../../lib/edge-reconcile";
 import * as sessionManager from "../session-manager";
@@ -76,6 +79,7 @@ import { buildCompositeRegistration, buildDomainFanoutRegistrations } from "./co
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
 import { buildUpstreamUrl, resolveRouteStrategy } from "../../../lib/upstream-url";
 import { withLoopbackPublish } from "../../../lib/loopback-publish";
+import { resolveRouteRedirect } from "../../../lib/domain-redirect";
 
 export interface ComposeDeployResult {
   /** `reconciling` when at least one service's outcome is UNKNOWN because the
@@ -1108,7 +1112,9 @@ export async function deployComposeServices(
         svc.name,
         `no public URL is known for ${unresolvedEnvUrls
           .map((u) => `${u.key}=${u.tokens.join("")}`)
-          .join(", ")} — ${unresolvedEnvUrls.length === 1 ? "that variable is" : "those variables are"} left UNSET rather than blank`,
+          .join(
+            ", ",
+          )} — ${unresolvedEnvUrls.length === 1 ? "that variable is" : "those variables are"} left UNSET rather than blank`,
       );
     }
 
@@ -1741,9 +1747,7 @@ export async function deployComposeServices(
     const probes = Promise.all(
       portAuditTargets.map(async (target) => {
         const [pc] = await auditPorts(runtime, target.containerId, [target.port], logger);
-        return pc
-          ? { ...pc, serviceId: target.serviceId, serviceName: target.serviceName }
-          : null;
+        return pc ? { ...pc, serviceId: target.serviceId, serviceName: target.serviceName } : null;
       }),
     );
     const audited = await Promise.race([
@@ -1812,9 +1816,7 @@ export async function deployComposeServices(
         f.target.serviceId &&
         readinessByServiceId.get(f.target.serviceId)?.onFailure === "fail",
     );
-    for (const finding of findings.filter(
-      (f) => !f.verdict.ok && !vetoing.includes(f),
-    )) {
+    for (const finding of findings.filter((f) => !f.verdict.ok && !vetoing.includes(f))) {
       // "warn": say what didn't hold, but leave the service's deploy result alone
       // so the stack stays up. Opting into the watch to get the signal must not
       // also opt into a veto.
@@ -2017,6 +2019,13 @@ export async function deployComposeServices(
           containerPort: port,
         });
       };
+      const validRedirectHosts = [...routeContext.domainByHostname.values()].map(
+        (domain) => domain.hostname,
+      );
+      const resolveRedirectHost = (hostname: string) => {
+        const domain = routeContext.domainByHostname.get(hostname.toLowerCase());
+        return domain ? resolveRouteRedirect(domain, validRedirectHosts) : null;
+      };
       const composite = buildCompositeRegistration({
         services: enabled,
         routingConfig: project.routingConfig,
@@ -2025,6 +2034,7 @@ export async function deployComposeServices(
         // still proxies the backend at the prefix, in the same vhost.
         resolveStaticRoot: (serviceId) =>
           results.find((r) => r.serviceId === serviceId)?.staticRoot ?? null,
+        resolveRedirectHost,
         resolveDomain: (serviceId) => {
           const svc = enabled.find((s) => s.id === serviceId);
           // Composite (vercel-style single-domain) uses the service's PRIMARY route.
@@ -2054,6 +2064,7 @@ export async function deployComposeServices(
           ...(r.proxyLocations?.length ? { proxyLocations: r.proxyLocations } : {}),
           ...(r.redirects?.length ? { redirects: r.redirects } : {}),
           ...(r.headerRules?.length ? { headerRules: r.headerRules } : {}),
+          ...(r.redirectHost ? { redirectHost: r.redirectHost } : {}),
           ...(routeContext.proxy ? { proxy: routeContext.proxy } : {}),
         });
         logger.log(
@@ -2067,6 +2078,7 @@ export async function deployComposeServices(
       for (const reg of buildDomainFanoutRegistrations({
         routes: project.compositeRoutes,
         resolveTargetUrl,
+        resolveRedirectHost,
       })) {
         await routeContext.routing.registerRoute({
           domain: reg.hostname,
@@ -2077,6 +2089,7 @@ export async function deployComposeServices(
           ),
           targetUrl: reg.targetUrl!,
           ...(reg.proxyLocations?.length ? { proxyLocations: reg.proxyLocations } : {}),
+          ...(reg.redirectHost ? { redirectHost: reg.redirectHost } : {}),
           ...(routeContext.proxy ? { proxy: routeContext.proxy } : {}),
         });
         logger.log(

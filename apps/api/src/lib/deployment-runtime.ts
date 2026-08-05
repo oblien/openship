@@ -19,6 +19,7 @@ import { buildSshConfig, sshManager } from "./ssh-manager";
 import { createProvisionLock } from "./provision-lock";
 import { isLocalHostRow } from "./box-org";
 import { resolveAcmeProviderOptions } from "./acme-config";
+import { targetSourceCloneSupportedForTopology } from "./source-clone-topology";
 
 /**
  * The shape of `deployment.meta` JSONB. Snapshotted per-deploy —
@@ -188,9 +189,7 @@ async function resolveOrgServer(
   organizationId: string | undefined,
 ): Promise<OrgServer> {
   if (!organizationId) {
-    throw new Error(
-      "Cannot resolve a server deployment target without an organization ID",
-    );
+    throw new Error("Cannot resolve a server deployment target without an organization ID");
   }
 
   if (serverId) {
@@ -222,7 +221,28 @@ async function resolveOrgServer(
     throw new Error("No server configured. Add your SSH server in Settings.");
   }
 
-  throw new Error("Deployment target is a server, but this deployment has no server ID. Redeploy and select a server explicitly.");
+  throw new Error(
+    "Deployment target is a server, but this deployment has no server ID. Redeploy and select a server explicitly.",
+  );
+}
+
+/**
+ * Resolve whether the concrete server topology supports target-host source
+ * acquisition without constructing a runtime or opening SSH. Preflight uses
+ * this read-only answer; the build pipeline independently verifies the same
+ * invariant through the resolved runtime capability.
+ */
+export async function resolveTargetSourceCloneSupport(input: {
+  effectiveTarget: DeployTarget;
+  runtimeMode: RuntimeMode;
+  serverId?: string;
+  organizationId?: string;
+}): Promise<boolean> {
+  if (input.effectiveTarget !== "server") return false;
+  if (input.runtimeMode === "bare") return true;
+
+  const server = await resolveOrgServer(input.serverId, input.organizationId);
+  return targetSourceCloneSupportedForTopology(input.runtimeMode, await isLocalHostRow(server));
 }
 
 /**
@@ -232,7 +252,10 @@ async function resolveOrgServer(
  * and the build pipeline both route through this so their notion of the target
  * can never drift (a drift caused the self-hosted→cloud-preflight 403).
  */
-export function resolveEffectiveTarget(base: Platform["target"], snapshot: DeploymentMeta): DeployTarget {
+export function resolveEffectiveTarget(
+  base: Platform["target"],
+  snapshot: DeploymentMeta,
+): DeployTarget {
   // AUTO-DETECT, don't hardcode per host platform: a deployment PINNED to a
   // specific server always routes over SSH to that server — whether the host is
   // a self-hosted box OR the DESKTOP app operating a remote server. Only the SaaS
@@ -255,7 +278,10 @@ export function resolveEffectiveTarget(base: Platform["target"], snapshot: Deplo
   return "cloud";
 }
 
-export function usesManagedRouting(base: Platform["target"], effectiveTarget: DeployTarget): boolean {
+export function usesManagedRouting(
+  base: Platform["target"],
+  effectiveTarget: DeployTarget,
+): boolean {
   // Managed (local OpenResty) routing applies only to on-box targets. A cloud
   // target — including the local-orchestrated cloud deploy — routes via cloud
   // pages/edge, not the local proxy.
@@ -309,7 +335,8 @@ export async function resolveDeploymentPlatform(
 ): Promise<ResolvedDeploymentPlatform> {
   const basePlatform = opts?.basePlatform ?? platform();
   const effectiveTarget = resolveEffectiveTarget(basePlatform.target, snapshot);
-  const runtimeMode = snapshot.runtimeMode ?? (basePlatform.runtime.name === "docker" ? "docker" : "bare");
+  const runtimeMode =
+    snapshot.runtimeMode ?? (basePlatform.runtime.name === "docker" ? "docker" : "bare");
 
   if (effectiveTarget === "local" || effectiveTarget === "server") {
     const resolvedServerId = effectiveTarget === "server" ? (snapshot.serverId ?? null) : null;
@@ -382,19 +409,29 @@ export async function resolveTargetPlatform(
     // ONE resolution for the server's executor + transport (isLocal → host
     // executor + socket docker; else → pooled SSH). Shared with
     // createServerDockerRuntime / createServerCommandExecutor — no drift.
-    const { id, executor, isLocal, ssh } = await resolveServerExecutor(
-      serverId,
-      organizationId,
-    );
+    const { id, executor, isLocal, ssh } = await resolveServerExecutor(serverId, organizationId);
 
     // The auto-registered "This Server" row IS the OpenShip host (VPS /
     // server-host mode): local host executor, host docker socket (DooD),
     // everything on-box.
     if (isLocal) {
+      // This row represents the control plane's own host. In compose edge mode
+      // the API and edge share the vhost/certificate mounts and the Docker
+      // socket, even though workload/system commands may still need the pooled
+      // HOST executor (especially for a bare runtime). Tell the platform about
+      // that edge topology explicitly: inferring it from `!executor` made SSL
+      // run certbot inside the edge but verify/write files as the unprivileged
+      // host SSH user, yielding a false "certificate is missing" and no TLS
+      // vhost after a successful issuance.
+      const localEdgeContainer =
+        process.env.OPENSHIP_EDGE_MODE === "docker"
+          ? process.env.OPENSHIP_EDGE_CONTAINER?.trim() || "openship-edge"
+          : undefined;
       return createPlatform({
         target: "selfhosted",
         runtime: runtimeMode,
         executor,
+        localEdgeContainer,
         docker: runtimeMode === "docker" ? { transport: "socket" as const } : undefined,
         nginx: resolveAcmeProviderOptions(),
         provisionLock: createProvisionLock("provision:local"),
@@ -419,9 +456,7 @@ export async function resolveTargetPlatform(
   return createPlatform({
     target: "selfhosted",
     runtime: runtimeMode,
-    docker: runtimeMode === "docker"
-      ? { transport: "socket" as const }
-      : undefined,
+    docker: runtimeMode === "docker" ? { transport: "socket" as const } : undefined,
     nginx: resolveAcmeProviderOptions(),
     provisionLock: createProvisionLock("provision:local"),
   });
@@ -523,7 +558,11 @@ export async function resolveServerExecutor(
 export async function createServerCommandExecutor(
   serverId: string,
   organizationId: string,
-): Promise<{ executor: CommandExecutor; conn: { host: string; port: number; user: string }; isLocal: boolean }> {
+): Promise<{
+  executor: CommandExecutor;
+  conn: { host: string; port: number; user: string };
+  isLocal: boolean;
+}> {
   const { executor, conn, isLocal } = await resolveServerExecutor(serverId, organizationId);
   return { executor, conn, isLocal };
 }

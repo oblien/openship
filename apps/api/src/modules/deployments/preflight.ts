@@ -15,8 +15,10 @@ import type { DeploymentConfigSnapshot } from "./build.service";
 import { platform } from "../../lib/controller-helpers";
 import {
   resolveEffectiveTarget,
+  resolveTargetSourceCloneSupport,
   usesManagedRouting as usesManagedRoutingFor,
 } from "../../lib/deployment-runtime";
+import { resolveBuildRuntimeModes } from "./build-execution-plan";
 import {
   resolveServiceHostnameLabel,
   normalizeCustomHostname,
@@ -30,7 +32,11 @@ import { runCloudPreflight, type CloudPreflightData } from "../../lib/cloud-pref
 import { isStaticService, type DeployableService } from "../../lib/deployable-service";
 import { isFullyPinned, snapshotNeedsGitSource } from "./pinned-artifacts";
 import { serviceKind } from "./compose/project-services";
-import { relayConfigEligible, resolveClonePlan } from "./clone-plan";
+import {
+  relayConfigEligible,
+  resolveClonePlan,
+  type SourceExecutionSite,
+} from "./clone-plan";
 import { hasLocalGitIdentity } from "../github/github.local-auth";
 import { isPublicRepo } from "../github/github.http";
 import { getRoutingBaseDomain } from "../../lib/routing-domains";
@@ -222,8 +228,8 @@ async function checkGitHubAppInstallation(
  *
  *   - The API runs in a non-App mode (oauth / cli / token) - no short-lived
  *     installation token exists to mint.
- *   - The build runs on the deploy target (`buildStrategy === "server"`),
- *     not on the API host - so the token has to travel.
+ *   - Source acquisition runs on the target host, not on the API host - so the
+ *     token has to travel.
  *   - The deploy target is remote (not the same host as the API).
  *
  * In that combination, today we ship the OAuth / gh / static PAT to the
@@ -253,7 +259,7 @@ async function relayWillClone(
 async function checkRemoteBuildTokenLeak(
   ctx: RequestContext | null,
   effectiveTarget: string,
-  buildStrategy: "local" | "server" | undefined,
+  sourceSite: SourceExecutionSite,
   serverId: string | undefined,
   isDesktop: boolean,
   forwardGitCredentials: boolean | undefined,
@@ -269,7 +275,7 @@ async function checkRemoteBuildTokenLeak(
   // App-scoped modes (local-signed or cloud-proxied) already use
   // short-lived installation tokens — safe to ship to a remote build.
   if (mode === "app" || mode === "cloud-app") return { ...baseCheck, status: "pass" };
-  if (buildStrategy === "local") return { ...baseCheck, status: "pass" };
+  if (sourceSite === "api-host") return { ...baseCheck, status: "pass" };
   if (effectiveTarget === "cloud") return { ...baseCheck, status: "pass" };
   // A per-server credential means the clone authenticates as the SERVER, not by
   // shipping the operator's gh-cli token off-host — so the leak concern (and the
@@ -326,7 +332,7 @@ async function checkRemoteBuildTokenLeak(
  *
  * Skipped when:
  *   - no userId / no owner (nothing to resolve)
- *   - buildStrategy === "local" (clone happens on the API host, not remote)
+ *   - sourceSite === "api-host" (clone happens here, not remotely)
  *   - effectiveTarget === "local" (no remote at all)
  *
  * On fail, emits GITHUB_REMOTE_TOKEN_REQUIRED — the dashboard maps that
@@ -340,7 +346,7 @@ async function checkRemoteCloneToken(
   owner: string | null | undefined,
   projectId: string | undefined,
   effectiveTarget: string,
-  buildStrategy: "local" | "server" | undefined,
+  sourceSite: SourceExecutionSite,
   serverId: string | undefined,
   isDesktop: boolean,
   forwardGitCredentials: boolean | undefined,
@@ -350,7 +356,7 @@ async function checkRemoteCloneToken(
     label: "Remote clone credential",
   };
   if (!ctx || !owner) return { ...baseCheck, status: "pass" };
-  if (buildStrategy === "local") return { ...baseCheck, status: "pass" };
+  if (sourceSite === "api-host") return { ...baseCheck, status: "pass" };
   if (effectiveTarget === "local") return { ...baseCheck, status: "pass" };
 
   // A per-server GitHub credential (device token / PAT / SSH key) satisfies the
@@ -1403,6 +1409,39 @@ export async function runPreflightChecks(
   const effectiveBuildStrategy =
     opts?.buildStrategy ?? (snapshot.buildStrategy as "local" | "server" | undefined);
 
+  // Resolve the same BUILD runtime and concrete source-acquisition topology the
+  // pipeline will use. A static/bare service can be built in Docker, and a
+  // "This Server" Docker target uses a socket transport that stages source in
+  // the API process. Credential preflight must follow that physical site.
+  const configuredRuntimeMode = snapshot.runtimeMode ?? "docker";
+  const runtimeModes = resolveBuildRuntimeModes({
+    hasServer: !!snapshot.hasServer,
+    serverId: snapshot.serverId,
+    baseTarget: plat.target,
+    effectiveTarget,
+    willRunServices: !!opts?.multiService,
+  });
+  const buildRuntimeMode = runtimeModes.buildRuntimeMode ?? configuredRuntimeMode;
+  const targetSourceCloneSupported =
+    effectiveTarget === "server" &&
+    (buildRuntimeMode === "bare" || snapshot.cloneStrategy === "server")
+      ? await resolveTargetSourceCloneSupport({
+          effectiveTarget,
+          runtimeMode: buildRuntimeMode,
+          serverId: snapshot.serverId,
+          organizationId: snapshot.organizationId,
+        })
+      : false;
+  const clonePlan = resolveClonePlan({
+    effectiveTarget,
+    runtimeIsBare: buildRuntimeMode === "bare",
+    cloneStrategy: snapshot.cloneStrategy,
+    buildStrategy: effectiveBuildStrategy,
+    isDesktop: plat.target === "desktop",
+    forwardGitCredentials: snapshot.forwardGitCredentials,
+    targetSourceCloneSupported,
+  });
+
   // A PUBLIC github.com repo clones with NO credential, so none of the
   // credential checks below should block it — this is how a public repo
   // deploys on Vercel. Probe tokenlessly (cached, fails CLOSED): private /
@@ -1412,34 +1451,27 @@ export async function runPreflightChecks(
   const ghRepo = parseGithubOwnerRepo(snapshot.repoUrl, opts?.gitOwner, opts?.gitRepo);
   const repoIsPublic = ghRepo ? await isPublicRepo(ghRepo.owner, ghRepo.repo) : false;
 
-  // GitHub App installation check — only relevant when the repo is cloned on a
-  // REMOTE build worker (server build). A LOCAL build ("Build on this machine")
-  // clones on the API host using local credentials (gh CLI / OAuth), so the
-  // cloud App installation is irrelevant — skip it. This mirrors the
-  // remote-clone-token check below, which already passes for local builds.
-  if (!repoIsPublic && getGitHubAuthMode() === "app" && effectiveBuildStrategy !== "local") {
+  // GitHub App installation check — only relevant when source acquisition runs
+  // away from the API host. An API-host clone can use the configured local
+  // credential chain, so no remote-scoped App installation is required.
+  if (!repoIsPublic && getGitHubAuthMode() === "app" && clonePlan.sourceSite !== "api-host") {
     checks.push(
       await checkGitHubAppInstallation(githubCtx, opts?.gitOwner),
     );
   }
 
-  // A remote clone credential is only needed when the repo is actually cloned
-  // ON the remote build worker. Per the build pipeline (build-pipeline.ts:774),
-  // that is ONLY the bare runtime on a server build: Docker builds — including
-  // EVERY services deploy — clone on the orchestrator (the token never leaves
-  // the API host), and cloud builds clone inside the workspace. So the two
-  // credential checks below apply only to bare + server; otherwise the clone is
-  // local and these checks would wrongly demand a remote/App/cloud credential.
-  const runtimeMode = snapshot.runtimeMode ?? "docker";
+  // Bare server deployments cannot transfer a prepared context, so they require
+  // a credential that is valid at the target. Docker target-host acquisition is
+  // handled separately below because it can safely fall back to an API-host
+  // clone + context transfer when no target-safe credential exists.
   const clonesOnRemote =
     !repoIsPublic &&
-    runtimeMode === "bare" &&
+    buildRuntimeMode === "bare" &&
     // Static apps now BUILD in a Docker sandbox (see build-pipeline's static
     // flip) which clones on the orchestrator — never a remote bare clone — so
     // they never need a remote clone credential even if runtimeMode is "bare".
     snapshot.hasServer &&
-    effectiveTarget === "server" &&
-    effectiveBuildStrategy !== "local";
+    clonePlan.sourceSite === "target-host";
 
   if (clonesOnRemote) {
     // Remote-build credential check. For App-scoped modes (app / cloud-app):
@@ -1449,7 +1481,7 @@ export async function runPreflightChecks(
       await checkRemoteBuildTokenLeak(
         githubCtx,
         effectiveTarget,
-        effectiveBuildStrategy,
+        clonePlan.sourceSite,
         snapshot.serverId,
         plat.target === "desktop",
         snapshot.forwardGitCredentials,
@@ -1464,7 +1496,7 @@ export async function runPreflightChecks(
         opts?.gitOwner,
         opts?.projectId,
         effectiveTarget,
-        effectiveBuildStrategy,
+        clonePlan.sourceSite,
         snapshot.serverId,
         plat.target === "desktop",
         snapshot.forwardGitCredentials,
@@ -1479,19 +1511,7 @@ export async function runPreflightChecks(
   // is already covered by the hard-fail clonesOnRemote checks above.
   // Same clone decision the build pipeline uses (resolveClonePlan) — so this
   // credential check verifies exactly the clone the pipeline will perform.
-  const dockerClonesOnServer = resolveClonePlan({
-    effectiveTarget,
-    serverId: snapshot.serverId,
-    runtimeIsBare: runtimeMode === "bare",
-    cloneStrategy: snapshot.cloneStrategy,
-    buildStrategy: effectiveBuildStrategy,
-    isDesktop: plat.target === "desktop",
-    forwardGitCredentials: snapshot.forwardGitCredentials,
-    // GitHub projects carry a parsed gitOwner; docker acquires the source
-    // tarball on the server for them. Same structured signal the pipeline uses
-    // (`!!project.gitOwner`) so the two decisions can't drift.
-    repoIsGithub: !!opts?.gitOwner,
-  }).dockerClonesOnServer;
+  const dockerClonesOnServer = clonePlan.dockerClonesOnServer;
   if (dockerClonesOnServer) {
     checks.push(
       await checkCloneOnServerCredential(

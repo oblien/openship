@@ -139,6 +139,25 @@ interface DockerSystemManager {
   ensureFeature(feature: Feature, onLog?: (log: SystemLog) => void): Promise<void>;
 }
 
+/**
+ * Fail closed when a caller asks this runtime to clone on the deployment
+ * target but the selected Docker transport has no target-host command path.
+ * Socket/TCP builds stage source from the API process; silently accepting
+ * `cloneOnServer` there makes credential planning describe a different machine
+ * from the one that actually runs git.
+ */
+export function assertCloneOnServerTransport(
+  transportKind: DockerTransport["kind"],
+  hasTargetExecutor: boolean,
+  cloneOnServer: boolean | undefined,
+): void {
+  if (cloneOnServer && (transportKind !== "ssh" || !hasTargetExecutor)) {
+    throw new Error(
+      `Clone-on-server requires the Docker SSH transport with a target executor; ${transportKind} stages source on the API host`,
+    );
+  }
+}
+
 // ─── Shared Docker helpers ───────────────────────────────────────────────────
 
 const RESTART_POLICIES: Record<string, { Name: string; MaximumRetryCount: number }> = {
@@ -666,27 +685,7 @@ export function parseContainerEventLine(line: string): ContainerLifecycleEvent |
 
 export class DockerRuntime implements RuntimeAdapter {
   readonly name = "docker";
-  readonly capabilities: ReadonlySet<RuntimeCapability> = new Set<RuntimeCapability>([
-    "build",
-    "deploy",
-    "multiServiceDeploy",
-    "stop",
-    "start",
-    "restart",
-    "destroy",
-    "containerInfo",
-    "runtimeLogs",
-    "streamLogs",
-    "usage",
-    "containerIp",
-    "rollback",
-    "serviceShell",
-    "projectContainerSweep",
-    "deploymentContainerQuery",
-    "hostContainerQuery",
-    "stabilityProbe",
-    "containerEvents",
-  ]);
+  readonly capabilities: ReadonlySet<RuntimeCapability>;
 
   /** Docker honors every extended compose key we currently support. */
   readonly unsupportedComposeKeys: ReadonlySet<keyof ComposeAdvanced> = new Set();
@@ -710,6 +709,30 @@ export class DockerRuntime implements RuntimeAdapter {
   ) {
     this.connectionOptions = opts;
     this.transport = resolveDockerTransport(opts);
+    this.capabilities = new Set<RuntimeCapability>([
+      "build",
+      "deploy",
+      ...(this.transport.kind === "ssh" && opts?.executor
+        ? (["targetSourceClone"] as const)
+        : []),
+      "multiServiceDeploy",
+      "stop",
+      "start",
+      "restart",
+      "destroy",
+      "containerInfo",
+      "runtimeLogs",
+      "streamLogs",
+      "usage",
+      "containerIp",
+      "rollback",
+      "serviceShell",
+      "projectContainerSweep",
+      "deploymentContainerQuery",
+      "hostContainerQuery",
+      "stabilityProbe",
+      "containerEvents",
+    ]);
     this.systemManager = systemManager ?? null;
     this.provisionLock = provisionLock;
   }
@@ -1421,6 +1444,12 @@ export class DockerRuntime implements RuntimeAdapter {
       const sshExecutor =
         this.transport.kind === "ssh" ? this.connectionOptions?.executor : null;
 
+      assertCloneOnServerTransport(
+        this.transport.kind,
+        !!this.connectionOptions?.executor,
+        config.cloneOnServer,
+      );
+
       // ── Clone-on-server path ───────────────────────────────────────────
       // Clone the repo ON the remote host and build there — no local clone and
       // no context transfer. Only for SSH server builds that opted in.
@@ -1866,6 +1895,11 @@ export class DockerRuntime implements RuntimeAdapter {
     // Every service in a compose/monorepo build shares ONE repo+branch+commit,
     // so the first spec's source config drives the single clone.
     const source = specs[0]!.config;
+    assertCloneOnServerTransport(
+      this.transport.kind,
+      !!this.connectionOptions?.executor,
+      source.cloneOnServer,
+    );
     const isSsh = this.transport.kind === "ssh" && !!this.connectionOptions?.executor;
     const cloneOnServer = isSsh && !!source.cloneOnServer;
     const remoteContextDir = `/tmp/openship-build-${source.sessionId}`;

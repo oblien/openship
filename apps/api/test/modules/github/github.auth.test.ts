@@ -1,8 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { APIError } from "better-auth/api";
 
-const { getAccessToken } = vi.hoisted(() => ({
+const {
+  getAccessToken,
+  unlinkProvider,
+  listMemberships,
+  setStoredDeviceToken,
+  setGithubCliDisabled,
+  setGhCliOperatorOptedIn,
+  isGithubCliDisabled,
+  invalidateByPrefix,
+} = vi.hoisted(() => ({
   getAccessToken: vi.fn(),
+  unlinkProvider: vi.fn(),
+  listMemberships: vi.fn(),
+  setStoredDeviceToken: vi.fn(),
+  setGithubCliDisabled: vi.fn(),
+  setGhCliOperatorOptedIn: vi.fn(),
+  isGithubCliDisabled: vi.fn(),
+  invalidateByPrefix: vi.fn(),
 }));
 
 vi.mock("@repo/db", () => ({
@@ -10,6 +26,8 @@ vi.mock("@repo/db", () => ({
     gitInstallation: {
       findByOwner: vi.fn(),
     },
+    account: { unlinkProvider },
+    member: { listByUser: listMemberships },
   },
 }));
 
@@ -27,15 +45,33 @@ vi.mock("../../../src/config/env", () => ({
 
 vi.mock("../../../src/modules/github/github.local-auth", () => ({
   getLocalGhToken: vi.fn(),
+  setStoredDeviceToken,
 }));
 
-import { getUserToken } from "../../../src/modules/github/github.auth";
+vi.mock("../../../src/modules/settings/settings.service", () => ({
+  setGithubCliDisabled,
+  setGhCliOperatorOptedIn,
+  isGithubCliDisabled,
+}));
+
+vi.mock("../../../src/lib/cache-store", () => ({
+  cacheStore: vi.fn(async () => ({ invalidateByPrefix })),
+}));
+
+import { disconnectUser, getUserToken } from "../../../src/modules/github/github.auth";
+
+beforeEach(() => {
+  getAccessToken.mockReset();
+  unlinkProvider.mockReset();
+  listMemberships.mockReset().mockResolvedValue([]);
+  setStoredDeviceToken.mockReset().mockResolvedValue(undefined);
+  setGithubCliDisabled.mockReset().mockResolvedValue(undefined);
+  setGhCliOperatorOptedIn.mockReset().mockResolvedValue(undefined);
+  isGithubCliDisabled.mockReset().mockResolvedValue(false);
+  invalidateByPrefix.mockReset().mockResolvedValue(undefined);
+});
 
 describe("getUserToken", () => {
-  beforeEach(() => {
-    getAccessToken.mockReset();
-  });
-
   it("uses Better Auth to resolve the GitHub OAuth token", async () => {
     getAccessToken.mockResolvedValue({ accessToken: "github-user-token" });
 
@@ -63,5 +99,21 @@ describe("getUserToken", () => {
     getAccessToken.mockRejectedValue(new Error("boom"));
 
     await expect(getUserToken("user-1")).rejects.toThrow("boom");
+  });
+});
+
+describe("disconnectUser", () => {
+  it("clears the stored credential and both local authorization gates", async () => {
+    await disconnectUser("user-1", "cli");
+
+    expect(setGithubCliDisabled).toHaveBeenCalledWith("user-1", true);
+    expect(setGhCliOperatorOptedIn).toHaveBeenCalledWith("user-1", false);
+    expect(setStoredDeviceToken).toHaveBeenCalledWith(null);
+  });
+
+  it("fails instead of reporting a successful disconnect when token removal fails", async () => {
+    setStoredDeviceToken.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(disconnectUser("user-1", "cli")).rejects.toThrow("database unavailable");
   });
 });

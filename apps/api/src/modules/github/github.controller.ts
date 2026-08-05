@@ -518,6 +518,15 @@ export async function connectRedirect(c: Context) {
  *  Gated by `localOnly` middleware - never reaches this handler in cloud modes.
  */
 export async function getLocalStatus(c: Context) {
+  const ctx = getRequestContext(c);
+  const { isGithubCliDisabled } = await import("../settings/settings.service");
+  if (await isGithubCliDisabled(ctx.userId).catch(() => true)) {
+    return c.json({
+      available: false,
+      method: null,
+      activeMode: githubAuth.getGitHubAuthMode(),
+    });
+  }
   const { getLocalGhStatus } = await import("./github.local-auth");
   const localStatus = await getLocalGhStatus();
   return c.json({

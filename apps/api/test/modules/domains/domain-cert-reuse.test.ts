@@ -14,6 +14,7 @@ const domainRepo = vi.hoisted(() => ({
   updateSsl: vi.fn(),
   listByProject: vi.fn().mockResolvedValue([]),
   setPrimary: vi.fn(),
+  recordVerifyFailure: vi.fn(),
 }));
 const projectRepo = vi.hoisted(() => ({ findById: vi.fn() }));
 const deploymentRepo = vi.hoisted(() => ({ findById: vi.fn() }));
@@ -27,6 +28,9 @@ const sslMocks = vi.hoisted(() => ({
 }));
 /** The adapter's proxy read api — swapped per test to stand in for a real proxy. */
 const edgeProxy = vi.hoisted(() => vi.fn());
+const convergeRoute = vi.hoisted(() => vi.fn());
+const convergeAllRoutes = vi.hoisted(() => vi.fn());
+const syncManagedEdge = vi.hoisted(() => vi.fn());
 // The host executor createHostExecutor() returns — swapped per test.
 const hostExec = vi.hoisted(() => ({ current: null as CommandExecutor | null }));
 
@@ -45,12 +49,21 @@ vi.mock("../../../src/lib/controller-helpers", async (importOriginal) => {
 });
 
 vi.mock("../../../src/lib/domain-ssl", () => sslMocks);
+vi.mock("../../../src/modules/domains/project-route.service", () => ({
+  convergeVerifiedDomainRoute: convergeRoute,
+  convergeAllProjectRoutes: convergeAllRoutes,
+}));
+vi.mock("../../../src/modules/projects/project-runtime.service", () => ({
+  syncProjectManagedEdge: syncManagedEdge,
+}));
 // Both accessors hand back the SAME host executor, which is the point: a local
 // server row and the host channel are one connection, so cert ops land on the
 // host's /etc/letsencrypt either way.
 vi.mock("../../../src/lib/ssh-manager", () => ({
   sshManager: {
-    withExecutor: vi.fn(async (_id: string, fn: (e: CommandExecutor) => unknown) => fn(hostExec.current!)),
+    withExecutor: vi.fn(async (_id: string, fn: (e: CommandExecutor) => unknown) =>
+      fn(hostExec.current!),
+    ),
     withHostExecutor: vi.fn(async (fn: (e: CommandExecutor) => unknown) => fn(hostExec.current!)),
   },
 }));
@@ -64,7 +77,11 @@ vi.mock("@repo/adapters", async (importOriginal) => {
 
 import { validateCertFor } from "@repo/adapters";
 import { makeTestCert } from "../../../../../packages/adapters/src/system/proxy/test-certs";
-import { reuseServerCertForDomain } from "../../../src/modules/domains/domain.service";
+import {
+  reuseServerCertForDomain,
+  verifyDomain,
+  verifyDomainSsl,
+} from "../../../src/modules/domains/domain.service";
 
 /**
  * Fake executor: `exists` answers the container markers from `container` and file
@@ -145,7 +162,14 @@ beforeEach(() => {
   deploymentRepo.findById.mockResolvedValue({ id: "dep_1", meta: { serverId: "srv_1" } });
   serverRepo.getInOrganization.mockResolvedValue({ id: "srv_1", isLocal: true });
   sslMocks.verifyExistingCert.mockResolvedValue({ verified: false });
-  sslMocks.installDomainCert.mockResolvedValue({ expiresAt: "2027-01-01T00:00:00.000Z", verified: true });
+  sslMocks.installDomainCert.mockResolvedValue({
+    expiresAt: "2027-01-01T00:00:00.000Z",
+    verified: true,
+  });
+  convergeRoute.mockResolvedValue(undefined);
+  convergeAllRoutes.mockResolvedValue(undefined);
+  syncManagedEdge.mockResolvedValue({ ok: true, failures: [] });
+  domainRepo.recordVerifyFailure.mockResolvedValue(1);
   edgeProxy.mockResolvedValue(null);
   hostExec.current = fakeExecutor({});
 });
@@ -159,7 +183,11 @@ afterEach(() => {
 
 describe("reuseServerCertForDomain", () => {
   it("reuses certbot's existing cert when the platform provider already sees it", async () => {
-    sslMocks.verifyExistingCert.mockResolvedValue({ verified: true, issuer: "certbot", expiresAt: "2027-01-01" });
+    sslMocks.verifyExistingCert.mockResolvedValue({
+      verified: true,
+      issuer: "certbot",
+      expiresAt: "2027-01-01",
+    });
 
     const ok = await reuseServerCertForDomain(ctx, "dom_1");
 
@@ -168,6 +196,8 @@ describe("reuseServerCertForDomain", () => {
       "dom_1",
       expect.objectContaining({ sslStatus: "active" }),
     );
+    expect(convergeAllRoutes).toHaveBeenCalledWith(project);
+    expect(syncManagedEdge).toHaveBeenCalledWith(project, project.organizationId);
     expect(sslMocks.installDomainCert).not.toHaveBeenCalled();
   });
 
@@ -219,6 +249,18 @@ describe("reuseServerCertForDomain", () => {
 
     expect(ok).toBe(false);
     expect(sslMocks.installDomainCert).not.toHaveBeenCalled();
+    expect(domainRepo.markVerifiedActive).not.toHaveBeenCalled();
+  });
+
+  it("does not activate a reused cert when strict route convergence fails", async () => {
+    sslMocks.verifyExistingCert.mockResolvedValue({
+      verified: true,
+      issuer: "certbot",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    });
+    convergeRoute.mockRejectedValue(new Error("vhost write failed"));
+
+    expect(await reuseServerCertForDomain(ctx, "dom_1")).toBe(false);
     expect(domainRepo.markVerifiedActive).not.toHaveBeenCalled();
   });
 
@@ -318,5 +360,173 @@ describe("reuseServerCertForDomain", () => {
 
     expect(ok).toBe(true);
     expect(sslMocks.installDomainCert).toHaveBeenCalled();
+  });
+});
+
+describe("verifyDomain route convergence", () => {
+  beforeEach(() => {
+    process.env.OPENSHIP_EDGE_MODE = "docker";
+    sslMocks.verifyExistingCert.mockResolvedValue({
+      verified: true,
+      issuer: "certbot",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("writes the live route before marking a reused certificate active", async () => {
+    const order: string[] = [];
+    convergeRoute.mockImplementation(async () => {
+      order.push("route");
+    });
+    domainRepo.markVerifiedActive.mockImplementation(async () => {
+      order.push("active");
+    });
+
+    const result = await verifyDomain(ctx, "dom_1");
+
+    expect(result.verified).toBe(true);
+    expect(order).toEqual(["route", "active"]);
+    expect(convergeRoute).toHaveBeenCalledWith(expect.objectContaining({ id: "dom_1" }), project);
+    expect(convergeAllRoutes).toHaveBeenCalledWith(project);
+    expect(syncManagedEdge).toHaveBeenCalledWith(project, project.organizationId);
+  });
+
+  it("does not report success when the certificate exists but vhost apply fails", async () => {
+    convergeRoute.mockRejectedValue(new Error("openresty reload failed"));
+
+    const result = await verifyDomain(ctx, "dom_1");
+
+    expect(result).toMatchObject({ verified: false, sslStatus: "active" });
+    expect(result.message).toContain("openresty reload failed");
+    expect(domainRepo.markVerifiedActive).not.toHaveBeenCalled();
+    expect(domainRepo.recordVerifyFailure).toHaveBeenCalled();
+  });
+
+  it("re-applies the vhost when Verify is clicked for an already-verified domain", async () => {
+    domainRepo.findById.mockResolvedValue({ ...domainRow, verified: true, sslStatus: "active" });
+
+    const result = await verifyDomain(ctx, "dom_1");
+
+    expect(result).toMatchObject({ verified: true, sslStatus: "active" });
+    expect(result.message).toContain("live route re-applied");
+    expect(convergeRoute).toHaveBeenCalledOnce();
+    expect(sslMocks.verifyExistingCert).not.toHaveBeenCalled();
+    expect(syncManagedEdge).toHaveBeenCalledWith(project, project.organizationId);
+  });
+
+  it("applies the live route before activating a newly issued certificate", async () => {
+    const order: string[] = [];
+    sslMocks.provisionDomainCertForVerify.mockResolvedValue({
+      verified: true,
+      issuer: "certbot",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    });
+    convergeRoute.mockImplementation(async () => {
+      order.push("route");
+    });
+    domainRepo.markVerifiedActive.mockImplementation(async () => {
+      order.push("active");
+    });
+
+    const result = await verifyDomain(ctx, "dom_1", { force: true });
+
+    expect(result.verified).toBe(true);
+    expect(order).toEqual(["route", "active"]);
+  });
+
+  it("keeps Action Required when a different verified route is still broken", async () => {
+    convergeAllRoutes.mockRejectedValue(new Error("sibling route failed"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await verifyDomain(ctx, "dom_1");
+
+    expect(result.verified).toBe(true);
+    expect(syncManagedEdge).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("still has unsynchronised routes"));
+    warn.mockRestore();
+  });
+
+  it("preserves an expired SSL state while repairing an already-verified route", async () => {
+    domainRepo.findById.mockResolvedValue({ ...domainRow, verified: true, sslStatus: "expired" });
+
+    const result = await verifyDomain(ctx, "dom_1");
+
+    expect(result).toMatchObject({ verified: true, sslStatus: "expired" });
+    expect(domainRepo.markVerified).toHaveBeenCalledWith("dom_1");
+    expect(domainRepo.markVerifiedActive).not.toHaveBeenCalled();
+    expect(sslMocks.verifyExistingCert).not.toHaveBeenCalled();
+  });
+
+  it("keeps Action Required when managed-edge reconciliation still fails", async () => {
+    syncManagedEdge.mockResolvedValue({ ok: false, failures: ["free.example.opsh.io"] });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await verifyDomain(ctx, "dom_1");
+
+    expect(result.verified).toBe(true);
+    expect(syncManagedEdge).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("still has unsynchronised routes"));
+    warn.mockRestore();
+  });
+});
+
+describe("verifyDomainSsl route recovery", () => {
+  beforeEach(() => {
+    sslMocks.manageDomainSsl.mockResolvedValue({
+      verified: true,
+      issuer: "certbot",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    });
+    domainRepo.findById.mockResolvedValue({
+      ...domainRow,
+      verified: true,
+      sslStatus: "active",
+      sslIssuer: "certbot",
+      sslExpiresAt: new Date("2027-01-01T00:00:00.000Z"),
+    });
+  });
+
+  it("repairs the live vhost while rechecking an existing certificate", async () => {
+    const result = await verifyDomainSsl(ctx, "dom_1");
+
+    expect(result).toMatchObject({ verified: true, sslStatus: "active" });
+    expect(convergeRoute).toHaveBeenCalledWith(expect.objectContaining({ id: "dom_1" }), project);
+    expect(convergeAllRoutes).toHaveBeenCalledWith(project);
+    expect(syncManagedEdge).toHaveBeenCalledWith(project, project.organizationId);
+  });
+
+  it("does not report a successful recheck when the vhost cannot be applied", async () => {
+    convergeRoute.mockRejectedValue(new Error("vhost write failed"));
+
+    await expect(verifyDomainSsl(ctx, "dom_1")).rejects.toThrow("vhost write failed");
+  });
+
+  it("does not rewrite routes for a cloud-workspace project on a local controller", async () => {
+    projectRepo.findById.mockResolvedValue({ ...project, cloudWorkspaceId: "ws_cloud" });
+
+    const result = await verifyDomainSsl(ctx, "dom_1");
+
+    expect(result).toMatchObject({ verified: true, sslStatus: "active" });
+    expect(convergeRoute).not.toHaveBeenCalled();
+    expect(convergeAllRoutes).not.toHaveBeenCalled();
+    expect(syncManagedEdge).not.toHaveBeenCalled();
+  });
+
+  it("does not rewrite routes when TLS terminates at an external ingress", async () => {
+    domainRepo.findById.mockResolvedValue({
+      ...domainRow,
+      verified: true,
+      sslStatus: "active",
+      sslIssuer: "certbot",
+      sslExpiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      externalIngress: true,
+    });
+
+    const result = await verifyDomainSsl(ctx, "dom_1");
+
+    expect(result).toMatchObject({ verified: true, sslStatus: "active" });
+    expect(convergeRoute).not.toHaveBeenCalled();
+    expect(convergeAllRoutes).not.toHaveBeenCalled();
+    expect(syncManagedEdge).not.toHaveBeenCalled();
   });
 });

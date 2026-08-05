@@ -60,8 +60,8 @@ export interface PlatformConfig {
    * Runtime mode for self-hosted (ignored for cloud/desktop).
    *
    * This is the ONLY choice for self-hosted - everything else follows:
-  *   - "docker" → Docker containers + Nginx + certbot (default)
-  *   - "bare"   → Node.js processes + Nginx + certbot
+   *   - "docker" → Docker containers + Nginx + certbot (default)
+   *   - "bare"   → Node.js processes + Nginx + certbot
    */
   runtime?: "docker" | "bare";
   /** Docker connection options (only for docker runtime) */
@@ -90,7 +90,7 @@ export interface PlatformConfig {
   /**
    * SSH config for remote server management (self-hosted only).
    *
-  * When provided, all system checks, installations, and Nginx file
+   * When provided, all system checks, installations, and Nginx file
    * operations run on the remote server via SSH instead of locally.
    * When omitted, everything runs on the current machine.
    */
@@ -104,6 +104,16 @@ export interface PlatformConfig {
    * connection per server.
    */
   executor?: CommandExecutor;
+  /**
+   * Name of an edge container whose routing state is mounted into this process.
+   *
+   * This is deliberately independent from `executor`: an API running in the
+   * compose stack may still need a host executor to run a bare workload on its
+   * own server, while vhost/certificate files must be read through the API's
+   * shared mounts and edge commands through the local Docker socket. Remote
+   * servers leave this unset and keep using their host/SSH edge provider.
+   */
+  localEdgeContainer?: string;
   /**
    * Custom state store for caching setup results.
    * Defaults to FileStateStore. The API layer can provide a DB-backed store.
@@ -228,9 +238,8 @@ async function createInfraProvider(
   // paths/pin decision for the edge image. Constructing the provider here too is
   // what let the two drift — and pointing `sitesDir` at a directory the edge never
   // reads fails silently, with the box dark.
-  const { containerEdgeProvider, localContainerEdgeProvider } = await import(
-    "./system/proxy/ensure-container-edge"
-  );
+  const { containerEdgeProvider, localContainerEdgeProvider } =
+    await import("./system/proxy/ensure-container-edge");
 
   // LOCAL containerized edge (compose): the api shares the routing mounts with the
   // `openship-edge` container and reaches it over the mounted Docker socket.
@@ -268,9 +277,8 @@ async function createInfraProvider(
 
   // Bare host OpenResty: legacy boxes not yet converted, and Docker-less servers.
   // No longer something we install — see `installContainerEdge`.
-  const { detectOpenRestyPaths, ensureOpenRestyConfig, ensureLuaScripts } = await import(
-    "./infra/openresty-lua"
-  );
+  const { detectOpenRestyPaths, ensureOpenRestyConfig, ensureLuaScripts } =
+    await import("./infra/openresty-lua");
   const paths = await detectOpenRestyPaths(executor);
 
   // Idempotent, but writes the SHARED nginx.conf (grep||sed). Concurrent deploys
@@ -310,9 +318,13 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
   // it needs the dockerode executor. A REMOTE box's container edge is resolved by
   // probing that box (createInfraProvider) — not from this env, which describes
   // the control plane and says nothing about the target.
-  const useDockerEdge =
+  const implicitLocalDockerEdge =
     !config.executor && !config.ssh && process.env.OPENSHIP_EDGE_MODE === "docker";
-  const edgeContainer = process.env.OPENSHIP_EDGE_CONTAINER?.trim() || "openship-edge";
+  const localEdgeContainer =
+    config.localEdgeContainer?.trim() ||
+    (implicitLocalDockerEdge
+      ? process.env.OPENSHIP_EDGE_CONTAINER?.trim() || "openship-edge"
+      : undefined);
 
   // Executor - use injected (managed/pooled) executor, or create a fresh one
   let executor: CommandExecutor;
@@ -323,16 +335,19 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     executor = createExecutor(config.ssh);
   }
 
-  // System - runtime mode determines all required components. In docker-edge
-  // mode the stack provides docker (socket) + OpenResty/certbot (edge image), so
-  // the api installs nothing on its container/host.
+  // System - runtime mode determines all required components. In the implicit
+  // local compose case the stack provides docker + OpenResty/certbot, so the API
+  // installs nothing in its own container. An EXPLICIT local edge can coexist
+  // with a host executor (notably for bare workloads), whose prerequisites must
+  // still be managed on that host — edge location and workload location are
+  // separate topology decisions.
   const { SystemManager } = await import("./system/setup");
   const system = new SystemManager(runtimeMode, {
     executor,
     stateStore: config.stateStore,
     installerConfig: config.installerConfig,
     provisionLock: config.provisionLock,
-    assumeInstalled: useDockerEdge,
+    assumeInstalled: implicitLocalDockerEdge,
   });
 
   // Runtime
@@ -350,7 +365,7 @@ async function createSelfHostedPlatform(config: PlatformConfig): Promise<Platfor
     runtimeMode,
     config,
     executor,
-    useDockerEdge ? edgeContainer : undefined,
+    localEdgeContainer,
   );
 
   return {
@@ -389,9 +404,7 @@ export async function initPlatform(config: PlatformConfig): Promise<Platform> {
  */
 export function getPlatform(): Platform {
   if (!_platform) {
-    throw new Error(
-      "Platform not initialized. Call initPlatform() at server startup.",
-    );
+    throw new Error("Platform not initialized. Call initPlatform() at server startup.");
   }
   return _platform;
 }

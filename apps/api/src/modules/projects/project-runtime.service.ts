@@ -11,15 +11,11 @@ import { assertResourceInOrg } from "../../lib/controller-helpers";
 import { syncManagedEdgeRoutes, edgeUnsyncedWarning } from "../../lib/managed-edge-proxy";
 import { resolveManagedHostname } from "../../lib/routing-domains";
 import { sshManager } from "../../lib/ssh-manager";
-import { applyProjectRouting } from "../domains/routing-apply.service";
+import { convergeAllProjectRoutes } from "../domains/project-route.service";
 
 // ─── Runtime logs ────────────────────────────────────────────────────────────
 
-export async function getRuntimeLogs(
-  projectId: string,
-  organizationId: string,
-  tail?: number,
-) {
+export async function getRuntimeLogs(projectId: string, organizationId: string, tail?: number) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -145,18 +141,19 @@ export async function retryProjectRouting(
   // Cloud manages its own ingress — there is no server edge to repair here.
   if (p.cloudWorkspaceId) return { ok: true };
 
-  const dep = p.activeDeploymentId
-    ? await repos.deployment.findById(p.activeDeploymentId)
-    : null;
+  const dep = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
 
   await repairDeploymentServerBinding(p, dep).catch(() => {});
 
   const serverId = p.serverId ?? (dep?.meta as { serverId?: string } | null)?.serverId ?? undefined;
   await restoreCustomPortsFromEdge(p, serverId).catch(() => {});
 
-  // Live re-apply is best-effort, but its failure must NOT clear the warning.
+  // Retry is an explicit recovery action: strictly converge every currently
+  // routable project + service hostname before any warning may be cleared.
+  // The older routing-config helper is deliberately best-effort and can return
+  // false without throwing, which previously produced a false "Live" state.
   let applyOk = true;
-  await applyProjectRouting(projectId).catch(() => {
+  await convergeAllProjectRoutes(p).catch(() => {
     applyOk = false;
   });
 
@@ -167,8 +164,11 @@ export async function retryProjectRouting(
   if (!ok) return { ok: false, warning: edgeUnsyncedWarning(failures, "retry") };
 
   if (!applyOk) {
-    const warning = "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
-    const fresh = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
+    const warning =
+      "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
+    const fresh = p.activeDeploymentId
+      ? await repos.deployment.findById(p.activeDeploymentId)
+      : null;
     await markRoutingWarning(fresh, warning).catch(() => {});
     return { ok: false, warning };
   }
@@ -314,5 +314,3 @@ async function markRoutingWarning(
   meta.deployWarning = warning;
   await repos.deployment.updateStatus(dep.id, dep.status, { meta });
 }
-
-

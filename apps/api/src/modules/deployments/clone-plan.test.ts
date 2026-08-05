@@ -3,12 +3,11 @@ import { resolveClonePlan, type ClonePlanInput } from "./clone-plan";
 
 const base: ClonePlanInput = {
   effectiveTarget: "server",
-  serverId: "srv_1",
   runtimeIsBare: false,
   cloneStrategy: "server",
   buildStrategy: "server",
   isDesktop: true,
-  repoIsGithub: true,
+  targetSourceCloneSupported: true,
 };
 
 describe("resolveClonePlan — relayEligible (forward is the default on desktop)", () => {
@@ -29,12 +28,11 @@ describe("resolveClonePlan — relayEligible (forward is the default on desktop)
   });
 
   it("is NOT eligible when the clone doesn't run on the server", () => {
-    // api-host clone of a non-github repo → not on-server → no relay.
+    // api-host clone → not on-server → no relay, regardless of provider.
     expect(
       resolveClonePlan({
         ...base,
         cloneStrategy: "api-host",
-        repoIsGithub: false,
       }).relayEligible,
     ).toBe(false);
   });

@@ -29,9 +29,12 @@ export async function createGitHubSource(ctx: RequestContext): Promise<GitHubSou
   }
 
   // Local: gh-FIRST. Resolve the gh sub-source from a LOCAL token read — do NOT
-  // probe the cloud here. The merge resolves the App side lazily.
+  // probe the cloud here. A user who disconnected local GitHub auth must not
+  // have the instance-wide credential silently reintroduced for discovery.
+  const { isGithubCliDisabled } = await import("../../settings/settings.service");
+  const cliDisabled = await isGithubCliDisabled(ctx.userId).catch(() => true);
   const { GhCliSource } = await import("./gh-cli-source");
   const gh = new GhCliSource(ctx.userId);
   const { LocalGitHubSource } = await import("./local-source");
-  return new LocalGitHubSource(ctx, (await gh.token()) ? gh : null);
+  return new LocalGitHubSource(ctx, !cliDisabled && (await gh.token()) ? gh : null);
 }

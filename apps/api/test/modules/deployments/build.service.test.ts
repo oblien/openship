@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   assertGitHubRepoAccess,
   getForwardGitToServer,
+  hasLegacyFlattenedCommandArgvAmbiguity,
   kickoffBuild,
   repos,
   resolveProjectRouteState,
+  resolveProjectInfo,
   resolveServicePipelineMode,
   resolveSmartRoute,
   resolveStrategy,
@@ -14,6 +16,7 @@ const {
 } = vi.hoisted(() => ({
   assertGitHubRepoAccess: vi.fn(),
   getForwardGitToServer: vi.fn(),
+  hasLegacyFlattenedCommandArgvAmbiguity: vi.fn(),
   kickoffBuild: vi.fn(),
   repos: {
     project: {
@@ -23,6 +26,7 @@ const {
     },
     deployment: {
       findById: vi.fn(),
+      findInProgressByCommit: vi.fn(),
       listByProject: vi.fn(),
       getLatestSuccessfulForBranch: vi.fn(),
       create: vi.fn(),
@@ -33,9 +37,11 @@ const {
     service: {
       listByProject: vi.fn(),
       syncFromCompose: vi.fn(),
+      reconcileFromCompose: vi.fn(),
     },
   },
   resolveProjectRouteState: vi.fn(),
+  resolveProjectInfo: vi.fn(),
   resolveServicePipelineMode: vi.fn(),
   resolveSmartRoute: vi.fn(),
   resolveStrategy: vi.fn(),
@@ -45,6 +51,7 @@ const {
 
 vi.mock("@repo/db", () => ({
   repos,
+  hasLegacyFlattenedCommandArgvAmbiguity,
 }));
 
 vi.mock("../../../src/modules/deployments/preflight", () => ({
@@ -54,6 +61,10 @@ vi.mock("../../../src/modules/deployments/preflight", () => ({
 vi.mock("../../../src/modules/deployments/build-pipeline", () => ({
   kickoffBuild,
   resolveServicePipelineMode,
+}));
+
+vi.mock("../../../src/modules/deployments/prepare.service", () => ({
+  resolveProjectInfo,
 }));
 
 vi.mock("../../../src/modules/domains/project-route.service", () => ({
@@ -216,18 +227,16 @@ describe("resolveSnapshotTarget", () => {
   });
 
   it("lets cloud win over a stray serverId and drops the serverId", async () => {
-    const t = await resolveSnapshotTarget(
-      project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }),
-    );
+    const t = await resolveSnapshotTarget(project({ cloudWorkspaceId: "ws_1", serverId: "srv_1" }));
     expect(t.deployTarget).toBe("cloud");
     expect(t.serverId).toBeUndefined();
   });
 
   it("lets an explicit override win over the durable binding", async () => {
-    const t = await resolveSnapshotTarget(
-      project({ serverId: "srv_1" }),
-      { deployTarget: "server", serverId: "srv_override" },
-    );
+    const t = await resolveSnapshotTarget(project({ serverId: "srv_1" }), {
+      deployTarget: "server",
+      serverId: "srv_override",
+    });
     expect(t).toMatchObject({ deployTarget: "server", serverId: "srv_override" });
   });
 
@@ -257,11 +266,20 @@ describe("triggerDeployment", () => {
     repos.project.findById.mockResolvedValue(baseProject());
     repos.project.getEnvMap.mockResolvedValue({});
     repos.deployment.listByProject.mockResolvedValue({ rows: [] });
+    repos.deployment.findInProgressByCommit.mockResolvedValue(null);
     repos.deployment.getLatestSuccessfulForBranch.mockResolvedValue(null);
     repos.deployment.create.mockResolvedValue({ id: "dep-1", projectId: "project-1" });
     repos.deployment.createBuildSession.mockResolvedValue(undefined);
     repos.deployment.supersedeReconciling.mockResolvedValue(undefined);
     repos.deployment.supersedePendingDecisions.mockResolvedValue(undefined);
+    repos.service.listByProject.mockResolvedValue(composeServices);
+    repos.service.reconcileFromCompose.mockResolvedValue({
+      services: composeServices,
+      driftedNames: [],
+      commandArgvReviewNames: [],
+    });
+    resolveProjectInfo.mockResolvedValue({ services: composeServices });
+    hasLegacyFlattenedCommandArgvAmbiguity.mockReturnValue(false);
 
     assertGitHubRepoAccess.mockResolvedValue(undefined);
     resolveProjectRouteState.mockResolvedValue({
@@ -327,6 +345,108 @@ describe("triggerDeployment", () => {
         composeServices,
       }),
     );
+  });
+
+  it("blocks a git redeploy until ambiguous legacy command argv is reviewed", async () => {
+    repos.project.findById.mockResolvedValue(
+      baseProject({
+        gitUrl: "https://github.com/acme/app.git",
+        localPath: null,
+        gitProvider: "github",
+        gitOwner: "acme",
+        gitRepo: "app",
+        composePath: "docker-compose.yml",
+      }),
+    );
+    repos.service.reconcileFromCompose.mockResolvedValue({
+      services: composeServices,
+      driftedNames: ["web"],
+      commandArgvReviewNames: ["web"],
+    });
+
+    await expect(
+      triggerDeployment(ctx, {
+        projectId: "project-1",
+        branch: "main",
+        commitSha: "abc123",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "COMPOSE_COMMAND_ARGV_REVIEW_REQUIRED",
+    });
+
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
+  });
+
+  it("keeps a persisted command argv review blocking a later non-Compose webhook", async () => {
+    const pending = {
+      ...composeServices[0],
+      command: "/bin/sh -ec echo grouped script",
+      commandArgv: ["/bin/sh", "-ec", "echo", "grouped", "script"],
+      driftSpec: {
+        command: "/bin/sh -ec echo grouped script",
+        commandArgv: ["/bin/sh", "-ec", "echo grouped script"],
+      },
+    };
+    repos.project.findById.mockResolvedValue(
+      baseProject({
+        gitUrl: "https://github.com/acme/app.git",
+        localPath: null,
+        gitProvider: "github",
+        gitOwner: "acme",
+        gitRepo: "app",
+      }),
+    );
+    repos.service.listByProject.mockResolvedValue([pending]);
+    hasLegacyFlattenedCommandArgvAmbiguity.mockReturnValue(true);
+
+    await expect(
+      triggerDeployment(ctx, {
+        projectId: "project-1",
+        branch: "main",
+        commitSha: "def456",
+        trigger: "webhook",
+        changedPaths: ["src/app.ts"],
+      }),
+    ).rejects.toMatchObject({
+      code: "COMPOSE_COMMAND_ARGV_REVIEW_REQUIRED",
+    });
+
+    expect(resolveProjectInfo).not.toHaveBeenCalled();
+    expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
+  });
+
+  it("blocks requestBuildAccess on the same pending command argv review", async () => {
+    repos.project.findById.mockResolvedValue(
+      baseProject({
+        gitUrl: "https://github.com/acme/app.git",
+        localPath: null,
+        gitProvider: "github",
+        gitOwner: "acme",
+        gitRepo: "app",
+        composePath: "docker-compose.yml",
+      }),
+    );
+    repos.service.reconcileFromCompose.mockResolvedValue({
+      services: composeServices,
+      driftedNames: ["web"],
+      commandArgvReviewNames: ["web"],
+    });
+
+    await expect(
+      requestBuildAccess(ctx, {
+        projectId: "project-1",
+        branch: "main",
+      }),
+    ).rejects.toMatchObject({
+      code: "COMPOSE_COMMAND_ARGV_REVIEW_REQUIRED",
+    });
+
+    expect(repos.deployment.create).not.toHaveBeenCalled();
+    expect(kickoffBuild).not.toHaveBeenCalled();
   });
 });
 
@@ -451,14 +571,32 @@ describe("requestBuildAccess — folder-upload compose services", () => {
   it("#336: recovers the real env when the caller echoes the mask sentinel", async () => {
     const uploadSessionId = seedSession({
       services: [
-        { name: "api", image: "ghcr.io/acme/api:1", ports: [], dependsOn: [], environment: { API_TOKEN: "real-token" }, volumes: [] },
+        {
+          name: "api",
+          image: "ghcr.io/acme/api:1",
+          ports: [],
+          dependsOn: [],
+          environment: { API_TOKEN: "real-token" },
+          volumes: [],
+        },
       ],
     });
     const requested = [
-      { name: "api", image: "ghcr.io/acme/api:1", ports: [], dependsOn: [], environment: { API_TOKEN: "••••••••" }, volumes: [] },
+      {
+        name: "api",
+        image: "ghcr.io/acme/api:1",
+        ports: [],
+        dependsOn: [],
+        environment: { API_TOKEN: "••••••••" },
+        volumes: [],
+      },
     ];
 
-    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, services: requested as any });
+    await requestBuildAccess(ctx, {
+      projectId: "project-1",
+      uploadSessionId,
+      services: requested as any,
+    });
 
     expect(repos.service.syncFromCompose).toHaveBeenCalledWith(
       "project-1",
@@ -471,10 +609,21 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     const uploadSessionId = seedSession({ services: [] });
     repos.service.listByProject.mockResolvedValue([]);
     const requested = [
-      { name: "api", image: "x", ports: [], dependsOn: [], environment: { GHOST: "••••••••", REAL: "keep" }, volumes: [] },
+      {
+        name: "api",
+        image: "x",
+        ports: [],
+        dependsOn: [],
+        environment: { GHOST: "••••••••", REAL: "keep" },
+        volumes: [],
+      },
     ];
 
-    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, services: requested as any });
+    await requestBuildAccess(ctx, {
+      projectId: "project-1",
+      uploadSessionId,
+      services: requested as any,
+    });
 
     expect(repos.service.syncFromCompose).toHaveBeenCalledWith(
       "project-1",

@@ -825,10 +825,9 @@ export async function getGitHubConnectionState(
 
   // ── gh CLI side ────────────────────────────────────────────────────
   // Only meaningful on self-hosted. On the SaaS the binary isn't there.
-  // Single rule: `gh auth token` is valid → connected. `gh auth logout`
-  // is the durable way to disconnect. We do NOT consult any per-user
-  // suppression flag here — the user already said this is the rule:
-  // "if gh cli logged in, use it as source of truth."
+  // A valid host/stored credential is connected only when this user has not
+  // explicitly disconnected it. The suppression flag is the durable boundary
+  // that keeps Settings, discovery, and clone resolution in agreement.
   let cliAvailable = false;
   let cliLogin: string | undefined;
   let cliAvatar: string | undefined;
@@ -840,18 +839,22 @@ export async function getGitHubConnectionState(
   let cliProblem: "rejected" | "unreachable" | undefined;
   let cliCheckedAt: string | undefined;
   if (onSelfHosted) {
-    // Dynamic import: gh probed ONLY when self-hosted; never loaded on the SaaS.
-    const { getLocalGhStatus } = await import("./github.local-auth");
-    const localStatus = await getLocalGhStatus();
-    cliCheckedAt = localStatus.checkedAt;
-    if (localStatus.available) {
-      cliAvailable = true;
-      cliLogin = localStatus.login;
-      cliAvatar = localStatus.avatar_url;
-      cliMethod = localStatus.method;
-    } else {
-      cliMethod = localStatus.method ?? undefined;
-      cliProblem = localStatus.problem;
+    const { isGithubCliDisabled } = await import("../settings/settings.service");
+    const cliDisabled = await isGithubCliDisabled(ctx.userId).catch(() => true);
+    if (!cliDisabled) {
+      // Dynamic import: gh probed ONLY when self-hosted; never loaded on the SaaS.
+      const { getLocalGhStatus } = await import("./github.local-auth");
+      const localStatus = await getLocalGhStatus();
+      cliCheckedAt = localStatus.checkedAt;
+      if (localStatus.available) {
+        cliAvailable = true;
+        cliLogin = localStatus.login;
+        cliAvatar = localStatus.avatar_url;
+        cliMethod = localStatus.method;
+      } else {
+        cliMethod = localStatus.method ?? undefined;
+        cliProblem = localStatus.problem;
+      }
     }
   }
 
@@ -1267,19 +1270,14 @@ export async function disconnectUser(
     await repos.account.unlinkProvider(userId, "github");
   }
   if (source === "cli" || source === "all") {
-    const { setGithubCliDisabled } = await import("../settings/settings.service");
+    const { setGithubCliDisabled, setGhCliOperatorOptedIn } = await import("../settings/settings.service");
     await setGithubCliDisabled(userId, true);
-    // Also drop the stored device-flow token. Without this, "Disconnect" only
-    // flipped the per-user opt-in while the credential itself stayed on the
-    // instance — so the UI said disconnected and clones kept working. Dynamic
-    // import to keep the SaaS bundle free of the gh module (see its CLOUD_MODE
-    // floor); a failure here must not abort the rest of the disconnect.
-    try {
-      const { setStoredDeviceToken } = await import("./github.local-auth");
-      await setStoredDeviceToken(null);
-    } catch (err) {
-      console.warn(`[GitHub] clearing stored device token failed: ${(err as Error).message}`);
-    }
+    await setGhCliOperatorOptedIn(userId, false);
+    // This mutation is the meaning of Disconnect, so fail the request if it
+    // cannot be persisted; returning success while the secret remains active
+    // leaves the dashboard lying and makes replacement impossible.
+    const { setStoredDeviceToken } = await import("./github.local-auth");
+    await setStoredDeviceToken(null);
   }
   await invalidateUserGitHubCache(userId);
   // Cascade MEDIUM — every org this user belongs to shares cache

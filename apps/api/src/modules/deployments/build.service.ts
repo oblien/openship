@@ -14,7 +14,7 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
-import { repos, type Project } from "@repo/db";
+import { hasLegacyFlattenedCommandArgvAmbiguity, repos, type Project } from "@repo/db";
 import {
   AppError,
   NotFoundError,
@@ -31,10 +31,7 @@ import {
   type StackDefinition,
   type ReleaseSource,
 } from "@repo/core";
-import type {
-  LogEntry,
-  ResourceConfig,
-} from "@repo/adapters";
+import type { LogEntry, ResourceConfig } from "@repo/adapters";
 import { resolveCloudResourceConfig } from "./cloud-resources";
 import type { TBuildAccessBody } from "./deployment.schema";
 import { platform } from "../../lib/controller-helpers";
@@ -70,7 +67,11 @@ import {
   syncProjectRouteState,
 } from "../domains/project-route.service";
 import { kickoffBuild, resolveServicePipelineMode } from "./build-pipeline";
-import { resolveReleaseDist, resolveLatestVersion, readApiVersion } from "../../lib/release-resolver";
+import {
+  resolveReleaseDist,
+  resolveLatestVersion,
+  readApiVersion,
+} from "../../lib/release-resolver";
 import { env } from "../../config";
 
 function throwPreflightFailure(preflight: PreflightResult): never {
@@ -321,10 +322,7 @@ function toRuntimeMode(value: string | null | undefined): "bare" | "docker" | un
 
 /** Build a config snapshot from the project - pure pass-through, no fallbacks.
  *  All values must be set by prepare / ensureProject before this is called. */
-export function buildConfigSnapshot(
-  project: Project,
-  branch?: string,
-): DeploymentConfigSnapshot {
+export function buildConfigSnapshot(project: Project, branch?: string): DeploymentConfigSnapshot {
   const runtimeImage = resolveRuntimeImage(project);
 
   return {
@@ -470,19 +468,54 @@ async function resolveProjectBranch(ctx: RequestContext, project: Project, branc
  * redeploy) or empty, reconcile runs to be safe.
  */
 const COMPOSE_PATH_RE = /(^|\/)(docker-compose|compose)\.ya?ml$/i;
+type ComposeDriftResult = {
+  driftedNames: string[];
+  commandArgvReviewNames: string[];
+};
+const NO_COMPOSE_DRIFT: ComposeDriftResult = {
+  driftedNames: [],
+  commandArgvReviewNames: [],
+};
+
 async function reconcileComposeDrift(
   ctx: RequestContext,
   project: Project,
   branch: string,
   changedPaths?: string[] | null,
-) {
+): Promise<ComposeDriftResult> {
   try {
-    if (!project.gitOwner || !project.gitRepo) return; // local/no-git source → nothing to re-parse
-    if (changedPaths && changedPaths.length > 0 && !changedPaths.some((p) => COMPOSE_PATH_RE.test(p))) {
-      return; // this push didn't touch the compose file → no drift possible
-    }
+    // A prior reconcile may already have persisted this review marker. Check it
+    // before every optimization/early return so a webhook that changes only
+    // application files cannot bypass an unresolved command-argv decision.
     const composeRows = await listProjectComposeServices(project.id);
-    if (!composeRows.some((s) => s.kind === "compose")) return; // not a compose project
+    const pendingCommandReviews = composeRows
+      .filter((service) => {
+        const pending = service.driftSpec;
+        return (
+          !!pending &&
+          hasLegacyFlattenedCommandArgvAmbiguity(
+            { command: service.command, commandArgv: service.commandArgv },
+            pending,
+          )
+        );
+      })
+      .map((service) => service.name);
+    if (pendingCommandReviews.length > 0) {
+      return {
+        driftedNames: pendingCommandReviews,
+        commandArgvReviewNames: pendingCommandReviews,
+      };
+    }
+
+    if (!project.gitOwner || !project.gitRepo) return NO_COMPOSE_DRIFT; // local/no-git source → nothing to re-parse
+    if (
+      changedPaths &&
+      changedPaths.length > 0 &&
+      !changedPaths.some((p) => COMPOSE_PATH_RE.test(p))
+    ) {
+      return NO_COMPOSE_DRIFT; // this push didn't touch the compose file → no drift possible
+    }
+    if (!composeRows.some((s) => s.kind === "compose")) return NO_COMPOSE_DRIFT; // not a compose project
     const info = await resolveProjectInfo({
       source: "github",
       owner: project.gitOwner,
@@ -495,16 +528,31 @@ async function reconcileComposeDrift(
       composePath: project.composePath ?? undefined,
     });
     const services = info.services ?? [];
-    if (services.length === 0) return;
-    const { driftedNames } = await repos.service.reconcileFromCompose(project.id, services);
+    if (services.length === 0) return NO_COMPOSE_DRIFT;
+    const { driftedNames, commandArgvReviewNames } = await repos.service.reconcileFromCompose(
+      project.id,
+      services,
+    );
     if (driftedNames.length > 0) {
       console.log(
         `[compose-drift] ${project.id}: kept user edits on ${driftedNames.join(", ")} (pending review)`,
       );
     }
+    return { driftedNames, commandArgvReviewNames };
   } catch (err) {
     console.warn(`[compose-drift] reconcile skipped for ${project.id}:`, err);
+    return NO_COMPOSE_DRIFT;
   }
+}
+
+function assertNoLegacyCommandArgvReview(result: ComposeDriftResult): void {
+  if (result.commandArgvReviewNames.length === 0) return;
+  throw new AppError(
+    `Compose command arguments need review for: ${result.commandArgvReviewNames.join(", ")}. ` +
+      "Open Apps & Services, accept the incoming Compose changes for those services, then redeploy.",
+    409,
+    "COMPOSE_COMMAND_ARGV_REVIEW_REQUIRED",
+  );
 }
 
 /**
@@ -831,10 +879,7 @@ export async function createQueuedDeployment(opts: {
 export { subscribe as subscribeToBuildSession } from "./session-manager";
 
 /** Resolve a pending pipeline prompt (e.g. port conflict). */
-export async function respondToPrompt(
-  deploymentId: string,
-  action: string,
-): Promise<boolean> {
+export async function respondToPrompt(deploymentId: string, action: string): Promise<boolean> {
   await loadDeployment(deploymentId);
   return sessionManager.respondToPrompt(deploymentId, action);
 }
@@ -845,11 +890,12 @@ export async function respondToPrompt(
  * with neither is dropped downstream (see deriveEnvironmentPublicEndpoints), so
  * pick the one the project's shape needs.
  */
-function defaultFreeEndpoint(project: {
-  slug: string;
-  hasServer: boolean;
-  port: number | null;
-}): { domain: string; domainType: "free"; port?: string; targetPath?: string } {
+function defaultFreeEndpoint(project: { slug: string; hasServer: boolean; port: number | null }): {
+  domain: string;
+  domainType: "free";
+  port?: string;
+  targetPath?: string;
+} {
   return project.hasServer && project.port
     ? { domain: project.slug, domainType: "free", port: String(project.port) }
     : { domain: project.slug, domainType: "free", targetPath: "/" };
@@ -896,9 +942,7 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // Folder-upload: resolve the session UP FRONT — its scanned compose services
   // feed the service-mode decision below. The snapshot mutations it drives still
   // happen further down, after target resolution (which the upload mode overrides).
-  const uploadSession = input.uploadSessionId
-    ? getFolderSession(input.uploadSessionId)
-    : undefined;
+  const uploadSession = input.uploadSessionId ? getFolderSession(input.uploadSessionId) : undefined;
   if (input.uploadSessionId && (!uploadSession || uploadSession.orgId !== ctx.organizationId)) {
     throw new AppError("Upload session not found or expired — re-upload the folder.", 400);
   }
@@ -932,7 +976,7 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // null), bootstraps their baseline while KEEPING the adopted image — so mapped
   // services reuse their running image (no rebuild) and everything else in the
   // compose is taken from the repo. Best-effort; self-guards to compose+git projects.
-  await reconcileComposeDrift(ctx, project, resolvedBranch);
+  assertNoLegacyCommandArgvReview(await reconcileComposeDrift(ctx, project, resolvedBranch));
 
   // #336: the wizard sees compose env MASKED, so a deploy request can echo the
   // "••••••••" sentinel back. Recover the real values before they're persisted
@@ -1072,7 +1116,11 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // the single source of truth shared with triggerDeployment — UI override >
   // cloudWorkspaceId > active-deployment meta. Keeps the two deploy entry points
   // from diverging on where a project deploys.
-  const resolvedTarget = await resolveSnapshotTarget(project, { deployTarget, serverId, runtimeMode });
+  const resolvedTarget = await resolveSnapshotTarget(project, {
+    deployTarget,
+    serverId,
+    runtimeMode,
+  });
   snapshot.deployTarget = resolvedTarget.deployTarget;
   snapshot.serverId = resolvedTarget.serverId;
   snapshot.runtimeMode = resolvedTarget.runtimeMode;
@@ -1099,14 +1147,13 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   // default, and a redeploy then resolves to that default (bare) — silently
   // flipping a docker/sandbox project to direct-on-host. Best-effort: a failed
   // persist must not block the deploy. Only write when it actually changed.
-  if (
-    (runtimeMode === "bare" || runtimeMode === "docker") &&
-    runtimeMode !== project.runtimeMode
-  ) {
+  if ((runtimeMode === "bare" || runtimeMode === "docker") && runtimeMode !== project.runtimeMode) {
     await repos.project
       .update(project.id, { runtimeMode })
       .catch((err) =>
-        console.warn(`[requestBuildAccess] failed to persist runtimeMode: ${safeErrorMessage(err)}`),
+        console.warn(
+          `[requestBuildAccess] failed to persist runtimeMode: ${safeErrorMessage(err)}`,
+        ),
       );
   }
 
@@ -1155,11 +1202,7 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
   const env = environment || "production";
 
   // ── Resolve commit info from the branch HEAD ────
-  const { commitSha, commitMessage } = await resolveLatestCommitInfo(
-    ctx,
-    project,
-    snapshot.branch,
-  );
+  const { commitSha, commitMessage } = await resolveLatestCommitInfo(ctx, project, snapshot.branch);
 
   // ── Resolve rollback context (shared helper — single default) ─────────
   const { rollbackStrategy, commitShaBefore } = await resolveRollbackContext(
@@ -1226,7 +1269,6 @@ export async function requestBuildAccess(ctx: RequestContext, input: BuildAccess
     project_id: project.id,
   };
 }
-
 
 /**
  * Cancel an in-flight deployment.
@@ -1405,7 +1447,7 @@ export async function redeployBuildSession(
   // Reconcile upstream compose drift BEFORE reading the rows, so this redeploy
   // picks up repo changes on unedited services (and flags edited ones). See
   // reconcileComposeDrift — best-effort, never blocks.
-  await reconcileComposeDrift(ctx, project, branch);
+  assertNoLegacyCommandArgvReview(await reconcileComposeDrift(ctx, project, branch));
 
   const currentComposeRows = await listProjectComposeServices(project.id).catch(() => []);
   const currentComposeServices = projectServicesToDeployableServices(
@@ -1423,10 +1465,7 @@ export async function redeployBuildSession(
   };
 
   // ── Resolve rollback context (shared helper — single default) ─────────
-  const { rollbackStrategy, commitShaBefore } = await resolveRollbackContext(
-    project,
-    branch,
-  );
+  const { rollbackStrategy, commitShaBefore } = await resolveRollbackContext(project, branch);
 
   // "update" wants a snapshot of the OLD state before the (destructive) tag
   // roll-forward — the safety net for stateful apps (n8n/Ghost/Convex volumes).
@@ -1658,7 +1697,9 @@ export async function triggerDeployment(
   // ship the frozen snapshot verbatim. `changedPaths` (webhook) lets it skip the
   // repo scan when the push didn't touch the compose file. Best-effort; never blocks.
   if (!data.reuseSnapshot && data.trigger !== "rollback") {
-    await reconcileComposeDrift(ctx, project, branch, data.changedPaths);
+    assertNoLegacyCommandArgvReview(
+      await reconcileComposeDrift(ctx, project, branch, data.changedPaths),
+    );
   }
 
   // ATOMIC rollback path: reuse the target deployment's frozen snapshot verbatim

@@ -8,14 +8,19 @@ const domainRepo = vi.hoisted(() => ({ listByProject: vi.fn(), update: vi.fn() }
 const edgeProxy = vi.hoisted(() => vi.fn());
 const siteFor = vi.hoisted(() => vi.fn());
 const withExecutor = vi.hoisted(() => vi.fn());
-const applyProjectRouting = vi.hoisted(() => vi.fn());
+const convergeAllProjectRoutes = vi.hoisted(() => vi.fn());
 const syncManagedEdgeRoutes = vi.hoisted(() => vi.fn());
 
 vi.mock("@repo/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/db")>();
   return {
     ...actual,
-    repos: { ...actual.repos, project: projectRepo, deployment: deploymentRepo, domain: domainRepo },
+    repos: {
+      ...actual.repos,
+      project: projectRepo,
+      deployment: deploymentRepo,
+      domain: domainRepo,
+    },
   };
 });
 
@@ -35,8 +40,8 @@ vi.mock("../../../src/lib/deployment-runtime", () => ({
   resolveDeploymentRuntime: vi.fn(),
 }));
 
-vi.mock("../../../src/modules/domains/routing-apply.service", () => ({
-  applyProjectRouting,
+vi.mock("../../../src/modules/domains/project-route.service", () => ({
+  convergeAllProjectRoutes,
 }));
 
 import { retryProjectRouting } from "../../../src/modules/projects/project-runtime.service";
@@ -86,11 +91,11 @@ describe("retryProjectRouting — safe self-heal", () => {
     deploymentRepo.updateStatus.mockResolvedValue(undefined);
     domainRepo.listByProject.mockResolvedValue([]);
     domainRepo.update.mockResolvedValue(undefined);
-    applyProjectRouting.mockResolvedValue(undefined);
+    convergeAllProjectRoutes.mockResolvedValue(undefined);
     syncManagedEdgeRoutes.mockResolvedValue({ failures: [] });
     // withExecutor(serverId, fn) → run fn with a dummy executor.
-    withExecutor.mockImplementation(async (_serverId: string, fn: (e: unknown) => Promise<unknown>) =>
-      fn({}),
+    withExecutor.mockImplementation(
+      async (_serverId: string, fn: (e: unknown) => Promise<unknown>) => fn({}),
     );
     edgeProxy.mockResolvedValue({ siteFor });
   });
@@ -103,6 +108,28 @@ describe("retryProjectRouting — safe self-heal", () => {
 
     expect(result).toEqual({ ok: true });
     expect(domainRepo.update).toHaveBeenCalledWith("dom_api", { targetPort: 4000 });
+    expect(convergeAllProjectRoutes).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "proj_1" }),
+    );
+  });
+
+  it("keeps Action Required when strict route convergence fails", async () => {
+    convergeAllProjectRoutes.mockRejectedValue(new Error("vhost write failed"));
+
+    const result = await retryProjectRouting("proj_1", "org_1");
+
+    expect(result).toEqual({
+      ok: false,
+      warning:
+        "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.",
+    });
+    expect(deploymentRepo.updateStatus).toHaveBeenLastCalledWith("dep_1", "ready", {
+      meta: expect.objectContaining({
+        edgeUnsynced: true,
+        deployWarning:
+          "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.",
+      }),
+    });
   });
 
   it("leaves the row unchanged when the edge has no live upstream (never guesses)", async () => {
@@ -143,11 +170,9 @@ describe("retryProjectRouting — safe self-heal", () => {
 
     await retryProjectRouting("proj_1", "org_1");
 
-    expect(deploymentRepo.updateStatus).toHaveBeenCalledWith(
-      "dep_1",
-      "ready",
-      { meta: expect.objectContaining({ serverId: "srv_1", deployTarget: "server" }) },
-    );
+    expect(deploymentRepo.updateStatus).toHaveBeenCalledWith("dep_1", "ready", {
+      meta: expect.objectContaining({ serverId: "srv_1", deployTarget: "server" }),
+    });
   });
 
   it("is a no-op for a cloud project (no server edge to repair)", async () => {
@@ -162,7 +187,7 @@ describe("retryProjectRouting — safe self-heal", () => {
     const result = await retryProjectRouting("proj_1", "org_1");
 
     expect(result).toEqual({ ok: true });
-    expect(applyProjectRouting).not.toHaveBeenCalled();
+    expect(convergeAllProjectRoutes).not.toHaveBeenCalled();
     expect(withExecutor).not.toHaveBeenCalled();
   });
 });

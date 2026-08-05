@@ -43,7 +43,7 @@ import { type BuildStrategy } from "@repo/core";
 import type { AmbientGitVia, CommandExecutor } from "@repo/adapters";
 import { tokenFor, requireTokenFor, type TokenContext } from "./github.token";
 import { isPublicRepo } from "./github.http";
-import { getLocalGhToken, hasLocalGitIdentity } from "./github.local-auth";
+import { hasLocalGitIdentity } from "./github.local-auth";
 import { resolveServerGitCredential } from "./server-github.service";
 import type { RequestContext } from "../../lib/request-context";
 
@@ -103,8 +103,10 @@ async function resolveLocalCredential(
   ctx: RequestContext,
   tokenCtx: TokenContext,
 ): Promise<{ token?: string }> {
-  const ghToken = await getLocalGhToken();
-  if (ghToken) return { token: ghToken };
+  // Route every local credential through the unified chain. Calling
+  // getLocalGhToken() directly here bypassed the user's Disconnect suppression
+  // and the operator-consent gate, so a token could remain active for clones
+  // after Settings reported it removed.
   const r = await tokenFor(ctx, "local", tokenCtx);
   return r?.token ? { token: r.token } : {};
 }

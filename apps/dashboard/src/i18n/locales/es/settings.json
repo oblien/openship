@@ -102,7 +102,8 @@
       "disconnectPrefix": "Para desconectar, ejecuta",
       "disconnectSuffix": "en tu terminal.",
       "use": "Usar gh CLI"
-    }
+    },
+    "removeFromOpenship": "Eliminar de Openship"
   },
   "deployDefaults": {
     "title": "Valores predeterminados de despliegue",
