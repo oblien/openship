@@ -31,6 +31,7 @@ import {
   DockerRuntime,
   allocateHostPort,
   runDeployPipeline,
+  sq,
   type CommandExecutor,
   type DeployConfig,
   type DeployEnvironment,
@@ -350,6 +351,58 @@ function appConfigHostPath(projectId: string, serviceName: string, containerPath
     throw new Error(`Unsafe app-config path (directory traversal): ${containerPath}`);
   }
   return `${APP_CONFIG_HOST_ROOT}/${projectId}/${safeSvc}/${rel}`;
+}
+
+/**
+ * Ensure the persistent on-host root for generated app-template config files
+ * exists and is writable by the executor's user. Fresh self-hosted installs
+ * (Compose or bare) don't create `/var/lib/openship/app-config`, and the
+ * SFTP write path turns that into a cryptic "No such file".
+ *
+ * We first ask the host directly (works if the installer or a prior deploy
+ * already created it), then try `sudo` to create + chown under the common
+ * root-owned `/var/lib/openship` parent, then fall back to a clear manual
+ * instruction instead of the misleading ENOENT.
+ */
+export async function ensureAppConfigRoot(executor: CommandExecutor, root: string): Promise<void> {
+  const user = await executor.exec("id -un").catch(() => "openship");
+
+  const isWritable = await executor.exec(`test -w ${sq(root)}`).then(
+    () => true,
+    () => false,
+  );
+  if (isWritable) return;
+
+  try {
+    await executor.exec(`sudo mkdir -p ${sq(root)} && sudo chown -R ${sq(user)} ${sq(root)}`);
+    return;
+  } catch {
+    // Parent may be user-writable (bare install or operator pre-created).
+  }
+
+  try {
+    await executor.mkdir(root);
+  } catch {
+    throw new Error(
+      `Could not create or own the app-config host directory ${root} as ${user}. ` +
+        `Create it and re-run the deploy:\n` +
+        `  sudo mkdir -p ${root}\n` +
+        `  sudo chown -R ${user} ${root}`,
+    );
+  }
+
+  const ok = await executor.exec(`test -w ${sq(root)}`).then(
+    () => true,
+    () => false,
+  );
+  if (!ok) {
+    throw new Error(
+      `Could not create or own the app-config host directory ${root} as ${user}. ` +
+        `Create it and re-run the deploy:\n` +
+        `  sudo mkdir -p ${root}\n` +
+        `  sudo chown -R ${user} ${root}`,
+    );
+  }
 }
 
 /** A service's public endpoints as DeployConfig entries (free slug resolved via
@@ -1303,6 +1356,7 @@ export async function deployComposeServices(
           { serviceName: svc.name },
         );
       } else {
+        await ensureAppConfigRoot(opts.executor, APP_CONFIG_HOST_ROOT);
         for (const file of advancedFiles) {
           // Token-local on purpose: one unresolved URL must not blank the whole
           // file (the mount is required — a missing kong.yml is a dead service),
