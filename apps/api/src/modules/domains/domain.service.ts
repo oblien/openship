@@ -866,9 +866,20 @@ export async function verifyDomain(
     // Background SSL provisioning. Don't await — the verify response stays fast
     // and the SSL status pill updates on the next list read. Failure is
     // non-fatal: HTTP route stays up, Renew + the ssl-scheduler recover it.
+    //
+    // Log before firing — this produces a visible "[DOMAIN] provisioning HTTPS"
+    // line in the deploy log so operators know the ~1 min window is expected,
+    // not a sign that SSL is broken (two users reported it as such: TODO.md).
+    console.log(`[DOMAIN] provisioning HTTPS for ${domain.hostname} — route is live on HTTP; certificate expected in ~1 min`);
     void manageDomainSsl(domain.hostname, {
       action: "provision",
       projectId: domain.projectId ?? undefined,
+    }).then((result) => {
+      if (result.verified) {
+        console.log(`[DOMAIN] HTTPS certificate issued for ${domain.hostname}${result.expiresAt ? ` (expires ${new Date(result.expiresAt).toISOString().slice(0, 10)})` : ""}`);
+      } else {
+        console.warn(`[DOMAIN] HTTPS provisioning completed but cert not verified for ${domain.hostname}`);
+      }
     }).catch((err) => {
       console.error(
         `[DOMAIN] Background SSL provisioning failed for ${domain.hostname}:`,

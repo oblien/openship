@@ -264,6 +264,8 @@ export {
 } from "./system/proxy/takeover-journal";
 // The consolidated reverse-proxy / edge facade (single point for the chain).
 export { detectEdge, importSites, takeoverOnMigrate, foreignProxyOnEdge, ensureEdge } from "./system/proxy";
+export { unreachableStaticRoots } from "./system/proxy/import";
+export type { UnreachableStaticRoot } from "./system/proxy/import";
 // The reverse-proxy READ api: sites, by-port index, per-host vhost + cert.
 export { edgeProxy, edgeProxyFor, buildProxyRouteIndex, collectProxyCerts } from "./system/proxy/api";
 export type {

@@ -447,7 +447,7 @@ export async function selfEdgePreflight(c: Context) {
   }
 
   try {
-    const { detectEdge, importSites } = await import("@repo/adapters");
+    const { detectEdge, importSites, unreachableStaticRoots } = await import("@repo/adapters");
     // Host-op executor: LocalExecutor bare, SSH→host.docker.internal when
     // containerized (OPENSHIP_HOST_SSH_* set). Inspecting the api container's
     // own netns would return a wrong migrate/takeover prompt in docker mode.
@@ -459,7 +459,13 @@ export async function selfEdgePreflight(c: Context) {
       const scanned = await importSites(executor, detected);
       return { status: detected, sites: scanned.sites, warnings: scanned.warnings };
     });
-    return c.json({ status, sites, warnings });
+    // Identify static sites whose docroot is outside the edge container's bind
+    // mounts — migrating them verbatim produces a 500 (try_files can't find the
+    // index in a directory that isn't mounted). Surfacing this BEFORE cutover
+    // lets the wizard prompt the operator to copy/mount/skip each path.
+    const containerEdge = process.env.OPENSHIP_EDGE_MODE === "docker";
+    const unreachable = unreachableStaticRoots(sites, { containerEdge });
+    return c.json({ status, sites, warnings, unreachableStaticRoots: unreachable });
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 500);
   }
