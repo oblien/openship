@@ -15,8 +15,8 @@
  *   useAnalyticsData       — per-MINUTE series for the traffic chart.
  *
  * The geo/overview split isn't arbitrary: countries, visitors and paths are only
- * aggregated daily at the edge (per-minute would multiply its shared-dict cardinality
- * by ~1440 and evict the request counters they annotate), so they can't come from the
+ * aggregated daily at the edge (per-minute would multiply the shared-dict cardinality
+ * by ~1440 and evict the counters they annotate), so they can't come from the
  * same fetch as the minute series.
  */
 
@@ -32,6 +32,7 @@ import {
   useAnalyticsData,
   useAnalyticsGeo,
   useProjectUsageHistory,
+  invalidateProjectCaches,
 } from "@/hooks/useProjectEndpoints";
 import { useProjectUsageStream } from "@/hooks/useProjectUsageStream";
 import { MOCK_VARIANTS, type MockVariant } from "@/components/monitoring/fixtures";
@@ -47,7 +48,7 @@ const PREVIEW_ALLOWED = process.env.NODE_ENV !== "production";
  * rather than `useSearchParams()`.
  *
  * Deliberate: `useSearchParams` is empty during prerender and only fills after
- * hydration, and this needs to be right on the FIRST client render or the tab
+ * hydration, and this needs to be right on the FIRST client render or the URL
  * flashes its empty state. Reading `window.location` in a lazy `useState`
  * initializer runs exactly once, on the client, after the URL is final.
  *
@@ -79,9 +80,7 @@ export const MonitoringTab = () => {
   const [domainScope, setDomainScope] = useState<string | null>(null);
   const domains = useMemo<string[]>(() => {
     const list = (projectData?.domains ?? []) as Array<{ domain?: string }>;
-    return Array.from(
-      new Set(list.map((d) => d.domain?.trim()).filter((d): d is string => !!d)),
-    );
+    return Array.from(new Set(list.map((d) => d.domain?.trim()).filter((d): d is string => !!d)));
   }, [projectData?.domains]);
 
   /**
@@ -96,14 +95,26 @@ export const MonitoringTab = () => {
   // Hooks always run — calling them conditionally would break the hook order. The
   // mock swaps their RESULTS, and passes `null` id so no request is made.
   const liveId = mock ? null : id;
-  const { data: liveAnalytics, isLoading: isLoadingAnalytics } = useAnalyticsData(liveId, domainScope);
+  const {
+    data: liveAnalytics,
+    isLoading: isLoadingAnalytics,
+    error: liveAnalyticsError,
+  } = useAnalyticsData(liveId, domainScope);
   const { data: liveGeo, isLoading: isLoadingGeo } = useAnalyticsGeo(liveId, domainScope);
-  const { usage: liveUsage, isConnected, error: usageError, reconnect } = useProjectUsageStream(liveId);
+  const {
+    usage: liveUsage,
+    isConnected,
+    error: usageError,
+    reconnect,
+  } = useProjectUsageStream(liveId);
 
   /** Scope for the history read. Held here rather than in the view because it keys the
    *  fetch — the view raises changes through `onServiceKeyChange`. */
   const [serviceKey, setServiceKey] = React.useState<string | null>(null);
-  const { data: liveHistory, isLoading: isLoadingHistory } = useProjectUsageHistory(liveId, serviceKey);
+  const { data: liveHistory, isLoading: isLoadingHistory } = useProjectUsageHistory(
+    liveId,
+    serviceKey,
+  );
 
   /**
    * Live hits on the map, off by default.
@@ -127,9 +138,9 @@ export const MonitoringTab = () => {
     // preview gets simulated hits instead — see below.
     enabled: liveOn && !mock,
     onEntry: (e) => hits.push({ country: e.country, path: e.path, statusCode: e.statusCode }),
-    onStatus: (st) => setLiveStatus(st.state === "error" || st.state === "unavailable" ? st.state : null),
+    onStatus: (st) =>
+      setLiveStatus(st.state === "error" || st.state === "unavailable" ? st.state : null),
   });
-
 
   // Turning it off, or changing which domain is in scope, clears the counter and the feed —
   // carrying a total across a scope change would attribute one domain's hits to another.
@@ -257,9 +268,12 @@ export const MonitoringTab = () => {
     async (enabled: boolean) => {
       setPathsBusy(true);
       try {
-        await api.post(`${endpoints.analytics.pathsCollection}?projectId=${encodeURIComponent(id)}`, {
-          enabled,
-        });
+        await api.post(
+          `${endpoints.analytics.pathsCollection}?projectId=${encodeURIComponent(id)}`,
+          {
+            enabled,
+          },
+        );
         setPathsOverride(enabled);
       } catch {
         // Leave the card as it was — pretending it flipped would misreport what the edge
@@ -304,6 +318,8 @@ export const MonitoringTab = () => {
       isUsageConnected={fixture ? true : isConnected}
       usageError={fixture ? null : usageError}
       onReconnectUsage={reconnect}
+      analyticsError={fixture ? null : liveAnalyticsError}
+      onRetryAnalytics={() => id && invalidateProjectCaches(id)}
       serviceKey={serviceKey}
       onServiceKeyChange={setServiceKey}
       // Shown on the traffic block's fold line, so a collapsed block still states the
