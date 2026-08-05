@@ -450,6 +450,13 @@ export function GitHubConnection() {
               manageUrl={ghManageUrl}
               manageLabel={ghManageLabel}
               onRecheck={() => void loadStatus(true)}
+              onRemove={() =>
+                promptDisconnect(
+                  "cli",
+                  ghMethodLabel,
+                  t.settings.github.ghCli.disconnectBody,
+                )
+              }
             />
           )}
           <MethodChooser
@@ -491,8 +498,11 @@ function CredentialProblem(props: {
   /** Re-run the verify. The card checks on load, but "unreachable" is usually
    *  transient and re-checking beats making the operator reload the page. */
   onRecheck: () => void;
+  /** Remove the unusable credential from Openship so a replacement can be
+   *  connected. This must remain available even though `available` is false. */
+  onRemove: () => void;
 }) {
-  const { problem, methodLabel, checkedAt, manageUrl, manageLabel, onRecheck } = props;
+  const { problem, methodLabel, checkedAt, manageUrl, manageLabel, onRecheck, onRemove } = props;
   const { t } = useI18n();
   const rejected = problem === "rejected";
   // Locale-formatted and only as precise as it needs to be. Invalid/absent
@@ -545,6 +555,14 @@ function CredentialProblem(props: {
           >
             <RefreshCw className="size-3" />
             {t.settings.github.ghCli.recheck}
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="inline-flex items-center gap-1 text-xs font-medium text-danger underline underline-offset-2 hover:text-danger/80"
+          >
+            <Unplug className="size-3" />
+            {t.settings.github.removeFromOpenship}
           </button>
           {checked && (
             <span className="text-xs text-muted-foreground/70">

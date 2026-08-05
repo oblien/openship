@@ -142,7 +142,8 @@
       "disconnectPrefix": "Bağlantıyı kesmek için terminalinizde",
       "disconnectSuffix": "çalıştırın.",
       "use": "gh CLI Kullan"
-    }
+    },
+    "removeFromOpenship": "Openship'ten kaldır"
   },
   "deployDefaults": {
     "title": "Dağıtım Varsayılanları",

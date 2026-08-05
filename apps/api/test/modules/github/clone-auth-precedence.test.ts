@@ -45,16 +45,15 @@ beforeEach(() => {
 });
 
 describe("resolveBuildGitToken — local build", () => {
-  it("uses the local gh token directly, never touching the remote/server chain", async () => {
-    getLocalGhToken.mockResolvedValue("ghtok");
+  it("uses the unified local token chain, never touching the remote/server chain", async () => {
+    tokenFor.mockResolvedValue({ token: "ghtok", source: "gh-cli" });
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "local" });
     expect(res).toEqual({ token: "ghtok" });
     expect(resolveServerGitCredential).not.toHaveBeenCalled();
-    expect(tokenFor).not.toHaveBeenCalled();
+    expect(tokenFor).toHaveBeenCalledWith(ctx, "local", expect.anything());
   });
 
-  it("falls through to the resolver chain when no local gh", async () => {
-    getLocalGhToken.mockResolvedValue(null);
+  it("uses a PAT returned by the local resolver chain", async () => {
     tokenFor.mockResolvedValue({ token: "pat" });
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "local" });
     expect(res).toEqual({ token: "pat" });
@@ -122,7 +121,9 @@ describe("resolveBuildGitToken — server build, fall-through when server has no
   });
 
   it("degrades to an api-host clone (flagged) for docker clone-on-server", async () => {
-    getLocalGhToken.mockResolvedValue("localtok");
+    tokenFor.mockImplementation(async (_ctx, purpose) =>
+      purpose === "local" ? { token: "localtok" } : null,
+    );
     const res = await resolveBuildGitToken({
       ...base,
       buildStrategy: "server",

@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { linkSocialAccount, getGitHubAuthMode } = vi.hoisted(() => ({
-  linkSocialAccount: vi.fn(),
-  getGitHubAuthMode: vi.fn(),
-}));
+const { linkSocialAccount, getGitHubAuthMode, getLocalGhStatus, isGithubCliDisabled } = vi.hoisted(
+  () => ({
+    linkSocialAccount: vi.fn(),
+    getGitHubAuthMode: vi.fn(),
+    getLocalGhStatus: vi.fn(),
+    isGithubCliDisabled: vi.fn(),
+  }),
+);
 
 vi.mock("../../../src/lib/auth", () => ({
   auth: {
@@ -17,10 +21,11 @@ vi.mock("../../../src/modules/github/github.auth", () => ({
   getGitHubAuthMode,
 }));
 
-vi.mock("../../../src/modules/github/github.local-auth", () => ({}));
+vi.mock("../../../src/modules/github/github.local-auth", () => ({ getLocalGhStatus }));
 vi.mock("../../../src/modules/github/github.service", () => ({}));
+vi.mock("../../../src/modules/settings/settings.service", () => ({ isGithubCliDisabled }));
 
-import { connectRedirect } from "../../../src/modules/github/github.controller";
+import { connectRedirect, getLocalStatus } from "../../../src/modules/github/github.controller";
 
 function createContext(headers: Headers) {
   return {
@@ -44,6 +49,29 @@ describe("connectRedirect", () => {
   beforeEach(() => {
     getGitHubAuthMode.mockReset();
     linkSocialAccount.mockReset();
+    getLocalGhStatus.mockReset();
+    isGithubCliDisabled.mockReset().mockResolvedValue(false);
+  });
+
+  it("reports local GitHub auth unavailable after the user disconnects it", async () => {
+    getGitHubAuthMode.mockReturnValue("cli");
+    isGithubCliDisabled.mockResolvedValue(true);
+    getLocalGhStatus.mockResolvedValue({
+      available: true,
+      login: "stale-login",
+      method: "host-cli",
+    });
+    const ctx = {
+      get: () => ({ userId: "user-1" }),
+      json: (body: unknown) => body,
+    } as any;
+
+    await expect(getLocalStatus(ctx)).resolves.toEqual({
+      available: false,
+      method: null,
+      activeMode: "cli",
+    });
+    expect(getLocalGhStatus).not.toHaveBeenCalled();
   });
 
   it("starts a GitHub link flow and forwards the OAuth state cookie", async () => {
@@ -51,12 +79,15 @@ describe("connectRedirect", () => {
     const headers = new Headers({ cookie: "openship.session_token=test" });
 
     linkSocialAccount.mockResolvedValue(
-      new Response(JSON.stringify({ url: "https://github.com/login/oauth/authorize?client_id=test" }), {
-        headers: {
-          "content-type": "application/json",
-          "set-cookie": "oauth_state=test-state; Path=/; HttpOnly",
+      new Response(
+        JSON.stringify({ url: "https://github.com/login/oauth/authorize?client_id=test" }),
+        {
+          headers: {
+            "content-type": "application/json",
+            "set-cookie": "oauth_state=test-state; Path=/; HttpOnly",
+          },
         },
-      }),
+      ),
     );
 
     const response = await connectRedirect(createContext(headers));
@@ -82,11 +113,14 @@ describe("connectRedirect", () => {
     getGitHubAuthMode.mockReturnValue("app");
 
     linkSocialAccount.mockResolvedValue(
-      new Response(JSON.stringify({ url: "https://github.com/login/oauth/authorize?client_id=test" }), {
-        headers: {
-          "content-type": "application/json",
+      new Response(
+        JSON.stringify({ url: "https://github.com/login/oauth/authorize?client_id=test" }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
         },
-      }),
+      ),
     );
 
     await connectRedirect(createContext(new Headers()));

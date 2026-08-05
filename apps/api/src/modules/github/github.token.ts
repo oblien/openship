@@ -458,6 +458,11 @@ async function mayUseOperatorCliToken(
   purpose: GitHubPurpose,
 ): Promise<boolean> {
   if (purpose === "remote") return false;
+  // Disconnect is a real authorization boundary, not just a dashboard hint.
+  // Check it before every local gh-token use, including zero-auth
+  // desktop/internal contexts.
+  const { isGithubCliDisabled } = await import("../settings/settings.service");
+  if (await isGithubCliDisabled(userId).catch(() => true)) return false;
   if (!organizationId) return true;
   return isCliOperatorAllowed(userId);
 }

@@ -26,6 +26,10 @@ const { getLocalGhToken, listLocalGhRepos } = vi.hoisted(() => ({
   listLocalGhRepos: vi.fn(),
 }));
 
+const { isGithubCliDisabled } = vi.hoisted(() => ({
+  isGithubCliDisabled: vi.fn(),
+}));
+
 vi.mock("../../../src/modules/github/github.auth", () => ({
   githubFetch,
   resolveGitHubAuthMode,
@@ -47,6 +51,10 @@ vi.mock("../../../src/modules/github/github.local-auth", () => ({
   listLocalGhRepos,
   listLocalGhOrgs: vi.fn(),
   getLocalGhStatus: vi.fn(),
+}));
+
+vi.mock("../../../src/modules/settings/settings.service", () => ({
+  isGithubCliDisabled,
 }));
 
 // env: {} → CLOUD_MODE is falsy, so createGitHubSource takes the LOCAL branch
@@ -83,6 +91,7 @@ beforeEach(() => {
   githubFetch.mockReset();
   getLocalGhToken.mockReset();
   listLocalGhRepos.mockReset();
+  isGithubCliDisabled.mockReset().mockResolvedValue(false);
 });
 
 describe("listReposForOwner — source dispatch", () => {
@@ -158,6 +167,18 @@ describe("listReposForOwner — source dispatch", () => {
       expect(repos).toHaveLength(1);
       expect(repos?.[0].full_name).toBe("acme/site");
       expect(githubFetch).not.toHaveBeenCalled();
+    });
+
+    it("does not reuse the instance credential after this user disconnects it", async () => {
+      isGithubCliDisabled.mockResolvedValue(true);
+      resolveGitHubAuthMode.mockResolvedValue("cloud-app");
+      getUserStatus.mockResolvedValue({ connected: false });
+      getLocalGhToken.mockResolvedValue("gho_token");
+      getInstallationToken.mockResolvedValue(null);
+
+      expect(await call("acme")).toEqual([]);
+      expect(getLocalGhToken).not.toHaveBeenCalled();
+      expect(listLocalGhRepos).not.toHaveBeenCalled();
     });
 
     it("returns [] when no gh token and the App install yields no token", async () => {

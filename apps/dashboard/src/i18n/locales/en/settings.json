@@ -177,6 +177,7 @@
     "manageTokensOnGithub": "Manage tokens on GitHub",
     "manageAccessOnGithub": "Manage access on GitHub",
     "disconnectScopeNote": "Disconnect removes this credential from Openship and stops using it for clones. It stays valid at GitHub until you revoke it there.",
+    "removeFromOpenship": "Remove from Openship",
     "credentialRejected": "GitHub rejected the stored {method}.",
     "credentialRejectedImpact": "It was revoked, expired, or lost a required scope. Deploys that clone with it will keep failing until you reconnect below.",
     "credentialUnreachable": "Couldn't reach GitHub to check the stored {method}.",
