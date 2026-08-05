@@ -41,5 +41,11 @@ describe("normalizeFramework", () => {
     expect(normalizeFramework(null)).toBe("unknown");
     expect(normalizeFramework(undefined)).toBe("unknown");
   });
+
+  it("does not match prototype chain properties", () => {
+    expect(normalizeFramework("constructor")).toBe("constructor");
+    expect(normalizeFramework("__proto__")).toBe("__proto__");
+    expect(normalizeFramework("toString")).toBe("tostring");
+  });
 });
 

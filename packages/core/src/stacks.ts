@@ -1057,7 +1057,7 @@ const BUN_ELIGIBLE_LANGUAGES: ReadonlySet<string> = new Set(["javascript", "type
 
 /** Get the resolved Docker build image for a stack */
 export function getBuildImage(stackId: StackId, packageManager?: string): string {
-  const stack = STACKS[stackId] as StackDefinition;
+  const stack = (Object.hasOwn(STACKS, stackId) ? STACKS[stackId] : STACKS["unknown"]) as StackDefinition;
   if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
     return "oven/bun:latest";
   }
@@ -1090,7 +1090,7 @@ export function packageManagerEnsureCommand(packageManager?: string): string {
 
 /** Get the resolved Docker runtime image for a stack */
 export function getRuntimeImage(stackId: StackId, packageManager?: string): string {
-  const stack = STACKS[stackId] as StackDefinition;
+  const stack = (Object.hasOwn(STACKS, stackId) ? STACKS[stackId] : STACKS["unknown"]) as StackDefinition;
   if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) {
     return "oven/bun:latest";
   }
@@ -1100,7 +1100,7 @@ export function getRuntimeImage(stackId: StackId, packageManager?: string): stri
 
 /** Get the full stack definition with resolved images */
 export function getStackDefaults(stackId: StackId, packageManager?: string) {
-  const stack = STACKS[stackId] as StackDefinition;
+  const stack = (Object.hasOwn(STACKS, stackId) ? STACKS[stackId] : STACKS["unknown"]) as StackDefinition;
   return {
     ...stack,
     buildImage: getBuildImage(stackId, packageManager),
@@ -1110,7 +1110,8 @@ export function getStackDefaults(stackId: StackId, packageManager?: string) {
 
 /** Derive the project type from a stack ID */
 export function getProjectType(stackId: StackId): ProjectType {
-  const cat = (STACKS[stackId] as StackDefinition).category;
+  const stack = Object.hasOwn(STACKS, stackId) ? (STACKS[stackId] as StackDefinition) : undefined;
+  const cat = stack?.category;
   if (cat === "docker") return "docker";
   if (cat === "services") return "services";
   return "app";
@@ -1125,7 +1126,7 @@ export function normalizeFramework(framework?: string | null): string {
   const trimmed = framework.trim();
   if (!trimmed) return "unknown";
   const lower = trimmed.toLowerCase();
-  if (lower in STACKS) return lower;
+  if (Object.hasOwn(STACKS, lower)) return lower;
   for (const [id, def] of Object.entries(STACKS)) {
     if (def.name.toLowerCase() === lower) return id;
   }

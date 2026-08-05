@@ -434,7 +434,7 @@ async function persistMonorepoApps(
     data.monorepoApps.map((app) => ({
       name: app.name,
       rootDirectory: app.rootDirectory,
-      framework: app.framework ?? null,
+      framework: app.framework ? normalizeFramework(app.framework) : null,
       packageManager: app.packageManager ?? null,
       buildImage: app.buildImage ?? null,
       installCommand: app.installCommand ?? null,
@@ -1111,7 +1111,11 @@ export async function updateProject(
     // no sibling fan-out. gitUrl is derived by the linker, so it's not set here
     // either (deriving it from an owner/repo we don't apply would desync it).
     if (GIT_SOURCE_IDENTITY_KEYS.has(key)) continue;
-    if (raw[key] !== undefined) update[key] = raw[key];
+    if (key === "framework" && raw.framework !== undefined) {
+      update.framework = typeof raw.framework === "string" ? normalizeFramework(raw.framework) : raw.framework;
+    } else if (raw[key] !== undefined) {
+      update[key] = raw[key];
+    }
   }
   if (data.name && data.name !== p.name) {
     const newSlug = slugify(data.name);

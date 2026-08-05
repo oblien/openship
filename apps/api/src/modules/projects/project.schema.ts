@@ -15,12 +15,18 @@ import {
   type ResourceTier,
 } from "@repo/core";
 
+import { normalizeFramework } from "@repo/core";
+
 // ─── Shared enums (derived from registry) ────────────────────────────────────
 
-export const FrameworkEnum = Type.String({
-  maxLength: 100,
-  description: "Framework stack ID or display label (e.g. 'static', 'nextjs', 'Static Site').",
-});
+export const FrameworkEnum = Type.Transform(
+  Type.String({
+    maxLength: 100,
+    description: "Framework stack ID or display label (e.g. 'static', 'nextjs', 'Static Site').",
+  }),
+)
+  .Decode((val) => normalizeFramework(val))
+  .Encode((val) => val);
 
 export const PackageManagerEnum = Type.Union(
   ALL_PACKAGE_MANAGERS.map((pm) => Type.Literal(pm)) as [TLiteral<string>, ...TLiteral<string>[]],

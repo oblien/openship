@@ -3,7 +3,7 @@
  */
 
 import { normalizeRoutingFields, repos, composeSpecDiff, type Project, type Service, type ServicePublicEndpoint } from "@repo/db";
-import { aliasConflictsWithSiblings, ForbiddenError, getProjectType, mergeAdvanced, normalizeServiceLabel, normalizeAliasStrict, withTimeout, type ComposeAdvanced, type ServiceContainerState, type StackId } from "@repo/core";
+import { aliasConflictsWithSiblings, ForbiddenError, getProjectType, mergeAdvanced, normalizeServiceLabel, normalizeAliasStrict, normalizeFramework, withTimeout, type ComposeAdvanced, type ServiceContainerState, type StackId } from "@repo/core";
 import {
   BuildLogger,
   DockerRuntime,
@@ -485,7 +485,7 @@ export async function createService(
     buildCommand: kind === "monorepo" ? trimOrNull(data.buildCommand) : null,
     startCommand: kind === "monorepo" ? trimOrNull(data.startCommand) : null,
     outputDirectory: kind === "monorepo" ? trimOrNull(data.outputDirectory) : null,
-    framework: kind === "monorepo" ? trimOrNull(data.framework) : null,
+    framework: kind === "monorepo" && data.framework ? normalizeFramework(data.framework) : null,
     packageManager: kind === "monorepo" ? trimOrNull(data.packageManager) : null,
     buildImage: kind === "monorepo" ? trimOrNull(data.buildImage) : null,
   });
@@ -575,13 +575,16 @@ export async function updateService(
     "buildCommand",
     "startCommand",
     "outputDirectory",
-    "framework",
     "packageManager",
     "buildImage",
   ] as const) {
     if (key in patch) {
       patch[key] = trimOrNull(patch[key]);
     }
+  }
+  if ("framework" in patch) {
+    const trimmed = trimOrNull(patch.framework);
+    patch.framework = trimmed ? normalizeFramework(trimmed) : null;
   }
 
   const touchesRouting = [
