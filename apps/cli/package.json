@@ -18,7 +18,7 @@
   ],
   "type": "module",
   "bin": {
-    "openship": "./dist/index.js"
+    "openship": "./dist/node-entry.js"
   },
   "files": [
     "dist",
