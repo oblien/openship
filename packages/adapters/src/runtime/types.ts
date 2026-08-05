@@ -41,6 +41,10 @@ import type { ContainerStabilitySample } from "./stability";
 export type RuntimeCapability =
   | "build"
   | "deploy"
+  /** Runtime can acquire repository source directly on the deployment target.
+   *  This is topology-sensitive: Docker-over-SSH supports it, while Docker via
+   *  the API host's socket/TCP transport does not. */
+  | "targetSourceClone"
   | "multiServiceDeploy"
   | "stop"
   | "start"

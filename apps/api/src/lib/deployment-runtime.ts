@@ -19,6 +19,7 @@ import { buildSshConfig, sshManager } from "./ssh-manager";
 import { createProvisionLock } from "./provision-lock";
 import { isLocalHostRow } from "./box-org";
 import { resolveAcmeProviderOptions } from "./acme-config";
+import { targetSourceCloneSupportedForTopology } from "./source-clone-topology";
 
 /**
  * The shape of `deployment.meta` JSONB. Snapshotted per-deploy —
@@ -223,6 +224,28 @@ async function resolveOrgServer(
   }
 
   throw new Error("Deployment target is a server, but this deployment has no server ID. Redeploy and select a server explicitly.");
+}
+
+/**
+ * Resolve whether the concrete server topology supports target-host source
+ * acquisition without constructing a runtime or opening SSH. Preflight uses
+ * this read-only answer; the build pipeline independently verifies the same
+ * invariant through the resolved runtime capability.
+ */
+export async function resolveTargetSourceCloneSupport(input: {
+  effectiveTarget: DeployTarget;
+  runtimeMode: RuntimeMode;
+  serverId?: string;
+  organizationId?: string;
+}): Promise<boolean> {
+  if (input.effectiveTarget !== "server") return false;
+  if (input.runtimeMode === "bare") return true;
+
+  const server = await resolveOrgServer(input.serverId, input.organizationId);
+  return targetSourceCloneSupportedForTopology(
+    input.runtimeMode,
+    await isLocalHostRow(server),
+  );
 }
 
 /**

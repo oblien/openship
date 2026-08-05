@@ -4,18 +4,19 @@ import { resolveClonePlan, type ClonePlanInput } from "../../../src/modules/depl
 
 const base: ClonePlanInput = {
   effectiveTarget: "server",
-  serverId: "srv_1",
   runtimeIsBare: false,
   cloneStrategy: "api-host",
   buildStrategy: "server",
   isDesktop: false,
   forwardGitCredentials: false,
+  targetSourceCloneSupported: true,
 };
 
 describe("resolveClonePlan", () => {
   it("local build → clone runs locally with a local credential", () => {
     const plan = resolveClonePlan({ ...base, effectiveTarget: "server", buildStrategy: "local" });
     expect(plan.runsOnServer).toBe(false);
+    expect(plan.sourceSite).toBe("api-host");
     expect(plan.runsLocally).toBe(true);
     expect(plan.cloneBuildStrategy).toBe("local");
   });
@@ -23,6 +24,8 @@ describe("resolveClonePlan", () => {
   it("docker + server + api-host clone → api-host clone (local credential), not on server", () => {
     const plan = resolveClonePlan({ ...base, cloneStrategy: "api-host" });
     expect(plan.runsOnServer).toBe(false);
+    expect(plan.sourceSite).toBe("api-host");
+    expect(plan.targetCloneUnavailable).toBe(false);
     expect(plan.runsLocally).toBe(true);
     expect(plan.cloneBuildStrategy).toBe("local");
   });
@@ -30,16 +33,48 @@ describe("resolveClonePlan", () => {
   it("docker + server + clone-on-server → on-server clone with a shippable (server) credential", () => {
     const plan = resolveClonePlan({ ...base, cloneStrategy: "server" });
     expect(plan.runsOnServer).toBe(true);
+    expect(plan.sourceSite).toBe("target-host");
     expect(plan.dockerClonesOnServer).toBe(true);
     expect(plan.runsLocally).toBe(false);
     expect(plan.cloneBuildStrategy).toBe("server");
     expect(plan.relayEligible).toBe(false); // non-desktop
   });
 
+  it("docker + This Server/socket + clone-on-server → transparent api-host fallback", () => {
+    const plan = resolveClonePlan({
+      ...base,
+      cloneStrategy: "server",
+      targetSourceCloneSupported: false,
+    });
+    expect(plan.sourceSite).toBe("api-host");
+    expect(plan.runsOnServer).toBe(false);
+    expect(plan.dockerClonesOnServer).toBe(false);
+    expect(plan.targetCloneUnavailable).toBe(true);
+    expect(plan.cloneBuildStrategy).toBe("local");
+  });
+
+  it("an omitted clone strategy keeps Docker source acquisition on the api host", () => {
+    const plan = resolveClonePlan({ ...base, cloneStrategy: undefined });
+    expect(plan.sourceSite).toBe("api-host");
+    expect(plan.runsOnServer).toBe(false);
+  });
+
   it("bare + server → always clones on the server with a server credential", () => {
     const plan = resolveClonePlan({ ...base, runtimeIsBare: true, cloneStrategy: "api-host" });
     expect(plan.runsOnServer).toBe(true);
+    expect(plan.sourceSite).toBe("target-host");
     expect(plan.dockerClonesOnServer).toBe(false); // bare excluded from the docker warn-case
+    expect(plan.cloneBuildStrategy).toBe("server");
+  });
+
+  it("bare + server ignores buildStrategy=local because source still runs on the target", () => {
+    const plan = resolveClonePlan({
+      ...base,
+      runtimeIsBare: true,
+      cloneStrategy: "api-host",
+      buildStrategy: "local",
+    });
+    expect(plan.sourceSite).toBe("target-host");
     expect(plan.cloneBuildStrategy).toBe("server");
   });
 
@@ -68,10 +103,10 @@ describe("resolveClonePlan", () => {
     const plan = resolveClonePlan({
       ...base,
       effectiveTarget: "cloud",
-      serverId: null,
       buildStrategy: "server",
     });
     expect(plan.runsOnServer).toBe(false);
+    expect(plan.sourceSite).toBe("cloud");
     expect(plan.runsLocally).toBe(false);
     expect(plan.cloneBuildStrategy).toBe("server");
   });
@@ -88,11 +123,12 @@ describe("resolveClonePlan", () => {
    * available … (purpose: remote)" on a box that could clone perfectly well.
    */
   describe("local target — clone always runs on this host", () => {
-    const localBase: ClonePlanInput = { ...base, effectiveTarget: "local", serverId: null };
+    const localBase: ClonePlanInput = { ...base, effectiveTarget: "local" };
 
     it("defaulted buildStrategy=server still clones locally with a local credential", () => {
       const plan = resolveClonePlan({ ...localBase, buildStrategy: "server" });
       expect(plan.runsOnServer).toBe(false);
+      expect(plan.sourceSite).toBe("api-host");
       expect(plan.runsLocally).toBe(true);
       expect(plan.cloneBuildStrategy).toBe("local");
     });
@@ -104,8 +140,8 @@ describe("resolveClonePlan", () => {
     });
 
     it("a bare runtime on a local target does not become an on-server clone", () => {
-      // runsOnServer requires effectiveTarget==="server" AND a serverId; bare only
-      // forces on-server WITHIN that. A local target has neither.
+      // Bare only forces target-host acquisition within a server deploy. A local
+      // target has no separate deployment host.
       const plan = resolveClonePlan({ ...localBase, runtimeIsBare: true });
       expect(plan.runsOnServer).toBe(false);
       expect(plan.cloneBuildStrategy).toBe("local");

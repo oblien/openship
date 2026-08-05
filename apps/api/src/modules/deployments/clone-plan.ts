@@ -19,8 +19,6 @@
 export interface ClonePlanInput {
   /** Resolved deploy target for this build. */
   effectiveTarget: "local" | "server" | "cloud";
-  /** Target server id (server deploys only). */
-  serverId?: string | null;
   /** Resolved runtime is bare (host process) vs docker (sandbox). The pipeline
    *  passes `runtime.name === "bare"`; preflight passes `runtimeMode === "bare"`
    *  — each from its own source, kept as an input so neither has to know the
@@ -28,8 +26,8 @@ export interface ClonePlanInput {
   runtimeIsBare: boolean;
   /** Per-deploy clone strategy for docker/server deploys ("api-host" default). */
   cloneStrategy?: "api-host" | "server" | null;
-  /** Where the BUILD runs — used only to decide the clone's credential purpose
-   *  (a local build always clones on this machine). */
+  /** Where the BUILD runs. For cloud deployments, a local build acquires source
+   *  on the API host before upload; a server build acquires it in the cloud. */
   buildStrategy?: "local" | "server";
   /** Whether this instance is the desktop app (relay is desktop-only). */
   isDesktop: boolean;
@@ -40,18 +38,23 @@ export interface ClonePlanInput {
    *  real SSH tunnel + a local `gh` identity, probed at runtime by the pipeline /
    *  resolver — this only expresses the operator's preference. */
   forwardGitCredentials?: boolean | null;
-  /** Repo is hosted on GitHub (`gitProvider === "github"` / has a parsed owner) →
-   *  the server can download the source tarball directly (source-tarball.ts), so
-   *  docker can acquire on the server without the explicit `cloneStrategy ===
-   *  "server"` opt-in, skipping the orchestrator clone + context transfer.
-   *  Whether it ACTUALLY runs on the server still depends on a shippable
-   *  credential (resolved later; degrades to an api-host clone otherwise). The
-   *  adapter re-validates the URL (github + https) before downloading and falls
-   *  back to clone. Local/imported projects → false → unchanged. */
-  repoIsGithub?: boolean;
+  /** Whether the resolved runtime/transport can acquire source on the target
+   *  host. Docker-over-SSH can; Docker through a local socket/TCP transport
+   *  cannot because its clone implementation runs in the API process. Bare
+   *  runtimes have their own target-host source path and do not need this flag. */
+  targetSourceCloneSupported?: boolean;
 }
 
+export type SourceExecutionSite = "api-host" | "target-host" | "cloud";
+
 export interface ClonePlan {
+  /** Where source acquisition physically executes. Credential selection and
+   *  preflight checks MUST follow this value, never the deploy target alone. */
+  sourceSite: SourceExecutionSite;
+  /** True when the operator requested target-host acquisition but the selected
+   *  runtime transport cannot execute it. The caller should surface the
+   *  transparent API-host fallback. */
+  targetCloneUnavailable: boolean;
   /** The clone runs directly on the deploy server — bare always, docker on the
    *  explicit "clone on the server" opt-in. (Pipeline's `cloneOnServer`.) */
   runsOnServer: boolean;
@@ -90,25 +93,29 @@ export function relayConfigEligible(input: {
 export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   const onServer = input.effectiveTarget === "server";
 
-  // Docker acquires source ON THE SERVER when the deploy opted in
-  // (cloneStrategy="server") OR the repo is a GitHub HTTPS remote — the server
-  // downloads the tarball directly, skipping the orchestrator clone + context
-  // transfer. Bare has its own always-on-server path (below), so it's excluded
-  // here. Whether it truly runs on the server still hinges on a shippable
-  // credential; effectiveCloneOnServer degrades to an api-host clone otherwise
-  // (allowApiHostFallback is driven by dockerClonesOnServer).
-  const dockerServerSide =
-    onServer &&
-    !input.runtimeIsBare &&
-    (input.cloneStrategy === "server" || input.repoIsGithub === true);
-
-  // Pipeline: the clone runs on the server (bare always; docker per above).
+  // Provider and source site are deliberately independent. GitHub repositories
+  // may use the tarball optimization AFTER target-host acquisition is selected,
+  // but being hosted on GitHub must never override an explicit "api-host"
+  // choice. Bare runtimes always acquire on their target. Docker does so only
+  // when requested AND its concrete transport implements that path.
+  const dockerTargetRequested =
+    onServer && !input.runtimeIsBare && input.cloneStrategy === "server";
+  const targetCloneUnavailable =
+    dockerTargetRequested && input.targetSourceCloneSupported !== true;
   const runsOnServer =
-    onServer && !!input.serverId && (input.runtimeIsBare || dockerServerSide);
+    onServer &&
+    (input.runtimeIsBare ||
+      (dockerTargetRequested && input.targetSourceCloneSupported === true));
+
+  const sourceSite: SourceExecutionSite = runsOnServer
+    ? "target-host"
+    : input.effectiveTarget === "cloud" && input.buildStrategy !== "local"
+      ? "cloud"
+      : "api-host";
 
   // Preflight warn-case + api-host-fallback gate: DOCKER (non-bare) acquiring on
   // the server. Bare is handled by the separate hard-fail remote-build checks.
-  const dockerClonesOnServer = dockerServerSide;
+  const dockerClonesOnServer = runsOnServer && !input.runtimeIsBare;
 
   // The clone's credential purpose follows WHERE THE CLONE RUNS, not where the
   // build runs: a local build clones on this machine, and a server deploy that
@@ -136,10 +143,11 @@ export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   // runsLocally MUST imply !runsOnServer — otherwise a contradictory config
   // (buildStrategy="local" + cloneStrategy="server") would tag an on-server clone
   // as local and ship the operator's local gh/OAuth token off-host to the remote.
-  const runsLocally =
-    !runsOnServer && (input.effectiveTarget !== "cloud" || input.buildStrategy === "local");
+  const runsLocally = sourceSite === "api-host";
 
   return {
+    sourceSite,
+    targetCloneUnavailable,
     runsOnServer,
     dockerClonesOnServer,
     runsLocally,

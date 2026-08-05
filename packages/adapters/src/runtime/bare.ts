@@ -101,6 +101,7 @@ export class BareRuntime implements RuntimeAdapter {
   readonly capabilities: ReadonlySet<RuntimeCapability> = new Set<RuntimeCapability>([
     "build",
     "deploy",
+    "targetSourceClone",
     "stop",
     "start",
     "restart",
