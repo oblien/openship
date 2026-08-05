@@ -91,9 +91,7 @@ export const MonitoringTab = () => {
   const [domainScope, setDomainScope] = useState<string | null>(null);
   const domains = useMemo<string[]>(() => {
     const list = (projectData?.domains ?? []) as Array<{ domain?: string }>;
-    return Array.from(
-      new Set(list.map((d) => d.domain?.trim()).filter((d): d is string => !!d)),
-    );
+    return Array.from(new Set(list.map((d) => d.domain?.trim()).filter((d): d is string => !!d)));
   }, [projectData?.domains]);
   // Primary-first, so the live-stream cap (MAX_STREAMS) drops the least-used tail, not the
   // domain that matters most. Mirrors ServerLogs so the map's default All scope fans out
@@ -122,7 +120,12 @@ export const MonitoringTab = () => {
     error: liveAnalyticsError,
   } = useAnalyticsData(liveId, domainScope);
   const { data: liveGeo, isLoading: isLoadingGeo } = useAnalyticsGeo(liveId, domainScope);
-  const { usage: liveUsage, isConnected, error: usageError, reconnect } = useProjectUsageStream(liveId);
+  const {
+    usage: liveUsage,
+    isConnected,
+    error: usageError,
+    reconnect,
+  } = useProjectUsageStream(liveId);
 
   const showAnalyticsError = !!liveAnalyticsError && !isLoadingAnalytics;
 
@@ -160,9 +163,9 @@ export const MonitoringTab = () => {
     // preview gets simulated hits instead — see below.
     enabled: liveOn && !mock,
     onEntry: (e) => hits.push({ country: e.country, path: e.path, statusCode: e.statusCode }),
-    onStatus: (st) => setLiveStatus(st.state === "error" || st.state === "unavailable" ? st.state : null),
+    onStatus: (st) =>
+      setLiveStatus(st.state === "error" || st.state === "unavailable" ? st.state : null),
   });
-
 
   // Turning it off, or changing which domain is in scope, clears the counter and the feed —
   // carrying a total across a scope change would attribute one domain's hits to another.
