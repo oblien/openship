@@ -89,12 +89,11 @@ export const systemCatalog = {
   checks: {
     docker: {
       versionCommand: "docker --version",
-      // A POSITIVE signal, not a bare exit code: only a daemon that answered can
-      // name its version. `docker info >/dev/null && echo ok` prints ok on ANY
-      // exit-0, so a daemon answering nothing would read as healthy — trading #408's
-      // false negative for a false positive. Leave stderr alone too; `checkDocker`
-      // puts the failure text in the component message.
-      daemonCommand: "docker info --format '{{.ServerVersion}}'",
+      // Docker 29 removed the `.ServerVersion` template field from `docker info`,
+      // so `docker info --format '{{.ServerVersion}}'` fails with "no such field"
+      // on healthy Docker 29+ daemons. `docker version --format '{{.Server.Version}}'`
+      // is the documented, stable server-version probe across Docker 24-29+.
+      daemonCommand: "docker version --format '{{.Server.Version}}'",
       parseVersion: (output: string) =>
         output.match(/Docker version ([^\s,]+)/)?.[1] ?? output,
       missingMessage: "Docker is not installed",
