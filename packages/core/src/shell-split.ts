@@ -24,6 +24,16 @@ export function shellSplitWords(value: string): string[] {
 
   for (const char of value.trim()) {
     if (escaped) {
+      // Unquoted, a backslash escapes any single following char (the backslash
+      // is dropped). Inside double quotes it is NOT that permissive: POSIX keeps
+      // the backslash LITERAL unless it precedes a character a double quote can
+      // itself escape (`"`, `\`, `$`, or a backtick). Without this carve-out a
+      // double-quoted regex/path/escape ("\d+", "C:\app", "s/\r//g") silently
+      // lost its backslashes — while the single-quoted form kept them — so the
+      // same command tokenized differently depending on the quote style.
+      if (inDouble && char !== '"' && char !== "\\" && char !== "$" && char !== "`") {
+        current += "\\";
+      }
       current += char;
       escaped = false;
       continue;
