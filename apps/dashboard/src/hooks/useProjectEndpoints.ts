@@ -187,9 +187,7 @@ interface AsyncState<T> {
  * Invalidation: call `invalidateProjectCaches(id)` after a mutation that
  * could change the underlying data (e.g. after a domain save).
  */
-type CacheEntry<T> =
-  | { kind: "loading"; promise: Promise<T> }
-  | { kind: "ready"; data: T };
+type CacheEntry<T> = { kind: "loading"; promise: Promise<T> } | { kind: "ready"; data: T };
 
 const infoCache = new Map<string, CacheEntry<ProjectInfoData>>();
 const overviewCache = new Map<string, CacheEntry<AnalyticsOverviewResponse>>();
@@ -364,13 +362,14 @@ async function fetchOverview(key: string): Promise<AnalyticsOverviewResponse> {
   const sepIndex = key.indexOf(OVERVIEW_KEY_SEP);
   const projectId = sepIndex === -1 ? key : key.slice(0, sepIndex);
   const domain = sepIndex === -1 ? undefined : key.slice(sepIndex + OVERVIEW_KEY_SEP.length);
-  const response = await api.get<{ data: AnalyticsOverviewResponse; success?: boolean; error?: string }>(
-    endpoints.analytics.overview,
-    {
-      params: { projectId, ...(domain ? { domain } : {}) },
-      timeout: ANALYTICS_OVERVIEW_TIMEOUT_MS,
-    },
-  );
+  const response = await api.get<{
+    data: AnalyticsOverviewResponse;
+    success?: boolean;
+    error?: string;
+  }>(endpoints.analytics.overview, {
+    params: { projectId, ...(domain ? { domain } : {}) },
+    timeout: ANALYTICS_OVERVIEW_TIMEOUT_MS,
+  });
   if (response.success === false || !response.data) {
     throw new Error(response.error || "Failed to load analytics");
   }
@@ -465,10 +464,7 @@ export function useAnalyticsGeo(id: string | null | undefined, domain?: string |
  * Separate from the live SSE stream on purpose: the stream answers "right now" at 5s
  * and keeps nothing, this answers "what happened overnight" from the sampled buckets.
  */
-export function useProjectUsageHistory(
-  id: string | null | undefined,
-  serviceKey?: string | null,
-) {
+export function useProjectUsageHistory(id: string | null | undefined, serviceKey?: string | null) {
   const key = id ? `${id}${HISTORY_SEP}${serviceKey ?? ""}` : id;
   return useEndpoint(key, usageHistoryCache, fetchUsageHistory, id);
 }
