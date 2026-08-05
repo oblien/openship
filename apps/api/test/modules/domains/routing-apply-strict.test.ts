@@ -95,11 +95,13 @@ describe("applyProjectRouting strict recovery", () => {
       { serviceId: "web", imageRef: "/opt/openship/static/proj-1/web" },
       { serviceId: "api", ip: "172.18.0.10", hostPort: 49300 },
     ]);
-    state.listDomains.mockResolvedValue([{
-      hostname: "app.example.com",
-      externalIngress: false,
-      manualSsl: false,
-    }]);
+    state.listDomains.mockResolvedValue([
+      {
+        hostname: "app.example.com",
+        externalIngress: false,
+        manualSsl: false,
+      },
+    ]);
     state.resolveRuntime.mockResolvedValue({
       routing: { provider: "remote-or-local-edge" },
       runtime: { name: "docker" },
@@ -118,22 +120,28 @@ describe("applyProjectRouting strict recovery", () => {
       expect.objectContaining({
         strict: true,
         routing: { provider: "remote-or-local-edge" },
-        registers: [{
-          hostname: "app.example.com",
-          isCustomDomain: true,
-          tls: true,
-          terminatesTlsLocally: true,
-          staticRoot: "/opt/openship/static/proj-1/web",
-          proxyLocations: [{
-            pathPrefix: "/backend/",
-            targetUrl: "http://127.0.0.1:49300",
-          }],
-          redirects: [{ path: "/old", exact: true, statusCode: 308, destination: "/new" }],
-          headerRules: [{
-            path: "/",
-            headers: [{ key: "X-Frame-Options", value: "DENY" }],
-          }],
-        }],
+        registers: [
+          {
+            hostname: "app.example.com",
+            isCustomDomain: true,
+            tls: true,
+            terminatesTlsLocally: true,
+            staticRoot: "/opt/openship/static/proj-1/web",
+            proxyLocations: [
+              {
+                pathPrefix: "/backend/",
+                targetUrl: "http://127.0.0.1:49300",
+              },
+            ],
+            redirects: [{ path: "/old", exact: true, statusCode: 308, destination: "/new" }],
+            headerRules: [
+              {
+                path: "/",
+                headers: [{ key: "X-Frame-Options", value: "DENY" }],
+              },
+            ],
+          },
+        ],
       }),
     );
   });
@@ -151,11 +159,13 @@ describe("applyProjectRouting strict recovery", () => {
   });
 
   it("preserves external-ingress TLS ownership on the compiled route", async () => {
-    state.listDomains.mockResolvedValue([{
-      hostname: "app.example.com",
-      externalIngress: true,
-      manualSsl: false,
-    }]);
+    state.listDomains.mockResolvedValue([
+      {
+        hostname: "app.example.com",
+        externalIngress: true,
+        manualSsl: false,
+      },
+    ]);
 
     await applyProjectRouting("proj-1", { strict: true, onlyHostname: "app.example.com" });
 
@@ -197,12 +207,14 @@ describe("applyProjectRouting strict recovery", () => {
     state.findProject.mockResolvedValue({
       ...project,
       routingConfig: null,
-      compositeRoutes: [{
-        hostname: "fanout.example.com",
-        isCustomDomain: true,
-        rootServiceId: "api",
-        locations: [{ pathPrefix: "/worker", serviceId: "worker" }],
-      }],
+      compositeRoutes: [
+        {
+          hostname: "fanout.example.com",
+          isCustomDomain: true,
+          rootServiceId: "api",
+          locations: [{ pathPrefix: "/worker", serviceId: "worker" }],
+        },
+      ],
     });
     state.listServices.mockResolvedValue([api, worker]);
     state.listLive.mockResolvedValue([{ serviceId: "api", ip: "172.18.0.10", hostPort: 49300 }]);
@@ -227,12 +239,14 @@ describe("applyProjectRouting strict recovery", () => {
     state.findProject.mockResolvedValue({
       ...project,
       routingConfig: null,
-      compositeRoutes: [{
-        hostname: "fanout.example.com",
-        isCustomDomain: true,
-        rootServiceId: "api",
-        locations: [{ pathPrefix: "/worker", serviceId: "worker" }],
-      }],
+      compositeRoutes: [
+        {
+          hostname: "fanout.example.com",
+          isCustomDomain: true,
+          rootServiceId: "api",
+          locations: [{ pathPrefix: "/worker", serviceId: "worker" }],
+        },
+      ],
     });
     state.listServices.mockResolvedValue([api, worker]);
     state.listLive.mockResolvedValue([

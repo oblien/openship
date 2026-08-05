@@ -75,13 +75,18 @@ async function isLocalHostServer(serverId: string, organizationId: string): Prom
 export async function resolveProjectServer(
   projectId: string,
   organizationId: string,
-): Promise<{ project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>; serverId: string } | { error: string; status: 400 | 404 }> {
+): Promise<
+  | { project: NonNullable<Awaited<ReturnType<typeof repos.project.findById>>>; serverId: string }
+  | { error: string; status: 400 | 404 }
+> {
   const project = await repos.project.findById(projectId);
-  if (!project || project.organizationId !== organizationId) return { error: "Project not found", status: 404 };
+  if (!project || project.organizationId !== organizationId)
+    return { error: "Project not found", status: 404 };
   if (project.cloudWorkspaceId) {
     return { error: "Cloud projects manage routing at the edge automatically", status: 400 };
   }
-  if (!project.activeDeploymentId) return { error: "Deploy the project before setting up its edge", status: 400 };
+  if (!project.activeDeploymentId)
+    return { error: "Deploy the project before setting up its edge", status: 400 };
   // Prefer the durable binding; fall back to the active deployment's snapshot for
   // legacy rows not yet backfilled.
   const dep = await repos.deployment.findById(project.activeDeploymentId);
@@ -253,7 +258,9 @@ export async function ensureEdgeStream(c: Context) {
       })().catch(() => {});
       const retry = await retryProjectRouting(id, ctx.organizationId);
       if (!retry.ok) {
-        throw new Error(retry.warning || "Edge is ready, but one or more routes could not be applied.");
+        throw new Error(
+          retry.warning || "Edge is ready, but one or more routes could not be applied.",
+        );
       }
       appendEdgeLog(session.id, "Done — routes are live.");
       finishEdgeConsentSession(session.id, "completed");

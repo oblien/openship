@@ -1,5 +1,11 @@
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { commandToArgv, generateId, mergeAdvanced, normalizeCustomHostname, type ComposeAdvanced } from "@repo/core";
+import {
+  commandToArgv,
+  generateId,
+  mergeAdvanced,
+  normalizeCustomHostname,
+  type ComposeAdvanced,
+} from "@repo/core";
 import type { Database } from "../client";
 import { service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
@@ -142,7 +148,17 @@ function composeWritePatch(
 /** Per-field diff of two specs — powers the drift UI. */
 export function composeSpecDiff(base: ComposeServiceSpec, next: ComposeServiceSpec) {
   const fields: (keyof ComposeServiceSpec)[] = [
-    "image", "build", "dockerfile", "ports", "dependsOn", "environment", "volumes", "command", "commandArgv", "restart", "advanced",
+    "image",
+    "build",
+    "dockerfile",
+    "ports",
+    "dependsOn",
+    "environment",
+    "volumes",
+    "command",
+    "commandArgv",
+    "restart",
+    "advanced",
   ];
   // Compare each field key-order-insensitively (matching canonicalSpec/
   // composeSpecsEqual) so a reordered `environment` or nested `advanced` block
@@ -216,11 +232,19 @@ export function normalizeServicePublicEndpoints(
     if (port === null || seenPorts.has(port)) continue;
     const domainType = endpoint.domainType === "custom" ? "custom" : "free";
     const domain = domainType === "free" ? endpoint.domain?.trim() || undefined : undefined;
-    const customDomain = domainType === "custom" ? normalizeCustomHostname(endpoint.customDomain ?? "") || undefined : undefined;
+    const customDomain =
+      domainType === "custom"
+        ? normalizeCustomHostname(endpoint.customDomain ?? "") || undefined
+        : undefined;
     if (domainType === "free" && !domain) continue;
     if (domainType === "custom" && !customDomain) continue;
     seenPorts.add(port);
-    out.push({ port, domainType, ...(domain ? { domain } : {}), ...(customDomain ? { customDomain } : {}) });
+    out.push({
+      port,
+      domainType,
+      ...(domain ? { domain } : {}),
+      ...(customDomain ? { customDomain } : {}),
+    });
   }
   return out;
 }
@@ -273,8 +297,8 @@ export function normalizeRoutingFields(input: {
     return {
       exposed,
       exposedPort: String(primary.port),
-      domain: primary.domainType === "free" ? primary.domain ?? null : null,
-      customDomain: primary.domainType === "custom" ? primary.customDomain ?? null : null,
+      domain: primary.domainType === "free" ? (primary.domain ?? null) : null,
+      customDomain: primary.domainType === "custom" ? (primary.customDomain ?? null) : null,
       domainType: primary.domainType,
       publicEndpoints: endpoints,
     };
@@ -287,7 +311,8 @@ export function normalizeRoutingFields(input: {
     exposed,
     exposedPort: trimOrNull(input.exposedPort),
     domain: domainType === "free" ? trimOrNull(input.domain) : null,
-    customDomain: domainType === "custom" ? normalizeCustomHostname(input.customDomain ?? "") || null : null,
+    customDomain:
+      domainType === "custom" ? normalizeCustomHostname(input.customDomain ?? "") || null : null,
     domainType,
     publicEndpoints: [],
   };
@@ -308,7 +333,8 @@ export function createServiceRepo(db: Database) {
     /** Batch id → display name, for naming services in list responses. */
     async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
       if (ids.length === 0) return [];
-      return db.select({ id: service.id, name: service.name })
+      return db
+        .select({ id: service.id, name: service.name })
         .from(service)
         .where(inArray(service.id, ids));
     },
@@ -422,7 +448,8 @@ export function createServiceRepo(db: Database) {
 
         const routing = normalizeRoutingFields({
           exposed: app.exposed ?? ex?.exposed ?? true,
-          exposedPort: app.exposedPort ?? ex?.exposedPort ?? (app.port != null ? String(app.port) : null),
+          exposedPort:
+            app.exposedPort ?? ex?.exposedPort ?? (app.port != null ? String(app.port) : null),
           domain: app.domain ?? ex?.domain,
           customDomain: app.customDomain ?? ex?.customDomain,
           domainType: app.domainType ?? ex?.domainType,

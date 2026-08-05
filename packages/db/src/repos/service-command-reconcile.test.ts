@@ -52,9 +52,7 @@ describe("reconcileFromCompose reviews pre-#332 command argv", () => {
     expect((writes[0].importedSpec as { commandArgv: string[] }).commandArgv).toEqual(
       structuredArgv,
     );
-    expect((writes[0].driftSpec as { commandArgv: string[] }).commandArgv).toEqual(
-      structuredArgv,
-    );
+    expect((writes[0].driftSpec as { commandArgv: string[] }).commandArgv).toEqual(structuredArgv);
     expect(result.commandArgvReviewNames).toEqual(["app"]);
   });
 
@@ -67,9 +65,7 @@ describe("reconcileFromCompose reviews pre-#332 command argv", () => {
 
     expect(writes).toHaveLength(1);
     expect(writes[0].commandArgv).toBeUndefined();
-    expect((writes[0].driftSpec as { commandArgv: string[] }).commandArgv).toEqual(
-      structuredArgv,
-    );
+    expect((writes[0].driftSpec as { commandArgv: string[] }).commandArgv).toEqual(structuredArgv);
     expect(result.commandArgvReviewNames).toEqual(["app"]);
   });
 

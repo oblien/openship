@@ -49,7 +49,9 @@ describe("buildDomainFanoutRegistrations", () => {
   });
 
   it("is a no-op for null / empty routes", () => {
-    expect(buildDomainFanoutRegistrations({ routes: null, resolveTargetUrl: () => null })).toEqual([]);
+    expect(buildDomainFanoutRegistrations({ routes: null, resolveTargetUrl: () => null })).toEqual(
+      [],
+    );
     expect(buildDomainFanoutRegistrations({ routes: [], resolveTargetUrl: () => "x" })).toEqual([]);
   });
 
@@ -85,8 +87,8 @@ describe("buildCompositeRegistration canonical redirect", () => {
           enabled: true,
         },
       ],
-      resolveTargetUrl: (id) => id === "api" ? "http://10.0.0.2:3000" : null,
-      resolveStaticRoot: (id) => id === "web" ? "/opt/openship/static/web" : null,
+      resolveTargetUrl: (id) => (id === "api" ? "http://10.0.0.2:3000" : null),
+      resolveStaticRoot: (id) => (id === "web" ? "/opt/openship/static/web" : null),
       resolveDomain: () => ({ hostname: "www.example.com", isCustomDomain: true }),
       resolveRedirectHost: () => ({ target: "example.com", statusCode: 301 }),
     });

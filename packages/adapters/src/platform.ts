@@ -60,8 +60,8 @@ export interface PlatformConfig {
    * Runtime mode for self-hosted (ignored for cloud/desktop).
    *
    * This is the ONLY choice for self-hosted - everything else follows:
-  *   - "docker" → Docker containers + Nginx + certbot (default)
-  *   - "bare"   → Node.js processes + Nginx + certbot
+   *   - "docker" → Docker containers + Nginx + certbot (default)
+   *   - "bare"   → Node.js processes + Nginx + certbot
    */
   runtime?: "docker" | "bare";
   /** Docker connection options (only for docker runtime) */
@@ -90,7 +90,7 @@ export interface PlatformConfig {
   /**
    * SSH config for remote server management (self-hosted only).
    *
-  * When provided, all system checks, installations, and Nginx file
+   * When provided, all system checks, installations, and Nginx file
    * operations run on the remote server via SSH instead of locally.
    * When omitted, everything runs on the current machine.
    */
@@ -238,9 +238,8 @@ async function createInfraProvider(
   // paths/pin decision for the edge image. Constructing the provider here too is
   // what let the two drift — and pointing `sitesDir` at a directory the edge never
   // reads fails silently, with the box dark.
-  const { containerEdgeProvider, localContainerEdgeProvider } = await import(
-    "./system/proxy/ensure-container-edge"
-  );
+  const { containerEdgeProvider, localContainerEdgeProvider } =
+    await import("./system/proxy/ensure-container-edge");
 
   // LOCAL containerized edge (compose): the api shares the routing mounts with the
   // `openship-edge` container and reaches it over the mounted Docker socket.
@@ -278,9 +277,8 @@ async function createInfraProvider(
 
   // Bare host OpenResty: legacy boxes not yet converted, and Docker-less servers.
   // No longer something we install — see `installContainerEdge`.
-  const { detectOpenRestyPaths, ensureOpenRestyConfig, ensureLuaScripts } = await import(
-    "./infra/openresty-lua"
-  );
+  const { detectOpenRestyPaths, ensureOpenRestyConfig, ensureLuaScripts } =
+    await import("./infra/openresty-lua");
   const paths = await detectOpenRestyPaths(executor);
 
   // Idempotent, but writes the SHARED nginx.conf (grep||sed). Concurrent deploys
@@ -406,9 +404,7 @@ export async function initPlatform(config: PlatformConfig): Promise<Platform> {
  */
 export function getPlatform(): Platform {
   if (!_platform) {
-    throw new Error(
-      "Platform not initialized. Call initPlatform() at server startup.",
-    );
+    throw new Error("Platform not initialized. Call initPlatform() at server startup.");
   }
   return _platform;
 }

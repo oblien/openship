@@ -15,11 +15,7 @@ import { convergeAllProjectRoutes } from "../domains/project-route.service";
 
 // ─── Runtime logs ────────────────────────────────────────────────────────────
 
-export async function getRuntimeLogs(
-  projectId: string,
-  organizationId: string,
-  tail?: number,
-) {
+export async function getRuntimeLogs(projectId: string, organizationId: string, tail?: number) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
@@ -145,9 +141,7 @@ export async function retryProjectRouting(
   // Cloud manages its own ingress — there is no server edge to repair here.
   if (p.cloudWorkspaceId) return { ok: true };
 
-  const dep = p.activeDeploymentId
-    ? await repos.deployment.findById(p.activeDeploymentId)
-    : null;
+  const dep = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
 
   await repairDeploymentServerBinding(p, dep).catch(() => {});
 
@@ -170,8 +164,11 @@ export async function retryProjectRouting(
   if (!ok) return { ok: false, warning: edgeUnsyncedWarning(failures, "retry") };
 
   if (!applyOk) {
-    const warning = "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
-    const fresh = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
+    const warning =
+      "Couldn't re-apply the project's routes at the edge — retry once the server is reachable.";
+    const fresh = p.activeDeploymentId
+      ? await repos.deployment.findById(p.activeDeploymentId)
+      : null;
     await markRoutingWarning(fresh, warning).catch(() => {});
     return { ok: false, warning };
   }

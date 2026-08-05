@@ -15,7 +15,10 @@ import { buildUpstreamUrl, resolveUpstreamUrl, resolveRouteStrategy } from "../.
 import { deregisterManagedEdgeRoutes, syncManagedEdgeRoutes } from "../../lib/managed-edge-proxy";
 import { syncProjectPublicRoutes } from "../../lib/project-route-store";
 import { resolveRouteRedirect } from "../../lib/domain-redirect";
-import { resolveDeploymentRuntime, resolveDeploymentStaticRoot } from "../../lib/deployment-runtime";
+import {
+  resolveDeploymentRuntime,
+  resolveDeploymentStaticRoot,
+} from "../../lib/deployment-runtime";
 import { buildServiceRouteDomains } from "../../lib/routing-domains";
 import { isStaticService } from "../../lib/deployable-service";
 import { applyProjectRouting } from "./routing-apply.service";
@@ -56,19 +59,23 @@ export function deriveEnvironmentPublicEndpoints(
   if (!primaryEndpoint) return [];
 
   if (primaryEndpoint.targetPath) {
-    return [{
-      targetPath: primaryEndpoint.targetPath,
-      domain: normalizedSlug,
-      domainType: "free",
-    }];
+    return [
+      {
+        targetPath: primaryEndpoint.targetPath,
+        domain: normalizedSlug,
+        domainType: "free",
+      },
+    ];
   }
 
   if (primaryEndpoint.port !== undefined) {
-    return [{
-      port: primaryEndpoint.port,
-      domain: normalizedSlug,
-      domainType: "free",
-    }];
+    return [
+      {
+        port: primaryEndpoint.port,
+        domain: normalizedSlug,
+        domainType: "free",
+      },
+    ];
   }
 
   return [];
@@ -91,7 +98,10 @@ function draftEndpointsWithIds(
   endpoints: StoredPublicEndpoint[],
 ): ProjectRouteEndpoint[] {
   const idByHostname = new Map(
-    normalizeProjectRouteRows(projectDomains).map((domain) => [domain.hostname.toLowerCase(), domain.id]),
+    normalizeProjectRouteRows(projectDomains).map((domain) => [
+      domain.hostname.toLowerCase(),
+      domain.id,
+    ]),
   );
 
   return endpoints.map((endpoint, index) => {
@@ -204,7 +214,7 @@ export async function resolveProjectRouteState(
   project: ProjectRouteProject,
   opts?: { projectDomains?: Domain[] },
 ): Promise<ProjectRouteState> {
-  const projectDomains = opts?.projectDomains ?? await listProjectRouteRows(project.id);
+  const projectDomains = opts?.projectDomains ?? (await listProjectRouteRows(project.id));
   return deriveProjectRouteState(project, { projectDomains });
 }
 
@@ -237,7 +247,7 @@ export async function syncProjectRouteState(
     preserveVerifiedCustom?: boolean;
   },
 ): Promise<ProjectRouteState> {
-  const projectDomains = input.projectDomains ?? await listProjectRouteRows(project.id);
+  const projectDomains = input.projectDomains ?? (await listProjectRouteRows(project.id));
   const nextState = deriveNextProjectRouteState(project, {
     ...input,
     projectDomains,
@@ -342,7 +352,8 @@ export async function reapplyProjectLiveRoutes(
 ): Promise<void> {
   const isCloud = !!project.cloudWorkspaceId;
   if (!isCloud && !project.activeDeploymentId) {
-    if (opts.strict) throw new ValidationError("No active deployment is available for this domain route");
+    if (opts.strict)
+      throw new ValidationError("No active deployment is available for this domain route");
     return;
   }
 
@@ -353,7 +364,8 @@ export async function reapplyProjectLiveRoutes(
   );
   const allCurrent = normalizeProjectRouteRows(state.projectDomains);
   const current = allCurrent.filter(
-    (domain) => !opts.onlyHostname || domain.hostname.toLowerCase() === opts.onlyHostname.toLowerCase(),
+    (domain) =>
+      !opts.onlyHostname || domain.hostname.toLowerCase() === opts.onlyHostname.toLowerCase(),
   );
   if (opts.strict && opts.onlyHostname && current.length === 0) {
     throw new ValidationError(`No project route is configured for ${opts.onlyHostname}`);
@@ -408,7 +420,8 @@ export async function reapplyProjectLiveRoutes(
   // resolver deploy/delete use), then compute each upstream from the container.
   const deployment = await repos.deployment.findById(project.activeDeploymentId!);
   if (!deployment) {
-    if (opts.strict) throw new ValidationError("The active deployment could not be found for this domain route");
+    if (opts.strict)
+      throw new ValidationError("The active deployment could not be found for this domain route");
     console.warn(
       `[project-route] ${project.slug}: no active deployment row — skipping live route re-apply`,
     );
@@ -472,7 +485,9 @@ export async function reapplyProjectLiveRoutes(
     await pushProjectRules(project.id, serverId ?? null, previousHostnames).catch(() => {});
     // Shared-dict state is RAM: the analytics collection switches have to be re-pushed
     // whenever routing is applied, or an nginx restart silently reverts them to off.
-    await pushProjectAnalyticsConfig(project.id, serverId ?? null, previousHostnames).catch(() => {});
+    await pushProjectAnalyticsConfig(project.id, serverId ?? null, previousHostnames).catch(
+      () => {},
+    );
     syncAddedManagedEdge();
     return;
   }
@@ -483,9 +498,16 @@ export async function reapplyProjectLiveRoutes(
     // live). Bare / no-host-port fall back to container IP (or 127.0.0.1 bare).
     let hostPort: number | undefined;
     if (strategy === "loopback-port" && runtime.name !== "bare") {
-      hostPort = (await runtime.getContainerInfo?.(containerId).catch(() => null))?.hostPort ?? undefined;
+      hostPort =
+        (await runtime.getContainerInfo?.(containerId).catch(() => null))?.hostPort ?? undefined;
     }
-    const url = await resolveUpstreamUrl({ strategy, runtime, containerId, containerPort: port, hostPort });
+    const url = await resolveUpstreamUrl({
+      strategy,
+      runtime,
+      containerId,
+      containerPort: port,
+      hostPort,
+    });
     if (!url) {
       console.warn(
         `[project-route] ${project.slug}: could not resolve upstream for ${containerId} (target=${effectiveTarget}, server=${serverId ?? "local"})`,
@@ -542,7 +564,10 @@ export async function reapplyProjectLiveRoutes(
       try {
         // Same call the deploy path's route registration and the output probe
         // make — one rule for "which directory does this path serve".
-        registers.push({ ...common, staticRoot: resolveServedStaticPath(staticRootBase, domain.targetPath) });
+        registers.push({
+          ...common,
+          staticRoot: resolveServedStaticPath(staticRootBase, domain.targetPath),
+        });
       } catch (err) {
         // A `../` in the operator's route path. Refuse this ONE route; the rest of
         // the re-apply (and the project's other domains) must still go through.
@@ -574,9 +599,9 @@ export async function reapplyProjectLiveRoutes(
   // hostnames. Best-effort — the DB is the source of truth; a failure defers to
   // the next reconcile. previousHostnames clears rules for any dropped hostname.
   await pushProjectRules(project.id, serverId ?? null, previousHostnames).catch(() => {});
-    // Shared-dict state is RAM: the analytics collection switches have to be re-pushed
-    // whenever routing is applied, or an nginx restart silently reverts them to off.
-    await pushProjectAnalyticsConfig(project.id, serverId ?? null, previousHostnames).catch(() => {});
+  // Shared-dict state is RAM: the analytics collection switches have to be re-pushed
+  // whenever routing is applied, or an nginx restart silently reverts them to off.
+  await pushProjectAnalyticsConfig(project.id, serverId ?? null, previousHostnames).catch(() => {});
 
   // Register the newly-added managed slug(s) on the cloud edge (the "add" half
   // of the edit; dropped slugs were deregistered above). Per-route — unchanged
@@ -635,9 +660,8 @@ export async function convergeVerifiedDomainRoute(domain: Domain, project: Proje
 
   const liveRows = await repos.service.listByDeployment(project.activeDeploymentId);
   const live = liveRows.find((row) => row.serviceId === service.id);
-  const staticRoot = isStaticService(service) && live?.imageRef?.startsWith("/")
-    ? live.imageRef
-    : null;
+  const staticRoot =
+    isStaticService(service) && live?.imageRef?.startsWith("/") ? live.imageRef : null;
   const targetUrl = staticRoot
     ? null
     : buildUpstreamUrl({
@@ -651,21 +675,26 @@ export async function convergeVerifiedDomainRoute(domain: Domain, project: Proje
   }
 
   const allDomains = await repos.domain.listByProject(project.id);
-  const redirectHost = resolveRouteRedirect(domain, allDomains.map((row) => row.hostname));
+  const redirectHost = resolveRouteRedirect(
+    domain,
+    allDomains.map((row) => row.hostname),
+  );
 
   await reconcileProjectRoutes(project, {
     deployment,
     routing,
     strict: true,
-    registers: [{
-      hostname: planned.hostname,
-      ...(staticRoot ? { staticRoot } : { targetUrl: targetUrl! }),
-      port: planned.targetPort,
-      isCustomDomain: planned.domainType === "custom",
-      tls: planned.tls,
-      terminatesTlsLocally: planned.terminatesTlsLocally,
-      ...(redirectHost ? { redirectHost } : {}),
-    }],
+    registers: [
+      {
+        hostname: planned.hostname,
+        ...(staticRoot ? { staticRoot } : { targetUrl: targetUrl! }),
+        port: planned.targetPort,
+        isCustomDomain: planned.domainType === "custom",
+        tls: planned.tls,
+        terminatesTlsLocally: planned.terminatesTlsLocally,
+        ...(redirectHost ? { redirectHost } : {}),
+      },
+    ],
   });
 }
 

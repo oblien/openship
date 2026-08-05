@@ -1,17 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listByProject, findDeployment, findService, listByDeployment, resolveRuntime, reconcile, applyCompiledRouting, syncManagedEdge, deregisterManagedEdge } =
-  vi.hoisted(() => ({
-    listByProject: vi.fn(),
-    findDeployment: vi.fn(),
-    findService: vi.fn(),
-    listByDeployment: vi.fn(),
-    resolveRuntime: vi.fn(),
-    reconcile: vi.fn(),
-    applyCompiledRouting: vi.fn(),
-    syncManagedEdge: vi.fn(),
-    deregisterManagedEdge: vi.fn(),
-  }));
+const {
+  listByProject,
+  findDeployment,
+  findService,
+  listByDeployment,
+  resolveRuntime,
+  reconcile,
+  applyCompiledRouting,
+  syncManagedEdge,
+  deregisterManagedEdge,
+} = vi.hoisted(() => ({
+  listByProject: vi.fn(),
+  findDeployment: vi.fn(),
+  findService: vi.fn(),
+  listByDeployment: vi.fn(),
+  resolveRuntime: vi.fn(),
+  reconcile: vi.fn(),
+  applyCompiledRouting: vi.fn(),
+  syncManagedEdge: vi.fn(),
+  deregisterManagedEdge: vi.fn(),
+}));
 
 vi.mock("@repo/db", () => ({
   repos: {
@@ -77,9 +86,9 @@ describe("convergeVerifiedDomainRoute", () => {
       customDomain: "zapbot.example.com",
       publicEndpoints: null,
     });
-    listByDeployment.mockReset().mockResolvedValue([
-      { serviceId: "svc-1", ip: "172.18.0.9", hostPort: 49123 },
-    ]);
+    listByDeployment
+      .mockReset()
+      .mockResolvedValue([{ serviceId: "svc-1", ip: "172.18.0.9", hostPort: 49123 }]);
     resolveRuntime.mockReset().mockResolvedValue({
       routing: { provider: "local-edge" },
       runtime: { name: "docker" },
@@ -113,14 +122,16 @@ describe("convergeVerifiedDomainRoute", () => {
       expect.objectContaining({
         strict: true,
         routing: { provider: "local-edge" },
-        registers: [{
-          hostname: "zapbot.example.com",
-          targetUrl: "http://127.0.0.1:49123",
-          port: 4000,
-          isCustomDomain: true,
-          tls: true,
-          terminatesTlsLocally: true,
-        }],
+        registers: [
+          {
+            hostname: "zapbot.example.com",
+            targetUrl: "http://127.0.0.1:49123",
+            port: 4000,
+            isCustomDomain: true,
+            tls: true,
+            terminatesTlsLocally: true,
+          },
+        ],
       }),
     );
   });
@@ -178,8 +189,20 @@ describe("convergeVerifiedDomainRoute", () => {
 
   it("includes an unverified sibling service before clearing a project routing warning", async () => {
     listByProject.mockResolvedValue([
-      { id: "dom-1", projectId: "proj-1", serviceId: "svc-1", hostname: "one.example.com", verified: true },
-      { id: "dom-2", projectId: "proj-1", serviceId: "svc-2", hostname: "two.example.com", verified: false },
+      {
+        id: "dom-1",
+        projectId: "proj-1",
+        serviceId: "svc-1",
+        hostname: "one.example.com",
+        verified: true,
+      },
+      {
+        id: "dom-2",
+        projectId: "proj-1",
+        serviceId: "svc-2",
+        hostname: "two.example.com",
+        verified: false,
+      },
     ]);
     findService.mockImplementation(async (id: string) => ({
       id,
@@ -217,8 +240,20 @@ describe("convergeVerifiedDomainRoute", () => {
 
   it("does not let an intentionally paused service pin the project routing warning", async () => {
     listByProject.mockResolvedValue([
-      { id: "dom-1", projectId: "proj-1", serviceId: "svc-1", hostname: "live.example.com", verified: true },
-      { id: "dom-2", projectId: "proj-1", serviceId: "svc-paused", hostname: "paused.example.com", verified: false },
+      {
+        id: "dom-1",
+        projectId: "proj-1",
+        serviceId: "svc-1",
+        hostname: "live.example.com",
+        verified: true,
+      },
+      {
+        id: "dom-2",
+        projectId: "proj-1",
+        serviceId: "svc-paused",
+        hostname: "paused.example.com",
+        verified: false,
+      },
     ]);
     findService.mockImplementation(async (id: string) => ({
       id,
@@ -306,66 +341,71 @@ describe("convergeVerifiedDomainRoute", () => {
   it.each([
     ["local", "local-edge"],
     ["remote", "remote-edge"],
-  ])("restores a static service route through the %s provider", async (effectiveTarget, provider) => {
-    findService.mockResolvedValue({
-      id: "svc-1",
-      projectId: "proj-1",
-      name: "web",
-      kind: "monorepo",
-      framework: "vite",
-      startCommand: "",
-      enabled: true,
-      exposed: true,
-      exposedPort: "4173",
-      ports: ["4173"],
-      domainType: "custom",
-      customDomain: "static.example.com",
-      publicEndpoints: null,
-    });
-    listByDeployment.mockResolvedValue([
-      {
-        serviceId: "svc-1",
-        imageRef: "/opt/openship/static/proj-1/web",
-        ip: null,
-        hostPort: null,
-      },
-    ]);
-    resolveRuntime.mockResolvedValue({
-      routing: { provider },
-      runtime: { name: "docker" },
-      effectiveTarget,
-      serverId: effectiveTarget === "remote" ? "srv-1" : null,
-    });
-
-    await convergeVerifiedDomainRoute(
-      {
-        id: "dom-static",
+  ])(
+    "restores a static service route through the %s provider",
+    async (effectiveTarget, provider) => {
+      findService.mockResolvedValue({
+        id: "svc-1",
         projectId: "proj-1",
-        serviceId: "svc-1",
-        hostname: "static.example.com",
+        name: "web",
+        kind: "monorepo",
+        framework: "vite",
+        startCommand: "",
+        enabled: true,
+        exposed: true,
+        exposedPort: "4173",
+        ports: ["4173"],
         domainType: "custom",
-      } as never,
-      {
-        id: "proj-1",
-        slug: "static",
-        organizationId: "org-1",
-        activeDeploymentId: "dep-1",
-        cloudWorkspaceId: null,
-      } as never,
-    );
-
-    expect(reconcile).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        strict: true,
+        customDomain: "static.example.com",
+        publicEndpoints: null,
+      });
+      listByDeployment.mockResolvedValue([
+        {
+          serviceId: "svc-1",
+          imageRef: "/opt/openship/static/proj-1/web",
+          ip: null,
+          hostPort: null,
+        },
+      ]);
+      resolveRuntime.mockResolvedValue({
         routing: { provider },
-        registers: [expect.objectContaining({
+        runtime: { name: "docker" },
+        effectiveTarget,
+        serverId: effectiveTarget === "remote" ? "srv-1" : null,
+      });
+
+      await convergeVerifiedDomainRoute(
+        {
+          id: "dom-static",
+          projectId: "proj-1",
+          serviceId: "svc-1",
           hostname: "static.example.com",
-          staticRoot: "/opt/openship/static/proj-1/web",
-        })],
-      }),
-    );
-  });
+          domainType: "custom",
+        } as never,
+        {
+          id: "proj-1",
+          slug: "static",
+          organizationId: "org-1",
+          activeDeploymentId: "dep-1",
+          cloudWorkspaceId: null,
+        } as never,
+      );
+
+      expect(reconcile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          strict: true,
+          routing: { provider },
+          registers: [
+            expect.objectContaining({
+              hostname: "static.example.com",
+              staticRoot: "/opt/openship/static/proj-1/web",
+            }),
+          ],
+        }),
+      );
+    },
+  );
 });
 
 describe("shouldRefuseLoopbackRoute", () => {
@@ -392,23 +432,13 @@ describe("shouldRefuseLoopbackRoute", () => {
 
 describe("deriveEnvironmentPublicEndpoints", () => {
   it("clones an explicit proxy target without inventing a fallback port", () => {
-    expect(
-      deriveEnvironmentPublicEndpoints(
-        [{ port: 4010 }],
-        "preview-app",
-      ),
-    ).toEqual([
+    expect(deriveEnvironmentPublicEndpoints([{ port: 4010 }], "preview-app")).toEqual([
       { port: 4010, domain: "preview-app", domainType: "free" },
     ]);
   });
 
   it("clones an explicit static path target without inventing a port", () => {
-    expect(
-      deriveEnvironmentPublicEndpoints(
-        [{ targetPath: "/docs" }],
-        "preview-docs",
-      ),
-    ).toEqual([
+    expect(deriveEnvironmentPublicEndpoints([{ targetPath: "/docs" }], "preview-docs")).toEqual([
       { targetPath: "/docs", domain: "preview-docs", domainType: "free" },
     ]);
   });
@@ -522,14 +552,16 @@ describe("reapplyProjectLiveRoutes self-app loopback route (issue #129)", () => 
       strict: true,
     });
 
-    expect(reconcile.mock.calls[0][1].registers).toEqual([{
-      hostname: "www.example.com",
-      targetUrl: "http://127.0.0.1:3001",
-      isCustomDomain: true,
-      tls: true,
-      terminatesTlsLocally: true,
-      redirectHost: { target: "example.com", statusCode: 308 },
-    }]);
+    expect(reconcile.mock.calls[0][1].registers).toEqual([
+      {
+        hostname: "www.example.com",
+        targetUrl: "http://127.0.0.1:3001",
+        isCustomDomain: true,
+        tls: true,
+        terminatesTlsLocally: true,
+        redirectHost: { target: "example.com", statusCode: 308 },
+      },
+    ]);
   });
 });
 
@@ -719,7 +751,9 @@ describe("deriveNextProjectRouteState custom-hostname gate", () => {
 
   it("accepts a real hostname, scheme and all", () => {
     const state = deriveNextProjectRouteState(project, {
-      nextPublicEndpoints: [{ customDomain: "HTTPS://App.Example.com/", domainType: "custom", port: 3000 }],
+      nextPublicEndpoints: [
+        { customDomain: "HTTPS://App.Example.com/", domainType: "custom", port: 3000 },
+      ],
     });
 
     expect(state.publicEndpoints[0]).toMatchObject({ customDomain: "app.example.com" });
@@ -732,16 +766,18 @@ describe("deriveNextProjectRouteState custom-hostname gate", () => {
    * submission INTRODUCES are refused; the endpoint list is authoritative, so every
    * save echoes the stored set back.
    */
-  const legacyRow = [{
-    id: "dom-legacy",
-    hostname: "localhost",
-    isPrimary: true,
-    serviceId: null,
-    targetPort: 3000,
-    targetPath: null,
-    domainType: "custom",
-    verified: false,
-  }] as never;
+  const legacyRow = [
+    {
+      id: "dom-legacy",
+      hostname: "localhost",
+      isPrimary: true,
+      serviceId: null,
+      targetPort: 3000,
+      targetPath: null,
+      domainType: "custom",
+      verified: false,
+    },
+  ] as never;
 
   it("does not throw on a bad hostname that is already stored", () => {
     expect(() => deriveNextProjectRouteState(project, { projectDomains: legacyRow })).not.toThrow();
@@ -763,7 +799,9 @@ describe("deriveNextProjectRouteState custom-hostname gate", () => {
     expect(() =>
       deriveNextProjectRouteState(project, {
         projectDomains: legacyRow,
-        nextPublicEndpoints: [{ customDomain: "app.example.com", domainType: "custom", port: 3000 }],
+        nextPublicEndpoints: [
+          { customDomain: "app.example.com", domainType: "custom", port: 3000 },
+        ],
       }),
     ).not.toThrow();
   });

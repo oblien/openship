@@ -159,7 +159,9 @@ export async function reconcileProjectRoutes(
         await local
           .removeRoute(r.hostname)
           .catch((err) =>
-            console.warn(`[route-apply] fallback removeRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`),
+            console.warn(
+              `[route-apply] fallback removeRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`,
+            ),
           );
       }
     }
@@ -187,7 +189,9 @@ export async function reconcileProjectRoutes(
       await routing.removeRoute(r.hostname);
     } catch (err) {
       if (opts.strict) throw err;
-      console.warn(`[route-apply] removeRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`);
+      console.warn(
+        `[route-apply] removeRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`,
+      );
     }
   }
 
@@ -229,7 +233,9 @@ export async function reconcileProjectRoutes(
       });
     } catch (err) {
       if (opts.strict) throw err;
-      console.warn(`[route-apply] registerRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`);
+      console.warn(
+        `[route-apply] registerRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`,
+      );
     }
   }
 }

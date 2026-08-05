@@ -69,7 +69,8 @@ export async function applyProjectRouting(
 
     // Self-hosted: compile to OpenResty locations and reconcile the domain.
     if (!routing) {
-      if (opts.strict) throw new ValidationError("No routing provider is available for this deployment");
+      if (opts.strict)
+        throw new ValidationError("No routing provider is available for this deployment");
       return false;
     }
     const domainByHostname = new Map(
@@ -93,15 +94,18 @@ export async function applyProjectRouting(
       const row = rowByService.get(serviceId);
       const port = def ? resolveServicePort(def, project.port) : null;
       if (!port) return null;
-      return buildUpstreamUrl({ strategy: routeStrategy, ip: row?.ip, hostPort: row?.hostPort, containerPort: port });
+      return buildUpstreamUrl({
+        strategy: routeStrategy,
+        ip: row?.ip,
+        hostPort: row?.hostPort,
+        containerPort: port,
+      });
     };
 
     const resolveStaticRoot = (serviceId: string) => {
       const def = defs.find((service) => service.id === serviceId);
       const row = rowByService.get(serviceId);
-      return def && isStaticService(def) && row?.imageRef?.startsWith("/")
-        ? row.imageRef
-        : null;
+      return def && isStaticService(def) && row?.imageRef?.startsWith("/") ? row.imageRef : null;
     };
 
     const composite = buildCompositeRegistration({
@@ -180,7 +184,9 @@ export async function applyProjectRouting(
         (route) => route.hostname.toLowerCase() === requested,
       );
       if (compositeDomain?.hostname.toLowerCase() === requested || fanoutConfigured) {
-        throw new ValidationError(`The compiled route for ${opts.onlyHostname} has no live upstream`);
+        throw new ValidationError(
+          `The compiled route for ${opts.onlyHostname} has no live upstream`,
+        );
       }
     }
     if (registers.length > 0) {

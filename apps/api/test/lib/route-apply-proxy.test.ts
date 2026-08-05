@@ -24,7 +24,9 @@ const project = (proxy?: unknown) => ({
   routingConfig: proxy ? ({ proxy } as never) : null,
 });
 
-const REGISTER = [{ hostname: "app.example.com", targetUrl: "http://127.0.0.1:3000", isCustomDomain: false }];
+const REGISTER = [
+  { hostname: "app.example.com", targetUrl: "http://127.0.0.1:3000", isCustomDomain: false },
+];
 
 function fakeRouting() {
   const registerRoute = vi.fn(async () => {});
@@ -84,7 +86,13 @@ describe("reconcileProjectRoutes — project request limits", () => {
 
     await reconcileProjectRoutes(project({ clientMaxBodySize: "50m" }), {
       routing,
-      registers: [{ hostname: "site.example.com", staticRoot: "/opt/openship/static/site", isCustomDomain: false }],
+      registers: [
+        {
+          hostname: "site.example.com",
+          staticRoot: "/opt/openship/static/site",
+          isCustomDomain: false,
+        },
+      ],
     });
 
     expect(registerRoute.mock.calls[0][0]).toMatchObject({

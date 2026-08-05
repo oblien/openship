@@ -22,10 +22,7 @@ export type {
   IncomingWebhookAuthMode,
 } from "./schema/incoming-webhook";
 export { INCIDENT_KINDS, type IncidentKind } from "./schema/service-incident";
-export {
-  RESOURCE_BUCKET_MINUTES,
-  SINGLE_APP_SERVICE_KEY,
-} from "./schema/resource-usage";
+export { RESOURCE_BUCKET_MINUTES, SINGLE_APP_SERVICE_KEY } from "./schema/resource-usage";
 
 // ─── Dump / restore (team-mode migration + project transfer) ─────────────────
 export {

@@ -57,7 +57,10 @@ import {
   toRoutedDomainInputs,
   type PlannedRouteDomain,
 } from "../../../lib/routing-domains";
-import { resolveServiceEndpointUrls, resolveServicePublicEndpoints } from "../../../lib/public-endpoints";
+import {
+  resolveServiceEndpointUrls,
+  resolveServicePublicEndpoints,
+} from "../../../lib/public-endpoints";
 import { ensureManagedEdgeProxy } from "../../../lib/managed-edge-proxy";
 import { ensureRoutingReady } from "../../../lib/edge-reconcile";
 import * as sessionManager from "../session-manager";
@@ -1109,7 +1112,9 @@ export async function deployComposeServices(
         svc.name,
         `no public URL is known for ${unresolvedEnvUrls
           .map((u) => `${u.key}=${u.tokens.join("")}`)
-          .join(", ")} — ${unresolvedEnvUrls.length === 1 ? "that variable is" : "those variables are"} left UNSET rather than blank`,
+          .join(
+            ", ",
+          )} — ${unresolvedEnvUrls.length === 1 ? "that variable is" : "those variables are"} left UNSET rather than blank`,
       );
     }
 
@@ -1742,9 +1747,7 @@ export async function deployComposeServices(
     const probes = Promise.all(
       portAuditTargets.map(async (target) => {
         const [pc] = await auditPorts(runtime, target.containerId, [target.port], logger);
-        return pc
-          ? { ...pc, serviceId: target.serviceId, serviceName: target.serviceName }
-          : null;
+        return pc ? { ...pc, serviceId: target.serviceId, serviceName: target.serviceName } : null;
       }),
     );
     const audited = await Promise.race([
@@ -1813,9 +1816,7 @@ export async function deployComposeServices(
         f.target.serviceId &&
         readinessByServiceId.get(f.target.serviceId)?.onFailure === "fail",
     );
-    for (const finding of findings.filter(
-      (f) => !f.verdict.ok && !vetoing.includes(f),
-    )) {
+    for (const finding of findings.filter((f) => !f.verdict.ok && !vetoing.includes(f))) {
       // "warn": say what didn't hold, but leave the service's deploy result alone
       // so the stack stays up. Opting into the watch to get the signal must not
       // also opt into a veto.
