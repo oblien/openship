@@ -104,9 +104,9 @@ export function detectPackageManager(
     if (lower.endsWith(".csproj") || lower.endsWith(".fsproj") || lower.endsWith(".sln")) return "dotnet";
   }
 
-  // ── JS/TS lock files (most reliable) ──
+  // ── JS/TS lock files & config (most reliable) ──
   if (fileSet.has("pnpm-lock.yaml")) return "pnpm";
-  if (fileSet.has("bun.lockb") || fileSet.has("bun.lock")) return "bun";
+  if (fileSet.has("bun.lockb") || fileSet.has("bun.lock") || fileSet.has("bunfig.toml")) return "bun";
   if (fileSet.has("package-lock.json")) return "npm";
   if (fileSet.has("yarn.lock")) return "yarn";
 
