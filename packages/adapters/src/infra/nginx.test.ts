@@ -1327,3 +1327,20 @@ describe("slug collisions between dotted and dashed hostnames", () => {
     expect(files.get(`${SITES}/${BASE}.conf`)).toContain("127.0.0.1:3006");
   });
 });
+
+describe("pending SSL fallback TLS for Cloudflare proxy compatibility", () => {
+  test("generates fallback TLS server block when tls is true but cert does not exist yet", async () => {
+    const { nginx, conf } = setup();
+    await nginx.registerRoute({
+      domain: "pending.example.com",
+      tls: true,
+      targetUrl: "http://127.0.0.1:3000",
+    });
+    const block = conf("pending-example-com");
+    expect(block).toBeDefined();
+    expect(block).toContain("listen 443 ssl;");
+    expect(block).toContain("ssl_certificate");
+    expect(block).toContain("_fallback");
+  });
+});
+
