@@ -85,7 +85,8 @@ export function parseRubyVersion(filename: string, content: string): string | nu
 export const rubyLanguageDetector: LanguageDetector = {
   id: "ruby",
   label: "Ruby",
-  manifestFiles: ["gemfile", "gemfile.lock"],
+  // `.ruby-version` carries no deps; it is listed so callers fetch it.
+  manifestFiles: ["gemfile", "gemfile.lock", ".ruby-version"],
   parseManifest(filename, content) {
     switch (filename.toLowerCase()) {
       case "gemfile":

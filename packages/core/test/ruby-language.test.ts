@@ -32,6 +32,11 @@ describe("rubyLanguageDetector", () => {
     expect(rubyLanguageDetector.manifestFiles).toContain("gemfile.lock");
   });
 
+  it("claims .ruby-version so callers fetch it, but reads no deps from it", () => {
+    expect(rubyLanguageDetector.manifestFiles).toContain(".ruby-version");
+    expect(rubyLanguageDetector.parseManifest(".ruby-version", "3.4.1")).toEqual({});
+  });
+
   it("reads gems from the lockfile that the Gemfile never names", () => {
     const deps = rubyLanguageDetector.parseManifest("Gemfile.lock", LOCKFILE);
     expect(deps.pg).toBe("1.5.9");

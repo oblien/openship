@@ -26,6 +26,7 @@ import {
   OUTPUT_DIRECTORIES,
   getProjectType,
   getBuildImage,
+  parseRubyVersion,
   LANGUAGE_MANIFEST_FILES,
   collectDependencies,
   detectPort as detectPortFromLanguages,
@@ -198,6 +199,19 @@ function hasBackendMarker(fileSet: Set<string>): boolean {
     fileSet.has("gemfile") || // Rails (Ruby)
     fileSet.has("mix.exs") // Phoenix (Elixir)
   );
+}
+
+/** The Ruby this project pins, in the order bundler trusts: `.ruby-version`,
+ *  then the lockfile stanza, then the Gemfile directive. First hit wins;
+ *  undefined leaves the language default in place. */
+function detectRubyVersion(fileContents: Record<string, string>): string | undefined {
+  for (const name of [".ruby-version", "gemfile.lock", "gemfile"]) {
+    const content = fileContents[name];
+    if (!content) continue;
+    const version = parseRubyVersion(name, content);
+    if (version) return version;
+  }
+  return undefined;
 }
 
 /** True if any of the stack's deps appears in the dep map. */
@@ -511,7 +525,7 @@ export function detectStack(
     installCommand: projectType === "docker" ? "" : getInstallCommand(pm),
     buildCommand: getBuildCommand(pm, matched, packageJson, files),
     startCommand,
-    buildImage: getBuildImage(matched, pm),
+    buildImage: getBuildImage(matched, pm, detectRubyVersion(fc)),
     outputDirectory: OUTPUT_DIRECTORIES[matched] ?? "dist",
     productionPaths,
     port: detectPortFromLanguages({ packageJson, fileContents: fc }) ?? stackDef.defaultPort,
