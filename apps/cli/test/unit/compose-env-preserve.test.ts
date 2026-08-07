@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   composeCalls: [] as string[][],
   /** `docker ps` rows for the port query: "<config_files>\t<published ports>". */
   dockerPsPorts: "",
+  /** Whether `docker volume inspect <project>_postgres_data` reports the volume exists. */
+  pgVolumeExists: false,
 }));
 
 vi.mock("node:child_process", () => ({
@@ -29,9 +31,10 @@ vi.mock("node:child_process", () => ({
     cb(null, { stdout: "" }),
   spawnSync: (cmd: string, args: string[] = []) => {
     if (cmd === "docker" && args[0] === "compose") h.composeCalls.push(args);
-    // No pre-existing db volume → the password-reconcile path stays out of the
-    // compose sequences these tests assert on.
-    if (cmd === "docker" && args[0] === "volume") return { status: 1, stdout: "", stderr: "" };
+    // Default to no pre-existing db volume; tests can flip `h.pgVolumeExists`.
+    if (cmd === "docker" && args[0] === "volume") {
+      return { status: h.pgVolumeExists ? 0 : 1, stdout: "", stderr: "" };
+    }
     // Only the published-ports query (composeHeldPorts), not the container sweep
     // orphanedStackContainers runs with its own format.
     if (cmd === "docker" && args[0] === "ps" && args.some((a) => a.includes("{{.Ports}}"))) {
@@ -79,6 +82,7 @@ import {
   composeEnvPorts,
   composeHeldPorts,
   composePaths,
+  composePlan,
   composeUp,
   composeUpdate,
   resolveComposePorts,
@@ -151,6 +155,7 @@ beforeEach(() => {
   h.written = new Map();
   h.composeCalls = [];
   h.dockerPsPorts = "";
+  h.pgVolumeExists = false;
 });
 
 describe("resolveEnvConfig", () => {
@@ -387,6 +392,39 @@ describe("compose port resolution", () => {
   it("writes an explicit 0.0.0.0 to .env for a remote install (public URL set)", async () => {
     await composeUp({ publicUrl: "https://remote.example.com" });
     expect(writtenEnv().OPENSHIP_BIND_ADDR).toBe("0.0.0.0");
+  });
+});
+
+describe("POSTGRES_PASSWORD preservation with an existing data volume", () => {
+  it("preserves the existing password on a re-run when the data volume exists", async () => {
+    h.pgVolumeExists = true;
+    seedEnv(CONFIGURED);
+    const res = await composeUp({});
+    expect(res.ok).toBe(true);
+    expect(writtenEnv().POSTGRES_PASSWORD).toBe("pg-secret");
+    expect(verbs()).toContainEqual(["up", "-d", "--force-recreate", "api", "dashboard", "edge"]);
+  });
+
+  it("refuses to generate a new password when the volume exists but POSTGRES_PASSWORD is missing", async () => {
+    h.pgVolumeExists = true;
+    const env = { ...CONFIGURED };
+    delete (env as any).POSTGRES_PASSWORD;
+    seedEnv(env);
+    await expect(composeUp({})).rejects.toThrow(
+      /Existing Postgres data volume .* already has a password/,
+    );
+  });
+
+  it("dry-run warns instead of claiming a new password will be generated", async () => {
+    h.pgVolumeExists = true;
+    const env = { ...CONFIGURED };
+    delete (env as any).POSTGRES_PASSWORD;
+    seedEnv(env);
+    const plan = composePlan({});
+    expect(plan.warnings.length).toBeGreaterThan(0);
+    const pg = plan.settings.find((s) => s.key === "POSTGRES_PASSWORD");
+    expect(pg?.value).toContain("cannot be generated");
+    expect(plan.newSecrets).not.toContain("POSTGRES_PASSWORD");
   });
 });
 

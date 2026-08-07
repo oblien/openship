@@ -432,7 +432,35 @@ volumes:
 
 /** Persist a stable secret in the compose .env — regenerated only if absent. */
 function keepSecret(existing: Record<string, string>, key: string): string {
-  return existing[key] || randomBytes(32).toString("hex");
+  const value = existing[key];
+  if (value) return value;
+  return randomBytes(32).toString("hex");
+}
+
+/**
+ * Preserve the Postgres password, or generate one on a genuine first install.
+ *
+ * Postgres only applies `POSTGRES_PASSWORD` when it initialises an EMPTY data
+ * dir. If a `<project>_postgres_data` volume already exists, generating a new
+ * password would leave the volume on the old password and the API on the new
+ * one — the api then crash-loops on `password authentication failed for user`
+ * (28P01). So: carry the existing password when we have one. If we don't have
+ * one and a volume exists, refuse rather than silently break the database. On a
+ * true fresh install (no volume), generate a new password.
+ */
+function keepPostgresPassword(existing: Record<string, string>, dryRun = false): string {
+  const value = existing.POSTGRES_PASSWORD;
+  if (value) return value;
+  const project = composeProjectName(existing);
+  if (dbVolumeExists(project)) {
+    const msg =
+      `Existing Postgres data volume ${project}_postgres_data already has a password, but POSTGRES_PASSWORD is missing from ${ENV_FILE}. ` +
+      `A new password cannot be safely generated for this volume. ` +
+      `Restore the previous .env or run \`openship uninstall\` to start fresh (this destroys DB data).`;
+    if (dryRun) return randomBytes(32).toString("hex"); // placeholder for the preview
+    throw new Error(msg);
+  }
+  return randomBytes(32).toString("hex");
 }
 
 /** Parse the existing .env so re-running `up` preserves generated secrets. */
@@ -1086,6 +1114,7 @@ function renderEnv(
   opts: ComposeUpOpts,
   host: { user: string; keyPath: string } | null,
   cfg: ReturnType<typeof resolveEnvConfig>,
+  dryRun = false,
 ): string {
   const prev = readEnvFile();
   const lines: string[] = [
@@ -1100,7 +1129,7 @@ function renderEnv(
     `OPENSHIP_HOST_CONTROL=${cfg.hostControl ? "true" : "false"}`,
     `OPENSHIP_IMAGE_REGISTRY=${cfg.registry}`,
     `OPENSHIP_VERSION=${opts.version || (typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "latest")}`,
-    `POSTGRES_PASSWORD=${keepSecret(prev, "POSTGRES_PASSWORD")}`,
+    `POSTGRES_PASSWORD=${keepPostgresPassword(prev, dryRun)}`,
     // Pinned once (see resolvePgData): fresh install → subdir, existing volume → root.
     `OPENSHIP_PGDATA=${resolvePgData(prev)}`,
     `BETTER_AUTH_SECRET=${keepSecret(prev, "BETTER_AUTH_SECRET")}`,
@@ -1240,6 +1269,8 @@ export interface ComposePlan {
   buildDir: string | null;
   /** The container→host SSH channel this run would provision, if any. */
   hostChannel: { user: string; keyPath: string } | null;
+  /** Non-fatal warnings the operator should see before applying the plan. */
+  warnings: string[];
 }
 
 export function composePlan(opts: ComposeUpOpts): ComposePlan {
@@ -1249,12 +1280,28 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
   const hostChannel = plannedHostChannel(cfg.hostControl);
   const settings: Array<{ key: string; value: string }> = [];
   const newSecrets: string[] = [];
-  for (const line of renderEnv(opts, hostChannel, cfg).split("\n")) {
+  const warnings: string[] = [];
+  const project = composeProjectName(prev);
+  const pgValue = prev.POSTGRES_PASSWORD;
+  const pgVolumeExists = dbVolumeExists(project);
+  for (const line of renderEnv(opts, hostChannel, cfg, true).split("\n")) {
     const at = line.indexOf("=");
     if (at < 1 || line.startsWith("#")) continue;
     const key = line.slice(0, at);
     if (!SECRET_ENV_KEY.test(key)) {
       settings.push({ key, value: line.slice(at + 1) });
+      continue;
+    }
+    if (key === "POSTGRES_PASSWORD" && !pgValue && pgVolumeExists) {
+      warnings.push(
+        `Existing Postgres data volume ${project}_postgres_data already has a password, but POSTGRES_PASSWORD is missing from ${ENV_FILE}. ` +
+          `A real run would refuse to overwrite the volume with a new generated password. ` +
+          `Restore the previous .env or run \`openship uninstall\` to start fresh (this destroys DB data).`,
+      );
+      settings.push({
+        key,
+        value: "<cannot be generated — existing Postgres data volume has an unknown password>",
+      });
       continue;
     }
     // Generated once and preserved (see keepSecret) — say WHICH, never the value.
@@ -1274,6 +1321,7 @@ export function composePlan(opts: ComposeUpOpts): ComposePlan {
     mountDirs: EDGE_CONTAINER_MOUNTS.map((m) => m.host),
     buildDir,
     hostChannel,
+    warnings,
   };
 }
 
