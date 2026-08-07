@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { join } from "node:path";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 /**
  * `openship up` regenerates `.env` from scratch, so anything it doesn't write is
@@ -43,6 +44,7 @@ vi.mock("node:child_process", () => ({
 
 vi.mock("node:fs", () => ({
   existsSync: (p: string) => h.existing.has(String(p)),
+  chmodSync: () => undefined,
   mkdirSync: () => undefined,
   readFileSync: (p: string) => {
     const v = h.written.get(String(p));
@@ -72,6 +74,13 @@ vi.mock("@repo/adapters", async () => {
     EDGE_CONTAINER_MOUNTS: lua.EDGE_CONTAINER_MOUNTS,
     invalidateEdgeContainer: () => {},
     LocalExecutor: class {},
+    resolveLocalDockerSocketPath: (_opts: unknown, env: NodeJS.ProcessEnv) => {
+      const host = env.DOCKER_HOST?.trim() ?? "";
+      if (host.startsWith("unix://")) return host.slice("unix://".length).trim();
+      if (host.startsWith("/")) return host;
+      return "/var/run/docker.sock";
+    },
+    DEFAULT_DOCKER_SOCKET_PATH: "/var/run/docker.sock",
   };
 });
 
@@ -151,6 +160,13 @@ beforeEach(() => {
   h.written = new Map();
   h.composeCalls = [];
   h.dockerPsPorts = "";
+});
+
+afterEach(() => {
+  delete process.env.DOCKER_HOST;
+  delete process.env.OPENSHIP_DOCKER_SOCKET;
+  delete process.env.OPENSHIP_HOST_SSH_HOST;
+  delete process.env.XDG_RUNTIME_DIR;
 });
 
 describe("resolveEnvConfig", () => {
@@ -387,6 +403,82 @@ describe("compose port resolution", () => {
   it("writes an explicit 0.0.0.0 to .env for a remote install (public URL set)", async () => {
     await composeUp({ publicUrl: "https://remote.example.com" });
     expect(writtenEnv().OPENSHIP_BIND_ADDR).toBe("0.0.0.0");
+  });
+});
+
+describe("rootless Docker socket and SSH host", () => {
+  const HOST_KEY_PATH = join(composePaths.dir, "host-ssh", "id_ed25519");
+  const HOST_PUB_PATH = `${HOST_KEY_PATH}.pub`;
+  const HOST_PUB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexample openship-host-executor";
+
+  function seedHostKey(): void {
+    h.existing.add(HOST_KEY_PATH);
+    h.existing.add(HOST_PUB_PATH);
+    h.written.set(HOST_PUB_PATH, HOST_PUB);
+  }
+
+  it("writes OPENSHIP_DOCKER_SOCKET from DOCKER_HOST (unix://)", async () => {
+    process.env.DOCKER_HOST = "unix:///run/user/1000/docker.sock";
+    seedHostKey();
+    await composeUp({});
+    expect(writtenEnv().OPENSHIP_DOCKER_SOCKET).toBe("/run/user/1000/docker.sock");
+    expect(h.written.get(composePaths.file)).toContain(
+      "${OPENSHIP_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock",
+    );
+  });
+
+  it("writes OPENSHIP_DOCKER_SOCKET from a bare absolute DOCKER_HOST", async () => {
+    process.env.DOCKER_HOST = "/run/user/1000/docker.sock";
+    seedHostKey();
+    await composeUp({});
+    expect(writtenEnv().OPENSHIP_DOCKER_SOCKET).toBe("/run/user/1000/docker.sock");
+  });
+
+  it("falls back to $XDG_RUNTIME_DIR/docker.sock when the default socket is absent", async () => {
+    process.env.XDG_RUNTIME_DIR = "/run/user/1000";
+    h.existing.add("/run/user/1000/docker.sock");
+    seedHostKey();
+    await composeUp({});
+    expect(writtenEnv().OPENSHIP_DOCKER_SOCKET).toBe("/run/user/1000/docker.sock");
+  });
+
+  it("keeps the rootful default when /var/run/docker.sock exists", async () => {
+    h.existing.add("/var/run/docker.sock");
+    seedHostKey();
+    await composeUp({});
+    expect(writtenEnv().OPENSHIP_DOCKER_SOCKET).toBe("/var/run/docker.sock");
+  });
+
+  it("preserves an explicit OPENSHIP_DOCKER_SOCKET from .env over DOCKER_HOST", async () => {
+    process.env.DOCKER_HOST = "unix:///run/user/1000/docker.sock";
+    seedEnv({ ...CONFIGURED, OPENSHIP_DOCKER_SOCKET: "/custom/docker.sock" });
+    seedHostKey();
+    await composeUp({});
+    expect(writtenEnv().OPENSHIP_DOCKER_SOCKET).toBe("/custom/docker.sock");
+  });
+
+  it("writes OPENSHIP_HOST_SSH_HOST=host.docker.internal by default", async () => {
+    seedHostKey();
+    await composeUp({});
+    expect(writtenEnv().OPENSHIP_HOST_SSH_HOST).toBe("host.docker.internal");
+    expect(h.written.get(composePaths.file)).toContain(
+      'extra_hosts: ["${OPENSHIP_HOST_SSH_HOST:-host.docker.internal}:host-gateway"]',
+    );
+  });
+
+  it("preserves a custom OPENSHIP_HOST_SSH_HOST from .env", async () => {
+    seedEnv({ ...CONFIGURED, OPENSHIP_HOST_CONTROL: "true", OPENSHIP_HOST_SSH_HOST: "10.0.0.108" });
+    seedHostKey();
+    await composeUp({});
+    expect(writtenEnv().OPENSHIP_HOST_SSH_HOST).toBe("10.0.0.108");
+  });
+
+  it("lets the shell OPENSHIP_HOST_SSH_HOST override .env", async () => {
+    process.env.OPENSHIP_HOST_SSH_HOST = "192.168.1.50";
+    seedEnv({ ...CONFIGURED, OPENSHIP_HOST_CONTROL: "true", OPENSHIP_HOST_SSH_HOST: "10.0.0.108" });
+    seedHostKey();
+    await composeUp({});
+    expect(writtenEnv().OPENSHIP_HOST_SSH_HOST).toBe("192.168.1.50");
   });
 });
 
