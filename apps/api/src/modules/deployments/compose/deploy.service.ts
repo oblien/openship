@@ -87,12 +87,22 @@ export interface ComposeDeployResult {
   summary: {
     total: number;
     successful: number;
+    /** Services this pass actually (re)deployed — a fresh container OR a static
+     *  (re)serve. EXCLUDES services carried forward (kept running as-is). So
+     *  `deployed === 0` while `successful > 0` means an all-carried no-op:
+     *  nothing was built, created, or port-probed. */
+    deployed: number;
     failed: number;
     /** Services whose container started but whose outcome is unverified
      *  (connection lost mid-deploy). Neither success nor failure yet. */
     indeterminate: number;
     failedServices: string[];
   };
+  /** The container the project's public route points at — the exposed "app"
+   *  service, resolved in the deploy loop (NOT `services.find(s => s.containerId)`,
+   *  which follows dependency order and names a db an app dependsOn). Undefined
+   *  when nothing exposed was deployed; callers fall back to the first container. */
+  primaryContainerId?: string;
   services: Array<{
     serviceId: string;
     serviceName: string;
@@ -118,6 +128,55 @@ export interface ComposeDeployResult {
   publicUrl?: string;
   /** Advisory per-service port-probe results (exposed services only). */
   portChecks?: PortCheckResult[];
+}
+
+/**
+ * True when a compose deploy carried EVERY service forward — nothing was
+ * (re)built, created, or port-probed, AND nothing failed. Such a deploy owns no
+ * containers of its own (null parent image, ~0 build, no port checks); marking
+ * it "ready" would advance the project's live pointer onto an empty release and
+ * let it pollute the "latest ready" / rollback set. The pipeline settles it as a
+ * non-advancing no-op instead and keeps the current active deployment (which
+ * still owns the live containers).
+ *
+ * `failed === 0` is deliberate: a deploy where one service failed to build while
+ * the rest were carried is NOT a clean no-op — it keeps the existing
+ * (advance-and-record-the-failure) behaviour so the failure isn't buried under a
+ * "no changes" headline. Pure + exported for testing.
+ */
+export function composeDeployMadeNoChanges(
+  result: Pick<ComposeDeployResult, "summary" | "portChecks">,
+): boolean {
+  return (
+    result.summary.deployed === 0 &&
+    result.summary.failed === 0 &&
+    (result.portChecks?.length ?? 0) === 0
+  );
+}
+
+/**
+ * The container the project's public route points at — the exposed "app" service
+ * resolved during the deploy loop, else the first service with a container
+ * (legacy fallback). `undefined` when nothing came up with a container. NOT
+ * `services.find(s => s.containerId)` on its own: `services` follows topoSort
+ * order (dependencies first), so for an app that dependsOn its db that find
+ * returns the DATABASE container. Pure + exported for testing.
+ */
+export function resolveComposePrimaryContainerId(
+  result: Pick<ComposeDeployResult, "primaryContainerId" | "services">,
+): string | undefined {
+  return result.primaryContainerId ?? result.services.find((s) => s.containerId)?.containerId;
+}
+
+/**
+ * As `resolveComposePrimaryContainerId`, but with the `"compose"` sentinel
+ * fallback for the parent-deployment container record (which must be a
+ * non-empty string). Pure + exported for testing.
+ */
+export function resolveComposeParentContainerId(
+  result: Pick<ComposeDeployResult, "primaryContainerId" | "services">,
+): string {
+  return resolveComposePrimaryContainerId(result) ?? "compose";
 }
 
 function topoSort(services: Service[]): Service[] {
@@ -684,6 +743,7 @@ export async function deployComposeServices(
       summary: {
         total: 0,
         successful: 0,
+        deployed: 0,
         failed: 0,
         indeterminate: 0,
         failedServices: [],
@@ -909,6 +969,16 @@ export async function deployComposeServices(
   // never fatal). Aggregated into the deployment's routing action-required signal.
   const composeRouteWarnings: string[] = [];
   let successful = 0;
+  // `successful` counts carried-forward services too; `deployed` counts ONLY the
+  // services this pass actually (re)created or (re)served, so an all-carried
+  // no-op is distinguishable (deployed === 0) from a real deploy. See the
+  // ComposeDeployResult.summary.deployed doc.
+  let deployed = 0;
+  // Container the project's public route resolves to — the first EXPOSED service
+  // that comes up (its dependencies, e.g. a db, are visited first in topo order
+  // but aren't exposed, so the app wins). Recorded as the deployment's parent
+  // container instead of `services.find(s => s.containerId)` (dependency-first).
+  let primaryContainerId: string | undefined;
   let firstPublicUrl: string | undefined;
   const seenRouteDomains = new Set<string>();
   const unavailableServiceNames = new Set<string>();
@@ -1271,6 +1341,7 @@ export async function deployComposeServices(
         staticRoot: image,
       });
       successful += 1;
+      deployed += 1; // a static (re)serve is a real deploy, not a carry-forward
       sessionManager.broadcastServiceStatus(dep.id, {
         serviceName: svc.name,
         serviceId: svc.id,
@@ -1568,6 +1639,7 @@ export async function deployComposeServices(
         hostPort: persistedHostPort ?? undefined,
       });
       successful += 1;
+      deployed += 1; // a real (re)created container, not a carry-forward
       if (result.containerId) {
         stabilityTargets.push({
           serviceId: svc.id,
@@ -1614,6 +1686,17 @@ export async function deployComposeServices(
           serviceId: svc.id,
           serviceName: svc.name,
         });
+        // First exposed service to come up owns the project's public route — the
+        // container logs/start/stop/status must act on. `??=` keeps the first
+        // (topo order visits a dependency db BEFORE the app, but a db isn't
+        // exposed, so it never reaches here and the app wins).
+        // NOTE: only CONTAINER services reach here — a STATIC exposed app (served
+        // from disk, no container) never sets this, so a static-app + db stack
+        // falls back to the db as primary. That's correct, not a regression: the
+        // db is the only container there is to log/start/stop; the static app has
+        // none. The "records the app, not the db" headline is about the
+        // containerized-app + db shape.
+        primaryContainerId ??= result.containerId;
       }
 
       // Reclaim the image this service just moved off — UNLESS it's still in the
@@ -2007,11 +2090,13 @@ export async function deployComposeServices(
       summary: {
         total: ordered.length,
         successful,
+        deployed,
         failed: failedNow.length,
         indeterminate: 0,
         failedServices: failedNow.map((r) => r.serviceName),
       },
       services: results,
+      primaryContainerId,
       error: prepareFailure,
       publicUrl: firstPublicUrl,
       portChecks,
@@ -2224,11 +2309,13 @@ export async function deployComposeServices(
       summary: {
         total: ordered.length,
         successful,
+        deployed,
         failed: failed.length,
         indeterminate: indeterminate.length,
         failedServices: failedNames,
       },
       services: results,
+      primaryContainerId,
       warning: `Connection lost — verifying ${indeterminate.length} service(s): ${names}`,
       publicUrl: firstPublicUrl,
       portChecks,
@@ -2257,11 +2344,13 @@ export async function deployComposeServices(
     summary: {
       total: ordered.length,
       successful,
+      deployed,
       failed: failed.length,
       indeterminate: 0,
       failedServices: failedNames,
     },
     services: results,
+    primaryContainerId,
     warning,
     ...(composeRouteWarnings.length ? { routeWarnings: composeRouteWarnings } : {}),
     error: successful > 0 ? undefined : (firstFailure ?? "No services deployed successfully"),

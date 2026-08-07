@@ -29,6 +29,7 @@ import type { BuildConfigSnapshotLike } from "../build-config";
 import {
   cleanupBuildArtifact,
   onFailure,
+  onNoChanges,
   onReconciling,
   onSuccess,
   routeIssuesWarning,
@@ -39,7 +40,12 @@ import type { DeployableService } from "../../../lib/deployable-service";
 import { webhookProxyTarget } from "../../../config";
 
 import { buildComposeImages } from "./build.service";
-import { deployComposeServices } from "./deploy.service";
+import {
+  composeDeployMadeNoChanges,
+  deployComposeServices,
+  resolveComposeParentContainerId,
+  resolveComposePrimaryContainerId,
+} from "./deploy.service";
 import { safeErrorMessage } from "@repo/core";
 import * as sessionManager from "../session-manager";
 
@@ -176,9 +182,8 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // running fine. Persist `reconciling` and leave the images in place (reconcile
   // may confirm ready; cleaning up now would hit the same dead connection).
   if (composeResult.status === "reconciling") {
-    const primary = composeResult.services.find((s) => s.containerId);
     await onReconciling(ctx, {
-      containerId: primary?.containerId,
+      containerId: resolveComposePrimaryContainerId(composeResult),
       warningMessage:
         composeResult.warning ?? "Connection lost during deploy — verifying remote state.",
     });
@@ -209,7 +214,6 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     });
   }
 
-  const primary = composeResult.services.find((s) => s.containerId);
   // Routing failures are best-effort (domains are optional — never fail the
   // deploy). Fold them into the SAME top-level "action required" signal the
   // single-app pipeline uses (`edgeUnsynced` + `deployWarning` → routingUnsynced
@@ -219,8 +223,22 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     : undefined;
   const successWarning = routingWarning ?? composeResult.warning;
   sessionManager.broadcastInstallPhase(dep.id, { id: "ready", status: "done" });
+
+  // NO-OP: every service was carried forward — nothing was (re)built, created, or
+  // port-probed. Do NOT advance the live pointer onto this empty release or
+  // record a parent container; settle it non-advancingly and keep the current
+  // active deployment (which still owns the live containers). Mirrors the
+  // single-app guard that refuses to record success without a deployable artifact.
+  if (composeDeployMadeNoChanges(composeResult)) {
+    await onNoChanges(ctx, {
+      warningMessage: successWarning,
+      durationMs: composeBuild.durationMs,
+    });
+    return;
+  }
+
   await onSuccess(ctx, {
-    containerId: primary?.containerId ?? "compose",
+    containerId: resolveComposeParentContainerId(composeResult),
     url: composeResult.publicUrl,
     durationMs: composeBuild.durationMs,
     warningMessage: successWarning,
