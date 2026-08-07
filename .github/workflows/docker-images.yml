@@ -32,14 +32,24 @@ permissions:
 
 jobs:
   # Native per-arch builds (no QEMU — reuses the ubuntu-24.04-arm runner). Each
-  # arch is pushed to GHCR BY DIGEST; merge-images assembles the manifest lists.
-  build-images:
-    name: Build ${{ matrix.image }} (${{ matrix.platform }})
+  # arch is pushed to GHCR BY DIGEST; the matching merge job assembles the
+  # manifest list.
+  #
+  # One build job PER IMAGE instead of a single 4×2 matrix, so each image
+  # publishes on its own: the merge for an image only needs that image's two
+  # arch builds. With one shared build job, a single stuck build held every
+  # image's version tag hostage — v0.6.1's GitHub release shipped while
+  # ghcr.io/oblien/openship-edge:0.6.1 never appeared, because the shared
+  # build-images job was stuck on "Build dashboard (arm64)" for hours. The
+  # timeout makes a hung build fail loudly instead of silently blocking the
+  # concurrency group for the rest of the day.
+  build-api:
+    name: Build api (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge, mail]
         platform: [amd64, arm64]
         include:
           - platform: amd64
@@ -66,21 +76,19 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
+          images: ghcr.io/${{ github.repository_owner }}/openship-api
 
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          # The mail image is built from apps/email/ but published as openship-mail;
-          # every other image key matches its apps/<key>/ directory 1:1.
-          file: apps/${{ matrix.image == 'mail' && 'email' || matrix.image }}/Dockerfile
+          file: apps/api/Dockerfile
           platforms: linux/${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/openship-api,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=api-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=api-${{ matrix.platform }}
 
       - name: Export digest
         run: |
@@ -92,24 +100,210 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v7
         with:
-          name: digests-${{ matrix.image }}-${{ matrix.platform }}
+          name: digests-api-${{ matrix.platform }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
 
-  merge-images:
-    name: Publish ${{ matrix.image }} (manifest)
-    needs: build-images
-    runs-on: ubuntu-24.04
+  build-dashboard:
+    name: Build dashboard (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge, mail]
+        platform: [amd64, arm64]
+        include:
+          - platform: amd64
+            runner: ubuntu-24.04
+          - platform: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openship-dashboard
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/dashboard/Dockerfile
+          platforms: linux/${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/openship-dashboard,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=dashboard-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=dashboard-${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-dashboard-${{ matrix.platform }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  build-edge:
+    name: Build edge (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [amd64, arm64]
+        include:
+          - platform: amd64
+            runner: ubuntu-24.04
+          - platform: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openship-edge
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/edge/Dockerfile
+          platforms: linux/${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/openship-edge,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=edge-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=edge-${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-edge-${{ matrix.platform }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # The mail image is built from apps/email/ but published as openship-mail;
+  # every other image key matches its apps/<key>/ directory 1:1.
+  build-mail:
+    name: Build mail (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [amd64, arm64]
+        include:
+          - platform: amd64
+            runner: ubuntu-24.04
+          - platform: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openship-mail
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/email/Dockerfile
+          platforms: linux/${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/openship-mail,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=mail-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=mail-${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-mail-${{ matrix.platform }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Each image is tagged as soon as its own two arch builds are done — no image
+  # waits on (or is blocked by) any other image's build.
+  merge-api:
+    name: Publish api (manifest)
+    needs: build-api
+    runs-on: ubuntu-24.04
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8
         with:
-          pattern: digests-${{ matrix.image }}-*
+          pattern: digests-api-*
           path: /tmp/digests
           merge-multiple: true
 
@@ -129,7 +323,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
+          images: ghcr.io/${{ github.repository_owner }}/openship-api
           tags: |
             type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' }}
@@ -143,7 +337,7 @@ jobs:
         working-directory: /tmp/digests
         env:
           METADATA_JSON: ${{ steps.meta.outputs.json }}
-          SRC: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
+          SRC: ghcr.io/${{ github.repository_owner }}/openship-api
         run: |
           set -euo pipefail
           docker buildx imagetools create \
@@ -153,4 +347,166 @@ jobs:
       - name: Inspect
         run: |
           docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}:${{ steps.meta.outputs.version }}" || true
+            "ghcr.io/${{ github.repository_owner }}/openship-api:${{ steps.meta.outputs.version }}" || true
+
+  merge-dashboard:
+    name: Publish dashboard (manifest)
+    needs: build-dashboard
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digests-dashboard-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag push → semver + :latest (auto: RCs like v1.2.3-rc.1 skip :latest).
+      # Manual dispatch → the input tag (or short SHA), and NEVER :latest.
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openship-dashboard
+          tags: |
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' }}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
+            type=sha,format=short,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag == '' }}
+          flavor: |
+            latest=${{ github.event_name == 'push' && 'auto' || 'false' }}
+
+      - name: Create manifest list + push
+        working-directory: /tmp/digests
+        env:
+          METADATA_JSON: ${{ steps.meta.outputs.json }}
+          SRC: ghcr.io/${{ github.repository_owner }}/openship-dashboard
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA_JSON") \
+            $(printf "${SRC}@sha256:%s " *)
+
+      - name: Inspect
+        run: |
+          docker buildx imagetools inspect \
+            "ghcr.io/${{ github.repository_owner }}/openship-dashboard:${{ steps.meta.outputs.version }}" || true
+
+  merge-edge:
+    name: Publish edge (manifest)
+    needs: build-edge
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digests-edge-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag push → semver + :latest (auto: RCs like v1.2.3-rc.1 skip :latest).
+      # Manual dispatch → the input tag (or short SHA), and NEVER :latest.
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openship-edge
+          tags: |
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' }}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
+            type=sha,format=short,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag == '' }}
+          flavor: |
+            latest=${{ github.event_name == 'push' && 'auto' || 'false' }}
+
+      - name: Create manifest list + push
+        working-directory: /tmp/digests
+        env:
+          METADATA_JSON: ${{ steps.meta.outputs.json }}
+          SRC: ghcr.io/${{ github.repository_owner }}/openship-edge
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA_JSON") \
+            $(printf "${SRC}@sha256:%s " *)
+
+      - name: Inspect
+        run: |
+          docker buildx imagetools inspect \
+            "ghcr.io/${{ github.repository_owner }}/openship-edge:${{ steps.meta.outputs.version }}" || true
+
+  merge-mail:
+    name: Publish mail (manifest)
+    needs: build-mail
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digests-mail-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag push → semver + :latest (auto: RCs like v1.2.3-rc.1 skip :latest).
+      # Manual dispatch → the input tag (or short SHA), and NEVER :latest.
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/openship-mail
+          tags: |
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' }}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
+            type=sha,format=short,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag == '' }}
+          flavor: |
+            latest=${{ github.event_name == 'push' && 'auto' || 'false' }}
+
+      - name: Create manifest list + push
+        working-directory: /tmp/digests
+        env:
+          METADATA_JSON: ${{ steps.meta.outputs.json }}
+          SRC: ghcr.io/${{ github.repository_owner }}/openship-mail
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA_JSON") \
+            $(printf "${SRC}@sha256:%s " *)
+
+      - name: Inspect
+        run: |
+          docker buildx imagetools inspect \
+            "ghcr.io/${{ github.repository_owner }}/openship-mail:${{ steps.meta.outputs.version }}" || true
