@@ -308,6 +308,92 @@ export async function onReconciling(
   });
 }
 
+/**
+ * NO-OP completion: a compose deploy that carried EVERY service forward — it
+ * created, rebuilt, and probed nothing (see `composeDeployMadeNoChanges`).
+ *
+ * Like onReconciling, and UNLIKE onSuccess: it does NOT advance the project's
+ * active pointer and does NOT record a parent container. The CURRENT active
+ * deployment still owns the live containers and its complete metadata; marking
+ * this empty release "ready" would make it the latest-ready row and a rollback
+ * target with a null image.
+ *
+ * This hook itself tears nothing down: the carried containers stay owned by the
+ * current active deployment, and this settle touches only THIS (non-active) row.
+ * (It deliberately does NOT reuse onFailure/onCancelled, both of which destroy
+ * the deployment's service containers — that would kill the live carried stack.)
+ *
+ * Settled as `cancelled`: the existing non-advancing terminal status every
+ * settled-status guard already understands. A dedicated `no_changes` value would
+ * have to be taught to each of those guards (deployment-status.test.ts) and the
+ * dashboard status chips — deliberately avoided here.
+ */
+export async function onNoChanges(
+  ctx: LifecycleContext,
+  result: { warningMessage?: string; durationMs?: number },
+): Promise<void> {
+  const { project, buildSessionId, dep } = ctx;
+
+  const collapsed = collectLogs(ctx);
+  const reason =
+    result.warningMessage ??
+    "No changes to deploy — every service was already up to date; kept the current release live.";
+  // Persist WHY this settled without advancing, so the history row is
+  // self-explanatory (the SSE note below is ephemeral). `meta.noChanges` is the
+  // machine-readable flag; `meta.noChangesReason` the human line. Sheddable, like
+  // onSuccess's meta — a hostile byte in the reason must never fail the write.
+  const mergedMeta = sanitizeStorableStrings({
+    ...((dep.meta as DeploymentMeta | null) ?? {}),
+    noChanges: true,
+    noChangesReason: reason,
+  });
+  await recordOutcome(dep.id, "cancelled", { errorMessage: null, meta: mergedMeta }, ["meta"]);
+  ctx.settled = "cancelled";
+  // The build stream closes on ready|failed|cancelled; the SSE layer has no
+  // "no-op" state, so finish it as "ready" with the reason (same split as
+  // onReconciling). The dashboard re-reads the row's `cancelled` status.
+  await finishSession(buildSessionId, "ready", result.durationMs ?? 0, collapsed);
+  sessionManager.updateStatus(dep.id, "ready", { warningMessage: reason });
+
+  // Emit a terminal event like every other settle path — otherwise a
+  // webhook/Slack/audit consumer sees the deploy START and never a settle. Use
+  // `deployment.cancelled`, which MATCHES the recorded status and is a mapped
+  // notification category (a bespoke `deployment.no_changes` would be dropped
+  // silently by categoryForEventType); the payload flags it as a no-op.
+  notification.emit({
+    organizationId: dep.organizationId,
+    eventType: "deployment.cancelled",
+    resourceType: "deployment",
+    resourceId: dep.id,
+    payload: {
+      projectName: project.name,
+      branch: dep.branch,
+      commitSha: dep.commitSha,
+      durationMs: result.durationMs,
+      noChanges: true,
+      message: reason,
+    },
+  });
+
+  audit.recordAsync(
+    { organizationId: dep.organizationId, actorUserId: null, source: "system" },
+    {
+      eventType: "deployment.cancelled",
+      resourceType: "deployment",
+      resourceId: dep.id,
+      before: { status: dep.status },
+      after: {
+        status: "cancelled",
+        projectId: project.id,
+        branch: dep.branch,
+        commitSha: dep.commitSha,
+        noChanges: true,
+        durationMs: result.durationMs,
+      },
+    },
+  );
+}
+
 export async function onFailure(
   ctx: LifecycleContext,
   error?: string,

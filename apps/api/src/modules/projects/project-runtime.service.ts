@@ -14,6 +14,74 @@ import { sshManager } from "../../lib/ssh-manager";
 import { applyProjectRouting } from "../domains/routing-apply.service";
 import { reapplyProjectLiveRoutes } from "../domains/project-route.service";
 
+// ─── Active-container resolution ───────────────────────────────────────────────
+
+/**
+ * Pick the container a project-level read-path op (logs / start / stop) should
+ * act on, from the active deployment's recorded container and its per-service
+ * rows.
+ *
+ * A single-app deployment (no service rows) records the app container directly,
+ * so `recordedContainerId` is authoritative. A COMPOSE deployment's recorded
+ * container is a best-effort primary that historically mis-resolved to a
+ * dependency (the db an app dependsOn) or, for an all-carried deploy, to the
+ * "compose" sentinel — so prefer the EXPOSED service's live container, the one
+ * the project's public route points at. Pure + exported for testing.
+ */
+export function pickActiveContainerId(args: {
+  recordedContainerId: string | null;
+  serviceDeployments: ReadonlyArray<{ serviceId: string; containerId: string | null }>;
+  exposedServiceIds: ReadonlySet<string>;
+}): string | null {
+  const { recordedContainerId, serviceDeployments, exposedServiceIds } = args;
+  // "compose" is the sentinel an all-carried deploy recorded — never a real id.
+  const recorded =
+    recordedContainerId && recordedContainerId !== "compose" ? recordedContainerId : null;
+  if (serviceDeployments.length === 0) return recorded;
+  const exposedApp = serviceDeployments.find(
+    (sd) => sd.containerId && exposedServiceIds.has(sd.serviceId),
+  );
+  if (exposedApp?.containerId) return exposedApp.containerId;
+  // Nothing exposed resolvable — keep the recorded primary, else any live
+  // service container (a usable target beats a misleading "no container").
+  return recorded ?? serviceDeployments.find((sd) => sd.containerId)?.containerId ?? null;
+}
+
+/**
+ * Reconcile the active deployment's recorded container against reality before a
+ * read-path op trusts it. DB-only, no docker probe.
+ *
+ * Gate on `meta.serviceDeploymentMode` — written into the deployment snapshot at
+ * CREATE time (the field `build-status.service.ts` trusts to classify a
+ * deployment), so it is present regardless of HOW the deploy settled. This is
+ * deliberately NOT `meta.composeDeployment`, which onSuccess's metaPatch writes
+ * ONLY on the happy path: a compose deploy that settled via the RECONCILE path
+ * (connection loss) never gets that marker, and if the loss hit before the
+ * exposed app came up its recorded parent is the topo-first db — so gating on the
+ * success-only marker left the read path acting on the db again. `serviceDeploymentMode`
+ * is `"single"` (or the caller's explicit single-app value) only for single-app
+ * deploys; compose always resolves to `"services"`, and an undefined value falls
+ * through to the reconcile (harmless — a single-app deploy has no service rows,
+ * so `pickActiveContainerId` returns the recorded id unchanged).
+ */
+export async function resolveActiveContainerId(
+  projectId: string,
+  dep: { id: string; containerId: string | null; meta: unknown },
+): Promise<string | null> {
+  const mode = (dep.meta as { serviceDeploymentMode?: string } | null)?.serviceDeploymentMode;
+  if (mode === "single") return dep.containerId ?? null;
+
+  const [serviceRows, services] = await Promise.all([
+    repos.service.listByDeployment(dep.id).catch(() => []),
+    repos.service.listByProject(projectId).catch(() => []),
+  ]);
+  return pickActiveContainerId({
+    recordedContainerId: dep.containerId,
+    serviceDeployments: serviceRows,
+    exposedServiceIds: new Set(services.filter((s) => s.exposed).map((s) => s.id)),
+  });
+}
+
 // ─── Runtime logs ────────────────────────────────────────────────────────────
 
 export async function getRuntimeLogs(
@@ -29,12 +97,13 @@ export async function getRuntimeLogs(
   }
 
   const dep = await repos.deployment.findById(p.activeDeploymentId);
-  if (!dep?.containerId) {
+  const containerId = dep ? await resolveActiveContainerId(projectId, dep) : null;
+  if (!dep || !containerId) {
     throw new NotFoundError("No running container for project", projectId);
   }
 
   const { runtime } = await resolveDeploymentRuntime(dep);
-  return runtime.getRuntimeLogs(dep.containerId, tail);
+  return runtime.getRuntimeLogs(containerId, tail);
 }
 
 export async function streamRuntimeLogs(
@@ -51,12 +120,13 @@ export async function streamRuntimeLogs(
   }
 
   const dep = await repos.deployment.findById(p.activeDeploymentId);
-  if (!dep?.containerId) {
+  const containerId = dep ? await resolveActiveContainerId(projectId, dep) : null;
+  if (!dep || !containerId) {
     throw new NotFoundError("No running container for project", projectId);
   }
 
   const { runtime, serverId } = await resolveDeploymentRuntime(dep);
-  const cleanup = await runtime.streamRuntimeLogs(dep.containerId, onLog, opts);
+  const cleanup = await runtime.streamRuntimeLogs(containerId, onLog, opts);
   return { cleanup, serverId };
 }
 
@@ -71,12 +141,13 @@ export async function enableProject(projectId: string, organizationId: string) {
   }
 
   const dep = await repos.deployment.findById(p.activeDeploymentId);
-  if (!dep?.containerId) {
+  const containerId = dep ? await resolveActiveContainerId(projectId, dep) : null;
+  if (!dep || !containerId) {
     throw new ValidationError("No container found for active deployment");
   }
 
   const { runtime } = await resolveDeploymentRuntime(dep);
-  await runtime.start(dep.containerId);
+  await runtime.start(containerId);
   // Cleared AFTER the start succeeded — the mirror of disableProject's ordering.
   // Clearing first would tell the health watch to expect a container that hasn't
   // come up yet.
@@ -102,7 +173,8 @@ export async function disableProject(projectId: string, organizationId: string) 
   }
 
   const dep = await repos.deployment.findById(p.activeDeploymentId);
-  if (!dep?.containerId) {
+  const containerId = dep ? await resolveActiveContainerId(projectId, dep) : null;
+  if (!dep || !containerId) {
     return { success: true, message: "No container to stop" };
   }
 
@@ -110,7 +182,7 @@ export async function disableProject(projectId: string, organizationId: string) 
   // see the intent, not a container that just went down for no recorded reason.
   await repos.project.update(projectId, { disabledAt: new Date() });
   const { runtime } = await resolveDeploymentRuntime(dep);
-  await runtime.stop(dep.containerId);
+  await runtime.stop(containerId);
   return { success: true, message: "Project disabled" };
 }
 
