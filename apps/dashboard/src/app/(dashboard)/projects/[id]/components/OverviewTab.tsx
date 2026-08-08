@@ -174,12 +174,13 @@ export const OverviewTab = () => {
 
   return (
     <div className="space-y-5">
-      {/* Only a catalog app's curated connection (URLs + generated keys) belongs on
-          the overview. A plain project's synthesized internal address is edited in
-          Settings → Advanced (single-app alias) and shown per service in the service
-          detail panel — surfacing it here too just clutters a plain project. Card
-          self-hides when the app declares no connection outputs. */}
-      {projectData.isApp && (
+      {/* Connection details — a catalog app's curated URLs+keys, OR (for a plain
+          app / raw compose / monorepo) its synthesized internal address so it can
+          be a "Use in a project" source. Card self-hides when it has no outputs.
+          Non-app mount is scoped to internally-reachable projects: static apps
+          have no listening port, and cloud sources can't be linked internally
+          yet (createConnection steers those to Public), so both are excluded. */}
+      {(projectData.isApp || (!isStaticRuntime && deployTarget !== "cloud")) && (
         <ConnectionCard
           projectId={projectData.id}
           appTemplateId={projectData.appTemplateId}
