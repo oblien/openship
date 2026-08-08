@@ -24,6 +24,7 @@ import {
   storedDashboardPort as dashboardPort,
 } from "./ports";
 import { startService, ensureInternalToken } from "../commands/up";
+import { composeHostChannel, readInstallMethod } from "./compose";
 import {
   resolveDataDir,
   dataDirExists,
@@ -228,6 +229,13 @@ export async function componentChecks(apiUp: boolean): Promise<ComponentCheck[]>
         ? { name: "Edge", state: "pass", detail: "openship-edge running" }
         : { name: "Edge", state: "warn", detail: "not installed (fine for a local box)" },
   );
+
+  // Host channel — compose only: that stack's API is containerized, so every
+  // operation on THIS machine (deploys to this box, the :80/:443 takeover, the
+  // host terminal) goes over SSH to the host. A bare install is already there.
+  if (readInstallMethod() === "compose") {
+    checks.push({ name: "Host", ...composeHostChannel() });
+  }
 
   return checks;
 }
