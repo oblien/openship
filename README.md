@@ -246,6 +246,30 @@ Good-faith security research is **authorized** under our
 [safe-harbor policy](SECURITY.md#safe-harbor), and we're happy to credit valid
 first reports.
 
+---
+## ⭐ Star History
+
+<p align="center">
+  <a href="https://star-history.dera.page/#oblien/openship&Date">
+    <picture>
+      <source
+        media="(prefers-color-scheme: dark)"
+        srcset="https://star-history.dera.page/svg?repos=oblien/openship&type=Date&theme=dark"
+      />
+      <source
+        media="(prefers-color-scheme: light)"
+        srcset="https://star-history.dera.page/svg?repos=oblien/openship&type=Date"
+      />
+      <img
+        alt="Star History Chart"
+        src="https://star-history.dera.page/svg?repos=oblien/openship&type=Date"
+      />
+    </picture>
+  </a>
+</p>
+
+---
+
 ## License
 
 Openship is **open-source** software, licensed under the [Apache License 2.0](LICENSE).
