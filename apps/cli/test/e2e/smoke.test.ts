@@ -18,10 +18,15 @@ const inject = join(here, "..", "helpers", "inject-version.mjs");
 const entry = join(cliRoot, "src", "index.ts");
 
 function runCli(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+  const bunVersion = (process.versions as NodeJS.ProcessVersions & { bun?: string }).bun;
+  const runtimeArgs = bunVersion
+    ? ["--preload", inject, entry, ...args]
+    : ["--import", "tsx", "--import", inject, entry, ...args];
+
   return new Promise((resolve) => {
     execFile(
       process.execPath,
-      ["--import", "tsx", "--import", inject, entry, ...args],
+      runtimeArgs,
       { cwd: cliRoot, env: { ...process.env } },
       (error, stdout, stderr) => {
         const code = error && typeof (error as { code?: number }).code === "number"
