@@ -175,9 +175,14 @@ front to terminate TLS and route public traffic to it.
 | \`DEFAULT_IMAP_PORT\`  | \`993\`                    |                               |
 | \`DEFAULT_SMTP_HOST\`  | \`mail.<email-domain>\`    | Pinned SMTP host              |
 | \`DEFAULT_SMTP_PORT\`  | \`587\`                    |                               |
+| \`MINIMAX_API_KEY\`    | unset                    | Enables AI email generation   |
+| \`MINIMAX_MODEL\`      | \`MiniMax-M3\`             | Chat model                    |
+| \`MINIMAX_BASE_URL\`   | \`https://api.minimax.io/v1\` | Global or CN API endpoint  |
 | \`BRANDING_PATH\`      | \`./data/branding\`        | Where branding lives on disk  |
 | \`SQLITE_PATH\`        | \`./data/zero.db\`         | Session DB                    |
 | \`IMAP_DEBUG\`         | unset                    | Verbose IMAP per-op timings   |
+
+Set \`MINIMAX_BASE_URL\` to \`https://api.minimaxi.com/v1\` for the CN endpoint.
 
 ## What's in the dist
 

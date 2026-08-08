@@ -29,6 +29,7 @@ import { sshManager } from "../../../lib/ssh-manager";
 import { decryptEnvMap } from "../../../lib/encryption";
 import { assertResourceInOrg } from "../../../lib/controller-helpers";
 import type { RequestContext } from "../../../lib/request-context";
+import { env } from "../../../config/env";
 import {
   apiRootPath,
   readApiVersion,
@@ -95,6 +96,7 @@ function webmailDistSpec(): ReleaseDistSpec {
   };
 }
 
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -110,6 +112,13 @@ function deriveAcmeEmail(hostname: string): string {
   const parts = hostname.split(".").filter(Boolean);
   const base = parts.length >= 2 ? parts.slice(-2).join(".") : hostname;
   return `admin@${base}`;
+}
+
+function addMiniMaxEnvironment(envMap: Record<string, string>): void {
+  if (!env.MINIMAX_API_KEY) return;
+  envMap.MINIMAX_API_KEY = env.MINIMAX_API_KEY;
+  envMap.MINIMAX_MODEL = env.MINIMAX_MODEL;
+  envMap.MINIMAX_BASE_URL = env.MINIMAX_BASE_URL;
 }
 
 /**
@@ -720,6 +729,7 @@ export async function startWebmailDeploy(
     DEFAULT_SMTP_PORT: "465",
     ACME_EMAIL: deriveAcmeEmail(input.hostname),
   };
+  addMiniMaxEnvironment(plainEnvMap);
   if (input.target.kind === "self") {
     plainEnvMap.SQLITE_PATH = REMOTE_SQLITE_PATH;
     plainEnvMap.BRANDING_PATH = REMOTE_BRANDING_DIR;
@@ -893,6 +903,7 @@ export async function startExternalWebmailDeploy(
     DEFAULT_SMTP_PORT: String(input.backend.smtpPort),
     ACME_EMAIL: deriveAcmeEmail(input.hostname),
   };
+  addMiniMaxEnvironment(plainEnvMap);
   if (input.target.deployTarget === "server") {
     plainEnvMap.SQLITE_PATH = REMOTE_SQLITE_PATH;
     plainEnvMap.BRANDING_PATH = REMOTE_BRANDING_DIR;
@@ -900,5 +911,3 @@ export async function startExternalWebmailDeploy(
 
   return finalizeWebmailDeploy(ctx, project, projectId, routeState, plainEnvMap, input.target);
 }
-
-

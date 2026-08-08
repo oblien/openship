@@ -11,6 +11,11 @@ import {
 export { runtimeTarget, runtimeTargetId, cloudRuntimeTarget, cloudRuntimeTargetId };
 
 const DEFAULT_BETTER_AUTH_SECRET = "change-me-in-production";
+const MINIMAX_MODELS = ["MiniMax-M3", "MiniMax-M2.7"] as const;
+const MINIMAX_BASE_URLS = [
+  "https://api.minimax.io/v1",
+  "https://api.minimaxi.com/v1",
+] as const;
 
 /**
  * Parse a string env var as boolean. Accepts "true"/"1" → true,
@@ -374,6 +379,11 @@ const envSchema = z.object({
    * browser; openship API holds it, dashboard talks to openship.
    */
   MAIL_WEBMAIL_ADMIN_TOKEN: z.string().optional(),
+
+  /** Optional MiniMax configuration forwarded to managed webmail deployments. */
+  MINIMAX_API_KEY: z.string().trim().min(1).optional(),
+  MINIMAX_MODEL: z.enum(MINIMAX_MODELS).default(MINIMAX_MODELS[0]),
+  MINIMAX_BASE_URL: z.enum(MINIMAX_BASE_URLS).default(MINIMAX_BASE_URLS[0]),
 
   /** Enables verbose timing logs for SSH/system checks and environment detection */
   SYSTEM_DEBUG_LOGS: envBool(),
