@@ -35,6 +35,8 @@ export const APP_LOGO: Record<
   grafana: { slug: "grafana" },
   gitea: { slug: "gitea" },
   minio: { slug: "minio" },
+  // SeaweedFS has no simpleicons mark — use the project site favicon.
+  seaweedfs: { src: "https://www.google.com/s2/favicons?domain=seaweedfs.com&sz=128" },
   freshrss: { slug: "freshrss" },
   excalidraw: { slug: "excalidraw" },
   qdrant: { slug: "qdrant" },
