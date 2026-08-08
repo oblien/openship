@@ -198,6 +198,11 @@ export function Sidebar() {
   // waiting for the user to click. Cheap (one /list call) and mirrors
   // the AccountSwitcher pattern.
   useEffect(() => {
+    // Signed out, so both endpoints below would 401. This effect is keyed on the
+    // user id, which sign-out transitions to undefined — without the guard every
+    // logout fires two unauthenticated org calls whose failures are swallowed by
+    // the catch, leaving only console noise.
+    if (!user?.id) return;
     let cancelled = false;
     (async () => {
       try {
