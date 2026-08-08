@@ -10,6 +10,7 @@ import {
   isMultiServiceRuntime,
   type LogEntry,
   type ContainerStatus,
+  type RuntimeAdapter,
 } from "@repo/adapters";
 import { scopedVolumeName, type CommandExecutor } from "@repo/adapters";
 import { encrypt, decrypt } from "../../lib/encryption";
@@ -43,7 +44,11 @@ import {
 import { resolveRuntimeResources } from "../../lib/resources";
 import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
 import { ensurePendingServiceDomain, removeServiceDomain, reuseServerCertForDomain } from "../domains/domain.service";
-import { buildUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
+import {
+  buildUpstreamUrl,
+  resolveRouteStrategy,
+  resolveUpstreamUrl,
+} from "../../lib/upstream-url";
 import {
   reconcileProjectRoutes,
   type RouteRegister,
@@ -659,6 +664,7 @@ export async function updateService(
   const exposedChanged = touchesRouting && patch.exposed !== svc.exposed;
 
   if (updated && (enabledChanged || exposedChanged || touchesRouting || nameChanged)) {
+    let runtime: RuntimeAdapter | undefined;
     try {
       const runtimeName = platform().runtime.name;
       // `enabled` / `exposed` are non-nullable DB columns - no need to
@@ -677,22 +683,66 @@ export async function updateService(
         .filter((route) => !nextByHost.has(route.hostname.toLowerCase()))
         .map((route) => ({ hostname: route.hostname, isCustomDomain: route.domainType === "custom" }));
 
-      // Self-hosted upstream = loopback host port (published) or the active
-      // deployment's service-row IP; cloud ignores targetUrl. Resolve once.
+      // Self-hosted upstream = loopback host port (read live) or container IP.
+      // For migrated/attached containers that were never published to 127.0.0.1,
+      // live resolution falls back to the container IP so the edge can still reach
+      // the service under the default "loopback-port" strategy.
       let ip: string | undefined;
       let hostPort: number | undefined;
+      let containerId: string | undefined;
+      let dep: Awaited<ReturnType<typeof repos.deployment.findById>> | null = null;
       if (isRoutable && nextRoutes.length > 0 && !project.cloudWorkspaceId && project.activeDeploymentId) {
         const rows = await repos.service.listByDeployment(project.activeDeploymentId);
         const row = rows.find((r) => r.serviceId === serviceId);
         ip = row?.ip ?? undefined;
         hostPort = row?.hostPort ?? undefined;
+        containerId = row?.containerId ?? undefined;
+        dep = await repos.deployment.findById(project.activeDeploymentId);
+        // Only resolve a Docker runtime for live reads; bare workloads already
+        // run on the host and their stored 127.0.0.1:<port> row is authoritative.
+        if (containerId && dep && (dep.meta as { runtimeMode?: string } | null)?.runtimeMode !== "bare") {
+          try {
+            ({ runtime } = await resolveDeploymentRuntimeForRead(dep));
+          } catch (err) {
+            console.warn(
+              `[SERVICE] ${svc.name}: could not resolve runtime for upstream: ${(err as Error).message}`,
+            );
+          }
+        }
       }
       const strategy = resolveRouteStrategy(project.routeStrategy);
-      const registers: RouteRegister[] = nextRoutes.map((route) => ({
+      // Read the container's CURRENT loopback binding once, then fall back to the
+      // stored row when the live read fails. A migrated container with no
+      // 127.0.0.1:<hostPort> publish will return no hostPort and resolve to its
+      // bridge IP via resolveUpstreamUrl.
+      let liveHostPort: number | undefined;
+      if (runtime && containerId && strategy === "loopback-port" && runtime.name !== "bare") {
+        liveHostPort = (await runtime.getContainerInfo?.(containerId).catch(() => null))?.hostPort ?? undefined;
+      }
+      const resolveUrl = async (containerPort: number): Promise<string | undefined> => {
+        if (!runtime || !containerId) {
+          return buildUpstreamUrl({ strategy, ip, hostPort, containerPort }) ?? undefined;
+        }
+        try {
+          const url = await resolveUpstreamUrl({
+            strategy,
+            runtime,
+            containerId,
+            containerPort,
+            hostPort: liveHostPort ?? hostPort,
+          });
+          return url ?? buildUpstreamUrl({ strategy, ip, hostPort, containerPort }) ?? undefined;
+        } catch (err) {
+          console.warn(`[SERVICE] ${svc.name}: live upstream resolution failed: ${(err as Error).message}`);
+          return buildUpstreamUrl({ strategy, ip, hostPort, containerPort }) ?? undefined;
+        }
+      };
+      const targetUrls = await Promise.all(
+        nextRoutes.map((route) => (route.targetPort ? resolveUrl(route.targetPort) : undefined)),
+      );
+      const registers: RouteRegister[] = nextRoutes.map((route, i) => ({
         hostname: route.hostname,
-        targetUrl: route.targetPort
-          ? (buildUpstreamUrl({ strategy, ip, hostPort, containerPort: route.targetPort }) ?? undefined)
-          : undefined,
+        targetUrl: targetUrls[i],
         port: route.targetPort,
         isCustomDomain: route.domainType === "custom",
       }));
@@ -740,13 +790,6 @@ export async function updateService(
         }
       }
 
-      // Single reused path: cloud → page/workspace primitives, self-hosted →
-      // the deployment's own routing (local box or remote server/sandbox).
-      const dep =
-        !project.cloudWorkspaceId && project.activeDeploymentId
-          ? await repos.deployment.findById(project.activeDeploymentId)
-          : null;
-
       // The edge re-register (+ cert reuse) runs over SSH to the serving box.
       // When that box is REMOTE (desktop mode) the write+reload can be slow — and
       // the service row is ALREADY saved above, with routing being best-effort
@@ -770,6 +813,10 @@ export async function updateService(
       ]);
     } catch (err) {
       console.error(`[SERVICE] Failed to update route for ${svc.name}:`, err);
+    } finally {
+      if (runtime?.dispose) {
+        await runtime.dispose().catch(() => {});
+      }
     }
   }
 

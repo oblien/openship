@@ -32,7 +32,11 @@ import {
   buildDomainFanoutRegistrations,
   planCompositeRoute,
 } from "../deployments/compose/composite-route";
-import { buildUpstreamUrl, resolveRouteStrategy } from "../../lib/upstream-url";
+import {
+  buildUpstreamUrl,
+  resolveRouteStrategy,
+  resolveUpstreamUrl,
+} from "../../lib/upstream-url";
 
 export async function applyProjectRouting(projectId: string): Promise<void> {
   const project = await repos.project.findById(projectId);
@@ -61,9 +65,42 @@ export async function applyProjectRouting(projectId: string): Promise<void> {
     const rowByService = new Map(liveRows.map((row) => [row.serviceId, row]));
     const routeStrategy = resolveRouteStrategy(project.routeStrategy);
 
-    // One live-upstream resolver, shared by the vercel composite AND the migration
-    // path-fan-out — each service's URL from its service_deployment row.
+    // Resolve live upstreams from the running container, then fall back to the
+    // persisted service_deployment row. This makes migrated/attached containers
+    // that were never published to 127.0.0.1 route via the container IP instead.
+    const upstreamsByServiceId = new Map<string, string | null>();
+    await Promise.all(
+      liveRows.map(async (row) => {
+        if (!row.containerId) return;
+        const def = defs.find((s) => s.id === row.serviceId);
+        const port = def ? resolveServicePort(def, project.port) : null;
+        if (!port) return;
+        try {
+          let liveHostPort: number | undefined;
+          if (routeStrategy === "loopback-port" && runtime.name !== "bare") {
+            liveHostPort =
+              (await runtime.getContainerInfo?.(row.containerId).catch(() => null))?.hostPort ?? undefined;
+          }
+          const url = await resolveUpstreamUrl({
+            strategy: routeStrategy,
+            runtime,
+            containerId: row.containerId,
+            containerPort: port,
+            hostPort: liveHostPort ?? row?.hostPort,
+          });
+          upstreamsByServiceId.set(row.serviceId, url);
+        } catch (err) {
+          console.warn(
+            `[routing-apply] live upstream for ${row.serviceId} failed: ${safeErrorMessage(err)}`,
+          );
+          upstreamsByServiceId.set(row.serviceId, null);
+        }
+      }),
+    );
+
     const resolveTargetUrl = (serviceId: string) => {
+      const cached = upstreamsByServiceId.get(serviceId);
+      if (cached !== undefined) return cached;
       const def = defs.find((s) => s.id === serviceId);
       const row = rowByService.get(serviceId);
       const port = def ? resolveServicePort(def, project.port) : null;
