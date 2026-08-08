@@ -45,7 +45,7 @@ export default function ForgotPasswordPage() {
           <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-secondary">
             <Mail className="size-6 text-foreground" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
             {t.auth.forgotPassword.sentTitle}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -73,7 +73,7 @@ export default function ForgotPasswordPage() {
       ) : (
         <>
           <div className="mb-6">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.03em] text-foreground">
               {t.auth.forgotPassword.title}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
