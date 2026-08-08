@@ -392,6 +392,8 @@ export const endpoints = {
         `mail/admin/${encodeURIComponent(serverId)}/components/${encodeURIComponent(key)}/logs`,
       componentsRestartAll: (serverId: string) =>
         `mail/admin/${encodeURIComponent(serverId)}/components/restart-all`,
+      migrateToContainer: (serverId: string) =>
+        `mail/admin/${encodeURIComponent(serverId)}/migrate-to-container`,
     },
     webmail: {
       targets: "mail/webmail/targets",

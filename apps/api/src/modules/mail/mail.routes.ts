@@ -204,6 +204,11 @@ r.post(
   admin.restartAllComponentsHandler,
 );
 r.post(
+  "/admin/:serverId/migrate-to-container",
+  { tag: "mail_server:admin" },
+  admin.migrateToContainerHandler,
+);
+r.post(
   "/admin/:serverId/components/:key/:action",
   { tag: "mail_server:admin" },
   admin.runComponentActionHandler,

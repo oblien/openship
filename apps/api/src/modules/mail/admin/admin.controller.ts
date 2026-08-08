@@ -765,6 +765,24 @@ export async function restartAllComponentsHandler(c: Context) {
   }
 }
 
+export async function migrateToContainerHandler(c: Context) {
+  const guard = assertNotCloud(c);
+  if (guard) return guard;
+  const serverId = param(c, "serverId");
+  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "admin" });
+  const ctx = getRequestContext(c);
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+  try {
+    const { migrateMailEngineToContainer } = await import("./migrate-engine.service");
+    const result = await migrateMailEngineToContainer(serverId);
+    return c.json(result);
+  } catch (err) {
+    return errorJson(c, err);
+  }
+}
+
 export async function getComponentLogsHandler(c: Context) {
   const guard = assertNotCloud(c);
   if (guard) return guard;
