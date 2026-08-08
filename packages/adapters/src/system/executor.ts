@@ -109,7 +109,8 @@ export function createHostExecutor(): CommandExecutor {
         "This operation targets the HOST machine, but no host channel is configured " +
           "(OPENSHIP_HOST_SSH_HOST is unset) and Openship is running in a container — " +
           "so it would have run inside the container instead, against the wrong " +
-          "filesystem. Re-run `openship up` to provision the host channel.",
+          "filesystem. Run `openship doctor` on the host to see why the channel is " +
+          "missing, then re-run `openship up` to provision it.",
       );
     }
     return localExecutor;
