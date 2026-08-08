@@ -150,7 +150,14 @@ function ComposeButton() {
       <DialogDescription></DialogDescription>
 
       <DialogTrigger asChild>
-        <button type="button" className="relative mb-1.5 inline-flex h-8 w-full items-center justify-center gap-1 self-stretch overflow-hidden rounded-lg border border-gray-200 bg-[#006FFE] text-black dark:border-none dark:text-white cursor-pointer hover:bg-[#0056CC] dark:hover:bg-[#0056CC] transition-colors">
+        {/* Light mode: black text on #006FFE is ~4.7:1, fine. Dark mode: white
+            text on the same blue is ~4.46:1, just under 4.5:1 - dark:bg
+            overrides to #0062D4 (~5.7:1) so the white text passes too. */}
+        <button
+          type="button"
+          aria-label={m['common.commandPalette.commands.newEmail']()}
+          className="relative mb-1.5 inline-flex h-8 w-full items-center justify-center gap-1 self-stretch overflow-hidden rounded-lg border border-gray-200 bg-[#006FFE] text-black dark:border-none dark:bg-[#0062D4] dark:text-white cursor-pointer hover:bg-[#0056CC] dark:hover:bg-[#0056CC] transition-colors"
+        >
           {state === 'collapsed' && !isMobile ? (
             <PencilCompose className="mt-0.5 fill-white text-black" />
           ) : (

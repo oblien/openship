@@ -235,6 +235,7 @@ const TemplateButtonComponent: React.FC<TemplateButtonProps> = ({
                     >
                       <span className="flex-1 truncate text-left">{t.name}</span>
                       <button
+                        aria-label="Delete template"
                         className="p-0.5 text-muted-foreground hover:text-destructive"
                         data-template-id={t.id}
                         onClick={handleDeleteButtonClick}

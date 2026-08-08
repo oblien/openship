@@ -124,7 +124,7 @@ function SortableNote({
             {note.content}
           </p>
 
-          <div className="mt-2 flex cursor-default items-center text-xs text-[#8C8C8C]">
+          <div className="mt-2 flex cursor-default items-center text-xs text-muted-foreground dark:text-[#8C8C8C]">
             <Clock className="mr-1 h-3 w-3" />
             <span>{formatRelativeTime(note.createdAt)}</span>
           </div>
@@ -579,7 +579,7 @@ export function NotesPanel({ threadId }: NotesPanelProps) {
                       <p className="text-sm text-black dark:text-white/90">
                         {m['common.notes.empty']()}
                       </p>
-                      <p className="mb-4 mt-1 max-w-[80%] text-xs text-[#8C8C8C]">
+                      <p className="mb-4 mt-1 max-w-[80%] text-xs text-muted-foreground dark:text-[#8C8C8C]">
                         {m['common.notes.emptyDescription']()}
                       </p>
                       <Button
@@ -696,7 +696,7 @@ export function NotesPanel({ threadId }: NotesPanelProps) {
 
                             <div className="mt-2 flex flex-wrap items-center justify-between gap-y-2 px-3 py-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-xs text-[#8C8C8C]">
+                                <span className="text-xs text-muted-foreground dark:text-[#8C8C8C]">
                                   {m['common.notes.label']()}
                                 </span>
                                 <div className="flex flex-wrap gap-1.5">
@@ -737,7 +737,7 @@ export function NotesPanel({ threadId }: NotesPanelProps) {
                               <Button
                                 variant="ghost"
                                 size="xs"
-                                className="text-[#8C8C8C] hover:bg-white/10 hover:text-[#a0a0a0]"
+                                className="text-muted-foreground dark:text-[#8C8C8C] hover:bg-white/10 hover:text-[#a0a0a0]"
                                 onClick={() => {
                                   setIsAddingNewNote(false);
                                   setNewNoteContent('');
@@ -790,7 +790,7 @@ export function NotesPanel({ threadId }: NotesPanelProps) {
             {editingNoteId && (
               <div className="dark:bg-panelDark border-t border-[#E7E7E7] bg-[#FAFAFA] p-3 dark:border-[#252525]">
                 <div className="space-y-2">
-                  <div className="mb-1 text-xs font-medium text-[#8C8C8C]">
+                  <div className="mb-1 text-xs font-medium text-muted-foreground dark:text-[#8C8C8C]">
                     {m['common.notes.editNote']()}:
                   </div>
                   <Textarea
@@ -806,7 +806,7 @@ export function NotesPanel({ threadId }: NotesPanelProps) {
                     <Button
                       variant="ghost"
                       size="xs"
-                      className="text-[#8C8C8C] hover:bg-white/10 hover:text-[#a0a0a0]"
+                      className="text-muted-foreground dark:text-[#8C8C8C] hover:bg-white/10 hover:text-[#a0a0a0]"
                       onClick={() => {
                         setEditingNoteId(null);
                         setEditContent('');
