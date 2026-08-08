@@ -1056,7 +1056,11 @@ export async function getThread(
             mimeType: ct,
             size: a.size ?? 0,
             inline: a.contentDisposition === 'inline',
-            body: '',
+            // simpleParser already decoded the full message (including this
+            // attachment's bytes) to build `parsed.text`/`parsed.html` above -
+            // `a.content` is sitting in memory either way, so shipping it
+            // base64-encoded here costs no extra IMAP round trip.
+            body: a.content ? a.content.toString('base64') : '',
             attachmentId: attId,
             headers: [],
           };

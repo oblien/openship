@@ -198,6 +198,7 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
         threadId: replyToMessage?.threadId,
         isForward: mode === 'forward',
         originalMessage: replyToMessage.decodedBody,
+        originalMessageId: replyToMessage?.id,
         scheduleAt: data.scheduleAt,
       });
 
@@ -273,7 +274,12 @@ export default function ReplyCompose({ messageId }: ReplyComposeProps) {
         initialTo={ensureEmailArray(draft?.to)}
         initialCc={ensureEmailArray(draft?.cc)}
         initialBcc={ensureEmailArray(draft?.bcc)}
-        initialSubject={draft?.subject}
+        initialSubject={
+          draft?.subject ??
+          (mode === 'forward' && replyToMessage?.subject
+            ? `Fwd: ${replyToMessage.subject}`
+            : undefined)
+        }
         autofocus={true}
         settingsLoading={settingsLoading}
         replyingTo={replyToMessage?.sender.email}
