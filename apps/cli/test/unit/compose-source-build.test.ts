@@ -62,6 +62,13 @@ vi.mock("@repo/adapters", async () => {
     EDGE_CONTAINER_MOUNTS: lua.EDGE_CONTAINER_MOUNTS,
     invalidateEdgeContainer: () => {},
     LocalExecutor: class {},
+    resolveLocalDockerSocketPath: (_opts: unknown, env: NodeJS.ProcessEnv) => {
+      const host = env.DOCKER_HOST?.trim() ?? "";
+      if (host.startsWith("unix://")) return host.slice("unix://".length).trim();
+      if (host.startsWith("/")) return host;
+      return "/var/run/docker.sock";
+    },
+    DEFAULT_DOCKER_SOCKET_PATH: "/var/run/docker.sock",
   };
 });
 

@@ -22,6 +22,8 @@ import {
   EDGE_CONTAINER_MOUNTS,
   EDGE_HOST_STATE_DIR,
   invalidateEdgeContainer,
+  resolveLocalDockerSocketPath,
+  DEFAULT_DOCKER_SOCKET_PATH,
   systemCatalog,
   type EnvironmentProfile,
 } from "@repo/adapters";
@@ -367,18 +369,23 @@ services:
     # (set by \`openship up\` when a public URL is configured for off-box access).
     ports: ["\${OPENSHIP_BIND_ADDR:-127.0.0.1}:\${API_PORT:-4000}:\${API_PORT:-4000}"]
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Docker daemon socket. Rootless installs put this under the user's runtime
+      # dir (e.g. /run/user/<uid>/docker.sock); the host path is resolved from
+      # $OPENSHIP_DOCKER_SOCKET, $DOCKER_HOST, the active docker context, or
+      # $XDG_RUNTIME_DIR, and is always mounted at /var/run/docker.sock inside
+      # the container so the API uses its normal default path.
+      - \${OPENSHIP_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
       # Routing state shared with the edge, as HOST BIND MOUNTS (generated from
       # EDGE_CONTAINER_MOUNTS): the vhost tree, /etc/letsencrypt, the ACME webroot
       # and the static doc-roots the API writes and the edge serves. Named volumes
       # hid all of it from every host-side reader (migrate's proxy scan, cert carry,
       # cert reuse, mail cert symlinks), each of which then silently saw "nothing".
 ${edgeVolumeYaml("      ")}
-      # Host-op SSH key (createHostExecutor → host.docker.internal). /dev/null
+      # Host-op SSH key (createHostExecutor → $OPENSHIP_HOST_SSH_HOST). /dev/null
       # when the host channel isn't provisioned → OPENSHIP_HOST_SSH_HOST stays
       # unset and the API falls back to LocalExecutor.
       - \${OPENSHIP_HOST_KEY_PATH:-/dev/null}:/run/secrets/openship_host_key:ro
-    extra_hosts: ["host.docker.internal:host-gateway"]
+    extra_hosts: ["\${OPENSHIP_HOST_SSH_HOST:-host.docker.internal}:host-gateway"]
     env_file: [.env]
     environment:
       NODE_ENV: production
@@ -450,6 +457,66 @@ function readEnvFile(): Record<string, string> {
 }
 
 /**
+ * Which Docker daemon socket the compose stack should mount.
+ *
+ * Precedence:
+ *   1. `OPENSHIP_DOCKER_SOCKET` from the current shell (explicit override).
+ *   2. `OPENSHIP_DOCKER_SOCKET` already in `.env` (preserves a manual edit).
+ *   3. `DOCKER_HOST` or the active docker context (see `resolveLocalDockerSocketPath`).
+ *   4. The rootful default (`/var/run/docker.sock`) when it exists.
+ *   5. Rootless fallback: `$XDG_RUNTIME_DIR/docker.sock` or `/run/user/<uid>/docker.sock`.
+ *   6. Fall back to the rootful default path.
+ *
+ * This keeps rootful installs untouched while letting rootless Docker (which puts
+ * the daemon socket under the user's runtime dir) work without manual edits.
+ */
+function resolveDockerSocketPath(prev: Record<string, string>): string {
+  const explicit = process.env.OPENSHIP_DOCKER_SOCKET?.trim() || prev.OPENSHIP_DOCKER_SOCKET?.trim();
+  if (explicit) return explicit;
+
+  const fromEnv = resolveLocalDockerSocketPath(undefined, process.env);
+  if (fromEnv !== DEFAULT_DOCKER_SOCKET_PATH) return fromEnv;
+
+  // The resolved path is the rootful default. Only use it when the socket is
+  // actually there; otherwise probe rootless locations before giving up.
+  if (existsSync(DEFAULT_DOCKER_SOCKET_PATH)) return DEFAULT_DOCKER_SOCKET_PATH;
+
+  if (process.env.XDG_RUNTIME_DIR) {
+    const candidate = join(process.env.XDG_RUNTIME_DIR, "docker.sock");
+    if (existsSync(candidate)) return candidate;
+  }
+
+  try {
+    const uid = userInfo().uid;
+    const candidate = `/run/user/${uid}/docker.sock`;
+    if (existsSync(candidate)) return candidate;
+  } catch {
+    /* no uid available */
+  }
+
+  return DEFAULT_DOCKER_SOCKET_PATH;
+}
+
+/**
+ * The hostname the api container uses to SSH back to the host.
+ *
+ * Precedence:
+ *   1. `OPENSHIP_HOST_SSH_HOST` from the current shell (explicit override).
+ *   2. `OPENSHIP_HOST_SSH_HOST` already in `.env` (preserves a manual edit).
+ *   3. `host.docker.internal` (the rootful default, reached via the docker bridge).
+ *
+ * Rootless setups may need an explicit LAN IP or `host-gateway` override, which
+ * operators can set in `.env` or export before running `openship up`.
+ */
+function resolveHostSshHost(prev: Record<string, string>): string {
+  return (
+    process.env.OPENSHIP_HOST_SSH_HOST?.trim() ||
+    prev.OPENSHIP_HOST_SSH_HOST?.trim() ||
+    "host.docker.internal"
+  );
+}
+
+/**
  * Provision the container→host SSH channel so the api container can run HOST-OS
  * ops (free a foreign proxy off :80/:443, host config) via createHostExecutor —
  * exactly what a bare install does locally. Best-effort + idempotent: generates
@@ -461,7 +528,7 @@ function readEnvFile(): Record<string, string> {
  * Not a new privilege: the api container already holds host-root-equivalent
  * access through the mounted docker socket — this key just gives it a shell for
  * the host ops the socket can't do. Prereq: the host runs sshd reachable from
- * containers on host.docker.internal:22.
+ * containers on OPENSHIP_HOST_SSH_HOST:22 (default host.docker.internal).
  */
 /** Marks the authorized_keys line as ours, so re-runs can revoke the previous one. */
 const HOST_KEY_COMMENT = "openship-host-executor";
@@ -521,7 +588,7 @@ export function rewriteHostAuthorizedKeys(existing: string, pub: string): string
 /**
  * The container→host SSH channel a run WOULD use: where its key lives and which
  * host user it logs in as — or null when there won't be one (`--no-host-control`,
- * or a non-Linux box: host.docker.internal SSH is the Linux compose path).
+ * or a non-Linux box: OPENSHIP_HOST_SSH_HOST SSH is the Linux compose path).
  *
  * THE rule, and pure. `provisionHostSshChannel` creates what this names, and
  * `composePlan` previews it, so a dry run can't describe a channel the install
@@ -1098,6 +1165,9 @@ function renderEnv(
     // Read by createHostExecutor (throws when false) and by the servers list
     // (hides the local row). Written explicitly so the policy is visible in .env.
     `OPENSHIP_HOST_CONTROL=${cfg.hostControl ? "true" : "false"}`,
+    // Host-side Docker socket path. Resolved from env / context / rootless fallbacks
+    // and mounted into the api container at /var/run/docker.sock.
+    `OPENSHIP_DOCKER_SOCKET=${resolveDockerSocketPath(prev)}`,
     `OPENSHIP_IMAGE_REGISTRY=${cfg.registry}`,
     `OPENSHIP_VERSION=${opts.version || (typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "latest")}`,
     `POSTGRES_PASSWORD=${keepSecret(prev, "POSTGRES_PASSWORD")}`,
@@ -1129,7 +1199,7 @@ function renderEnv(
     // Activates createHostExecutor → SSH to the host; OPENSHIP_HOST_KEY_PATH is
     // the compose-side source for the /run/secrets/openship_host_key mount.
     lines.push(
-      "OPENSHIP_HOST_SSH_HOST=host.docker.internal",
+      `OPENSHIP_HOST_SSH_HOST=${resolveHostSshHost(prev)}`,
       `OPENSHIP_HOST_SSH_USER=${host.user}`,
       "OPENSHIP_HOST_SSH_PORT=22",
       "OPENSHIP_HOST_SSH_KEY=/run/secrets/openship_host_key",
