@@ -8,7 +8,7 @@
  * restore: `zstd -d | mysql` via pipeIntoCommand. mysqldump output is
  *          SQL, so plain mysql client replays it.
  *
- * Detection: image matches ^(mysql|mariadb|percona):.* with
+ * Detection: image matches ^(mysql|mariadb|percona/percona-server)(:|$) with
  * MYSQL_ROOT_PASSWORD + (MYSQL_DATABASE OR explicit db) in env.
  */
 
@@ -23,7 +23,7 @@ import type {
   ServiceHandle,
 } from "../types";
 
-const MYSQL_IMAGE_RE = /^(mysql|mariadb|percona\/percona-server):/i;
+const MYSQL_IMAGE_RE = /^(mysql|mariadb|percona\/percona-server)(:|$)/i;
 
 function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;

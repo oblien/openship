@@ -10,7 +10,7 @@
  *          producer.restore, so writing dump.rdb while Redis is down
  *          is safe — it'll be loaded on next start.)
  *
- * Detection: image matches ^redis:.*
+ * Detection: image matches ^redis([:/]|$)
  *
  * Caveat: Redis with persistence disabled (AOF-only or no-persistence)
  * won't have a usable dump.rdb. UI surfaces this in Chunk 4.
@@ -27,7 +27,7 @@ import type {
   ServiceHandle,
 } from "../types";
 
-const REDIS_IMAGE_RE = /^redis(\/|:)/i;
+const REDIS_IMAGE_RE = /^redis([:/]|$)/i;
 
 class RedisRdbProducerImpl implements BackupProducer {
   readonly kind = "redis_rdb" as const;
