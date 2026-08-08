@@ -714,9 +714,9 @@ export async function startWebmailDeploy(
     TRUSTED_ORIGINS: publicOrigin,
     SESSION_ENCRYPTION_KEY: sessionEncryptionKey,
     BRANDING_ADMIN_TOKEN: brandingToken,
-    DEFAULT_IMAP_HOST: mailHost,
+    DEFAULT_IMAP_HOST: input.target.kind === "self" ? "127.0.0.1" : mailHost,
     DEFAULT_IMAP_PORT: "993",
-    DEFAULT_SMTP_HOST: mailHost,
+    DEFAULT_SMTP_HOST: input.target.kind === "self" ? "127.0.0.1" : mailHost,
     DEFAULT_SMTP_PORT: "465",
     ACME_EMAIL: deriveAcmeEmail(input.hostname),
   };

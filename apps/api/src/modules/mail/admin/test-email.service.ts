@@ -273,46 +273,62 @@ export async function sendTestEmail(
   // then connects to 127.0.1.1 inside its OWN namespace, where nothing
   // listens, and every send fails with `ECONNREFUSED 127.0.1.1:465` while
   // Postfix is healthy on 0.0.0.0:465. `servername` keeps TLS validating
-  // against the hostname, so certificate checking is unchanged.
   const connectHost = await resolveSubmissionAddress(smtpHost);
-  const transporter: Transporter = nodemailer.createTransport({
+  let transporter: Transporter = nodemailer.createTransport({
     host: connectHost,
     tls: { servername: smtpHost },
     port: SUBMISSION_PORT,
     secure: true,
     auth: { user: authUser, pass: smtpPassword },
-    // Timeouts kept short - the dashboard awaits this synchronously and
-    // the operator is staring at a "Send test" spinner. If the mail VPS
-    // takes longer than 15 s for AUTH, something is wrong and we want
-    // the surface error, not the hang.
-    connectionTimeout: 15_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 20_000,
+    connectionTimeout: 8_000,
+    greetingTimeout: 8_000,
+    socketTimeout: 10_000,
   });
 
+  let verified = false;
   try {
     await transporter.verify();
+    verified = true;
   } catch (err) {
-    // With the platform-mailbox primitive owning both ends of the
-    // credential, a 535 here should be REALLY rare — it implies the
-    // doveadm hash in `vmail.mailbox` and the plaintext in
-    // `state.platformMailbox` got out of sync via some path that bypassed
-    // ensureOpenshipPlatformMailbox (manual psql update, restored state
-    // file from a different generation, etc.). Tell operators how to
-    // realign both ends in a single call.
-    const message = safeErrorMessage(err);
-    const looksLikeAuthFailure =
-      /\b535\b/.test(message) ||
-      /5\.7\.8/.test(message) ||
-      /authentication\s+failed/i.test(message) ||
-      /invalid\s+credentials/i.test(message);
-    const suffix = looksLikeAuthFailure
-      ? ` - the platform mailbox credential and the Dovecot hash appear to have drifted. Click "Rotate platform mailbox password" in the Mail admin panel (calls ensureOpenshipPlatformMailbox with { rotate: true }) to refresh both ends atomically, then retry.`
-      : ``;
-    throw wrapSmtpError(
-      err,
-      `SMTP submission check failed against ${smtpHost}:${SUBMISSION_PORT}${suffix}`,
-    );
+    if (connectHost !== "127.0.0.1") {
+      const fallbackTransporter: Transporter = nodemailer.createTransport({
+        host: "127.0.0.1",
+        tls: { servername: smtpHost },
+        port: SUBMISSION_PORT,
+        secure: true,
+        auth: { user: authUser, pass: smtpPassword },
+        connectionTimeout: 8_000,
+        greetingTimeout: 8_000,
+        socketTimeout: 10_000,
+      });
+      try {
+        await fallbackTransporter.verify();
+        transporter = fallbackTransporter;
+        verified = true;
+      } catch {
+        // Fallback also failed
+      }
+    }
+
+    if (!verified) {
+      const message = safeErrorMessage(err);
+      const looksLikeAuthFailure =
+        /\b535\b/.test(message) ||
+        /5\.7\.8/.test(message) ||
+        /authentication\s+failed/i.test(message) ||
+        /invalid\s+credentials/i.test(message);
+
+      if (looksLikeAuthFailure) {
+        throw new TestEmailError(
+          `Authentication failed for ${authUser} on ${connectHost}:${SUBMISSION_PORT} (${message}). Run /mail/admin/${serverId}/platform-mailbox/rotate to resync the credentials.`,
+        );
+      }
+
+      throw wrapSmtpError(
+        err,
+        `SMTP submission check failed against ${smtpHost}:${SUBMISSION_PORT}`,
+      );
+    }
   }
 
   let info: { messageId: string; response: string };
