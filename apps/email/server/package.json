@@ -7,6 +7,7 @@
     "dev": "bun --watch run src/main.ts",
     "start": "bun run src/main.ts",
     "build": "tsc --noEmit",
+    "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -45,6 +46,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/sanitize-html": "2.13.0",
     "drizzle-kit": "^0.31.9",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }
