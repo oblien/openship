@@ -603,18 +603,62 @@ function composeProjectName(prev: Record<string, string>): string {
  *
  * A fresh install uses a subdirectory (`…/data/pgdata`) rather than the bare
  * mount root: initdb against a mount root fails on quirky host filesystems with
- * "Operation not permitted" (WAL preallocation / lost+found — see #350). But a
- * pre-existing install already has its DB at the mount ROOT, and moving PGDATA
- * would make Postgres init a fresh empty DB and orphan the old one. So the
- * decision is made ONCE and then pinned in `.env` (same sticky rule as
- * COMPOSE_PROJECT_NAME): re-runs reuse it; a volume that predates this pin keeps
- * the root. The check uses the resolved project name so it inspects the right
- * `<project>_postgres_data` volume.
+ * "Operation not permitted" (WAL preallocation / lost+found — see #350). A
+ * pre-existing install may have its DB at the mount ROOT or in the `pgdata/`
+ * subdirectory, depending on how it was created; moving PGDATA would make
+ * Postgres init a fresh empty DB and orphan the old one. So the decision is
+ * made ONCE and then pinned in `.env` (same sticky rule as
+ * COMPOSE_PROJECT_NAME): re-runs reuse it; a volume that predates this pin is
+ * probed for PG_VERSION and the existing path is preserved. The check uses the
+ * resolved project name so it inspects the right `<project>_postgres_data`
+ * volume.
  */
 const PGDATA_ROOT = "/var/lib/postgresql/data";
+
+/**
+ * Probe the existing `<project>_postgres_data` volume to find where the
+ * Postgres cluster lives. Returns:
+ *   "subdir"  – `pgdata/PG_VERSION` exists (fresh-install default),
+ *   "root"    – `PG_VERSION` exists at the volume root (legacy pre-subdir data),
+ *   "empty"   – the volume has no entries (safe to initialize in the subdir),
+ *   "unknown" – non-empty but no recognizable PG_VERSION; caller should fail.
+ */
+function pgDataLocation(project: string): "subdir" | "root" | "empty" | "unknown" {
+  const r = spawnSync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "-v",
+      `${project}_postgres_data:/data:ro`,
+      "alpine:3",
+      "sh",
+      "-c",
+      "if [ -f /data/pgdata/PG_VERSION ]; then echo subdir; exit 0; fi; " +
+        "if [ -f /data/PG_VERSION ]; then echo root; exit 0; fi; " +
+        'if [ -z "$(ls -A /data 2>/dev/null)" ]; then echo empty; exit 0; fi; ' +
+        "echo unknown",
+    ],
+    { encoding: "utf8" },
+  );
+  if (r.status !== 0 || !r.stdout) return "unknown";
+  const out = r.stdout.trim();
+  if (out === "subdir" || out === "root" || out === "empty") return out;
+  return "unknown";
+}
+
 function resolvePgData(prev: Record<string, string>): string {
   if (prev.OPENSHIP_PGDATA) return prev.OPENSHIP_PGDATA; // decided already — never move it
-  return dbVolumeExists(composeProjectName(prev)) ? PGDATA_ROOT : `${PGDATA_ROOT}/pgdata`;
+  const project = composeProjectName(prev);
+  if (!dbVolumeExists(project)) return `${PGDATA_ROOT}/pgdata`;
+  const loc = pgDataLocation(project);
+  if (loc === "subdir" || loc === "empty") return `${PGDATA_ROOT}/pgdata`;
+  if (loc === "root") return PGDATA_ROOT;
+  throw new Error(
+    `Postgres data volume ${project}_postgres_data already exists but its ` +
+      `PGDATA cannot be determined: no PG_VERSION in / or /pgdata and the volume ` +
+      `is not empty. Set OPENSHIP_PGDATA in ${ENV_FILE} to the correct path and re-run.`,
+  );
 }
 
 /**
@@ -1101,7 +1145,7 @@ function renderEnv(
     `OPENSHIP_IMAGE_REGISTRY=${cfg.registry}`,
     `OPENSHIP_VERSION=${opts.version || (typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "latest")}`,
     `POSTGRES_PASSWORD=${keepSecret(prev, "POSTGRES_PASSWORD")}`,
-    // Pinned once (see resolvePgData): fresh install → subdir, existing volume → root.
+    // Pinned once (see resolvePgData): fresh/empty → subdir, existing cluster in pgdata/ → subdir, existing cluster at root → root.
     `OPENSHIP_PGDATA=${resolvePgData(prev)}`,
     `BETTER_AUTH_SECRET=${keepSecret(prev, "BETTER_AUTH_SECRET")}`,
     `INTERNAL_TOKEN=${keepSecret(prev, "INTERNAL_TOKEN")}`,
