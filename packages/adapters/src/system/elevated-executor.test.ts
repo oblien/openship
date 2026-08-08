@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { elevatedExecutor, elevateCommand } from "./elevated-executor";
+import { elevatedExecutor, elevateCommand, ensureOwnedDir } from "./elevated-executor";
 import { sq } from "./local-shell";
 import type { CommandExecutor, LogEntry } from "../types";
 
@@ -132,5 +132,61 @@ describe("elevatedExecutor", () => {
     const el = elevatedExecutor(inner) as unknown as { rawExec: (c: string) => Promise<unknown> };
     await el.rawExec("docker ps");
     expect(rawExec).toHaveBeenCalledWith("docker ps");
+  });
+});
+
+/**
+ * The two shapes that broke a remote non-root deploy (issue #514): the directory
+ * is absent under a `/opt` the user can't create in, or present and root-owned
+ * because Docker created it for the edge's bind mount.
+ */
+describe("ensureOwnedDir", () => {
+  const PATH = "/opt/openship/static";
+
+  /** A target that denies unelevated writes unless the tree is already ours. */
+  function target(opts: { canSudo: boolean; alreadyWritable?: boolean }) {
+    const commands: string[] = [];
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        commands.push(command);
+        if (command === "id -u") return "1000";
+        if (command.startsWith("sudo -n true")) return opts.canSudo ? "yes" : "no";
+        if (command.startsWith("sudo -n ")) return "";
+        if (command.includes("mkdir -p") && !opts.alreadyWritable) {
+          throw new Error("mkdir: cannot create directory '/opt/openship': Permission denied");
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    return { executor, commands };
+  }
+
+  it("creates the directory and hands it to the login user when sudo is available", async () => {
+    const { executor, commands } = target({ canSudo: true });
+
+    await ensureOwnedDir(executor, PATH);
+
+    // Unwrap the one level of quoting elevateCommand added.
+    const inner = commands.find((c) => c.startsWith("sudo -n sh -c "))!.replace(/'\\''/g, "'");
+    expect(inner).toContain(`mkdir -p '${PATH}'`);
+    // $top, not the leaf: an `mv` needs write permission on the PARENT.
+    expect(inner).toContain(`while [ ! -d "$d" ]; do top="$d"; d=$(dirname "$d"); done`);
+    expect(inner).toContain(`chown -R "$SUDO_USER" "$top"`);
+  });
+
+  it("stays unelevated when the directory is already writable", async () => {
+    const { executor, commands } = target({ canSudo: true, alreadyWritable: true });
+
+    await ensureOwnedDir(executor, PATH);
+
+    expect(commands).toEqual([`mkdir -p '${PATH}' && [ -w '${PATH}' ]`]);
+  });
+
+  it("names the commands an operator must run when there is no sudo", async () => {
+    const { executor } = target({ canSudo: false });
+
+    await expect(ensureOwnedDir(executor, PATH)).rejects.toThrow(
+      /sudo mkdir -p \/opt\/openship\/static/,
+    );
   });
 });

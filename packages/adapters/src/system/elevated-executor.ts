@@ -1,4 +1,5 @@
 import type { CommandExecutor, LogEntry } from "../types";
+import { resolveEnvironment } from "./environment";
 import { sq } from "./local-shell";
 
 // apt/dpkg non-interactive env, re-set INSIDE the sudo'd root shell. sudo
@@ -74,4 +75,56 @@ export function elevatedExecutor(inner: CommandExecutor): CommandExecutor {
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
     },
   });
+}
+
+/**
+ * Ensure `path` exists and the login user can write into it.
+ *
+ * Openship's host directories sit under `/opt`, which no non-root user may
+ * create in, and the ones Docker materialises for a bind mount are created by
+ * the daemon and so are root-owned. A plain `mkdir -p` fails on both, which is
+ * why this elevates and then hands the result over rather than only creating it.
+ *
+ * The chown targets the TOPMOST directory that had to be created, not `path`:
+ * renaming an entry needs write permission on its parent, so a leaf-only chown
+ * would still leave a later `mv` failing. `$SUDO_USER` is set by sudo itself, so
+ * the owner needs no extra probe.
+ */
+export async function ensureOwnedDir(
+  executor: CommandExecutor,
+  path: string,
+): Promise<void> {
+  const quoted = sq(path);
+  try {
+    await executor.exec(`mkdir -p ${quoted} && [ -w ${quoted} ]`);
+    return;
+  } catch {
+    // Absent and uncreatable, or present and not ours — both need root.
+  }
+
+  const { isRoot, canSudo } = await resolveEnvironment(executor);
+  if (isRoot) {
+    await executor.exec(`mkdir -p ${quoted}`);
+    return;
+  }
+  if (!canSudo) {
+    throw new Error(
+      `Cannot create ${path} on the target server: the deploy user cannot write there and has no ` +
+        `passwordless sudo. Run these once on the server, then redeploy:\n` +
+        `  sudo mkdir -p ${path}\n` +
+        `  sudo chown -R "$(id -un)" ${path}`,
+    );
+  }
+  await executor.exec(
+    elevateCommand(
+      [
+        `d=${quoted}`,
+        `top=`,
+        `while [ ! -d "$d" ]; do top="$d"; d=$(dirname "$d"); done`,
+        `mkdir -p ${quoted}`,
+        `[ -z "$top" ] && top=${quoted}`,
+        `chown -R "$SUDO_USER" "$top"`,
+      ].join("; "),
+    ),
+  );
 }

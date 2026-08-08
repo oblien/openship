@@ -31,10 +31,37 @@ import { isRetryableRemoteConnectionError } from "./errors";
 /** Bump when the wrapper script changes — forces a redeploy on the next ensure. */
 export const OPSH_RUN_VERSION = 1;
 
-/** Default remote base dir owning bin/ + ops/. Mirrors apps/api's OPENSHIP_DIR
+/** Fallback remote base dir owning bin/ + ops/. Mirrors apps/api's OPENSHIP_DIR
  *  (openship-server-store.ts) so adapter-layer callers don't cross the layer
- *  boundary to journal. Keep the two in sync. */
+ *  boundary to journal. Keep the two in sync. Used only when the target's own
+ *  home directory can't be resolved — see {@link resolveJournalBase}. */
 export const DEFAULT_JOURNAL_BASE = "/root/.openship";
+
+const journalBaseCache = new WeakMap<CommandExecutor, Promise<string>>();
+
+/**
+ * The journal base for a target: `<the SSH user's home>/.openship` — for a root
+ * login that IS `/root/.openship`, so nothing moves on a server that worked.
+ *
+ * The journal holds per-op scratch state (`bin/opsh-run`, `ops/<opId>/`), not
+ * server-of-record state, so it belongs to whoever runs the ops rather than to a
+ * directory only root can write. Resolved once per executor: `$HOME` doesn't
+ * move mid-session.
+ */
+export async function resolveJournalBase(exec: CommandExecutor): Promise<string> {
+  let pending = journalBaseCache.get(exec);
+  if (!pending) {
+    pending = exec
+      .exec(`printf %s "$HOME"`)
+      .then((home) => {
+        const trimmed = home.trim();
+        return trimmed.startsWith("/") ? `${trimmed}/.openship` : DEFAULT_JOURNAL_BASE;
+      })
+      .catch(() => DEFAULT_JOURNAL_BASE);
+    journalBaseCache.set(exec, pending);
+  }
+  return pending;
+}
 
 /**
  * Same non-interactive env both executors prepend to plain `exec()`, applied to
@@ -277,7 +304,8 @@ export interface ReliableRunResult {
 }
 
 export interface RunReliableOptions {
-  /** Remote base dir owning bin/ + ops/. Defaults to DEFAULT_JOURNAL_BASE. */
+  /** Remote base dir owning bin/ + ops/. Defaults to the target's own
+   *  `<home>/.openship` (see resolveJournalBase). */
   baseDir?: string;
   /** Overall deadline across reconnects (default 15 min). */
   timeoutMs?: number;
@@ -325,7 +353,6 @@ export async function runReliable(
   command: string,
   opts: RunReliableOptions,
 ): Promise<ReliableRunResult> {
-  const baseDir = opts.baseDir ?? DEFAULT_JOURNAL_BASE;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_RELIABLE_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
   const minMs = opts.reconnectMinMs ?? DEFAULT_RECONNECT_MIN_MS;
@@ -350,6 +377,9 @@ export async function runReliable(
     }
 
     try {
+      // Per iteration: a reconnect can hand back a different executor, and the
+      // base belongs to whichever login that one holds.
+      const baseDir = opts.baseDir ?? (await resolveJournalBase(executor));
       if (!opts.ensured || !opts.ensured.has(executor)) {
         await ensureRemoteJournal(executor, baseDir);
         opts.ensured?.add(executor);

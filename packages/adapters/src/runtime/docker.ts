@@ -100,6 +100,7 @@ function clampShellWindow(
 }
 import type { Feature, SystemLog } from "../system/types";
 import { isRuntimeNotFoundError } from "../system/errors";
+import { ensureOwnedDir } from "../system/elevated-executor";
 
 import type {
   RuntimeAdapter,
@@ -1744,7 +1745,7 @@ export class DockerRuntime implements RuntimeAdapter {
   ): Promise<void> {
     const cid = (await sshExecutor.exec(`docker create ${sq(tag)}`)).trim();
     try {
-      await sshExecutor.exec(`mkdir -p ${sq(hostOutDir)}`);
+      await ensureOwnedDir(sshExecutor, hostOutDir);
       // `/.` → contents, so no strip step (see the contract above).
       await sshExecutor.exec(`docker cp ${sq(`${cid}:${docRoot}/.`)} ${sq(hostOutDir)}`);
       // `docker cp` of an empty dir exits 0, so the contract is checked here.

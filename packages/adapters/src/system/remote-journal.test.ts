@@ -1,10 +1,17 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { LocalExecutor } from "./local-executor";
-import { ensureRemoteJournal, parseFrame, runJournaled } from "./remote-journal";
+import {
+  DEFAULT_JOURNAL_BASE,
+  ensureRemoteJournal,
+  parseFrame,
+  resolveJournalBase,
+  runJournaled,
+} from "./remote-journal";
+import type { CommandExecutor } from "../types";
 
 /**
  * Exercises the opsh-run wrapper end-to-end against the LOCAL machine via
@@ -88,5 +95,45 @@ describe("remote-journal", () => {
     expect(parseFrame("OPSH-DEAD").status).toBe("dead");
     expect(parseFrame("OPSH-COLLISION").status).toBe("collision");
     expect(parseFrame("OPSH-EIO disk full").status).toBe("eio");
+  });
+});
+
+/**
+ * The base is the SSH user's OWN home. Hardcoding /root/.openship meant every
+ * journaled op on a server whose deploy user isn't root died on the wrapper
+ * write with a bare "Permission denied" (issue #514).
+ */
+describe("resolveJournalBase", () => {
+  /** Records the probes and answers `$HOME` with `home`. */
+  function homeExecutor(home: string | null) {
+    const commands: string[] = [];
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        commands.push(command);
+        if (command.includes("$HOME")) {
+          if (home === null) throw new Error("Permission denied");
+          return `${home}\n`;
+        }
+        return "";
+      }),
+    } as unknown as CommandExecutor;
+    return { executor, commands };
+  }
+
+  it("uses the login user's home", async () => {
+    const { executor } = homeExecutor("/home/deploy");
+    await expect(resolveJournalBase(executor)).resolves.toBe("/home/deploy/.openship");
+  });
+
+  it("keeps /root/.openship for a root login — unchanged for every server that worked", async () => {
+    const { executor } = homeExecutor("/root");
+    await expect(resolveJournalBase(executor)).resolves.toBe(DEFAULT_JOURNAL_BASE);
+  });
+
+  it("falls back when $HOME is unusable, and probes only once per executor", async () => {
+    const { executor, commands } = homeExecutor(null);
+    await expect(resolveJournalBase(executor)).resolves.toBe(DEFAULT_JOURNAL_BASE);
+    await expect(resolveJournalBase(executor)).resolves.toBe(DEFAULT_JOURNAL_BASE);
+    expect(commands).toHaveLength(1);
   });
 });

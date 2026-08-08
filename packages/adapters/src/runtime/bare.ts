@@ -30,6 +30,7 @@ import type {
 } from "../types";
 
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
+import { ensureOwnedDir } from "../system/elevated-executor";
 import { execReliable } from "../system/remote-journal";
 import { STACKS, appVolumeTargets, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, type StackId, type StackDefinition } from "@repo/core";
 import { checkToolchainForStack, installTools } from "../toolchain";
@@ -267,7 +268,7 @@ export class BareRuntime implements RuntimeAdapter {
     const releaseDir = this.releaseDir(deploymentId);
     if (artifactPath === releaseDir) return releaseDir;
 
-    await this.executor.mkdir(`${this.workDir}/releases`);
+    await ensureOwnedDir(this.executor, `${this.workDir}/releases`);
     await this.executor.rm(releaseDir);
 
     // Capistrano-style hard-link dedup: when we know the previous
