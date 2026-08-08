@@ -30,6 +30,7 @@ smtp-amavis unix -  -   n   -   PH_AMAVISD_MAX_SERVERS  smtp
     -o smtp_data_done_timeout=1200
     -o smtp_send_xforward_command=yes
     -o smtp_dns_support_level=disabled
+    -o smtp_tls_security_level=none
     -o max_use=20
 
 # smtp port used by Amavisd to re-inject scanned email back to Postfix
