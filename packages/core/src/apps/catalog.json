@@ -1829,6 +1829,156 @@
           }
         ]
       }
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "description": "Standalone PostgreSQL database — persistent volume, generated password, and connection strings for apps in the same project or over a public TCP endpoint.",
+      "kind": "template",
+      "logo": "postgresql",
+      "category": "database",
+      "tags": [
+        "database",
+        "postgres",
+        "postgresql",
+        "sql",
+        "relational"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "postgres",
+          "image": "postgres:16-alpine",
+          "ports": [
+            "5432:5432"
+          ],
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "postgres_data:/var/lib/postgresql/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "postgres",
+          "label": "Database password",
+          "help": "Auto-generated. The password for the PostgreSQL user.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "POSTGRES_DB",
+          "service": "postgres",
+          "label": "Database name",
+          "help": "Created on first start. Apps connect to this database by default.",
+          "type": "text",
+          "default": "app",
+          "required": true
+        },
+        {
+          "key": "POSTGRES_USER",
+          "service": "postgres",
+          "label": "Database user",
+          "help": "The PostgreSQL role used in connection strings.",
+          "type": "text",
+          "default": "postgres",
+          "required": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to PostgreSQL",
+        "description": "Point an ORM, driver, or CLI at the connection URL. Prefer Internal for apps on the same project network.",
+        "guide": {
+          "intro": "Your project gets a PostgreSQL connection, ready to use.",
+          "useHint": "Read `process.env.DATABASE_URL` in your code — it's set the next time your project deploys. Nothing else to do.",
+          "defaultMode": "internal"
+        },
+        "outputs": [
+          {
+            "id": "dbUrl",
+            "label": "Database URL",
+            "source": "template:postgresql://{{env:postgres:POSTGRES_USER}}:{{env:postgres:POSTGRES_PASSWORD}}@{{host}}:5432/{{env:postgres:POSTGRES_DB}}",
+            "sourceLabel": "Public",
+            "variants": [
+              {
+                "id": "internal",
+                "label": "Internal",
+                "source": "template:postgresql://{{env:postgres:POSTGRES_USER}}:{{env:postgres:POSTGRES_PASSWORD}}@postgres:5432/{{env:postgres:POSTGRES_DB}}"
+              }
+            ],
+            "service": "postgres",
+            "secret": true,
+            "envKey": "DATABASE_URL",
+            "recommended": true,
+            "help": "Direct Postgres connection. Published on port 5432. Switch to Internal for apps on the same project network."
+          },
+          {
+            "id": "dbUser",
+            "label": "User",
+            "source": "env:postgres:POSTGRES_USER",
+            "envKey": "POSTGRES_USER",
+            "width": "half"
+          },
+          {
+            "id": "dbPassword",
+            "label": "Password",
+            "source": "env:postgres:POSTGRES_PASSWORD",
+            "secret": true,
+            "envKey": "POSTGRES_PASSWORD",
+            "width": "half"
+          },
+          {
+            "id": "dbName",
+            "label": "Database",
+            "source": "env:postgres:POSTGRES_DB",
+            "envKey": "POSTGRES_DB",
+            "width": "half"
+          },
+          {
+            "id": "dbHost",
+            "label": "Host (internal)",
+            "source": "template:postgres",
+            "help": "Docker service name — use from other services in this project.",
+            "width": "half"
+          }
+        ]
+      },
+      "endpoints": [
+        {
+          "service": "postgres",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp"
+        }
+      ],
+      "provides": [
+        {
+          "id": "postgres",
+          "outputRefs": [
+            "dbUrl"
+          ],
+          "category": "database"
+        }
+      ]
     }
   ]
 }
