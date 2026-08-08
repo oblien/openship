@@ -52,8 +52,8 @@ export function volumeAutoName(path: string): string {
  * `<autoname>:<absolute target>`. Anything already in `source:target` form (a
  * named volume or a host bind mount) passes through untouched, so a user who
  * wants a bind mount or a shared volume name keeps full control. Returns null
- * for input that can't be a mount (empty, or a target outside the app dir given
- * as a relative path that normalises away).
+ * for input that can't be a mount (empty, a target outside the app dir given as
+ * a relative path that normalises away, or a path with a `..` traversal segment).
  */
 export function normalizeAppVolume(spec: string, appDir: string = APP_DIR): string | null {
   const raw = spec.trim();
@@ -68,6 +68,13 @@ export function normalizeAppVolume(spec: string, appDir: string = APP_DIR): stri
 
   const path = body.replace(/^\.\//, "").replace(/\/+$/g, "");
   if (!path) return null;
+  // A `..` segment resolves the mount outside the app dir (`../secret`,
+  // `/app/../secret` → `/secret`) — which the app-relative auto-name and the
+  // bare runtime's symlink logic below can't represent, and which the doc says
+  // returns null. Refuse traversal outright, the way normalizeRepoPath does in
+  // source-access.ts. Explicit `source:target` binds are handled above and keep
+  // full control.
+  if (path.split("/").includes("..")) return null;
   const target = path.startsWith("/") ? path : `${appDir.replace(/\/+$/, "")}/${path}`;
   // The auto-name is derived from the path RELATIVE to the app dir, so
   // `storage` and `/app/storage` produce the same volume — declaring it either
