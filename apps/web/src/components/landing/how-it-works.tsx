@@ -1,68 +1,114 @@
-/**
- * How it works - the deploy mechanism as a five-step flow.
- *
- * This is the differentiator the feature grids only imply: builds run on YOUR
- * machine, ship to YOUR servers over SSH with no agent installed, start as
- * immutable containers, swap with zero downtime, and are drivable from
- * anywhere (CLI / dashboard / desktop / AI agent over MCP).
- */
+import { InteractiveTerminal, type TerminalLine } from "./interactive-terminal";
+import { SectionHeader } from "./section-header";
+import styles from "./how-it-works.module.css";
 
-const STEPS = [
+type TerminalDemo = {
+  step: string;
+  title: string;
+  description: string;
+  command: string;
+  lines: TerminalLine[];
+};
+
+const TERMINALS: TerminalDemo[] = [
   {
-    n: "01",
-    title: "Connect",
-    body: "Link a Git repo and pick a target — Openship Cloud or your own server over SSH. Nothing is installed on your box: no agent, no daemon, no dashboard.",
+    step: "01",
+    title: "Connect the project",
+    description:
+      "Link the current repository to its Openship project and production target. The link stays in the repo, so every later command knows where to deploy.",
+    command: "openship init --project proj_storefront",
+    lines: [
+      { text: "→ Using context self-hosted", tone: "muted" },
+      { text: "→ Linking project proj_storefront", tone: "accent" },
+      { text: "✓ Linked storefront → .openship/project.json", tone: "success" },
+    ],
   },
   {
-    n: "02",
-    title: "Build",
-    body: "On every push the image builds on your machine (or in the cloud), runs your tests, and is tagged as an immutable, versioned artifact. Your production servers stay focused on serving.",
+    step: "02",
+    title: "Build an immutable image",
+    description:
+      "A deploy reads the linked branch, builds away from production, runs the checks, and tags one versioned artifact before anything reaches your server.",
+    command: "openship deploy --watch",
+    lines: [
+      { text: "◐ Triggering deployment", tone: "accent" },
+      { text: "✓ Deployment queued: dep_7f3a", tone: "success" },
+      { text: "→ Reading main at 9c4e1f2", tone: "muted" },
+      { text: "→ Building image on this machine" },
+      { text: "✓ Tests passed · image storefront:9c4e1f2", tone: "success" },
+    ],
   },
   {
-    n: "03",
-    title: "Ship",
-    body: "The built image streams to the target over SSH and starts as a fresh container on an isolated private network — no exposed ports, no hand-written Docker or Compose.",
+    step: "03",
+    title: "Ship and route",
+    description:
+      "The finished image crosses SSH, starts on a private network, passes its health check, and receives TLS before traffic switches over.",
+    command: "openship logs dep_7f3a --follow",
+    lines: [
+      { text: "→ Streaming image to srv_lon_01 over SSH", tone: "accent" },
+      { text: "→ Starting container on private network" },
+      { text: "✓ Health check passed on :3000", tone: "success" },
+      { text: "✓ TLS ready · traffic switched", tone: "success" },
+      { text: "✓ https://storefront.opsh.io", tone: "success" },
+    ],
   },
   {
-    n: "04",
-    title: "Route",
-    body: "Your domains are wired through OpenResty with automatic Let's Encrypt SSL, then traffic swaps to the new container with zero downtime. The previous version stays ready for rollback.",
-  },
-  {
-    n: "05",
-    title: "Operate",
-    body: "Stream logs, watch metrics, and roll back to any previous version in one click — from the CLI, the web dashboard, the desktop app, or an AI agent over MCP.",
+    step: "04",
+    title: "Operate without lock-in",
+    description:
+      "Logs, status, and rollback use the same CLI and the same deployment history. A previous healthy artifact can take traffic again without rebuilding.",
+    command: "openship deployment rollback dep_6e91",
+    lines: [
+      { text: "→ Found healthy artifact storefront:6e91b4c", tone: "muted" },
+      { text: "→ Starting previous container", tone: "accent" },
+      { text: "→ Switching OpenResty upstream" },
+      { text: "✓ Rolled back to dep_6e91", tone: "success" },
+      { text: "✓ No requests dropped", tone: "success" },
+    ],
   },
 ];
 
-export function HowItWorks() {
+export function HowItWorks({ index, total }: { index: number; total: number }) {
   return (
-    <section id="how-it-works" className="hiw-section">
-      <div className="hiw-container">
-        <header className="hiw-head">
-          <p className="hiw-eyebrow">How it works</p>
-          <h2 className="hiw-title">
-            From git push to live,<br />on your infrastructure.
-          </h2>
-          <p className="hiw-sub">
-            No agent on your servers, no black box. Here&rsquo;s the exact path your
-            code takes — and why your production machines never build.
-          </p>
-        </header>
+    <section id="how-it-works" className="lp-sec">
+      <SectionHeader label="How it works" index={index} total={total} />
 
-        <ol className="hiw-flow">
-          {STEPS.map((s) => (
-            <li key={s.n} className="hiw-step">
-              <div className="hiw-step-rail">
-                <span className="hiw-step-n">{s.n}</span>
-              </div>
-              <div className="hiw-step-body">
-                <h3 className="hiw-step-title">{s.title}</h3>
-                <p className="hiw-step-desc">{s.body}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
+      <div className="lp-band">
+        <div className="lp-band-in">
+          <div className={styles.headline}>
+            <h2 className={styles.headlineTitle}>
+              From git push to live,<br />on your infrastructure.
+            </h2>
+            <p className={styles.headlineSub}>
+              Edit a command, press Enter, and watch the real Openship workflow move
+              through linking, building, SSH delivery, routing, and rollback.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="lp-band">
+        <div className="lp-band-in lp-band-in--flush">
+          <div className={styles.terminalGrid}>
+            {TERMINALS.map((terminal) => (
+              <article className={styles.terminalCard} key={terminal.step}>
+                <div className={styles.terminalStage}>
+                  <InteractiveTerminal
+                    title={terminal.title}
+                    command={terminal.command}
+                    lines={terminal.lines}
+                  />
+                </div>
+                <div className={styles.terminalCopy}>
+                  <span className={styles.step}>{terminal.step}</span>
+                  <div>
+                    <h3 className={styles.terminalTitle}>{terminal.title}</h3>
+                    <p className={styles.terminalDescription}>{terminal.description}</p>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );

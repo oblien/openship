@@ -1,6 +1,12 @@
+import { SectionHeader } from "./section-header";
+
 /**
- * Deployment models - three big numbered panels. Middle (Hybrid) is the
- * inverted dark panel for visual rhythm. Big "01/02/03" as type-as-design.
+ * Deployment models - the same platform in three shapes.
+ *
+ * Laid out as three cells of the ruled grid rather than three floating
+ * panels: they are alternatives, so they get identical frames and differ
+ * only in what they say. The migration callout closes the section, because
+ * "you can switch any day" is only reassuring once you know the choices.
  */
 
 const MODELS = [
@@ -49,64 +55,74 @@ const MODELS = [
   },
 ];
 
-export function DeploymentModels() {
+export function DeploymentModels({ index, total }: { index: number; total: number }) {
   return (
-    <section className="dm-section">
-      <div className="dm-container">
-        <header className="dm-head">
-          <p className="dm-eyebrow">Where it runs</p>
-          <h2 className="dm-title">
-            Cloud, self-hosted,<br />or both.
-          </h2>
-          <p className="dm-sub">
-            Same platform, three deployment shapes - and you can switch any day.
-          </p>
-        </header>
+    <section className="lp-sec">
+      <SectionHeader label="Where it runs" index={index} total={total} />
 
-        <div className="dm-grid">
-          {MODELS.map((m) => (
-            <article
-              key={m.n}
-              className={`dm-panel ${m.feature ? "dm-panel--feature" : ""}`}
-            >
-              <div className="dm-panel-top">
-                <span className="dm-panel-n">{m.n}</span>
-                <span className="dm-panel-tag">{m.tag}</span>
-              </div>
-
-              <h3 className="dm-panel-title">{m.title}</h3>
-              <p className="dm-panel-lead">{m.lead}</p>
-
-              <ul className="dm-panel-points">
-                {m.points.map((p) => (
-                  <li key={p}>{p}</li>
-                ))}
-              </ul>
-
-              <div className="dm-panel-foot">
-                <span className="dm-panel-price">{m.price}</span>
-                <span className="dm-panel-pricenote">{m.priceNote}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-
-        {/* ── Migration callout ────────────────────────────────────── */}
-        <div className="dm-migrate">
-          <div className="dm-migrate-left">
-            <span className="dm-migrate-tag">Migrate any day</span>
-            <h3 className="dm-migrate-title">
-              Cloud{" "}
-              <span className="dm-migrate-arrow" aria-hidden="true">⇄</span>
-              {" "}self-hosted.<br />
-              <span className="dm-migrate-soft">One click, any time.</span>
-            </h3>
+      <div className="lp-band">
+        <div className="lp-band-in">
+          <div className="dm-headline">
+            <h2 className="dm-headline-title">
+              Cloud, self-hosted,<br />or both.
+            </h2>
+            <p className="dm-headline-sub">
+              Same platform, three deployment shapes - and you can switch any day.
+            </p>
           </div>
-          <p className="dm-migrate-body">
-            Your apps are plain containers and your services are standard images.
-            Move workloads between Openship Cloud and your own servers without
-            rebuilding, rewriting, or paying an exit tax. Click, confirm, done.
-          </p>
+        </div>
+      </div>
+
+      <div className="lp-band">
+        <div className="lp-band-in lp-band-in--flush">
+          <div className="dm-grid">
+            {MODELS.map((m) => (
+              <article
+                key={m.n}
+                className="dm-cell"
+                data-feature={m.feature ? "true" : undefined}
+              >
+                <span className="dm-cell-eyebrow">
+                  {m.n} / {m.tag}
+                </span>
+                <h3 className="dm-cell-title">{m.title}</h3>
+                <p className="dm-cell-lead">{m.lead}</p>
+
+                <ul className="dm-cell-points">
+                  {m.points.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+
+                <div className="dm-cell-foot">
+                  <span className="dm-cell-price">{m.price}</span>
+                  <span className="dm-cell-pricenote">{m.priceNote}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Migration callout ────────────────────────────────────── */}
+      <div className="lp-band">
+        <div className="lp-band-in">
+          <div className="dm-migrate">
+            <div className="dm-migrate-left">
+              <span className="dm-migrate-tag">Migrate any day</span>
+              <h3 className="dm-migrate-title">
+                Cloud{" "}
+                <span className="dm-migrate-arrow" aria-hidden="true">⇄</span>
+                {" "}self-hosted.<br />
+                <span className="dm-migrate-soft">One click, any time.</span>
+              </h3>
+            </div>
+            <p className="dm-migrate-body">
+              Your apps are plain containers and your services are standard images.
+              Move workloads between Openship Cloud and your own servers without
+              rebuilding, rewriting, or paying an exit tax. Click, confirm, done.
+            </p>
+          </div>
         </div>
       </div>
     </section>

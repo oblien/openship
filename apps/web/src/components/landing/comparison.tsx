@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { SectionHeader } from "./section-header";
 
 /**
  * Comparison - grouped table, Openship column highlighted with a tinted rail.
@@ -234,10 +235,10 @@ const GROUPS: Group[] = [
 
 function StatusMark({ status }: { status: Status }) {
   return (
-    <span className={`cmp-mark cmp-mark--${status}`} aria-hidden="true">
+    <span className={`bench-mark bench-mark--${status}`} aria-hidden="true">
       {status === "win" && (
         <svg viewBox="0 0 14 14" fill="none">
-          <path d="M3 7.2 L6 10 L11 4.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M3 7.2 L6 10 L11 4.4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
       {status === "loss" && (
@@ -254,63 +255,91 @@ function StatusMark({ status }: { status: Status }) {
   );
 }
 
-export function Comparison() {
+const ROWS = GROUPS.flatMap((g) =>
+  g.rows.map((r, i) => ({ ...r, group: i === 0 ? g.title : null })),
+);
+
+export function Comparison({ index, total }: { index: number; total: number }) {
   return (
-    <section className="cmp-section">
-      <div className="cmp-container">
-        <header className="cmp-head">
-          <p className="cmp-eyebrow">Straight comparison</p>
-          <h2 className="cmp-title">
-            Where Openship is<br />genuinely different.
-          </h2>
-          <p className="cmp-sub">
-            Git deploys, TLS, databases, backups, cron &mdash; every tool here has those, so
-            they are not on this list. What is below is where the choice actually changes
-            what you can do, and what it costs you to change your mind.
-          </p>
-        </header>
+    <section className="lp-sec">
+      <SectionHeader label="Straight comparison" index={index} total={total} />
 
-        <div className="cmp">
-          <div className="cmp-highlight" aria-hidden="true" />
-
-          {/* Header */}
-          <div className="cmp-row cmp-row--head">
-            <div className="cmp-cell cmp-cell--feature">Feature</div>
-            <div className="cmp-cell cmp-cell--win">Openship</div>
-            <div className="cmp-cell">Managed (Vercel, Netlify)</div>
-            <div className="cmp-cell">Self-host (Coolify, Dokploy, Dokku)</div>
+      <div className="lp-band">
+        <div className="lp-band-in">
+          <div className="bench-headline">
+            <h2 className="bench-headline-title">
+              Where Openship is<br />genuinely different.
+            </h2>
+            <p className="bench-headline-sub">
+              Git deploys, TLS, databases, backups, cron &mdash; every tool here has those, so
+              they are not on this list. What is below is where the choice actually changes
+              what you can do, and what it costs you to change your mind.
+            </p>
           </div>
+        </div>
+      </div>
 
-          {/* Body, grouped */}
-          {GROUPS.map((g) => (
-            <Fragment key={g.title}>
-              <p className="cmp-group">{g.title}</p>
-              {g.rows.map((r) => (
-                <div key={r.feature} className="cmp-row">
-                  <div className="cmp-cell cmp-cell--feature">{r.feature}</div>
-                  <div className="cmp-cell cmp-cell--win">
+      <div className="lp-band">
+        <div className="lp-band-in">
+          {/* The Openship tint stays inside the same grid as every other
+              column so the comparison reads as one table. */}
+          <div className="bench-board">
+            <div className="bench-row bench-row--head">
+              <div className="bench-cell bench-cell--label">
+                <span className="bench-vendor">Feature</span>
+              </div>
+              <div className="bench-cell bench-cell--sm bench-cell--sm-head">
+                <span className="bench-badge">Best</span>
+                <span className="bench-vendor bench-vendor--sm">Openship</span>
+              </div>
+              <div className="bench-cell">
+                <span className="bench-vendor">Managed (Vercel, Netlify)</span>
+              </div>
+              <div className="bench-cell">
+                <span className="bench-vendor">Self-host (Coolify, Dokploy, Dokku)</span>
+              </div>
+            </div>
+
+            {ROWS.map((r) => (
+              <Fragment key={r.feature}>
+                {r.group && (
+                  <div className="bench-row bench-row--group">
+                    <div className="bench-cell bench-cell--label">
+                      <span className="bench-group">{r.group}</span>
+                    </div>
+                    <div className="bench-cell bench-cell--sm" />
+                    <div className="bench-cell" />
+                    <div className="bench-cell" />
+                  </div>
+                )}
+
+                <div className="bench-row">
+                  <div className="bench-cell bench-cell--label">
+                    <span className="bench-feature">{r.feature}</span>
+                  </div>
+                  <div className="bench-cell bench-cell--sm">
                     <StatusMark status={r.openship.status} />
                     <span>{r.openship.text}</span>
                   </div>
-                  <div className="cmp-cell">
+                  <div className="bench-cell">
                     <StatusMark status={r.managed.status} />
                     <span>{r.managed.text}</span>
                   </div>
-                  <div className="cmp-cell">
+                  <div className="bench-cell">
                     <StatusMark status={r.selfhost.status} />
                     <span>{r.selfhost.text}</span>
                   </div>
                 </div>
-              ))}
-            </Fragment>
-          ))}
-        </div>
+              </Fragment>
+            ))}
+          </div>
 
-        <p className="cmp-foot">
-          Compared against the shipping versions of each tool, July 2026. A dash means
-          that tool genuinely matches Openship, or that the row does not apply to it.
-          We would rather score a row even than invent a cross.
-        </p>
+          <p className="bench-foot">
+            Compared against the shipping versions of each tool, July 2026. A dash means
+            that tool genuinely matches Openship, or that the row does not apply to it.
+            We would rather score a row even than invent a cross.
+          </p>
+        </div>
       </div>
     </section>
   );

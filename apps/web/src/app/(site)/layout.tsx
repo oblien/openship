@@ -110,14 +110,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#0F0F0F" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#0F0F0F" },
   ],
-  // Light-only marketing site. The one dark surface (webmail landing) opts in
-  // via `color-scheme: dark` on `body:has(.mail-home)` in globals.css, which
-  // overrides this document default for that subtree. Declaring "light" here
-  // stops the browser from painting a dark canvas/scrollbars under a dark OS.
-  colorScheme: "light",
+  colorScheme: "light dark",
 };
 
 const organizationLd = {

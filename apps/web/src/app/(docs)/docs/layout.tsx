@@ -9,13 +9,13 @@ import type { ReactNode } from "react";
 /**
  * Native Fumadocs "Notebook" docs shell — full-width navbar on top (like
  * fumadocs.dev), sidebar + TOC below. RootProvider is scoped to /docs so the
- * light-only marketing site is untouched, while docs get the full native
- * experience: light/dark theme + toggle, native search (/api/search), sidebar,
- * TOC. No custom theming — stock Fumadocs.
+ * docs get the full native experience: system-aware light/dark theme + toggle,
+ * native search (/api/search), sidebar, and TOC. No custom theming — stock
+ * Fumadocs.
  */
 export default function DocsRootLayout({ children }: { children: ReactNode }) {
   return (
-    <RootProvider theme={{ defaultTheme: "light", enableSystem: false }}>
+    <RootProvider theme={{ defaultTheme: "system", enableSystem: true }}>
       <DocsLayout
         tree={docsSource.pageTree}
         nav={{
