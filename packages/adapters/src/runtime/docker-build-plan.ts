@@ -222,8 +222,16 @@ function generatePhpDockerfile(config: BuildConfig): string {
       `WORKDIR /workspace`,
       `COPY . /workspace`,
       `WORKDIR ${sourceDir}`,
-      assetBuildLine,
     );
+    // Flux/Filament (or any Composer package shipping its own CSS) is @import'd
+    // and Tailwind-@source-scanned from vendor/, so the asset build needs the
+    // Composer tree the builder stage installed — this stage's `COPY . /workspace`
+    // only brings the (git-ignored) source, not vendor/. Guarded on installLine:
+    // vendor/ only exists in the builder when composer install actually ran.
+    if (installLine) {
+      lines.push(`COPY --from=builder ${sourceDir}/vendor ${sourceDir}/vendor`);
+    }
+    lines.push(assetBuildLine);
   }
 
   const docroot = normalizeRelativePath(config.outputDirectory) || "public";
