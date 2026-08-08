@@ -32,11 +32,15 @@ function toConnectConfig(config: SshConfig): ConnectConfig {
     agent: config.sshAgent,
     tryKeyboard: false,
     keepaliveInterval: 15_000,
-    // 10 (~150s) rather than 3 (45s): a small server pegged by a heavy
-    // `docker build` / `bun install` can briefly starve sshd of keepalive
-    // replies, and 45s was dropping the SSH channel mid-build (build failed with
-    // a bare "exited with code 1"). Still detects a truly-dead link within ~2.5m.
-    keepaliveCountMax: 10,
+    // 240 (~60m) rather than 10 (~150s): 150s still dropped the channel during a
+    // real build. A `COPY --from=deps` of a large node_modules, or a Next.js
+    // compile, pins disk and CPU for minutes with no channel traffic, and sshd
+    // under that load misses more than ten consecutive keepalive replies — the
+    // client then tears down a link that is merely busy, surfacing as "remote
+    // channel closed without an exit status" mid-build. The exec paths carry
+    // their own idle timeouts, so liveness is still bounded; this only stops the
+    // transport from quitting on a server that is working hard.
+    keepaliveCountMax: 240,
   };
 }
 
