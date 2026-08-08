@@ -262,7 +262,12 @@ export function renderUpPlan(plan: UpPlan): string {
 
   if (plan.compose) {
     head("Compose stack");
-    item(plan.compose.existing ? "re-runs an existing install (secrets preserved)" : "fresh install");
+    const composeNote = plan.compose.warnings.length
+      ? ` (warning: ${plan.compose.warnings.join("; ")})`
+      : plan.compose.newSecrets.length
+        ? ` (generates: ${plan.compose.newSecrets.join(", ")})`
+        : " (secrets preserved)";
+    item(`${plan.compose.existing ? "re-runs an existing install" : "fresh install"}${composeNote}`);
     for (const { key, value } of plan.compose.settings) item(`${key}=${value}`);
   }
 

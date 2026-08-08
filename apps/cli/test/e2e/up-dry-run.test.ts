@@ -57,6 +57,7 @@ vi.mock("../../src/lib/compose", () => ({
     mountDirs: ["/var/lib/openship/edge/sites-enabled"],
     buildDir: null,
     hostControl: true,
+    warnings: [],
   }),
   resolveComposePorts: async (_p: unknown, opts?: { persist?: boolean }) => {
     c.portOpts.push(opts);
