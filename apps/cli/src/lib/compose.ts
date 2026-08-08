@@ -543,9 +543,21 @@ function plannedHostChannel(hostControl: boolean): { user: string; keyPath: stri
   return { user, keyPath: join(COMPOSE_DIR, "host-ssh", "id_ed25519") };
 }
 
-function provisionHostSshChannel(hostControl: boolean): { user: string; keyPath: string } | null {
+/**
+ * Provision the channel `plannedHostChannel` names, or say why it couldn't.
+ *
+ * `error` is null for the DELIBERATE absences (`--no-host-control`, a non-Linux
+ * box) and set for everything else. Collapsing the two into a bare `null` is what
+ * let `renderEnv` write an `.env` with no OPENSHIP_HOST_SSH_* keys, report a
+ * healthy install, and leave the first deploy to fail with "no host channel is
+ * configured" (#509).
+ */
+function provisionHostSshChannel(hostControl: boolean): {
+  channel: { user: string; keyPath: string } | null;
+  error: string | null;
+} {
   const target = plannedHostChannel(hostControl);
-  if (!target) return null;
+  if (!target) return { channel: null, error: null };
   const { user, keyPath } = target;
   try {
     mkdirSync(join(COMPOSE_DIR, "host-ssh"), { recursive: true, mode: 0o700 });
@@ -555,10 +567,19 @@ function provisionHostSshChannel(hostControl: boolean): { user: string; keyPath:
         ["-t", "ed25519", "-N", "", "-q", "-f", keyPath, "-C", HOST_KEY_COMMENT],
         { stdio: "ignore" },
       );
-      if (g.status !== 0) return null;
+      // `g.error` is ENOENT — a box with no openssh-client, which is a package
+      // away rather than a broken install.
+      if (g.error || g.status !== 0) {
+        return {
+          channel: null,
+          error: g.error
+            ? "ssh-keygen isn't installed (package: openssh-client)"
+            : `ssh-keygen failed (exit ${g.status})`,
+        };
+      }
     }
     const pub = readFileSync(`${keyPath}.pub`, "utf8").trim();
-    if (!pub) return null;
+    if (!pub) return { channel: null, error: `${keyPath}.pub is empty — delete the key pair and re-run` };
 
     // Authorize the key for the host user the container SSHes in as (see
     // plannedHostChannel for why that user comes from the passwd entry).
@@ -572,10 +593,35 @@ function provisionHostSshChannel(hostControl: boolean): { user: string; keyPath:
     // already existed keeps its old permissions — set them explicitly.
     chmodSync(authKeys, 0o600);
 
-    return { user, keyPath };
-  } catch {
-    return null;
+    return { channel: { user, keyPath }, error: null };
+  } catch (err) {
+    return { channel: null, error: (err as Error).message };
   }
+}
+
+/**
+ * The host channel this install HAS — read back from the generated `.env`, as
+ * opposed to `plannedHostChannel`'s "what a run would create". Shaped as a
+ * `doctor` check (repair.ts `ComponentCheck`), which is its only caller: an
+ * install whose channel failed to provision reports healthy everywhere else, right
+ * up to the deploy that needs it (#509).
+ */
+export function composeHostChannel(): { state: "pass" | "fail"; detail: string } {
+  const env = readEnvFile();
+  if (env.OPENSHIP_HOST_CONTROL === "false") {
+    return { state: "pass", detail: "host control off (--no-host-control)" };
+  }
+  const host = env.OPENSHIP_HOST_SSH_HOST;
+  if (!host) {
+    return { state: "fail", detail: "not provisioned — deploys to this box will fail; re-run `openship up`" };
+  }
+  // The key outlives the `.env` that points at it: a wiped `~/.openship` leaves
+  // the vars behind and the API then fails at connect time instead of here.
+  const keyPath = env.OPENSHIP_HOST_KEY_PATH;
+  if (!keyPath || !existsSync(keyPath)) {
+    return { state: "fail", detail: `key missing at ${keyPath || "(unset)"} — re-run \`openship up\`` };
+  }
+  return { state: "pass", detail: `SSH to ${host} as ${env.OPENSHIP_HOST_SSH_USER || "root"}` };
 }
 
 /**
@@ -1182,6 +1228,8 @@ function materialize(opts: ComposeUpOpts): {
    * environment. So this decides whether they get recreated.
    */
   envChanged: boolean;
+  /** Why the host channel isn't there, when it was meant to be (see composeUp). */
+  hostChannelError: string | null;
 } {
   mkdirSync(COMPOSE_DIR, { recursive: true, mode: 0o700 });
   const prev = readEnvFile();
@@ -1189,7 +1237,7 @@ function materialize(opts: ComposeUpOpts): {
   // --no-host-control: never generate/authorize a host key in the first place.
   // Not just "don't use it" — there is nothing on disk to steal. Resolved through
   // cfg so a plain re-run keeps the install's original choice.
-  const host = provisionHostSshChannel(cfg.hostControl);
+  const { channel: host, error: hostChannelError } = provisionHostSshChannel(cfg.hostControl);
   let before = "";
   try {
     before = readFileSync(ENV_FILE, "utf8");
@@ -1204,7 +1252,7 @@ function materialize(opts: ComposeUpOpts): {
   if (buildDir) writeFileSync(BUILD_FILE, renderBuildOverride(buildDir));
   // `before === ""` is a first install: the containers don't exist yet and will be
   // created with this env, so there is nothing to force.
-  return { buildDir, cfg, envChanged: before !== "" && rendered !== before };
+  return { buildDir, cfg, envChanged: before !== "" && rendered !== before, hostChannelError };
 }
 
 /** `.env` keys whose VALUE must never be printed. Suffix-matched so a key added
@@ -1365,7 +1413,7 @@ function isRootlessDocker(): boolean {
 export async function composeUp(
   opts: ComposeUpOpts,
 ): Promise<{ ok: boolean; apiPort: string; dashPort: string }> {
-  const { buildDir, cfg, envChanged } = materialize(opts);
+  const { buildDir, cfg, envChanged, hostChannelError } = materialize(opts);
   // The EFFECTIVE ports, not the flags: a re-run with no flags keeps the ports the
   // install was configured with, so the summary must report those.
   const apiPort = cfg.apiPort;
@@ -1455,6 +1503,7 @@ export async function composeUp(
     }
     onEdgeContainerChanged();
     writeInstallMethod("compose");
+    warnHostChannel(hostChannelError);
     return { ok: true, apiPort, dashPort };
   }
 
@@ -1464,7 +1513,24 @@ export async function composeUp(
   if (up() !== 0) return { ok: false, apiPort, dashPort };
   onEdgeContainerChanged();
   writeInstallMethod("compose");
+  warnHostChannel(hostChannelError);
   return { ok: true, apiPort, dashPort };
+}
+
+/**
+ * A stack that came up WITHOUT the host channel it was supposed to have. Printed
+ * here rather than where provisioning happens — hundreds of lines of pull output
+ * sit between the two. Doesn't fail the install: a box that only manages remote
+ * servers is fine without a channel.
+ */
+function warnHostChannel(error: string | null): void {
+  if (!error) return;
+  console.error(
+    `\n  ! Host operations are NOT available: ${error}\n` +
+      `    Deploys to this box, the :80/:443 takeover and the host terminal will fail\n` +
+      `    with "no host channel is configured".\n` +
+      `    Fix the cause, re-run \`openship up\`, then confirm with \`openship doctor\`.\n`,
+  );
 }
 
 /**
