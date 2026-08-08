@@ -508,8 +508,13 @@ function parseDurationNs(value: string | undefined): number | undefined {
  * `test` string → `["CMD-SHELL", cmd]`; `test` array → `["CMD", ...argv]`;
  * `disable` → `["NONE"]` (turns off an image's baked-in check). Returns
  * undefined when there's nothing to configure so the image default stands.
+ *
+ * App catalog and migration payloads can preserve the original Docker
+ * `CMD` / `CMD-SHELL` prefix in the `test` array, so an array that already
+ * starts with one of those prefixes is used as-is instead of having an extra
+ * `CMD` prepended.
  */
-function toDockerHealthcheck(hc?: ComposeHealthcheck):
+export function toDockerHealthcheck(hc?: ComposeHealthcheck):
   | { Test: string[]; Interval?: number; Timeout?: number; Retries?: number; StartPeriod?: number }
   | undefined {
   if (!hc) return undefined;
@@ -519,7 +524,12 @@ function toDockerHealthcheck(hc?: ComposeHealthcheck):
   if (typeof hc.test === "string" && hc.test.trim()) {
     Test = ["CMD-SHELL", hc.test];
   } else if (Array.isArray(hc.test) && hc.test.length > 0) {
-    Test = ["CMD", ...hc.test];
+    const head = hc.test[0];
+    if (head === "CMD" || head === "CMD-SHELL") {
+      Test = [...hc.test];
+    } else {
+      Test = ["CMD", ...hc.test];
+    }
   }
   if (!Test) return undefined;
 
