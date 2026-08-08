@@ -20,6 +20,16 @@ describe("shellSplitWords", () => {
     ]);
     expect(shellSplitWords(`grep -E '\\d+' file.txt`)).toEqual(["grep", "-E", "\\d+", "file.txt"]);
   });
+  it("keeps backslashes literal inside double quotes (except real escapes)", () => {
+    // Same regex as the single-quoted case above — must tokenize identically.
+    expect(shellSplitWords(`grep -E "\\d+" file.txt`)).toEqual(["grep", "-E", "\\d+", "file.txt"]);
+    expect(shellSplitWords(`sed "s/\\r//g" /data/in`)).toEqual(["sed", "s/\\r//g", "/data/in"]);
+    expect(shellSplitWords(`run "C:\\app\\bin"`)).toEqual(["run", "C:\\app\\bin"]);
+    // A double quote CAN escape these four, so the backslash is consumed there.
+    expect(shellSplitWords(`echo "a\\"b"`)).toEqual(["echo", `a"b`]);
+    expect(shellSplitWords(`echo "a\\\\b"`)).toEqual(["echo", "a\\b"]);
+    expect(shellSplitWords(`echo "\\$HOME"`)).toEqual(["echo", "$HOME"]);
+  });
   it("keeps an empty quoted word as an empty argument", () => {
     expect(shellSplitWords(`node app.js --base-href ""`)).toEqual([
       "node",
