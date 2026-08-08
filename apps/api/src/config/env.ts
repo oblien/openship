@@ -299,6 +299,16 @@ const envSchema = z.object({
    */
   TRUST_PROXY: envBool("false"),
   /**
+   * Trust an upstream edge/proxy to enforce rate limiting, and skip the
+   * app-level pre-auth flood guard (middleware/rate-limiter.ts `floodGuard`)
+   * as redundant. Set true when this API sits behind something that already
+   * rate-limits — the Openship Edge, or your own reverse proxy with limits.
+   * Auto-implied under CLOUD_MODE (the cloud Edge has default limits). Leave
+   * false on a standalone self-hosted API so the flood guard still protects
+   * the pre-auth session lookup.
+   */
+  OPENSHIP_TRUST_EDGE: envBool("false"),
+  /**
    * Allow outbound notification webhooks to target internal/loopback/LAN hosts.
    * Default false → the SSRF guard (assertPublicUrl) runs on self-hosted too, so
    * a member can't point a channel at 127.0.0.1 / metadata / the private network.
