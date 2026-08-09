@@ -1,0 +1,83 @@
+{
+  "available": true,
+  "verified": true,
+  "id": "kanbn",
+  "name": "Kan.bn",
+  "description": "Open-source project management and Kanban boards — a self-hosted Trello alternative.",
+  "repository": "https://github.com/kanbn/kan",
+  "kind": "template",
+  "logo": "kanbn",
+  "category": "other",
+  "tags": ["project-management", "kanban", "collaboration", "trello"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "postgres",
+      "image": "postgres:15",
+      "environment": {
+        "POSTGRES_DB": "kan_db",
+        "POSTGRES_USER": "kan"
+      },
+      "secretEnv": ["POSTGRES_PASSWORD"],
+      "volumes": ["kan_postgres_data:/var/lib/postgresql/data"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "pg_isready -U kan -d kan_db"],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 10
+      },
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "migrate",
+      "image": "ghcr.io/kanbn/kan-migrate:latest",
+      "dependsOn": ["postgres"],
+      "environment": {
+        "POSTGRES_URL": "postgres://kan:{{config:POSTGRES_PASSWORD}}@postgres:5432/kan_db"
+      },
+      "secretEnv": ["POSTGRES_URL"],
+      "restart": "no"
+    },
+    {
+      "name": "web",
+      "image": "ghcr.io/kanbn/kan:latest",
+      "ports": ["3000:3000"],
+      "exposedPort": 3000,
+      "exposed": true,
+      "dependsOn": ["migrate"],
+      "environment": {
+        "NEXT_PUBLIC_BASE_URL": "{{publicUrl:web}}",
+        "POSTGRES_URL": "postgres://kan:{{config:POSTGRES_PASSWORD}}@postgres:5432/kan_db",
+        "NEXT_PUBLIC_ALLOW_CREDENTIALS": "true"
+      },
+      "secretEnv": ["POSTGRES_URL", "BETTER_AUTH_SECRET"],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "POSTGRES_PASSWORD",
+      "service": "postgres",
+      "label": "Database password",
+      "help": "Auto-generated. The password used by Kan.bn's Postgres database.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "BETTER_AUTH_SECRET",
+      "service": "web",
+      "label": "Authentication secret",
+      "help": "Auto-generated. Encrypts Kan.bn authentication data.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "web",
+      "port": 3000,
+      "label": "Kan.bn",
+      "kind": "http"
+    }
+  ]
+}
