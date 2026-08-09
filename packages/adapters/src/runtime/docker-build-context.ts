@@ -180,17 +180,21 @@ async function applyDockerignore(contextDir: string, config: BuildConfig): Promi
 
   const prune = async (currentPath: string): Promise<void> => {
     const entries = await readdir(currentPath, { withFileTypes: true });
-    await Promise.all(
-      entries.map(async (entry) => {
-        const absolutePath = join(currentPath, entry.name);
-        const relativePath = toPosixPath(relative(contextDir, absolutePath));
-        if (!buildFiles.has(relativePath) && matcher.ignores(relativePath)) {
-          await rm(absolutePath, { recursive: true, force: true });
-          return;
-        }
-        if (entry.isDirectory()) await prune(absolutePath);
-      }),
-    );
+    // Sequential, not Promise.all: a wide `.dockerignore` (every *.md, .github/,
+    // .gitignore …) fans out to hundreds of concurrent `rm`s, and on Windows the
+    // directory listing then lags behind the deletes — a later `readdir` still
+    // reports names whose inode is already gone, so the very next `lstat` throws
+    // ENOENT. Deleting in order keeps the tree and its listing in step; the cost
+    // is negligible next to the build that follows.
+    for (const entry of entries) {
+      const absolutePath = join(currentPath, entry.name);
+      const relativePath = toPosixPath(relative(contextDir, absolutePath));
+      if (!buildFiles.has(relativePath) && matcher.ignores(relativePath)) {
+        await rm(absolutePath, { recursive: true, force: true });
+        continue;
+      }
+      if (entry.isDirectory()) await prune(absolutePath);
+    }
   };
   await prune(contextDir);
 }
@@ -429,7 +433,23 @@ export async function resolveServiceDockerfile(
     );
   }
 
-  const contextEntries = await readdir(contextDir);
+  // Confirm each name still resolves before handing the list to dockerode. Its
+  // tar-fs pack `lstat`s every entry and emits an unhandled 'error' on a miss,
+  // which takes the whole API process down (not just the build). A name that
+  // vanished between this readdir and the pack — a pruned path whose deletion
+  // the directory listing hadn't caught up with — must simply not be offered.
+  const contextEntries = (
+    await Promise.all(
+      (await readdir(contextDir)).map(async (name) =>
+        (await access(join(contextDir, name)).then(
+          () => true,
+          () => false,
+        ))
+          ? name
+          : null,
+      ),
+    )
+  ).filter((name): name is string => name !== null);
 
   return {
     contextEntries,
