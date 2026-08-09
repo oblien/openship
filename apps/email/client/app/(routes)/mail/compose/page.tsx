@@ -11,12 +11,13 @@ import { useLoaderData } from 'react-router';
 import type { Route } from './+types/page';
 
 export async function clientLoader({ request }: Route.ClientLoaderArgs) {
+  const baseUrl = import.meta.env.VITE_PUBLIC_APP_URL || new URL(request.url).origin;
   const session = await authProxy.api.getSession({ headers: request.headers });
-  if (!session) return Response.redirect(`${import.meta.env.VITE_PUBLIC_APP_URL}/login`);
+  if (!session) return Response.redirect(`${baseUrl}/login`);
   const url = new URL(request.url);
   if (url.searchParams.get('to')?.startsWith('mailto:')) {
     return Response.redirect(
-      `${import.meta.env.VITE_PUBLIC_APP_URL}/mail/compose/handle-mailto?mailto=${encodeURIComponent(url.searchParams.get('to') ?? '')}`,
+      `${baseUrl}/mail/compose/handle-mailto?mailto=${encodeURIComponent(url.searchParams.get('to') ?? '')}`,
     );
   }
 
