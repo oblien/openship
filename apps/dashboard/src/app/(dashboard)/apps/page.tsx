@@ -45,6 +45,7 @@ interface FeaturedApp {
 // (single source: AVAILABLE_APP_IDS in @repo/core).
 const FEATURED_APPS: FeaturedApp[] = [
   { id: "supabase", name: "Supabase", desc: "Postgres backend + Studio", icon: Database },
+  { id: "postgres", name: "PostgreSQL", desc: "Standalone Postgres database", icon: Database },
   { id: "convex", name: "Convex", desc: "Reactive backend & database", icon: Database },
   { id: "mongodb", name: "MongoDB", desc: "Document database + Mongo Express", icon: Database },
   { id: "n8n", name: "n8n", desc: "Workflow automation", icon: Workflow },

@@ -21,6 +21,8 @@ export const APP_LOGO: Record<
   // Supabase's official mark, rendered in its brand green by the simpleicons CDN.
   supabase: { slug: "supabase" },
   mongodb: { slug: "mongodb" },
+  // Catalog id is "postgres"; simpleicons brand slug is "postgresql".
+  postgres: { slug: "postgresql" },
   n8n: { slug: "n8n" },
   // Ghost's brand mark is near-black — invert it on the dark themes so it
   // stays visible (it's monochrome, so invert = clean white). Colored logos
