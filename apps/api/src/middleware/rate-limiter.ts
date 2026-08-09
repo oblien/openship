@@ -114,6 +114,39 @@ export function rateLimiterFor(policyId: PolicyId): MiddlewareHandler {
 }
 
 /**
+ * Pre-auth flood guard, mounted app-level on `/api/*` ahead of every route
+ * chain. Enforces the per-IP `flood-ip` ceiling before authMiddleware runs, so
+ * an unauthenticated flood can't drive the session lookup (or any per-route
+ * pre-limiter work) in unbounded volume from one IP. It is a SEPARATE bucket
+ * from the per-route policies `secureRouter` attaches after auth, so the two
+ * count independently — no single bucket is charged twice. Health/bootstrap
+ * paths are exempt for the same reason the per-route limiters skip them.
+ *
+ * Deliberately follows the ordinary per-IP limiters' loopback exemption (via
+ * `enforce`): under a same-host proxy misconfig where all traffic looks
+ * loopback, per-IP limiting is meaningless anyway, and dev/on-host traffic
+ * shouldn't 429.
+ *
+ * Skipped entirely when an upstream edge already rate-limits — CLOUD_MODE
+ * (behind the Oblien Edge, which has default limits) or OPENSHIP_TRUST_EDGE.
+ * It's the first line only for a standalone self-hosted API with nothing
+ * rate-limiting in front of it.
+ */
+export async function floodGuard(c: Context, next: Next): Promise<void | Response> {
+  if (env.CLOUD_MODE || env.OPENSHIP_TRUST_EDGE) {
+    await next();
+    return;
+  }
+  if (c.req.path.startsWith("/api/health")) {
+    await next();
+    return;
+  }
+  const rejected = await enforce(c, "flood-ip");
+  if (rejected) return rejected;
+  await next();
+}
+
+/**
  * Global default rate-limiter mounted on `/api`. Routes that set
  * `rateLimit: <policyId>` on their secureRouter spec inject their
  * own per-route limiter via the `requestPolicy` context key — when
