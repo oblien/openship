@@ -68,6 +68,8 @@ const IMAGE_BRAND: Record<string, string> = {
   grafana: "grafana",
   prometheus: "prometheus",
   loki: "grafana",
+  "opentelemetry-collector-contrib": "opentelemetry",
+  "otel-collector": "opentelemetry",
   n8n: "n8n",
   supabase: "supabase",
   keycloak: "keycloak",
