@@ -130,6 +130,10 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:z
       - /var/lib/openship/edge/acme:/var/www/acme:z
       - /opt/openship/static:/opt/openship/static:z
+      # Host-op SSH key at the path OPENSHIP_HOST_SSH_KEY names in .env.example —
+      # /dev/null when OPENSHIP_HOST_KEY_PATH is unset. Without this mount there is
+      # nowhere for the key to be, so host ops fail whatever the .env says (#509).
+      - ${OPENSHIP_HOST_KEY_PATH:-/dev/null}:/run/secrets/openship_host_key:ro
     # Reach the HOST over the internal docker bridge (host.docker.internal →
     # host-gateway) for host-OS ops when configured (OPENSHIP_HOST_SSH_*, set up
     # by `openship up`). Harmless when unset. Linux needs the explicit mapping.
