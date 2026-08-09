@@ -25,6 +25,13 @@ describe("app catalog (JSON)", () => {
     expect(isValidAppTemplate(null)).toBe(false);
     expect(isValidAppTemplate({ id: "x", name: "X", description: "d", kind: "template", logo: "x", category: "bogus" })).toBe(false);
   });
+
+  it("uptime-kuma is enabled on the current major image", () => {
+    const app = APP_TEMPLATES.find((a) => a.id === "uptime-kuma");
+    expect(app?.available).toBe(true);
+    expect(app?.services?.[0]?.image).toBe("louislam/uptime-kuma:2");
+    expect(app?.connection?.outputs.some((o) => o.source === "publicUrl:uptime-kuma")).toBe(true);
+  });
 });
 
 // A minimal valid template used to probe the stricter, version-aware gate.
