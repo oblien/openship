@@ -45,12 +45,15 @@ jobs:
           - platform: amd64
             runner: ubuntu-24.04
           - platform: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-24.04-arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
