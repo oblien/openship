@@ -1,0 +1,206 @@
+{
+  "available": true,
+  "verified": true,
+  "id": "seaweedfs",
+  "name": "SeaweedFS",
+  "description": "S3-compatible object storage backed by SeaweedFS, with persistent filer data and generated access credentials.",
+  "kind": "template",
+  "logo": "seaweedfs",
+  "category": "database",
+  "tags": [
+    "storage",
+    "object-storage",
+    "s3",
+    "seaweedfs",
+    "self-hosted"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "seaweedfs",
+      "image": "chrislusf/seaweedfs:latest",
+      "command": "server -ip=0.0.0.0 -ip.bind=0.0.0.0 -dir=/data -master.port=9333 -volume.port=8080 -filer -filer.port=8888 -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json",
+      "ports": [
+        "8333:8333",
+        "8888:8888",
+        "9333:9333"
+      ],
+      "exposedPort": 8888,
+      "routes": [
+        { "port": 8888 },
+        { "port": 8333, "slugSuffix": "s3" }
+      ],
+      "exposed": true,
+      "volumes": [
+        "seaweedfs-data:/data"
+      ],
+      "restart": "unless-stopped",
+      "secretEnv": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY"
+      ],
+      "environment": {
+        "AWS_ACCESS_KEY_ID": "{{config:AWS_ACCESS_KEY_ID}}",
+        "AWS_SECRET_ACCESS_KEY": "{{config:AWS_SECRET_ACCESS_KEY}}",
+        "S3_BUCKET": "{{config:S3_BUCKET}}"
+      },
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "wget -q --spider http://127.0.0.1:9333/ || exit 1"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 30
+      }
+    }
+  ],
+  "volumes": [
+    "seaweedfs-data"
+  ],
+  "configFields": [
+    {
+      "key": "AWS_ACCESS_KEY_ID",
+      "service": "seaweedfs",
+      "label": "Access key",
+      "help": "Generated S3 access key for SeaweedFS.",
+      "default": "openship",
+      "secret": true
+    },
+    {
+      "key": "AWS_SECRET_ACCESS_KEY",
+      "service": "seaweedfs",
+      "label": "Secret key",
+      "help": "Generated S3 secret key for SeaweedFS.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "S3_BUCKET",
+      "service": "seaweedfs",
+      "label": "Default bucket",
+      "help": "Bucket name shown in the connection details.",
+      "default": "uploads"
+    }
+  ],
+  "files": [
+    {
+      "service": "seaweedfs",
+      "path": "/etc/seaweedfs/s3.json",
+      "content": "{\n  \"identities\": [\n    {\n      \"name\": \"openship\",\n      \"credentials\": [\n        {\n          \"accessKey\": \"{{config:AWS_ACCESS_KEY_ID}}\",\n          \"secretKey\": \"{{config:AWS_SECRET_ACCESS_KEY}}\"\n        }\n      ],\n      \"actions\": [\"Admin\", \"Read\", \"List\", \"Tagging\", \"Write\"]\n    }\n  ]\n}\n"
+    }
+  ],
+  "prepare": [
+    {
+      "service": "seaweedfs",
+      "command": "printf 's3.bucket.create -name=%s\n' \"$S3_BUCKET\" | weed shell -master=127.0.0.1:9333 -filer=127.0.0.1:8888 > /dev/null 2>&1 || true; printf '%s' \"$S3_BUCKET\"",
+      "capture": "bucket",
+      "phase": "post-ready",
+      "readiness": {
+        "test": "wget -q --spider http://127.0.0.1:8888/ && wget -q --spider http://127.0.0.1:9333/",
+        "interval": 1000,
+        "retries": 30
+      },
+      "once": true
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "seaweedfs",
+      "port": 8333,
+      "label": "S3 API",
+      "kind": "http",
+      "required": true,
+      "scope": "public",
+      "defaultMode": "domain",
+      "allowedModes": [
+        "domain",
+        "port",
+        "internal"
+      ]
+    },
+    {
+      "service": "seaweedfs",
+      "port": 8888,
+      "label": "Filer UI",
+      "kind": "http",
+      "required": false,
+      "scope": "public",
+      "defaultMode": "domain",
+      "allowedModes": [
+        "domain",
+        "port",
+        "internal"
+      ]
+    }
+  ],
+  "provides": [
+    {
+      "id": "s3",
+      "category": "database",
+      "outputRefs": [
+        "endpoint",
+        "accessKey",
+        "secretKey",
+        "bucket"
+      ]
+    }
+  ],
+  "connection": {
+    "title": "SeaweedFS S3 storage",
+    "description": "Use these credentials with any S3-compatible client or bind this storage app to another project.",
+    "outputs": [
+      {
+        "id": "endpoint",
+        "label": "S3 endpoint",
+        "source": "publicUrl:seaweedfs:8333",
+        "service": "seaweedfs",
+        "envKey": "S3_ENDPOINT",
+        "recommended": true,
+        "variants": [
+          {
+            "id": "internal",
+            "label": "Internal endpoint",
+            "source": "template:http://seaweedfs:8333"
+          }
+        ]
+      },
+      {
+        "id": "accessKey",
+        "label": "Access key",
+        "source": "env:seaweedfs:AWS_ACCESS_KEY_ID",
+        "service": "seaweedfs",
+        "envKey": "S3_ACCESS_KEY_ID",
+        "recommended": true,
+        "secret": true
+      },
+      {
+        "id": "secretKey",
+        "label": "Secret key",
+        "source": "env:seaweedfs:AWS_SECRET_ACCESS_KEY",
+        "service": "seaweedfs",
+        "envKey": "S3_SECRET_ACCESS_KEY",
+        "secret": true,
+        "recommended": true
+      },
+      {
+        "id": "bucket",
+        "label": "Default bucket",
+        "source": "env:seaweedfs:S3_BUCKET",
+        "service": "seaweedfs",
+        "envKey": "S3_BUCKET"
+      },
+      {
+        "id": "region",
+        "label": "Region",
+        "source": "template:us-east-1",
+        "envKey": "S3_REGION"
+      }
+    ],
+    "guide": {
+      "intro": "SeaweedFS exposes an S3-compatible API with generated credentials.",
+      "useHint": "Use path-style S3 clients against the S3 endpoint. Create the bucket named above before binding it to another project if it does not exist yet.",
+      "defaultMode": "internal"
+    }
+  }
+}

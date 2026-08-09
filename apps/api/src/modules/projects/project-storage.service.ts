@@ -101,10 +101,9 @@ export type BindObjectStorageInput = {
   secretAccessKey?: string;
 };
 
-/** Apps that can hand a bucket to another project. Kept to MinIO for now — the
- *  one S3 server in the catalog — but keyed off the template id, not the name,
- *  so a future MinIO-alike joins by adding its id here. */
-const STORAGE_TEMPLATE_IDS = new Set(["minio"]);
+/** Apps that can hand a bucket to another project. Keyed off the template id
+ *  (not the display name) so MinIO-alikes join by adding their id here. */
+const STORAGE_TEMPLATE_IDS = new Set(["minio", "seaweedfs"]);
 
 export async function getObjectStorage(
   ctx: RequestContext,
