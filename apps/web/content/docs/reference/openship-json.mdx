@@ -46,6 +46,7 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
     installCommand: { type: 'string', description: 'Command that installs dependencies.' },
     buildCommand: { type: 'string', description: 'Command that builds the app.' },
     startCommand: { type: 'string', description: 'Command that starts the server in production.' },
+    releaseCommands: { type: 'string[]', description: 'Commands run once per deploy, after the build and before the new version goes live. A failure fails the deploy. See Release commands.' },
     outputDirectory: { type: 'string', description: 'Directory the build writes to (dist, .next, build, out).' },
     buildImage: { type: 'string', description: 'Docker image used for the build (e.g. "node:22").' },
     productionPaths: { type: 'string[]', description: 'Paths shipped to the runtime as the production artifact.' },
@@ -62,6 +63,62 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
     volumes: { type: 'string[]', description: 'Paths kept across deploys. Omit to inherit the framework defaults; [] turns persistence off.' },
   }}
 />
+
+## Release commands
+
+`releaseCommands` runs once per deploy, **after the build and before the new version goes
+live** — the place migrations belong. Each command runs in order, its output streams into
+the deploy log, and a non-zero exit **fails the deploy**: nothing cuts over, and the
+version that was already serving keeps serving.
+
+```json
+{
+  "releaseCommands": [
+    "php artisan migrate --force",
+    "php artisan optimize",
+    "php artisan storage:link",
+    "php artisan reload"
+  ]
+}
+```
+
+Nothing is injected for you — a framework's release set is a choice, so an app with no
+`releaseCommands` runs no release phase at all. The equivalents elsewhere:
+
+| Stack | Typical release commands |
+| --- | --- |
+| Laravel | `php artisan migrate --force`, `php artisan optimize`, `php artisan storage:link`, `php artisan reload` |
+| Rails | `bundle exec rails db:migrate` |
+| Django | `python manage.py migrate --noinput`, `python manage.py collectstatic --noinput` |
+
+Each command gets the same environment variables as your start command, secrets included,
+and a bounded 10-minute budget. On the Docker runtime it runs in a throwaway container
+built from the new image, with the project's volumes mounted; on the bare runtime it runs
+in the staged release directory. Openship Cloud has no one-off execution primitive, and a
+static site has no runtime at all — on those the commands are reported in the deploy log
+and skipped rather than silently dropped.
+
+<Callout title="Not supported on projects with services yet" type="warn">
+A project runs the release phase only on the **single-app** path. Attaching any service,
+including the database your migrations need, routes the project onto the services/compose
+pipeline, and there the declared commands are named in the deploy log and skipped.
+
+This is a real limitation rather than a design choice: a compose release phase has to name
+which service to run in, and that is not modelled yet. If your app needs both a service and
+a release phase today, run the commands through the service terminal after the deploy, or
+point the app at an external managed database. Compose support is the intended follow-up.
+</Callout>
+
+<Callout title="Rollbacks do not replay them">
+Rolling back promotes a release that was already built, so its release commands are **not**
+re-run: the schema is already ahead of the version coming back, and a phase that can fail a
+deploy has no business running on the recovery path. A redeploy that genuinely rebuilds an
+older deployment still runs the commands that release declared.
+</Callout>
+
+<Callout title="Not a deploy hook">
+This runs **during** a deploy. It is not an inbound trigger that starts one.
+</Callout>
 
 ## Persistent storage
 
@@ -252,6 +309,7 @@ dashboard for now.
 |---|---|
 | `framework`, `packageManager`, `*Command`, `outputDirectory`, `buildImage`, `productionPaths`, `rootDirectory` | Build settings |
 | `port`, `productionMode`, `runtime` | Runtime settings (`hasServer`, runtime isolation) |
+| `releaseCommands` | Project release commands (`PATCH /projects/:id` → `releaseCommands`) |
 | `volumes` | Configuration → Persistent storage |
 | `env` | Environment variables (seeded as editable rows) |
 | `domains` | Public endpoints / custom domains |

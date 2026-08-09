@@ -127,6 +127,14 @@ export type RuntimeCapability =
    */
   | "isolatedExec"
   /**
+   * Runtime can run a one-off RELEASE COMMAND against a freshly-built artifact,
+   * between the build and the cutover — `runReleaseCommand`. Docker runs it in a
+   * throwaway container off the new image; Bare runs it in the staged release
+   * directory. Cloud has no such primitive, so a project that declares release
+   * commands gets a logged skip there rather than a silently-unrun migration.
+   */
+  | "releaseCommand"
+  /**
    * Runtime can report a container's RESTART HISTORY and health, not just a
    * point-in-time status — the readings the post-deploy stabilization watch
    * needs to tell "up" from "bouncing" (`sampleStability`). Docker implements
@@ -206,6 +214,24 @@ export interface RuntimeAdapter {
 
   /** Start a container/process from a completed build */
   deploy(config: DeployConfig, onLog?: LogCallback): Promise<DeploymentResult>;
+
+  /**
+   * Run ONE release command against the freshly-built artifact named by
+   * `config.imageRef`, before anything is activated. Streams the command's
+   * output through `onLog` and REJECTS on a non-zero exit (or on the timeout)
+   * with that output in the message, which is what fails the deploy.
+   *
+   * Must not touch the running deployment: this is a throwaway execution
+   * context (a one-off container / the not-yet-promoted release directory), so
+   * a failure leaves the previous version untouched and still serving.
+   * Only present when `supports("releaseCommand")`.
+   */
+  runReleaseCommand?(
+    config: DeployConfig,
+    command: string,
+    onLog: LogCallback,
+    opts?: { timeoutMs?: number },
+  ): Promise<void>;
 
   /** Stop a running container/process (preserves state) */
   stop(containerId: string): Promise<void>;

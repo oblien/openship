@@ -248,6 +248,11 @@ export interface ProjectInfo {
    * the pipeline does when the project has no `readiness`.
    */
   readiness?: OpenshipReadiness;
+  /**
+   * Declared release commands — run once per deploy between build and cutover.
+   * Absent means no release phase, which is the default for every project.
+   */
+  releaseCommands?: string[];
 }
 
 /** A `domains[]` entry normalized to the `CreateProjectBody.publicEndpoints` shape. */
@@ -436,6 +441,8 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
   }
   if (config.resources) info.resources = config.resources;
   if (config.readiness) info.readiness = config.readiness;
+  // Declared `[]` is meaningful (release phase off), so test for presence.
+  if (config.releaseCommands) info.releaseCommands = config.releaseCommands;
 
   // Declared compose services replace detection: the project IS a services
   // project. runtimeMode="docker" then falls out of buildProductionProjectInput's
@@ -500,6 +507,7 @@ export function projectInfoToScanResponse(result: ProjectInfo) {
     ...(result.publicEndpoints && { publicEndpoints: result.publicEndpoints }),
     ...(result.resources && { resources: result.resources }),
     ...(result.readiness && { readiness: result.readiness }),
+    ...(result.releaseCommands && { releaseCommands: result.releaseCommands }),
     ...(result.rootEnv && Object.keys(result.rootEnv).length > 0 && { rootEnv: maskEnv(result.rootEnv) }),
     ...(result.routing && { routing: result.routing }),
     ...(result.monorepoWorkspace && { monorepoWorkspace: result.monorepoWorkspace }),

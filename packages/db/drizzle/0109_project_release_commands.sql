@@ -1,0 +1,18 @@
+-- Deploy-time release phase, per project.
+--
+-- Commands that run ONCE per deploy, after the build and before the new version
+-- is activated: `php artisan migrate --force`, `rails db:migrate`, `optimize`,
+-- `storage:link`. Before this there was exactly one command per app stack (the
+-- start command), so a Laravel/Rails/Django project's migrations never ran and
+-- had to be applied by hand through the service terminal.
+--
+-- A jsonb LIST, not a text column with `&&`-chained steps: a framework's release
+-- set is several independent commands (Laravel 13: migrate --force, optimize,
+-- storage:link, reload) and each needs its own log marker and its own
+-- attributable failure. Matches how `volumes` / `monorepo_shared_paths` store
+-- their lists.
+--
+-- Nullable with NO default and no backfill: NULL means "no release phase", so
+-- every existing project keeps deploying exactly as it does today. A non-zero
+-- exit fails the deploy, so opting in has to be explicit.
+ALTER TABLE "project" ADD COLUMN IF NOT EXISTS "release_commands" jsonb;
