@@ -1829,6 +1829,130 @@
           }
         ]
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "id": "shoutrrr",
+      "name": "Shoutrrr",
+      "description": "Open-source social media scheduling and publishing platform (Buffer & Hootsuite alternative).",
+      "kind": "template",
+      "logo": "shoutrrr",
+      "category": "automation",
+      "tags": [
+        "social-media",
+        "scheduling",
+        "publishing",
+        "marketing",
+        "automation"
+      ],
+      "framework": "docker-compose",
+      "repository": "https://github.com/coollabsio/shoutrrr",
+      "services": [
+        {
+          "name": "shoutrrr",
+          "image": "ghcr.io/coollabsio/shoutrrr:latest",
+          "ports": [
+            "8080:8080"
+          ],
+          "exposedPort": 8080,
+          "exposed": true,
+          "environment": {
+            "APP_ENV": "production",
+            "APP_DEBUG": "false",
+            "APP_URL": "{{publicUrl:shoutrrr}}",
+            "OCTANE_SERVER": "frankenphp",
+            "OCTANE_HTTPS": "true",
+            "TRUSTED_PROXIES": "*",
+            "SESSION_SECURE_COOKIE": "true",
+            "DB_CONNECTION": "sqlite",
+            "DB_DATABASE": "/var/www/html/database/sqlite/database.sqlite",
+            "CACHE_STORE": "database",
+            "QUEUE_CONNECTION": "database",
+            "SESSION_DRIVER": "database",
+            "QUEUE_WORKER_ENABLED": "true",
+            "QUEUE_WORKER_COUNT": "1",
+            "SCHEDULER_ENABLED": "true",
+            "SOCIALITE_ENABLED": "false"
+          },
+          "secretEnv": [
+            "APP_KEY"
+          ],
+          "volumes": [
+            "shoutrrr_storage:/var/www/html/storage",
+            "shoutrrr_sqlite:/var/www/html/database/sqlite"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "APP_KEY",
+          "service": "shoutrrr",
+          "label": "Application key",
+          "help": "Auto-generated encryption key for sessions, tokens, and encrypted credentials.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "settings": [
+        {
+          "id": "general",
+          "label": "General",
+          "fields": [
+            {
+              "key": "APP_NAME",
+              "service": "shoutrrr",
+              "label": "Application Name",
+              "type": "text",
+              "default": "Shoutrrr",
+              "placeholder": "Shoutrrr"
+            },
+            {
+              "key": "QUEUE_WORKER_COUNT",
+              "service": "shoutrrr",
+              "label": "Queue Workers",
+              "type": "number",
+              "default": "1",
+              "integer": true,
+              "min": 1,
+              "advanced": true
+            },
+            {
+              "key": "INERTIA_SSR_ENABLED",
+              "service": "shoutrrr",
+              "label": "Enable SSR (Server-Side Rendering)",
+              "type": "boolean",
+              "default": "false",
+              "advanced": true
+            },
+            {
+              "key": "SOCIALITE_ENABLED",
+              "service": "shoutrrr",
+              "label": "Enable OAuth Social Login",
+              "type": "boolean",
+              "default": "false",
+              "advanced": true
+            }
+          ]
+        }
+      ],
+      "connection": {
+        "title": "Connect to Shoutrrr",
+        "description": "Open the web interface to complete onboarding and manage social channels.",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Application URL",
+            "source": "publicUrl:shoutrrr",
+            "kind": "url",
+            "help": "Open the Shoutrrr web dashboard in your browser."
+          }
+        ]
+      }
     }
   ]
 }

@@ -45,6 +45,7 @@ export const APP_LOGO: Record<
   // Buzz (block/buzz) — vendored bee mark (its own favicon, OS-recolor stripped).
   // Monochrome near-black, so darkInvert flips it to light on the dark themes.
   buzz: { slug: undefined, src: "/app-logos/buzz.svg", darkInvert: true },
+  shoutrrr: { src: "/app-logos/shoutrrr.png" },
   // code-server / IT-Tools / Stirling-PDF have no reliable simpleicons mark →
   // they fall back to the monochrome Boxes glyph.
   // openship-native mail stack — its own brand mark, a full-bleed square icon.
