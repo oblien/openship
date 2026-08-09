@@ -7,6 +7,11 @@ import { useToast } from "@/components/toast";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Github, Loader2 } from "lucide-react";
+import {
+  renderableOAuthProviders,
+  type AdvertisedAuthProvider,
+  type RenderableOAuthProviderId,
+} from "@/lib/auth-providers";
 
 function GoogleIcon() {
   return (
@@ -19,17 +24,36 @@ function GoogleIcon() {
   );
 }
 
+/** Icon per renderable provider. The label comes from i18n (`t.auth.oauth[id]`),
+ *  so adding a provider means one entry here and one key there. */
+const PROVIDER_ICONS: Record<RenderableOAuthProviderId, () => React.ReactElement> = {
+  github: () => <Github />,
+  google: () => <GoogleIcon />,
+};
+
 /**
- * Shared OAuth buttons - GitHub + Google.
- * Includes the divider above them.
+ * Shared OAuth buttons, rendered from the provider list the SERVER advertises
+ * (GET /health/env → `authProviders`, plumbed through the auth layout's
+ * context). Renders nothing at all — no divider either — when the list is
+ * empty, so callers can mount this unconditionally instead of guessing from
+ * `selfHosted` which providers exist.
+ *
  * Pass callbackURL to override the default post-OAuth redirect.
  */
-export function OAuthButtons({ callbackURL = "/" }: { callbackURL?: string }) {
+export function OAuthButtons({
+  providers,
+  callbackURL = "/",
+}: {
+  providers: readonly AdvertisedAuthProvider[] | undefined;
+  callbackURL?: string;
+}) {
   const { toast } = useToast();
   const { t } = useI18n();
-  const [loading, setLoading] = useState<"github" | "google" | null>(null);
+  const [loading, setLoading] = useState<RenderableOAuthProviderId | null>(null);
 
-  async function handleOAuth(provider: "github" | "google") {
+  const visible = renderableOAuthProviders(providers);
+
+  async function handleOAuth(provider: RenderableOAuthProviderId) {
     setLoading(provider);
     try {
       // Resolve callbackURL against the DASHBOARD origin. Better Auth resolves
@@ -64,6 +88,10 @@ export function OAuthButtons({ callbackURL = "/" }: { callbackURL?: string }) {
     }
   }
 
+  // Nothing configured server-side → no divider, no buttons. This is what makes
+  // the callers' unconditional `<OAuthButtons providers={…} />` safe.
+  if (visible.length === 0) return null;
+
   return (
     <>
       {/* Divider */}
@@ -75,25 +103,18 @@ export function OAuthButtons({ callbackURL = "/" }: { callbackURL?: string }) {
 
       {/* OAuth buttons */}
       <div className="space-y-2.5">
-        <Button
-          variant="ghost"
-          disabled={loading !== null}
-          onClick={() => handleOAuth("github")}
-          className="w-full border-0 bg-foreground/[0.04] hover:bg-foreground/[0.08]"
-        >
-          {loading === "github" ? <Loader2 className="animate-spin" /> : <Github />}
-          {t.auth.oauth.github}
-        </Button>
-
-        <Button
-          variant="ghost"
-          disabled={loading !== null}
-          onClick={() => handleOAuth("google")}
-          className="w-full border-0 bg-foreground/[0.04] hover:bg-foreground/[0.08]"
-        >
-          {loading === "google" ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
-          {t.auth.oauth.google}
-        </Button>
+        {visible.map((provider) => (
+          <Button
+            key={provider}
+            variant="ghost"
+            disabled={loading !== null}
+            onClick={() => handleOAuth(provider)}
+            className="w-full border-0 bg-foreground/[0.04] hover:bg-foreground/[0.08]"
+          >
+            {loading === provider ? <Loader2 className="animate-spin" /> : PROVIDER_ICONS[provider]()}
+            {t.auth.oauth[provider]}
+          </Button>
+        ))}
       </div>
     </>
   );

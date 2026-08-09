@@ -33,7 +33,7 @@ function RegisterPageInner() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { t } = useI18n();
-  const { selfHosted } = useAuthContext();
+  const { authProviders } = useAuthContext();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -148,10 +148,11 @@ function RegisterPageInner() {
         </Button>
       </form>
 
-      {/* Social login is cloud-only — a self-hosted operator rarely sets
-          GOOGLE_/GITHUB_ client creds, so the buttons would just fail. Mirror
-          the login page, which hides them on self-hosted. */}
-      {!selfHosted && <OAuthButtons callbackURL={postLoginUrl ?? "/"} />}
+      {/* Mirrors the login page: render the providers the SERVER advertises as
+          configured, not a `!selfHosted` guess. A self-hosted operator who HAS
+          set GITHUB_/GOOGLE_ client creds gets working buttons; one who hasn't
+          gets nothing rendered, exactly as before. */}
+      <OAuthButtons providers={authProviders} callbackURL={postLoginUrl ?? "/"} />
 
       <p className="mt-8 text-center text-sm text-muted-foreground">
         {t.auth.register.hasAccount}{" "}

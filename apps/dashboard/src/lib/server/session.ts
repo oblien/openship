@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { serverApi, ServerApiError } from "./api";
+import type { AdvertisedAuthProvider } from "@/lib/auth-providers";
 
 /**
  * Session and user types returned by Better Auth's `/api/auth/get-session`.
@@ -125,6 +126,14 @@ export type DeploymentInfo = {
    * send it; `resolveProductView` treats a missing value as "platform".
    */
   productMode?: "platform" | "mail";
+  /**
+   * Social-login providers the API actually has credentials for, advertised by
+   * GET /health/env. The auth pages render exactly these (see
+   * lib/auth-providers.ts) instead of assuming "cloud ⇒ github+google". Absent
+   * on an older server — treat that as "none advertised", which reproduces the
+   * old self-hosted behaviour.
+   */
+  authProviders?: AdvertisedAuthProvider[];
   cloudAuthUrl: string;
   cloudApiUrl: string;
   machineName?: string;

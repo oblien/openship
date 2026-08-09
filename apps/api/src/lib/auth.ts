@@ -21,6 +21,7 @@ import {
   teardownBillingForOrg,
 } from "../modules/billing/billing-org-cleanup";
 import { provisionUser } from "./provision-user";
+import { socialProviderCredentials } from "./auth-providers";
 import { safeErrorMessage } from "@repo/core";
 
 /**
@@ -115,6 +116,12 @@ function getSharedCookieDomain() {
 const sharedCookieDomain = getSharedCookieDomain();
 const useSessionCookieCache = getDriver() !== "pglite";
 
+// Credential pairs, or null when the operator configured neither/half of one.
+// Same resolver GET /health/env uses to advertise the provider list, so "a
+// button is shown" and "the provider is registered" cannot disagree.
+const githubOAuth = socialProviderCredentials("github");
+const googleOAuth = socialProviderCredentials("google");
+
 export const auth = betterAuth({
   basePath: "/api/auth",
   // Dynamic when served on a public URL — every absolute OAuth/auth URL is built
@@ -190,13 +197,17 @@ export const auth = betterAuth({
       : undefined,
   },
 
-  /* ---------- OAuth Providers ---------- */
+  /* ---------- OAuth Providers ----------
+     A provider is registered only when BOTH halves of its credential pair are
+     set. That condition now lives in lib/auth-providers.ts, because
+     GET /health/env advertises the same list to the dashboard so it can draw
+     exactly the buttons that will work — inlining the env check here again is
+     how the two would drift. */
   socialProviders: {
-    ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+    ...(githubOAuth
       ? {
           github: {
-            clientId: env.GITHUB_CLIENT_ID,
-            clientSecret: env.GITHUB_CLIENT_SECRET,
+            ...githubOAuth,
             scope: ["read:user", "user:email"],
             mapProfileToUser: (profile: any) => ({
               name: profile.name || profile.login,
@@ -206,14 +217,7 @@ export const auth = betterAuth({
           },
         }
       : {}),
-    ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
-      ? {
-          google: {
-            clientId: env.GOOGLE_CLIENT_ID,
-            clientSecret: env.GOOGLE_CLIENT_SECRET,
-          },
-        }
-      : {}),
+    ...(googleOAuth ? { google: googleOAuth } : {}),
   },
 
   /* ---------- Account Linking ---------- */

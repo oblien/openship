@@ -96,6 +96,18 @@ describe("GET /health/env authMode", () => {
     expect((await getEnv()).body.authMode).toBe("local");
   });
 
+  it("advertises no social providers when no OAuth credentials are configured", async () => {
+    // The suite runs with a bare env (no GITHUB_/GOOGLE_ client creds), which is
+    // the default self-hosted instance: password login only. The field must be
+    // PRESENT and empty rather than absent — the dashboard renders whatever it
+    // is handed, and a missing key would be indistinguishable from an older
+    // server on the client side. The configured case lives in
+    // health-env-auth-providers.test.ts (it has to stuff process.env before
+    // config/env parses).
+    const { body } = await getEnv();
+    expect(body.authProviders).toEqual([]);
+  });
+
   it("still reports the other instanceSettings fields", async () => {
     settings.authMode = "none";
     settings.teamMode = "multi_user";
