@@ -1829,6 +1829,92 @@
           }
         ]
       }
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "umami",
+      "name": "Umami",
+      "description": "Lightweight, privacy-focused website analytics without cookies or personal data collection.",
+      "kind": "template",
+      "logo": "umami",
+      "category": "analytics",
+      "tags": [
+        "analytics",
+        "privacy",
+        "web"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "umami-db",
+          "image": "postgres:15-alpine",
+          "environment": {
+            "POSTGRES_DB": "umami",
+            "POSTGRES_USER": "umami"
+          },
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "volumes": [
+            "umami_db_data:/var/lib/postgresql/data"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "umami",
+          "image": "ghcr.io/umami-software/umami:postgresql-latest",
+          "ports": [
+            "3009:3000"
+          ],
+          "exposedPort": 3000,
+          "exposed": true,
+          "dependsOn": [
+            "umami-db"
+          ],
+          "environment": {
+            "DATABASE_URL": "postgresql://umami:{{config:POSTGRES_PASSWORD}}@umami-db:5432/umami"
+          },
+          "secretEnv": [
+            "APP_SECRET"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "umami-db",
+          "label": "Database password",
+          "help": "Auto-generated. Shared with the umami service's DATABASE_URL.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "APP_SECRET",
+          "service": "umami",
+          "label": "App secret",
+          "help": "Auto-generated. Signs sessions.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "connection": {
+        "title": "Open Umami",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "URL",
+            "source": "publicUrl:umami",
+            "kind": "url"
+          }
+        ],
+        "firstLogin": {
+          "username": "admin",
+          "password": "umami",
+          "note": "Change the admin password right after your first login."
+        }
+      }
     }
   ]
 }

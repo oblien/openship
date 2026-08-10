@@ -38,6 +38,7 @@ export const APP_LOGO: Record<
   freshrss: { slug: "freshrss" },
   excalidraw: { slug: "excalidraw" },
   qdrant: { slug: "qdrant" },
+  umami: { slug: "umami" },
   // Kafka's catalog id is "kafka"; its simpleicons brand slug is "apachekafka".
   // The mark is near-black (brand color #231F20), so it vanishes on the dark/dim
   // tiles — darkInvert flips it to near-white there (dark on light themes as-is).
