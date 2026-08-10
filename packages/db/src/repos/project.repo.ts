@@ -34,10 +34,49 @@ export function createProjectRepo(db: Database) {
   return {
     // ── Projects ───────────────────────────────────────────────────────
 
-    async findById(id: string) {
+    async findById(id: string | null | undefined) {
+      // Tolerate a null/undefined id (e.g. a webhook-owned domain has no
+      // projectId) → no project, which every caller already guards with `!project`.
+      if (!id) return undefined;
       return db.query.project.findFirst({
         where: and(eq(project.id, id), isNull(project.deletedAt)),
       });
+    },
+
+    /**
+     * Batch id → display name. Lets a list response (the audit feed) show
+     * "api-gateway" instead of "prj_8fk2abc" with one query per page.
+     * Includes soft-deleted rows on purpose: history about a deleted project
+     * should still name it.
+     */
+    async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
+      if (ids.length === 0) return [];
+      return db.select({ id: project.id, name: project.name })
+        .from(project)
+        .where(inArray(project.id, ids));
+    },
+
+    /**
+     * Ids of projects in an org whose name or slug matches a search term.
+     *
+     * The inverse of `listNamesByIds`, for the audit feed's free-text search:
+     * rows store `prj_8fk2abc`, so searching "api-gateway" can only work by
+     * resolving the name to ids first. Soft-deleted included — the row being
+     * searched for is often the deletion itself.
+     */
+    async searchIdsByName(organizationId: string, term: string, limit = 200): Promise<string[]> {
+      const pattern = `%${term}%`;
+      const rows = await db
+        .select({ id: project.id })
+        .from(project)
+        .where(
+          and(
+            eq(project.organizationId, organizationId),
+            sql`(${project.name} ILIKE ${pattern} OR ${project.slug} ILIKE ${pattern})`,
+          ),
+        )
+        .limit(limit);
+      return rows.map((r) => r.id);
     },
 
     /** Slug uniqueness scoped to one org. */
@@ -48,6 +87,27 @@ export function createProjectRepo(db: Database) {
           eq(project.slug, slug),
           isNull(project.deletedAt),
         ),
+      });
+    },
+
+    /**
+     * The not-yet-deployed catalog-app draft for (org, appTemplateId), if any.
+     * A draft = an isApp project that never went live (activeDeploymentId null).
+     * Pass `slug` to require an exact-slug match so re-opening a same-named draft
+     * is reused while a differently-named install still creates a new instance
+     * (multiple apps of the same type). Omit `slug` to match any draft of the type.
+     */
+    async findDraftByAppTemplate(organizationId: string, appTemplateId: string, slug?: string) {
+      return db.query.project.findFirst({
+        where: and(
+          eq(project.organizationId, organizationId),
+          eq(project.appTemplateId, appTemplateId),
+          isNull(project.activeDeploymentId),
+          isNull(project.deletedAt),
+          eq(project.environmentSlug, "production"),
+          ...(slug ? [eq(project.slug, slug)] : []),
+        ),
+        orderBy: [desc(project.createdAt)],
       });
     },
 
@@ -141,10 +201,7 @@ export function createProjectRepo(db: Database) {
      * Membership check is enforced at the middleware layer; this just
      * scopes the rows.
      */
-    async listByOrganization(
-      organizationId: string,
-      opts?: { page?: number; perPage?: number },
-    ) {
+    async listByOrganization(organizationId: string, opts?: { page?: number; perPage?: number }) {
       const page = opts?.page ?? 1;
       const perPage = opts?.perPage ?? 20;
       const offset = (page - 1) * perPage;
@@ -332,11 +389,7 @@ export function createProjectRepo(db: Database) {
         .update(project)
         .set({ deletionInProgress: true, updatedAt: new Date() })
         .where(
-          and(
-            eq(project.id, id),
-            eq(project.deletionInProgress, false),
-            isNull(project.deletedAt),
-          ),
+          and(eq(project.id, id), eq(project.deletionInProgress, false), isNull(project.deletedAt)),
         )
         .returning();
       return rows.length > 0;
@@ -371,13 +424,17 @@ export function createProjectRepo(db: Database) {
 
     /**
      * Count projects currently deployed to each server, keyed by server id.
-     * A project counts for a server when its ACTIVE deployment's meta.serverId
-     * matches. Powers the "N projects" chip + Projects stat on the Servers list.
+     * A project counts for a server when it has an ACTIVE deployment and resolves
+     * to that server — preferring the DURABLE `project.server_id` binding and
+     * falling back to the active deployment's `meta.serverId` for legacy rows not
+     * yet backfilled. Powers the "N projects" chip + Projects stat on the Servers
+     * list (and the container-issues classifier's absent-edge alarm).
      */
     async countActiveByServer(organizationId: string): Promise<Record<string, number>> {
+      const boundServer = sql<string>`coalesce(${project.serverId}, ${deployment.meta} ->> 'serverId')`;
       const rows = await db
         .select({
-          serverId: sql<string>`${deployment.meta} ->> 'serverId'`,
+          serverId: boundServer,
           count: sql<number>`count(*)::int`,
         })
         .from(project)
@@ -386,10 +443,10 @@ export function createProjectRepo(db: Database) {
           and(
             eq(project.organizationId, organizationId),
             isNull(project.deletedAt),
-            sql`${deployment.meta} ->> 'serverId' is not null`,
+            sql`coalesce(${project.serverId}, ${deployment.meta} ->> 'serverId') is not null`,
           ),
         )
-        .groupBy(sql`${deployment.meta} ->> 'serverId'`);
+        .groupBy(boundServer);
       const out: Record<string, number> = {};
       for (const r of rows) {
         if (r.serverId) out[r.serverId] = Number(r.count);
@@ -397,11 +454,23 @@ export function createProjectRepo(db: Database) {
       return out;
     },
 
-    /** Set the active deployment for a project */
+    /**
+     * Set the active deployment for a project.
+     *
+     * Advancing the pointer to a real release also clears `disabledAt`: a release
+     * that just went live is, by definition, not a project someone turned off, and
+     * a stale marker would tell the health watch to ignore a running workload
+     * forever. Clearing to null (a deleted deployment) leaves the marker alone —
+     * that isn't a release going live.
+     */
     async setActiveDeployment(projectId: string, deploymentId: string | null) {
       await db
         .update(project)
-        .set({ activeDeploymentId: deploymentId, updatedAt: new Date() })
+        .set({
+          activeDeploymentId: deploymentId,
+          ...(deploymentId ? { disabledAt: null } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(project.id, projectId));
     },
 
@@ -541,18 +610,18 @@ export function createProjectRepo(db: Database) {
       deletes: string[],
       serviceId?: string | null,
     ) {
-      const affectedKeys = Array.from(
-        new Set([...deletes, ...upserts.map((u) => u.key)]),
-      );
+      const affectedKeys = Array.from(new Set([...deletes, ...upserts.map((u) => u.key)]));
       if (affectedKeys.length === 0) return;
 
       await db.transaction(async (tx) => {
-        await tx.delete(envVar).where(
-          and(
-            ...envVarScope(projectId, environment, serviceId ?? null),
-            inArray(envVar.key, affectedKeys),
-          ),
-        );
+        await tx
+          .delete(envVar)
+          .where(
+            and(
+              ...envVarScope(projectId, environment, serviceId ?? null),
+              inArray(envVar.key, affectedKeys),
+            ),
+          );
 
         if (upserts.length > 0) {
           await tx.insert(envVar).values(
@@ -598,10 +667,7 @@ export function createProjectRepo(db: Database) {
       environment: string,
     ): Promise<Array<{ serviceId: string | null; updatedAt: Date }>> {
       const rows = await db.query.envVar.findMany({
-        where: and(
-          eq(envVar.projectId, projectId),
-          eq(envVar.environment, environment),
-        ),
+        where: and(eq(envVar.projectId, projectId), eq(envVar.environment, environment)),
         columns: { serviceId: true, updatedAt: true },
       });
       return rows.map((r) => ({ serviceId: r.serviceId, updatedAt: r.updatedAt }));

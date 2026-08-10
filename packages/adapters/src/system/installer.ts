@@ -7,30 +7,21 @@
  */
 
 import type { CommandExecutor, LogEntry } from "../types";
-import type { EdgeConflictDetails, InstallerConfig, InstallResult, SystemLogCallback, SystemLog } from "./types";
+import type { InstallerConfig, InstallResult, SystemLogCallback, SystemLog } from "./types";
 import { systemCatalog } from "./catalog";
 import { resolveEnvironment, type EnvironmentProfile } from "./environment";
 import { elevatedExecutor } from "./elevated-executor";
 import { safeErrorMessage } from "@repo/core";
 import {
-  deployLuaScripts,
-  detectOpenRestyPaths,
-  buildReloadCommand,
-  ensureOpenRestyConfig,
-  OPENRESTY_DEFAULT_PATHS,
-  type OpenRestyPaths,
-} from "../infra/openresty-lua";
-import {
-  EdgeConflictError,
   EdgeMigrateRequested,
-  freeEdgeTargets,
-  isOpenshipManagedEdge,
-  probeEdge,
-  stopTargetsForStatus,
-} from "./edge-preflight";
+  invalidateEdgeContainer,
+  resolveOurEdgeContainer,
+} from "./proxy/detect";
 import { probeListeningPort } from "../runtime/port-conflict";
-import { canImportProxy, scanImportableSites } from "./proxy-import";
-import type { ProxyScanResult } from "./types";
+import { dockerAvailable } from "./managed-image";
+import { ensureContainerEdge } from "./proxy/ensure-container-edge";
+import { containerCommand } from "./edge-container-executor";
+import { sq } from "./local-shell";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -208,232 +199,65 @@ export async function installRsync(
   }
 }
 
-// ─── Certbot ─────────────────────────────────────────────────────────────────
-
-export async function installCertbot(
-  executor: CommandExecutor,
-  onLog: SystemLogCallback,
-): Promise<InstallResult> {
-  const prep = await prepareExecutor(executor, "certbot");
-  if (!prep.ok) return prep.result;
-  executor = prep.executor;
-  const profile = prep.profile;
-  const plan = systemCatalog.installs.certbot(profile);
-  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
-    return { component: "certbot", success: false, error: plan.unsupportedReason ?? "Certbot install not supported" };
-  }
-
-  onLog(log("Installing certbot..."));
-  try {
-    const { code } = await executor.streamExec(plan.installCommand, onLog as (log: LogEntry) => void);
-    if (code !== 0) return { component: "certbot", success: false, error: "Certbot installation failed" };
-
-    const version = await executor.exec(plan.verifyCommand);
-    const parsed = systemCatalog.checks.certbot.parseVersion(version);
-    onLog(log(`Certbot ${parsed} installed`));
-    return { component: "certbot", success: true, version: parsed };
-  } catch (err) {
-    const msg = safeErrorMessage(err);
-    onLog(log(`Certbot installation failed: ${msg}`, "error"));
-    return { component: "certbot", success: false, error: msg };
-  }
-}
-
-// ─── OpenResty ───────────────────────────────────────────────────────────────
-
 /**
- * Make ports 80/443 ours to bind — without ever blind-killing a foreign proxy.
+ * Install the edge — the `edge` component. It is a CONTAINER, always.
  *
- * Resolution order:
- *   1. free / ours              → proceed.
- *   2. pre-accepted edgePolicy  → stop the identified targets (no prompt).
- *   3. interactive promptUser   → HOLD and ask (same mechanism as the deploy
- *      "a service is already running" prompt): "override" stops it and takes
- *      over; "cancel" aborts. ("migrate" is signalled to the caller.)
- *   4. neither                  → throw EdgeConflictError (never guess).
+ * The edge is the openship-edge image and its serving path is host-side (host
+ * networking, host bind mounts for vhosts/certs/ACME). There is deliberately NO
+ * host-package fallback: a Docker-less box gets an explicit, actionable failure
+ * instead of a second, divergent edge implementation that then has to be migrated.
+ *
+ * THE only way to install an edge. There is no `installOpenResty`/`installCertbot`
+ * any more — both apt-installed a host-side edge, and the mail wizard was the last
+ * caller keeping them alive. That left one box able to end up with two edge
+ * implementations, a certbot on the host that only mail's cert step used, and a
+ * second copy of the conflict handling. `ensureContainerEdge` below still converts
+ * a PRE-EXISTING host OpenResty (bare→container), which is how boxes installed
+ * before this move come across.
  */
-async function ensureEdgeClear(
-  executor: CommandExecutor,
-  config: InstallerConfig | undefined,
-  onLog: SystemLogCallback,
-): Promise<{ tookOver: boolean }> {
-  const status = await probeEdge(executor);
-  if (status.canProceedClean) return { tookOver: false };
-
-  const takeover = async () => {
-    onLog(log(
-      `Taking over ports from ${status.occupants.map((o) => o.command ?? o.port).join(", ")}...`,
-      "warn",
-    ));
-    const configured = config?.edgePolicy?.stopTargets ?? [];
-    const targets = configured.length ? configured : stopTargetsForStatus(status);
-    await freeEdgeTargets(executor, targets, (m, l) => onLog(log(m, l)));
-  };
-
-  if (config?.edgePolicy?.mode === "takeover") {
-    await takeover();
-    return { tookOver: true };
-  }
-
-  if (config?.promptUser) {
-    const known = status.classification === "known";
-    const owner = status.occupants.map((o) => o.command ?? `port ${o.port}`).join(", ");
-
-    // For a known, importable proxy, scan its sites so we can offer migration.
-    const proxy = status.occupants.find((o) => o.proxy)?.proxy;
-    let scan: ProxyScanResult | undefined;
-    if (known && canImportProxy(proxy)) {
-      scan = await scanImportableSites(executor, proxy!);
-    }
-    const migratable = scan && scan.sites.length > 0;
-
-    // Openship terminates TLS + routes on its own OpenResty edge, so it must own
-    // 80/443. Spell that out — the operator is choosing to hand their load
-    // balancer to us, and "migrate" imports the existing sites first so nothing
-    // they're serving goes dark.
-    const message = migratable
-      ? `Openship runs its own load balancer (OpenResty) on ports 80 and 443, but ${owner} is ` +
-        `already serving them (${scan!.sites.length} site${scan!.sites.length === 1 ? "" : "s"}). ` +
-        `Migrate those sites into Openship and take over, just stop it and take over, or cancel?`
-      : known
-        ? `Openship runs its own load balancer (OpenResty) on ports 80 and 443, but ${owner} is ` +
-          `already serving them. Stop it and take over, or cancel and leave it running?`
-        : `Openship runs its own load balancer (OpenResty) on ports 80 and 443, but ${owner} is ` +
-          `already using them and we can't identify it. Stop it and take over, or cancel and leave it running?`;
-
-    const details: EdgeConflictDetails = {
-      edge: status,
-      sites: scan?.sites ?? [],
-      warnings: scan?.warnings ?? [],
-    };
-    const action = await config.promptUser({
-      promptId: "edge_conflict",
-      title: known ? "Existing reverse proxy detected" : "Ports 80/443 are in use",
-      message,
-      actions: [
-        ...(migratable
-          ? [{ id: "migrate", label: `Migrate ${scan!.sites.length} site(s) & take over`, variant: "primary" }]
-          : []),
-        { id: "override", label: "Stop it & take over", variant: "danger" },
-        { id: "cancel", label: "Cancel", variant: "secondary" },
-      ],
-      details,
-    });
-
-    if (action === "migrate" && scan) {
-      throw new EdgeMigrateRequested(status, scan.sites, scan.warnings);
-    }
-    if (action === "override") {
-      await takeover();
-      return { tookOver: true };
-    }
-    // "cancel" (or anything unexpected) → leave the box untouched.
-    throw new EdgeConflictError(status);
-  }
-
-  throw new EdgeConflictError(status);
-}
-
-export async function installOpenResty(
+export async function installContainerEdge(
   executor: CommandExecutor,
   onLog: SystemLogCallback,
   config?: InstallerConfig,
 ): Promise<InstallResult> {
-  // Gate on privilege BEFORE touching the box, so a non-privileged run bails
-  // out cleanly instead of stopping a running OpenResty and then failing at apt.
-  const prep = await prepareExecutor(executor, "openresty");
+  // Elevate: `docker` may need sudo, and the host state dirs live under /var/lib
+  // and /etc.
+  const prep = await prepareExecutor(executor, "edge");
   if (!prep.ok) return prep.result;
   executor = prep.executor;
-  const profile = prep.profile;
-  onLog(log(describeEnvironment(profile)));
-  const plan = systemCatalog.installs.openresty(profile);
-  if (!plan.supported || !plan.installCommand || !plan.verifyCommand) {
-    return { component: "openresty", success: false, error: plan.unsupportedReason ?? "OpenResty install not supported" };
+
+  if (!(await dockerAvailable(executor))) {
+    const error =
+      "The edge is a container image and needs Docker on this server. " +
+      "Install the Docker component first, then install the edge.";
+    onLog(log(error, "error"));
+    return { component: "edge", success: false, error };
   }
 
-  onLog(log("Installing OpenResty..."));
   try {
-    // Resolve the edge conflict FIRST — before touching any process — so we
-    // never kill a foreign proxy (even a foreign OpenResty) without consent.
-    // May stop the foreign owner (takeover), throw EdgeMigrateRequested
-    // (migrate → caller runs the takeover orchestration), or throw
-    // EdgeConflictError (no consent).
-    const { tookOver } = await ensureEdgeClear(executor, config, onLog);
-
-    // Stop an existing OpenResty only if it's OURS (reinstall/upgrade). A
-    // foreign OpenResty was already handled by the consent gate above.
-    const hasIt = await executor.exec("command -v openresty >/dev/null 2>&1 && echo y || echo n").then((r) => r.trim() === "y");
-    if (hasIt && (await isOpenshipManagedEdge(executor))) {
-      onLog(log("Stopping existing OpenResty..."));
-      await execSafe(executor, "systemctl stop openresty 2>/dev/null || true");
-      await execSafe(executor, "pkill -f '[o]penresty' 2>/dev/null || true");
+    const result = await ensureContainerEdge(executor, {
+      onLog,
+      config,
+      image: config?.edgeImage,
+    });
+    if (result.converted) {
+      onLog(log("Edge moved from host OpenResty to the container edge", "warn"));
     }
-
-    if (profile.packageManager === "apt") {
-      await ensureAptReady(executor, onLog);
-    }
-
-    // Install package
-    const { code } = await executor.streamExec(plan.installCommand, onLog as (log: LogEntry) => void);
-    if (code !== 0) return { component: "openresty", success: false, error: "OpenResty installation failed" };
-
-    // Stop auto-started instance, write our config, then start
-    await execSafe(executor, "systemctl stop openresty 2>/dev/null || true");
-    await execSafe(executor, "pkill -f '[o]penresty' 2>/dev/null || true");
-    await execSafe(executor, "systemctl reset-failed openresty 2>/dev/null || true");
-
-    const paths = await detectOpenRestyPaths(executor);
-    await ensureOpenRestyConfig(executor, paths);
-
-    // Validate config
-    onLog(log("Validating config..."));
-    const { code: testCode } = await executor.streamExec(`${paths.bin} -t 2>&1`, onLog as (log: LogEntry) => void);
-    if (testCode !== 0) {
-      return { component: "openresty", success: false, error: "OpenResty config invalid - see logs above" };
-    }
-
-    // Start service
-    if (plan.startCommand) {
-      onLog(log("Starting OpenResty..."));
-      let start = await executor.streamExec(plan.startCommand, onLog as (log: LogEntry) => void);
-
-      // If it failed and a takeover was authorized (policy or prompt), reclaim
-      // the identified ports and retry once.
-      if (start.code !== 0 && tookOver) {
-        onLog(log("Start failed - reclaiming authorized ports...", "warn"));
-        const targets = config?.edgePolicy?.stopTargets?.length
-          ? config.edgePolicy.stopTargets
-          : stopTargetsForStatus(await probeEdge(executor));
-        await freeEdgeTargets(executor, targets, (m, l) => onLog(log(m, l)));
-        await execSafe(executor, "systemctl reset-failed openresty 2>/dev/null || true");
-        start = await executor.streamExec(plan.startCommand, onLog as (log: LogEntry) => void);
-      }
-
-      if (start.code !== 0) {
-        const journal = await executor.exec(
-          "journalctl -xeu openresty.service --no-pager -n 30 2>/dev/null || echo '(unavailable)'",
-        ).catch(() => "(could not read journal)");
-        onLog(log(`Service journal:\n${journal}`, "error"));
-        return { component: "openresty", success: false, error: "OpenResty installed but failed to start" };
-      }
-    }
-
-    // Reload, deploy scripts, verify
-    await executor.exec(buildReloadCommand(paths));
-    onLog(log("Deploying analytics scripts..."));
-    await deployLuaScripts(executor, paths);
-
-    const version = await executor.exec(plan.verifyCommand);
-    const parsed = systemCatalog.checks.openresty.parseVersion(version);
-    onLog(log(`OpenResty ${parsed} installed`));
-    return { component: "openresty", success: true, version: parsed };
+    const version = await executor
+      .exec(containerCommand(result.container, "openresty -v 2>&1"))
+      .catch(() => "");
+    return {
+      component: "edge",
+      success: true,
+      version: version ? systemCatalog.checks.openresty.parseVersion(version) : undefined,
+    };
   } catch (err) {
     // The migrate signal must reach the caller (which runs the takeover
     // orchestration) — don't swallow it into a failed InstallResult.
     if (err instanceof EdgeMigrateRequested) throw err;
     const msg = safeErrorMessage(err);
-    onLog(log(`OpenResty installation failed: ${msg}`, "error"));
-    return { component: "openresty", success: false, error: msg };
+    onLog(log(`Edge setup failed: ${msg}`, "error"));
+    return { component: "edge", success: false, error: msg };
   }
 }
 
@@ -461,95 +285,32 @@ export async function uninstallRsync(
   }
 }
 
-export async function uninstallCertbot(
+export async function uninstallEdge(
   executor: CommandExecutor,
   onLog: SystemLogCallback,
 ): Promise<InstallResult> {
-  const prep = await prepareExecutor(executor, "certbot");
+  const prep = await prepareExecutor(executor, "edge");
   if (!prep.ok) return prep.result;
   executor = prep.executor;
-  const cmd = buildRemoveCommand(prep.profile.packageManager, ["certbot"]);
-  if (!cmd) return { component: "certbot", success: false, error: "Certbot removal not supported" };
 
-  onLog(log("Removing certbot..."));
-  try {
-    const { code } = await executor.streamExec(cmd, onLog as (log: LogEntry) => void);
-    if (code !== 0) return { component: "certbot", success: false, error: "Certbot removal failed" };
-    onLog(log("Certbot removed"));
-    return { component: "certbot", success: true };
-  } catch (err) {
-    const msg = safeErrorMessage(err);
-    return { component: "certbot", success: false, error: msg };
+  // `fresh`: we are about to REMOVE it, so a stale positive would `docker rm` a
+  // name that no longer exists and report success over an untouched box.
+  const container = await resolveOurEdgeContainer(executor, { fresh: true }).catch(() => null);
+  if (!container) {
+    onLog(log("No edge container on this server — nothing to remove."));
+    return { component: "edge", success: true };
   }
-}
 
-export async function uninstallOpenResty(
-  executor: CommandExecutor,
-  onLog: SystemLogCallback,
-): Promise<InstallResult> {
-  const prep = await prepareExecutor(executor, "openresty");
-  if (!prep.ok) return prep.result;
-  executor = prep.executor;
-  const profile = prep.profile;
-
-  try {
-    // 1. Stop
-    onLog(log("Stopping OpenResty..."));
-    await execSafe(executor, "systemctl stop openresty 2>/dev/null || true");
-    await execSafe(executor, "pkill -f '[o]penresty' 2>/dev/null || true");
-    // Force-clear port 80 only if it's not held by a foreign proxy — we never
-    // take down someone else's service while removing our own. And free it by
-    // killing only what still LISTENS on :80 (a lingering openresty worker),
-    // never a blind `fuser -k 80/tcp` — fuser matches ANY socket on the port,
-    // so a process merely holding an outbound/established :80 connection would
-    // be killed too. probeListeningPort is LISTEN-state filtered.
-    const edge = await probeEdge(executor).catch(() => null);
-    const foreignOn80 = edge?.occupants.some((o) => o.port === 80) ?? false;
-    if (!foreignOn80) {
-      const stray = await probeListeningPort(executor, 80).catch(() => null);
-      if (stray?.pid) {
-        await execSafe(executor, `kill -9 ${stray.pid} 2>/dev/null || true`);
-      }
-    }
-
-    // 2. Remove package
-    const removeCmd = buildRemoveCommand(profile.packageManager, ["openresty"]);
-    if (removeCmd) {
-      if (profile.packageManager === "apt") {
-        await ensureAptReady(executor, onLog);
-      }
-      onLog(log("Removing OpenResty package..."));
-      const { code } = await executor.streamExec(removeCmd, onLog as (log: LogEntry) => void);
-      if (code !== 0) return { component: "openresty", success: false, error: "Package removal failed" };
-    }
-
-    // 3. Clean up leftover files
-    onLog(log("Cleaning up files..."));
-    let paths: OpenRestyPaths;
-    try {
-      paths = await detectOpenRestyPaths(executor);
-    } catch {
-      paths = OPENRESTY_DEFAULT_PATHS;
-    }
-    const root = paths.bin.includes("/openresty/") ? paths.bin.replace(/\/bin\/[^/]+$/, "") : "/usr/local/openresty";
-
-    await execSafe(executor, [
-      `rm -rf ${root}`,
-      `rm -rf ${paths.confDir}`,
-      "rm -rf /etc/openresty",
-      "rm -rf /usr/local/openresty",
-      "rm -f /etc/apt/sources.list.d/openresty.list",
-      "rm -f /usr/share/keyrings/openresty.gpg",
-      "rm -f /etc/yum.repos.d/openresty.repo",
-    ].join(" && "));
-
-    onLog(log("OpenResty removed"));
-    return { component: "openresty", success: true };
-  } catch (err) {
-    const msg = safeErrorMessage(err);
-    onLog(log(`OpenResty removal failed: ${msg}`, "error"));
-    return { component: "openresty", success: false, error: msg };
-  }
+  onLog(log(`Removing the edge container ${container}...`));
+  // Clear the restart policy first, or the daemon brings it straight back.
+  await execSafe(executor, `docker update --restart=no ${sq(container)} 2>/dev/null || true`);
+  await execSafe(executor, `docker rm -f ${sq(container)} 2>/dev/null || true`);
+  invalidateEdgeContainer(executor);
+  // Certs and vhosts stay on the host on purpose — same rule as the compose
+  // uninstall: issued certificates outlive a reinstall, and /etc/letsencrypt may be
+  // shared with the mail server. Removing them is the operator's call.
+  onLog(log("Edge removed. Certificates and vhosts were left on the host."));
+  return { component: "edge", success: true };
 }
 
 // ─── Removal support check ──────────────────────────────────────────────────
@@ -558,10 +319,9 @@ export async function getRemovalSupport(
   executor: CommandExecutor,
   componentName: string,
 ): Promise<{ supported: boolean; reason?: string }> {
+  // The edge is a container: removal needs the daemon, not a package manager.
+  if (componentName === "edge") return { supported: true };
   const profile = await resolveEnvironment(executor);
-  if (profile.os !== "linux" && componentName === "openresty") {
-    return { supported: false, reason: "OpenResty removal only supported on Linux" };
-  }
   const cmd = buildRemoveCommand(profile.packageManager, [componentName]);
   return cmd
     ? { supported: true }
@@ -578,14 +338,14 @@ type InstallerFn = (
 
 export const COMPONENT_INSTALLERS: Record<string, InstallerFn> = {
   docker: (exec, log) => installDocker(exec, log),
-  openresty: (exec, log, config) => installOpenResty(exec, log, config),
-  certbot: (exec, log) => installCertbot(exec, log),
+  // The edge is ONE component and it is a container image — there is no
+  // host-OpenResty or host-certbot installer to reach for any more.
+  edge: (exec, log, config) => installContainerEdge(exec, log, config),
   git: (exec, log) => installGit(exec, log),
   rsync: (exec, log) => installRsync(exec, log),
 };
 
 export const COMPONENT_UNINSTALLERS: Record<string, InstallerFn> = {
-  openresty: (exec, log) => uninstallOpenResty(exec, log),
-  certbot: (exec, log) => uninstallCertbot(exec, log),
+  edge: (exec, log) => uninstallEdge(exec, log),
   rsync: (exec, log) => uninstallRsync(exec, log),
 };

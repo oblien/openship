@@ -39,12 +39,34 @@ async function resolveMcpPrincipal(token: string, headers: Headers): Promise<Mcp
   }
 
   let grantedRootTypes: ReadonlySet<string> = new Set();
+  let canCreateProjects = false;
+  let sourceCapabilities: ReadonlySet<"content" | "write"> = new Set();
   if (role === "restricted" && id.hasBinding) {
     const grants = await repos.patGrant.listByToken(id.tokenId);
     grantedRootTypes = new Set(grants.map((g) => g.resourceType));
+    // Repo CONTENT is granted separately from the repo itself, so a token holding
+    // github grants is still deploy-only until some grant names read/write paths.
+    // Coarse on purpose (any grant, not per-repo): `tools/list` advertises what
+    // could succeed for SOME input, and `tools/call` still narrows per repo+path.
+    const caps = new Set<"content" | "write">();
+    for (const g of grants) {
+      if (g.scope?.read?.paths?.length) caps.add("content");
+      if (g.scope?.write?.paths?.length && (g.permissions ?? []).some((p) => p === "write" || p === "admin")) {
+        caps.add("write");
+      }
+    }
+    sourceCapabilities = caps;
+    // "Own projects" scope: a project wildcard grant carrying the create ability
+    // (mirrors the {project,"*",create} check in permission.ts).
+    canCreateProjects = grants.some(
+      (g) =>
+        g.resourceType === "project" &&
+        g.resourceId === "*" &&
+        (g.permissions ?? []).includes("create"),
+    );
   }
 
-  return { role, readOnly: id.readOnly, grantedRootTypes };
+  return { role, readOnly: id.readOnly, grantedRootTypes, canCreateProjects, sourceCapabilities };
 }
 
 const PUBLIC_REASON =

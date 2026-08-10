@@ -86,6 +86,7 @@ import {
 } from "@repo/adapters";
 import { env } from "../config/env";
 import { isOblienConfigured } from "./platform-mode";
+import { resolveAcmeProviderOptions } from "./acme-config";
 
 // Re-export the platform accessor so existing callers that do
 // `import { platform } from "@/lib/controller-helpers"` keep working
@@ -207,6 +208,7 @@ export function resolvePlatformConfig(): PlatformConfig {
   return {
     target: "selfhosted",
     runtime: env.DEPLOY_MODE === "bare" ? "bare" : "docker",
+    nginx: resolveAcmeProviderOptions(),
   };
 }
 

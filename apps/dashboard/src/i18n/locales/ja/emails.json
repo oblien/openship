@@ -3,6 +3,7 @@
     "title": "メールサーバー",
     "subtitle": "数クリックでセルフホスト型メールサーバーをセットアップ",
     "backToServers": "メールサーバー一覧に戻る",
+    "backToAdmin": "メール管理に戻る",
     "addServer": "メールサーバーを追加",
     "removeModal": {
       "title": "このメールサーバーを削除しますか？",

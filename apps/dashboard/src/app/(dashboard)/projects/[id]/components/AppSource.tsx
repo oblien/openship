@@ -2,10 +2,11 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw, Loader2, Check, ArrowUpCircle } from "lucide-react";
+import { RefreshCw, Loader2, Check, ArrowUpCircle, ExternalLink } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { appsApi } from "@/lib/api/apps";
 import { updatesApi, type UpdateStatusItem } from "@/lib/api/updates";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { AppLogo } from "@/components/AppLogo";
@@ -28,6 +29,7 @@ export function AppSource() {
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [repository, setRepository] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -43,6 +45,23 @@ export function AppSource() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The source repository is static catalog metadata, not update state — fetch it
+  // once from the app template (best-effort; absent for apps that don't declare one).
+  useEffect(() => {
+    const appId = projectData.appTemplateId;
+    if (!appId) return;
+    let alive = true;
+    appsApi
+      .template(appId)
+      .then((res) => {
+        if (alive) setRepository(res.data?.repository ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [projectData.appTemplateId]);
 
   const checkNow = async () => {
     setChecking(true);
@@ -73,7 +92,9 @@ export function AppSource() {
     }
   };
 
-  const hasData = !!status; // false until a scan has populated this project
+  // Absent means this project has no drift to compare (never deployed, no remote
+  // source) — the list read is read-through, so it isn't "waiting for a scan".
+  const hasData = !!status;
   const kind = status?.kind ?? "release";
   const current = status?.currentLabel ?? projectData.version ?? "—";
   const latest = status?.latestLabel ?? null;
@@ -102,6 +123,20 @@ export function AppSource() {
           mono={hasData && !!latest}
           badge={behind ? s.updateAvailable : undefined}
         />
+        {repository && (
+          <div className="flex items-center justify-between gap-3 border-b border-border/40 py-3 last:border-0">
+            <span className="text-sm text-muted-foreground">{s.repository}</span>
+            <a
+              href={repository}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-primary hover:underline"
+            >
+              {repository.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+              <ExternalLink className="size-3.5 text-muted-foreground" />
+            </a>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-border/50 px-5 py-4">

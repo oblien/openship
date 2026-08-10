@@ -3,6 +3,7 @@
     "title": "Email Server",
     "subtitle": "Set up a self-hosted mail server with a few clicks",
     "backToServers": "Back to mail servers",
+    "backToAdmin": "Back to mail admin",
     "addServer": "Add mail server",
     "removeModal": {
       "title": "Remove this mail server?",

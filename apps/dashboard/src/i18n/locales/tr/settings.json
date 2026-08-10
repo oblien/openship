@@ -54,6 +54,7 @@
       "email": "E-posta",
       "audit": "Denetim günlüğü",
       "cloud": "Bulut",
+      "infrastructure": "Altyapı",
       "instance": "Kurulum"
     }
   },
@@ -152,9 +153,18 @@
     "noServers": "Henüz yapılandırılmış sunucu yok - dağıtım seçiciden bir tane ekleyin.",
     "clearDefault": "Varsayılanı temizle (her seferinde sor)",
     "targets": {
-      "local": { "label": "Bu Bilgisayar", "desc": "Yerel Docker / çalışma zamanı" },
-      "server": { "label": "Sunucum", "desc": "Yapılandırılmış bir SSH sunucusu" },
-      "cloud": { "label": "Openship Bulut", "desc": "Yönetilen bulut altyapısı" }
+      "local": {
+        "label": "Bu Bilgisayar",
+        "desc": "Yerel Docker / çalışma zamanı"
+      },
+      "server": {
+        "label": "Sunucum",
+        "desc": "Yapılandırılmış bir SSH sunucusu"
+      },
+      "cloud": {
+        "label": "Openship Bulut",
+        "desc": "Yönetilen bulut altyapısı"
+      }
     },
     "labelFor": {
       "yourServer": "sunucunuz",
@@ -174,9 +184,18 @@
     "loading": "Tercihler yükleniyor…",
     "intro": "Yeni dağıtımlar için varsayılan derleme stratejisini seçin. Proje bazlı değişiklikler proje ayarlarında mevcuttur.",
     "modes": {
-      "auto": { "label": "Otomatik", "desc": "Framework'e göre akıllı seçim" },
-      "server": { "label": "Sunucu", "desc": "Uzaktaki sunucuda derle" },
-      "local": { "label": "Yerel", "desc": "Bilgisayarda derle" }
+      "auto": {
+        "label": "Otomatik",
+        "desc": "Framework'e göre akıllı seçim"
+      },
+      "server": {
+        "label": "Sunucu",
+        "desc": "Uzaktaki sunucuda derle"
+      },
+      "local": {
+        "label": "Yerel",
+        "desc": "Bilgisayarda derle"
+      }
     },
     "toast": {
       "setTo": "Derleme modu {mode} olarak ayarlandı",
@@ -306,7 +325,7 @@
       "pendingBody": "Openship alan adınız doğrulama bekliyor (DNS / SSL). Canlıya geçtiğinde davetler açılır.",
       "viewDomain": "Alan adını görüntüle"
     },
-    "descPersonal": "Kişisel çalışma alanınıza erişimi olan kişiler. Doğrudan iş birliği yapacak kişileri davet edin veya ayrı bir ekip organizasyonu oluşturun.",
+    "descPersonal": "Kişisel çalışma alanınıza erişimi olan kişiler.",
     "descTeam": "Bu organizasyonun projelerine, dağıtımlarına ve sunucularına erişimi olan kişiler.",
     "inviteMember": "Üye davet et",
     "createTeamCard": {
@@ -505,6 +524,7 @@
       "email": "E-posta",
       "webhook": "Webhook",
       "slack": "Slack",
+      "telegram": "Telegram",
       "in_app": "Uygulama içi"
     },
     "form": {
@@ -512,6 +532,9 @@
       "emailPlaceholder": "kullanici@example.com",
       "webhookPlaceholder": "https://example.com/openship-hook",
       "slackPlaceholder": "https://hooks.slack.com/services/...",
+      "telegramTokenPlaceholder": "@BotFather'dan alınan bot jetonu",
+      "telegramChatPlaceholder": "Sohbet kimliği (örn. -1001234567890)",
+      "telegramHint": "@BotFather ile bir bot oluşturun, ardından yanıt verebilmesi için bota bir mesaj gönderin (veya botu grubunuza ekleyin).",
       "adding": "Ekleniyor…",
       "addChannel": "Kanal ekle",
       "labelRequired": "Etiket gereklidir",
@@ -523,22 +546,25 @@
       "title": "Neler hakkında bildirim alınacak",
       "description": "Hangi olayların hangi kanala gideceğini seçin. Her hücre bir aboneliktir.",
       "empty": "Olaylara abone olmak için önce bir kanal ekleyin.",
+      "allTab": "Tümü",
       "eventHeader": "Olay",
-      "cellAria": "{channel} üzerinden {category}"
+      "cellAria": "{channel} üzerinden {category}",
+      "notifyMe": "Bana bildir"
     },
     "orgDefaults": {
       "title": "Organizasyon varsayılanları",
       "description": "Bu organizasyona yeni bir üye katıldığında uygulanan varsayılanlar. Üyeler kanal bazında değiştirebilir.",
-      "notifyAria": "{category} bildirimini aç"
+      "notifyAria": "{category} bildirimini aç",
+      "nChannels": "{n} kanal"
     }
   },
   "audit": {
     "heading": "Denetim günlüğü",
-    "subtitle": "Bu organizasyondaki her değişiklik, kimin tarafından ve ne zaman yapıldığı.",
-    "searchPlaceholder": "Olaylarda, aktörlerde, kaynaklarda ara...",
-    "allEvents": "Tüm olaylar",
-    "noMatch": "Aramanızla eşleşen olay yok.",
-    "noEvents": "Henüz olay yok.",
+    "subtitle": "Bu organizasyonda olan her şey, kimin yaptığı ve ne zaman.",
+    "searchPlaceholder": "Uygulama, sunucu, alan adı, kişi ara…",
+    "noMatch": "Bu filtrelerle eşleşen bir şey yok.",
+    "noEvents": "Henüz hiçbir şey kaydedilmedi.",
+    "clearFilters": "Filtreleri temizle",
     "showing": "Toplam {total} kayıttan {from}-{to} arası gösteriliyor",
     "actor": "Aktör",
     "name": "Ad",
@@ -554,7 +580,50 @@
     "after": "Sonra",
     "removed": "Kaldırıldı",
     "system": "Sistem",
-    "actorPrefix": "Aktör {id}"
+    "actorPrefix": "Aktör {id}",
+    "recording": {
+      "title": "Etkinliği kaydet",
+      "description": "Bu organizasyonda yapılan her değişikliğin kaydını tutar. Varsayılan olarak açık.",
+      "paused": "Kayıt kapalı. Yeni hiçbir şey eklenmiyor — aşağıdaki kayıtlar kapatılmadan önce toplananlar.",
+      "retention": "Kayıtları şu süre boyunca tut",
+      "retentionOption": "{days} gün",
+      "retentionHint": "Daha eski kayıtlar otomatik olarak silinir.",
+      "adminOnly": "Bunu yalnızca sahipler ve yöneticiler değiştirebilir.",
+      "saveFailed": "Etkinlik ayarları kaydedilemedi."
+    },
+    "filters": {
+      "anyone": "Herkes",
+      "period": "Dönem",
+      "allTime": "Tüm zamanlar",
+      "today": "Bugün",
+      "last7": "Son 7 gün",
+      "last30": "Son 30 gün",
+      "last90": "Son 90 gün"
+    },
+    "tabs": {
+      "all": "Tümü"
+    },
+    "sources": {
+      "all": "Tümü",
+      "dashboard": "Panel",
+      "mcp": "Yapay zekâ asistanı",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "Sistem",
+      "unknown": "Bilinmiyor"
+    },
+    "day": {
+      "today": "Bugün",
+      "yesterday": "Dün"
+    },
+    "details": {
+      "who": "Kim",
+      "when": "Ne zaman",
+      "cameFrom": "Nereden",
+      "technical": "Teknik detaylar",
+      "eventType": "Olay türü"
+    }
   },
   "updates": {
     "title": "Güncellemeler",
@@ -579,6 +648,20 @@
     "security3": "). Yalnızca bu verileri",
     "securityPulls": "çeker (pull)",
     "security4": "— hiçbir üçüncü taraf servisi ve Openship tarafından işletilen hiçbir sunucu kurulumunuza güncelleme veya sinyal gönderemez (push). Duyurular her sürüme sabitlenmiştir, böylece yayınlanmamış değişiklikler size asla ulaşmaz. Kritik güvenlik duyuruları her zaman bir kez gösterilir; diğer her şey yukarıdaki ayara uyar."
+  },
+  "infrastructure": {
+    "title": "Platform bileşenleri",
+    "description": "Sunucularınızdaki edge ve e-posta kapsayıcıları nasıl güncel tutulur",
+    "autoUpdateLabel": "Sunucu altyapısını otomatik güncelle",
+    "autoUpdateDesc": "Bu kontrol düzlemi güncellendiğinde, bağlı sunucularınızdaki edge ve mail konteynerlerini de otomatik olarak güncelle. Varsayılan olarak kapalı — aksi hâlde güncellemeler her sunucuda tek tıkla uygulanmak üzere işaretlenir.",
+    "autoScanLabel": "Sunucu altyapısını otomatik denetle",
+    "autoScanDesc": "Sunucular sayfasını ya da ana sayfayı açtığınızda sunucularınızı sessizce yeniden denetler; böylece durmuş veya kurulu olmayan bir edge, elle denetim yapmadan işaretlenir. Varsayılan olarak açık — yalnızca algılar, hiçbir şeyi değiştirmez.",
+    "attentionOne": "1 bileşen ilgi bekliyor",
+    "attentionMany": "{n} bileşen ilgi bekliyor",
+    "updatesOne": "1 güncelleme mevcut",
+    "updatesMany": "{n} güncelleme mevcut",
+    "allHealthy": "Tüm platform bileşenleri güncel",
+    "manageLink": "Sunucular'da yönet"
   },
   "dataTransfer": {
     "export": {
@@ -743,5 +826,29 @@
     "toastLoadStateFailed": "Durum yüklenemedi",
     "toastRemoteUnreachable": "Uzaktaki sunucuya ulaşılamıyor. Yine de geri dönmek için \"uzaktaki verileri çekme\" seçeneğini işaretleyin.",
     "toastSwitchBackFailed": "Geri alma başarısız oldu"
+  },
+  "routePreferences": {
+    "title": "Yönlendirme",
+    "description": "Kenarın uygulamalarınızın upstream'lerine nasıl ulaştığı",
+    "loading": "Tercihler yükleniyor…",
+    "intro": "Yeni kendi kendine barındırılan projeler için varsayılan upstream adreslemesini seçin. Proje bazlı geçersiz kılmalar proje ayarlarındadır.",
+    "modes": {
+      "auto": {
+        "label": "Otomatik",
+        "desc": "Önerilen (loopback bağlantı noktası)"
+      },
+      "loopbackPort": {
+        "label": "Loopback bağlantı noktası",
+        "desc": "Özel 127.0.0.1 ana bilgisayar bağlantı noktası"
+      },
+      "containerIp": {
+        "label": "Konteyner IP",
+        "desc": "Gelişmiş — köprü IP"
+      }
+    },
+    "toast": {
+      "setTo": "Yönlendirme stratejisi {mode} olarak ayarlandı",
+      "failed": "Yönlendirme stratejisi güncellenemedi"
+    }
   }
 }

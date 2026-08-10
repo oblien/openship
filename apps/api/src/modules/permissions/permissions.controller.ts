@@ -24,20 +24,19 @@ import { createGitHubSource } from "../github/sources";
 import { fetchOrgCloudProjects } from "../../lib/cloud/projects";
 import { resolveOrgCloudUserId } from "../../lib/cloud/transport";
 import { env } from "../../config";
+import { GRANTABLE_RESOURCE_TYPES } from "../../lib/grantable-types";
+import {
+  parseSourceAccessScope,
+  serializeSourceAccessScope,
+  type SourceAccessScope,
+} from "@repo/core";
 
 // ─── Constants + helpers ────────────────────────────────────────────────────
 
-const ALLOWED_RESOURCE_TYPES: ResourceType[] = [
-  "project",
-  "server",
-  "mail_server",
-  "backup_destination",
-  "billing",
-  "audit",
-  // GitHub access-control grant targets: org/account (login) + single repo.
-  "github_installation",
-  "github_repository",
-];
+// The grantable surface lives in lib/grantable-types.ts so the satisfiability
+// ratchet test can bind to the same list this endpoint validates against — a copy
+// would let the two drift, which is how an unsatisfiable type gets offered.
+const ALLOWED_RESOURCE_TYPES: readonly ResourceType[] = GRANTABLE_RESOURCE_TYPES;
 
 const ALLOWED_PERMISSIONS: Permission[] = ["read", "write", "admin"];
 
@@ -471,6 +470,9 @@ export async function upsertGrant(c: Context) {
     resourceType?: string;
     resourceId?: string;
     permissions?: unknown;
+    /** Source-access scope for a repo grant — see @repo/core source-access.
+     *  Omitted/null ⇒ metadata only, which is the default for a repo grant. */
+    scope?: unknown;
   }>();
 
   if (!body.userId || !body.resourceType || !body.resourceId) {
@@ -523,12 +525,21 @@ export async function upsertGrant(c: Context) {
     return c.json({ data: null, revoked: true });
   }
 
+  // Round-tripped through the parser so only normalised, matchable rules are
+  // stored — a pattern the picker allowed but the matcher would reject must never
+  // be persisted as though it were enforceable. An absent/malformed scope becomes
+  // undefined, i.e. metadata-only.
+  const scope = parseSourceAccessScope(
+    typeof body.scope === "string" ? body.scope : body.scope ? JSON.stringify(body.scope) : null,
+  );
+
   const grant = await repos.resourceGrant.upsert({
     organizationId,
     userId: body.userId,
     resourceType: body.resourceType as ResourceType,
     resourceId: body.resourceId,
     permissions,
+    scope,
     grantedByUserId: actorUserId,
   });
 
@@ -573,7 +584,12 @@ export async function replaceGrants(c: Context) {
   // Validate + normalize desired grants (key by type:id; drop zero-perm rows).
   const desired = new Map<
     string,
-    { resourceType: ResourceType; resourceId: string; permissions: Permission[] }
+    {
+      resourceType: ResourceType;
+      resourceId: string;
+      permissions: Permission[];
+      scope?: SourceAccessScope;
+    }
   >();
   for (const raw of body.grants as Array<Record<string, unknown>>) {
     const resourceType = raw.resourceType as ResourceType;
@@ -601,7 +617,12 @@ export async function replaceGrants(c: Context) {
         );
       }
     }
-    desired.set(`${resourceType}:${resourceId}`, { resourceType, resourceId, permissions });
+    // Source scope, normalised on the way in so an unmatchable pattern is dropped
+    // rather than stored as though it were enforceable. Absent ⇒ metadata only.
+    const scope = parseSourceAccessScope(
+      typeof raw.scope === "string" ? raw.scope : raw.scope ? JSON.stringify(raw.scope) : null,
+    );
+    desired.set(`${resourceType}:${resourceId}`, { resourceType, resourceId, permissions, scope });
   }
 
   const existing = await repos.resourceGrant.listByMember(organizationId, body.userId);
@@ -613,15 +634,26 @@ export async function replaceGrants(c: Context) {
       await repos.resourceGrant.delete(g.id, organizationId);
     }
   }
+  // Scope has to take part in change detection. Comparing permissions alone would
+  // silently skip the upsert when ONLY the source scope changed — so narrowing a
+  // repo from the whole tree to `src/**`, or revoking content access entirely,
+  // would appear to save and change nothing.
+  const scopeKey = (s?: SourceAccessScope) => JSON.stringify(serializeSourceAccessScope(s) ?? null);
+
   for (const [key, d] of desired) {
     const prev = existingByKey.get(key);
-    if (!prev || permsKey(prev.permissions) !== permsKey(d.permissions)) {
+    const changed =
+      !prev ||
+      permsKey(prev.permissions) !== permsKey(d.permissions) ||
+      scopeKey(prev.scope) !== scopeKey(d.scope);
+    if (changed) {
       await repos.resourceGrant.upsert({
         organizationId,
         userId: body.userId,
         resourceType: d.resourceType,
         resourceId: d.resourceId,
         permissions: d.permissions,
+        scope: d.scope,
         grantedByUserId: actorUserId,
       });
     }

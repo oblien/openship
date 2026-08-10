@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, getApiBaseUrl, getActiveOrganizationId } from "./client";
 import { endpoints } from "./endpoints";
 
 export interface BrowseEntry {
@@ -12,11 +12,39 @@ export interface BrowseResult {
   directories: BrowseEntry[];
 }
 
+/**
+ * A vhost the edge serves with no Openship record behind it.
+ *
+ * `static` is the case that matters: it keeps returning 200 with a removed
+ * project's built files. A dead `proxy` vhost 502s and announces itself.
+ */
+export interface UntrackedEdgeSite {
+  hostname: string;
+  hostnames: string[];
+  kind: "proxy" | "static";
+  /** Static docroot, or proxy upstream. */
+  target: string;
+  ssl: boolean;
+  source?: string;
+}
+
+export interface EdgeOrphanScan {
+  /** False = could not compare (no edge / foreign proxy). Not the same as zero orphans. */
+  scanned: boolean;
+  reason?: string;
+  orphans: UntrackedEdgeSite[];
+  knownCount: number;
+}
+
 export interface InstanceSettings {
   configured: boolean;
   authMode?: "none" | "cloud" | "local";
   tunnelProvider?: "edge" | "cloudflare" | "ngrok" | null;
   defaultBuildMode?: "auto" | "server" | "local";
+  /** Auto-update remote edge/mail containers on a control-plane version bump. */
+  autoUpdateInfra?: boolean;
+  /** Run one detect-only scan on a relevant surface load when the cache is stale. */
+  autoScanInfra?: boolean;
 }
 
 /** Instance SMTP config as returned by the API — password is never included. */
@@ -34,6 +62,9 @@ export interface InstanceEmailSettings {
 export interface ServerInfo {
   id: string;
   name: string | null;
+  /** The auto-registered host row (VPS / server-host mode) — "This Server".
+   *  Deploys to it run on the local host, and its SSH fields are placeholders. */
+  isLocal?: boolean;
   sshHost: string;
   sshPort: number;
   sshUser: string;
@@ -81,6 +112,128 @@ export interface ModuleApplyResult {
   ok: boolean;
   error?: string;
 }
+
+/**
+ * A managed container's cached drift status on a server (server_container_status).
+ * The container sibling of {@link ServerModuleStatus}: `running*` is what the box
+ * runs now, `pinned*` is what this control plane's APP_VERSION targets, and
+ * `behind` is a plain tag mismatch (an update is available).
+ */
+export interface ServerContainerStatus {
+  id: string;
+  serverId: string;
+  component: "edge" | "mail";
+  /** Image ref the container runs now (null when down). */
+  runningLabel: string | null;
+  /** Image ref this control plane pins for the component (the target). */
+  pinnedLabel: string | null;
+  /** Running image TAG, e.g. "0.4.0" — the version on the box. */
+  runningVersion: string | null;
+  /** Pinned image TAG, e.g. "0.5.0" — the version it should run. */
+  pinnedVersion: string | null;
+  behind: boolean;
+  latestInProgress: boolean;
+  /**
+   * `containerMissing` splits a DOWN component into stopped-in-place (startable
+   * with one click) vs gone (needs the setup path that owns its secrets) — the UI
+   * only offers a fix for the former. `flavor: "host"` marks a LEGACY
+   * pre-containerization mail engine (systemd Postfix/Dovecot, no image), where
+   * version and drift are meaningless and the row labels the topology instead.
+   */
+  detail: {
+    lastError?: string;
+    down?: boolean;
+    containerMissing?: boolean;
+    flavor?: "container" | "host";
+  } | null;
+  checkedAt: string;
+}
+
+/** One org server paired with its cached edge/mail rows — the global infra view. */
+export interface ServerContainerGroup {
+  server: {
+    id: string;
+    name: string;
+    sshHost: string;
+    isLocal: boolean;
+    /** Projects with an active deployment on this server — an absent edge is an
+     *  issue (not just an offer) only when this is > 0. */
+    projectCount: number;
+  };
+  components: ServerContainerStatus[];
+}
+
+/** One (server, component) pair needing hands-on action. */
+export interface ContainerIssue {
+  server: { id: string; name: string };
+  component: "edge" | "mail";
+  issue: "down" | "absent";
+  /** Gone rather than stopped → the fix is the setup path, not a one-click start. */
+  containerMissing: boolean;
+  /** Last recorded failure for this component. Absent when it is merely stopped. */
+  reason?: string;
+}
+
+/**
+ * Actionable-issue rollup for the attention dot + home surface. An issue is a
+ * managed component needing hands-on action: an edge that's `down` (installed, not
+ * running) or `absent` (missing on a server that hosts projects), or a provisioned
+ * mail engine that stopped. Behind (update available) is NOT here — that's
+ * {@link ServerContainerGroup} / the updates surface. A box with no mail row has no
+ * mail, so it never raises the mail alarm.
+ */
+export interface ContainerIssues {
+  /** Issue count, not server count (one box can contribute edge + mail). */
+  total: number;
+  servers: ContainerIssue[];
+  edgeDown: number;
+  edgeMissing: number;
+  mailDown: number;
+}
+
+/** `update` swaps onto the pinned image; `repair` starts a stopped container. */
+export type ContainerApplyIntent = "update" | "repair";
+
+/**
+ * Outcome of a fleet bulk apply. `started` runs detached (each entry is a live
+ * per-server session), `skipped` is what needs the server's own page: 80/443
+ * takeover consent, a container that's gone (setup, not a restart), an apply
+ * already in flight, or an unreachable box.
+ */
+export interface BulkApplyResult {
+  started: Array<{
+    serverId: string;
+    serverName: string;
+    component: "edge" | "mail";
+    intent: ContainerApplyIntent;
+  }>;
+  skipped: Array<{
+    serverId: string;
+    serverName: string;
+    component: "edge" | "mail";
+    reason: "needs_takeover_consent" | "container_missing" | "already_running" | "unreachable";
+  }>;
+}
+
+/** One step of a container image swap, for the progress bar. */
+export interface ContainerApplyStep {
+  id: "pull" | "recreate" | "verify";
+  label: string;
+  status: "pending" | "running" | "done" | "error";
+}
+
+/** A parsed SSE frame from the container-apply stream. */
+export type ContainerApplyEvent =
+  | { event: "steps"; steps: ContainerApplyStep[] }
+  | { event: "log"; timestamp: string; message: string; level: "info" | "warn" | "error" }
+  | {
+      event: "complete";
+      status: "completed" | "failed";
+      result: { updated: boolean; down: boolean } | null;
+      error: string | null;
+    }
+  | { event: "end"; status: string }
+  | { event: "ping" };
 
 /** True when running inside the Electron desktop shell */
 function isElectron(): boolean {
@@ -163,6 +316,15 @@ export interface SetupSessionInfo {
   finishedAt?: number;
 }
 
+/** Read-only status of a managed-container image swap (edge/mail), for re-attach. */
+export interface ContainerApplySessionInfo {
+  active: boolean;
+  sessionId?: string;
+  status?: "running" | "completed" | "failed";
+  serverId?: string;
+  component?: "edge" | "mail";
+}
+
 export interface SetupLogEvent {
   type: "log";
   timestamp: string;
@@ -201,6 +363,38 @@ export interface ServerRateLimitConfig {
   whitelist: string[];
 }
 
+/** One listening socket found by the port-exposure scan. */
+export interface HostListener {
+  proto: "tcp" | "udp";
+  family: "ipv4" | "ipv6";
+  address: string;
+  port: number;
+  exposed: boolean;
+  pid: number | null;
+  process: string | null;
+  /** Well-known service label ("SSH", "HTTPS", "PostgreSQL") or null. */
+  service: string | null;
+  /** Expected-open platform port (SSH, edge 80/443). */
+  required?: boolean;
+  /** Should almost never face the internet (databases, Docker API). */
+  sensitive?: boolean;
+  /** Confirmed off-box: true = reachable from the internet, false = bound but
+   *  firewall-blocked, null/undefined = not probed (loopback, UDP, local target). */
+  reachable?: boolean | null;
+}
+
+export interface PortScanResult {
+  listeners: HostListener[];
+  totalCount: number;
+  exposedCount: number;
+  source: "ss" | "procfs";
+  scanned: boolean;
+  /** Whether the API confirmed reachability by dialing exposed ports off-box. */
+  reachabilityProbed?: boolean;
+  /** Exposed TCP ports confirmed reachable from the internet. */
+  reachableCount?: number;
+}
+
 export interface SetupProgressEvent {
   type: "progress";
   component: string | null;
@@ -232,6 +426,22 @@ export interface TunnelInfo {
 }
 
 export const systemApi = {
+  /**
+   * Vhosts the local edge serves that Openship no longer tracks.
+   *
+   * `scanned: false` is NOT "all clear" — it means we couldn't compare (no edge,
+   * or a foreign proxy). Render the reason, never an empty success state.
+   */
+  listUntrackedEdgeSites: () =>
+    api.get<{ data: EdgeOrphanScan }>(endpoints.system.edgeUntracked),
+
+  /** Stop serving ONE untracked hostname. Owner-only; refuses anything still tracked. */
+  removeUntrackedEdgeSite: (hostname: string) =>
+    api.post<{ data: { removed: boolean; hostname: string } }>(
+      endpoints.system.edgeUntrackedRemove,
+      { hostname },
+    ),
+
   /** List child directories at a given path (backend browse) */
   browse: (path?: string) =>
     api.get<BrowseResult>(endpoints.system.browse, {
@@ -326,6 +536,12 @@ export const systemApi = {
       params: sessionId ? { id: sessionId } : undefined,
     }),
 
+  /** Is a container image swap (edge/mail) running for this server? (re-attach) */
+  getContainerApplySession: (serverId: string, component: "edge" | "mail") =>
+    api.get<ContainerApplySessionInfo>(
+      endpoints.system.serverContainerApplySession(serverId, component),
+    ),
+
   // ── Servers CRUD ─────────────────────────────────────────────────────────
 
   /** List all configured servers */
@@ -369,6 +585,137 @@ export const systemApi = {
       timeout: 120_000,
     }),
 
+  // ── Managed-container updates (edge / mail, per-server) ─────────────────────
+
+  /** Cached edge/mail image drift for a server. */
+  listServerContainers: (serverId: string) =>
+    api.get<ServerContainerStatus[]>(endpoints.system.serverContainers(serverId)),
+
+  /** Re-probe the server now and refresh the container drift cache. */
+  scanServerContainers: (serverId: string) =>
+    api.post<{ ok: boolean; containers: unknown[] }>(
+      endpoints.system.serverContainersScan(serverId),
+      {},
+    ),
+
+  /**
+   * Swap a server's edge/mail container onto the pinned image, streaming
+   * progress via POST + SSE (fetch ReadableStream, same shape as mail setup).
+   * Idempotent per (server, component): a second call while a swap is in flight
+   * re-attaches to the running session and replays its steps + logs. Resolves
+   * when the stream ends; `onEvent` receives each parsed frame.
+   */
+  streamApplyServerContainer: async (
+    serverId: string,
+    component: "edge" | "mail",
+    onEvent: (event: ContainerApplyEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const url = new URL(endpoints.system.serverContainerApply(serverId, component), getApiBaseUrl());
+    // Direct fetch bypasses the api client, so attach the active org header
+    // ourselves (a stale cookie in a multi-tab session can resolve the wrong org).
+    const orgId = getActiveOrganizationId();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (orgId) headers["X-Organization-Id"] = orgId;
+
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: "{}",
+      signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `Update failed: ${res.status}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error("No response body");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let eventType = "";
+    let eventData = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.startsWith("event:")) {
+          eventType = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          eventData = line.slice(5).trim();
+        } else if (line === "" && eventType) {
+          try {
+            const parsed = eventData ? JSON.parse(eventData) : {};
+            onEvent({ event: eventType, ...parsed } as ContainerApplyEvent);
+          } catch {
+            // Skip malformed frames.
+          }
+          eventType = "";
+          eventData = "";
+        }
+      }
+    }
+  },
+
+  /** Read the instance-wide auto-update-infra toggle (from /system/settings). */
+  getInfraAutoUpdate: async (): Promise<boolean> => {
+    const s = await api.get<InstanceSettings>(endpoints.system.settings);
+    return Boolean(s.autoUpdateInfra);
+  },
+
+  /** Set the instance-wide auto-update-infra toggle. */
+  setInfraAutoUpdate: (enabled: boolean) =>
+    api.patch<{ ok: boolean }>(endpoints.system.settings, { autoUpdateInfra: enabled }),
+
+  /** Read the instance-wide auto-scan-infra toggle (default on when unset). */
+  getInfraAutoScan: async (): Promise<boolean> => {
+    const s = await api.get<InstanceSettings>(endpoints.system.settings);
+    return s.autoScanInfra ?? true;
+  },
+
+  /** Set the instance-wide auto-scan-infra toggle. */
+  setInfraAutoScan: (enabled: boolean) =>
+    api.patch<{ ok: boolean }>(endpoints.system.settings, { autoScanInfra: enabled }),
+
+  /** Org-wide managed-container drift summary for the home nudge. */
+  containersBehind: () =>
+    api.get<{ servers: number; components: number }>(endpoints.system.containersBehind()),
+
+  /** Org-wide actionable-issue rollup (edge down / absent-with-projects) for the
+   *  attention dot + home surface. Cheap (read from cache), safe on every render. */
+  containerIssues: () =>
+    api.get<ContainerIssues>(endpoints.system.containersIssues()),
+
+  /** Every org server with its cached edge/mail rows — the global infra view. */
+  listAllContainers: () =>
+    api.get<ServerContainerGroup[]>(endpoints.system.allContainers()),
+
+  /** Detect-only refresh across every org server, then return the grouped view. */
+  scanAllContainers: () =>
+    api.post<ServerContainerGroup[]>(endpoints.system.allContainersScan(), {}, { timeout: 120_000 }),
+
+  /**
+   * Update every behind container and/or restart every stopped one across the org.
+   * Targets are derived from the cache SERVER-side; `intents` only picks which
+   * classes to act on. Returns as soon as the targets are classified — the applies
+   * run as per-server sessions the rows render as "Updating…" and a click
+   * re-attaches to for live logs.
+   *
+   * Same 120 s budget as the scan, NOT the 15 s default: classifying edge REPAIRS
+   * pre-probes 80/443 over SSH on each stopped box, which can outlast 15 s on a
+   * larger fleet. An abort here wouldn't cancel the applies — it would just report
+   * a failure for work that's already running.
+   */
+  applyAllContainers: (intents?: ContainerApplyIntent[]) =>
+    api.post<BulkApplyResult>(endpoints.system.allContainersApply(), intents ? { intents } : {}, {
+      timeout: 120_000,
+    }),
+
   // ── Rate Limiting (per-server) ─────────────────────────────────────────────
 
   /** Get rate limit config for a server */
@@ -383,6 +730,14 @@ export const systemApi = {
       endpoints.system.serverRateLimit(serverId),
       data,
     ),
+
+  // ── Port exposure scan (per-server) ────────────────────────────────────────
+
+  /** Enumerate every listening socket on the server and classify exposed vs
+   *  loopback. Read-only; runs through the executor middleware server-side.
+   *  Generous timeout — a cold SSH probe against a real box needs headroom. */
+  scanPorts: (serverId: string) =>
+    api.post<PortScanResult>(endpoints.system.serverPortsScan(serverId), {}, { timeout: 30_000 }),
 
   // ── Port-forward tunnels (desktop-only) ────────────────────────────────────
 

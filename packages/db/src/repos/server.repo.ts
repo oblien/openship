@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import { servers } from "../schema";
 
@@ -16,6 +16,34 @@ export function createServerRepo(db: Database) {
       return db.query.servers.findMany({
         orderBy: (s, { asc }) => [asc(s.createdAt)],
       });
+    },
+
+    /**
+     * Batch id → display name, for naming servers in list responses. Falls back
+     * to the SSH host, which is what an unnamed server is called everywhere else.
+     */
+    async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
+      if (ids.length === 0) return [];
+      return db
+        .select({ id: servers.id, name: sql<string>`coalesce(${servers.name}, ${servers.sshHost})` })
+        .from(servers)
+        .where(inArray(servers.id, ids));
+    },
+
+    /** Ids of servers in an org whose name or SSH host matches a search term. */
+    async searchIdsByName(organizationId: string, term: string, limit = 200): Promise<string[]> {
+      const pattern = `%${term}%`;
+      const rows = await db
+        .select({ id: servers.id })
+        .from(servers)
+        .where(
+          and(
+            eq(servers.organizationId, organizationId),
+            sql`(${servers.name} ILIKE ${pattern} OR ${servers.sshHost} ILIKE ${pattern})`,
+          ),
+        )
+        .limit(limit);
+      return rows.map((r) => r.id);
     },
 
     /**
@@ -41,6 +69,21 @@ export function createServerRepo(db: Database) {
     async get(id: string): Promise<Server | undefined> {
       return db.query.servers.findFirst({
         where: eq(servers.id, id),
+      });
+    },
+
+    /**
+     * The auto-registered "this host" row (VPS / server-host mode), if any.
+     * Scoped to one org because the self-server is created in the founding
+     * admin's org. Used by the boot reconcile for idempotency.
+     */
+    async findLocal(organizationId: string): Promise<Server | undefined> {
+      return db.query.servers.findFirst({
+        where: and(eq(servers.organizationId, organizationId), eq(servers.isLocal, true)),
+        // Deterministic: if more than one row was ever flagged local (a boot
+        // reconcile row + an adopted/self-healed one), always return the oldest —
+        // the canonical "This Server" — never an arbitrary pick.
+        orderBy: (s, { asc }) => asc(s.createdAt),
       });
     },
 

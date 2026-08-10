@@ -1,0 +1,210 @@
+/* ── Features catalog + detail ─────────────────────────────────────────────
+   Reuses the global hero classes (hero-section, hero-grid, hero-aurora, …) and
+   the th-* design tokens; only feature-specific pieces live here. */
+
+/* ── Category grouping ─────────────────────────────────────────── */
+.ft-cat {
+  margin-top: 4.5rem;
+}
+.ft-cat:first-of-type {
+  margin-top: 0;
+}
+.ft-cat-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.ft-cat-name {
+  font-size: clamp(1.35rem, 2.6vw, 1.75rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--th-text-heading);
+}
+.ft-cat-blurb {
+  font-size: 14.5px;
+  font-style: italic;
+  font-weight: 300;
+  color: var(--th-on-40);
+}
+
+/* ── Card grid ─────────────────────────────────────────────────── */
+.ft-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+@media (min-width: 640px) {
+  .ft-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 900px) {
+  .ft-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.ft-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  border-radius: 1rem;
+  padding: 1.4rem;
+  background: var(--th-card-bg);
+  border: 1px solid var(--th-card-bd);
+  transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.ft-card:hover {
+  border-color: var(--th-bd-strong);
+  transform: translateY(-3px);
+  box-shadow: 0 24px 60px -40px rgba(0, 0, 0, .55);
+}
+.ft-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.75rem;
+  background: var(--th-sf-04);
+  border: 1px solid var(--th-on-06);
+  color: var(--th-text-heading);
+}
+.ft-card-title {
+  font-size: 16.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--th-text-heading);
+}
+.ft-card-tagline {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+.ft-card-more {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--th-text-muted);
+  transition: color .2s ease, gap .2s ease;
+}
+.ft-card:hover .ft-card-more {
+  color: var(--th-text-heading);
+  gap: 0.5rem;
+}
+
+/* ── Screenshot frame (shared with detail) ─────────────────────── */
+.ft-shot {
+  margin: 0;
+  border-radius: 0.9rem;
+  overflow: hidden;
+  border: 1px solid var(--th-card-bd);
+  background: var(--th-card-bg);
+  box-shadow: 0 40px 90px -50px rgba(0, 0, 0, .6);
+}
+.ft-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--th-bd-subtle);
+  background: var(--th-sf-04);
+}
+.ft-shot-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--th-on-12);
+}
+.ft-shot-body {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: var(--th-sf-02);
+}
+.ft-shot-img {
+  object-fit: cover;
+  object-position: top center;
+}
+.ft-shot-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  background:
+    radial-gradient(120% 120% at 50% 0%, var(--th-sf-04), transparent 70%),
+    var(--th-sf-02);
+}
+.ft-shot-mark {
+  width: 3.5rem;
+  height: 3.5rem;
+  color: var(--th-on-12);
+}
+.ft-shot-empty-label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--th-text-muted);
+}
+
+/* ── Detail page ───────────────────────────────────────────────── */
+.ft-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--th-text-muted);
+  transition: color .2s ease, gap .2s ease;
+}
+.ft-back:hover {
+  color: var(--th-text-heading);
+  gap: 0.55rem;
+}
+.ft-detail-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--th-sf-06);
+  color: var(--th-text-secondary);
+  border: 1px solid var(--th-bd-subtle);
+}
+.ft-detail-body p {
+  color: var(--th-text-body);
+  font-size: 16px;
+  line-height: 1.75;
+  max-width: 64ch;
+}
+.ft-detail-body p + p {
+  margin-top: 1.1rem;
+}
+
+/* ── Highlights ────────────────────────────────────────────────── */
+.ft-highlight {
+  border-radius: 0.9rem;
+  padding: 1.15rem 1.25rem;
+  background: var(--th-card-bg);
+  border: 1px solid var(--th-card-bd);
+}
+.ft-highlight-title {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--th-text-heading);
+}
+.ft-highlight-desc {
+  margin-top: 0.3rem;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+.ft-check {
+  color: #6ee7b7;
+}

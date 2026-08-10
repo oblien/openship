@@ -134,6 +134,27 @@ export interface UpdateMailboxPayload {
   active?: boolean;
 }
 
+// ─── Aliases / forwards / catch-all ───────────────────────────────────────────
+
+export interface AdminAlias {
+  id: number;
+  address: string;
+  forwarding: string;
+  domain: string;
+  destDomain: string;
+  /** true when `address` is the bare domain (no @) - the domain's catch-all. */
+  isCatchAll: boolean;
+  active: boolean;
+}
+
+export interface CreateAliasPayload {
+  domain: string;
+  /** Ignored when isCatchAll is true. */
+  localPart?: string;
+  isCatchAll: boolean;
+  destination: string;
+}
+
 // ─── Stats ───────────────────────────────────────────────────────────────────
 
 export interface MailServerStats {
@@ -285,6 +306,24 @@ export const mailAdminApi = {
       api.delete<{ ok: boolean; mode: "soft" | "hard" }>(
         `${endpoints.mail.admin.mailbox(serverId, email)}?hard=true`,
       ),
+  },
+  aliases: {
+    list: (serverId: string, domain: string) =>
+      api.get<{ aliases: AdminAlias[] }>(
+        `${endpoints.mail.admin.aliases(serverId)}?domain=${encodeURIComponent(domain)}`,
+      ),
+    create: (serverId: string, payload: CreateAliasPayload) =>
+      api.post<{ alias: AdminAlias }>(
+        endpoints.mail.admin.aliases(serverId),
+        payload,
+      ),
+    setActive: (serverId: string, id: number, active: boolean) =>
+      api.patch<{ alias: AdminAlias }>(
+        endpoints.mail.admin.alias(serverId, id),
+        { active },
+      ),
+    delete: (serverId: string, id: number) =>
+      api.delete<{ ok: boolean }>(endpoints.mail.admin.alias(serverId, id)),
   },
   stats: {
     get: (serverId: string) =>

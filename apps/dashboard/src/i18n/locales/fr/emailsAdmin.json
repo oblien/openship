@@ -377,6 +377,16 @@
     "dismissLink": "Je sais, masquer ceci",
     "dismiss": "Ignorer"
   },
+  "engine": {
+    "downTitle": "Le moteur de messagerie de ce serveur n'est pas actif",
+    "downBody": "Tant qu'il est arrêté, aucun courrier n'est distribué ni accepté, et tous les onglets ici en dépendent. Le redémarrer est sans risque : rien n'est réinstallé et aucune configuration n'est modifiée.",
+    "legacyNote": "Ce serveur utilise l'ancien moteur installé directement sur l'hôte (Postfix/Dovecot via systemd) : il n'y a donc aucun conteneur à inspecter.",
+    "start": "Démarrer le moteur",
+    "missingTitle": "Aucun moteur de messagerie sur ce serveur",
+    "missingBody": "Openship ne trouve aucun moteur de messagerie ici — ni le conteneur du moteur, ni les unités Postfix/Dovecot. Relancez la configuration de la messagerie pour le réinstaller.",
+    "rerunSetup": "Relancer la configuration",
+    "cardBlocked": "Indisponible tant que le moteur de messagerie n'est pas actif."
+  },
   "welcome": {
     "invalidEmail": "Saisissez une adresse e-mail valide",
     "sendFailed": "Échec de l'envoi",

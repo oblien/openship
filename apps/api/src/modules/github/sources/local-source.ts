@@ -40,7 +40,7 @@ import type {
   GitHubInstallation,
   MappedRepository,
 } from "../github.types";
-import type { GhCliSource } from "./gh-cli-source";
+import type { GhCliSource, GhCliStatus } from "./gh-cli-source";
 import type { GitHubAppSource } from "./app-source";
 import type {
   GitHubConnectionStatus,
@@ -50,6 +50,36 @@ import type {
   GitHubSource,
   GitHubUserStatus,
 } from "./types";
+
+/**
+ * THE one place a gh probe result becomes wire state.
+ *
+ * `getHome` and `getConnectionState` each built this object inline, and both
+ * omitted `method` — so a pasted PAT reached the dashboard as an anonymous
+ * "gh CLI" connection (the label is the `?? "host-cli"` fallback) and the
+ * library asked for consent to read the host's gh login that was never used.
+ * `github.auth.ts:getGitHubConnectionState` set the field correctly and is not
+ * on either of these paths, which is why the plumbing looked done.
+ */
+function ghCliState(status: GhCliStatus): GitHubConnectionState["sources"]["ghCli"] {
+  if (status.available) {
+    return {
+      available: true,
+      login: status.login,
+      avatarUrl: status.avatar_url,
+      method: status.method,
+      checkedAt: status.checkedAt,
+    };
+  }
+  // No credential at all → stay the empty shape. `method`/`problem` are present
+  // only when something IS stored and failed, which is the case the UI warns on.
+  return {
+    available: false,
+    ...(status.method ? { method: status.method } : {}),
+    ...(status.problem ? { problem: status.problem } : {}),
+    checkedAt: status.checkedAt,
+  };
+}
 
 export class LocalGitHubSource implements GitHubSource {
   // Listing-facing label; the App side (cloud-app/app) is resolved lazily and
@@ -104,9 +134,12 @@ export class LocalGitHubSource implements GitHubSource {
       const state: GitHubConnectionState = {
         sources: {
           openshipApp: { connected: false },
-          ghCli: status.available
-            ? { available: true, login: status.login, avatarUrl: status.avatar_url }
-            : { available: true },
+          // `available` is pinned true on this path: the gh sub-source only
+          // exists because a token was resolved at construction, and the library
+          // is already committed to `primary: "gh-cli"` below. Left as-is (a
+          // failed verify here yields an empty repo list rather than an error),
+          // but the probe's method/problem now ride along either way.
+          ghCli: { ...ghCliState(status), available: true },
         },
         primary: "gh-cli",
       };
@@ -130,12 +163,13 @@ export class LocalGitHubSource implements GitHubSource {
     const app = await this.app();
     const [appState, ghStatus] = await Promise.all([
       app ? app.getConnectionState() : Promise.resolve(null),
-      this.gh ? this.gh.status() : Promise.resolve({ available: false } as const),
+      // No gh sub-source at all → no credential, so nothing was verified and
+      // there is no `problem` to report (that word is reserved for a stored
+      // credential that failed).
+      this.gh ? this.gh.status() : Promise.resolve({ available: false, method: null } as const),
     ]);
     const openshipApp = appState?.sources.openshipApp ?? { connected: false };
-    const ghCli = ghStatus.available
-      ? { available: true, login: ghStatus.login, avatarUrl: ghStatus.avatar_url }
-      : { available: false };
+    const ghCli = ghCliState(ghStatus);
     return {
       sources: { openshipApp, ghCli },
       primary: openshipApp.connected ? "openship-app" : ghCli.available ? "gh-cli" : null,

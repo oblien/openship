@@ -46,5 +46,36 @@
     "backToDashboard": "返回控制台",
     "viewDeployments": "查看部署",
     "copyId": "复制 ID"
+  },
+  "window": {
+    "back": "后退",
+    "forward": "前进",
+    "reload": "重新加载",
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭",
+    "devTools": "开发者工具",
+    "navigation": "导航"
+  },
+  "apiDown": {
+    "title": "无法连接 API",
+    "description": "仪表盘正在运行，但无法与 Openship API 通信，因此暂时没有内容可显示。你的部署仍会继续运行。",
+    "hintStatus": "确认 API 已启动：在主机上运行 `openship status`。",
+    "hintStart": "没有在运行？用 `openship up` 启动它。",
+    "hintRemote": "在管理远程主机？请确认它的 URL，以及此处能否访问 API 端口。",
+    "docs": "自托管文档",
+    "retry": "重试"
+  },
+  "error": {
+    "title": "此页面出现错误",
+    "description": "此界面的部分内容未能渲染。重试通常就能恢复——你已部署的内容不受影响。",
+    "tryAgain": "重试",
+    "goToProjects": "前往项目",
+    "refCode": "编号"
+  },
+  "errorLinks": {
+    "docs": "文档",
+    "github": "报告问题"
   }
 }

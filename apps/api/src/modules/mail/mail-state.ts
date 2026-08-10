@@ -311,6 +311,15 @@ export interface MailServerState {
   serverId: string;
   /** Primary mail domain (`mail.<domain>` is the SMTP/IMAP host). */
   domain: string;
+  /**
+   * What the deploy step (`stepDeployEngine`) last brought up for the `openship-mail`
+   * container engine: the image ref the dashboard surfaces as the running version and
+   * that `ensureContainerMail` compares to decide a "pull newer + recreate" swap, and
+   * the container name it manages. Absent on legacy host-native installs adopted
+   * before containerization.
+   */
+  engineImage?: string;
+  containerName?: string;
   startedAt: string;
   /** Last time we wrote - handy for "when was last activity" displays. */
   updatedAt: string;

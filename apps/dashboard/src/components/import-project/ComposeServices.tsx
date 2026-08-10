@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { useDeployment } from "@/context/DeploymentContext";
+import { folderApi } from "@/lib/api/folder";
 import { usePlatform } from "@/context/PlatformContext";
 import {
   usesServiceDeployment,
@@ -30,6 +31,7 @@ import {
 } from "@/context/deployment/types";
 import { getModeSwitchUpdates } from "@/context/deployment/mode-config";
 import { normalizeSubdomain } from "@/utils/subdomain";
+import { parseContainerPort, serviceExposedPort } from "@/utils/compose-ports";
 import PublicEndpointsCard from "@/components/routing/PublicEndpointsCard";
 import { Modal } from "@/components/ui/Modal";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -39,9 +41,6 @@ import { cn } from "@/lib/utils";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const getExposedPort = (svc: ComposeServiceInfo) =>
-  svc.ports[0]?.split(":").pop()?.split("/")[0];
 
 type EnvVarRow = { key: string; value: string; visible: boolean };
 
@@ -84,7 +83,7 @@ const missingEnvCount = (service: ComposeServiceInfo) =>
     ([key, meta]) => meta.source === "missing" && !service.environment[key],
   ).length;
 
-const portDisplay = (port: string) => port.split(":").pop()?.split("/")[0] || port;
+const portDisplay = (port: string) => parseContainerPort(port) || port;
 
 // ─── Port / volume rows (compose string[] ↔ editable rows) ───────────────────
 // Round-trips are LOSSLESS for the fields the UI doesn't edit: a port keeps its
@@ -193,7 +192,7 @@ const ServiceDomainSection: React.FC<{
     );
   }
 
-  const primaryPort = service.exposedPort || getExposedPort(service) || "";
+  const primaryPort = service.exposedPort || serviceExposedPort(service) || "";
   const defaultSubdomain =
     service.name === "web" || service.name === "app" || service.name === "frontend"
       ? normalizeSubdomain(projectName)
@@ -489,7 +488,7 @@ const ServiceConfigSection: React.FC<{
     [onChange],
   );
 
-  const routedPort = service.exposedPort || getExposedPort(service) || "";
+  const routedPort = service.exposedPort || serviceExposedPort(service) || "";
   const statefulOnCloud = isCloud && (isStatefulImage(service.image) || service.volumes.length > 0);
   const portsStr = interpolate(service.ports.length === 1 ? cnt.portOne : cnt.portOther, { count: String(service.ports.length) });
   const volumesStr = interpolate(service.volumes.length === 1 ? cnt.volumeOne : cnt.volumeOther, { count: String(service.volumes.length) });
@@ -703,11 +702,19 @@ const ServiceCard: React.FC<{
   onDelete: () => void;
 }> = ({ service, projectName, onUpdate, onEnvChange, onDelete }) => {
   const { t } = useI18n();
+  const { config } = useDeployment();
   const cs = t.importProject.composeServices;
   const cnt = t.importProject.counts;
   const missingCount = missingEnvCount(service);
   const envCount = Object.keys(service.environment).length;
   const [envModalOpen, setEnvModalOpen] = useState(false);
+  // #336: in the folder-upload flow the scan masks env — reveal THIS service's
+  // real values from the upload session (write-gated on the API). Only wired
+  // when an upload session exists; git/edit flows have no session-scoped source.
+  const uploadSessionId = config.uploadSessionId;
+  const onRevealAll = uploadSessionId
+    ? async () => (await folderApi.reveal(uploadSessionId)).environments[service.name] ?? {}
+    : undefined;
   const [envRows, setEnvRows] = useState<EnvVarRow[]>(() =>
     envToArray(service.environment, {}, service.environmentMeta),
   );
@@ -900,6 +907,7 @@ const ServiceCard: React.FC<{
             envVars={envRows}
             envMeta={service.environmentMeta}
             onEnvVarsChange={handleEnvChange}
+            onRevealAll={onRevealAll}
           />
         </div>
       </Modal>
@@ -968,7 +976,7 @@ const ComposeServices: React.FC = () => {
           ? normalizeSubdomain(projectNameForHost)
           : normalizeSubdomain(`${projectNameForHost}-${svc.name}`);
       const eps = ensurePublicEndpoints(svc.publicEndpoints, {
-        port: svc.exposedPort || getExposedPort(svc) || "",
+        port: svc.exposedPort || serviceExposedPort(svc) || "",
         domain: svc.domain || defaultSub,
         customDomain: svc.customDomain || "",
         domainType: svc.domainType || "free",

@@ -106,10 +106,10 @@ function HealthRow({
             <button
               onClick={() => onRunAction(component)}
               disabled={busy}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50 ${
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 ${
                 isUpdate
-                  ? "border-warning-border bg-warning-bg text-warning hover:bg-warning-bg"
-                  : "border-border/70 hover:bg-muted text-muted-foreground"
+                  ? "bg-warning-bg text-warning hover:bg-warning/20"
+                  : "bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
               {running ? (
@@ -129,7 +129,7 @@ function HealthRow({
               onClick={() => onRemoveAction(component)}
               disabled={removeDisabled}
               title={component.removeBlockedReason}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border border-danger-border hover:bg-danger-bg transition-colors text-danger disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg bg-danger-bg hover:bg-danger/20 transition-colors text-danger disabled:opacity-50"
             >
               {running ? (
                 <Loader2 className="size-3.5 animate-spin" />

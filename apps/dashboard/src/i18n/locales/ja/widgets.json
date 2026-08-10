@@ -35,6 +35,10 @@
         "backToDashboard": "ダッシュボードに戻る",
         "createNewProject": "新しいプロジェクトを作成"
       },
+      "loadFailed": {
+        "title": "このプロジェクトを読み込めませんでした",
+        "subtitle": "このプロジェクトへの接続で問題が発生しました。接続を確認して再試行してください。"
+      },
       "accessDenied": {
         "title": "アクセスが拒否されました",
         "subtitle": "このリソースにアクセスする権限がありません。",
@@ -205,7 +209,8 @@
   "routing": {
     "domainSwitcher": {
       "notConfigured": "未設定",
-      "selectDomain": "ドメインを選択"
+      "selectDomain": "ドメインを選択",
+      "allDomains": "すべてのドメイン"
     },
     "publicEndpoints": {
       "mappedToPort": "ポート {port} にマッピングされています。",
@@ -236,7 +241,39 @@
       "permanent": "恒久的",
       "cleanUrls": "クリーン URL",
       "cleanUrlsHint": "（.html を除去）",
-      "trailingSlash": "末尾のスラッシュ"
+      "trailingSlash": "末尾のスラッシュ",
+      "proxyLimits": "リクエスト制限",
+      "proxyLimitsHint": "アップロードサイズとタイムアウト。空欄の場合はプロキシの既定値（アップロード 1 MB、タイムアウト 60s）が適用されます。",
+      "maxBodySize": "最大アップロードサイズ",
+      "maxBodySizeHint": "例: 25m。これを超えるリクエストは 413 で拒否されます。既定値は 1m。",
+      "readTimeout": "読み取りタイムアウト",
+      "readTimeoutHint": "例: 300s。アプリの応答を待つ時間。既定値は 60s。",
+      "sendTimeout": "送信タイムアウト",
+      "sendTimeoutHint": "例: 300s。アプリへ送信する際に待つ時間。既定値は 60s。",
+      "bodyTimeout": "アップロードタイムアウト",
+      "bodyTimeoutHint": "例: 300s。大きなアップロードではこれも延ばさないと転送途中で中断します。既定値は 60s。",
+      "proxyBuffering": "レスポンスをバッファリング",
+      "proxyBufferingHint": "（ストリーミング / SSE では無効に）",
+      "gzip": "レスポンスを圧縮",
+      "gzipHint": "（テキスト、JSON、JS、CSS を gzip）",
+      "proxyGroups": {
+        "body": "リクエストボディ",
+        "timeouts": "アップストリームのタイムアウト",
+        "buffering": "レスポンスのバッファリング",
+        "compression": "圧縮",
+        "headers": "ヘッダーとプロトコル",
+        "upstreamTls": "アプリへの TLS"
+      },
+      "proxyInherit": "nginx のデフォルト",
+      "proxyNotSet": "未設定",
+      "proxyLiveLabel": "配信中:",
+      "proxyLiveVaries": "ホストごとに異なります",
+      "proxyDrift": "保存値と異なります",
+      "proxyDriftSummary": "エッジは次の項目で異なる値を配信しています:",
+      "proxyAdoptLive": "現在の値を取り込む",
+      "proxyLiveUnavailable": "このプロジェクトのサーバーから現在の設定を読み取れませんでした。",
+      "proxyLiveSource": "読み取り元:",
+      "proxyRefreshLive": "現在の設定を再読み込み"
     },
     "settingsCard": {
       "recordLabels": {
@@ -254,6 +291,11 @@
       "checkingDns": "DNS を確認中…",
       "addRecordHint": "{primary} レコードと {txt} レコードを追加してください",
       "viewRecords": "レコードを表示",
+      "redirectTo": "リダイレクト",
+      "redirectServeApp": "ここでアプリを配信",
+      "redirectToHost": "→ {hostname}",
+      "redirectPermanent": "301 恒久的",
+      "redirectTemporary": "302 一時的",
       "exposedPort": "公開ポート",
       "staticPath": "静的パス",
       "staticPathHint": "ビルド出力内のこのサブディレクトリからファイルを配信します。ルート出力には {path} を使用してください。",

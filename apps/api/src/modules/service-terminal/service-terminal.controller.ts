@@ -35,7 +35,7 @@ import { safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../lib/request-context";
 import { resolveActiveOrganizationId } from "../../middleware/active-organization";
 import { checkPermission } from "../../lib/permission";
-import { containerIdForService } from "../services/service-container";
+import { containerIdForService, liveContainerIdWithRuntime } from "../services/service-container";
 import {
   attachServiceWs,
   consumeServiceTerminalTicket,
@@ -49,6 +49,12 @@ import {
   touchServiceSession,
   unregisterServiceSession,
 } from "../../lib/service-terminal-session-manager";
+import {
+  safeWsSend,
+  safeWsClose,
+  safeShellWrite,
+  safeShellClose,
+} from "../../lib/terminal-helpers";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -188,8 +194,15 @@ async function resolveServiceForOrg(
   }
 
   // Resolve THIS service's own container via the shared resolver (never the
-  // compose primary — see containerIdForService).
-  const containerId = await containerIdForService(dep, service);
+  // compose primary — see containerIdForService), then VERIFY it against the
+  // host: a recorded id that a redeploy replaced would open a shell request on a
+  // dead container and fail with docker's "no such container".
+  const containerId = await liveContainerIdWithRuntime(runtime, {
+    service: { id: service.id, name: service.name },
+    projectId: project.id,
+    slug: project.slug,
+    tracked: await containerIdForService(dep, service),
+  });
   if (!containerId) {
     return {
       ok: false,
@@ -349,13 +362,16 @@ interface HandshakeCtx {
   resumeToken: string;
 }
 
-interface ConnState {
+export interface ConnState {
   ctx: HandshakeCtx;
   sessionId: string | null;
   shell: ShellSession | null;
   ws: WSLike | null;
   heartbeatTimer: ReturnType<typeof setInterval> | null;
+  /** True when this WebSocket connection has detached; stops its data pump and incoming messages. */
   closed: boolean;
+  /** True when this connection's session has been fully ended (shell killed, audit row closed). */
+  ended: boolean;
   userTerminated: boolean;
 }
 
@@ -373,6 +389,7 @@ function buildHandlers(ctx: HandshakeCtx) {
     ws: null,
     heartbeatTimer: null,
     closed: false,
+    ended: false,
     userTerminated: false,
   };
 
@@ -381,11 +398,7 @@ function buildHandlers(ctx: HandshakeCtx) {
       state.ws = ws;
       const dataPump = (chunk: Buffer) => {
         if (state.closed) return;
-        try {
-          ws.send(chunk);
-        } catch {
-          /* peer gone */
-        }
+        safeWsSend(ws, chunk);
       };
 
       // RESUME path
@@ -400,11 +413,7 @@ function buildHandlers(ctx: HandshakeCtx) {
             code: "resume_failed",
             message: "Session is no longer available",
           });
-          try {
-            ws.close(1011, "resume_failed");
-          } catch {
-            /* already closing */
-          }
+          safeWsClose(ws, 1011, "resume_failed");
           return;
         }
 
@@ -412,13 +421,20 @@ function buildHandlers(ctx: HandshakeCtx) {
         state.sessionId = existing.sessionId;
         attachServiceWs(existing.sessionId, dataPump);
 
+        // Re-bind the timeout hook to this fresh WS/connection state so a
+        // later idle or hard-cap timeout closes the session from the live
+        // connection, not the stale parked one. Re-arm the idle timer so a
+        // resume does not inherit an expiry from the original WS.
+        existing.onTimeout = (_sid, reason) => {
+          sendControl(ws, { type: "error", code: reason as ErrorCode, message: reason });
+          safeWsClose(ws, 1011, reason);
+          void teardown(state, reason, null, /* alreadyUnregistered */ true, /* forceClose */ true);
+        };
+        touchServiceSession(existing.sessionId);
+
         existing.shell.onClose((code: number | null, signal?: string) => {
           sendControl(ws, { type: "exit", code, signal });
-          try {
-            ws.close(1000, "remote_exit");
-          } catch {
-            /* already closing */
-          }
+          safeWsClose(ws, 1000, "remote_exit");
           void teardown(state, "remote_exit", code);
         });
 
@@ -455,11 +471,7 @@ function buildHandlers(ctx: HandshakeCtx) {
           code,
           message: safeErrorMessage(err),
         });
-        try {
-          ws.close(1011, code);
-        } catch {
-          /* already closing */
-        }
+        safeWsClose(ws, 1011, code);
         return;
       }
 
@@ -490,11 +502,7 @@ function buildHandlers(ctx: HandshakeCtx) {
             code: reason as ErrorCode,
             message: reason,
           });
-          try {
-            ws.close(1011, reason);
-          } catch {
-            /* already closing */
-          }
+          safeWsClose(ws, 1011, reason);
           void teardown(state, reason, null, true, true);
         },
       });
@@ -510,11 +518,7 @@ function buildHandlers(ctx: HandshakeCtx) {
 
       shell.onClose((code: number | null, signal?: string) => {
         sendControl(ws, { type: "exit", code, signal });
-        try {
-          ws.close(1000, "remote_exit");
-        } catch {
-          /* already closing */
-        }
+        safeWsClose(ws, 1000, "remote_exit");
         void teardown(state, "remote_exit", code, false, true);
       });
 
@@ -537,20 +541,12 @@ function buildHandlers(ctx: HandshakeCtx) {
       const data = evt.data;
       if (data instanceof ArrayBuffer) {
         if (state.sessionId) touchServiceSession(state.sessionId);
-        try {
-          state.shell.stdin.write(Buffer.from(data));
-        } catch {
-          /* shell gone */
-        }
+        safeShellWrite(state.shell, Buffer.from(data));
         return;
       }
       if (data instanceof Uint8Array || Buffer.isBuffer(data)) {
         if (state.sessionId) touchServiceSession(state.sessionId);
-        try {
-          state.shell.stdin.write(Buffer.from(data as Uint8Array));
-        } catch {
-          /* shell gone */
-        }
+        safeShellWrite(state.shell, Buffer.from(data as Uint8Array));
         return;
       }
       if (typeof data === "string") {
@@ -573,11 +569,7 @@ function buildHandlers(ctx: HandshakeCtx) {
         }
         if (msg?.type === "close") {
           state.userTerminated = true;
-          try {
-            ws.close(1000, "client_terminate");
-          } catch {
-            /* already closing */
-          }
+          safeWsClose(ws, 1000, "client_terminate");
           return;
         }
       }
@@ -599,14 +591,22 @@ function buildHandlers(ctx: HandshakeCtx) {
   };
 }
 
-async function teardown(
+export async function teardown(
   state: ConnState,
   reason: TerminalExitReason,
   exitCode: number | null,
   alreadyUnregistered = false,
   forceClose = true,
 ) {
-  if (state.closed) return;
+  // Full teardown already completed for this connection.
+  if (state.ended) return;
+
+  // The WS side of this connection is already gone and this is not the
+  // timeout/unregister path that intentionally runs after the WS detached.
+  // This deflects stale shell.onClose callbacks from a previous WS after a
+  // resume, while still allowing the idle/cap timeout to finalize the row.
+  if (state.closed && !alreadyUnregistered) return;
+
   state.closed = true;
 
   if (state.heartbeatTimer) {
@@ -619,12 +619,12 @@ async function teardown(
     return;
   }
 
+  // Force-close: this session is ending. Mark it now so any re-entrant
+  // shell.onClose / onClose handler for this same connection no-ops.
+  state.ended = true;
+
   if (state.shell) {
-    try {
-      state.shell.close();
-    } catch {
-      /* best-effort */
-    }
+    safeShellClose(state.shell);
     state.shell = null;
   }
 
@@ -645,22 +645,14 @@ async function teardown(
 }
 
 function sendControl(ws: WSLike, msg: ControlOut): void {
-  try {
-    ws.send(JSON.stringify(msg));
-  } catch {
-    /* peer gone */
-  }
+  safeWsSend(ws, JSON.stringify(msg));
 }
 
 function openInitFailure(code: ErrorCode, message: string, closeCode: number) {
   return {
     onOpen(_evt: unknown, ws: WSLike) {
       sendControl(ws, { type: "error", code, message });
-      try {
-        ws.close(closeCode, code);
-      } catch {
-        /* already closing */
-      }
+      safeWsClose(ws, closeCode, code);
     },
     onMessage() {
       /* drop */

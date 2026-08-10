@@ -12,81 +12,80 @@
  * the in-repo engine is what gets installed.
  */
 
-import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import type { CommandExecutor, LogEntry, SystemLogCallback, SystemLog } from "@repo/adapters";
-import { updatePostmasterPassword } from "./mail-credentials.service";
+import type { CommandExecutor, SystemLogCallback, SystemLog } from "@repo/adapters";
+import { checkMailHealth } from "./mail-health.service";
 import { safeErrorMessage } from "@repo/core";
 import {
-  installRsync,
-  installOpenResty,
-  installCertbot,
+  installDocker,
+  installContainerEdge,
+  ensureEdge,
+  foreignProxyOnEdge,
+  ensureContainerMail,
+  MAIL_CONTAINER,
+  MAIL_PORTS,
 } from "@repo/adapters";
+import {
+  mailConfigFile,
+  mailEngineCommand,
+  mailUnitActionCommand,
+  requireMailEngine,
+  type MailEngineFlavor,
+} from "./mail-engine";
+
+// ─── Shell quoting helper ─────────────────────────────────────────────────────
+
+/** Single-quote a value for safe shell interpolation. */
+function sq(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
 
 // ─── Engine source-of-truth ──────────────────────────────────────────────────
 
-/**
- * Where the iRedMail engine tree is staged on the target machine before the
- * installer runs. Same path for local and remote executors - the executor
- * abstracts how bytes get there.
- */
-const REMOTE_ENGINE_DIR = "/root/iRedMail-engine";
-
-/**
- * Absolute path to `apps/email/engine/` on the openship API host.
- *
- * `MAIL_SERVER_ENGINE_DIR` overrides for ops who pin a packaged build to a
- * fixed location; otherwise resolved relative to apps/api's cwd so the
- * monorepo dev layout works without configuration.
- */
-function resolveLocalEngineDir(): string {
-  if (process.env.MAIL_SERVER_ENGINE_DIR) {
-    return process.env.MAIL_SERVER_ENGINE_DIR;
-  }
-  return resolve(process.cwd(), "../../apps/email/engine");
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function errMsg(err: unknown): string {
   return safeErrorMessage(err);
 }
 
 /**
- * Probe whether a working iRedMail stack is already installed on the server.
- * iRedMail is "present" when both postfix and dovecot are active systemd
- * services. Used by the install pre-flight (to skip the engine + rotate the
- * postmaster password) AND by the "scan & adopt" flow (to re-adopt a server
- * whose orchestrator state was lost). Pure read — no mutation.
+ * The amavis half of the topology, resolved once per operation.
+ *
+ * Two things vary by flavor and nothing else does: WHERE amavis commands run
+ * (inside the engine vs on the host) and which side of the `50-user` bind mount we
+ * edit. `mailEngineCommand` / `mailConfigFile` own both — see `./mail-engine.ts`.
+ * The binary name varies by DISTRO, not by flavor (`amavisd` on noble,
+ * `amavisd-new` on jammy), so it stays a probe on both.
+ *
+ * Goes through `requireMailEngine`, so DKIM work on a box with no engine — or a
+ * stopped one, which can't genrsa or reload — fails as a typed 409 with a
+ * remediation instead of a raw "No such container".
  */
-export async function detectMailInstall(exec: CommandExecutor): Promise<boolean> {
-  const postfixState = (
-    await exec.exec("systemctl is-active postfix 2>/dev/null || echo missing")
-  ).trim();
-  const dovecotState = (
-    await exec.exec("systemctl is-active dovecot 2>/dev/null || echo missing")
-  ).trim();
-  return postfixState === "active" && dovecotState === "active";
-}
-
-/**
- * Run a command with real-time log streaming.
- * Every stdout/stderr line is forwarded to the StepLogger so the frontend
- * sees actual SSH output as it happens.
- */
-async function streamCmd(
-  exec: CommandExecutor,
-  command: string,
-  stepId: number,
-  log: StepLogger,
-): Promise<{ code: number; output: string }> {
-  return exec.streamExec(command, (entry: LogEntry) => {
-    log(stepId, entry.level, entry.message);
-  });
+async function resolveAmavis(exec: CommandExecutor): Promise<{
+  flavor: MailEngineFlavor;
+  /** `amavisd` or `amavisd-new`, whichever this engine actually has. */
+  bin: string;
+  /** Wrap a command so it runs where amavis lives. */
+  run: (cmd: string) => string;
+  /** `50-user`: `write` = the path to edit, `engine` = the path amavis reads. */
+  conf: { write: string; engine: string };
+}> {
+  const { flavor } = await requireMailEngine(exec);
+  const run = (cmd: string) => mailEngineCommand(flavor, cmd);
+  const detect =
+    "if command -v amavisd >/dev/null 2>&1; then echo amavisd; " +
+    "elif command -v amavisd-new >/dev/null 2>&1; then echo amavisd-new; " +
+    "else echo MISSING; fi";
+  const probe = await exec.exec(run(`sh -c ${sq(detect)}`));
+  const bin = probe.trim().split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "";
+  if (!bin || bin === "MISSING") {
+    throw new Error(
+      flavor === "container"
+        ? "Neither `amavisd` nor `amavisd-new` is on PATH inside the mail engine container."
+        : "Neither `amavisd` nor `amavisd-new` is on PATH on this mail server.",
+    );
+  }
+  return { flavor, bin, run, conf: mailConfigFile(flavor, "amavisUserConf") };
 }
 
 /**
@@ -116,16 +115,11 @@ export interface MailSetupStep {
  * step already has its own internal reconnect loop.
  */
 export const STEP_TIMEOUT_MS: Record<string, number> = {
-  system_update:        5 * 60_000,   // apt update + upgrade
-  ensure_components:    8 * 60_000,   // rsync + openresty + certbot install
+  ensure_components:   15 * 60_000,   // Docker install + edge image pull
   check_port_25:        30_000,
   ensure_reverse_proxy: 30_000,
-  set_hostname:         30_000,
-  update_hosts:         30_000,
-  transfer_engine:     10 * 60_000,   // rsync the engine - depends on link speed
-  prepare_engine:       30_000,
-  run_installer:       30 * 60_000,   // the big one: package install + setup
-  first_reboot:        10 * 60_000,   // includes 30s sleep + 12×10s reconnect attempts
+  open_firewall:        60_000,
+  deploy_engine:       15 * 60_000,   // pull engine + sidecar images, first-boot init
   dkim_keys:            60_000,
   request_ssl:          5 * 60_000,
   configure_ssl:        2 * 60_000,
@@ -134,20 +128,20 @@ export const STEP_TIMEOUT_MS: Record<string, number> = {
 /** Fallback when a step key isn't in the map. Never used as long as the map stays in sync. */
 export const DEFAULT_STEP_TIMEOUT_MS = 10 * 60_000;
 
+// The containerized flow: the mail engine is a PREBUILT image, so the old
+// host-native install steps (apt upgrade, set hostname, /etc/hosts, rsync the
+// engine, run iRedMail.sh, reboot) are gone — the box is just a Docker + edge
+// host. What remains is either runtime-specific (firewall, DKIM/DNS, cert) or
+// per-install (domain + secrets, injected into the engine's first boot).
 export const MAIL_SETUP_STEPS: MailSetupStep[] = [
-  { id: 1,  key: "system_update",        label: "System Update",             description: "Update and upgrade system packages" },
-  { id: 2,  key: "ensure_components",    label: "Ensure System Components",  description: "Install rsync, OpenResty, and certbot if missing" },
-  { id: 3,  key: "check_port_25",        label: "Check Port 25",             description: "Verify outbound SMTP port is open" },
-  { id: 4,  key: "ensure_reverse_proxy", label: "Ensure Reverse Proxy",      description: "Confirm OpenResty owns ports 80/443" },
-  { id: 5,  key: "set_hostname",         label: "Set Hostname",              description: "Configure server hostname to mail subdomain" },
-  { id: 6,  key: "update_hosts",         label: "Update /etc/hosts",         description: "Add mail domain to hosts file" },
-  { id: 7,  key: "transfer_engine",      label: "Transfer iRedMail Engine",  description: `Stage apps/email/engine to ${REMOTE_ENGINE_DIR}` },
-  { id: 8,  key: "prepare_engine",       label: "Prepare iRedMail Engine",   description: "Verify engine layout and make iRedMail.sh executable" },
-  { id: 9,  key: "run_installer",        label: "Run iRedMail Installer",    description: "Execute the iRedMail setup wizard (mail daemons only)" },
-  { id: 10, key: "first_reboot",         label: "Reboot Server",             description: "Reboot to activate mail services" },
-  { id: 11, key: "dkim_keys",            label: "Retrieve DKIM Keys",        description: "Get DKIM keys and DNS records" },
-  { id: 12, key: "request_ssl",          label: "Request SSL Certificate",   description: "Obtain Let's Encrypt SSL for mail domain" },
-  { id: 13, key: "configure_ssl",        label: "Configure SSL",             description: "Link certificates and reload mail daemons" },
+  { id: 1, key: "ensure_components",    label: "Ensure System Components",  description: "Install Docker and bring up the openship edge" },
+  { id: 2, key: "check_port_25",        label: "Check Port 25",             description: "Verify outbound SMTP port is open" },
+  { id: 3, key: "ensure_reverse_proxy", label: "Ensure Reverse Proxy",      description: "Confirm the openship edge owns ports 80/443" },
+  { id: 4, key: "open_firewall",        label: "Open Mail Firewall",        description: "Open inbound SMTP/IMAP/submission ports on the host firewall" },
+  { id: 5, key: "deploy_engine",        label: "Deploy Mail Engine",        description: "Pull and run the openship-mail engine container + database sidecar" },
+  { id: 6, key: "dkim_keys",            label: "Retrieve DKIM Keys",        description: "Get DKIM keys and DNS records" },
+  { id: 7, key: "request_ssl",          label: "Request SSL Certificate",   description: "Obtain Let's Encrypt SSL for mail domain" },
+  { id: 8, key: "configure_ssl",        label: "Configure SSL",             description: "Link certificates and reload mail daemons" },
 ];
 
 export const TOTAL_STEPS = MAIL_SETUP_STEPS.length;
@@ -195,35 +189,13 @@ export interface IRedMailConfig {
 
 // ─── Step runners ────────────────────────────────────────────────────────────
 
-/** Step 1: apt-get update && apt-get upgrade (streamed) */
-export async function stepSystemUpdate(
-  exec: CommandExecutor,
-  _domain: string,
-  log: StepLogger,
-): Promise<StepResult> {
-  log(1, "info", "Updating package lists...");
-  const update = await streamCmd(exec, "DEBIAN_FRONTEND=noninteractive apt-get update -y", 1, log);
-  if (update.code !== 0) {
-    return { stepId: 1, success: false, message: "apt-get update failed" };
-  }
-
-  log(1, "info", "Upgrading packages...");
-  const upgrade = await streamCmd(exec, "DEBIAN_FRONTEND=noninteractive apt-get -y upgrade", 1, log);
-  if (upgrade.code !== 0) {
-    return { stepId: 1, success: false, message: "apt-get upgrade failed" };
-  }
-
-  log(1, "info", "System updated successfully");
-  return { stepId: 1, success: true, message: "System updated successfully" };
-}
-
-/** Step 3: Check outbound port 25 */
+/** Step 2: Check outbound port 25 */
 export async function stepCheckPort25(
   exec: CommandExecutor,
   _domain: string,
   log: StepLogger,
 ): Promise<StepResult> {
-  const stepId = 3;
+  const stepId = 2;
   log(stepId, "info", "Testing outbound SMTP port 25...");
   const output = await exec.exec(
     "timeout 5 bash -c '</dev/tcp/portquiz.net/25' 2>&1 && echo PORT_OPEN || echo PORT_BLOCKED",
@@ -244,29 +216,39 @@ export async function stepCheckPort25(
 }
 
 /**
- * Step 2: Ensure rsync + OpenResty + certbot are installed on the target.
+ * Step 1: Ensure Docker and the openship edge are on the target.
  *
- * Reuses the existing component installers from `@repo/adapters` - same
- * code path the regular server-setup wizard uses, so we don't fork a
- * second install story for mail boxes.
+ *   - Docker → the mail engine + edge are container images, so it's a hard prereq
+ *   - edge   → routing + TLS for this box: OpenResty, its Lua, and certbot, all
+ *              inside the `openship-edge` image
  *
- *   - rsync     → required by `transferIn` (engine staging in step 7)
- *   - OpenResty → openship's routing layer; owns :80 / :443 from now on
- *   - certbot   → used by step 12 (request_ssl) for mail.<domain>
+ * There is ONE edge on a box and it is the container. This step used to
+ * apt-install a HOST OpenResty and certbot, which made mail the only flow with
+ * its own edge story: a second implementation to keep in sync, its own conflict
+ * handling, and a certbot on the host that step 12 then shelled out to while
+ * every other cert in the system was issued through the edge's.
+ *
+ * So it goes through `ensureEdge` → {@link installContainerEdge}, the same
+ * orchestrator the deploy pipeline, server-setup, and the Domains tab use.
+ * Deliberately NO host fallback: a Docker-less box gets `installContainerEdge`'s
+ * own actionable failure rather than a divergent edge that then has to be
+ * migrated. Both installers are idempotent, so a re-run is cheap.
+ *
+ * No `promptUser` is passed, so a foreign proxy on :80/:443 surfaces as a plain
+ * failure (see `ensureEdgeClear`) instead of the interactive migrate hold the
+ * deploy pipeline offers. Mail never blind-takes-over someone's proxy; the
+ * operator migrates it from the dashboard and reruns. Wiring the consent prompt
+ * into the mail SSE later is a drop-in at this call site.
  */
 export async function stepEnsureComponents(
   exec: CommandExecutor,
   _domain: string,
   log: StepLogger,
 ): Promise<StepResult> {
-  const stepId = 2;
+  const stepId = 1;
   const sysLog = bridgeToSystemLog(stepId, log);
 
-  for (const [name, install] of [
-    ["rsync", installRsync],
-    ["OpenResty", installOpenResty],
-    ["certbot", installCertbot],
-  ] as const) {
+  for (const [name, install] of [["Docker", installDocker]] as const) {
     log(stepId, "info", `Ensuring ${name}...`);
     const r = await install(exec, sysLog);
     if (!r.success) {
@@ -279,187 +261,130 @@ export async function stepEnsureComponents(
     log(stepId, "info", `${name} ready${r.version ? ` (${r.version})` : ""}`);
   }
 
-  return { stepId, success: true, message: "rsync, OpenResty, and certbot are installed" };
+  log(stepId, "info", "Ensuring the openship edge (OpenResty + certbot, containerized)...");
+  const edge = await ensureEdge(
+    exec,
+    (promptUser) => installContainerEdge(exec, sysLog, { promptUser }),
+    { onLog: sysLog },
+  );
+
+  // `migrated` means a foreign proxy was imported and 80/443 taken over. Only
+  // reachable once this call site passes a promptUser, but handled now so adding
+  // one can't silently report a rolled-back migration as success.
+  if (edge.migrated) {
+    return edge.ok
+      ? { stepId, success: true, message: "Docker and the edge are ready (migrated the existing proxy)" }
+      : {
+          stepId,
+          success: false,
+          message: "Edge migration failed - rolled back to the previous proxy.",
+        };
+  }
+
+  if (!edge.value.success) {
+    return {
+      stepId,
+      success: false,
+      message: `Edge install failed: ${edge.value.error ?? "unknown error"}`,
+    };
+  }
+
+  log(stepId, "info", `Edge ready${edge.value.version ? ` (OpenResty ${edge.value.version})` : ""}`);
+  return {
+    stepId,
+    success: true,
+    message: "Docker and the openship edge are ready",
+  };
 }
 
 /**
- * Step 4: Ensure OpenResty is running and owns :80 / :443.
+ * Step 4: Confirm OUR edge holds :80 / :443.
  *
- * After step 2 it's installed; this step confirms the daemon is up + ports
- * are bound by it (rather than by some unexpected process). If openresty
- * is down, start it. We DON'T scan for "conflicts" anymore - we expect
- * OpenResty to be the owner and treat anything else as an error.
+ * Pure verification — step 2 is what brings the edge up. There is no host
+ * `openresty.service` to check or start any more: the edge is a container, and
+ * starting/stopping it is `ensureContainerEdge`'s business, not a step that
+ * shells out to systemd behind its back.
+ *
+ * Answered by the SHARED edge detector (`probeEdge`, same one the deploy pipeline
+ * and self-app use), never an ad-hoc `ss`/regex, so "ours" means exactly what it
+ * means everywhere else.
  */
 export async function stepEnsureReverseProxy(
   exec: CommandExecutor,
   _domain: string,
   log: StepLogger,
 ): Promise<StepResult> {
+  const stepId = 3;
+
+  log(stepId, "info", "Checking which proxy holds :80 / :443...");
+  const { status, blocked, owner } = await foreignProxyOnEdge(exec);
+
+  // A foreign proxy is surfaced as an error, never taken over: mail doesn't have
+  // the interactive migrate hold, so the operator migrates it from the dashboard
+  // (which does) and reruns.
+  if (blocked) {
+    return {
+      stepId,
+      success: false,
+      message: `Ports 80/443 are held by another proxy (${owner}). Stop it, or migrate it from the dashboard, then rerun.`,
+    };
+  }
+
+  // "free" = nothing is serving. Not a conflict — the edge simply isn't up, which
+  // means step 2 didn't complete (or the container has since been removed). Say
+  // that, rather than passing a box no cert challenge could reach.
+  if (status.classification === "free") {
+    return {
+      stepId,
+      success: false,
+      message:
+        "Nothing is listening on :80 / :443 - the openship edge isn't running. " +
+        "Rerun from \"Ensure System Components\" to bring it up.",
+    };
+  }
+
+  log(stepId, "info", "The openship edge holds :80 / :443");
+  return { stepId, success: true, message: "The openship edge is the active reverse proxy" };
+}
+
+/**
+ * Step 4: Open the inbound mail ports on the host firewall.
+ *
+ * The engine now runs `--network host`, and unlike a bridge port-publish Docker
+ * does NOT poke the firewall for a host-networked container — so a box with ufw
+ * enabled would silently accept no mail on :25/:587/:993. The old outbound-:25
+ * probe (step 3) only proves egress; this opens ingress. Best-effort across ufw
+ * and raw iptables so it works whether or not ufw is the front-end, and a no-op
+ * when neither is active.
+ */
+export async function stepOpenMailFirewall(
+  exec: CommandExecutor,
+  _domain: string,
+  log: StepLogger,
+): Promise<StepResult> {
   const stepId = 4;
-  log(stepId, "info", "Checking OpenResty service status...");
+  log(stepId, "info", `Opening inbound mail ports: ${MAIL_PORTS.join(", ")}...`);
 
-  const active = (
-    await exec.exec("systemctl is-active openresty 2>/dev/null || echo inactive")
-  ).trim();
+  const ufwActive = (
+    await exec.exec("ufw status 2>/dev/null | head -1 || true").catch(() => "")
+  ).includes("Status: active");
 
-  if (active !== "active") {
-    log(stepId, "info", "OpenResty is not running - starting it...");
-    try {
-      await exec.exec("systemctl start openresty");
-    } catch (err) {
-      return {
-        stepId,
-        success: false,
-        message: `Failed to start OpenResty: ${errMsg(err)}`,
-      };
+  for (const port of MAIL_PORTS) {
+    if (ufwActive) {
+      await exec.exec(`ufw allow ${port}/tcp 2>/dev/null || true`).catch(() => {});
+    } else {
+      // Idempotent: check-then-insert so a re-run doesn't stack duplicate rules.
+      await exec
+        .exec(
+          `iptables -C INPUT -p tcp --dport ${port} -j ACCEPT 2>/dev/null || ` +
+            `iptables -I INPUT -p tcp --dport ${port} -j ACCEPT 2>/dev/null || true`,
+        )
+        .catch(() => {});
     }
   }
 
-  // Confirm OpenResty is the listener on :80. Anything else means another
-  // service has the port - we surface it as an error rather than try to
-  // resolve in-band; the operator can stop it and rerun the step.
-  const port80 = (
-    await exec.exec("ss -ltnp 'sport = :80' 2>/dev/null | tail -n +2 || true")
-  ).trim();
-  if (port80 && !/openresty|nginx/i.test(port80)) {
-    return {
-      stepId,
-      success: false,
-      message: `Port 80 is held by an unexpected process: ${port80.slice(0, 200)}`,
-    };
-  }
-
-  log(stepId, "info", "OpenResty is running and holds :80 / :443");
-  return { stepId, success: true, message: "OpenResty is the active reverse proxy" };
-}
-
-/** Step 5: Set hostname to mail.<domain> */
-export async function stepSetHostname(
-  exec: CommandExecutor,
-  domain: string,
-  log: StepLogger,
-): Promise<StepResult> {
-  const stepId = 5;
-  const mailDomain = `mail.${domain}`;
-  log(stepId, "info", `Checking current hostname...`);
-
-  const currentHostname = (await exec.exec("hostname -f")).trim();
-  log(stepId, "info", `Current hostname: ${currentHostname}`);
-
-  if (currentHostname === mailDomain) {
-    log(stepId, "info", "Hostname already correct");
-    return { stepId, success: true, message: "Hostname already correct" };
-  }
-
-  log(stepId, "info", `Setting hostname to ${mailDomain}...`);
-  try {
-    await exec.exec(`hostnamectl set-hostname ${mailDomain}`);
-  } catch (err) {
-    return { stepId, success: false, message: `Failed to set hostname: ${errMsg(err)}` };
-  }
-
-  log(stepId, "info", `Hostname set to ${mailDomain}`);
-  return { stepId, success: true, message: `Hostname set to ${mailDomain}` };
-}
-
-/** Step 6: Update /etc/hosts with 127.0.1.1 mail.<domain> */
-export async function stepUpdateHosts(
-  exec: CommandExecutor,
-  domain: string,
-  log: StepLogger,
-): Promise<StepResult> {
-  const stepId = 6;
-  const mailDomain = `mail.${domain}`;
-  log(stepId, "info", "Checking /etc/hosts...");
-
-  const countStr = await exec.exec("grep -c '^127.0.1.1' /etc/hosts || echo 0");
-  const hasEntry = parseInt(countStr.trim(), 10) > 0;
-
-  if (hasEntry) {
-    const correctStr = await exec.exec(
-      `grep -c '^127.0.1.1.*${mailDomain}' /etc/hosts || echo 0`,
-    );
-    if (parseInt(correctStr.trim(), 10) > 0) {
-      log(stepId, "info", "/etc/hosts already configured correctly");
-      return { stepId, success: true, message: "/etc/hosts already configured" };
-    }
-
-    log(stepId, "info", "Updating existing 127.0.1.1 entry...");
-    await exec.exec(
-      `sed -i 's/^127.0.1.1.*/127.0.1.1 ${mailDomain} ${domain}/' /etc/hosts`,
-    );
-  } else {
-    log(stepId, "info", "Adding 127.0.1.1 entry...");
-    await exec.exec(
-      `sed -i '/127.0.0.1/a 127.0.1.1 ${mailDomain} ${domain}' /etc/hosts`,
-    );
-  }
-
-  const hosts = await exec.exec("cat /etc/hosts");
-  log(stepId, "info", `Updated /etc/hosts:\n${hosts}`);
-  return { stepId, success: true, message: "/etc/hosts updated" };
-}
-
-/**
- * Step 6: Stage the in-repo iRedMail engine onto the target machine.
- *
- * `executor.transferIn` decides locality: `LocalExecutor` does `cp -a`,
- * `SshExecutor` tars locally + untars remotely. Same destination path
- * either way, same code path in this service.
- */
-export async function stepTransferEngine(
-  exec: CommandExecutor,
-  _domain: string,
-  log: StepLogger,
-): Promise<StepResult> {
-  const stepId = 7;
-  const localEngine = resolveLocalEngineDir();
-  log(stepId, "info", `Transferring engine ${localEngine} → ${REMOTE_ENGINE_DIR}...`);
-
-  try {
-    await exec.transferIn(localEngine, REMOTE_ENGINE_DIR, (entry) => {
-      log(stepId, entry.level, entry.message);
-    });
-  } catch (err) {
-    return { stepId, success: false, message: `Engine transfer failed: ${errMsg(err)}` };
-  }
-
-  log(stepId, "info", "Engine staged");
-  return { stepId, success: true, message: `Engine staged at ${REMOTE_ENGINE_DIR}` };
-}
-
-/**
- * Step 7: Sanity-check the staged engine and ensure iRedMail.sh is executable.
- *
- * The transferIn in step 6 preserves permissions when possible, but a chmod
- * here makes the step idempotent across executor implementations.
- */
-export async function stepPrepareEngine(
-  exec: CommandExecutor,
-  _domain: string,
-  log: StepLogger,
-): Promise<StepResult> {
-  const stepId = 8;
-  log(stepId, "info", "Verifying iRedMail.sh is present...");
-  const exists = await exec.exec(
-    `[ -f ${REMOTE_ENGINE_DIR}/iRedMail.sh ] && echo OK || echo MISSING`,
-  );
-  if (!exists.includes("OK")) {
-    return {
-      stepId,
-      success: false,
-      message: `iRedMail.sh not found at ${REMOTE_ENGINE_DIR} - engine transfer incomplete`,
-    };
-  }
-
-  log(stepId, "info", "Making iRedMail.sh executable...");
-  try {
-    await exec.exec(`chmod +x ${REMOTE_ENGINE_DIR}/iRedMail.sh`);
-  } catch (err) {
-    return { stepId, success: false, message: `chmod failed: ${errMsg(err)}` };
-  }
-
-  return { stepId, success: true, message: "Engine ready to install" };
+  log(stepId, "info", ufwActive ? "Opened via ufw" : "Opened via iptables (or firewall inactive)");
+  return { stepId, success: true, message: "Inbound mail ports opened" };
 }
 
 /** Random URL-safe secret. iRedMail's installer treats these as opaque strings. */
@@ -468,124 +393,24 @@ export function genSecret(bytes = 24): string {
 }
 
 /**
- * Verify-or-repair fail2ban's PostgreSQL auth.
+ * Step 5: Deploy the mail engine as the `openship-mail` container + pg sidecar.
  *
- * The cron job at /etc/cron.d/iredmail runs `fail2ban_banned_db unban_db` as
- * root every minute. The script discovers `/var/lib/postgresql/.pgpass`,
- * exports it as PGPASSFILE, and runs `psql -U fail2ban -d fail2ban`. If the
- * password in `.pgpass` and the PG role's password don't match, psql falls
- * through to a prompt - which fails non-interactively and cron mails root.
- *
- * This is the install-pipeline self-heal: idempotently re-align the role's
- * password with `.pgpass`. On older boxes provisioned before the
- * FAIL2BAN_DB_PASSWD-was-missing bug was fixed, `.pgpass` still has an empty
- * password field and the role has whatever Postgres rejected as empty. Use
- * the new `desiredPassword` to rewrite both in lockstep.
- *
- * No-ops gracefully if fail2ban isn't installed on the box.
+ * The iRedMail install itself is baked into the prebuilt image, so this step no
+ * longer runs `iRedMail.sh` — it generates the per-install secrets, hands them +
+ * the domain to `ensureContainerMail` (which pulls, runs host-networked, and lets
+ * the image's first-boot entrypoint provision the vmail DB), then health-gates on
+ * the container's daemons. Idempotent: a container already on the pinned image is
+ * left as-is. Generated secrets come back in `data.secrets` (the only way to admin
+ * the mail DB later) and the deployed image ref + container name in `data.engine`,
+ * both for the controller to persist onto the mail-state.
  */
-async function repairFail2banAuth(
-  exec: CommandExecutor,
-  desiredPassword: string,
-  stepId: number,
-  log: StepLogger,
-): Promise<void> {
-  // Bail out if fail2ban isn't on the box - slimmed-down installs without
-  // USE_FAIL2BAN=YES shouldn't error here.
-  const present = (
-    await exec.exec(
-      "[ -f /var/lib/postgresql/.pgpass ] && command -v fail2ban-client >/dev/null 2>&1 && echo YES || echo NO",
-    )
-  ).trim();
-  if (!present.includes("YES")) {
-    log(stepId, "info", "fail2ban not installed - skipping auth repair.");
-    return;
-  }
-
-  // Probe: does the existing .pgpass line let us auth right now? If yes,
-  // nothing to do. We try psql under PGPASSFILE - same path the cron uses.
-  const probe = (
-    await exec.exec(
-      "sudo -u postgres bash -c 'PGPASSFILE=/var/lib/postgresql/.pgpass psql -U fail2ban -d fail2ban -tAc \"SELECT 1\" 2>&1' || true",
-    )
-  ).trim();
-  if (probe === "1") {
-    log(stepId, "info", "fail2ban PostgreSQL auth is healthy - no repair needed.");
-    return;
-  }
-
-  log(
-    stepId,
-    "warn",
-    `fail2ban PostgreSQL auth is broken (probe: ${probe.slice(0, 120)}). Repairing…`,
-  );
-
-  // Rotate the PG role password to `desiredPassword`. Single-quote-wrap the
-  // password and escape inner quotes the PostgreSQL way (double the quote).
-  const pgQuoted = desiredPassword.replace(/'/g, "''");
-  await exec.exec(
-    `sudo -u postgres psql -d template1 -v ON_ERROR_STOP=1 -c "ALTER ROLE fail2ban WITH ENCRYPTED PASSWORD '${pgQuoted}';"`,
-  );
-
-  // Rewrite the fail2ban line in .pgpass to match. The .pgpass format is
-  // `host:port:db:user:password` - every field is `*` here, no quoting.
-  // sed-delete any existing fail2ban line, then append the fresh one. Doing
-  // both as `postgres` keeps the file ownership/mode (0600) intact.
-  const newLine = `*:*:*:fail2ban:${desiredPassword}`;
-  // Escape sed special chars in the replacement just in case (`/` and `&`).
-  const sedSafe = newLine.replace(/[\\/&]/g, "\\$&");
-  await exec.exec(
-    `sudo -u postgres bash -c "sed -i '/^[^:]*:[^:]*:[^:]*:fail2ban:/d' /var/lib/postgresql/.pgpass && printf '%s\\n' '${sedSafe.replace(/'/g, "'\\''")}' >> /var/lib/postgresql/.pgpass"`,
-  );
-
-  // Verify.
-  const reprobe = (
-    await exec.exec(
-      "sudo -u postgres bash -c 'PGPASSFILE=/var/lib/postgresql/.pgpass psql -U fail2ban -d fail2ban -tAc \"SELECT 1\" 2>&1' || true",
-    )
-  ).trim();
-  if (reprobe !== "1") {
-    throw new Error(
-      `fail2ban auth repair failed: psql still returns "${reprobe.slice(0, 120)}"`,
-    );
-  }
-  log(stepId, "info", "fail2ban PostgreSQL auth repaired successfully.");
-
-  // Also patch the cron line on-disk so older boxes stop spamming
-  // root-mail. The slim-engine patch covers fresh installs; this covers
-  // the in-place case. Idempotent (sed only matches the unredirected line).
-  await exec.exec(
-    `sed -i 's|/usr/local/bin/fail2ban_banned_db unban_db$|/usr/local/bin/fail2ban_banned_db unban_db >/dev/null 2>\\&1|' /etc/cron.d/iredmail 2>/dev/null || true`,
-  );
-}
-
-/**
- * Step 9: Run the iRedMail installer non-interactively.
- *
- * The engine is the slimmed tree (see `apps/email/scripts/slim-engine.ts`):
- * nginx, PHP, iRedAdmin, Roundcube, SOGo, Netdata, mlmmj, MySQL backend,
- * and OpenLDAP are gone. What remains is the raw mail core - Postfix,
- * Dovecot, Amavis, ClamAV, SpamAssassin, iRedAPD, fail2ban, PostgreSQL.
- *
- * Because the engine no longer touches :80 / :443 at all, there's no need
- * to stop/restart OpenResty around the installer - the two stay running
- * side-by-side.
- *
- * Config: pre-seeded so the installer skips its dialog. The `#EOF` marker
- * is mandatory - without it, iRedMail's `check_env` says "Found, but not
- * finished" and falls through to interactive mode (which hangs in SSH).
- *
- * All generated secrets are returned in `data.secrets` so the controller
- * can persist them - the PostgreSQL root password is the only way to
- * admin the mail DB later.
- */
-export async function stepRunInstaller(
+export async function stepDeployEngine(
   exec: CommandExecutor,
   domain: string,
   log: StepLogger,
   config?: IRedMailConfig,
 ): Promise<StepResult> {
-  const stepId = 9;
+  const stepId = 5;
   const backend = config?.storageBackend ?? "postgresql";
   const dbBackend = backend === "postgresql" ? "PGSQL" : "MYSQL";
   const dbRootKey = backend === "postgresql" ? "PGSQL_ROOT_PASSWD" : "MYSQL_ROOT_PASSWD";
@@ -625,179 +450,67 @@ export async function stepRunInstaller(
   // would lose any prior-run reuse).
   const finalAdminPassword = secrets.DOMAIN_ADMIN_PASSWD_PLAIN;
 
-  // ── Pre-flight: detect already-installed iRedMail ───────────────────
-  //
-  // If the user runs the wizard against a server that already has a
-  // working iRedMail, the engine's `STATUS_FILE` flags every step as
-  // done and SKIPs them all. The install "succeeds" instantly, but our
-  // freshly-generated postmaster password never makes it into the
-  // database - they keep the old one (which we don't have) and the
-  // dashboard's password doesn't work.
-  //
-  // We catch this by checking the daemon state before running the
-  // installer. If postfix + dovecot are both active, we skip the
-  // engine invocation and rotate the postmaster password in the DB
-  // (via doveadm + UPDATE) to match the value the dashboard is about
-  // to surface. The other daemons stay untouched.
-  log(stepId, "info", "Checking whether iRedMail is already installed...");
-  const alreadyInstalled = await detectMailInstall(exec);
+  // finalAdminPassword is the postmaster password the dashboard surfaces; it's
+  // injected into the engine's first-boot env so the container provisions the
+  // account with it. Referenced via `secrets` below.
+  void finalAdminPassword;
 
-  if (alreadyInstalled) {
-    log(
-      stepId,
-      "warn",
-      "iRedMail is already installed on this server. The engine would skip every step.",
-    );
-    log(
-      stepId,
-      "info",
-      "Rotating postmaster password so the dashboard matches the live database...",
-    );
-    try {
-      await updatePostmasterPassword(exec, domain, finalAdminPassword);
-    } catch (err) {
+  // Deploy the engine as the `openship-mail` container (+ postgres sidecar).
+  // Idempotent: a container already running the pinned image is left as-is (the
+  // env-file secrets are only consumed on first boot, so a re-run never rotates a
+  // live DB); a different image triggers a rollback-guarded swap. This REPLACES the
+  // old host-native `iRedMail.sh` run — the engine's own first-boot entrypoint does
+  // the iRedMail provisioning inside the image against the sidecar DB.
+  log(stepId, "info", "Deploying the mail engine container...");
+  let engine: { image: string; container: string };
+  try {
+    const result = await ensureContainerMail(exec, {
+      domain,
+      secrets,
+      onLog: bridgeToSystemLog(stepId, log),
+      // The engine image is delivered before this call (deliverManagedImage in the
+      // deploy_engine step) — dev builds on the control plane and ships to the box,
+      // prod pulls; ensureContainerMail just runs whatever tag is already present.
+    });
+    if (result.mailDown) {
       return {
         stepId,
         success: false,
-        message: `iRedMail is already installed, but the postmaster password rotation failed: ${errMsg(err)}`,
+        message: "Mail engine update failed and rollback also failed — no engine is running.",
       };
     }
-    // Self-heal: realign .pgpass and the PG role when they have an empty
-    // password and a broken state, so root stops getting cron mail every minute.
-    try {
-      await repairFail2banAuth(exec, secrets.FAIL2BAN_DB_PASSWD, stepId, log);
-    } catch (err) {
-      log(
-        stepId,
-        "warn",
-        `fail2ban auth repair failed (non-fatal): ${errMsg(err)}`,
-      );
-    }
-    log(stepId, "info", "Postmaster password synced. Skipping engine reinstall.");
-    return {
-      stepId,
-      success: true,
-      message:
-        "iRedMail already installed - postmaster password rotated to the dashboard value, engine reinstall skipped.",
-      data: { secrets: { ...secrets } as Record<string, string> },
-    };
-  }
-
-  log(stepId, "info", "Generating iRedMail config...");
-
-  const lines = [
-    "# Auto-generated by openship - DO NOT EDIT BY HAND",
-    `export STORAGE_BASE_DIR='/var/vmail'`,
-    `export BACKEND_ORIG='${dbBackend}'`,
-    `export BACKEND='${dbBackend}'`,
-    `export FIRST_DOMAIN='${domain}'`,
-    // USE_FAIL2BAN is the one USE_* the slim engine still consults
-    // (optional_components dispatches `fail2ban_setup` on this flag).
-    `export USE_FAIL2BAN='YES'`,
-    ...Object.entries(secrets).map(([k, v]) => `export ${k}='${v}'`),
-    // Mandatory: without this marker iRedMail treats the config as
-    // incomplete and falls into its dialog (which hangs over SSH).
-    "#EOF",
-    "",
-  ];
-
-  await exec.writeFile(`${REMOTE_ENGINE_DIR}/config`, lines.join("\n"));
-
-  log(stepId, "info", "Running iRedMail installer (this takes 5-10 minutes)...");
-
-  // AUTO_* env vars short-circuit every `read_setting` prompt in the
-  // engine. They MUST be a command prefix on the same line as
-  // `bash iRedMail.sh` so they're exported to that process - joining
-  // them with " && " makes them shell-local assignments that the
-  // sub-bash never sees, and the installer hangs at the first prompt.
-  //
-  // Values: `y` accepts iRedMail's default (use the config file, install
-  // without confirm, remove sendmail). `n` declines (don't touch host
-  // firewall - openship owns that, don't replace MySQL config - we're
-  // on Postgres).
-  const envPrefix = [
-    "AUTO_USE_EXISTING_CONFIG_FILE=y",
-    "AUTO_INSTALL_WITHOUT_CONFIRM=y",
-    "AUTO_CLEANUP_REMOVE_SENDMAIL=y",
-    "AUTO_CLEANUP_REPLACE_FIREWALL_RULES=n",
-    "AUTO_CLEANUP_RESTART_FIREWALL=n",
-    "AUTO_CLEANUP_REPLACE_MYSQL_CONFIG=n",
-  ].join(" ");
-
-  const installer = await streamCmd(
-    exec,
-    `cd ${REMOTE_ENGINE_DIR} && ${envPrefix} bash iRedMail.sh 2>&1`,
-    stepId, log,
-  );
-  if (installer.code !== 0) {
-    log(stepId, "error", `Installer exited with code ${installer.code}`);
-    return {
-      stepId,
-      success: false,
-      message: "iRedMail installer failed. Check logs above.",
-    };
-  }
-
-  log(stepId, "info", "iRedMail installer completed");
-
-  // Post-install verification: confirm fail2ban can actually auth against
-  // its Postgres DB. The engine's own setup is supposed to leave this
-  // working, but if the password ever drifts (a re-run with new secrets,
-  // a partial install, etc.) the every-minute cron will spam root mail
-  // forever. Run the same repair we use on already-installed boxes - it's
-  // a no-op when auth is already healthy.
-  try {
-    await repairFail2banAuth(exec, secrets.FAIL2BAN_DB_PASSWD, stepId, log);
+    engine = { image: result.image, container: result.container };
   } catch (err) {
-    log(
-      stepId,
-      "warn",
-      `fail2ban post-install auth check failed (non-fatal): ${errMsg(err)}`,
-    );
+    return { stepId, success: false, message: `Mail engine deploy failed: ${errMsg(err)}` };
   }
 
+  // Health-gate on the daemons the container actually reports (via supervisorctl),
+  // so a container that starts but whose Postfix/Dovecot never come up is a failure
+  // here, not a mystery two steps later.
+  const health = await checkMailHealth(exec).catch(() => null);
+  if (health) {
+    // Only the mail-path daemons gate the deploy; ClamAV/freshclam can still be
+    // warming up (large signature load) without blocking a working mail server.
+    const CRITICAL = new Set(["postfix", "dovecot", "postgresql"]);
+    const down = health.filter((c) => CRITICAL.has(c.key) && c.status !== "active");
+    if (down.length > 0) {
+      return {
+        stepId,
+        success: false,
+        message: `Mail engine started but these components are not running: ${down
+          .map((c) => c.label)
+          .join(", ")}.`,
+      };
+    }
+  }
+
+  log(stepId, "info", "Mail engine container running");
   return {
     stepId,
     success: true,
-    message: "iRedMail installed successfully",
-    data: { secrets: { ...secrets } as Record<string, string> },
+    message: "Mail engine deployed",
+    data: { secrets: { ...secrets } as Record<string, string>, engine },
   };
-}
-
-/** Step 10: Reboot server and wait for reconnection */
-export async function stepReboot(
-  exec: CommandExecutor,
-  _domain: string,
-  log: StepLogger,
-  reconnectFn: () => Promise<CommandExecutor>,
-): Promise<StepResult> {
-  const stepId = 10;
-  log(stepId, "info", "Rebooting server...");
-
-  // Fire-and-forget reboot (will drop connection)
-  exec.exec("sleep 2 && reboot").catch(() => {});
-
-  log(stepId, "info", "Waiting 30 seconds for server to restart...");
-  await sleep(30_000);
-
-  log(stepId, "info", "Attempting to reconnect...");
-  const maxAttempts = 12;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    log(stepId, "info", `Reconnection attempt ${attempt}/${maxAttempts}...`);
-    try {
-      const newExec = await reconnectFn();
-      const out = await newExec.exec("echo connected");
-      if (out.trim() === "connected") {
-        log(stepId, "info", "Reconnected successfully");
-        return { stepId, success: true, message: "Server rebooted and reconnected" };
-      }
-    } catch {
-      // Expected during reboot
-    }
-    await sleep(10_000);
-  }
-
-  return { stepId, success: false, message: "Failed to reconnect after reboot" };
 }
 
 /**
@@ -836,39 +549,31 @@ export async function stepDkimKeys(
   log: StepLogger,
 ): Promise<StepResult> {
   const mailDomain = `mail.${domain}`;
-  log(11, "info", "Locating amavis binary...");
+  log(6, "info", "Locating amavis binary...");
 
-  // Debian renamed the binary between Ubuntu 22.04 (jammy: `amavisd-new`)
-  // and 24.04 (noble: `amavisd`). The package name (`amavisd-new`) stays
-  // the same on both, so checking the package is no help - we have to
-  // probe for whichever binary actually exists. iRedMail's own engine
-  // does the same dispatch in `conf/amavisd`.
-  const probe = await exec.exec(
-    "if command -v amavisd >/dev/null 2>&1; then echo amavisd; " +
-      "elif command -v amavisd-new >/dev/null 2>&1; then echo amavisd-new; " +
-      "else echo MISSING; fi",
-  );
-  const amavisBin = probe.trim();
-  if (amavisBin === "MISSING") {
-    return {
-      stepId: 11,
-      success: false,
-      message:
-        "Neither `amavisd` (Ubuntu 24.04) nor `amavisd-new` (Ubuntu 22.04) is on PATH. The amavisd-new package may not have installed.",
-    };
+  let amavis: Awaited<ReturnType<typeof resolveAmavis>>;
+  try {
+    amavis = await resolveAmavis(exec);
+  } catch (err) {
+    return { stepId: 6, success: false, message: errMsg(err) };
   }
-  log(11, "info", `Using ${amavisBin}`);
+  const amavisBin = amavis.run(amavis.bin);
+  log(
+    6,
+    "info",
+    amavis.flavor === "container" ? `Using ${amavis.bin} (in ${MAIL_CONTAINER})` : `Using ${amavis.bin}`,
+  );
 
-  log(11, "info", "Retrieving DKIM keys...");
+  log(6, "info", "Retrieving DKIM keys...");
   let rawOutput: string;
   try {
     rawOutput = await exec.exec(`${amavisBin} showkeys 2>&1`);
   } catch (err) {
-    return { stepId: 11, success: false, message: `Failed to retrieve DKIM keys: ${errMsg(err)}` };
+    return { stepId: 6, success: false, message: `Failed to retrieve DKIM keys: ${errMsg(err)}` };
   }
 
   if (!rawOutput) {
-    return { stepId: 11, success: false, message: "Empty DKIM output" };
+    return { stepId: 6, success: false, message: "Empty DKIM output" };
   }
 
   // Extract the TXT record value from between quotes
@@ -878,7 +583,7 @@ export async function stepDkimKeys(
     : "";
 
   if (!dkimValue) {
-    return { stepId: 11, success: false, message: "Could not parse DKIM key from output" };
+    return { stepId: 6, success: false, message: "Could not parse DKIM key from output" };
   }
 
   // ── Detect server's public IPs ──────────────────────────────────────
@@ -894,7 +599,7 @@ export async function stepDkimKeys(
   // - more reliable than parsing `ip addr` when the host has multiple
   // interfaces or is behind a one-to-one NAT. Falls back to empty on
   // network failure; we just hide the corresponding card.
-  log(11, "info", "Detecting server's public IPs...");
+  log(6, "info", "Detecting server's public IPs...");
   const detectedIpv4 = (
     await exec.exec(
       "curl -4 -s --max-time 5 https://api.ipify.org 2>/dev/null || true",
@@ -910,9 +615,9 @@ export async function stepDkimKeys(
     detectedIpv6.includes(":") && /^[0-9a-f:]+$/i.test(detectedIpv6)
       ? detectedIpv6
       : null;
-  if (ipv4) log(11, "info", `IPv4: ${ipv4}`);
-  if (ipv6) log(11, "info", `IPv6: ${ipv6}`);
-  if (!ipv4) log(11, "warn", "Could not detect IPv4 - A record card will be hidden.");
+  if (ipv4) log(6, "info", `IPv4: ${ipv4}`);
+  if (ipv6) log(6, "info", `IPv6: ${ipv6}`);
+  if (!ipv4) log(6, "warn", "Could not detect IPv4 - A record card will be hidden.");
 
   // Records the user should publish.
   //
@@ -971,9 +676,9 @@ export async function stepDkimKeys(
     },
   };
 
-  log(11, "info", "DKIM keys retrieved - DNS records ready");
+  log(6, "info", "DKIM keys retrieved - DNS records ready");
   return {
-    stepId: 11,
+    stepId: 6,
     success: true,
     message: "DKIM keys retrieved",
     data: { dnsRecords, rawOutput },
@@ -987,12 +692,14 @@ export async function stepDkimKeys(
  * appended to the existing amavis setup.
  *
  * Sequence:
- *   1. Probe amavis binary (`amavisd` on noble, `amavisd-new` on jammy).
+ *   1. Resolve amavis: which binary (`amavisd` on noble, `amavisd-new` on jammy)
+ *      and where it runs — `resolveAmavis` keeps that the only flavor-aware bit.
  *   2. `amavisd genrsa /var/lib/dkim/<domain>.pem` - generates the keypair.
- *   3. Read /etc/amavis/conf.d/50-user, append the `dkim_key('<domain>', …)`
- *      directive + the per-domain entry in
- *      `@dkim_signature_options_bysender_maps`, write it back. All string
- *      manipulation happens in JS - no shell escaping, no `perl -i`.
+ *   3. Read 50-user, append the `dkim_key('<domain>', …)` directive + the
+ *      per-domain entry in `@dkim_signature_options_bysender_maps`, write it back.
+ *      All string manipulation happens in JS - no shell escaping, no `perl -i`.
+ *      The path written is the host side of the bind mount; the path INSIDE the
+ *      directive is what amavis itself reads.
  *   4. Reload amavis so the new key + sign-options take effect.
  *   5. `amavisd showkeys <domain>` to extract the public-key TXT value.
  *
@@ -1003,31 +710,19 @@ export async function provisionDomainDkim(
   exec: CommandExecutor,
   newDomain: string,
 ): Promise<string> {
-  // ── Step 1: pick the right amavis binary ─────────────────────────────
-  const probe = await exec.exec(
-    "if command -v amavisd >/dev/null 2>&1; then echo amavisd; " +
-      "elif command -v amavisd-new >/dev/null 2>&1; then echo amavisd-new; " +
-      "else echo MISSING; fi",
-  );
-  const amavisBin = probe.trim();
-  if (amavisBin === "MISSING") {
-    throw new Error(
-      "Neither `amavisd` nor `amavisd-new` is installed - can't provision DKIM.",
-    );
-  }
+  // ── Step 1: resolve where amavis lives + which binary it ships ─────────
+  const { bin, run, conf, flavor } = await resolveAmavis(exec);
+  const amavisBin = run(bin);
 
-  // ── Step 2: generate the keypair ─────────────────────────────────────
+  // ── Step 2: generate the keypair (engine-side path; bind-mounted on container) ─
   const keyPath = `/var/lib/dkim/${newDomain}.pem`;
-  await exec.exec(`mkdir -p /var/lib/dkim`);
-  // amavisd genrsa exits non-zero if the file already exists; treat that
-  // as success so re-runs are idempotent.
-  await exec.exec(
-    `[ -s ${keyPath} ] || ${amavisBin} genrsa ${keyPath}`,
-  );
-  await exec.exec(`chown -R amavis:amavis /var/lib/dkim 2>/dev/null || true`);
+  await exec.exec(run("mkdir -p /var/lib/dkim"));
+  // genrsa exits non-zero if the file already exists; treat that as success.
+  await exec.exec(run(`sh -c ${sq(`[ -s ${keyPath} ] || ${bin} genrsa ${keyPath}`)}`));
+  await exec.exec(run("chown -R amavis:amavis /var/lib/dkim")).catch(() => {});
 
-  // ── Step 3: splice the directive + sign-options entry into 50-user ───
-  const confPath = "/etc/amavis/conf.d/50-user";
+  // ── Step 3: splice the directive into 50-user (the writable side) ───────
+  const confPath = conf.write;
   const existing = await exec.readFile(confPath).catch(() => "");
   const dkimKeyLine = `dkim_key('${newDomain}', 'dkim', '${keyPath}');`;
   const signEntry = `   '.${newDomain}'  => { d => '${newDomain}', a => 'rsa-sha256', ttl => 21*24*3600 },`;
@@ -1036,14 +731,11 @@ export async function provisionDomainDkim(
     await exec.writeFile(confPath, next);
   }
 
-  // ── Step 4: reload amavis ────────────────────────────────────────────
-  await exec.exec(
-    "systemctl reload amavis 2>/dev/null || systemctl reload amavisd 2>/dev/null || " +
-      "systemctl restart amavis 2>/dev/null || systemctl restart amavisd 2>/dev/null || true",
-  );
+  // ── Step 4: reload amavis so the new key is signed with ──────────────
+  await exec.exec(mailUnitActionCommand(flavor, "amavis", "amavis", "restart")).catch(() => {});
 
   // ── Step 5: read the public key out ──────────────────────────────────
-  const showOutput = await exec.exec(`${amavisBin} showkeys ${newDomain} 2>&1`);
+  const showOutput = await exec.exec(`${amavisBin} showkeys ${sq(newDomain)} 2>&1`);
   const matches = showOutput.match(/"([^"]+)"/g);
   const dkimValue = matches
     ? matches.map((m: string) => m.replace(/"/g, "")).join("").replace(/\s+/g, "")
@@ -1131,82 +823,125 @@ export function spliceAmavisConf(
 /**
  * Step 12: Request a Let's Encrypt cert for `mail.<domain>`.
  *
- * Uses certbot in standalone mode: we briefly stop OpenResty (which owns
- * :80 from step 2) so certbot can bind it for the HTTP-01 challenge, then
- * bring OpenResty back. (Future cleanup: switch to webroot mode and skip
- * the stop/start dance entirely by serving `.well-known/acme-challenge/`
- * through OpenResty.)
+ * Delegates to the SAME `platform.ssl` every other certificate in the system goes
+ * through — the pattern `registerWebmailCloudProxy` already uses against this very
+ * mail VPS. This used to invoke `certbot certonly --standalone` itself, with a
+ * comment saying it was "the same ACME mechanism the rest of openship uses": it
+ * imitated `NginxProvider.provisionCert` instead of calling it, so the two could
+ * drift, and it ran certbot on the HOST — which broke outright once the edge became
+ * a container, because certbot then lives inside the image and the host has none.
+ *
+ * What comes free by delegating: execution on the right side of the container
+ * boundary, `--cert-name` lineage pinning (a stale renewal config would otherwise
+ * push the cert to `<domain>-0001`, where step 13's symlinks would never find it),
+ * `ensureIssued`'s post-issuance verification, and `summarizeCertbotFailure`'s
+ * actionable DNS/firewall/proxy diagnosis instead of "check logs above".
+ *
+ * A hostname with no vhost is fine: `provisionCert` finds no route sidecar and no
+ * conf to scrape, logs "cert provisioned but no route yet", and returns. It also
+ * short-circuits on an already-valid cert, so retrying this step is cheap.
+ *
+ * Step 13 then symlinks the cert into Postfix/Dovecot's paths — reachable because
+ * `/etc/letsencrypt` is a HOST bind mount into the edge, not a container volume.
  */
 export async function stepRequestSSL(
   exec: CommandExecutor,
   domain: string,
   log: StepLogger,
+  target: MailSslTarget,
 ): Promise<StepResult> {
-  const stepId = 12;
+  const stepId = 7;
   const mailDomain = `mail.${domain}`;
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(mailDomain)) {
+    return { stepId, success: false, message: `Invalid mail domain: ${mailDomain}` };
+  }
   log(stepId, "info", `Requesting SSL certificate for ${mailDomain}...`);
 
-  log(stepId, "info", "Pausing OpenResty for standalone ACME challenge...");
-  await exec.exec("systemctl stop openresty 2>/dev/null || true");
+  // Dynamic import to match webmail-project.service.ts — deployment-runtime pulls in
+  // the platform/runtime graph, and the mail module is imported from it.
+  const { resolveTargetPlatform } = await import("../../lib/deployment-runtime");
 
-  const cert = await streamCmd(
-    exec,
-    `certbot certonly --standalone --agree-tos --register-unsafely-without-email -d ${mailDomain} --non-interactive 2>&1`,
-    stepId, log,
-  );
+  try {
+    const platform = await resolveTargetPlatform(
+      "server",
+      "bare",
+      target.serverId,
+      target.organizationId,
+    );
+    const result = await platform.ssl.provisionCert(mailDomain, {
+      onLog: (line) => log(stepId, "info", line),
+    });
+    if (!result.verified) {
+      return {
+        stepId,
+        success: false,
+        message: `Certificate not confirmed for ${mailDomain} (${result.reason ?? "unknown"}).`,
+      };
+    }
 
-  await exec.exec("systemctl start openresty 2>/dev/null || true");
+    // Register the host so the ssl:renew sweep can see it. Without this the cert is
+    // real, works, and then expires ~90 days later with nothing renewing it — the
+    // renewer reads the `domain` table and a mail server has no project row.
+    const { recordMailCertDomain } = await import("../../lib/domain-ssl");
+    await recordMailCertDomain(mailDomain, result);
 
-  if (cert.code !== 0) {
+    log(stepId, "info", "SSL certificate obtained (the edge stayed up — apps unaffected)");
     return {
       stepId,
-      success: false,
-      message: "Failed to obtain SSL certificate. Check logs above.",
+      success: true,
+      message: `SSL certificate obtained for ${mailDomain}`,
+      data: { expiresAt: result.expiresAt, issuer: result.issuer },
     };
+  } catch (err) {
+    // Already the summarized, actionable cause (summarizeCertbotFailure).
+    return { stepId, success: false, message: errMsg(err) };
   }
-
-  log(stepId, "info", "SSL certificate obtained");
-  return { stepId, success: true, message: `SSL certificate obtained for ${mailDomain}` };
 }
 
 /**
- * Step 13: Link Let's Encrypt certs into the paths Postfix/Dovecot expect,
- * then reload the mail daemons. No reboot - a daemon reload is sufficient
- * and orders of magnitude faster.
+ * Step 8: Link Let's Encrypt certs into the paths Postfix/Dovecot expect, then
+ * reload the mail daemons — a reload, no reboot.
  *
- * `reconnectFn` is unused now but kept in the signature so the controller's
- * key-based dispatch (which treats this step as a "reboot" type) keeps
- * working; the dispatch will be tightened in a follow-up.
+ * Runs where the daemons do: inside the engine on a containerized box, on the host
+ * itself on a legacy one. A retry of this step against an adopted legacy server
+ * used to `docker exec` into a container that isn't there, and every command here
+ * ends in `|| true` — so it "succeeded" while linking nothing.
  */
 export async function stepConfigureSSL(
   exec: CommandExecutor,
   domain: string,
   log: StepLogger,
-  _reconnectFn: () => Promise<CommandExecutor>,
 ): Promise<StepResult> {
-  const stepId = 13;
+  const stepId = 8;
   const mailDomain = `mail.${domain}`;
 
-  log(stepId, "info", "Setting Let's Encrypt directory permissions...");
-  await exec.exec("chmod 0755 /etc/letsencrypt/live /etc/letsencrypt/archive");
+  let flavor: MailEngineFlavor;
+  try {
+    ({ flavor } = await requireMailEngine(exec));
+  } catch (err) {
+    return { stepId, success: false, message: errMsg(err) };
+  }
 
+  // /etc/letsencrypt is the shared HOST bind mount the edge's certbot writes and
+  // the mail container reads; loosen live/archive so the container can traverse.
+  log(stepId, "info", "Setting Let's Encrypt directory permissions...");
+  await exec.exec("chmod 0755 /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true");
+
+  // The iRedMail cert symlinks live at /etc/ssl (baked into the image, not bind-
+  // mounted) and point at the shared /etc/letsencrypt mount — so link + reload run
+  // wherever the daemons read from.
+  const inMail = (cmd: string) => mailEngineCommand(flavor, cmd);
   log(stepId, "info", "Backing up existing iRedMail self-signed certificates...");
-  await exec.exec("mv /etc/ssl/certs/iRedMail.crt /etc/ssl/certs/iRedMail.crt.bak 2>/dev/null || true");
-  await exec.exec("mv /etc/ssl/private/iRedMail.key /etc/ssl/private/iRedMail.key.bak 2>/dev/null || true");
+  await exec.exec(inMail("mv /etc/ssl/certs/iRedMail.crt /etc/ssl/certs/iRedMail.crt.bak 2>/dev/null || true"));
+  await exec.exec(inMail("mv /etc/ssl/private/iRedMail.key /etc/ssl/private/iRedMail.key.bak 2>/dev/null || true"));
 
   log(stepId, "info", "Linking Let's Encrypt certificates into mail daemon paths...");
-  await exec.exec(
-    `ln -sf /etc/letsencrypt/live/${mailDomain}/fullchain.pem /etc/ssl/certs/iRedMail.crt`,
-  );
-  await exec.exec(
-    `ln -sf /etc/letsencrypt/live/${mailDomain}/privkey.pem /etc/ssl/private/iRedMail.key`,
-  );
+  await exec.exec(inMail(`ln -sf /etc/letsencrypt/live/${mailDomain}/fullchain.pem /etc/ssl/certs/iRedMail.crt`));
+  await exec.exec(inMail(`ln -sf /etc/letsencrypt/live/${mailDomain}/privkey.pem /etc/ssl/private/iRedMail.key`));
 
   log(stepId, "info", "Reloading mail daemons to pick up new certificates...");
-  // Best-effort: a missing service is fine (e.g. Postfix not yet enabled),
-  // we only care that the running ones reload their TLS context.
-  await exec.exec("systemctl reload postfix 2>/dev/null || true");
-  await exec.exec("systemctl reload dovecot 2>/dev/null || true");
+  await exec.exec(inMail("postfix reload 2>/dev/null || true"));
+  await exec.exec(inMail("doveadm reload 2>/dev/null || true"));
 
   log(stepId, "info", "Mail setup complete!");
   return {
@@ -1229,13 +964,6 @@ export type BasicStepFn = (
   log: StepLogger,
 ) => Promise<StepResult>;
 
-export type RebootStepFn = (
-  exec: CommandExecutor,
-  domain: string,
-  log: StepLogger,
-  reconnectFn: () => Promise<CommandExecutor>,
-) => Promise<StepResult>;
-
 export type InstallerStepFn = (
   exec: CommandExecutor,
   domain: string,
@@ -1243,23 +971,35 @@ export type InstallerStepFn = (
   config?: IRedMailConfig,
 ) => Promise<StepResult>;
 
+/**
+ * Which server (and whose org) the cert is for. `stepRequestSSL` issues through
+ * `platform.ssl`, and resolving that platform needs the server identity — an
+ * executor alone can't say which row it belongs to.
+ */
+export interface MailSslTarget {
+  serverId: string;
+  organizationId: string;
+}
+
+export type SslStepFn = (
+  exec: CommandExecutor,
+  domain: string,
+  log: StepLogger,
+  target: MailSslTarget,
+) => Promise<StepResult>;
+
 export const STEP_RUNNERS: Record<
   number,
-  BasicStepFn | RebootStepFn | InstallerStepFn
+  BasicStepFn | InstallerStepFn | SslStepFn
 > = {
-  1: stepSystemUpdate,
-  2: stepEnsureComponents,
-  3: stepCheckPort25,
-  4: stepEnsureReverseProxy,
-  5: stepSetHostname,
-  6: stepUpdateHosts,
-  7: stepTransferEngine,
-  8: stepPrepareEngine,
-  9: stepRunInstaller,
-  10: stepReboot,
-  11: stepDkimKeys,
-  12: stepRequestSSL,
-  13: stepConfigureSSL,
+  1: stepEnsureComponents,
+  2: stepCheckPort25,
+  3: stepEnsureReverseProxy,
+  4: stepOpenMailFirewall,
+  5: stepDeployEngine,
+  6: stepDkimKeys,
+  7: stepRequestSSL,
+  8: stepConfigureSSL,
 };
 
 

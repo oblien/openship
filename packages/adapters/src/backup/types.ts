@@ -89,6 +89,18 @@ export interface StreamPathOpts {
   compression?: "zstd" | "gzip" | "none";
   /** Glob-ish patterns to exclude (passed to tar `--exclude`). */
   exclude?: string[];
+  /**
+   * Give up after this long with NO output — not this long overall. Same
+   * reasoning as `ReceiveStreamOpts.idleTimeoutMs`, and deliberately the same
+   * default (10 min on the docker helper): a volume big enough to need hours to
+   * restore needs hours to capture, and the direction that fails silently is
+   * this one. Executors own their defaults; `undefined` means "the executor's",
+   * never "unbounded".
+   */
+  idleTimeoutMs?: number;
+  /** Absolute ceiling regardless of traffic, behind `idleTimeoutMs`. Docker
+   *  helper default 6 hours, matching restore. */
+  timeoutMs?: number;
 }
 
 export interface ReceiveStreamOpts {
@@ -96,6 +108,28 @@ export interface ReceiveStreamOpts {
   /** Wipe the target before extracting. Default false — adapter-
    *  specific safer modes (delete-then-recreate volume) take precedence. */
   clearTarget?: boolean;
+  /**
+   * Give up after this long with NO traffic in either direction — not this long
+   * overall. Default 10 minutes; 0/undefined at the executor means "use the
+   * default", never "unbounded".
+   *
+   * Idle rather than wall-clock because the two states are indistinguishable by
+   * elapsed time alone: a 50GB extract legitimately runs for hours, and #434's
+   * hang also lasts hours. They differ in traffic — `tar -x` consumes stdin
+   * continuously, a wedged helper moves nothing — so the idle timer separates
+   * them exactly where a wall-clock bound has to choose between strangling the
+   * first and missing the second.
+   */
+  idleTimeoutMs?: number;
+  /** Absolute ceiling regardless of traffic, as a last resort behind
+   *  `idleTimeoutMs`. Default 6 hours. */
+  timeoutMs?: number;
+  /**
+   * Abort an in-flight extract. Aborting mid-extract leaves the target holding
+   * partial data — the caller owns saying so; the executor only stops early and
+   * reaps the helper.
+   */
+  signal?: AbortSignal;
 }
 
 /** Executor — the runtime-shaped axis. Speaks "run this command inside
@@ -197,21 +231,48 @@ export type PayloadKind =
   | "mongo_dump"
   | "custom_command";
 
+/**
+ * The policy's `payloadConfig`, forwarded WHOLE by the orchestrator.
+ *
+ * D5: the orchestrator used to assemble this by hand-picking three keys, which
+ * dropped every custom_command key — so each mail-server backup captured an
+ * artifact with `restoreCommand: null` and could never be restored. The producer
+ * read those keys off `opts` through a cast, which is why the typechecker never
+ * saw the mismatch. A new payload key belongs HERE; the orchestrator forwards
+ * the config unfiltered so the two halves cannot drift again.
+ */
 export interface ProducerOpts {
   /** Which sources from `listSources()` to back up. Null = producer's
    *  default (usually "everything"). */
   sourceIds?: string[];
-  /** For custom_command: the command to run. */
+  /** For custom_command: the command to run. Legacy alias for
+   *  `produceCommand`, still honored. */
   command?: string;
   /** Extra patterns to exclude (forwarded to executor). */
   exclude?: string[];
+  /** custom_command: shell command whose stdout IS the artifact. */
+  produceCommand?: string;
+  /** custom_command: shell command whose stdin receives the artifact on
+   *  restore. Frozen into the artifact's metadata at capture time — an artifact
+   *  captured without it is permanently unrestorable. */
+  restoreCommand?: string;
+  /** custom_command: filename portion of the destination key. */
+  artifactName?: string;
 }
 
+/**
+ * Deliberately does NOT carry a post-restore startup timeout. `startupTimeoutMs`
+ * lived here for a while, dropped on the floor by every producer and read by no
+ * executor — honoring it means building a readiness probe, which is a feature and
+ * belongs with `OpenshipReadiness`, not a field that quietly implies one exists.
+ */
 export interface RestoreOpts {
   /** Pass clearTarget through. */
   clearTarget?: boolean;
-  /** Wait this long for the service to come back up after restart. */
-  startupTimeoutMs?: number;
+  /** Forwarded to the executor so a cancel doesn't have to wait out the
+   *  whole extract. Producers that restore through `pipeIntoCommand` ignore
+   *  it — those writes are transactional at the engine, not the volume. */
+  signal?: AbortSignal;
 }
 
 /** A single backup artifact — one file in the destination. A producer
@@ -324,8 +385,12 @@ export interface PutOpts {
   /** Known byte size when available (S3 multipart threshold etc.). */
   size?: number;
   contentType?: string;
-  /** Pre-computed sha256 hex; if present, destination may verify
-   *  end-to-end (e.g. S3 Content-MD5 / ChecksumSHA256). */
+  /** Pre-computed sha256 hex. A GATE, not a hint: a destination that can check
+   *  it must refuse the object on mismatch rather than land it (see local.put).
+   *  Only settable when the caller holds the whole body — the run manifest. A
+   *  streamed artifact's digest doesn't exist until its bytes have already left,
+   *  so integrity there runs the other way round: `PutResult.etag` is compared
+   *  against the digest computed in flight (see uploadArtifact). */
   sha256?: string;
   /** Free-form object metadata stored alongside (S3 x-amz-meta-*,
    *  SFTP ignores). */

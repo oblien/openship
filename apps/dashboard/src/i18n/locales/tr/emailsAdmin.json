@@ -423,6 +423,16 @@
     "dismissLink": "Biliyorum, bunu gizle",
     "dismiss": "Kapat"
   },
+  "engine": {
+    "downTitle": "Bu sunucudaki posta motoru çalışmıyor",
+    "downBody": "Durdurulmuş haldeyken posta ne teslim edilir ne de kabul edilir; buradaki tüm sekmeler ona bağlı. Yeniden başlatmak güvenlidir: hiçbir şey yeniden kurulmaz ve yapılandırma değişmez.",
+    "legacyNote": "Bu sunucu, doğrudan ana makineye kurulu eski motoru (systemd Postfix/Dovecot) kullanıyor; bu yüzden incelenecek bir konteyner yok.",
+    "start": "Motoru başlat",
+    "missingTitle": "Bu sunucuda posta motoru yok",
+    "missingBody": "Openship burada bir posta motoru bulamıyor — ne motor konteyneri ne de Postfix/Dovecot birimleri. Yeniden kurmak için posta kurulumunu tekrar çalıştırın.",
+    "rerunSetup": "Posta kurulumunu tekrar çalıştır",
+    "cardBlocked": "Posta motoru çalışana kadar kullanılamaz."
+  },
   "welcome": {
     "invalidEmail": "Geçerli bir e-posta adresi girin",
     "sendFailed": "Gönderilemedi",

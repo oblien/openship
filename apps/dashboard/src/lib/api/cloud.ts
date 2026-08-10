@@ -16,13 +16,21 @@ export interface CloudConnectFinalizeResponse {
 }
 
 export interface CloudConnectAuthorizeBody {
-  redirect: string;
+  /** Browser-redirect (desktop/local) flow only — the URL the code is delivered
+   *  to. Omitted for device/poll (mode="device"), where the CLI retrieves the
+   *  code via connect-poll and there's nothing to navigate to. */
+  redirect?: string;
   state: string;
   codeChallenge: string;
+  /** "device" = headless CLI poll flow: confirm in-place, no redirect. */
+  mode?: "device";
 }
 
 export interface CloudConnectAuthorizeResponse {
-  callbackUrl: string;
+  /** Present only for the browser-redirect flow. */
+  callbackUrl?: string;
+  /** Present for the device/poll flow — the code is picked up via connect-poll. */
+  authorized?: boolean;
 }
 
 export const cloudApi = {

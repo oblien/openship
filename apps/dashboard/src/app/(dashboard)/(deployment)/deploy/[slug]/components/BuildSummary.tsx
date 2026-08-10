@@ -48,7 +48,7 @@ const BuildSummary: React.FC = () => {
       icon: fw
         ? (
             <span className="flex size-3.5 items-center justify-center overflow-hidden rounded-sm [&>img]:h-full [&>img]:w-full [&>img]:object-contain">
-              {fw.icon("hsl(var(--foreground))")}
+              {fw.icon("var(--foreground)")}
             </span>
           )
         : <Container className="size-3 text-muted-foreground" />,
@@ -64,11 +64,25 @@ const BuildSummary: React.FC = () => {
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string; icon: React.ReactNode }>;
 
-  // For app/docker: single domain display
-  const endpointHosts = !isServices
-    ? getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName)
+  // For app/docker: single domain display. "None" routing wins over whatever is
+  // still in `publicEndpoints` — the summary used to keep advertising the free
+  // subdomain after the user picked None, which read as "it's still going to
+  // assign that domain". Report None explicitly rather than hiding the row, so
+  // the summary never goes quiet about the app's reachability.
+  const noPublicRoute = !isServices && !!config.noPublicRoute;
+  const endpointHosts = !isServices && !noPublicRoute
+    ? getPublicEndpointHosts(config.publicEndpoints, baseDomain)
     : [];
-  const domainDisplay = endpointHosts[0] ?? null;
+  // A config that names no host gets "—", not a host composed from the project
+  // name (which is neither what the deploy creates nor a real hostname). The row
+  // still renders, so the summary never goes quiet about reachability — but "—"
+  // says "nothing chosen" instead of advertising a URL that won't resolve.
+  // Explicit "None" stays reserved for the operator's own no-route choice.
+  const domainDisplay = noPublicRoute
+    ? t.deploy.domainSettings.routeNoneLabel
+    : isServices
+      ? null
+      : (endpointHosts[0] ?? "—");
   const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
   return (
     <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 via-primary/3 to-transparent border border-primary/10 space-y-3">
@@ -163,7 +177,11 @@ const BuildSummary: React.FC = () => {
                   {isServices ? t.deploy.buildSummary.stack : t.deploy.buildSummary.runtime}
                 </p>
                 <p className="text-sm font-medium text-foreground truncate">
-                  {stackDef?.name || "Docker"}
+                  {/* A compose project has no single top-level stack (framework
+                      is "unknown" by design — the real stack is per-service), so
+                      don't surface STACKS['unknown'].name = "Unknown"; label it
+                      as the compose stack it is. */}
+                  {config.projectType === "services" ? "Docker Compose" : stackDef?.name || "Docker"}
                 </p>
               </div>
             </div>

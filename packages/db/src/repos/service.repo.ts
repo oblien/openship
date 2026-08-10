@@ -1,5 +1,5 @@
 import { eq, and, asc, inArray } from "drizzle-orm";
-import { generateId, normalizeCustomHostname, type ComposeAdvanced } from "@repo/core";
+import { commandToArgv, generateId, mergeAdvanced, normalizeCustomHostname, type ComposeAdvanced } from "@repo/core";
 import type { Database } from "../client";
 import { service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
@@ -34,6 +34,7 @@ export function toComposeSpec(s: {
   environment?: Record<string, string> | null;
   volumes?: string[] | null;
   command?: string | null;
+  commandArgv?: string[] | null;
   restart?: string | null;
   advanced?: ComposeAdvanced | null;
 }): ComposeServiceSpec {
@@ -46,6 +47,11 @@ export function toComposeSpec(s: {
     environment: s.environment ?? {},
     volumes: s.volumes ?? [],
     command: s.command ?? null,
+    // #332: derive argv from the text `command` when a row has no explicit
+    // `commandArgv` (legacy rows stored before the fix). This keeps drift
+    // comparison representation-stable — a legacy row and its re-parse
+    // canonicalize identically instead of flagging a phantom string↔argv change.
+    commandArgv: s.commandArgv ?? commandToArgv(s.command ?? null),
     restart: s.restart ?? "unless-stopped",
     advanced: s.advanced ?? {},
   };
@@ -77,10 +83,36 @@ const canonicalSpec = (s: ComposeServiceSpec): string =>
 export const composeSpecsEqual = (a: ComposeServiceSpec, b: ComposeServiceSpec) =>
   canonicalSpec(a) === canonicalSpec(b);
 
+/**
+ * The compose-owned fields as an UPDATE payload, with `advanced` MERGED onto the
+ * stored blob rather than replacing it.
+ *
+ * `toComposeSpec` coerces a missing `advanced` to `{}`, which is right for the
+ * drift comparison it exists for — a stored `{}` and an absent one have to
+ * canonicalize identically — and destructive as a write: compose YAML has no
+ * syntax for a readiness gate, generated config files, resource caps or an
+ * east-west alias, so `{}` from the parser silently erased whatever the operator
+ * or an app template had set. Every deploy carrying compose services did this.
+ *
+ * Deliberately NOT used by reconcileFromCompose: there, applying `theirs`
+ * wholesale is the point — a key the operator deleted from the compose file
+ * SHOULD disappear, and the 3-way merge against `importedSpec` is what decides
+ * whether that is safe.
+ */
+function composeWritePatch(
+  parsed: ParsedComposeService,
+  stored?: { advanced?: ComposeAdvanced | null } | null,
+): ComposeServiceSpec {
+  return {
+    ...toComposeSpec(parsed),
+    advanced: mergeAdvanced(stored?.advanced ?? null, parsed.advanced),
+  };
+}
+
 /** Per-field diff of two specs — powers the drift UI. */
 export function composeSpecDiff(base: ComposeServiceSpec, next: ComposeServiceSpec) {
   const fields: (keyof ComposeServiceSpec)[] = [
-    "image", "build", "dockerfile", "ports", "dependsOn", "environment", "volumes", "command", "restart", "advanced",
+    "image", "build", "dockerfile", "ports", "dependsOn", "environment", "volumes", "command", "commandArgv", "restart", "advanced",
   ];
   // Compare each field key-order-insensitively (matching canonicalSpec/
   // composeSpecsEqual) so a reordered `environment` or nested `advanced` block
@@ -112,6 +144,7 @@ export type ParsedComposeService = {
   environment?: Record<string, string>;
   volumes?: string[];
   command?: string;
+  commandArgv?: string[] | null;
   restart?: string;
   advanced?: ComposeAdvanced;
   exposed?: boolean;
@@ -169,7 +202,12 @@ export function normalizeRoutingFields(input: {
   customDomain?: string | null;
   domainType?: string | null;
   /** Multi-route array. When present + non-empty it WINS: entry[0] mirrors the
-   *  scalar columns below, and the full set is stored on `publicEndpoints`. */
+   *  scalar columns below, and the full set is stored on `publicEndpoints`.
+   *
+   *  This function does NOT merge: a caller holding a stored row is responsible
+   *  for folding a scalar-only patch into the row's route set BEFORE calling
+   *  (apps/api `mergeServiceRoutingPatch`), because array-wins would otherwise
+   *  silently discard the scalars. */
   publicEndpoints?: PublicEndpointInputLike[] | null;
 }): {
   exposed: boolean;
@@ -184,13 +222,26 @@ export function normalizeRoutingFields(input: {
     return t || null;
   };
 
+  const endpoints = normalizeServicePublicEndpoints(input.publicEndpoints);
+
+  // `exposed` is a GATE, not part of route identity. Unexposing PAUSES routing —
+  // every route reader is gated on it (resolveServicePublicEndpoints returns [],
+  // buildServiceRouteDomains returns [], the deploy's publicPort/publicSlug/
+  // customDomain resolvers all bail) — so a paused row's config is inert and does
+  // NOT need to be erased to stop serving. It used to be erased, which made an
+  // expose toggle silently delete a multi-route set (and orphan its verified
+  // domain rows), and made a drift reconcile that re-normalizes a paused row's own
+  // routing wipe it. An explicit `exposed: false` is still AUTHORITATIVE over a
+  // non-empty array: that array previously flipped the row back to exposed:true,
+  // so it could never be paused at all.
+  const exposed = input.exposed ?? endpoints.length > 0;
+
   // Multi-route wins. The primary (first) endpoint mirrors the scalar columns
   // so every single-route reader keeps working against the primary.
-  const endpoints = normalizeServicePublicEndpoints(input.publicEndpoints);
   if (endpoints.length > 0) {
     const primary = endpoints[0];
     return {
-      exposed: true,
+      exposed,
       exposedPort: String(primary.port),
       domain: primary.domainType === "free" ? primary.domain ?? null : null,
       customDomain: primary.domainType === "custom" ? primary.customDomain ?? null : null,
@@ -199,16 +250,11 @@ export function normalizeRoutingFields(input: {
     };
   }
 
-  const exposed = input.exposed ?? false;
-  if (!exposed) {
-    return { exposed: false, exposedPort: null, domain: null, customDomain: null, domainType: "free", publicEndpoints: [] };
-  }
-
   const domainType = input.domainType === "custom" ? "custom" : "free";
   // Single-route (scalar) path — publicEndpoints stays [] and the primary route
   // is synthesized from these columns at read time (resolveServicePublicEndpoints).
   return {
-    exposed: true,
+    exposed,
     exposedPort: trimOrNull(input.exposedPort),
     domain: domainType === "free" ? trimOrNull(input.domain) : null,
     customDomain: domainType === "custom" ? normalizeCustomHostname(input.customDomain ?? "") || null : null,
@@ -227,6 +273,14 @@ export function createServiceRepo(db: Database) {
       return db.query.service.findFirst({
         where: eq(service.id, id),
       });
+    },
+
+    /** Batch id → display name, for naming services in list responses. */
+    async listNamesByIds(ids: string[]): Promise<{ id: string; name: string }[]> {
+      if (ids.length === 0) return [];
+      return db.select({ id: service.id, name: service.name })
+        .from(service)
+        .where(inArray(service.id, ids));
     },
 
     async findByName(projectId: string, name: string) {
@@ -406,8 +460,30 @@ export function createServiceRepo(db: Database) {
      * Also preserves the user's explicit `enabled` choice on updates -
      * compose's YAML doesn't carry an enabled flag, so re-syncing a row
      * the user disabled in the dashboard must keep it disabled.
+     *
+     * `removeMissing` (default true) controls whether compose rows absent from
+     * `parsed` are hard-deleted. Deploy-time callers pass FALSE, because the
+     * list they hand over is not authoritative about what should exist:
+     *
+     *   - On a ROLLBACK it is the TARGET release's frozen list, so a service
+     *     added after that release would be deleted - and `serviceDeployment
+     *     .serviceId` is ON DELETE CASCADE, so its entire deploy history across
+     *     every release goes with it while its container keeps running.
+     *   - On ANY compose deploy, `deployComposeServices` builds its de-listed
+     *     reaper input from the ACTIVE deployment's `service_deployment` rows,
+     *     and this sync runs first - so the cascade empties the reaper's input
+     *     and the removed service's container is orphaned instead of stopped.
+     *
+     * Removal keeps its home in the explicit compose-reconcile path
+     * (`reconcileFromCompose` below), which models a removal policy properly by
+     * 3-way merging against `importedSpec` before deleting anything.
      */
-    async syncFromCompose(projectId: string, parsed: ParsedComposeService[]) {
+    async syncFromCompose(
+      projectId: string,
+      parsed: ParsedComposeService[],
+      opts?: { removeMissing?: boolean },
+    ) {
+      const removeMissing = opts?.removeMissing ?? true;
       // Defensive filter - even though every caller should already strip
       // non-compose entries before reaching here, an explicit kind="monorepo"
       // would otherwise insert a ghost compose row with the same name as the
@@ -437,14 +513,17 @@ export function createServiceRepo(db: Database) {
         if (ex) {
           // Update existing - preserve the operator's `enabled` choice AND their
           // `sortOrder` (dashboard reordering); the compose YAML carries neither.
+          // One computed patch for both the write and the echoed row, or the
+          // returned Service would disagree with what was stored.
+          const patch = composeWritePatch(p, ex);
           await this.update(ex.id, {
-            ...toComposeSpec(p),
+            ...patch,
             ...routing,
             // enabled + sortOrder left as-is (already on ex)
           });
           results.push({
             ...ex,
-            ...toComposeSpec(p),
+            ...patch,
             ...routing,
             updatedAt: new Date(),
           } as Service);
@@ -466,9 +545,11 @@ export function createServiceRepo(db: Database) {
       // Remove stale compose services (not in the incoming compose YAML).
       // Monorepo sub-apps live in a different kind and were filtered out
       // above; they survive untouched.
-      for (const ex of composeExisting) {
-        if (!incomingNames.has(ex.name)) {
-          await this.remove(ex.id);
+      if (removeMissing) {
+        for (const ex of composeExisting) {
+          if (!incomingNames.has(ex.name)) {
+            await this.remove(ex.id);
+          }
         }
       }
 
@@ -549,12 +630,18 @@ export function createServiceRepo(db: Database) {
 
         // Repo changed, user has NOT edited → auto-apply theirs, advance baseline.
         if (composeSpecsEqual(ours, base)) {
+          // Re-normalizing the row's OWN routing must round-trip it, exposed or
+          // PAUSED. Omitting `publicEndpoints` dropped every secondary route on a
+          // multi-route row (an app template's second port) on the next redeploy,
+          // and an unexposed row lost its whole route config — the docstring's
+          // "never touches routing" only held for single-route exposed rows.
           const routing = normalizeRoutingFields({
             exposed: ex.exposed,
             exposedPort: ex.exposedPort,
             domain: ex.domain,
             customDomain: ex.customDomain,
             domainType: ex.domainType,
+            publicEndpoints: ex.publicEndpoints,
           });
           await this.update(ex.id, {
             ...theirs,
@@ -596,6 +683,18 @@ export function createServiceRepo(db: Database) {
     async listByDeployment(deploymentId: string) {
       return db.query.serviceDeployment.findMany({
         where: eq(serviceDeployment.deploymentId, deploymentId),
+      });
+    },
+
+    /** service_deployment rows referencing any of these live container ids —
+     *  the "are these containers already managed by a project here?" lookup that
+     *  makes a re-import idempotent (refuse re-adopting an existing project's
+     *  containers instead of minting a duplicate `-2` set). Callers resolve each
+     *  row's deployment→project for org-scope + soft-delete checks. */
+    async findByContainerIds(containerIds: string[]): Promise<ServiceDeployment[]> {
+      if (containerIds.length === 0) return [];
+      return db.query.serviceDeployment.findMany({
+        where: inArray(serviceDeployment.containerId, containerIds),
       });
     },
 

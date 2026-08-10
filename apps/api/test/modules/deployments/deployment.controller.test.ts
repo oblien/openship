@@ -17,7 +17,11 @@ vi.mock("../../../src/modules/deployments/build.service", () => ({ triggerDeploy
 // Sibling imports the create() path never touches — stub so their heavy graphs
 // don't load.
 vi.mock("../../../src/lib/sse", () => ({ streamSSE: vi.fn() }));
-vi.mock("../../../src/modules/deployments/deployment.service", () => ({}));
+// create() presents the deployment through the masking boundary; the mask is
+// covered by its own tests, so pass the row through untouched here.
+vi.mock("../../../src/modules/deployments/deployment.service", () => ({
+  presentDeployment: <T,>(dep: T) => dep,
+}));
 vi.mock("../../../src/modules/deployments/reconcile.service", () => ({ triggerReconcile: vi.fn() }));
 vi.mock("../../../src/modules/deployments/build-status.service", () => ({}));
 vi.mock("../../../src/modules/deployments/ssl.service", () => ({}));

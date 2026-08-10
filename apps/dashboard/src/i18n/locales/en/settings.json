@@ -54,6 +54,7 @@
       "email": "Email",
       "audit": "Audit log",
       "cloud": "Cloud",
+      "infrastructure": "Infrastructure",
       "instance": "Instance"
     }
   },
@@ -140,8 +141,47 @@
       "optionalSuffix": "on this machine to enable local-build clones of repos outside your App installations. Remote deploys use each server's SSH key or the App.",
       "disconnectPrefix": "To disconnect, run",
       "disconnectSuffix": "in your terminal.",
-      "use": "Use gh CLI"
-    }
+      "use": "Use gh CLI",
+      "login": "Log in with GitHub",
+      "deviceHint": "Enter this one-time code at GitHub to authorize this instance:",
+      "waiting": "Waiting for authorization — this updates automatically.",
+      "tokenAltPrefix": "Prefer a token? Add a personal access token under",
+      "tokenAltLink": "Clone credentials.",
+      "forwardOnNote": "Forwarding is on — gh CLI also authenticates remote server clones. Your identity is tunneled over SSH per clone; nothing is stored on the server.",
+      "forwardOffHint": "Local builds only for now. Turn on \"Forward my git identity to build servers\" to use gh CLI for remote server deploys too.",
+      "manageForward": "Manage forwarding",
+      "disconnectBody": "Openship will remove this credential from this instance and stop using it for clones. It stays valid at GitHub until you revoke it there. You can reconnect at any time.",
+      "recheck": "Check again"
+    },
+    "activeVia": "Connected via {method}",
+    "pickMethod": "Pick how Openship reaches your repositories.",
+    "methodDevice": "GitHub sign-in",
+    "methodApp": "Openship Cloud GitHub App",
+    "methodAppDesc": "Managed App — deploy to remote servers with short-lived tokens.",
+    "methodSshDesc": "Attach a deploy key to each server (Servers → GitHub).",
+    "methodTokenDesc": "A personal access token, usable everywhere.",
+    "signIn": "Sign in with GitHub",
+    "signInDesc": "Browser sign-in with a device code. Nothing to register, no SSH into the server.",
+    "changeMethod": "Change method",
+    "otherMethods": "Other methods",
+    "openGithub": "Open GitHub",
+    "copyCode": "Click to copy",
+    "tokenConnect": "Connect",
+    "tokenCreate": "Create a token on GitHub",
+    "tokenGhHint": "Already signed in on the server with",
+    "tokenSaveFailed": "Could not save the token.",
+    "forwardOffHint": "Local builds only. Turn on \"Forward my git identity to build servers\" to use it for remote server deploys too.",
+    "remoteCredentialHint": "Used for repo browsing and builds that run on this host. Deploys that build on a remote server use that server's own credential — add a deploy key or token per server.",
+    "methodToken": "GitHub token",
+    "methodHostCli": "gh CLI on this host",
+    "manageTokensOnGithub": "Manage tokens on GitHub",
+    "manageAccessOnGithub": "Manage access on GitHub",
+    "disconnectScopeNote": "Disconnect removes this credential from Openship and stops using it for clones. It stays valid at GitHub until you revoke it there.",
+    "credentialRejected": "GitHub rejected the stored {method}.",
+    "credentialRejectedImpact": "It was revoked, expired, or lost a required scope. Deploys that clone with it will keep failing until you reconnect below.",
+    "credentialUnreachable": "Couldn't reach GitHub to check the stored {method}.",
+    "credentialUnreachableImpact": "This is usually a network problem rather than a bad credential — Openship keeps using it. Reconnecting won't help if GitHub is unreachable.",
+    "credentialCheckedAt": "Last checked {time}"
   },
   "deployDefaults": {
     "title": "Deploy Defaults",
@@ -152,9 +192,18 @@
     "noServers": "No servers configured yet - add one from the deploy picker.",
     "clearDefault": "Clear default (ask every time)",
     "targets": {
-      "local": { "label": "This Machine", "desc": "Local Docker / runtime" },
-      "server": { "label": "My Server", "desc": "A configured SSH server" },
-      "cloud": { "label": "OpenShip Cloud", "desc": "Managed cloud infra" }
+      "local": {
+        "label": "This Machine",
+        "desc": "Local Docker / runtime"
+      },
+      "server": {
+        "label": "My Server",
+        "desc": "A configured SSH server"
+      },
+      "cloud": {
+        "label": "OpenShip Cloud",
+        "desc": "Managed cloud infra"
+      }
     },
     "labelFor": {
       "yourServer": "your server",
@@ -174,9 +223,18 @@
     "loading": "Loading preferences…",
     "intro": "Choose the default build strategy for new deployments. Per-project overrides are available in project settings.",
     "modes": {
-      "auto": { "label": "Auto", "desc": "Smart per-framework" },
-      "server": { "label": "Server", "desc": "Build on remote" },
-      "local": { "label": "Local", "desc": "Build on machine" }
+      "auto": {
+        "label": "Auto",
+        "desc": "Smart per-framework"
+      },
+      "server": {
+        "label": "Server",
+        "desc": "Build on remote"
+      },
+      "local": {
+        "label": "Local",
+        "desc": "Build on machine"
+      }
     },
     "toast": {
       "setTo": "Build mode set to {mode}",
@@ -201,6 +259,9 @@
     "clear": "Clear",
     "useAsDefault": "Use as default clone token",
     "useAsDefaultDesc": "When on, the clone module uses this token as the second tier in the chain (after per-project overrides). When off, the token is stored but not used - handy if you only want it active for specific deploys.",
+    "forwardGitLabel": "Forward my git identity to build servers",
+    "forwardGitDesc": "When a build runs on a remote server, forward your local GitHub CLI login over the SSH tunnel so private repos clone directly on the server — no GitHub App needed. When off, the server falls back to its own git login, a stored token, or the public/local clone path.",
+    "forwardGitFailed": "Failed to update git forwarding",
     "toast": {
       "pasteFirst": "Paste a token before saving",
       "notLikeToken": "That doesn't look like a GitHub token. Save anyway if you're sure.",
@@ -306,7 +367,7 @@
       "pendingBody": "Your Openship domain is pending verification (DNS / SSL). Invites turn on once it's live.",
       "viewDomain": "View domain"
     },
-    "descPersonal": "People with access to your personal workspace. Invite collaborators directly, or create a separate team organization.",
+    "descPersonal": "People with access to your personal workspace.",
     "descTeam": "People with access to this organization's projects, deployments, and servers.",
     "inviteMember": "Invite member",
     "createTeamCard": {
@@ -335,6 +396,14 @@
     "memberPanel": {
       "subtitle": "Grants apply to restricted members. Owner/admin/member have org-wide access by default.",
       "saveLabel": "Save access"
+    },
+    "serverAccessWarning": {
+      "title": "Grant full server access?",
+      "body": "{member} will gain full control of {scope} — every deployment and its data, all apps running on it, stored secrets and environment variables, terminal access, and any connected integrations (e.g. GitHub tokens and deploy keys held for it). They'll be able to manage or delete these resources.",
+      "scopeAllServers": "all servers in this organization",
+      "scopeThisServer": "this server",
+      "scopeCount": "{count} servers",
+      "confirm": "Grant access"
     },
     "confirmRemove": "Remove this member from the organization?",
     "workspace": {
@@ -448,6 +517,16 @@
     "toast": {
       "disconnected": "Disconnected from Openship Cloud",
       "disconnectFailed": "Failed to disconnect"
+    },
+    "pitch": {
+      "title": "Add Openship Cloud",
+      "body": "Every project gets a free .{domain} domain with automatic SSL — no DNS, no certificates. Your own servers keep working exactly as they do now.",
+      "perkDomain": "Free .{domain} domain + automatic SSL on every project",
+      "perkDeploy": "Deploy to managed cloud, or stay on your own servers",
+      "perkServices": "Managed Postgres, Redis and more, provisioned in a click",
+      "perkGithub": "GitHub connected without registering your own app",
+      "noLockIn": "Free to connect. Nothing moves, and you can disconnect at any time.",
+      "viewPricing": "View pricing"
     }
   },
   "instance": {
@@ -491,6 +570,8 @@
       "empty": "No channels yet. Add one to start receiving notifications.",
       "verified": "Verified",
       "unverified": "Unverified",
+      "sendTest": "Send test",
+      "testSent": "Test sent",
       "deleteChannel": "Delete channel",
       "addChannel": "Add channel",
       "confirmDelete": "Delete this channel? Subscriptions using it will stop.",
@@ -509,6 +590,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "In-app"
     },
     "form": {
@@ -518,6 +600,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Bot token from @BotFather",
+      "telegramChatPlaceholder": "Chat ID (e.g. -1001234567890)",
+      "telegramHint": "Create a bot with @BotFather, then message the bot (or add it to your group) so it's allowed to reply.",
       "adding": "Adding…",
       "addChannel": "Add channel",
       "labelRequired": "Label is required",
@@ -529,22 +614,25 @@
       "title": "What to be notified about",
       "description": "Pick which events go to which channel. Each cell is one subscription.",
       "empty": "Add a channel first to subscribe to events.",
+      "allTab": "All",
       "eventHeader": "Event",
-      "cellAria": "{category} via {channel}"
+      "cellAria": "{category} via {channel}",
+      "notifyMe": "Notify me"
     },
     "orgDefaults": {
       "title": "Organization defaults",
       "description": "Defaults applied when a new member joins this organization. Members can override per-channel.",
-      "notifyAria": "Notify on {category}"
+      "notifyAria": "Notify on {category}",
+      "nChannels": "{n} channels"
     }
   },
   "audit": {
     "heading": "Audit log",
-    "subtitle": "Every change in this organization, who made it, and when.",
-    "searchPlaceholder": "Search events, actors, resources...",
-    "allEvents": "All events",
-    "noMatch": "No events match your search.",
-    "noEvents": "No events yet.",
+    "subtitle": "Everything that happened in this organization, who did it, and when.",
+    "searchPlaceholder": "Search apps, servers, domains, people…",
+    "noMatch": "Nothing matches these filters.",
+    "noEvents": "Nothing has been recorded yet.",
+    "clearFilters": "Clear filters",
     "showing": "Showing {from}-{to} of {total}",
     "actor": "Actor",
     "name": "Name",
@@ -560,7 +648,50 @@
     "after": "After",
     "removed": "Removed",
     "system": "System",
-    "actorPrefix": "Actor {id}"
+    "actorPrefix": "Actor {id}",
+    "recording": {
+      "title": "Record activity",
+      "description": "Keep a record of every change made in this organization. On by default.",
+      "paused": "Recording is off. Nothing new is being added — the entries below are what was captured before it was switched off.",
+      "retention": "Keep entries for",
+      "retentionOption": "{days} days",
+      "retentionHint": "Older entries are deleted automatically.",
+      "adminOnly": "Only owners and admins can change this.",
+      "saveFailed": "Could not save the activity settings."
+    },
+    "filters": {
+      "anyone": "Anyone",
+      "period": "Period",
+      "allTime": "All time",
+      "today": "Today",
+      "last7": "Last 7 days",
+      "last30": "Last 30 days",
+      "last90": "Last 90 days"
+    },
+    "tabs": {
+      "all": "All"
+    },
+    "sources": {
+      "all": "Everything",
+      "dashboard": "Dashboard",
+      "mcp": "AI assistant",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "System",
+      "unknown": "Unknown"
+    },
+    "day": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "details": {
+      "who": "Who",
+      "when": "When",
+      "cameFrom": "Came from",
+      "technical": "Technical details",
+      "eventType": "Event type"
+    }
   },
   "updates": {
     "title": "Updates",
@@ -585,6 +716,20 @@
     "security3": "). It only ever",
     "securityPulls": "pulls",
     "security4": "this data — no third-party service and no Openship-operated server can push updates or signals to your install. Advisories are pinned to each release, so unreleased changes never reach you. Critical security advisories are always shown once; everything else respects the toggle above."
+  },
+  "infrastructure": {
+    "title": "Platform components",
+    "description": "How the edge and mail containers on your servers are kept up to date",
+    "autoUpdateLabel": "Auto-update server infrastructure",
+    "autoUpdateDesc": "When this control plane updates, automatically update the edge and mail containers on your connected servers. Off by default — otherwise updates are flagged for a one-click apply on each server.",
+    "autoScanLabel": "Auto-scan server infrastructure",
+    "autoScanDesc": "Quietly re-check your servers when you open the Servers page or the home page, so a down or missing edge is flagged without a manual scan. On by default — detect-only, it never changes anything.",
+    "attentionOne": "1 component needs attention",
+    "attentionMany": "{n} components need attention",
+    "updatesOne": "1 update available",
+    "updatesMany": "{n} updates available",
+    "allHealthy": "All platform components are up to date",
+    "manageLink": "Manage in Servers"
   },
   "dataTransfer": {
     "export": {
@@ -749,5 +894,54 @@
     "toastLoadStateFailed": "Failed to load state",
     "toastRemoteUnreachable": "Remote unreachable. Tick \"don't pull remote data\" to switch back anyway.",
     "toastSwitchBackFailed": "Switch back failed"
+  },
+  "routePreferences": {
+    "title": "Routing",
+    "description": "How the edge reaches your apps' upstreams",
+    "loading": "Loading preferences…",
+    "intro": "Choose the default upstream addressing for new self-hosted projects. Per-project overrides live in project settings.",
+    "modes": {
+      "auto": {
+        "label": "Auto",
+        "desc": "Recommended (loopback port)"
+      },
+      "loopbackPort": {
+        "label": "Loopback port",
+        "desc": "Private 127.0.0.1 host port"
+      },
+      "containerIp": {
+        "label": "Container IP",
+        "desc": "Advanced — bridge IP"
+      }
+    },
+    "toast": {
+      "setTo": "Route strategy set to {mode}",
+      "failed": "Failed to update route strategy"
+    }
+  },
+  "edgeOrphans": {
+    "title": "Untracked edge routes",
+    "description": "Hostnames this machine still serves that Openship has no record of",
+    "scan": "Scan",
+    "scanning": "Scanning…",
+    "allClear": "Every hostname the edge serves is accounted for.",
+    "comparedTo": "Compared against {count} tracked hostnames.",
+    "unavailable": "Couldn't check the edge",
+    "explain": "Removing a project with \"Remove from Openship only\" deliberately leaves its route running. A leftover app route then returns 502 once its container is gone, but a leftover STATIC route keeps serving the old files with a 200 — even on a hostname since given to another project.",
+    "kindStatic": "Static files",
+    "kindProxy": "App route",
+    "staticWarning": "Still serving files. This answers requests today.",
+    "proxyWarning": "Points at an upstream that is probably gone.",
+    "servingFrom": "Serving from",
+    "proxyingTo": "Proxying to",
+    "alsoAnswers": "Also answers for",
+    "stopServing": "Stop serving",
+    "stopping": "Stopping…",
+    "stopped": "{hostname} is no longer served.",
+    "stopFailed": "Couldn't stop serving {hostname}",
+    "confirmTitle": "Stop serving {hostname}?",
+    "confirmBody": "This removes the edge configuration for this hostname only. Built files stay on disk, and nothing else on the server is touched. If a project is later deployed to this hostname it will create its own route.",
+    "confirmCta": "Stop serving",
+    "cancel": "Cancel"
   }
 }

@@ -1,12 +1,47 @@
 import type { WorkspaceDetector } from "./types";
 
 /**
+ * Read the argument list of one `include` call, starting just past the keyword.
+ *
+ * Parenthesized form (`include(...)`) runs to the matching `)`, so a list split
+ * over several lines is read whole. The bare form runs to end of line, plus any
+ * following lines while the previous one ends in a comma (Groovy's line
+ * continuation).
+ */
+function readIncludeArgs(content: string, start: number): string {
+  let i = start;
+  while (content[i] === " " || content[i] === "\t") i++;
+
+  if (content[i] === "(") {
+    let depth = 0;
+    for (let j = i; j < content.length; j++) {
+      if (content[j] === "(") depth++;
+      else if (content[j] === ")" && --depth === 0) return content.slice(i + 1, j);
+    }
+    return content.slice(i + 1);
+  }
+
+  let args = "";
+  for (;;) {
+    const newline = content.indexOf("\n", i);
+    const line = newline === -1 ? content.slice(i) : content.slice(i, newline);
+    args += line;
+    if (newline === -1 || !line.trimEnd().endsWith(",")) return args;
+    i = newline + 1;
+  }
+}
+
+/**
  * Gradle multi-project - `settings.gradle` or `settings.gradle.kts` declares
  * the included sub-projects via `include` calls:
  *
  *     include 'app', 'libs:shared'
  *     include(":services:api")
  *     include ":services:worker"
+ *     include(
+ *         ":feature:login",
+ *         ":core:data",
+ *     )
  *
  * Gradle uses colon-prefixed paths (`:services:api`); we convert them to
  * slash-separated filesystem paths (`services/api`) since that's how the rest
@@ -23,13 +58,14 @@ function parseGradleSettings(content: string): string[] {
     .join("\n");
 
   const paths: string[] = [];
-  const includePattern = /include\s*(?:\(\s*)?((?:[^()\n]+))(?:\))?/g;
+  // `include` as its own call. The word boundary excludes the settings-level
+  // `includeBuild` / `includeFlat`, which reference other builds and sibling
+  // directories rather than modules of this build.
+  const includePattern = /\binclude\b/g;
 
   let match: RegExpExecArray | null;
   while ((match = includePattern.exec(cleaned)) !== null) {
-    const args = match[1];
-    // Skip Gradle settings-level calls like `includeBuild` (which composes builds, not modules).
-    if (/^Build\b/.test(args)) continue;
+    const args = readIncludeArgs(cleaned, match.index + match[0].length);
     // Capture every quoted string in this include() call.
     const stringPattern = /"([^"]+)"|'([^']+)'/g;
     let stringMatch: RegExpExecArray | null;

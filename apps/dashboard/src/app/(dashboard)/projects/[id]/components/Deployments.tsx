@@ -3,7 +3,8 @@
 import React from "react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeploymentsContent } from "@/app/(dashboard)/deployments/components";
-import { deployApi, projectsApi, isAbortError, getApiErrorMessage } from "@/lib/api";
+import { deployApi, projectsApi, isAbortError } from "@/lib/api";
+import type { PendingAction } from "@/lib/api/projects";
 import { openTriggeredBuild } from "@/lib/deploy-nav";
 import { type Service } from "@/lib/api/services";
 import { useModal } from "@/context/ModalContext";
@@ -15,39 +16,23 @@ import DropdownMenu from "@/components/ui/DropdownMenu";
 import WarningCallout from "@/components/shared/WarningCallout";
 
 export const Deployments = () => {
-  const { id, projectData, setActiveTab, servicesData, refreshServices, hasMultipleServices, updateProjectData } =
-    useProjectSettings();
+  const {
+    id,
+    projectData,
+    setActiveTab,
+    servicesData,
+    refreshServices,
+    hasMultipleServices,
+  } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
 
   const [isRedeploying, setIsRedeploying] = React.useState(false);
-  const [isRetryingRoute, setIsRetryingRoute] = React.useState(false);
   // The Openship control-plane self-app has no deployable source and updates
   // itself via the CLI — redeploy/self-update controls would only 403, so hide them.
   const isSelfApp = projectData?.appTemplateId === "openship";
-
-  /** Re-run just the free .opsh.io edge-route sync (no rebuild). On success the
-   *  routing warning clears and the project flips back to Live; on failure the
-   *  same guidance is re-surfaced as an error toast. */
-  const handleRetryRouting = async () => {
-    if (!projectData?.id || isRetryingRoute) return;
-    setIsRetryingRoute(true);
-    try {
-      const res = await projectsApi.retryRouting(projectData.id);
-      if (res?.ok) {
-        updateProjectData({ routingUnsynced: false });
-        showToast(t.projects.routingRetry.success, "success", t.projects.routingRetry.title);
-      } else {
-        showToast(res?.warning || res?.error || t.projects.routingRetry.failed, "error", t.projects.routingRetry.title);
-      }
-    } catch (err) {
-      showToast(getApiErrorMessage(err) || t.projects.routingRetry.failed, "error", t.projects.routingRetry.title);
-    } finally {
-      setIsRetryingRoute(false);
-    }
-  };
 
   // "Project outdated" banner. Two shapes discriminated by `mode`: a commit
   // project is behind its branch HEAD; a release/dist project has a newer
@@ -93,12 +78,48 @@ export const Deployments = () => {
             : null,
         );
       })
-      .catch(() => { /* best-effort nudge; never block the page */ });
+      .catch(() => {
+        /* best-effort nudge; never block the page */
+      });
     return () => {
       cancelled = true;
     };
     // activeDeploymentId dep → refetch after a deploy advances the live release.
   }, [projectData?.id, projectData?.activeDeploymentId, isSelfApp]);
+
+  /**
+   * A deploy blocked on something the operator can clear — today a port already
+   * in use. Fetched only when the project payload says there IS one
+   * (`latestDeploymentBlocked`), so the common case costs no request.
+   *
+   * This is the gap this banner fills: a blocked deploy fails, and a failed
+   * deploy never becomes the active one, so every other flag on this page (all
+   * derived from the ACTIVE deployment) is structurally unable to mention it.
+   */
+  const [blockedAction, setBlockedAction] = React.useState<PendingAction | null>(null);
+  const isBlocked = !!projectData?.latestDeploymentBlocked;
+
+  React.useEffect(() => {
+    if (!projectData?.id || !isBlocked) {
+      setBlockedAction(null);
+      return;
+    }
+    let cancelled = false;
+    projectsApi
+      .getPendingActions(projectData.id)
+      .then((res) => {
+        if (cancelled) return;
+        setBlockedAction(
+          res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null,
+        );
+      })
+      .catch(() => {
+        /* best-effort — the status badge already says Action Required */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectData?.id, isBlocked, projectData?.latestDeploymentId]);
 
   /**
    * Redeploy = take the project's CURRENT saved configuration + env vars, pull
@@ -110,38 +131,45 @@ export const Deployments = () => {
    * so it rebuilds every service (a no-op for single-app projects). On success
    * we land on the build screen for the new version.
    */
-  const runRedeploy = React.useCallback(async (mode: "smart" | "all" | "refresh" = "smart") => {
-    if (!projectData?.id) return;
-    setIsRedeploying(true); // drive the loading state for menu paths too
-    try {
-      const body =
-        mode === "all"
-          ? { projectId: projectData.id, forceAll: true }
-          : mode === "refresh"
-            ? { projectId: projectData.id, refresh: true }
-            : { projectId: projectData.id, smartRoute: true };
-      const res = await deployApi.trigger(body);
-      openTriggeredBuild(router, res, projectData.id);
-    } catch (error) {
-      // A timeout almost certainly means the server started the deploy but was
-      // slow to return the id — show the deployments list so it's visible rather
-      // than stranding the user on an error.
-      if (isAbortError(error)) {
-        showToast(t.projects.redeploy.deployStartedLong, "success", t.projects.redeploy.deployingTitle);
-        router.push(`/projects/${projectData.id}/deployments`);
-        return;
+  const runRedeploy = React.useCallback(
+    async (mode: "smart" | "all" | "refresh" = "smart") => {
+      if (!projectData?.id) return;
+      setIsRedeploying(true); // drive the loading state for menu paths too
+      try {
+        const body =
+          mode === "all"
+            ? { projectId: projectData.id, forceAll: true }
+            : mode === "refresh"
+              ? { projectId: projectData.id, refresh: true }
+              : { projectId: projectData.id, smartRoute: true };
+        const res = await deployApi.trigger(body);
+        openTriggeredBuild(router, res, projectData.id);
+      } catch (error) {
+        // A timeout almost certainly means the server started the deploy but was
+        // slow to return the id — show the deployments list so it's visible rather
+        // than stranding the user on an error.
+        if (isAbortError(error)) {
+          showToast(
+            t.projects.redeploy.deployStartedLong,
+            "success",
+            t.projects.redeploy.deployingTitle,
+          );
+          router.push(`/projects/${projectData.id}/deployments`);
+          return;
+        }
+        console.error("Redeploy failed:", error);
+        showToast(
+          mode === "refresh"
+            ? t.projects.redeploy.couldNotRefresh
+            : t.projects.redeploy.couldNotRedeploy,
+          "error",
+          t.projects.redeploy.errorTitle,
+        );
+        setIsRedeploying(false); // success navigates away; only clear on failure
       }
-      console.error("Redeploy failed:", error);
-      showToast(
-        mode === "refresh"
-          ? t.projects.redeploy.couldNotRefresh
-          : t.projects.redeploy.couldNotRedeploy,
-        "error",
-        t.projects.redeploy.errorTitle,
-      );
-      setIsRedeploying(false); // success navigates away; only clear on failure
-    }
-  }, [projectData?.id, router, showToast, t]);
+    },
+    [projectData?.id, router, showToast, t],
+  );
 
   const handleRedeploy = async () => {
     if (!projectData?.id || isRedeploying) return;
@@ -222,25 +250,31 @@ export const Deployments = () => {
 
   return (
     <div className="space-y-6">
-      {/* Routing-not-synced nudge — the release is live on the server but its
-          free .opsh.io edge route didn't sync. A dedicated Retry re-runs just
-          the edge sync (no rebuild); on success the warning clears. */}
-      {projectData.routingUnsynced && !projectData.awaitingDecision && (
+      {/* Blocked deploy — FIRST, because nothing shipped: the newest release
+          didn't go out, whereas every other callout below is about a release that
+          did. The copy and the button both come from the API item, so the reason
+          (which process, which pid, whether it's a stale Openship deployment we
+          can safely stop) is the server's answer rather than a guess here. */}
+      {blockedAction && (
         <WarningCallout
-          title={t.projects.routingRetry.title}
-          description={t.projects.routingRetry.description}
+          tone="danger"
+          title={blockedAction.title}
+          description={blockedAction.message}
           actions={
             <button
               type="button"
-              onClick={handleRetryRouting}
-              disabled={isRetryingRoute}
-              className="rounded-lg bg-warning-solid px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-warning-solid/90 disabled:opacity-60"
+              onClick={() => void handleRedeploy()}
+              disabled={isRedeploying}
+              className="rounded-lg bg-danger-solid px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-60"
             >
-              {isRetryingRoute ? t.projects.routingRetry.retrying : t.projects.routingRetry.retry}
+              {isRedeploying ? t.projects.redeploy.deploying : t.projects.deployBlocked.redeploy}
             </button>
           }
         />
       )}
+
+      {/* Routing-not-synced lives on Domains & Routes (RoutingUnsyncedCallout):
+          the release itself shipped fine, so the fix belongs beside the routes. */}
 
       {/* Action-required nudge — the live release is a partial-failure deploy
           still awaiting a keep/reject decision. Links to the build screen where
@@ -272,11 +306,13 @@ export const Deployments = () => {
               <span className="font-mono text-foreground/80">
                 {commitStatus.latestSha?.slice(0, 7)}
               </span>
-              {commitStatus.latestMessage ? ` · ${commitStatus.latestMessage}` : ""} {t.projects.redeploy.newCommitOn}{" "}
+              {commitStatus.latestMessage ? ` · ${commitStatus.latestMessage}` : ""}{" "}
+              {t.projects.redeploy.newCommitOn}{" "}
               <span className="font-mono text-foreground/80">{commitStatus.branch}</span>
               {commitStatus.deployedSha ? (
                 <>
-                  {" "}{t.projects.redeploy.newCommitDeployedOn}{" "}
+                  {" "}
+                  {t.projects.redeploy.newCommitDeployedOn}{" "}
                   <span className="font-mono text-foreground/80">
                     {commitStatus.deployedSha.slice(0, 7)}
                   </span>
@@ -308,12 +344,11 @@ export const Deployments = () => {
           description={
             <>
               {t.projects.redeploy.newVersionAvailable}{" "}
-              <span className="font-mono text-foreground/80">
-                v{commitStatus.latestVersion}
-              </span>
+              <span className="font-mono text-foreground/80">v{commitStatus.latestVersion}</span>
               {commitStatus.currentVersion ? (
                 <>
-                  {" "}{t.projects.redeploy.newVersionDeployed}{" "}
+                  {" "}
+                  {t.projects.redeploy.newVersionDeployed}{" "}
                   <span className="font-mono text-foreground/80">
                     v{commitStatus.currentVersion}
                   </span>
@@ -338,62 +373,72 @@ export const Deployments = () => {
       )}
 
       {!isSelfApp && (
-      <div className="bg-card rounded-2xl border border-border/50 p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Rocket className="size-5" />
+        <div className="bg-card rounded-2xl border border-border/50 p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Rocket className="size-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">
+                  {t.projects.redeploy.deployLatestTitle}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {hasMultipleServices
+                    ? t.projects.redeploy.deployLatestMulti
+                    : t.projects.redeploy.deployLatestSingle}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">{t.projects.redeploy.deployLatestTitle}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {hasMultipleServices
-                  ? t.projects.redeploy.deployLatestMulti
-                  : t.projects.redeploy.deployLatestSingle}
-              </p>
-            </div>
-          </div>
 
-          {/* Primary action + a caret menu for the variants — one clean
+            {/* Primary action + a caret menu for the variants — one clean
               control instead of three competing buttons. */}
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleRedeploy}
-              disabled={isRedeploying}
-              className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
-            >
-              {isRedeploying ? t.projects.redeploy.deployingButton : t.projects.redeploy.redeployProject}
-            </button>
-            <DropdownMenu
-              align="right"
-              disabled={isRedeploying}
-              triggerClassName="inline-flex items-center justify-center rounded-xl border border-border/60 bg-muted/30 p-2.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              trigger={<ChevronDown className="size-4" />}
-              actions={[
-                {
-                  id: "refresh",
-                  label: t.projects.redeploy.refreshEnv,
-                  icon: <RefreshCw className="size-4" />,
-                  onClick: () => runRedeploy("refresh"),
-                },
-                ...(hasMultipleServices
-                  ? [
-                      {
-                        id: "rebuild",
-                        label: t.projects.redeploy.rebuildAll,
-                        icon: <Layers className="size-4" />,
-                        onClick: () => runRedeploy("all"),
-                      },
-                    ]
-                  : []),
-              ]}
-            />
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleRedeploy}
+                disabled={isRedeploying}
+                className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+              >
+                {isRedeploying
+                  ? t.projects.redeploy.deployingButton
+                  : t.projects.redeploy.redeployProject}
+              </button>
+              <DropdownMenu
+                align="right"
+                disabled={isRedeploying}
+                triggerClassName="inline-flex items-center justify-center rounded-xl border border-border/60 bg-muted/30 p-2.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                trigger={<ChevronDown className="size-4" />}
+                actions={[
+                  {
+                    id: "refresh",
+                    label: t.projects.redeploy.refreshEnv,
+                    icon: <RefreshCw className="size-4" />,
+                    onClick: () => runRedeploy("refresh"),
+                  },
+                  ...(hasMultipleServices
+                    ? [
+                        {
+                          id: "rebuild",
+                          label: t.projects.redeploy.rebuildAll,
+                          icon: <Layers className="size-4" />,
+                          onClick: () => runRedeploy("all"),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </div>
           </div>
         </div>
-      </div>
       )}
 
-      <DeploymentsContent projectId={id} projectName={projectData.name} hideHeader hideSidebar />
+      <DeploymentsContent
+        projectId={id}
+        projectName={projectData.name}
+        appTemplateId={projectData.isApp ? (projectData.appTemplateId ?? undefined) : undefined}
+        hideHeader
+        hideSidebar
+      />
     </div>
   );
 };

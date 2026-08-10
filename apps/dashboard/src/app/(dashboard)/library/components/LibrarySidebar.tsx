@@ -15,6 +15,7 @@ import {
   Shield,
 } from "lucide-react";
 import type { GitHubRepo, GitHubConnectionState } from "@/context/GitHubContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 
 interface LibrarySidebarProps {
@@ -27,6 +28,10 @@ interface LibrarySidebarProps {
   /** Whether the local instance is connected to Openship Cloud. Drives
    *  the "safer remote cloning" CTA card. */
   cloudConnected: boolean;
+  /** Authoritative owner-wide counts from the server (GitHub's real totals).
+   *  Preferred over counting the `repos` array, which is only the current page
+   *  under server-side pagination. Falls back to `repos` when omitted. */
+  counts?: { total: number; publicCount: number; privateCount: number };
 }
 
 export function LibrarySidebar({
@@ -35,11 +40,13 @@ export function LibrarySidebar({
   selfHosted,
   state,
   cloudConnected,
+  counts,
 }: LibrarySidebarProps) {
   const { t } = useI18n();
   const connected = state.primary !== null;
-  const publicCount = repos.filter((r) => !r.private).length;
-  const privateCount = repos.filter((r) => r.private).length;
+  const total = counts?.total ?? repos.length;
+  const publicCount = counts?.publicCount ?? repos.filter((r) => !r.private).length;
+  const privateCount = counts?.privateCount ?? repos.filter((r) => r.private).length;
 
   // NOTE: the library never probes the App. The state here is gh-FIRST (from
   // GET /github/home, which is zero-cloud when gh is logged in), so the App
@@ -62,7 +69,7 @@ export function LibrarySidebar({
       )}
 
       {/* Stats (when connected) */}
-      {connected && repos.length > 0 && (
+      {connected && total > 0 && (
         <div className="bg-card rounded-2xl border border-border/50 p-5">
           <div className="flex items-center gap-2 mb-4">
             <BookOpen className="size-4 text-muted-foreground" />
@@ -76,7 +83,7 @@ export function LibrarySidebar({
                 </div>
                 <span className="text-sm text-muted-foreground">{t.library.sidebar.total}</span>
               </div>
-              <span className="text-lg font-semibold text-foreground">{repos.length}</span>
+              <span className="text-lg font-semibold text-foreground">{total}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -167,8 +174,37 @@ function SelfHostedConnectionCard({
   selectedOwner: string;
 }) {
   const { t } = useI18n();
+  const { deployMode } = usePlatform();
+  // gh CLI / `gh auth login` is a DESKTOP concept. A VPS runs the API in a
+  // container with no `gh` and no shell, so its row must never say "gh CLI" or
+  // "Run gh auth login" — it connects with a token (or the App).
+  const isDesktop = deployMode === "desktop";
   const cliConnected = state.sources.ghCli.available;
   const cliLogin = state.sources.ghCli.login;
+  // Name it by how it was actually connected. This row said "gh CLI" for every
+  // identity, so a pasted token or a browser sign-in was reported as a gh-CLI
+  // connection — which is not what happened and sent people looking for a CLI.
+  const cliMethod = state.sources.ghCli.method ?? "host-cli";
+  const cliLabel =
+    cliMethod === "token"
+      ? t.library.sidebar.methodToken
+      : cliMethod === "device"
+        ? t.library.sidebar.methodDevice
+        : t.library.sidebar.ghCli;
+  // Primary row, gated on platform: desktop keeps the gh-CLI framing (Terminal +
+  // "Run gh auth login"); a VPS shows the real method (never "gh CLI") and a
+  // plain "Not connected" instead of a shell instruction it can't follow.
+  const primaryIcon = isDesktop ? Terminal : Github;
+  const primaryLabel = isDesktop
+    ? cliLabel
+    : cliMethod === "device"
+      ? t.library.sidebar.methodDevice
+      : t.library.sidebar.methodToken;
+  const primarySublabel = cliConnected
+    ? `@${cliLogin}`
+    : isDesktop
+      ? t.library.sidebar.runGhAuth
+      : t.library.sidebar.notConnected;
 
   // App status is NOT part of the gh-first `state` (GET /github/home is
   // zero-cloud by design). To show the REAL App connection without slowing the
@@ -212,24 +248,30 @@ function SelfHostedConnectionCard({
       </div>
 
       <div className="space-y-2.5">
-        {/* PRIMARY: gh CLI */}
+        {/* PRIMARY: the instance's own GitHub identity (gh CLI on desktop; a
+            token on a VPS — never gh-CLI framing there). */}
         <SourceRow
-          icon={Terminal}
-          label={t.library.sidebar.ghCli}
-          sublabel={cliConnected ? `@${cliLogin}` : t.library.sidebar.runGhAuth}
+          icon={primaryIcon}
+          label={primaryLabel}
+          sublabel={primarySublabel}
           connected={cliConnected}
           tone="primary"
         />
 
-        {/* SECONDARY: Openship Cloud App. Real status comes from the async
-            /github/status probe above — accurate without blocking the library. */}
-        <SourceRow
-          icon={Cloud}
-          label={t.library.sidebar.openshipCloudApp}
-          sublabel={appSublabel}
-          connected={appStatus?.connected ?? false}
-          tone="secondary"
-        />
+        {/* SECONDARY: Openship Cloud App — rendered ONLY when it is actually
+            connected. A permanent "Openship Cloud App · Not connected" row on a
+            self-hosted install is an advert, not status: nothing here needs it,
+            and sitting next to the working connection it read like something was
+            half-configured. Connecting it lives in Settings. */}
+        {appStatus?.connected && (
+          <SourceRow
+            icon={Cloud}
+            label={t.library.sidebar.openshipCloudApp}
+            sublabel={appSublabel}
+            connected
+            tone="secondary"
+          />
+        )}
       </div>
 
       {/* Footnote: the library is gh-driven; App status + install live in Settings */}

@@ -71,6 +71,16 @@ export type DeployableService = ComposeService & MonorepoSubAppFields & {
     customDomain?: string | null;
     domainType?: string | null;
   }>;
+  /**
+   * Whether ANY service_deployment row has ever been recorded for this
+   * service. `undefined` means unknown (the caller supplied services
+   * directly, e.g. an in-flight wizard session, rather than projecting them
+   * from the project's saved `service` rows) — preflight treats that as "not
+   * provably dead" and keeps failing loudly. Only an explicit `false` — a
+   * saved row this project has never once deployed — is eligible for the
+   * dead-row carve-out.
+   */
+  everDeployed?: boolean;
 };
 
 /**
@@ -90,11 +100,17 @@ export function serviceKind(
 
 /**
  * A monorepo sub-app that is a STATIC build (frontend/static framework, no
- * long-running server command of its own). Such a sub-app is served as files
- * by a minimal nginx image (built via the static Dockerfile branch) rather than
- * by running a `startCommand`. Derived from the persisted `framework` category +
- * absence of a start command, so no extra DB column is needed. Compose services
- * (Dockerfile/image) are never treated as static here.
+ * long-running server command of its own). Served as FILES rather than by running
+ * a `startCommand`:
+ *
+ *   self-hosted → the build output is moved to a host directory and the edge serves
+ *                 it with `root`. No container, no port, no second web server.
+ *   cloud       → a minimal nginx image, because Oblien runs the workload and there
+ *                 is no host directory to serve.
+ *
+ * Derived from the persisted `framework` category + absence of a start command, so
+ * no extra DB column is needed. Compose services (Dockerfile/image) are never
+ * treated as static here.
  */
 export function isStaticService(service: {
   kind?: string | null;

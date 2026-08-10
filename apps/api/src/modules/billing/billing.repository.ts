@@ -21,6 +21,7 @@ import {
   type CreditPackDefinition,
 } from "@repo/core";
 import { getQuotaState } from "./billing-oblien-quota";
+import { env } from "../../config/env";
 
 const {
   billingCustomer,
@@ -58,6 +59,43 @@ export interface BillingState {
    * build-session durations) — Oblien does not meter build separately.
    */
   buildTimeMinutes: number;
+  /**
+   * Live per-resource capacity + consumption for the dashboard's Capacity
+   * panel. Optional + additive: populated on the cloud once the resource
+   * meters are wired, forwarded verbatim by the self-hosted billing proxy.
+   * Each meter is `{ used, max }`; `used === null` = not yet reported,
+   * `max === null` = no ceiling on this plan. Keep in sync with the dashboard
+   * `BillingCapacity` type in apps/dashboard/src/lib/api/billing.ts.
+   */
+  capacity?: {
+    routes?: { used: number | null; max: number | null };
+    workspaces?: { used: number | null; max: number | null };
+    vcpus?: { used: number | null; max: number | null };
+    ramMb?: { used: number | null; max: number | null };
+    diskGb?: { used: number | null; max: number | null };
+    bandwidthGb?: { used: number | null; max: number | null };
+  };
+  /**
+   * MASTER billing-feature availability, decided by Openship Cloud and driven
+   * by `BILLING_ENABLED`. Every mode reads this (SaaS builds it; self-hosted +
+   * local forward it verbatim through the billing proxy) so the dashboard knows
+   * whether billing is live or "coming soon". Stripe-mutating endpoints enforce
+   * the same flag server-side, so billing goes live by flipping the cloud flag —
+   * no dashboard or self-hosted release.
+   */
+  billing: {
+    enabled: boolean;
+    status: "live" | "coming_soon" | "disabled";
+  };
+  /**
+   * One-time credit top-up availability. Requires BOTH the master switch and
+   * `BILLING_TOPUPS_ENABLED`, so subscriptions can launch before top-ups. The
+   * dashboard uses it to enable the buy flow or show the "coming soon" preview.
+   */
+  topups: {
+    available: boolean;
+    status: "available" | "coming_soon" | "unavailable";
+  };
 }
 
 export interface BillingCustomer {
@@ -175,6 +213,15 @@ export async function getBillingState(orgId: string): Promise<BillingState> {
     monthlyCreditLimit,
     overQuota,
     buildTimeMinutes,
+    billing: {
+      enabled: env.BILLING_ENABLED,
+      status: env.BILLING_ENABLED ? "live" : "coming_soon",
+    },
+    topups: {
+      // Top-ups need the master switch AND the sub-switch.
+      available: env.BILLING_ENABLED && env.BILLING_TOPUPS_ENABLED,
+      status: env.BILLING_ENABLED && env.BILLING_TOPUPS_ENABLED ? "available" : "coming_soon",
+    },
   };
 }
 

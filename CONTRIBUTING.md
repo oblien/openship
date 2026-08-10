@@ -2,6 +2,60 @@
 
 Thanks for your interest in contributing! This guide covers everything you need to get started.
 
+## Before you open a pull request
+
+**Bug fixes, tests, docs, and small self-contained improvements** are welcome as direct pull
+requests — no need to ask first.
+
+**New features, behavior changes, new dependencies, new endpoints, schema/migration changes, or
+anything architectural** must start as an **issue** so we can agree on the feature *and* the
+approach *before* any code is written. A PR for one of these without an agreed issue will likely be
+closed unmerged — not because the idea is bad, but because settling direction after the code exists
+wastes your effort and ours. The flow:
+
+1. Open an issue describing the problem, the change you propose, and how you'd approach it.
+2. Wait for a maintainer to agree on scope + approach (usually quick).
+3. Implement it, and link the issue in your PR.
+
+If you're unsure whether something counts as a "fix" or a "feature," open an issue and ask — that's
+always the cheaper path.
+
+### Pull request quality bar
+
+Every PR is reviewed by a human, so make it easy to trust:
+
+- **One change per PR.** One bug, or one agreed feature. Don't bundle unrelated changes.
+- **Scope the diff.** Touch only the files your change needs. Do **not** reformat unrelated lines
+  or "fix" pre-existing Prettier/lint drift on lines you aren't otherwise changing — run
+  `bun format`, then review the diff and drop anything unrelated before you push.
+- **Explain the why.** State what was broken (or what the linked issue agreed), and exactly how you
+  verified it — the commands you ran and the before/after behavior.
+- **Prove it.** Add a test that fails without your change and passes with it, and say so in the PR.
+- **No test spam.** A test earns its place by catching a regression that could actually happen.
+  Don't add tests to move a coverage number, and don't submit ones that assert a constant equals
+  itself, re-check what the type system already guarantees, only verify that a mock you just wrote
+  was called, or restate the implementation line by line. Those pass forever, catch nothing, and
+  every future contributor pays to read and maintain them. Coverage percentage is not a review
+  criterion — one test that genuinely fails without your change is worth more than twenty that
+  can't fail at all.
+- **Green before you open.** `bun run test`, the relevant typecheck (`bun run --cwd <workspace>
+  lint`), and `bun format` all pass locally.
+
+### Using AI assistants
+
+AI tools are fine to use — but **you** are the author and are accountable for every line you submit:
+
+- **Understand your whole diff.** If you can't explain a line in review, don't submit it.
+- **Verify, don't trust.** Actually run the change and confirm it does what the PR claims. Do not
+  paste generated code — or a generated PR description — that you haven't checked against the real
+  codebase.
+- **Keep it real and scoped.** The PRs that waste the most review time are plausible-looking but
+  unverified: invented/nonexistent APIs, fixes for bugs that don't exist, sweeping reformats, or
+  duplicates of open work. Low-effort, speculative, or spammy PRs (AI-generated or not) are closed
+  on sight.
+
+A focused, verified, well-explained PR — AI-assisted or not — is exactly what we want.
+
 ## Prerequisites
 
 - [Bun 1.3.10](https://bun.sh/) (pinned in `.bun-version` and `package.json`)
@@ -16,7 +70,7 @@ cd openship
 bun install --frozen-lockfile
 cp apps/api/.env.example apps/api/.env
 cp apps/dashboard/.env.example apps/dashboard/.env
-bun dev:local
+bun dev
 ```
 
 This starts the API and dashboard used for local development:

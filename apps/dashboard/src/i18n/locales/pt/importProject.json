@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "Diretório com o resultado do build",
     "sourceFolderLabel": "Pasta de Origem",
     "sourceFolderDesc": "Compila a partir de um subdiretório dentro do repositório ou projeto local.",
+    "composePath": {
+      "title": "Arquivo Compose",
+      "subtitle": "Detectado automaticamente na raiz do projeto",
+      "label": "Caminho para o arquivo Compose",
+      "description": "Para repositórios que mantêm o compose fora da raiz — informe o arquivo (deploy/stack.yml) ou a pasta que o contém (deploy/docker-compose). O repositório é reanalisado e os serviços declarados são implantados.",
+      "apply": "Analisar",
+      "scanning": "Analisando…",
+      "scanFailed": "Não foi possível analisar esse caminho do Compose.",
+      "subtitleOptIn": "Implantar com Docker Compose? Aponte para o arquivo."
+    },
+    "healthCheck": {
+      "title": "Verificações de saúde",
+      "subtitle": "Desligadas — o deploy termina assim que a app está a correr",
+      "subtitleOn": "Ligadas — o deploy espera pela tua app antes de ficar no ar",
+      "description": "O Openship não espera pela tua app depois de a arrancar, por isso um arranque lento nunca atrasa nem falha um deploy. Depois de estar no ar, a porta é verificada de qualquer forma e reportada sem bloquear nada. Liga isto só se quiseres que o próprio deploy se recuse a ficar verde.",
+      "probeLabel": "Esperar que a app responda",
+      "probeDesc": "Depois de o contentor arrancar, contactar a porta da app e esperar que aceite uma ligação.",
+      "pathLabel": "Caminho HTTP",
+      "pathPlaceholder": "/health",
+      "pathDesc": "Exige que um GET aqui responda abaixo de 500. Deixa vazio para aceitar qualquer ligação TCP, o que também funciona para serviços que não são HTTP.",
+      "timeoutLabel": "Desistir após (segundos)",
+      "stabilizationLabel": "Vigiar ciclos de reinício",
+      "stabilizationDesc": "Vigia o contentor depois de arrancar e reporta um ciclo de falhas. Lê o runtime, por isso também funciona em servidores remotos.",
+      "stabilizationWindowLabel": "Vigiar durante (segundos)",
+      "onFailureLabel": "Se uma verificação falhar",
+      "onFailureWarn": "Manter o deploy no ar e sinalizá-lo para revisão",
+      "onFailureFail": "Falhar o deploy e manter a versão anterior a servir"
+    },
     "buildImageLabel": "Imagem de Build",
     "buildImageDesc": "Imagem de container do compilador para builds em cloud ou servidor. Substitua-a quando a imagem base detectada estiver incorreta.",
     "productionPathsLabel": "Caminhos de Produção",
@@ -122,6 +150,11 @@
       "clipboardEmpty": "A área de transferência está vazia",
       "clipboardInvalid": "A área de transferência não contém variáveis de ambiente KEY=VALUE válidas",
       "clipboardBlocked": "O acesso à área de transferência foi bloqueado. Clique dentro da caixa de ambiente e cole com Cmd/Ctrl+V."
+    },
+    "reveal": {
+      "show": "Mostrar valores",
+      "hide": "Ocultar valores",
+      "error": "Não foi possível revelar os valores"
     }
   },
   "composeServices": {
@@ -278,7 +311,6 @@
       "successful": "Implantação Bem-sucedida",
       "deploying": "Implantando..."
     },
-    "viewDashboard": "Ver dashboard",
     "visitSite": "Visitar Site",
     "warningTitle": "A implantação foi concluída, mas alguns serviços ainda precisam de atenção.",
     "productionLogs": "Logs de Produção",
@@ -320,7 +352,6 @@
     "running": "em execução",
     "buildingSuffix": "· {count} compilando",
     "failedSuffix": "· {count} com falha",
-    "viewDashboard": "Ver Dashboard",
     "decisionBannerTitle": "Ação necessária — alguns serviços falharam",
     "decisionBannerDefaultMsg": "Esta implantação foi concluída com serviços que falharam. Mantenha-a e corrija-os depois, ou rejeite-a para restaurar a versão anterior.",
     "review": "Revisar",

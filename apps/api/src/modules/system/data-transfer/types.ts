@@ -60,4 +60,13 @@ export interface ImportResult {
   secretsRehydrated: number;
   /** true when the file had no secrets, or had secrets but no passphrase was supplied. */
   secretsSkipped: boolean;
+  /**
+   * Projects whose source is a LOCAL FOLDER path (localPath / folder-upload).
+   * That path is machine-specific — it points at the SOURCE machine and almost
+   * certainly does not exist on this install (e.g. a Mac path imported onto a
+   * Linux server). The next deploy of these projects can't find the folder until
+   * you re-point localPath (or re-deploy from a folder on THIS machine). Warn-only
+   * — we never guess a rewrite. Empty when nothing needs attention.
+   */
+  localPathProjects: Array<{ slug: string; localPath: string }>;
 }

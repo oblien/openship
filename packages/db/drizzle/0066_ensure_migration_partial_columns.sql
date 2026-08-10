@@ -1,0 +1,2 @@
+ALTER TABLE "docker_migration_run" ADD COLUMN IF NOT EXISTS "pending_items" jsonb DEFAULT '[]'::jsonb;--> statement-breakpoint
+ALTER TABLE "docker_migration_run" ADD COLUMN IF NOT EXISTS "input_snapshot" jsonb;

@@ -22,7 +22,7 @@ export interface ProductTip {
 export const PRODUCT_TIPS: ProductTip[] = [
   { id: "envVars", href: "/projects" },
   { id: "customDomain", href: "/projects" },
-  { id: "autoDeploy", href: "/settings/git" },
+  { id: "autoDeploy", href: "/settings" },
   { id: "rollback", href: "/deployments" },
   { id: "apps", href: "/apps" },
   { id: "servers", href: "/servers", selfHostedOnly: true },

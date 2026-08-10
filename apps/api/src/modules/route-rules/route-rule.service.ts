@@ -12,8 +12,7 @@
 import { repos } from "@repo/db";
 import type { RouteRuleSpec } from "@repo/core";
 import { safeErrorMessage } from "@repo/core";
-import { OPENRESTY_MGMT_PORT } from "@repo/adapters";
-import { postMgmtJson } from "../../lib/project-analytics";
+import { postEdgeMgmt } from "../../lib/project-analytics";
 import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
 
 /** One host's rules in the shape `rules_guard.lua` reads (longest prefix wins). */
@@ -60,23 +59,18 @@ export async function serializeProjectRules(
   return out;
 }
 
-/** Push one host's rules to the edge (SSH tunnel for a server, loopback for local). */
+/** Push one host's rules to the edge (SSH tunnel for a server, loopback for local).
+ *  The server-vs-local branch lives in `postEdgeMgmt`, shared with the analytics
+ *  collection-switch push, so the two cannot disagree about where "local" is. */
 async function pushHost(
   serverId: string | null,
   host: string,
   rules: HostRuleEntry[],
+  organizationId?: string,
 ): Promise<void> {
-  const body = { host, rules };
-  if (serverId) {
-    await postMgmtJson(serverId, "/rules", body);
-    return;
-  }
-  // Local target: OpenResty's mgmt port is on this host's loopback.
-  await fetch(`http://127.0.0.1:${OPENRESTY_MGMT_PORT}/rules`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  }).catch(() => {});
+  // organizationId is how a null serverId gets resolved to the "This Server" row. Without
+  // it a local target has no edge to reach — see postEdgeMgmt.
+  await postEdgeMgmt(serverId, "/rules", { host, rules }, organizationId);
 }
 
 /**
@@ -89,9 +83,10 @@ export async function pushProjectRules(
   serverId: string | null,
   priorHostnames: string[] = [],
 ): Promise<void> {
-  const [map, domains] = await Promise.all([
+  const [map, domains, project] = await Promise.all([
     serializeProjectRules(projectId),
     repos.domain.listByProject(projectId),
+    repos.project.findById(projectId).catch(() => null),
   ]);
   // Push EVERY current hostname (empty ruleset = clear), so a deleted/disabled
   // rule stops enforcing without the caller tracking prior state. priorHostnames
@@ -103,7 +98,7 @@ export async function pushProjectRules(
   ]);
   await Promise.all(
     Array.from(hosts).map((host) =>
-      pushHost(serverId, host, map.get(host) ?? []).catch((err) =>
+      pushHost(serverId, host, map.get(host) ?? [], project?.organizationId).catch((err) =>
         console.warn(`[route-rules] push failed for ${host}: ${safeErrorMessage(err)}`),
       ),
     ),

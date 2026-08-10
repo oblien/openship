@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { mkdtemp, rm as fsRm, stat, unlink } from "node:fs/promises";
 import { connect as netConnect } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join, posix } from "node:path";
 import { Duplex } from "node:stream";
 import { promisify } from "node:util";
 import { randomBytes } from "node:crypto";
@@ -30,6 +30,11 @@ import { openSystemSshReverseTunnel } from "./reverse-tunnel";
 import { SshDisconnectedError } from "./errors";
 
 const execFileAsync = promisify(execFile);
+
+/** `dirname` for a path on the TARGET Linux box — always POSIX, never the control
+ *  plane's native separators. The plain `join` is the other namespace: LOCAL
+ *  staging paths under tmpdir. See SshExecutor for what a leaked backslash costs. */
+const remoteDirname = posix.dirname;
 
 /** Clamp a PTY window dimension to a sane range (mirrors SshExecutor). */
 function clampWindow(value: number | undefined, fallback: number, min: number, max: number): number {
@@ -269,11 +274,15 @@ export class SystemSshExecutor implements CommandExecutor {
   }
 
   async writeFile(path: string, content: string): Promise<void> {
-    const remoteCommand = `mkdir -p ${sq(dirname(path))} && cat > ${sq(path)}`;
+    const remoteCommand = `mkdir -p ${sq(remoteDirname(path))} && cat > ${sq(path)}`;
     const res = await this.runSsh(remoteCommand, { input: content });
     if (res.code !== 0) {
       throw new Error(res.stderr.trim() || `Failed to write ${path} (exit ${res.code})`);
     }
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    await this.exec(`mv ${sq(from)} ${sq(to)}`);
   }
 
   async readFile(path: string): Promise<string> {
@@ -363,7 +372,7 @@ export class SystemSshExecutor implements CommandExecutor {
       onLog?.(logEntry("Packing source into a single archive..."));
       await packLocalArchive(tarArgs, localArchive);
       const totalBytes = (await stat(localArchive)).size;
-      await this.exec(`mkdir -p ${sq(dirname(remoteArchive))}`);
+      await this.exec(`mkdir -p ${sq(remoteDirname(remoteArchive))}`);
 
       const rsync = await canUseRemoteRsync(deps);
       if (rsync.ok) {

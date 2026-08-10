@@ -8,9 +8,16 @@
 import * as githubService from "../github/github.service";
 import type { RequestContext } from "../../lib/request-context";
 import { MANIFEST_FILES, type RepoFile, type StackResult } from "../../lib/stack-detector";
-import { parseComposeEnvFile, parseComposeFile, type ComposeService } from "../../lib/compose-parser";
+import {
+  parseComposeEnvFile,
+  parseComposeFile,
+  type ComposeMissingVariable,
+  type ComposeService,
+} from "../../lib/compose-parser";
+import { maskEnv, maskScanService } from "../../lib/secret-env";
 import {
   applyWorkspaceContext,
+  buildProjectRootSnapshot,
   discoverMonorepoApps,
   discoverProjectRootHints,
   normalizeProjectRootDirectory,
@@ -32,7 +39,10 @@ import {
   type OpenshipEnv,
   type OpenshipService,
   type OpenshipResources,
+  type OpenshipReadiness,
   type OpenshipMonorepoApp,
+  type ComposeAdvanced,
+  resolveTierResources,
 } from "@repo/core";
 import { env } from "../../config";
 import { createGitHubReader, type ProjectReader } from "./project-reader";
@@ -61,8 +71,108 @@ export type Source =
        *  Optional in the type for back-compat with old callers; the
        *  github resolver throws when it's missing. */
       ctx?: RequestContext;
+      /** See {@link ResolveOptions.composePath}. */
+      composePath?: string;
+      /** See {@link ResolveOptions.env}. */
+      env?: Record<string, string>;
     }
-  | { source: "local"; path: string };
+  | {
+      source: "local";
+      path: string;
+      composePath?: string;
+      /** See {@link ResolveOptions.env}. */
+      env?: Record<string, string>;
+    };
+
+export interface ResolveOptions {
+  /**
+   * Where the compose file lives when it is NOT at the auto-detected project
+   * root — either the file itself (`"deploy/stack.yml"`, which also covers
+   * non-standard filenames) or the directory holding it
+   * (`"deploy/docker-compose"`).
+   *
+   * Declaring this is an instruction, not a hint: root selection and monorepo
+   * discovery are skipped, the project is a compose/services deploy, and a path
+   * with no compose file is an error rather than a silent fall-back to a
+   * buildpack build (the confusing behaviour this option exists to replace).
+   */
+  composePath?: string;
+  /**
+   * Env the caller already holds for this deploy (the values configured on the
+   * project / entered in the wizard). Compose interpolation resolves against
+   * these on top of the repo `.env`, so a file declaring `${VAR:?...}` scans
+   * cleanly once the user has supplied VAR — without it the scan reports the
+   * file as unparseable even though the deploy would have succeeded (#383).
+   */
+  env?: Record<string, string>;
+}
+
+/** Thrown when a declared `composePath` has no compose file behind it. */
+class ComposePathNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ComposePathNotFoundError";
+  }
+}
+
+/** Where a declared compose path points, before we've looked at the tree. */
+interface DeclaredComposeTarget {
+  /** Directory to snapshot, repo-relative ("" = the repo root). */
+  directory: string;
+  /** Filenames to accept in it, in priority order — exactly one for a file path. */
+  candidates: string[];
+}
+
+/**
+ * Split a declared compose path into "which directory" and "which filenames".
+ * Pure — the caller does the single directory listing.
+ *
+ * File-vs-directory is decided by the YAML extension, NOT by the standard
+ * compose filenames: matching only `docker-compose.yml`/`compose.yml` would treat
+ * `deploy/stack.yml` as a directory of that name, losing the non-standard
+ * filename support that is half the point of accepting a file path.
+ */
+function parseDeclaredComposePath(composePath: string): DeclaredComposeTarget {
+  const normalized = normalizeProjectRootDirectory(composePath);
+  const segments = normalized ? normalized.split("/") : [];
+
+  // `..` can't be resolved against a repo we only have a listing for, and would
+  // escape the checkout.
+  if (segments.some((segment) => segment === "..")) {
+    throw new ComposePathNotFoundError(
+      `Compose path "${composePath}" must be inside the repository (no "..").`,
+    );
+  }
+
+  const basename = segments.at(-1) ?? "";
+  if (/\.ya?ml$/i.test(basename)) {
+    return { directory: segments.slice(0, -1).join("/"), candidates: [basename] };
+  }
+  return { directory: normalized, candidates: [...COMPOSE_FILES] };
+}
+
+/** Pick the declared compose file out of its directory's listing, or explain why not. */
+function pickDeclaredComposeFile(
+  files: RepoFile[],
+  target: DeclaredComposeTarget,
+  composePath: string,
+): string {
+  const where = target.directory || ".";
+  if (files.length === 0) {
+    throw new ComposePathNotFoundError(
+      `Compose path "${composePath}" was not found in the repository — "${where}" is empty or does not exist.`,
+    );
+  }
+
+  const [match] = presentComposeFiles(files, target.candidates);
+  if (!match) {
+    throw new ComposePathNotFoundError(
+      `No compose file found at "${composePath}" — looked for ${target.candidates.join(", ")} in "${where}".`,
+    );
+  }
+
+  return match;
+}
 
 export interface ProjectInfo {
   repository: {
@@ -86,9 +196,21 @@ export interface ProjectInfo {
   buildImage: string;
   outputDirectory: string;
   rootDirectory: string;
+  /**
+   * The compose path this resolution actually used, echoed back so the wizard can
+   * show it and persist it — including when it came from `openship.json` rather
+   * than the request. Absent when the root was detected the usual way.
+   */
+  composePath?: string;
   productionPaths: string[];
+  /** Declared persistent mounts. Undefined = the project inherits the stack's
+   *  `persistentPaths`; `[]` = the user opted out. */
+  volumes?: string[];
   port: number;
   services?: ComposeService[];
+  /** Compose variables the file marks mandatory that no `.env`/caller value
+   *  satisfied — the wizard's list to prompt for. Absent when there are none. */
+  missingRequiredEnv?: ComposeMissingVariable[];
   monorepoApps?: MonorepoApp[];
   monorepoWorkspace?: MonorepoWorkspace;
   rootEnv?: Record<string, string>;
@@ -108,6 +230,12 @@ export interface ProjectInfo {
   publicEndpoints?: DeclaredPublicEndpoint[];
   /** Declared resource sizing (cloud tier or explicit cpu/mem/disk). */
   resources?: OpenshipResources;
+  /**
+   * Declared deploy-time readiness gate. SEEDS the wizard's Health section only —
+   * absent here means the wizard shows it off (the default), which is also what
+   * the pipeline does when the project has no `readiness`.
+   */
+  readiness?: OpenshipReadiness;
 }
 
 /** A `domains[]` entry normalized to the `CreateProjectBody.publicEndpoints` shape. */
@@ -183,10 +311,30 @@ function splitDomain(host: string): { domain?: string; customDomain?: string; do
 }
 
 /**
+ * A declared `resources` block → the `advanced.resources` shape service rows
+ * store. A `tier` resolves through the shared table; explicit cpu/memory win.
+ * Returns undefined when nothing was declared (inherit the project).
+ */
+function toAdvancedResources(
+  r: OpenshipResources | undefined,
+): { cpuCores?: number; memoryMb?: number } | undefined {
+  if (!r) return undefined;
+  const base = r.tier ? resolveTierResources(r.tier) : undefined;
+  const cpuCores = r.cpuCores ?? base?.cpuCores;
+  const memoryMb = r.memoryMb ?? base?.memoryMb;
+  if (cpuCores === undefined && memoryMb === undefined) return undefined;
+  return {
+    ...(cpuCores !== undefined && { cpuCores }),
+    ...(memoryMb !== undefined && { memoryMb }),
+  };
+}
+
+/**
  * Map declared `services[]` to the compose-service rows the deploy pipeline
  * persists. A declared service is a full compose definition, so this replaces
- * detection (the project becomes a `services` project). Healthcheck maps into
- * the `advanced` JSONB blob, mirroring the compose parser.
+ * detection (the project becomes a `services` project). Healthcheck and
+ * per-service resources map into the `advanced` JSONB blob, mirroring the
+ * compose parser.
  */
 function openshipServicesToCompose(services: OpenshipService[]): ComposeService[] {
   return services.map((s) => {
@@ -202,7 +350,17 @@ function openshipServicesToCompose(services: OpenshipService[]): ComposeService[
       volumes: s.volumes ?? [],
       ...(s.command && { command: s.command }),
       ...(s.restart && { restart: s.restart }),
-      ...(s.healthcheck && { advanced: { healthcheck: s.healthcheck } }),
+      ...(() => {
+        // One `advanced` blob, built additively — a per-service `resources`
+        // declaration must not be dropped just because healthcheck is absent
+        // (and vice versa).
+        const advanced: ComposeAdvanced = {};
+        if (s.healthcheck) advanced.healthcheck = s.healthcheck;
+        if (s.readiness) advanced.readiness = s.readiness;
+        const res = toAdvancedResources(s.resources);
+        if (res) advanced.resources = res;
+        return Object.keys(advanced).length > 0 ? { advanced } : {};
+      })(),
       ...(s.exposed !== undefined && { exposed: s.exposed }),
       ...(s.exposedPort && { exposedPort: s.exposedPort }),
       ...(domain ?? {}),
@@ -249,6 +407,8 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
   if (config.rootDirectory) info.rootDirectory = config.rootDirectory;
   if (config.buildImage) info.buildImage = config.buildImage;
   if (config.productionPaths) info.productionPaths = config.productionPaths;
+  // Declared `[]` is meaningful (persistence off), so test for presence, not truth.
+  if (config.volumes) info.volumes = config.volumes;
   if (config.port !== undefined) info.port = config.port;
   if (config.productionMode) info.productionMode = config.productionMode;
   if (config.runtime) info.runtimeMode = config.runtime;
@@ -259,6 +419,7 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
     info.rootEnv = { ...(info.rootEnv ?? {}), ...envMapToRecord(config.env) };
   }
   if (config.resources) info.resources = config.resources;
+  if (config.readiness) info.readiness = config.readiness;
 
   // Declared compose services replace detection: the project IS a services
   // project. runtimeMode="docker" then falls out of buildProductionProjectInput's
@@ -305,16 +466,23 @@ export function projectInfoToScanResponse(result: ProjectInfo) {
     buildImage: result.buildImage,
     outputDirectory: result.outputDirectory,
     rootDirectory: result.rootDirectory,
+    ...(result.composePath && { composePath: result.composePath }),
     productionPaths: result.productionPaths,
     port: result.port,
-    services: result.services,
+    // #336: env values (and their environmentMeta) are masked on output. The
+    // deploy pipeline recovers the real values by re-parsing the source, and the
+    // wizard reveals them on demand via the write-gated reveal endpoint.
+    services: (result.services ?? []).map(maskScanService),
+    ...(result.missingRequiredEnv && { missingRequiredEnv: result.missingRequiredEnv }),
     // Declared-overlay fields (openship.json) — omitted from the response when
     // absent so a repo without the file yields the exact same payload as before.
     ...(result.productionMode && { productionMode: result.productionMode }),
+    ...(result.volumes && { volumes: result.volumes }),
     ...(result.runtimeMode && { runtimeMode: result.runtimeMode }),
     ...(result.publicEndpoints && { publicEndpoints: result.publicEndpoints }),
     ...(result.resources && { resources: result.resources }),
-    ...(result.rootEnv && Object.keys(result.rootEnv).length > 0 && { rootEnv: result.rootEnv }),
+    ...(result.readiness && { readiness: result.readiness }),
+    ...(result.rootEnv && Object.keys(result.rootEnv).length > 0 && { rootEnv: maskEnv(result.rootEnv) }),
     ...(result.routing && { routing: result.routing }),
     ...(result.monorepoWorkspace && { monorepoWorkspace: result.monorepoWorkspace }),
     ...(result.monorepoApps && { monorepoApps: result.monorepoApps }),
@@ -425,16 +593,20 @@ async function readProjectText(
   return reader.readText(joinProjectPath(rootDirectory, name));
 }
 
+/** Which of `candidates` this directory listing actually holds, in candidate order. */
+function presentComposeFiles(files: RepoFile[], candidates: readonly string[]): string[] {
+  return candidates.filter((candidate) =>
+    files.some((file) => file.name.toLowerCase() === candidate.toLowerCase()),
+  );
+}
+
+/** Read the first of `names` that yields content. Names are already known present. */
 async function readComposeText(
   reader: ProjectReader,
   rootDirectory: string,
-  files: RepoFile[],
+  names: string[],
 ): Promise<string | undefined> {
-  for (const name of COMPOSE_FILES) {
-    if (!files.some((file) => file.name.toLowerCase() === name)) {
-      continue;
-    }
-
+  for (const name of names) {
     const composeContent = await readProjectText(reader, rootDirectory, name);
     if (composeContent) {
       return composeContent;
@@ -453,7 +625,10 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
     if (!input.ctx) {
       throw new Error("resolveProjectInfo(github): ctx is required");
     }
-    return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch);
+    return resolveFromGitHub(input.ctx, input.owner, input.repo, input.branch, {
+      composePath: input.composePath,
+      env: input.env,
+    });
   }
 
   if (env.CLOUD_MODE) {
@@ -462,31 +637,111 @@ export async function resolveProjectInfo(input: Source): Promise<ProjectInfo> {
 
   // Dynamic import keeps local-source (node:fs) out of the cloud module graph.
   const { resolveFromLocal } = await import("./local-source");
-  return resolveFromLocal(input.path);
+  return resolveFromLocal(input.path, { composePath: input.composePath, env: input.env });
 }
 
 type RepoMeta = Parameters<typeof toProjectInfo>[0];
 
 /**
- * Shared resolution pipeline: snapshot → select root → read compose/.env → map.
+ * The project root we settled on, however we got there — the detector's pick or a
+ * directory the user pinned. One shape for both so the read → map → overlay tail
+ * below stays single-copy: only the RESOLUTION differs between the two paths.
+ */
+interface ResolvedProjectRoot {
+  selected: ProjectRootSnapshot;
+  monorepo: { apps: MonorepoApp[]; workspace: MonorepoWorkspace } | null;
+  /** Compose filenames to read from, in order. Already confirmed present. */
+  composeFiles: string[];
+  /** The declared path, when there was one — pins projectType and rootDirectory. */
+  declaredComposePath?: string;
+}
+
+/** Root by detection: score the candidate directories and probe for compose. */
+async function resolveDetectedRoot(
+  reader: ProjectReader,
+  rootSnapshot: ProjectRootSnapshotInput,
+): Promise<ResolvedProjectRoot> {
+  const { selected, monorepo } = await selectProjectSnapshot(reader, rootSnapshot);
+  return { selected, monorepo, composeFiles: presentComposeFiles(selected.files, COMPOSE_FILES) };
+}
+
+/**
+ * Root by declaration. Skips `selectPreferredProjectRoot` and
+ * `discoverMonorepoApps` on purpose: the user told us where the compose file is,
+ * so there is nothing to infer and no sub-app flow to offer.
+ */
+async function resolveDeclaredRoot(
+  reader: ProjectReader,
+  composePath: string,
+): Promise<ResolvedProjectRoot> {
+  const target = parseDeclaredComposePath(composePath);
+  // One listing serves both jobs — readProjectSnapshot lists this same directory.
+  const snapshotInput = await readProjectSnapshot(reader, target.directory);
+  const composeFile = pickDeclaredComposeFile(snapshotInput.files, target, composePath);
+
+  return {
+    selected: buildProjectRootSnapshot(snapshotInput),
+    monorepo: null,
+    composeFiles: [composeFile],
+    declaredComposePath: composePath,
+  };
+}
+
+/**
+ * Shared resolution pipeline: snapshot → resolve root → read compose/.env → map.
  * Source-specific work (auth, branch validation, fs stat) lives in the callers.
  */
 export async function resolveFromReader(
   reader: ProjectReader,
   repoMeta: RepoMeta,
   selectedBranch: string,
+  opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
   const rootSnapshot = await readProjectSnapshot(reader);
-  const { selected, monorepo } = await selectProjectSnapshot(reader, rootSnapshot);
-  const [composeContent, composeEnvContent] = await Promise.all([
-    readComposeText(reader, selected.rootDirectory, selected.files),
-    readProjectText(reader, selected.rootDirectory, ".env"),
-  ]);
   const routing = extractRootRouting(rootSnapshot.fileContents ?? {});
   const openshipConfig = extractOpenshipConfig(rootSnapshot.fileContents ?? {});
 
-  const info = toProjectInfo(repoMeta, selected, composeContent, selectedBranch, composeEnvContent, monorepo, routing);
-  return applyOpenshipOverlay(info, openshipConfig);
+  // Configs SEED defaults; an explicit caller value — the user's own edit,
+  // persisted on the project — wins over the repo-declared one. Resolved before
+  // the root so a declared path can pre-empt detection; the overlay applied at
+  // the end of this function is far too late to relocate the compose read.
+  const declaredComposePath = opts.composePath?.trim() || openshipConfig?.composePath?.trim();
+  const root = declaredComposePath
+    ? await resolveDeclaredRoot(reader, declaredComposePath)
+    : await resolveDetectedRoot(reader, rootSnapshot);
+
+  // `.env` sits next to the compose file, which is what compose itself resolves
+  // against — for a declared root that is the pinned directory, not the repo root.
+  const [composeContent, composeEnvContent] = await Promise.all([
+    readComposeText(reader, root.selected.rootDirectory, root.composeFiles),
+    readProjectText(reader, root.selected.rootDirectory, ".env"),
+  ]);
+  if (root.declaredComposePath && !composeContent) {
+    throw new ComposePathNotFoundError(
+      `Compose file "${root.composeFiles[0]}" at "${root.selected.rootDirectory || "."}" could not be read.`,
+    );
+  }
+
+  const info = toProjectInfo(
+    repoMeta,
+    root.selected,
+    composeContent,
+    selectedBranch,
+    composeEnvContent,
+    root.monorepo,
+    routing,
+    { declaredCompose: !!root.declaredComposePath, env: opts.env },
+  );
+  const overlaid = applyOpenshipOverlay(info, openshipConfig);
+
+  if (root.declaredComposePath) {
+    // The compose directory IS this project's root — it anchors every relative
+    // `build:` context. Re-pin it after the overlay so a stray `rootDirectory` in
+    // openship.json can't desync the two and send builds at the wrong folder.
+    overlaid.rootDirectory = root.selected.rootDirectory || "./";
+    overlaid.composePath = root.declaredComposePath;
+  }
+  return overlaid;
 }
 
 async function resolveFromGitHub(
@@ -494,6 +749,7 @@ async function resolveFromGitHub(
   owner: string,
   repo: string,
   branch?: string,
+  opts: ResolveOptions = {},
 ): Promise<ProjectInfo> {
   const repository = await githubService.getRepository(ctx, owner, repo, {
     withBranches: true,
@@ -512,6 +768,7 @@ async function resolveFromGitHub(
     createGitHubReader(ctx, owner, repo, selectedBranch),
     repository,
     selectedBranch,
+    opts,
   );
 }
 
@@ -533,17 +790,40 @@ function toProjectInfo(
   composeEnvContent?: string,
   monorepo?: { apps: MonorepoApp[]; workspace: MonorepoWorkspace } | null,
   routing?: RoutingConfig,
+  opts?: {
+    /** The caller resolved a declared `composePath`: parse + classify as a
+     *  services project even when stack detection wouldn't say so on its own
+     *  (a non-standard filename like `stack.yml` matches no root marker). */
+    declaredCompose?: boolean;
+    /** See {@link ResolveOptions.env}. */
+    env?: Record<string, string>;
+  },
 ): ProjectInfo {
   const stack = projectRoot.stack;
   const rootEnv = composeEnvContent ? parseComposeEnvFile(composeEnvContent) : {};
 
   let services: ComposeService[] | undefined;
-  if (composeContent && stack.projectType === "services") {
+  let missingRequiredEnv: ComposeMissingVariable[] | undefined;
+  if (composeContent && (opts?.declaredCompose || stack.projectType === "services")) {
     try {
-      const parsed = parseComposeFile(composeContent, { envFileContent: composeEnvContent });
+      const parsed = parseComposeFile(composeContent, {
+        envFileContent: composeEnvContent,
+        env: opts?.env,
+      });
       services = parsed.services;
-    } catch {
-      // Invalid YAML - continue without services.
+      // Values the file demands (`${VAR:?…}`) that nothing here supplied. NOT an
+      // error: the scan runs before the user has filled the wizard's env form, so
+      // this is the list to prompt for, not a reason to refuse the repo (#472).
+      if (parsed.missingRequired.length > 0) missingRequiredEnv = parsed.missingRequired;
+    } catch (err) {
+      // Surface the broken file — an unusable file (invalid YAML), which is all
+      // the parser throws for now. Swallowing it returns a services project with
+      // ZERO services — the wizard then shows nothing to deploy and no reason
+      // why (issue #339). True whether the path was declared or detected: we
+      // only parse when compose IS this root's stack.
+      const detail = err instanceof Error && err.message ? err.message : "Unknown parser error";
+      const where = opts?.declaredCompose ? ` at "${projectRoot.rootDirectory || "."}"` : "";
+      throw new Error(`Could not parse the Docker Compose file${where}: ${detail}`, { cause: err });
     }
   }
 
@@ -552,7 +832,11 @@ function toProjectInfo(
   // `selected` root provides a single-app fallback if the user chooses to deploy
   // just one.
   const isMonorepo = !services && monorepo && monorepo.apps.length >= 2;
-  const projectType: ProjectType = isMonorepo ? "monorepo" : stack.projectType;
+  const projectType: ProjectType = opts?.declaredCompose
+    ? "services"
+    : isMonorepo
+      ? "monorepo"
+      : stack.projectType;
 
   return {
     repository: {
@@ -569,7 +853,14 @@ function toProjectInfo(
     stack: stack.stack,
     projectType,
     category: stack.category,
-    packageManager: stack.packageManager,
+    // detectPackageManager()'s "unknown" fallback (no manifest anywhere in this
+    // root) is an internal sentinel, not a real package manager — PackageManagerEnum
+    // (project.schema.ts) never included it, so echoing it back verbatim here let
+    // the client round-trip it straight into project creation and 400 with
+    // "Expected union value" (issue #415). "npm" mirrors the client's own
+    // `|| "npm"` fallback default (DEFAULT_DEPLOYMENT_CONFIG) — same reasonable
+    // default, now applied where the value is actually produced.
+    packageManager: stack.packageManager === "unknown" ? "npm" : stack.packageManager,
     buildCommand: stack.buildCommand,
     installCommand: stack.installCommand,
     startCommand: stack.startCommand,
@@ -579,6 +870,7 @@ function toProjectInfo(
     productionPaths: stack.productionPaths,
     port: stack.port,
     ...(services && { services }),
+    ...(missingRequiredEnv && { missingRequiredEnv }),
     ...(isMonorepo && monorepo
       ? { monorepoApps: monorepo.apps, monorepoWorkspace: monorepo.workspace }
       : {}),

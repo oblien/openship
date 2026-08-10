@@ -1,0 +1,25 @@
+# Build-time iRedMail config baked into the openship-mail image.
+#
+# This is consumed ONLY during `docker build` (iRedMail.sh reads ${ROOTDIR}/config)
+# to lay down the daemon configuration. Per-install values (FIRST_DOMAIN + real
+# secrets) are injected at first boot by the entrypoint from the --env-file, so the
+# placeholders here never reach a running server. The `#EOF` marker is mandatory —
+# without it iRedMail treats the config as incomplete and drops into its interactive
+# dialog (which hangs a non-interactive build).
+export STORAGE_BASE_DIR='/var/vmail'
+export BACKEND_ORIG='PGSQL'
+export BACKEND='PGSQL'
+export FIRST_DOMAIN='build.invalid'
+export USE_FAIL2BAN='YES'
+# The runtime vmail DB is the sidecar on loopback; the entrypoint bootstraps it.
+export SQL_SERVER_ADDRESS='127.0.0.1'
+export SQL_SERVER_PORT='5432'
+# Placeholder secrets — overwritten on first boot from the per-install env-file.
+export DOMAIN_ADMIN_PASSWD_PLAIN='build-placeholder'
+export VMAIL_DB_BIND_PASSWD='build-placeholder'
+export VMAIL_DB_ADMIN_PASSWD='build-placeholder'
+export AMAVISD_DB_PASSWD='build-placeholder'
+export IREDAPD_DB_PASSWD='build-placeholder'
+export FAIL2BAN_DB_PASSWD='build-placeholder'
+export PGSQL_ROOT_PASSWD='build-placeholder'
+#EOF

@@ -49,6 +49,8 @@ import {
   Smartphone,
 } from "lucide-react";
 import {
+  getApiErrorMessage,
+  isMailEngineUnavailable,
   mailAdminApi,
   type MailServerStats,
   type MailSetupStatus,
@@ -286,6 +288,8 @@ function MailStatsCard({ serverId }: { serverId: string }) {
   const { t } = useI18n();
   const [stats, setStats] = useState<MailServerStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The failure was "the engine isn't serving" — stated, not alarmed about. */
+  const [blocked, setBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -300,7 +304,12 @@ function MailStatsCard({ serverId }: { serverId: string }) {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : t.emailsAdmin.overview.statsFailed);
+        // The engine being down is a PANEL-level condition that already carries
+        // its fix (MailEngineBanner, above the tab bar). Repeating it as a red
+        // line in every card that failed for that one reason buries the remedy —
+        // so this card states it quietly and points nowhere.
+        setBlocked(isMailEngineUnavailable(err));
+        setError(getApiErrorMessage(err, t.emailsAdmin.overview.statsFailed));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -319,6 +328,8 @@ function MailStatsCard({ serverId }: { serverId: string }) {
 
       {loading ? (
         <StatsSkeleton />
+      ) : blocked ? (
+        <p className="text-xs text-muted-foreground">{t.emailsAdmin.engine.cardBlocked}</p>
       ) : error ? (
         <p className="text-xs text-danger">{error}</p>
       ) : stats ? (

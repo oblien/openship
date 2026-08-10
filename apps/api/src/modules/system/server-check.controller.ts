@@ -20,19 +20,26 @@ import {
   type CommandExecutor,
   COMPONENT_INSTALLERS,
   COMPONENT_UNINSTALLERS,
-  EdgeMigrateRequested,
+  ensureEdge,
   getRemovalSupport,
   isSshAuthError,
   recoverInterruptedTakeover,
-  runEdgeTakeover,
+  scanPorts,
+  probeTcp,
+  type PortScanResult,
+  type SystemLog,
   SYSTEM_COMPONENTS,
   getSystemComponentDefinition,
 } from "@repo/adapters";
 import { formatDuration, systemDebug } from "@/lib/system-debug";
 import { sshManager, buildSshConfig } from "../../lib/ssh-manager";
+import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
+import { deliverManagedImage } from "../../lib/deliver-managed-image";
+import { resolveAcmeProviderOptions } from "../../lib/acme-config";
 import { runConnectivityCheck } from "../../lib/connectivity";
 import "../../lib/connectivity-checks"; // registers ssh / ssh-server / backup-destination
 import { repos } from "@repo/db";
+import { refreshServerContainer } from "./server-containers.service";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
 import { safeErrorMessage } from "@repo/core";
@@ -365,10 +372,32 @@ export async function installRespond(c: Context) {
 }
 
 /**
+ * Edge-only Stage-B APPLY ahead of a component installer: build our source onto the
+ * box (or ship + build for a remote one) so the create path adopts the dev image
+ * instead of pulling an unpublished dev tag from GHCR (the reported bug). A no-op for
+ * every non-edge component (docker/git/rsync aren't our images) and in prod (no
+ * checkout → deliver returns at once). Shared by the two install entry points below so
+ * the edge gate and the deliver call can't drift between them.
+ */
+async function deliverEdgeBeforeInstall(
+  component: string,
+  executor: CommandExecutor,
+  onLog: (log: SystemLog) => void,
+): Promise<void> {
+  if (component !== "edge") return;
+  await deliverManagedImage({
+    kind: "edge",
+    image: pinnedEdgeImage(),
+    targetExecutor: executor,
+    onLog,
+  });
+}
+
+/**
  * POST /system/install
  *
  * Install a specific component on a server.
- * Body: { serverId: string, component: "docker" | "openresty" | ..., config?: InstallerConfig }
+ * Body: { serverId: string, component: "docker" | "edge" | ..., config?: InstallerConfig }
  *
  * Returns: { success: boolean, component: string, version?: string, error?: string }
  */
@@ -379,8 +408,8 @@ export async function installComponent(c: Context) {
   const serverId = body.serverId as string | undefined;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
-  getRequestContext(c);
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "admin" });
+  const ctx = getRequestContext(c);
+  await permission.assert(ctx, { resourceType: "server", resourceId: serverId, action: "admin" });
 
   const componentName = body.component as string;
 
@@ -394,15 +423,19 @@ export async function installComponent(c: Context) {
     return c.json({ error: `No installer for ${componentName}` }, 400);
   }
 
+  // Hoisted so the catch can return whatever the build/install already logged: a
+  // from-source edge build that fails throws with its output ONLY in these lines, and
+  // a success-only `logs` would drop exactly the diagnostic the operator needs.
+  const logs: string[] = [];
   try {
-    const logs: string[] = [];
-    const installResult = await sshManager.withExecutor(serverId, (executor) =>
-      installerFn(
+    const installResult = await sshManager.withExecutor(serverId, async (executor) => {
+      await deliverEdgeBeforeInstall(componentName, executor, (log) => logs.push(log.message));
+      return installerFn(
         executor,
         (log) => logs.push(log.message),
-        body.config ?? {},
-      ),
-    );
+        withPinnedEdgeImage(body.config ?? {}),
+      );
+    });
 
     return c.json({
       ...installResult,
@@ -415,12 +448,12 @@ export async function installComponent(c: Context) {
       message === "No server configured" ||
       message === "Invalid SSH auth configuration"
     ) {
-      return c.json({ error: "no_server", message }, 400);
+      return c.json({ error: "no_server", message, logs }, 400);
     }
     if (isSshAuthError(err)) {
-      return c.json({ error: "auth_failed", message }, 400);
+      return c.json({ error: "auth_failed", message, logs }, 400);
     }
-    return c.json({ error: "install_failed", message }, 502);
+    return c.json({ error: "install_failed", message, logs }, 502);
   }
 }
 
@@ -428,7 +461,7 @@ export async function installComponent(c: Context) {
  * POST /system/remove
  *
  * Remove a specific component from a server.
- * Body: { serverId: string, component: "openresty" | "certbot" | "rsync" }
+ * Body: { serverId: string, component: "edge" | "rsync" }
  *
  * Returns: { success: boolean, component: string, error?: string, logs?: string[] }
  */
@@ -458,7 +491,7 @@ export async function removeComponent(c: Context) {
       uninstallerFn(
         executor,
         (log) => logs.push(log.message),
-        body.config ?? {},
+        withPinnedEdgeImage(body.config ?? {}),
       ),
     );
 
@@ -485,7 +518,7 @@ export async function removeComponent(c: Context) {
  * POST /system/install/stream
  *
  * Install multiple components with real-time SSE log streaming.
- * Body: { serverId: string, components: ["docker", "openresty", ...], config?: InstallerConfig }
+ * Body: { serverId: string, components: ["docker", "edge", ...], config?: InstallerConfig }
  *
  * Returns an SSE stream with events:
  *   - progress: component status updates
@@ -500,11 +533,12 @@ export async function installStream(c: Context) {
   const serverId = body.serverId as string | undefined;
   if (!serverId) return c.json({ error: "serverId is required" }, 400);
 
-  getRequestContext(c);
-  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "admin" });
+  const ctx = getRequestContext(c);
+  await permission.assert(ctx, { resourceType: "server", resourceId: serverId, action: "admin" });
 
   const requestedComponents = body.components as string[] | undefined;
-  const config = body.config ?? {};
+  // Pinned here, at the boundary — the edge image is never caller-supplied.
+  const config = withPinnedEdgeImage(body.config ?? {});
 
   if (!requestedComponents?.length) {
     return c.json({ error: "No components specified" }, 400);
@@ -549,15 +583,17 @@ export async function installStream(c: Context) {
     // the SSE stream stays open via the promise below
     const installPromise = (async () => {
       let hasFailure = false;
+      /** Per-component failure reason, for the cached row below. */
+      const failures = new Map<string, string>();
 
-      // Before installing OpenResty, self-heal a takeover that crashed mid-flight
+      // Before installing the edge, self-heal a takeover that crashed mid-flight
       // on this server on a prior attempt (restores the previous proxy if the
       // migrate didn't finish). No-op when there's no leftover journal.
-      if (validNames.includes("openresty")) {
+      if (validNames.includes("edge")) {
         try {
           await sshManager.withExecutor(serverId, (executor) =>
             recoverInterruptedTakeover(executor, (l) =>
-              appendSetupLog(session.id, "openresty", l.message, l.level),
+              appendSetupLog(session.id, "edge", l.message, l.level),
             ),
           );
         } catch {
@@ -577,9 +613,9 @@ export async function installStream(c: Context) {
 
         updateComponentProgress(session.id, name, "installing");
 
-        // Bind the interactive "hold" to this session so installOpenResty can
-        // pause on an edge (80/443) conflict and surface the SAME prompt modal
-        // the deploy pipeline uses. Non-openresty installers ignore it.
+        // Bind the interactive "hold" to this session so the edge installer can
+        // pause on an 80/443 conflict and surface the SAME prompt modal the deploy
+        // pipeline uses. Installers other than `edge` ignore it.
         const promptUser: PromptUserFn = (prompt) => promptSetupUser(session.id, prompt);
 
         const onLog = (log: { message: string; level: "info" | "warn" | "error" }) =>
@@ -587,45 +623,59 @@ export async function installStream(c: Context) {
 
         try {
           const result = await sshManager.withExecutor(serverId, async (executor) => {
-            try {
-              return await installerFn(executor, onLog, { ...config, promptUser });
-            } catch (err) {
-              // User chose "migrate" at the edge-conflict hold → import the
-              // existing proxy's sites, then take over 80/443.
-              if (err instanceof EdgeMigrateRequested) {
-                appendSetupLog(session.id, name, `Migrating ${err.sites.length} site(s) from the existing proxy...`);
-                const takeover = await runEdgeTakeover(
-                  executor,
-                  { status: err.status, sites: err.sites, acmeEmail: config?.acmeEmail },
-                  onLog,
-                );
-                for (const w of [...err.warnings, ...takeover.warnings]) {
-                  appendSetupLog(session.id, name, w, "warn");
-                }
-                return {
-                  component: name,
-                  success: takeover.ok,
-                  error: takeover.ok ? undefined : "migration failed — rolled back to the previous proxy",
-                };
-              }
-              throw err;
-            }
+            await deliverEdgeBeforeInstall(name, executor, onLog);
+            // Single edge-prepare point: the installer raises the edge-conflict
+            // consent prompt via promptUser; on "migrate", ensureEdge runs the
+            // takeover. Its InstallResult is returned unchanged when no migration.
+            const edge = await ensureEdge(
+              executor,
+              (p) => installerFn(executor, onLog, { ...config, promptUser: p }),
+              {
+                promptUser,
+                onLog,
+                acmeEmail: config?.acmeEmail,
+                nginx: {
+                  ...resolveAcmeProviderOptions(),
+                  ...(config?.acmeEmail ? { acmeEmail: config.acmeEmail } : {}),
+                },
+              },
+            );
+            if (!edge.migrated) return edge.value;
+            return {
+              component: name,
+              success: edge.ok,
+              error: edge.ok ? undefined : "migration failed — rolled back to the previous proxy",
+            };
           });
 
           if (result.success) {
             appendSetupLog(session.id, name, `${name} installed successfully${result.version ? ` (${result.version})` : ""}`);
             updateComponentProgress(session.id, name, "installed");
           } else {
-            appendSetupLog(session.id, name, result.error ?? `${name} installation failed`, "error");
+            const msg = result.error ?? `${name} installation failed`;
+            appendSetupLog(session.id, name, msg, "error");
             updateComponentProgress(session.id, name, "failed", result.error);
+            failures.set(name, msg);
             hasFailure = true;
           }
         } catch (err) {
           const msg = safeErrorMessage(err);
           appendSetupLog(session.id, name, msg, "error");
           updateComponentProgress(session.id, name, "failed", msg);
+          failures.set(name, msg);
           hasFailure = true;
         }
+      }
+
+      // Write what the box now looks like into the cached edge row. Without this the
+      // install told nobody: a SUCCESSFUL "Fix edge" left the stale `down` row in
+      // place, so the operator refreshed and still saw "Edge down" — indistinguishable
+      // from the fix having done nothing. A FAILED one lands its reason on the same
+      // row, so the attention card names the cause (`bind() … Address already in use`)
+      // instead of repeating "is down". Edge only: it's the sole component here that
+      // has a container row (mail is provisioned by its own wizard).
+      if (validNames.includes("edge")) {
+        await refreshServerContainer(serverId, "edge", failures.get("edge"));
       }
 
       finishSetupSession(session.id, hasFailure ? "failed" : "completed");
@@ -863,4 +913,95 @@ export async function monitorStream(c: Context) {
       sshManager.release(serverId);
     }
   });
+}
+
+/**
+ * POST /system/servers/:id/ports/scan
+ *
+ * Enumerate every listening socket on the server and classify each exposed
+ * (bound to a wildcard / real interface) vs loopback-only. Read-only.
+ *
+ * Runs through the shared executor middleware (`sshManager.withExecutor`) so the
+ * socket table is read INSIDE the target — the API itself may be containerized
+ * and only sees the host's real ports via that server's executor, not a direct
+ * exec. A `probeReachable` fast-fail keeps an offline box from hanging the tab
+ * on the full SSH-connect timeout.
+ */
+export async function scanExposedPorts(c: Context) {
+  if (env.CLOUD_MODE) return c.json({ error: "Not available" }, 404);
+
+  const organizationId = getRequestContext(c).organizationId;
+  const serverId = c.req.param("id")!;
+  await permission.assert(getRequestContext(c), { resourceType: "server", resourceId: serverId, action: "read" });
+
+  const server = await repos.server.getInOrganization(serverId, organizationId);
+  if (!server) return c.json({ error: "Server not found" }, 404);
+
+  const reachable = await sshManager.probeReachable(serverId).catch(() => false);
+  if (!reachable) {
+    return c.json({ error: "unreachable", message: "Server is not reachable over SSH right now." }, 502);
+  }
+
+  try {
+    const result = await sshManager.withExecutor(serverId, (executor) => scanPorts(executor));
+    const enriched = await confirmReachability(result, server.sshHost);
+    return c.json(enriched);
+  } catch (err) {
+    const message = safeErrorMessage(err);
+    if (isSshAuthError(err)) return c.json({ error: "auth_failed", message }, 400);
+    return c.json({ error: "scan_failed", message }, 502);
+  }
+}
+
+// Off-box reachability probe: the scan's `exposed` flag only means "bound to a
+// non-loopback interface" — a cloud/host firewall (Hetzner, ufw, security group)
+// can still block it. So we dial each exposed TCP port from the API host to learn
+// which are ACTUALLY reachable vs bound-but-blocked. Bounded (cap + concurrency +
+// short timeout) so a box full of firewalled ports can't stall the request.
+const REACHABILITY_MAX_PORTS = 50;
+const REACHABILITY_CONCURRENCY = 16;
+const REACHABILITY_TIMEOUT_MS = 1_500;
+
+async function confirmReachability(
+  result: PortScanResult,
+  host: string | null,
+): Promise<PortScanResult> {
+  // Only meaningful against a real remote target — an off-box dial to
+  // loopback/localhost tells us nothing about internet exposure.
+  const dialable = host && !/^(127\.|::1$|localhost$)/i.test(host.trim());
+  if (!result.scanned || !dialable) {
+    return { ...result, reachabilityProbed: false, reachableCount: 0 };
+  }
+
+  const targets = [
+    ...new Set(
+      result.listeners.filter((l) => l.exposed && l.proto === "tcp").map((l) => l.port),
+    ),
+  ].slice(0, REACHABILITY_MAX_PORTS);
+
+  const reachable = new Map<number, boolean>();
+  const queue = [...targets];
+  const workers = Array.from(
+    { length: Math.min(REACHABILITY_CONCURRENCY, queue.length) },
+    async () => {
+      for (let port = queue.shift(); port !== undefined; port = queue.shift()) {
+        const ok = await probeTcp(host!.trim(), port, REACHABILITY_TIMEOUT_MS).catch(() => false);
+        reachable.set(port, ok);
+      }
+    },
+  );
+  await Promise.all(workers);
+
+  const listeners = result.listeners.map((l) =>
+    l.exposed && l.proto === "tcp" && reachable.has(l.port)
+      ? { ...l, reachable: reachable.get(l.port)! }
+      : l,
+  );
+
+  return {
+    ...result,
+    listeners,
+    reachabilityProbed: true,
+    reachableCount: listeners.filter((l) => l.reachable === true).length,
+  };
 }

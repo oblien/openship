@@ -1,5 +1,7 @@
+import { lookup as dnsLookup } from "node:dns/promises";
 import nodemailer, { type Transporter } from "nodemailer";
 import { env } from "../config/env";
+import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
 import { cloudClient } from "./cloud/client";
 import { decrypt } from "./encryption";
@@ -80,6 +82,55 @@ const PLATFORM_TRANSPORT_TTL_MS = 60_000;
 const platformTransportCache = new Map<string, CachedPlatformTransport>();
 
 /**
+ * Resolving the platform mailbox SSHes into the mail server, so a server that is
+ * slow, unreachable, or mid-install costs seconds per attempt. Two guards:
+ *
+ *   - a NEGATIVE cache, so one failure isn't re-probed by every subsequent
+ *     caller (`GET /system/settings/email` is polled by the UI — without this a
+ *     broken mail install made every read pay the full SSH timeout, ~23s each,
+ *     and logged the same warning every time);
+ *   - a hard time budget, so even a first attempt can't hold a read request
+ *     open indefinitely. Mail sending has its own retries; a read that can't
+ *     answer in time reports "no platform transport", which is the truth as far
+ *     as this request is concerned.
+ */
+const PLATFORM_TRANSPORT_FAILURE_TTL_MS = 60_000;
+const PLATFORM_ENSURE_TIMEOUT_MS = 8_000;
+const platformTransportFailures = new Map<string, number>();
+
+/**
+ * `ensureOpenshipPlatformMailbox` reports `mail.<domain>` as the platform
+ * mailbox's SMTP host - correct for an external mail client, and correct
+ * for THIS process too when the api runs bare on the mail server box. But
+ * when containerized, that hostname commonly resolves to a loopback address
+ * via the HOST's own `/etc/hosts` self-entry (e.g. Ubuntu's default
+ * `127.0.1.1 <hostname>`) - meaningful only in the host's network
+ * namespace, not the container's. Connecting there fails immediately with
+ * ECONNREFUSED before ever reaching Postfix.
+ *
+ * Detected generically (not by hardcoding any domain): resolve the reported
+ * host and check if it's loopback. If so, and we have a working container
+ * -> host bridge address (the same one the SSH manager already uses to
+ * reach this box from inside a container), reconnect through that instead.
+ * A genuinely remote mail server resolves to a real address and is passed
+ * through untouched.
+ */
+async function resolveContainerReachableSmtpHost(reportedHost: string): Promise<string> {
+  const bridgeHost = process.env.OPENSHIP_HOST_SSH_HOST?.trim();
+  if (!bridgeHost) return reportedHost;
+  try {
+    const { address } = await dnsLookup(reportedHost);
+    const isLoopback = address === "::1" || address.startsWith("127.");
+    if (!isLoopback) return reportedHost;
+  } catch {
+    // Unresolvable - fall through and let nodemailer's own lookup fail with
+    // its normal error rather than silently substituting a guess.
+    return reportedHost;
+  }
+  return bridgeHost;
+}
+
+/**
  * Locate the active mail server and (re)build its platform-mailbox
  * transport. Returns null if no mail server is provisioned, or if the
  * ensure*-call throws (we don't want a transient mail-server fault to
@@ -107,7 +158,12 @@ async function getPlatformTransport(): Promise<{
     console.warn("[mail] mail-server lookup failed:", err);
     return null;
   }
-  const installed = mailServers.find((m) => m.installedAt != null) ?? mailServers[0];
+  // ONLY a finished install can have a platform mailbox. Falling back to the
+  // first row meant a half-installed mail server (row present, `installedAt`
+  // null) sent every caller down the SSH path to fail on "Mail state not found —
+  // finish the mail install", which is exactly the state that was costing a
+  // polled settings read ~23s.
+  const installed = mailServers.find((m) => m.installedAt != null);
   if (!installed) return null;
 
   const cacheKey = installed.serverId;
@@ -115,20 +171,36 @@ async function getPlatformTransport(): Promise<{
   if (cached && Date.now() - cached.fetchedAt < PLATFORM_TRANSPORT_TTL_MS) {
     return { transport: cached.transport, from: cached.from };
   }
+  const failedAt = platformTransportFailures.get(cacheKey);
+  if (failedAt && Date.now() - failedAt < PLATFORM_TRANSPORT_FAILURE_TTL_MS) {
+    return null; // known-bad within the window — don't re-probe (or re-log)
+  }
 
   try {
     const { ensureOpenshipPlatformMailbox } = await import(
       "../modules/mail/admin/platform-mailbox.service"
     );
-    const creds = await ensureOpenshipPlatformMailbox(installed.serverId);
+    const creds = await withTimeout(
+      ensureOpenshipPlatformMailbox(installed.serverId),
+      PLATFORM_ENSURE_TIMEOUT_MS,
+      `platform mailbox lookup on ${installed.serverId}`,
+    );
+    const smtpHost = await resolveContainerReachableSmtpHost(creds.smtpHost);
     const transport = nodemailer.createTransport({
-      host: creds.smtpHost,
+      host: smtpHost,
       port: creds.smtpPort,
       secure: creds.secure,
       auth: {
         user: creds.email,
         pass: creds.password,
       },
+      // When smtpHost got rewritten to the container->host bridge address,
+      // the TCP connection no longer matches the certificate's name (it's
+      // issued for the mail server's real hostname, e.g. mail.<domain>) -
+      // pin SNI/cert verification to the ORIGINAL hostname so TLS still
+      // validates against the right name while the socket itself reaches a
+      // container-routable address.
+      ...(smtpHost !== creds.smtpHost ? { tls: { servername: creds.smtpHost } } : {}),
     });
     const entry: CachedPlatformTransport = {
       transport,
@@ -136,14 +208,31 @@ async function getPlatformTransport(): Promise<{
       fetchedAt: Date.now(),
     };
     platformTransportCache.set(cacheKey, entry);
+    platformTransportFailures.delete(cacheKey);
     return { transport, from: creds.from };
   } catch (err) {
+    // Logged once per failure window (see the negative cache above) instead of
+    // on every request.
+    platformTransportFailures.set(cacheKey, Date.now());
     console.warn(
-      "[mail] ensureOpenshipPlatformMailbox failed; will fall back to env transport:",
-      err,
+      `[mail] platform mailbox unavailable on ${installed.serverId}; using the next transport ` +
+        `(retrying in ${PLATFORM_TRANSPORT_FAILURE_TTL_MS / 1000}s): ${safeErrorMessage(err)}`,
     );
     return null;
   }
+}
+
+/** Drop the cached platform transport + failure marker for a mail server, so the
+ *  next send/read re-probes immediately instead of waiting out the window. Call
+ *  after an install/repair finishes. */
+export function invalidatePlatformTransport(serverId?: string): void {
+  if (!serverId) {
+    platformTransportCache.clear();
+    platformTransportFailures.clear();
+    return;
+  }
+  platformTransportCache.delete(serverId);
+  platformTransportFailures.delete(serverId);
 }
 
 // ─── Instance SMTP transport (operator-configured, DB-backed) ────────────────

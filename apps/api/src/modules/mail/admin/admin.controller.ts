@@ -37,10 +37,20 @@ import {
   softDeleteMailbox,
   updateMailbox,
 } from "./mailboxes.service";
+import {
+  createAlias,
+  deleteAlias,
+  listAliases,
+  updateAliasActive,
+  AliasConflictsWithMailboxError,
+  AliasExistsError,
+  AliasNotFoundError,
+} from "./aliases.service";
 import { getMailServerStats } from "./stats.service";
 import { scanDns } from "./dns-scan.service";
 import { sendTestEmail, TestEmailError } from "./test-email.service";
-import { safeErrorMessage } from "@repo/core";
+import { AppError, safeErrorMessage } from "@repo/core";
+import { handleApiError } from "../../../middleware/error-handler";
 import {
   getComponentLogs,
   restartAllComponents,
@@ -538,6 +548,110 @@ export async function deleteMailboxHandler(c: Context) {
   }
 }
 
+// ─── Admin panel - aliases / forwards / catch-all ────────────────────────────
+
+export async function listAliasesHandler(c: Context) {
+  const guard = assertNotCloud(c);
+  if (guard) return guard;
+  const serverId = param(c, "serverId");
+  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "read" });
+  const ctx = getRequestContext(c);
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+  const domain = c.req.query("domain");
+  if (!domain) return c.json({ error: "domain query param required" }, 400);
+  try {
+    const rows = await listAliases(serverId, domain);
+    return c.json({ aliases: rows });
+  } catch (err) {
+    return errorJson(c, err);
+  }
+}
+
+export async function createAliasHandler(c: Context) {
+  const guard = assertNotCloud(c);
+  if (guard) return guard;
+  const serverId = param(c, "serverId");
+  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "write" });
+  const ctx = getRequestContext(c);
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    const row = await createAlias(serverId, {
+      domain: String(body.domain ?? ""),
+      localPart: body.localPart ? String(body.localPart) : undefined,
+      isCatchAll: Boolean(body.isCatchAll),
+      destination: String(body.destination ?? ""),
+    });
+    return c.json({ alias: row }, 201);
+  } catch (err) {
+    if (err instanceof AliasExistsError) {
+      return c.json({ error: err.message }, 409);
+    }
+    if (err instanceof AliasConflictsWithMailboxError) {
+      return c.json({ error: err.message }, 409);
+    }
+    return errorJson(c, err);
+  }
+}
+
+export async function updateAliasHandler(c: Context) {
+  const guard = assertNotCloud(c);
+  if (guard) return guard;
+  const serverId = param(c, "serverId");
+  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "write" });
+  const ctx = getRequestContext(c);
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+  const idParam = c.req.param("id");
+  const id = Number(idParam);
+  if (!idParam || !Number.isInteger(id)) {
+    return c.json({ error: "id must be an integer" }, 400);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  if (body.active == null) {
+    return c.json({ error: "active is required" }, 400);
+  }
+  try {
+    const row = await updateAliasActive(serverId, id, Boolean(body.active));
+    return c.json({ alias: row });
+  } catch (err) {
+    if (err instanceof AliasNotFoundError) {
+      return c.json({ error: err.message }, 404);
+    }
+    return errorJson(c, err);
+  }
+}
+
+export async function deleteAliasHandler(c: Context) {
+  const guard = assertNotCloud(c);
+  if (guard) return guard;
+  const serverId = param(c, "serverId");
+  await permission.assert(getRequestContext(c), { resourceType: "mail_server", resourceId: serverId, action: "admin" });
+  const ctx = getRequestContext(c);
+  if (!(await isServerInOrg(ctx, serverId))) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+  const idParam = c.req.param("id");
+  const id = Number(idParam);
+  if (!idParam || !Number.isInteger(id)) {
+    return c.json({ error: "id must be an integer" }, 400);
+  }
+  try {
+    await deleteAlias(serverId, id);
+    return c.json({ ok: true });
+  } catch (err) {
+    if (err instanceof AliasNotFoundError) {
+      return c.json({ error: err.message }, 404);
+    }
+    return errorJson(c, err);
+  }
+}
+
 // ─── Stats ───────────────────────────────────────────────────────────────────
 
 export async function getStatsHandler(c: Context) {
@@ -678,6 +792,14 @@ export async function getComponentLogsHandler(c: Context) {
 // ─── Error mapping ───────────────────────────────────────────────────────────
 
 function errorJson(c: Context, err: unknown) {
+  // A typed AppError already carries its status + code — MailEngineUnavailableError
+  // is the one every read here can raise (a stopped engine / a legacy box whose
+  // container never existed), and it must reach the panel as 409 +
+  // MAIL_ENGINE_NOT_{INSTALLED,RUNNING} so the UI can offer the fix. Flattening it
+  // to 500 is exactly what turned "your mail engine is stopped" into "API 500".
+  // The central mapper owns that translation; don't restate it per error type.
+  if (err instanceof AppError) return handleApiError(err, c);
+
   const message = safeErrorMessage(err);
   // The SSH+psql layer throws plain Error for any non-shape error
   // (connection failure, SQL syntax, validation). 500 is the right default;

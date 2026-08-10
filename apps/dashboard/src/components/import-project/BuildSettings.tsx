@@ -61,12 +61,10 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
 
   const hasBuild = buildData?.hasBuild !== false;
   const hasServer = !!buildData?.hasServer;
-  const endpointFallbackHost = config?.projectName || config?.repo || 'project';
-  const primaryEndpointHost = getPublicEndpointHosts(
-    config?.publicEndpoints,
-    baseDomain,
-    endpointFallbackHost,
-  )[0] ?? "";
+  // Only a host the config actually names. The old fallback labelled the port
+  // field "Port for <projectName>.<baseDomain>" for a config with no chosen
+  // route at all — a hostname nobody created.
+  const primaryEndpointHost = getPublicEndpointHosts(config?.publicEndpoints, baseDomain)[0] ?? "";
   const additionalServerEndpoints: PublicEndpoint[] = hasServer
     ? (config?.publicEndpoints ?? []).slice(1)
     : [];
@@ -322,6 +320,8 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   const visibleBuildFields = hasBuild ? buildFields : [];
   const visibleStartFields = hasServer ? startFields : [];
 
+  /** Label for one endpoint's port/path field: its host when the config names
+   *  one, else a positional "domain N" — never a composed guess. */
   const resolveEndpointHost = (endpoint: PublicEndpoint, index: number) => {
     if (endpoint.domainType === 'custom' && endpoint.customDomain) {
       return endpoint.customDomain;
@@ -331,8 +331,8 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       return `${endpoint.domain}.${baseDomain}`;
     }
 
-    if (index === 0) {
-      return primaryEndpointHost || `${endpointFallbackHost}.${baseDomain}`;
+    if (index === 0 && primaryEndpointHost) {
+      return primaryEndpointHost;
     }
 
     return `domain ${index + 1}`;
@@ -420,6 +420,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             placeholder="/"
             className="w-full px-3.5 py-2.5 border border-border/50 rounded-lg text-sm text-foreground bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
+          <p className="text-[11px] text-muted-foreground/70 mt-1.5 leading-relaxed">{bs.staticPathHint}</p>
         </div>
       );
     });

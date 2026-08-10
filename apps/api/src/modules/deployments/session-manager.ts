@@ -9,8 +9,10 @@
  */
 
 import { SYSTEM } from "@repo/core";
+import type { InstallPhaseEvent, InstallPhaseId } from "@repo/core";
 import { TtlCache } from "../../lib/cache";
-import type { LogEntry } from "@repo/adapters";
+import type { LogEntry, PromptPayload } from "@repo/adapters";
+import { PromptRegistry } from "../../lib/prompt-gateway";
 import type { PortCheckResult } from "../../lib/deployment-runtime";
 import { STEP_INDEX, STEP_PROGRESS, progressForStep } from "./build-steps";
 
@@ -32,6 +34,10 @@ export interface BuildSessionState {
   errorMessage?: string;
   /** Per-service deployment statuses (compose projects only, for replay on reconnect) */
   serviceStatuses: Map<string, ServiceStatusPayload>;
+  /** Latest state of each install phase (catalog-app installs). Stored — not just
+   *  broadcast — so a page refresh/reconnect replays the stepper. Parallel to the
+   *  low-level build-step/progress model; see @repo/core install-phases. */
+  installPhases: Map<InstallPhaseId, InstallPhaseEvent>;
   /** The prompt currently awaiting a user decision (e.g. edge 80/443 takeover,
    *  port conflict). Held here — not just broadcast — so a page refresh /
    *  reconnect re-shows it (replayed in subscribe). Cleared on response/timeout. */
@@ -47,15 +53,10 @@ export interface BuildSessionState {
 
 export type SseWriter = (event: string, data: string) => boolean;
 
-/** A user-decision prompt (edge takeover, port conflict, …). Mirrors the SSE
- *  "prompt" payload the dashboard renders as a modal. */
-export interface PromptPayload {
-  promptId: string;
-  title: string;
-  message: string;
-  actions: Array<{ id: string; label: string; variant?: string }>;
-  details?: Record<string, unknown>;
-}
+// The prompt shape is the ONE shared PromptPayload from @repo/adapters (used by
+// the deploy pipeline, server-setup, CLI, and dashboard modal). Re-exported here
+// so existing importers of session-manager keep working.
+export type { PromptPayload };
 
 
 /** Convert a LogEntry into the JSON payload the frontend expects. The event id
@@ -110,6 +111,7 @@ export function createSession(
     status: "queued",
     logs: [],
     serviceStatuses: new Map(),
+    installPhases: new Map(),
     subscribers: new Set(),
     startedAt: Date.now(),
     nextSeq: 0,
@@ -182,6 +184,27 @@ export function broadcastServiceStatus(
   const dead: SseWriter[] = [];
   for (const writer of session.subscribers) {
     const ok = writer("service-status", payload);
+    if (!ok) dead.push(writer);
+  }
+  for (const w of dead) session.subscribers.delete(w);
+}
+
+/** Broadcast an install-phase transition (catalog-app installs). Stored latest-
+ *  per-id for reconnect replay. This is the stepper's source of truth — it does
+ *  NOT touch the build-step/progress model. */
+export function broadcastInstallPhase(
+  sessionId: string,
+  phase: InstallPhaseEvent,
+): void {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  session.installPhases.set(phase.id, phase);
+
+  const payload = JSON.stringify({ type: "install-phase", ...phase });
+  const dead: SseWriter[] = [];
+  for (const writer of session.subscribers) {
+    const ok = writer("install-phase", payload);
     if (!ok) dead.push(writer);
   }
   for (const w of dead) session.subscribers.delete(w);
@@ -323,6 +346,11 @@ export function subscribe(
     }));
   }
 
+  // Replay install-phase state (catalog-app installs) so a refresh resumes the stepper
+  for (const phase of session.installPhases.values()) {
+    writer("install-phase", JSON.stringify({ type: "install-phase", ...phase }));
+  }
+
   // Re-show a still-pending decision prompt (edge takeover, port conflict) so a
   // refresh/reconnect lands back on the modal instead of a silent stalled build.
   // Only for a live session — a finished build's prompt is stale.
@@ -372,20 +400,10 @@ export function removeSession(sessionId: string): void {
   rejectPendingPrompt(sessionId, "Session removed");
 }
 
-/**
- * Pending prompt - the pipeline blocks on `promise` while the user
- * sees the prompt in the dashboard. Resolved/rejected via respondToPrompt.
- */
-interface PendingPrompt {
-  resolve: (action: string) => void;
-  reject: (reason: Error) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-}
-
-const pendingPrompts = new Map<string, PendingPrompt>();
-
-/** Default timeout for prompts - if the user doesn't respond, the pipeline aborts. */
-const PROMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+// The block-on-a-promise + timeout mechanic lives once in PromptRegistry; this
+// manager keeps only the session-object hold (currentPrompt, for replay) + the
+// SSE broadcast.
+const promptRegistry = new PromptRegistry();
 
 /**
  * Broadcast a prompt SSE event and block until the user responds.
@@ -402,21 +420,20 @@ export async function promptUser(
 
   // Hold the prompt on the session so a refresh/reconnect re-shows it (replayed
   // in subscribe), not just a one-shot broadcast.
-  session.currentPrompt = prompt;
-  const payload = JSON.stringify({ type: "prompt", ...prompt });
+  //
+  // Stamp the deadline HERE, where the hold actually starts — the raising code
+  // (ensurePortAvailable, the edge-consent flow) doesn't own the timeout. A
+  // client that has to poll to discover this prompt needs to know how long it
+  // has; without it, "waiting" and "about to be aborted" look identical.
+  const held: PromptPayload = { ...prompt, expiresAt: promptRegistry.deadlineFromNow() };
+  session.currentPrompt = held;
+  const payload = JSON.stringify({ type: "prompt", ...held });
   for (const writer of session.subscribers) {
     writer("prompt", payload);
   }
 
-  // Create a promise the pipeline will await
-  return new Promise<string>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      pendingPrompts.delete(sessionId);
-      if (session.currentPrompt?.promptId === prompt.promptId) session.currentPrompt = undefined;
-      reject(new Error("Prompt timed out - no response from user"));
-    }, PROMPT_TIMEOUT_MS);
-
-    pendingPrompts.set(sessionId, { resolve, reject, timeoutId });
+  return promptRegistry.wait(sessionId, () => {
+    if (session.currentPrompt?.promptId === prompt.promptId) session.currentPrompt = undefined;
   });
 }
 
@@ -425,25 +442,18 @@ export async function promptUser(
  * Called from the API route handler.
  */
 export function respondToPrompt(sessionId: string, action: string): boolean {
-  const pending = pendingPrompts.get(sessionId);
-  if (!pending) return false;
-
-  clearTimeout(pending.timeoutId);
-  pendingPrompts.delete(sessionId);
-  const session = sessions.get(sessionId);
-  if (session) session.currentPrompt = undefined;
-  pending.resolve(action);
-  return true;
+  const ok = promptRegistry.respond(sessionId, action);
+  if (ok) {
+    const session = sessions.get(sessionId);
+    if (session) session.currentPrompt = undefined;
+  }
+  return ok;
 }
 
 /** Reject a pending prompt (cleanup helper). */
 function rejectPendingPrompt(sessionId: string, reason: string): void {
-  const pending = pendingPrompts.get(sessionId);
-  if (!pending) return;
-
-  clearTimeout(pending.timeoutId);
-  pendingPrompts.delete(sessionId);
+  if (!promptRegistry.has(sessionId)) return;
   const session = sessions.get(sessionId);
   if (session) session.currentPrompt = undefined;
-  pending.reject(new Error(reason));
+  promptRegistry.reject(sessionId, reason);
 }

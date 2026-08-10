@@ -1,0 +1,123 @@
+{
+  "available": true,
+  "verified": true,
+  "id": "kafka",
+  "name": "Apache Kafka",
+  "description": "Apache Kafka event-streaming broker (KRaft mode — no ZooKeeper) with the Kafbat Kafka UI web console for topics, messages, and consumer groups.",
+  "kind": "template",
+  "logo": "apachekafka",
+  "category": "backend",
+  "tags": [
+    "kafka",
+    "streaming",
+    "events",
+    "queue",
+    "messaging"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "kafka",
+      "image": "apache/kafka:4.0.0",
+      "environment": {
+        "KAFKA_NODE_ID": "1",
+        "KAFKA_PROCESS_ROLES": "broker,controller",
+        "KAFKA_LISTENERS": "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+        "KAFKA_ADVERTISED_LISTENERS": "PLAINTEXT://kafka:9092",
+        "KAFKA_CONTROLLER_LISTENER_NAMES": "CONTROLLER",
+        "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT",
+        "KAFKA_INTER_BROKER_LISTENER_NAME": "PLAINTEXT",
+        "KAFKA_CONTROLLER_QUORUM_VOTERS": "1@kafka:9093",
+        "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": "1",
+        "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
+        "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR": "1",
+        "KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS": "0",
+        "KAFKA_NUM_PARTITIONS": "3",
+        "KAFKA_LOG_DIRS": "/var/lib/kafka/data"
+      },
+      "volumes": [
+        "kafka_data:/var/lib/kafka/data"
+      ],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "kafka-ui",
+      "image": "ghcr.io/kafbat/kafka-ui:latest",
+      "exposedPort": 8080,
+      "exposed": true,
+      "ports": [
+        "8080:8080"
+      ],
+      "routes": [
+        {
+          "port": 8080
+        }
+      ],
+      "dependsOn": [
+        "kafka"
+      ],
+      "environment": {
+        "KAFKA_CLUSTERS_0_NAME": "local",
+        "KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS": "kafka:9092",
+        "DYNAMIC_CONFIG_ENABLED": "true",
+        "AUTH_TYPE": "LOGIN_FORM",
+        "SPRING_SECURITY_USER_NAME": "admin"
+      },
+      "secretEnv": [
+        "SPRING_SECURITY_USER_PASSWORD"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "SPRING_SECURITY_USER_PASSWORD",
+      "service": "kafka-ui",
+      "label": "Kafka UI password",
+      "help": "Auto-generated. The password to sign in to the Kafka UI web console (username: admin).",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to Kafka",
+    "description": "Open the Kafka UI to browse topics and messages, or point a client at the broker from another service in this project.",
+    "outputs": [
+      {
+        "id": "ui",
+        "label": "Kafka UI",
+        "source": "publicUrl:kafka-ui",
+        "kind": "url",
+        "help": "Sign in with the username + password below."
+      },
+      {
+        "id": "uiUser",
+        "label": "UI username",
+        "source": "env:kafka-ui:SPRING_SECURITY_USER_NAME"
+      },
+      {
+        "id": "uiPassword",
+        "label": "UI password",
+        "source": "env:kafka-ui:SPRING_SECURITY_USER_PASSWORD",
+        "secret": true
+      },
+      {
+        "id": "broker",
+        "label": "Bootstrap server (internal)",
+        "source": "template:kafka:9092",
+        "help": "Reachable as kafka:9092 from other services in this project — connect an app to it."
+      }
+    ]
+  },
+  "endpoints": [
+    {
+      "service": "kafka-ui",
+      "port": 8080,
+      "label": "Kafka UI",
+      "kind": "http"
+    }
+  ]
+}

@@ -17,16 +17,17 @@
   },
   "domainSettings": {
     "saveFailed": "ドメインの保存に失敗しました",
-    "toastTitle": "ドメイン"
+    "toastTitle": "ドメイン",
+    "routeFreeLabel": "無料サブドメイン",
+    "routeFreeDesc": "無料の {domain} URL。すぐに使えます。",
+    "routeCustomLabel": "カスタムドメイン",
+    "routeCustomDesc": "独自のドメインをこのデプロイに向けます。",
+    "routeNoneLabel": "なし",
+    "routeNoneDesc": "公開 URL なし — 内部のみ。ホストのポートでアクセスします。"
   },
   "dns": {
     "title": "DNS設定",
     "addRecordsFor": "次のレコードをDNSプロバイダーに追加してください:",
-    "descCname": "ドメインをエッジネットワーク経由でルーティングします",
-    "descA": "ドメインをサーバーに向けます",
-    "descTxt": "ドメインの所有権を検証します",
-    "nameHost": "名前 / ホスト",
-    "valueTarget": "値 / ターゲット",
     "selfInfoPre": "サーバーIPを指す ",
     "recordA": "Aレコード",
     "selfInfoMid": " を追加し、続けて所有権検証用の ",
@@ -34,7 +35,31 @@
     "verifySuffix": " を追加してください。",
     "cloudInfoPre": "ルーティング用の ",
     "recordCname": "CNAMEレコード",
-    "cloudInfoMid": " を追加し、続けて "
+    "cloudInfoMid": " を追加し、続けて ",
+    "modalTitle": "ドメインを向けてからデプロイ",
+    "modalSubtitle": "ドメインがここを指すと、初回デプロイ時に HTTPS が発行されます — スキップして後から「ドメイン」タブで DNS を追加することもできます。",
+    "autoConfigTitle": "自分の DNS プロバイダーで自動設定する",
+    "autoConfigDesc": "レジストラーを接続すると、これらのレコードを代わりに追加します。",
+    "comingSoon": "近日公開",
+    "deployAction": "デプロイ",
+    "cancel": "キャンセル",
+    "loadingRecords": "DNS レコードを読み込み中…",
+    "serverIpPlaceholder": "サーバーのパブリックIP",
+    "record": {
+      "purposeA": "{hostname} をこのサーバーの IP アドレスに向けます",
+      "purposeCname": "{hostname} をエッジネットワーク経由でルーティングします",
+      "purposeCnameAlias": "{hostname} を {target} に向けます",
+      "purposeTxt": "{hostname} の所有権を証明します（検証時にこのレコードを参照します）",
+      "fieldType": "種類",
+      "fieldName": "名前",
+      "fieldValue": "値",
+      "fieldTtl": "TTL",
+      "ttlValue": "自動（または 3600）",
+      "apexHint": "「@」はドメイン自体を指します。プロバイダによっては空欄にします",
+      "fullName": "プロバイダがフルレコード名を求める場合:",
+      "proxyNote": "プロキシ / CDN のスイッチはオフのままにしてください（Cloudflare では灰色の雲＝「DNS only」）。このドメインの HTTPS を発行できるようにするためです。",
+      "copy": "コピー"
+    }
   },
   "buildSummary": {
     "title": "デプロイの概要",
@@ -119,6 +144,8 @@
     "addServer": "独自のサーバーを追加",
     "continue": "続行",
     "chooseServer": "サーバーを選択",
+    "thisServerBadge": "このサーバー",
+    "thisServerHost": "現在のホスト — デプロイはここで実行されます",
     "searchPlaceholder": "サーバーを検索…",
     "noServersMatch": "検索に一致するサーバーはありません。",
     "requireCloudFeature": "Openship Cloudへのデプロイ",
@@ -177,7 +204,15 @@
       "apiHostServerDesc": "Openshipホスト上でクローンしてからアップロードします。どこでも動作します。",
       "serverLabel": "サーバー上",
       "serverDesc": "サーバー上でクローンします — アップロードなし。大きなリポジトリに最適です。"
-    }
+    },
+    "rollbackTitle": "ロールバックとバックアップ",
+    "rollbackHint": "このサーバーで復元可能な過去バージョン数と、デプロイ前にバックアップされる対象。",
+    "rollbackFirstDeploy": "最初のデプロイ後にプロジェクト設定で変更できます。",
+    "backupSummaryNone": "バックアップ設定なし",
+    "backupSummaryConfigured": "バックアップ設定 {count} 件 · デプロイ前: {preDeploy}",
+    "backupManage": "バックアップを管理",
+    "on": "有効",
+    "off": "無効"
   },
   "summary": {
     "buildAndDeploy": "ビルドとデプロイ:",
@@ -188,7 +223,16 @@
     "targetServer": "自分のサーバー",
     "targetCloud": "Openship Cloud",
     "buildLocal": "このマシン",
-    "buildRemote": "リモート"
+    "buildRemote": "リモート",
+    "runtimeStatic": "Static · edge-served",
+    "runtimeSandboxed": "Sandboxed",
+    "runtimeDirectWarning": "Not sandboxed",
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed.",
+    "rollbackOne": "{count} バージョン",
+    "rollbackOther": "{count} バージョン",
+    "rollbackAuto": "ロールバック: 自動",
+    "rollbackSnapshotHint": "各バージョンのコピーを保持するため、ロールバックで再ビルドは発生しません。「詳細設定」で変更できます。",
+    "rollbackGitHint": "復元可能な過去バージョンの数です。「詳細設定」で変更できます。"
   },
   "power": {
     "heading": "パワー",
@@ -288,5 +332,20 @@
     "deployButton": "ウェブメールをデプロイ",
     "deployFailedTitle": "デプロイに失敗しました",
     "deployFailed": "デプロイの開始に失敗しました"
+  },
+  "serveMode": {
+    "heading": "How it's served",
+    "subtitle": "Serve the built files, or run it as a live server process.",
+    "staticLabel": "Serve as static files",
+    "staticDesc": "The build output is served directly by the edge. Nothing runs as a process.",
+    "serverLabel": "Run as a server process",
+    "serverDesc": "Start a long-running process (needs a start command and port).",
+    "staticNote": "Built in an isolated Docker sandbox, then served as static files by the edge.",
+    "startCommandLabel": "Start command",
+    "startCommandPlaceholder": "npx serve -s dist -l $PORT",
+    "startCommandHint": "The command that starts your server. For a static bundle, use a static file server (e.g. npx serve).",
+    "modeStatic": "静的",
+    "modeProcess": "サーバープロセス",
+    "portLabel": "Port"
   }
 }

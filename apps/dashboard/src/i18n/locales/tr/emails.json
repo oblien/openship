@@ -3,6 +3,7 @@
     "title": "E-posta Sunucusu",
     "subtitle": "Birkaç tıkla kendi sunucunuzda barındırılan bir e-posta sunucusu kurun",
     "backToServers": "E-posta sunucularına dön",
+    "backToAdmin": "E-posta yönetimine dön",
     "addServer": "E-posta sunucusu ekle",
     "removeModal": {
       "title": "Bu e-posta sunucusu kaldırılsın mı?",

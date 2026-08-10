@@ -3,6 +3,7 @@
     "title": "Serveur de messagerie",
     "subtitle": "Configurez un serveur de messagerie auto-hébergé en quelques clics",
     "backToServers": "Retour aux serveurs de messagerie",
+    "backToAdmin": "Retour à l'administration de la messagerie",
     "addServer": "Ajouter un serveur de messagerie",
     "removeModal": {
       "title": "Retirer ce serveur de messagerie ?",

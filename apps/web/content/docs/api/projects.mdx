@@ -306,20 +306,30 @@ steps; the binary tarball upload happens out-of-band (raw bytes, not JSON).
 
 <Cards>
   <Card title="1. Open a session" href="#folder-upload-deploy">
-    `POST /api/projects/folder/session` → returns an `upload` target `{ url, method, headers }`.
+    `POST /api/projects/folder/session` → returns an `upload` target
+    `{ url, absoluteUrl, method, headers, requiresAuth }`.
   </Card>
   <Card title="2. Upload the tarball">
-    POST the gzipped tarball to that `upload.url` with `Content-Type: application/gzip`. On self-hosted this
-    relays through `POST /api/projects/folder/upload/:sessionId` (300 MB limit).
+    POST the gzipped tarball to `upload.absoluteUrl` with `upload.headers` and
+    `Content-Type: application/gzip`. On self-hosted this relays through
+    `POST /api/projects/folder/upload/:sessionId` (300 MB limit).
   </Card>
   <Card title="3. Scan">
-    `POST /api/projects/folder/scan/:sessionId` detects stack, package manager, and build/start commands.
+    `POST /api/projects/folder/scan/:sessionId` detects stack, package manager, and build/start commands
+    — plus `services` for a docker-compose folder.
   </Card>
   <Card title="4. Ensure + deploy">
     Feed the scan into `POST /api/projects/ensure` (create/update the project), then deploy via
     `POST /api/deployments/build/access`.
   </Card>
 </Cards>
+
+The upload target is deliberately opaque — it points at this API's relay on a self-hosted instance and
+straight at a build workspace on Openship Cloud. Use `absoluteUrl` as-is, or resolve the API-relative
+`url` against your own API base. When `requiresAuth` is `true` (the self-hosted relay), send the same
+`Authorization: Bearer <token>` you used to open the session **in addition to** `upload.headers` — the
+relay is permission-checked like every other route. When it's `false`, the target is external and
+carries its own credential in `headers`; never add your Openship token to it.
 
 The session body (`POST /api/projects/folder/session`) is a lightweight hint — all fields optional:
 
@@ -334,6 +344,24 @@ The session body (`POST /api/projects/folder/session`) is a lightweight hint —
 `POST /api/projects/ensure` takes the full [create body](#create-a-project) plus an optional `projectId` to
 update an existing project in place instead of creating a new one. Set `gitProvider: "upload"` for a
 folder-upload project.
+
+### Multi-service folders
+
+When the uploaded folder has a `docker-compose.yml`, the scan returns a `services` array. Pass it through
+to `POST /api/projects/ensure` verbatim and it becomes the project's service set — `ensure` owns those
+rows, so send the whole set (services you leave out are removed, same as
+`POST /api/projects/:id/services/sync`). If you skip it, the deploy step falls back to the services the
+scan parsed for that upload session, so the four-step flow works either way; passing them explicitly is
+what lets you review or edit the set before deploying.
+
+<Callout title="Send uploadSessionId with echoed services" type="warn">
+Compose `environment` values are **masked** on every read (`••••••••`). When you echo a scanned
+`services` array back into `ensure`, include
+`uploadSessionId` so the server can restore the real values from the scan it captured pre-mask. Without
+it, masked values have no source to restore from and are **dropped** rather than persisted as dots (the
+same rule every write path follows). Values you revealed and edited are sent in the clear and pass
+through untouched.
+</Callout>
 
 ## Transfer to / from cloud
 

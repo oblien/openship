@@ -17,8 +17,7 @@
 import chalk from "chalk";
 import open from "open";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   intro,
@@ -33,10 +32,56 @@ import {
   isCancel,
 } from "@clack/prompts";
 
-import { startService, ensureInternalToken, normalizeUrl } from "./up";
+import { isValidEmail } from "@repo/core";
+import { startService, normalizeUrl } from "./up";
+import {
+  ensureInternalToken,
+  internalGet,
+  internalPost,
+  bootstrapAdmin,
+  waitHealthy,
+  waitDashboard,
+  detectPublicIp,
+  OS_DIR,
+} from "../lib/loopback-api";
 import { ensureDashboard } from "../lib/dashboard";
 import { serviceStatus, stop as stopService, restart as restartService } from "../lib/service";
-import { saveInstanceUrl, readInstanceUrl } from "../lib/ports";
+import {
+  saveInstanceUrl,
+  readInstanceUrl,
+  portMoveNotice,
+  readStoredPorts,
+  storedApiPort,
+  storedDashboardPort,
+} from "../lib/ports";
+import { runRepair, looksCorrupted, lastServiceError } from "../lib/repair";
+import {
+  ensureDocker,
+  dockerGap,
+  hasDockerCompose,
+  composeUp,
+  composeInternalToken,
+  composePrefetch,
+  composeTrustedOriginUrls,
+  resolveComposePorts,
+  sourceBuildDir,
+  readInstallMethod,
+  composeDown,
+  composeStart,
+  composeRestart,
+  composeRunning,
+} from "../lib/compose";
+import {
+  planAndApplyHostEdge,
+  rollbackHostEdge,
+  completeHostEdge,
+  renderEdgeConflict,
+  confirmEdgeAction,
+  remediateUnreachableStaticRoots,
+} from "../lib/edge-preflight";
+import { importMigratedSites } from "../lib/edge-import";
+import { LocalExecutor, type ImportedSite, type UnreachableStaticRoot } from "@repo/adapters/proxy";
+import { headlessProvision, type InstallInputs } from "../lib/instance-provision";
 
 declare const __CLI_VERSION__: string;
 
@@ -51,110 +96,9 @@ function ensure<T>(value: T | symbol): T {
 
 const SLUG_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 
-/* ── loopback API helpers (internal-token gated) ─────────────────────────── */
-
-async function internalGet(port: string, path: string): Promise<any | null> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-      headers: { "X-Internal-Token": ensureInternalToken() },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
-async function internalPost(port: string, path: string, body: unknown): Promise<{ ok: boolean; data: any }> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Internal-Token": ensureInternalToken() },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
-    });
-    const data = await res.json().catch(() => ({}));
-    return { ok: res.ok, data };
-  } catch (err) {
-    return { ok: false, data: { error: (err as Error).message } };
-  }
-}
-
-/** POST the first admin to the internal-token-gated bootstrap endpoint. */
-async function bootstrapAdmin(
-  apiPort: string,
-  admin: { name: string; email: string; password: string },
-): Promise<{ ok: boolean; message?: string }> {
-  const { ok, data } = await internalPost(apiPort, "/api/system/bootstrap-admin", admin);
-  if (ok) return { ok: true };
-  if (data?.error === "An admin account already exists") return { ok: true, message: "already-exists" };
-  return { ok: false, message: data?.error || "failed" };
-}
-
-/** Last error line from the service log — surfaced when the API won't boot so the
- *  user sees the real cause (e.g. a locked DB) instead of a bare timeout. */
-function lastServiceError(): string | null {
-  for (const name of ["up.err.log", "up.log"]) {
-    const p = join(homedir(), ".openship", "logs", name);
-    if (!existsSync(p)) continue;
-    try {
-      const lines = readFileSync(p, "utf8").trim().split("\n");
-      const hit = [...lines].reverse().find((l) => /error|locked|EADDRINUSE|throw|cannot/i.test(l));
-      if (hit) return hit.trim().slice(0, 200);
-    } catch {
-      /* ignore */
-    }
-  }
-  return null;
-}
-
-async function waitHealthy(apiPort: string, seconds = 90): Promise<boolean> {
-  for (let i = 0; i < seconds; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      await fetch(`http://127.0.0.1:${apiPort}/api/health`, { signal: AbortSignal.timeout(2000) });
-      return true;
-    } catch {
-      /* not up yet */
-    }
-  }
-  return false;
-}
-
-/** Poll the dashboard port until it serves — the dist was pre-pulled, so the
- *  service only has to boot it. Best-effort: returns false on timeout (the API
- *  is already healthy; the dashboard just needs another moment). */
-async function waitDashboard(dashPort: string, seconds = 45): Promise<boolean> {
-  for (let i = 0; i < seconds; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const res = await fetch(`http://127.0.0.1:${dashPort}/`, {
-        redirect: "manual",
-        signal: AbortSignal.timeout(2000),
-      });
-      if (res.status > 0) return true;
-    } catch {
-      /* not up yet */
-    }
-  }
-  return false;
-}
-
-/** Best-effort public IP for the A-record hint + edge-proxy target. */
-async function detectPublicIp(): Promise<string | null> {
-  for (const url of ["https://api.ipify.org", "https://ifconfig.me/ip"]) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-      if (!res.ok) continue;
-      const ip = (await res.text()).trim();
-      if (/^[0-9.]+$/.test(ip) || ip.includes(":")) return ip;
-    } catch {
-      /* try next */
-    }
-  }
-  return null;
-}
+/* Loopback API helpers (internalGet/internalPost/bootstrapAdmin/waitHealthy/
+ * waitDashboard/detectPublicIp) now live in lib/loopback-api and are imported
+ * above — one copy shared with the headless installer + `openship up`. */
 
 const b64url = (buf: Buffer) =>
   buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -164,7 +108,7 @@ const b64url = (buf: Buffer) =>
  * finalize on the loopback API (internal-token gated). Returns the linked cloud
  * account (its email) on success, or null when not linked.
  */
-async function connectOpenshipCloud(port: string): Promise<{ email: string | null } | null> {
+async function connectOpenshipCloud(port: string, token?: string): Promise<{ email: string | null } | null> {
   const already = await internalGet(port, "/api/system/cloud-status");
   if (already?.connected) {
     log.success(`Already connected to Openship Cloud${already.user?.email ? ` as ${already.user.email}` : ""}.`);
@@ -189,16 +133,17 @@ async function connectOpenshipCloud(port: string): Promise<{ email: string | nul
   // unguessable `state` to pick up the one-time, PKCE-locked code. This is why
   // it works over SSH — the browser (on the user's laptop) never has to reach
   // back to this box.
-  //   - mode=device → the consent page confirms in-place (no redirect).
-  //   - `redirect` is required + validated by the SaaS but never navigated to
-  //     in device mode; point it at the cloud origin so validation passes.
+  //   - mode=device → the consent page confirms in-place; the code is delivered
+  //     by the poll below, so there is NO redirect param at all.
   const handoff =
     `${apiBase}/api/cloud/connect-handoff` +
-    `?redirect=${encodeURIComponent(apiBase)}` +
-    `&state=${encodeURIComponent(state)}&code_challenge=${challenge}&mode=device`;
+    `?state=${encodeURIComponent(state)}&code_challenge=${challenge}&mode=device`;
 
   const overSsh = !!(process.env.SSH_CONNECTION || process.env.SSH_TTY || process.env.SSH_CLIENT);
-  note(handoff, "Open this URL in your browser to authorize (then click Authorize)");
+  // Print the URL as a bare, single-line, selectable value. clack's note() boxes
+  // and gutters it, which wraps the URL across lines and makes it uncopyable.
+  log.step("Open this URL in your browser to authorize, then click Authorize:");
+  console.log("\n" + chalk.cyan.underline(handoff) + "\n");
   // A box with a desktop browser can auto-open it; over SSH there's none, so
   // the user opens the printed URL on their own machine.
   if (!overSsh) void open(handoff).catch(() => {});
@@ -237,7 +182,7 @@ async function connectOpenshipCloud(port: string): Promise<{ email: string | nul
 
   const linking = spinner();
   linking.start("Linking this instance to Openship Cloud");
-  const res = await internalPost(port, "/api/system/cloud-connect", { code, codeVerifier: verifier });
+  const res = await internalPost(port, "/api/system/cloud-connect", { code, codeVerifier: verifier }, token);
   if (!res.ok) {
     linking.stop(`Couldn't link Openship Cloud: ${res.data?.error || "failed"}`, 1);
     return null;
@@ -254,7 +199,9 @@ async function promptLocalAdmin(): Promise<{ name: string; email: string; passwo
     await text({
       message: "Email",
       placeholder: "you@example.com",
-      validate: (v) => (v?.includes("@") ? undefined : "Enter a valid email"),
+      // Same rule the headless path enforces (isValidEmail) — an `@`-only check
+      // let `test@gmail.co,` through and created an admin nobody could reach.
+      validate: (v) => (isValidEmail(v ?? "") ? undefined : "Enter a valid email address"),
     }),
   )
     .trim()
@@ -326,8 +273,152 @@ async function streamProvision(
   return { ok, detail };
 }
 
+/**
+ * "Setup didn't finish" marker. Written once the wizard COMMITS the OS service
+ * (so `serviceStatus().installed` flips true) and cleared only when setup runs
+ * all the way to the end. If the wizard is interrupted in between — e.g. the
+ * cloud-connect / domain step is cancelled or times out — this stays behind, so
+ * the next `openship` resumes setup instead of showing the control panel as if
+ * the install were finished. `openship up` never writes it (that path is a
+ * complete install on its own), and pre-this-version installs never had one, so
+ * neither is mistaken for interrupted.
+ */
+const SETUP_LOCK = join(OS_DIR, "setup-in-progress");
+
+/** True when a prior wizard run installed the service but never completed. */
+export function isSetupInProgress(): boolean {
+  return existsSync(SETUP_LOCK);
+}
+function markSetupStarted(): void {
+  mkdirSync(OS_DIR, { recursive: true });
+  writeFileSync(SETUP_LOCK, "1");
+}
+function markSetupDone(): void {
+  rmSync(SETUP_LOCK, { force: true });
+}
+
+/** Map the wizard's collected domain plan to the shared provision pipe's inputs. */
+function wizardInputs(
+  admin: { name: string; email: string; password: string },
+  plan:
+    | { type: "free"; slug: string; publicHost: string }
+    | { type: "custom"; hostname: string }
+    | { type: "byo"; hostname: string }
+    | { type: "none" },
+): InstallInputs {
+  switch (plan.type) {
+    case "free":
+      return { admin, domain: { kind: "free", slug: plan.slug, publicHost: plan.publicHost } };
+    case "custom":
+      // Compose edge is a container; headlessProvision issues the cert via the
+      // self-app project, so `edge` (host takeover) is a no-op here.
+      return { admin, domain: { kind: "custom", hostname: plan.hostname, acmeEmail: admin.email, edge: "cancel" } };
+    case "byo":
+      return { admin, domain: { kind: "byo", hostname: plan.hostname } };
+    default:
+      return { admin, domain: { kind: "none" } };
+  }
+}
+
+/** Shared "Openship is live" summary + clear the in-progress marker + outro. */
+function finishSetup(opts: {
+  liveUrl: string;
+  dashPort: string;
+  apiPort: string;
+  adminEmail: string;
+  cloudEmail: string | null;
+  method: "compose" | "bare";
+  byo: boolean;
+}): void {
+  saveInstanceUrl(opts.liveUrl);
+  markSetupDone();
+  const pad = (label: string) => chalk.dim(label.padEnd(11));
+  log.success(chalk.bold("Openship is live"));
+  log.message(
+    `${pad("URL")}${chalk.bold(opts.liveUrl)}\n` +
+      `${pad("Dashboard")}http://localhost:${opts.dashPort}\n` +
+      `${pad("API")}http://localhost:${opts.apiPort}\n` +
+      `${pad("Login")}${opts.adminEmail} ${chalk.dim("(email + password you set)")}\n` +
+      (opts.cloudEmail
+        ? `${pad("Cloud")}${chalk.dim("connected as ")}${opts.cloudEmail}${chalk.dim(" — free domain + mail only")}\n`
+        : "") +
+      `${pad("Status")}${chalk.green("running")} ${chalk.dim(opts.method === "compose" ? "· Docker Compose stack (restarts on boot)" : "· service (restarts on boot)")}`,
+  );
+  log.message(
+    chalk.dim("Sign in with the email + password you just set. Openship appears under your Apps.\n") +
+      chalk.dim("Change the domain, Openship Cloud, team, and everything else anytime in Settings.\n") +
+      chalk.dim(`Locked out? Run ${chalk.reset("openship reset-admin-password")}${chalk.dim(" on this machine — resets your login without signing in.")}`),
+  );
+  outro(opts.byo ? chalk.dim("Point your reverse proxy at the dashboard port above.") : chalk.green("Happy shipping."));
+}
+
+/**
+ * Shared local-edge preflight for a BARE install. A foreign proxy on 80/443 must
+ * be dealt with before Openship can own the edge — and this is domain-AGNOSTIC:
+ * a custom domain terminates TLS here, and a FREE domain has Cloud forward to :80
+ * here, so BOTH need the local edge (and the same migrate/take-over/cancel
+ * choice). This is the bare-mode twin of `openship up`'s compose `planAndApplyHostEdge`.
+ * Returns proceed=false only when the operator chose to leave the proxy running.
+ */
+async function promptLocalEdgeTakeover(port: string): Promise<{
+  proceed: boolean;
+  edgeMigrate: boolean;
+  edgeTakeover: boolean;
+  staticRootOverrides?: Record<string, string>;
+}> {
+  const pf = await internalPost(port, "/api/system/self-edge/preflight", {});
+  const status = pf.ok
+    ? (pf.data?.status as
+        | { classification: string; canProceedClean: boolean; occupants: Array<{ command?: string; port: number }> }
+        | undefined)
+    : undefined;
+  // Clean (or unknown) edge → nothing to migrate/take over.
+  if (!status || status.canProceedClean || !status.occupants?.length) {
+    return { proceed: true, edgeMigrate: false, edgeTakeover: false };
+  }
+  const owner = status.occupants.map((o) => o.command ?? `port ${o.port}`).join(", ");
+  const known = status.classification === "known";
+  const sites = (pf.ok && Array.isArray(pf.data?.sites) ? pf.data.sites : []) as ImportedSite[];
+  const warnings = (pf.ok && Array.isArray(pf.data?.warnings) ? pf.data.warnings : []) as string[];
+
+  // Reuse the ONE shared presenter + prompt from edge-preflight.ts (same UI,
+  // same EdgeAction vocabulary + default the compose host-edge preflight uses) —
+  // no third hand-rolled copy of the migrate/take-over/cancel decision.
+  renderEdgeConflict({ owner, sites, warnings });
+  const action = await confirmEdgeAction({ owner, known, importable: sites.length });
+  if (action === "cancel") return { proceed: false, edgeMigrate: false, edgeTakeover: false };
+
+  // On migrate, remediate adopted static roots the edge can't reach (copy them into
+  // its static mount host-side, this box being the host). The server's preflight
+  // decided containerEdge (bare-vs-container) already, so trust its list — a bare
+  // edge sees every path and returns none. See #456.
+  let staticRootOverrides: Record<string, string> | undefined;
+  if (action === "migrate") {
+    const unreachable = (
+      pf.ok && Array.isArray(pf.data?.unreachableStaticRoots) ? pf.data.unreachableStaticRoots : []
+    ) as UnreachableStaticRoot[];
+    staticRootOverrides = await remediateUnreachableStaticRoots({
+      unreachable,
+      executor: new LocalExecutor(),
+      interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    });
+  }
+  return {
+    proceed: true,
+    edgeMigrate: action === "migrate",
+    edgeTakeover: action === "takeover",
+    ...(staticRootOverrides ? { staticRootOverrides } : {}),
+  };
+}
+
 export async function runWizard(): Promise<void> {
+  const resuming = isSetupInProgress();
   intro(`${chalk.bgCyan(chalk.black(" Openship "))}${chalk.dim(" setup")}`);
+  if (resuming) {
+    log.warn(
+      "Your last setup didn't finish — picking it back up. Re-enter your details to complete it (or run `openship up` to just keep the server running).",
+    );
+  }
   log.message(
     chalk.dim(
       "Deploy Openship on this machine — a few questions, then it installs itself\nas a service, registers as an app, and prints the URL to log in.",
@@ -558,53 +649,291 @@ export async function runWizard(): Promise<void> {
     break planning;
   }
 
-  // 3. Deploy Openship as an app — pull the prebuilt DIST from GitHub (no build),
-  //    then run it through the SAME `up` service pipeline. The dist pull happens
-  //    LIVE here (not hidden in the background service) so you see it; the service
-  //    then reuses this exact cached bundle (matched by tag).
-  const uiTag = `v${__CLI_VERSION__}`;
-  const dl = spinner();
-  dl.start("Pulling the Openship dist from GitHub");
-  try {
-    await ensureDashboard({
-      tag: uiTag,
-      onProgress: (received, total) => {
-        if (total) dl.message(`Pulling the Openship dist from GitHub — ${Math.round((received / total) * 100)}%`);
-      },
-    });
-    dl.stop("Openship dist ready.");
-  } catch (e) {
-    dl.stop(`Couldn't pull the Openship dist: ${(e as Error).message}`, 1);
-    log.info("Check your network / that this release published its dashboard asset, then re-run `openship`.");
-    process.exit(1);
+  // 3. Choose how to run Openship. On a Linux server use the Docker Compose stack
+  //    (containerized edge on 80/443 that hosts apps on THIS box, with real
+  //    image-pull progress) — the same install `openship up` picks — auto-installing
+  //    Docker via the same toolchain the deploy pipeline uses. macOS/Windows (no
+  //    host-net Docker) and a failed Docker ensure fall back to the bare service.
+  let method: "compose" | "bare" = "bare";
+  if (process.platform === "linux") {
+    // Say what's ACTUALLY missing. "Docker isn't installed" on a box that has
+    // Docker but no Compose plugin (Debian's docker.io) sent operators chasing
+    // the wrong problem, and re-running get.docker.com for a daemon that's merely
+    // unreachable can't help — it just rewrites their docker repo config.
+    const gap = dockerGap();
+    if (!gap) {
+      method = "compose";
+    } else if (!gap.installable) {
+      log.warn(`${gap.summary} — using the bare process service instead.`);
+      if (gap.hint) log.info(gap.hint);
+      method = "bare";
+    } else {
+      log.step(`${gap.summary} — installing via get.docker.com…`);
+      method = (await ensureDocker({ onNotice: (line) => log.info(line) })) ? "compose" : "bare";
+      if (method === "bare") {
+        log.warn("Couldn't install Docker automatically — falling back to the bare process service.");
+      }
+    }
   }
+
+  const uiTag = `v${__CLI_VERSION__}`;
+  // Bare runs the downloaded dashboard bundle; Compose ships the dashboard inside
+  // the image, so only the bare path pulls the dist (Compose shows pull progress).
+  if (method === "bare") {
+    const dl = spinner();
+    dl.start("Pulling the Openship dist from GitHub");
+    try {
+      await ensureDashboard({
+        tag: uiTag,
+        onProgress: (received, total) => {
+          if (total) dl.message(`Pulling the Openship dist from GitHub — ${Math.round((received / total) * 100)}%`);
+        },
+      });
+      dl.stop("Openship dist ready.");
+    } catch (e) {
+      dl.stop(`Couldn't pull the Openship dist: ${(e as Error).message}`, 1);
+      log.info("Check your network / that this release published its dashboard asset, then re-run `openship`.");
+      process.exit(1);
+    }
+  }
+
+  // From here the service/stack exists, so serviceStatus().installed is true even
+  // if the user bails at the cloud/domain step below — mark setup in-progress so
+  // the next launch resumes here instead of jumping to the control panel.
+  markSetupStarted();
 
   const s = spinner();
-  s.start("Installing Openship as a service");
   let started: { port: string; dashPort: string; publicUrl?: string };
-  try {
-    started = await startService(
-      { publicUrl, trustProxy: behindProxy, managedEdge, acmeEmail: managedEdge ? admin.email : undefined, uiVersion: uiTag },
-      { quiet: true },
+  let provisionToken: string | undefined;
+  // Host-edge takeover state (compose only): what the operator chose, plus the
+  // sites/certs to hand the api once the container edge is up.
+  let edgeAction: "migrate" | "takeover" | "cancel" | undefined;
+  let migratedSites: ImportedSite[] | undefined;
+  let migratedCertPems: Record<string, { certPem: string; keyPem: string }> | undefined;
+  let migratedStaticRootOverrides: Record<string, string> | undefined;
+  // Host control is a SECURITY decision, so it's shown rather than assumed — but
+  // pre-selected to "allow", because a single-box install needs it (:80/:443
+  // takeover, host port scans, the host terminal) and a hardening prompt that
+  // blocks the happy path just gets clicked through. Declining is a real posture:
+  // this box then manages only REMOTE servers.
+  let allowHostControl = true;
+  if (method === "compose") {
+    allowHostControl =
+      ensure(
+        await select({
+          message: "Let Openship operate this machine's OS?",
+          initialValue: "allow",
+          options: [
+            {
+              value: "allow",
+              label: "Allow (recommended)",
+              hint: "needed to deploy to THIS box: take over :80/:443, scan ports, host terminal",
+            },
+            {
+              value: "deny",
+              label: "No host control",
+              hint: "manage only remote servers — no host key is created, host ops refuse",
+            },
+          ],
+        }),
+      ) === "allow";
+    if (!allowHostControl) {
+      log.message(
+        chalk.dim(
+          "  No host key will be created or mounted, and this box won't be offered as a deploy target.\n" +
+            "  The Docker socket stays mounted (deployments need it), so this is defense in depth, not isolation.",
+        ),
+      );
+    }
+  }
+  if (method === "compose") {
+    // Ports are a preference, not a fixture: the stack publishes them on the host,
+    // so a busy 4000/3001 would fail `up` outright. Resolved once here and passed to
+    // both compose steps (they each render `.env`, so they must agree).
+    const ports = await resolveComposePorts({});
+    const apiPort = String(ports.api);
+    const dashboardPort = String(ports.dashboard);
+    const moved = portMoveNotice(ports, composeTrustedOriginUrls());
+    if (moved.length) log.info(moved.join("\n"));
+    // Fetch FIRST, cut over second — same rule as `openship up`. Pulling after the
+    // preflight stops a foreign proxy keeps the box dark for the whole download, and
+    // a failed pull takes their sites down for a problem that never reached them.
+    log.step(
+      sourceBuildDir()
+        ? "Building the Openship images before touching :80/:443 (first run takes a few minutes)…"
+        : "Pulling images before touching :80/:443…",
     );
-  } catch (e) {
-    s.stop("Couldn't install the service.", 1);
-    log.error((e as Error).message);
-    log.info("Run `openship up --foreground` to run it attached and see the error.");
-    process.exit(1);
+    if (
+      !composePrefetch({
+        apiPort,
+        dashboardPort,
+        publicUrl,
+        trustProxy: behindProxy,
+        version: __CLI_VERSION__,
+        noHostControl: !allowHostControl,
+      })
+    ) {
+      cancel("Couldn't fetch the Openship images — nothing on this box was changed.");
+      process.exit(1);
+    }
+
+    // A foreign proxy already on 80/443? Migrate/take it over first (interactive)
+    // so the container edge can bind — the same host-edge pipe `openship up` uses.
+    const edgePlan = await planAndApplyHostEdge({});
+    if (!edgePlan.proceed) {
+      cancel(
+        edgePlan.blockedBy
+          ? `Can't take over the edge: ${edgePlan.blockedBy}. Nothing was started.`
+          : "Left the existing proxy on 80/443 running — re-run and choose migrate/takeover when ready.",
+      );
+      process.exit(edgePlan.blockedBy ? 1 : 0);
+    }
+    // Kept outside this branch so the health-check failure below can roll the
+    // takeover back, and so the post-up import knows what to register.
+    edgeAction = edgePlan.action;
+    migratedSites = edgePlan.sites;
+    migratedCertPems = edgePlan.certPems;
+    migratedStaticRootOverrides = edgePlan.staticRootOverrides;
+    log.step("Starting the Docker Compose stack…");
+    const up = await composeUp({
+      // Prefetched above, before the preflight stopped anything.
+      alreadyFetched: true,
+      apiPort,
+      dashboardPort,
+      publicUrl,
+      trustProxy: behindProxy,
+      version: __CLI_VERSION__,
+      noHostControl: !allowHostControl,
+    });
+    if (!up.ok) {
+      // The preflight stopped + disabled the operator's proxy to free 80/443. The
+      // stack isn't coming up, so restore it rather than leaving the box dark.
+      if (edgePlan.action && (await rollbackHostEdge())) {
+        log.warn("Restored the previous proxy on 80/443 — your existing sites are serving again.");
+      }
+      log.error("The Docker Compose stack didn't come up. Run `openship up --compose` to see the error.");
+      process.exit(1);
+    }
+    started = { port: up.apiPort, dashPort: up.dashPort, publicUrl };
+    provisionToken = composeInternalToken() ?? undefined;
+    s.start("Waiting for the Openship API");
+  } else {
+    s.start("Installing Openship as a service");
+    try {
+      started = await startService(
+        { publicUrl, trustProxy: behindProxy, managedEdge, acmeEmail: managedEdge ? admin.email : undefined, uiVersion: uiTag },
+        { quiet: true },
+      );
+    } catch (e) {
+      s.stop("Couldn't install the service.", 1);
+      log.error((e as Error).message);
+      log.info("Run `openship up --foreground` to run it attached and see the error.");
+      process.exit(1);
+    }
+    s.message("Waiting for the Openship API");
   }
 
-  s.message("Waiting for the Openship API");
   if (!(await waitHealthy(started.port))) {
     s.stop("Openship didn't become healthy in time.", 1);
+    if (method === "compose" && edgeAction && (await rollbackHostEdge())) {
+      log.warn("Restored the previous proxy on 80/443 — your existing sites are serving again.");
+    }
     const reason = lastServiceError();
     if (reason) log.error(reason);
     if (reason && /lock/i.test(reason)) {
       log.info("The database is locked by another instance — run `openship stop`, then re-run `openship`.");
     } else {
-      log.info("Run `openship up --foreground` to run it attached and see the error.");
+      log.info(
+        method === "compose"
+          ? "Run `openship up --compose` to see the error."
+          : "Run `openship up --foreground` to run it attached and see the error.",
+      );
     }
     process.exit(1);
+  }
+
+  if (method === "compose") {
+    // Reuse the SAME provision pipe as `openship up` (admin + domain via
+    // self-register against the running stack). Keep the interactive Openship
+    // Cloud connect for a free domain; the container edge owns HTTPS.
+    s.message("Starting the Openship dashboard");
+    await waitDashboard(started.dashPort);
+    s.stop("Deployed.");
+
+    // Migrate, phase 2 — the container edge exists now, so re-register the
+    // foreign proxy's sites into it (same helper `openship up` uses). Without
+    // this, "Migrate N sites & take over" would take the ports and serve nothing
+    // for those hostnames.
+    if (edgeAction === "migrate" && migratedSites?.length) {
+      const imported = await importMigratedSites(
+        started.port,
+        migratedSites,
+        migratedCertPems,
+        migratedStaticRootOverrides,
+      );
+      if (!imported.ok) {
+        log.warn(
+          `Your ${migratedSites.length} existing site${migratedSites.length === 1 ? "" : "s"} ` +
+            "aren't served yet — re-run `openship up` to retry the import.",
+        );
+      }
+    }
+    if (edgeAction) await completeHostEdge();
+
+    let liveUrl = publicUrl ?? `http://localhost:${started.dashPort}`;
+    if (domainPlan.type === "free") {
+      const cloud = await connectOpenshipCloud(started.port, provisionToken);
+      if (cloud) cloudEmail = cloud.email;
+      else
+        log.warn(
+          "Openship Cloud wasn't connected — skipping the free domain. Your local admin login still works; add it later in Settings → Cloud.",
+        );
+    }
+    const result = await headlessProvision({
+      port: started.port,
+      dashPort: started.dashPort,
+      inputs: wizardInputs(admin, domainPlan),
+      token: provisionToken,
+      method: "compose",
+      onLog: (msg) => log.message(chalk.dim(msg)),
+      // .opsh.io is a SHARED zone, and Cloud only connects after the stack is up —
+      // so a taken subdomain can't be detected at prompt time. Recover here, where
+      // we still have a TTY, instead of ending the run with no domain.
+      onSlugTaken: async (taken) => {
+        log.warn(`"${taken}.opsh.io" is already taken.`);
+        const next = await text({
+          message: "Choose a different subdomain (or leave empty to skip the free domain)",
+          placeholder: "my-openship",
+          validate: (v) => {
+            const value = (v ?? "").trim().toLowerCase();
+            if (!value) return undefined; // empty = skip
+            return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(value)
+              ? undefined
+              : "Lowercase letters, digits and hyphens only";
+          },
+        });
+        if (isCancel(next)) return null;
+        const value = String(next ?? "").trim().toLowerCase();
+        return value || null;
+      },
+    });
+    if (result.liveUrl) liveUrl = result.liveUrl;
+    // The domain FAILED: don't present the planned hostname as the live URL. The
+    // summary used to print `https://<slug>.opsh.io` for a domain that was never
+    // created, because liveUrl was seeded from the plan and only overwritten on
+    // success — so a hard failure read as a success.
+    else if (!result.domainRegistered) liveUrl = `http://localhost:${started.dashPort}`;
+    for (const w of result.warnings) log.warn(w);
+    finishSetup({
+      liveUrl,
+      dashPort: started.dashPort,
+      apiPort: started.port,
+      adminEmail: admin.email,
+      cloudEmail,
+      method: "compose",
+      byo: domainPlan.type === "byo",
+    });
+    return;
   }
 
   // Always create the local admin now — before any cloud connect — so the instance
@@ -658,117 +987,67 @@ export async function runWizard(): Promise<void> {
       await internalPost(port, "/api/system/self-register", { domainType: "byo" });
     } else {
       cloudEmail = cloud.email;
-      // Availability is only knowable now (cloud is connected) — so surface it
-      // here: on a taken/invalid subdomain, re-prompt and retry instead of
-      // dead-ending. The public host is guaranteed set (resolvePublicHost).
-      let regSlug = domainPlan.slug;
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const s2 = spinner();
-        s2.start(`Registering ${chalk.bold(`${regSlug}.opsh.io`)} with Openship Cloud`);
-        const res = await internalPost(port, "/api/system/self-register", {
-          domainType: "free",
-          slug: regSlug,
-          publicHost: domainPlan.publicHost,
-          dashPort: Number(started.dashPort),
-        });
-        if (res.ok && res.data?.url) {
-          liveUrl = res.data.url;
-          s2.stop(`Free domain live: ${res.data.url}`);
-          break;
-        }
-        s2.stop(`Couldn't register ${regSlug}.opsh.io: ${res.data?.error || "failed"}`, 1);
-        const next = ensure(
-          await select({
-            message: "Try a different subdomain?",
-            options: [
-              { value: "retry", label: "Pick another subdomain" },
-              { value: "skip", label: "Skip for now", hint: "log in on this server; add a domain later in Settings → Cloud" },
-            ],
-          }),
+      // Cloud forwards <slug>.opsh.io → :80 on THIS box, so the box needs a local
+      // edge listening there — including taking over a foreign proxy on 80/443.
+      // The SAME shared preflight the custom path runs; Cloud terminates TLS, so
+      // no cert is issued (self-register gets localEdge + the takeover choice).
+      const edge = await promptLocalEdgeTakeover(port);
+      if (!edge.proceed) {
+        log.warn(
+          "Left the existing proxy on 80/443 running — a free domain forwards to :80 here, so it " +
+            "won't serve until Openship owns that port. Re-run setup and choose migrate / take over.",
         );
-        if (next === "skip") break;
-        regSlug = ensure(
-          await text({
-            message: "Choose your subdomain",
-            placeholder: "my-openship",
-            initialValue: regSlug,
-            validate: (v) => (v && SLUG_RE.test(v.trim().toLowerCase()) ? undefined : "Lowercase letters, digits, hyphens"),
-          }),
-        )
-          .trim()
-          .toLowerCase();
       }
+      // Reuse the SAME provision pipe as `openship up` + the compose wizard: its
+      // free branch owns the shared-zone slug-taken retry (onSlugTaken) AND the
+      // localEdge host-edge streaming — no hand-rolled loop here. bootstrapAdmin
+      // already ran above; headlessProvision's bootstrap is idempotent.
+      const result = await headlessProvision({
+        port,
+        dashPort: started.dashPort,
+        token: provisionToken,
+        method: "bare",
+        inputs: {
+          admin,
+          domain: {
+            kind: "free",
+            slug: domainPlan.slug,
+            publicHost: domainPlan.publicHost,
+            // Bare needs a local :80 edge for Cloud to forward to; skip only when
+            // the operator declined the takeover (their proxy keeps 80/443).
+            localEdge: edge.proceed,
+            edgeTakeover: edge.edgeTakeover,
+            edgeMigrate: edge.edgeMigrate,
+            ...(edge.staticRootOverrides ? { staticRootOverrides: edge.staticRootOverrides } : {}),
+          },
+        },
+        onLog: (msg) => log.message(chalk.dim(msg)),
+        onSlugTaken: async (taken) => {
+          log.warn(`"${taken}.opsh.io" is already taken.`);
+          const next = await text({
+            message: "Choose a different subdomain (or leave empty to skip the free domain)",
+            placeholder: "my-openship",
+            validate: (v) => (!v || SLUG_RE.test(v.trim().toLowerCase()) ? undefined : "Lowercase letters, digits, hyphens"),
+          });
+          return isCancel(next) || !next.trim() ? null : next.trim().toLowerCase();
+        },
+      });
+      if (result.liveUrl) liveUrl = result.liveUrl;
+      for (const w of result.warnings) log.warn(w);
     }
   } else if (domainPlan.type === "custom") {
-    // Managed HTTPS needs ports 80/443. If an existing proxy already owns them,
-    // ask before taking over — never silently kill someone's running service.
-    let edgeTakeover = false;
-    let edgeMigrate = false;
-    let proceedCustom = true;
-    const pf = await internalPost(port, "/api/system/self-edge/preflight", {});
-    const status = pf.ok
-      ? (pf.data?.status as
-          | { classification: string; canProceedClean: boolean; occupants: Array<{ command?: string; port: number }> }
-          | undefined)
-      : undefined;
-    const importable = pf.ok && Array.isArray(pf.data?.sites) ? (pf.data.sites as unknown[]).length : 0;
-    if (status && !status.canProceedClean && status.occupants?.length) {
-      const owner = status.occupants.map((o) => o.command ?? `port ${o.port}`).join(", ");
-      const known = status.classification === "known";
+    // Managed HTTPS needs ports 80/443 — the SAME shared preflight the free path
+    // runs asks migrate / take over / cancel when a foreign proxy owns them.
+    const edge = await promptLocalEdgeTakeover(port);
+    const proceedCustom = edge.proceed;
+    const edgeTakeover = edge.edgeTakeover;
+    const edgeMigrate = edge.edgeMigrate;
 
-      // Show WHAT would be migrated (not just a count) so the operator can audit
-      // it before handing us their edge. Mirrors the dashboard takeover modal.
-      const sites = (pf.ok && Array.isArray(pf.data?.sites) ? pf.data.sites : []) as Array<{
-        serverNames?: string[];
-        ssl?: boolean;
-        target?: { kind?: string; url?: string; root?: string };
-        source?: string;
-      }>;
-      if (sites.length > 0) {
-        const lines = sites.map((st) => {
-          const host = (st.serverNames ?? []).join(", ") || "(no server_name)";
-          const dest = st.target?.kind === "static" ? `static: ${st.target?.root ?? ""}` : st.target?.url ?? "";
-          return `${chalk.bold(host)} → ${chalk.dim(dest)}${st.ssl ? chalk.green(" [TLS]") : ""}`;
-        });
-        note(lines.join("\n"), `Detected ${sites.length} site${sites.length === 1 ? "" : "s"} on ${owner}`);
-      }
-      const warns = (pf.ok && Array.isArray(pf.data?.warnings) ? pf.data.warnings : []) as string[];
-      if (warns.length > 0) {
-        log.warn(`${warns.length} config item${warns.length === 1 ? "" : "s"} won't migrate automatically:`);
-        for (const w of warns.slice(0, 8)) log.message(chalk.dim(`• ${w}`));
-      }
-
-      const choice = ensure(
-        await select({
-          message: known
-            ? `An existing reverse proxy (${owner}) is serving ports 80/443.`
-            : `Ports 80/443 are in use by ${owner}, which we couldn't identify.`,
-          options: [
-            ...(importable > 0
-              ? [{
-                  value: "migrate",
-                  label: `Migrate ${importable} site${importable === 1 ? "" : "s"} & take over`,
-                  hint: "import the existing sites into Openship, then take 80/443",
-                }]
-              : []),
-            {
-              value: "override",
-              label: "Stop it & take over 80/443",
-              hint: known ? "the existing sites stop being served" : "may interrupt a running service",
-            },
-            { value: "cancel", label: "Cancel — leave it running" },
-          ],
-          // Per product decision: unknown owner pre-selects takeover; a known
-          // proxy defaults to cancel so the user chooses deliberately.
-          initialValue: known ? "cancel" : "override",
-        }),
-      );
-      if (choice === "cancel") proceedCustom = false;
-      else if (choice === "migrate") edgeMigrate = true;
-      else edgeTakeover = true;
-    }
-
+    // proceed=false covers BOTH the explicit "Cancel — leave it running" choice
+    // and ESC/Ctrl-C (the shared confirmEdgeAction maps isCancel → "cancel").
+    // Either way we DON'T abort the run — the stack is already up, so we register
+    // the instance as byo (front it with your own proxy) and continue, rather than
+    // leaving a deployed-but-unregistered box. The warn below tells the operator.
     if (!proceedCustom) {
       log.warn(
         "Left the existing proxy on 80/443 running. Registering Openship without managed HTTPS — " +
@@ -787,6 +1066,7 @@ export async function runWizard(): Promise<void> {
         acmeEmail: admin?.email,
         edgeTakeover,
         edgeMigrate,
+        ...(edge.staticRootOverrides ? { staticRootOverrides: edge.staticRootOverrides } : {}),
       });
       if (res.ok && res.data?.sessionId) {
         const s2 = spinner();
@@ -813,44 +1093,15 @@ export async function runWizard(): Promise<void> {
     await internalPost(port, "/api/system/self-register", { domainType: "byo" });
   }
 
-  // Remember the access URL so `openship` (control panel) can show/open it later.
-  saveInstanceUrl(liveUrl);
-
-  // Borderless summary (left rail only). A boxed note() sizes to the longest
-  // line and doesn't wrap, so long lines (Cloud / the help text) spill past the
-  // right border on narrow terminals — the rail-only log.* flows cleanly.
-  const pad = (label: string) => chalk.dim(label.padEnd(11));
-  log.success(chalk.bold("Openship is live"));
-  log.message(
-    `${pad("URL")}${chalk.bold(liveUrl)}\n` +
-      `${pad("Dashboard")}http://localhost:${started.dashPort}\n` +
-      `${pad("API")}http://localhost:${started.port}\n` +
-      `${pad("Login")}${admin.email} ${chalk.dim("(email + password you set)")}\n` +
-      (cloudEmail
-        ? `${pad("Cloud")}${chalk.dim("connected as ")}${cloudEmail}${chalk.dim(" — free domain + mail only")}\n`
-        : "") +
-      `${pad("Status")}${chalk.green("running")} ${chalk.dim("· service (restarts on boot)")}`,
-  );
-  log.message(
-    chalk.dim("Sign in with the email + password you just set. Openship appears under your Apps.\n") +
-      chalk.dim("Change the domain, Openship Cloud, team, and everything else anytime in Settings.\n") +
-      chalk.dim(`Locked out? Run ${chalk.reset("openship reset-admin-password")}${chalk.dim(" on this machine — resets your login without signing in.")}`),
-  );
-  outro(
-    domainPlan.type === "byo"
-      ? chalk.dim("Point your reverse proxy at the dashboard port above.")
-      : chalk.green("Happy shipping."),
-  );
-}
-
-/** The resolved API/dashboard ports the service last used. */
-function storedPorts(): { api?: number; dashboard?: number } {
-  const p = join(homedir(), ".openship", "ports.json");
-  try {
-    return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : {};
-  } catch {
-    return {};
-  }
+  finishSetup({
+    liveUrl,
+    dashPort: started.dashPort,
+    apiPort: started.port,
+    adminEmail: admin.email,
+    cloudEmail,
+    method: "bare",
+    byo: domainPlan.type === "byo",
+  });
 }
 
 /**
@@ -861,9 +1112,14 @@ function storedPorts(): { api?: number; dashboard?: number } {
  */
 export async function runControl(): Promise<void> {
   const svc = serviceStatus();
-  const ports = storedPorts();
-  const apiPort = String(ports.api ?? 4000);
-  const dashUrl = `http://localhost:${ports.dashboard ?? 3001}`;
+  const isCompose = readInstallMethod() === "compose";
+  // A compose install has no systemd/launchd unit for serviceStatus() to read,
+  // so derive liveness + drive start/stop/restart through docker compose instead.
+  const running = isCompose ? composeRunning() : svc.running;
+  const managerLabel = isCompose ? "docker compose" : svc.kind === "unsupported" ? "none" : svc.kind;
+  const ports = readStoredPorts();
+  const apiPort = String(storedApiPort());
+  const dashUrl = `http://localhost:${storedDashboardPort()}`;
   const publicUrl = readInstanceUrl();
   // The real front door: the public domain if one was set, else the local dashboard.
   const primaryUrl = publicUrl && !/^https?:\/\/localhost/i.test(publicUrl) ? publicUrl : dashUrl;
@@ -871,22 +1127,31 @@ export async function runControl(): Promise<void> {
   intro(`${chalk.bgCyan(chalk.black(" Openship "))}${chalk.dim(" control")}`);
   note(
     `${chalk.dim("URL".padEnd(11))}${chalk.bold(primaryUrl)}\n` +
-      `${chalk.dim("Service".padEnd(11))}${svc.running ? chalk.green("running") : chalk.yellow("stopped")}\n` +
+      `${chalk.dim("Service".padEnd(11))}${running ? chalk.green("running") : chalk.yellow("stopped")}\n` +
       `${chalk.dim("Dashboard".padEnd(11))}${dashUrl}\n` +
       (ports.api ? `${chalk.dim("API".padEnd(11))}http://localhost:${ports.api}\n` : "") +
-      `${chalk.dim("Manager".padEnd(11))}${svc.kind === "unsupported" ? "none" : svc.kind}`,
+      `${chalk.dim("Manager".padEnd(11))}${managerLabel}`,
     "Openship is already set up",
   );
+
+  // Crash-looping on a corrupt DB is the one case where "Start" won't help —
+  // surface Repair first and say so, instead of leaving the user guessing.
+  const corrupted = looksCorrupted();
+  if (corrupted) {
+    note(chalk.red("The service is installed but keeps failing to start — the database looks corrupted."), "Needs repair");
+  }
 
   const action = ensure(
     await select({
       message: "What would you like to do?",
       options: [
+        ...(corrupted ? [{ value: "repair", label: "Repair database", hint: "backup → heal → verify" }] : []),
         { value: "open", label: "Open the dashboard" },
-        svc.running
+        running
           ? { value: "restart", label: "Restart the service" }
           : { value: "start", label: "Start the service" },
         { value: "stop", label: "Stop the service", hint: "won't restart on boot" },
+        ...(corrupted ? [] : [{ value: "repair", label: "Repair database", hint: "backup → heal a corrupt DB" }]),
         { value: "reset", label: "Reset admin password", hint: "sets a local email + password login" },
         { value: "reconfigure", label: "Re-run setup", hint: "reconfigure domain / cloud / admin" },
         { value: "quit", label: "Quit" },
@@ -895,19 +1160,40 @@ export async function runControl(): Promise<void> {
   );
 
   switch (action) {
+    case "repair": {
+      const res = await runRepair();
+      outro(res.healed ? chalk.green(res.detail) : chalk.yellow(res.detail));
+      return;
+    }
     case "open":
       await open(primaryUrl).catch(() => {});
       outro(chalk.dim(`Opening ${primaryUrl}`));
       return;
-    case "start":
+    case "start": {
+      if (isCompose) {
+        const ok = composeStart();
+        outro(ok ? chalk.green("Started.") : chalk.yellow("Couldn't start the stack — run `openship up` to see the error."));
+        return;
+      }
       await startService({});
       return;
+    }
     case "restart": {
+      if (isCompose) {
+        const ok = composeRestart();
+        outro(ok ? chalk.green("Restarted.") : chalk.yellow("Couldn't restart the stack."));
+        return;
+      }
       const r = restartService();
       outro(r.restarted ? chalk.green("Restarted.") : chalk.yellow(r.detail));
       return;
     }
     case "stop": {
+      if (isCompose) {
+        const ok = composeDown();
+        outro(ok ? chalk.green("Stopped. Won't restart on boot.") : chalk.yellow("Couldn't stop the stack."));
+        return;
+      }
       const r = stopService();
       outro(chalk.green(`Stopped. ${chalk.dim(r.detail)}`));
       return;

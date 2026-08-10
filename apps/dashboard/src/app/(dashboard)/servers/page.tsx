@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { BlurIp } from "@/components/BlurIp";
 import {
   Server,
   Plus,
@@ -21,10 +23,15 @@ import {
   MapPin,
 } from "lucide-react";
 import { systemApi } from "@/lib/api";
+import type { ContainerApplyIntent } from "@/lib/api/system";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { useToast } from "@/components/toast";
+import { useInfraFleet, type InfraSegment } from "@/hooks/useInfraFleet";
+import { InfraFleetCard } from "@/components/infra/InfraFleetCard";
+import { InfraFilters } from "@/components/infra/InfraFilters";
 import { ComingSoonPanel } from "./_components/coming-soon-panel";
 import * as CountryFlags from "country-flag-icons/react/3x2";
 
@@ -44,22 +51,35 @@ interface ServerEntry {
   user: string;
   auth: "key" | "password" | null;
   country: string | null;
+  /** The auto-registered host row ("This Server") — deploys run locally, not SSH. */
+  isLocal: boolean;
   /** Projects currently deployed to this server (active deployment → this host). */
   projectCount: number;
 }
 
 /** Per-state colors: an ambient presence dot on the avatar + a word on the right. */
+/** `dot` is a RING, not a filled pip — same treatment as the scanned-component
+ *  circles (components-tab), which reads calmer than a solid dot at 6px. */
+/** A server's component bucket, or null while the fleet view hasn't loaded. */
+type InfraBucket = Exclude<InfraSegment, "all">;
+/** Sort weight per bucket — attention first, then updates, then healthy, then unknown. */
+const BUCKET_RANK: Record<InfraBucket, number> = { attention: 0, updates: 1, healthy: 2 };
+const bucketRank = (b: InfraBucket | null) => (b ? BUCKET_RANK[b] : 3);
+
 const STATUS: Record<Reachability, { dot: string; text: string }> = {
-  online: { dot: "bg-success-solid", text: "text-success" },
-  offline: { dot: "bg-danger-solid", text: "text-danger" },
-  checking: { dot: "bg-warning-solid animate-pulse", text: "text-muted-foreground/70" },
+  online: { dot: "border-success-solid", text: "text-success" },
+  offline: { dot: "border-danger-solid", text: "text-danger" },
+  checking: { dot: "border-warning-solid animate-pulse", text: "text-muted-foreground/70" },
 };
 
 export default function ServersPage() {
   const { t } = useI18n();
   const router = useRouter();
-  const { deployMode } = usePlatform();
+  const { selfHosted, deployMode } = usePlatform();
+  const { toast } = useToast();
   const isDesktop = deployMode === "desktop";
+  /** Managed edge/mail containers exist only where we operate the boxes. */
+  const infraEnabled = selfHosted || isDesktop;
 
   const [activeTab, setActiveTab] = useState<ServersTab>("servers");
   const [servers, setServers] = useState<ServerEntry[]>([]);
@@ -82,6 +102,7 @@ export default function ServersPage() {
           user: s.sshUser ?? "root",
           auth: (s.sshAuthMethod as "key" | "password" | null) ?? null,
           country: s.country ?? null,
+          isLocal: s.isLocal ?? false,
           projectCount: s.projectCount ?? 0,
         })),
       );
@@ -151,6 +172,65 @@ export default function ServersPage() {
   const regionCount = new Set(servers.map((s) => s.country).filter(Boolean)).size;
   const onlinePct = servers.length ? Math.round((counts.online / servers.length) * 100) : 0;
 
+  // ── Managed containers (edge / mail) across the fleet ──────────────────────
+  const infra = useInfraFleet(infraEnabled);
+  const ic = t.servers.list.infra;
+  const [segment, setSegment] = useState<InfraSegment>("all");
+  const [search, setSearch] = useState("");
+
+  const runBulk = useCallback(
+    async (intent: ContainerApplyIntent) => {
+      try {
+        const res = await infra.applyAll(intent);
+        if (!res) return; // infra disabled (cloud) — the buttons aren't rendered there
+        const n = res.started.length;
+        const skipped = res.skipped.length;
+        if (n === 0 && skipped === 0) {
+          toast("info", ic.nothingToDo);
+          return;
+        }
+        const head = interpolate(intent === "update" ? ic.started : ic.startedRestart, {
+          n: String(n),
+        });
+        const tail = skipped > 0 ? interpolate(ic.skipped, { n: String(skipped) }) : "";
+        toast(n > 0 ? "success" : "info", tail ? `${head} · ${tail}` : head);
+      } catch {
+        toast("error", ic.applyFailed);
+      }
+    },
+    [infra, toast, ic],
+  );
+
+  /**
+   * Which bucket a server falls in — attention wins over updates. `null` until the
+   * fleet view loads: an unread server matches no segment rather than being called
+   * healthy, so the segment counts and the filtered list can never disagree.
+   */
+  const bucketOf = useCallback(
+    (id: string): InfraBucket | null => {
+      const s = infra.summaries.get(id);
+      if (!s) return null;
+      if (s.down.length + s.missing.length > 0 || s.edgeAbsent) return "attention";
+      return s.updates > 0 ? "updates" : "healthy";
+    },
+    [infra.summaries],
+  );
+
+  // Attention first, then updates — the row you have to act on is never below the
+  // fold. Order inside a bucket is preserved (Array.prototype.sort is stable).
+  const visibleServers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const rows = servers.filter((s) => {
+      if (q && !s.name.toLowerCase().includes(q) && !s.host.toLowerCase().includes(q)) return false;
+      return segment === "all" || bucketOf(s.id) === segment;
+    });
+    if (!infraEnabled) return rows;
+    return [...rows].sort((a, b) => bucketRank(bucketOf(a.id)) - bucketRank(bucketOf(b.id)));
+  }, [servers, search, segment, bucketOf, infraEnabled]);
+
+  /** The filter strip only earns its space once the list is long enough to hunt in. */
+  const showFilters = infraEnabled && servers.length > 6;
+
   const tabs: TabDef<ServersTab>[] = [
     { key: "servers", label: t.servers.tabsNav.servers, icon: Server },
     { key: "cluster", label: t.servers.tabsNav.cluster, icon: Boxes },
@@ -159,8 +239,10 @@ export default function ServersPage() {
 
   return (
     <PageContainer>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      {/* Header — mb-6 to match the server DETAIL page's header gap exactly, so
+          the tab strip sits at the same y on both pages (this was mb-5, which put
+          the list's tabs 4px higher than the detail's). */}
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>
             {t.servers.list.title}
@@ -210,8 +292,20 @@ export default function ServersPage() {
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
             {/* ── LEFT COLUMN ── */}
             <div className="min-w-0">
+              {showFilters && (
+                <InfraFilters
+                  segment={segment}
+                  onSegmentChange={setSegment}
+                  search={search}
+                  onSearchChange={setSearch}
+                  counts={infra.counts}
+                />
+              )}
               <div className="overflow-hidden rounded-2xl border border-border/50 bg-card divide-y divide-border/50">
-                {servers.map((server) => {
+                {visibleServers.length === 0 && (
+                  <p className="px-5 py-8 text-center text-sm text-muted-foreground">{ic.noMatches}</p>
+                )}
+                {visibleServers.map((server) => {
                   const state = reach[server.id] ?? "checking";
                   const sm = STATUS[state];
                   const authLabel =
@@ -222,10 +316,22 @@ export default function ServersPage() {
                         : null;
                   const AuthIcon = server.auth === "password" ? Lock : KeyRound;
                   const fwd = forwardCounts[server.id] ?? 0;
+                  // Component chip: one per row at most, and only when there IS
+                  // something to say (same rule as the project count below —
+                  // a healthy box gets no chip). Down/absent outranks an update.
+                  const comp = infra.summaries.get(server.id);
+                  const downParts = comp
+                    ? [
+                        ...[...comp.down, ...comp.missing].map((k) =>
+                          k === "edge" ? ic.chipEdgeDown : ic.chipMailDown,
+                        ),
+                        ...(comp.edgeAbsent ? [ic.chipEdgeMissing] : []),
+                      ]
+                    : [];
                   return (
-                    <button
+                    <Link
                       key={server.id}
-                      onClick={() => router.push(`/servers/${server.id}`)}
+                      href={`/servers/${server.id}`}
                       className="group flex w-full items-center gap-3.5 px-5 py-3 text-start transition-colors hover:bg-muted/40"
                     >
                       {/* Avatar — full country flag when we can geolocate the IP, else glyph.
@@ -248,23 +354,46 @@ export default function ServersPage() {
 
                       {/* Name + host (fixed column — keeps meta aligned, no dead gap) */}
                       <div className="w-44 min-w-0 shrink-0 text-start lg:w-56">
-                        <p className="truncate text-sm font-medium text-foreground">{server.name}</p>
-                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{server.host}</p>
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {server.name}
+                          {server.isLocal && (
+                            <span className="ms-2 rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-medium text-info align-middle">
+                              {t.servers.list.thisServer}
+                            </span>
+                          )}
+                        </p>
+                        <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">
+                          {server.isLocal ? t.servers.list.currentHost : <BlurIp>{server.host}</BlurIp>}
+                        </p>
                       </div>
 
                       {/* Meta chips */}
                       <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-                        <span
-                          title={t.servers.list.projects}
-                          className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-xs ${
-                            server.projectCount > 0
-                              ? "bg-muted/60 text-foreground/80"
-                              : "text-muted-foreground/60"
-                          }`}
-                        >
-                          <Layers className="size-3.5" />
-                          {server.projectCount}
-                        </span>
+                        {/* Nothing deployed → no chip at all. A greyed-out "0" beside
+                            a layers glyph is noise that reads as an error. With
+                            projects, the count is spelled out ("1 project") instead
+                            of leaving an icon to carry the meaning. */}
+                        {server.projectCount > 0 && (
+                          <span className="inline-flex shrink-0 items-center rounded-md bg-muted/60 px-2 py-0.5 text-xs text-foreground/80">
+                            {interpolate(
+                              server.projectCount === 1
+                                ? t.servers.list.projectCountOne
+                                : t.servers.list.projectCountMany,
+                              { n: String(server.projectCount) },
+                            )}
+                          </span>
+                        )}
+                        {downParts.length > 0 ? (
+                          <span className="inline-flex shrink-0 items-center rounded-md bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger">
+                            {downParts.join(" · ")}
+                          </span>
+                        ) : comp && comp.updates > 0 ? (
+                          <span className="inline-flex shrink-0 items-center rounded-md bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">
+                            {interpolate(comp.updates === 1 ? ic.chipUpdateOne : ic.chipUpdates, {
+                              n: String(comp.updates),
+                            })}
+                          </span>
+                        ) : null}
                         {authLabel && (
                           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 py-0.5 text-xs text-muted-foreground">
                             <AuthIcon className="size-3.5" />
@@ -285,12 +414,12 @@ export default function ServersPage() {
                           title={t.servers.list[state]}
                           className={`inline-flex items-center gap-1.5 text-xs font-medium ${sm.text}`}
                         >
-                          <span className={`size-1.5 rounded-full ${sm.dot}`} />
+                          <span className={`size-2.5 rounded-full border-2 ${sm.dot}`} />
                           {t.servers.list[state]}
                         </span>
                         <ArrowRight className="size-4 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground rtl:rotate-180" />
                       </div>
-                    </button>
+                    </Link>
                   );
                 })}
               </div>
@@ -352,6 +481,19 @@ export default function ServersPage() {
                 </div>
               </div>
             </div>
+
+            {/* Managed containers across the fleet. Self-hosted/desktop only, and
+                only once at least one component is tracked — a box we've never
+                scanned has nothing to report. */}
+            {infraEnabled && !infra.empty && (
+              <InfraFleetCard
+                counts={infra.counts}
+                scanning={infra.scanning}
+                applying={infra.applying}
+                onScan={() => void infra.scan()}
+                onApply={(intent) => void runBulk(intent)}
+              />
+            )}
           </div>
         </div>
       ))}

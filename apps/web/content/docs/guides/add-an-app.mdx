@@ -1,0 +1,247 @@
+---
+title: Add an app
+description: Add a one-click app to Openship — either as a curated catalog entry via a pull request, or as a custom app you upload to your own organization. Covers the trust bar, worked examples, and the review checklist.
+---
+
+Openship's **Apps** tab is a catalog of one-click installs. Each entry is a small JSON file
+describing the containers, how they wire together, which secrets to generate, and what to show the
+user afterwards. Every field is documented in the
+[App catalog JSON reference](/docs/reference/app-catalog); this page is how you get one in.
+
+There are two ways to add an app, and they differ mainly in **trust**:
+
+| | Curated catalog entry | Custom app |
+|---|---|---|
+| How | A pull request to the Openship repo | Upload JSON in your own dashboard, or `POST /api/apps/custom` |
+| Who sees it | Everyone, on every instance | Only your organization |
+| Reviewed | Yes, by a maintainer | No — always marked unverified |
+| Good for | An app the whole community wants | Your own internal stack, or trying something out |
+
+## Add a custom app (no pull request)
+
+The fastest path, and entirely self-service. In the dashboard open **Apps → Add a custom app**,
+paste or upload your JSON, and it is validated and added to your organization's catalog. The same
+thing over the API:
+
+```bash
+curl -X POST https://your-host/api/apps/custom \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data @my-app.json
+```
+
+Custom apps run through the **same strict validation** as the curated catalog — the full shape check
+plus every [referential check](/docs/reference/app-catalog#validation) — and install through the
+normal services pipeline, with the same in-container boundary as any project you deploy yourself.
+No new privilege is granted.
+
+Four rules are enforced on upload:
+
+- **Always unverified.** Trust comes from provenance, never from the file. `verified` and
+  `available` are set by the server, so a JSON claiming `"verified": true` is ignored.
+- **`kind` must be `template`.** Flow apps point at built-in wizards, so they cannot be uploaded.
+- **The `id` cannot shadow a built-in.** Pick something unique, or the upload is refused by name.
+- **It must pass validation.** A shape or reference error is returned with the offending detail.
+
+<Callout title="Keep the $schema line" type="info">
+Add `"$schema": "https://openship.io/app.schema.json"` to your file. Your editor then autocompletes
+field names and flags bad **values** — an invalid `category`, a wrong `type`, a missing required
+field — before you ever upload. It cannot flag a misspelled field *name*, because unknown keys are
+deliberately ignored rather than rejected, so rely on the autocomplete for those.
+</Callout>
+
+## Add a curated catalog entry
+
+Curated apps live in the Openship repo at `packages/core/src/apps/catalog/<id>.json`, one file per
+app.
+
+### The bar
+
+The catalog is **curated, not open-ended** — installing an app never runs arbitrary third-party
+code. Expect review on exactly these points:
+
+- **Open-source only.** A well-known project with a public source repository, so anyone can see what
+  it is before installing.
+- **Official or reputable images, pinned.** Use the project's own published image at a pinned
+  version (`qdrant/qdrant:v1.18.3`, `apache/kafka:4.0.0`) — never an unpinned tag or an
+  unknown publisher.
+- **Secure defaults.** Credentials are auto-generated, never shipped as plaintext defaults.
+  Publicly-exposed admin UIs require auth. App containers publish on loopback behind the edge, not
+  directly on a public interface.
+- **Fully auditable.** The JSON is the whole truth — images, ports, env, volumes all visible in one
+  small file. Nothing is fetched from a private source.
+
+### 1. Create `catalog/<id>.json`
+
+`id` is a stable kebab-case slug, and the filename must match it. A minimal single-service app:
+
+```json
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "id": "it-tools",
+  "name": "IT-Tools",
+  "description": "A handy collection of developer and sysadmin utilities. No login, no setup.",
+  "kind": "template",
+  "logo": "it-tools",
+  "category": "other",
+  "tags": ["developer", "tools", "utilities"],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "it-tools",
+      "image": "corentinth/it-tools:latest",
+      "ports": ["80:80"],
+      "exposedPort": 80,
+      "exposed": true,
+      "restart": "unless-stopped"
+    }
+  ]
+}
+```
+
+A multi-service app wires services **by name** and shares a generated secret across them:
+
+```json
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": false,
+  "id": "ghost",
+  "name": "Ghost",
+  "description": "Modern publishing platform for blogs, newsletters, and membership sites.",
+  "kind": "template",
+  "logo": "ghost",
+  "category": "cms",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "ghost-db",
+      "image": "mysql:8.0",
+      "environment": { "MYSQL_DATABASE": "ghost" },
+      "secretEnv": ["MYSQL_ROOT_PASSWORD"],
+      "volumes": ["ghost_db:/var/lib/mysql"],
+      "restart": "unless-stopped"
+    },
+    {
+      "name": "ghost",
+      "image": "ghost:5-alpine",
+      "ports": ["2368:2368"],
+      "exposedPort": 2368,
+      "exposed": true,
+      "dependsOn": ["ghost-db"],
+      "environment": {
+        "NODE_ENV": "production",
+        "url": "{{publicUrl:ghost}}",
+        "database__client": "mysql",
+        "database__connection__host": "ghost-db",
+        "database__connection__user": "root",
+        "database__connection__database": "ghost"
+      },
+      "secretEnv": ["database__connection__password"],
+      "volumes": ["ghost_content:/var/lib/ghost/content"],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    { "key": "MYSQL_ROOT_PASSWORD", "service": "ghost-db", "label": "Database password",
+      "generate": "secret", "generateGroup": "ghostdb", "secret": true },
+    { "key": "database__connection__password", "service": "ghost", "label": "Ghost DB password",
+      "generate": "secret", "generateGroup": "ghostdb", "secret": true }
+  ]
+}
+```
+
+The four things that matter in that example:
+
+- **Service name is the hostname.** `ghost` reaches the database at `ghost-db` on the project
+  network — which is why the host is just `"ghost-db"`.
+- **`exposed: true` plus `exposedPort`** picks the one service that gets a public route.
+- **`generateGroup`** makes two fields receive the **same** generated value, so the database password
+  matches on both sides. Secrets are auto-filled and stored encrypted; operators never type them.
+- **`{{publicUrl:ghost}}`** resolves at install to the app's public URL. See
+  [placeholders](/docs/reference/app-catalog#placeholders).
+
+<Callout title="Asking the user for a value?">
+Then it is a **setting** with `installStep: true`, not a `configField`. `configFields` are only for
+values the operator never types — generated secrets, signed keys, derived defaults. This is the most
+common authoring mistake; see
+[the comparison table](/docs/reference/app-catalog#two-field-systems).
+</Callout>
+
+### 2. Give it a logo
+
+`logo` is an id resolved by the dashboard's `AppLogo` component:
+
+- **On [simpleicons](https://simpleicons.org)?** Set `logo` to the simpleicons slug (`"ghost"`,
+  `"grafana"`) and you are done.
+- **Not there, or the mark renders wrong?** Drop an SVG at
+  `apps/dashboard/public/app-logos/<id>.svg` and add a `LOGO_CONFIG` entry mapping the id to that
+  source. Apps with no good mark fall back to a generic glyph.
+
+### 3. Regenerate the merged catalog
+
+The bundle imports one merged artifact, built from the per-app files:
+
+```bash
+cd packages/core
+bun scripts/gen-catalog.ts        # rewrites src/apps/catalog.json from catalog/*.json
+```
+
+Order is preserved from the existing `catalog.json` (curated, featured-first); a **new** app is
+appended alphabetically — reorder it by hand in `catalog.json` if you want it featured earlier. A
+drift test fails CI if you edit a `catalog/*.json` without regenerating.
+
+### 4. Validate
+
+```bash
+cd packages/core && bunx vitest run src/apps/catalog.test.ts
+```
+
+This asserts `catalog.json` is in sync **and** that every app passes the full schema — required
+fields, valid `category`, and all referential checks.
+
+### 5. Flip it live when it actually works
+
+`"available": false` (or omitted) shows the app in the catalog **dimmed, as coming soon**, and it
+cannot be installed — the guard is server-side too, so a coming-soon app cannot be installed by API
+either. Set `"available": true` once it deploys cleanly end to end.
+
+<Callout title="Merged apps reach existing instances without a redeploy" type="info">
+The runtime catalog is the bundled copy overlaid by a live fetch of `catalog.json` from the repo,
+refreshed on a 10-minute TTL. So a merged app appears on instances that are already running — gated
+per-entry by [`minEngine`](/docs/reference/app-catalog#stability-and-versioning). If your app needs a
+capability that only shipped in a given release, set `minEngine` to it: older instances then show a
+guided *Requires Openship ≥ X* card instead of failing an install.
+</Callout>
+
+## What the user sees on install
+
+An install moves through four named phases, rendered as a stepper:
+
+| Phase | Meaning |
+|---|---|
+| **Preparing images** | Pulling or building. Skipped for pull-only apps. |
+| **Starting services** | Creating and starting the containers. |
+| **Finishing setup** | Your [`prepare`](/docs/reference/app-catalog#prepare) steps. Present only if the app declares any. |
+| **Live** | Done — the Connection card is available. |
+
+You can label your own `prepare` steps in that third phase with `title` and `description`.
+
+## Checklist
+
+- [ ] **Open-source** app; **official or reputable** image **pinned** to a version.
+- [ ] `catalog/<id>.json` created, `id` matches the filename, kebab-case.
+- [ ] Services wire by name; one service `exposed` with an `exposedPort`.
+- [ ] Secrets use `generate` / `generateGroup` with `secret: true` — no plaintext credentials.
+- [ ] Anything the user types is an `installStep` setting, not a `configField`.
+- [ ] Logo resolves — simpleicons slug, or a vendored SVG plus a `LOGO_CONFIG` entry.
+- [ ] `bun scripts/gen-catalog.ts` run and `catalog.json` committed.
+- [ ] `bunx vitest run src/apps/catalog.test.ts` passes.
+- [ ] `minEngine` set if the definition uses a recently added capability.
+- [ ] `available: true` only once it deploys cleanly end to end.
+
+## See also
+
+- [App catalog JSON](/docs/reference/app-catalog) — every field, in detail
+- [Apps API](/docs/api/apps) — catalog, install, custom apps, settings, connection
+- [Compose / multi-service](/docs/guides/compose-multi-service) — the engine an app deploys through

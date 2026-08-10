@@ -1,4 +1,15 @@
 {
+  "capacity": {
+    "title": "容量与用量",
+    "subtitle": "您套餐包含的容量以及已用量。实时数据从 Openship Cloud 同步。",
+    "routes": "免费路由",
+    "workspaces": "工作区",
+    "unlimited": "无限制",
+    "used": "已用",
+    "of": "/ {max}",
+    "syncing": "正在从云端同步"
+  },
+  "topupsComingSoon": "一次性积分充值即将推出——您将可以在此在每月额度之外添加积分。",
   "header": {
     "credits": "Credits",
     "creditsSuffix": "of {limit}",
@@ -156,7 +167,7 @@
     "weekTick": "第 {n} 周"
   },
   "layout": {
-    "title": "账单",
+    "title": "账单与用量",
     "subtitle": "管理您的订阅、用量和付款方式。"
   },
   "sidebar": {

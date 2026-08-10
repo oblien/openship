@@ -1,0 +1,92 @@
+{
+  "title": "问题",
+  "subtitle": "Openship 在你的项目、服务器和域名中发现的所有问题。",
+  "tabs": {
+    "open": "未解决",
+    "resolved": "已解决"
+  },
+  "resolvedNote": "历史记录仅涵盖容器和服务器事件——其他检查报告的是当前状态，因此证书或部署修复后会直接从这里消失。",
+  "rescan": "重新扫描",
+  "rescanning": "扫描中",
+  "filters": {
+    "searchPlaceholder": "搜索问题",
+    "all": "全部",
+    "outage": "服务中断",
+    "action_required": "需要处理",
+    "advisory": "提示",
+    "clear": "清除筛选"
+  },
+  "scopes": {
+    "platform": "Openship",
+    "server": "服务器",
+    "project": "项目",
+    "domain": "域名"
+  },
+  "scopeSubtitles": {
+    "platform": "本次安装本身",
+    "server": "运行你的工作负载的机器",
+    "project": "已部署的项目及其容器",
+    "domain": "自定义主机名和证书"
+  },
+  "kinds": {
+    "deploy_blocked": "部署被阻止",
+    "prompt": "等待决定",
+    "partial_decision": "部分发布",
+    "routing_unsynced": "路由未同步",
+    "domain_unverified": "域名未验证",
+    "ssl_error": "证书问题",
+    "port_advisory": "端口提示",
+    "workload_unhealthy": "健康检查失败",
+    "workload_crash_loop": "反复崩溃",
+    "workload_down": "容器已停止",
+    "server_unreachable": "无法连接服务器",
+    "edge_down": "边缘已停止",
+    "edge_absent": "未安装边缘",
+    "mail_down": "邮件引擎已停止",
+    "update_available": "有可用更新",
+    "component_behind": "组件有可用更新"
+  },
+  "since": "开始于 {when}",
+  "resolvedWhen": "{when} 已解决",
+  "expiresIn": "{n} 分钟后中止",
+  "view": "查看",
+  "fix": "修复",
+  "install": "安装",
+  "update": "更新",
+  "mailSetup": "邮件设置",
+  "selfUpdateNote": "本次安装通过命令行自行更新。",
+  "empty": {
+    "openTitle": "没有需要处理的问题",
+    "openBody": "没有被阻止或等待中的部署，没有证书或域名问题，没有落后的版本，也没有运行在错误端口上的服务。检查会继续在后台运行。",
+    "resolvedTitle": "没有已解决的事件",
+    "resolvedBody": "容器和服务器事件恢复后会出现在这里，并保留 30 天。",
+    "filteredTitle": "没有匹配项",
+    "filteredBody": "有未解决的问题，但没有符合此筛选条件的。"
+  },
+  "summary": {
+    "title": "概览",
+    "subtitle": "健康状况一览",
+    "totalOpen": "待处理",
+    "totalResolved": "已解决",
+    "bySeverity": "按严重程度",
+    "byArea": "按区域"
+  },
+  "home": {
+    "attentionTitle": "需要处理",
+    "attentionSubtitle": "有内容出现故障或在等你决定",
+    "updatesTitle": "有可用更新",
+    "updatesSubtitle": "有可应用的新版本",
+    "more": "还有 {n} 项",
+    "hide": "隐藏，直到有变化"
+  },
+  "loadFailed": "无法加载问题",
+  "toast": {
+    "title": "问题",
+    "rescanned": "重新扫描完成",
+    "rescanPartial": "重新扫描完成，{n} 项检查失败",
+    "rescanFailed": "重新扫描失败",
+    "resolved": "完成",
+    "resolveFailed": "无法应用该修复",
+    "confirmDestructive": "此操作会产生无法撤销的副作用。要继续吗？"
+  }
+}

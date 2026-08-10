@@ -13,6 +13,13 @@ const PUBLIC_ROUTES = [
   "/verify-email",
   "/authorize",
   "/onboarding",
+  // The MCP OAuth consent page. It must reach its own render even without a
+  // session cookie, because it sends the user to /login with a `returnTo` that
+  // comes BACK here and resumes the client's authorize. This middleware's
+  // redirect uses `from`, which nothing reads (getPostAuthRedirect only honors
+  // `returnTo`/`callback`), so intercepting it stranded the user on `/` and the
+  // MCP client's flow never completed.
+  "/mcp/authorize",
 ];
 
 const SESSION_COOKIE_SUFFIX = ".session_token";

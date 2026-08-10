@@ -6,4 +6,5 @@ export { default as CTASection } from './CTASection';
 export { default as PlatformFeatureCard } from './PlatformFeatureCard';
 export { default as ServerSelector } from './ServerSelector';
 export type { ServerOption, ServerSelectorProps } from './ServerSelector';
+export { default as CopyCommand, SELF_UPDATE_COMMAND } from './CopyCommand';
 

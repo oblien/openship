@@ -1,4 +1,15 @@
 {
+  "capacity": {
+    "title": "Capacidad y uso",
+    "subtitle": "Capacidad incluida en tu plan y cuánto has usado. Las cifras en vivo se sincronizan desde Openship Cloud.",
+    "routes": "Rutas gratuitas",
+    "workspaces": "Espacios de trabajo",
+    "unlimited": "Ilimitado",
+    "used": "usado",
+    "of": "de {max}",
+    "syncing": "Sincronizando desde la nube"
+  },
+  "topupsComingSoon": "Las recargas de créditos únicas estarán disponibles pronto: aquí podrás añadir créditos además de tu asignación mensual.",
   "header": {
     "credits": "Credits",
     "creditsSuffix": "of {limit}",
@@ -156,7 +167,7 @@
     "weekTick": "Sem {n}"
   },
   "layout": {
-    "title": "Facturación",
+    "title": "Facturación y uso",
     "subtitle": "Gestiona tu suscripción, uso y métodos de pago."
   },
   "sidebar": {

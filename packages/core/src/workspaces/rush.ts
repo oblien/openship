@@ -1,3 +1,4 @@
+import { stripJsonComments } from "./comments";
 import type { WorkspaceDetector } from "./types";
 
 /**
@@ -6,11 +7,15 @@ import type { WorkspaceDetector } from "./types";
  *
  * We pull `projectFolder` from each entry. Rush projects are always literal
  * paths (no globs), so the downstream matcher treats them as exact.
+ *
+ * `rush.json` is JSONC - Rush reads it with a comment-tolerant parser and the
+ * file `rush init` generates opens with a block comment - so comments are
+ * stripped before `JSON.parse`.
  */
 function parseRushJson(content: string): string[] {
   let parsed: { projects?: unknown } | null = null;
   try {
-    parsed = JSON.parse(content) as { projects?: unknown };
+    parsed = JSON.parse(stripJsonComments(content)) as { projects?: unknown };
   } catch {
     return [];
   }

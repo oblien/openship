@@ -1,4 +1,4 @@
-import { api, getApiBaseUrl, getActiveOrganizationId } from "./client";
+import { api, getApiBaseUrl, getActiveOrganizationId, getApiErrorCode } from "./client";
 import { endpoints } from "./endpoints";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -43,6 +43,8 @@ export interface MailComponentHealth {
   status: MailComponentStatus;
   subState?: string;
   activeSince?: string;
+  /** Why the status is `unknown` — the probe's own output. */
+  detail?: string;
 }
 
 export interface MailComponentDef {
@@ -88,6 +90,26 @@ export interface MailWebmailSummary {
   version: string;
 }
 
+/** What kind of mail engine the box runs, and whether it's serving. */
+export interface MailEngineState {
+  flavor: "container" | "host" | "none";
+  running: boolean;
+}
+
+/**
+ * The two codes the API's mail-engine gate raises (`MailEngineUnavailableError`),
+ * meaning "this failed because nothing is serving mail on the box" rather than
+ * anything about the request. Every mail-admin request can fail this way, so the
+ * predicate lives here instead of being re-derived per tab — and it matches on the
+ * CODE, never the message.
+ */
+const ENGINE_UNAVAILABLE_CODES = ["MAIL_ENGINE_NOT_INSTALLED", "MAIL_ENGINE_NOT_RUNNING"];
+
+export function isMailEngineUnavailable(err: unknown): boolean {
+  const code = getApiErrorCode(err);
+  return !!code && ENGINE_UNAVAILABLE_CODES.includes(code);
+}
+
 export interface MailSetupStatus {
   active: boolean;
   serverId?: string;
@@ -111,6 +133,17 @@ export interface MailSetupStatus {
   credentials?: MailCredentials;
   /** Webmail deploy record. Absent when no webmail is deployed yet. */
   webmail?: MailWebmailSummary;
+  /**
+   * Live mail-engine topology, probed on the same connection that read the state
+   * file. `container` = the openship-mail engine; `host` = a LEGACY systemd
+   * Postfix/Dovecot install (every mail box provisioned before the engine image);
+   * `none` = nothing serving mail on the box at all.
+   *
+   * ABSENT means "we couldn't look" (server unreachable, probe failed) — never
+   * treat a missing field as "no engine", or an SSH hiccup renders a serving box
+   * as broken.
+   */
+  engine?: MailEngineState;
   steps: MailStepStatus[];
   /** Server-buffered log lines, rehydrated on page reload. */
   logs?: MailSessionLogLine[];

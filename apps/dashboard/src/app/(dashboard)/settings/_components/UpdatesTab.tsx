@@ -11,51 +11,14 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, ShieldCheck, Download, Github, CheckCircle2, Loader2 } from "lucide-react";
 import { changelogUrl } from "@repo/core";
 import { SettingsSection } from "./SettingsSection";
+import { SettingsToggleRow } from "./SettingsToggleRow";
 import { useUpdates } from "@/components/updates/useUpdates";
+import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-
-function Toggle({
-  checked,
-  onChange,
-  label,
-  description,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-  description: string;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 py-1">
-      <div className="min-w-0">
-        <p className="text-[14px] font-medium text-foreground">{label}</p>
-        <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{description}</p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
-          checked ? "bg-primary" : "bg-muted-foreground/30"
-        }`}
-      >
-        <span
-          className={`inline-block size-5 transform rounded-full bg-white shadow transition-transform ${
-            checked ? "translate-x-[22px] rtl:-translate-x-[22px]" : "translate-x-0.5 rtl:-translate-x-0.5"
-          }`}
-        />
-      </button>
-    </div>
-  );
-}
 
 export function UpdatesTab() {
   const { t } = useI18n();
-  const { state, muted, desktop, setMuted, startDesktopUpdate, refresh } = useUpdates();
+  const { state, muted, desktop, mode, setMuted, startDesktopUpdate, refresh } = useUpdates();
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [checking, setChecking] = useState(false);
 
@@ -108,6 +71,11 @@ export function UpdatesTab() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Self-hosted: the upgrade runs on the host, so hand over the exact
+                command. The line above only said "re-run your install". */}
+            {state?.updateAvailable && mode === "selfhosted" && (
+              <CopyCommand command={SELF_UPDATE_COMMAND} />
+            )}
             {state?.updateAvailable && desktop && (
               <button
                 type="button"
@@ -133,14 +101,14 @@ export function UpdatesTab() {
         {/* Controls */}
         <div className="mt-5 space-y-4">
           {desktop && (
-            <Toggle
+            <SettingsToggleRow
               checked={autoUpdate}
               onChange={toggleAuto}
               label={t.settings.updates.autoUpdateLabel}
               description={t.settings.updates.autoUpdateDesc}
             />
           )}
-          <Toggle
+          <SettingsToggleRow
             checked={!muted}
             onChange={(v) => setMuted(!v)}
             label={t.settings.updates.notificationsLabel}

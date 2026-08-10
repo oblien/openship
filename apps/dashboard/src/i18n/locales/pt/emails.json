@@ -3,6 +3,7 @@
     "title": "Servidor de Email",
     "subtitle": "Configure um servidor de email auto-hospedado com alguns cliques",
     "backToServers": "Voltar aos servidores de email",
+    "backToAdmin": "Voltar à administração de email",
     "addServer": "Adicionar servidor de email",
     "removeModal": {
       "title": "Remover este servidor de email?",

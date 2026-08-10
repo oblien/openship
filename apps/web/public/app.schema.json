@@ -1,0 +1,556 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openship.io/app.schema.json",
+  "title": "Openship App definition",
+  "description": "An Openship App catalog entry — the JSON that turns a set of containers into a one-click install, with generated secrets, a curated settings form, and a connection card. Full reference: https://openship.io/docs/reference/app-catalog",
+  "type": "object",
+  "required": ["id", "name", "description", "kind", "logo", "category"],
+  "properties": {
+    "$schema": { "type": "string" },
+
+    "id": {
+      "description": "Stable kebab-case slug. Must match the filename and be globally unique.",
+      "type": "string"
+    },
+    "name": { "description": "Display name shown in the catalog.", "type": "string" },
+    "description": { "description": "One-line summary shown on the catalog card.", "type": "string" },
+    "kind": {
+      "description": "template instantiates the declared services; flow points at a bespoke built-in wizard.",
+      "enum": ["template", "flow"]
+    },
+    "logo": {
+      "description": "A simpleicons slug, or an id mapped to a vendored SVG in the dashboard.",
+      "type": "string"
+    },
+    "category": {
+      "description": "Catalog grouping.",
+      "enum": ["backend", "database", "cms", "mail", "analytics", "automation", "other"]
+    },
+    "tags": {
+      "description": "Free-form keywords used for catalog search.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "framework": {
+      "description": "Stack slug for the created project. Usually \"docker-compose\" for template apps.",
+      "type": "string"
+    },
+    "flowHref": {
+      "description": "For kind:\"flow\" — internal route of the bespoke wizard. Must start with \"/\".",
+      "type": "string",
+      "pattern": "^/"
+    },
+
+    "services": {
+      "description": "The containers to run. Required in practice for template apps.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/service" }
+    },
+    "configFields": {
+      "description": "Machine-generated or derived env only — never rendered as a form input. For values the user types, use a setting with installStep:true.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/configField" }
+    },
+    "settings": {
+      "description": "The curated settings form. A field with installStep:true is also collected in the install wizard.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/settingGroup" }
+    },
+    "prepare": {
+      "description": "Commands run inside a service container after start. Must be re-run safe.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/prepareStep" }
+    },
+    "connection": { "$ref": "#/definitions/connection" },
+    "endpoints": {
+      "description": "How the install wizard offers to expose each port. Omit for one http endpoint per exposed service.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/endpoint" }
+    },
+    "files": {
+      "description": "Generated config files bind-mounted into a container at deploy. Self-hosted and desktop only.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/file" }
+    },
+    "provides": {
+      "description": "Connectable bundles this app advertises to other projects.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/provides" }
+    },
+    "requires": {
+      "description": "Connections this app needs from another project in the same organization.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/requires" }
+    },
+    "management": {
+      "description": "Override how the installed app is managed. Omit to derive (schema when settings exist, else raw project tabs).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "schema" } }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "href"],
+          "properties": {
+            "kind": { "const": "custom" },
+            "href": { "description": "Internal route of the bespoke management surface.", "type": "string" }
+          }
+        }
+      ]
+    },
+
+    "available": {
+      "description": "false or omitted → shown dimmed as \"coming soon\" and not installable (enforced server-side too).",
+      "type": "boolean"
+    },
+    "verified": {
+      "description": "Curated-catalog marker. Forced by the server on custom uploads — authoring it has no effect.",
+      "type": "boolean"
+    },
+    "schemaVersion": {
+      "description": "JSON shape revision. Defaults to 1. Bump only on a genuinely breaking shape change.",
+      "type": "number"
+    },
+    "minEngine": {
+      "description": "Minimum Openship version required to install this app. Set it to the release that introduced whatever capability the definition uses.",
+      "type": "string"
+    },
+    "updatedAt": { "description": "Informational last-updated stamp.", "type": "string" },
+    "repository": {
+      "description": "Upstream source repository URL.",
+      "type": "string",
+      "format": "uri"
+    }
+  },
+
+  "definitions": {
+    "localized": {
+      "description": "A plain string, or an inline per-locale map such as { \"en\": \"…\", \"ar\": \"…\" }.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "object", "additionalProperties": { "type": "string" } }
+      ]
+    },
+
+    "service": {
+      "type": "object",
+      "required": ["name", "image"],
+      "properties": {
+        "name": {
+          "description": "Service name, and its hostname on the project network. Other services reach it at this exact name.",
+          "type": "string"
+        },
+        "image": {
+          "description": "Container image. Pin a version — unpinned tags are rejected in review.",
+          "type": "string"
+        },
+        "ports": {
+          "description": "Compose-style port strings, e.g. [\"2368:2368\"].",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "exposedPort": {
+          "description": "The container port that receives the public route.",
+          "type": "number"
+        },
+        "exposed": {
+          "description": "Marks this service as the one that gets a public route.",
+          "type": "boolean"
+        },
+        "routes": {
+          "description": "For a service needing more than one public port.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["port"],
+            "properties": {
+              "port": { "type": "number" },
+              "slugSuffix": {
+                "description": "Distinguishes the extra hostname for this port.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "environment": {
+          "description": "Non-secret env defaults. Supports {{publicUrl:service}} and {{config:KEY}} placeholders.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "secretEnv": {
+          "description": "Env keys on this service that are secrets — forced encrypted and never written as plaintext, whether the value comes from environment or a configField.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "volumes": {
+          "description": "Compose-style volumes. Named volumes are project-scoped.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "dependsOn": {
+          "description": "Other service names this one starts after.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "healthcheck": {
+          "description": "Container healthcheck. disable:true turns off an image baked-in check.",
+          "type": "object",
+          "properties": {
+            "test": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+            "interval": { "type": "string" },
+            "timeout": { "type": "string" },
+            "retries": { "type": "number" },
+            "startPeriod": { "type": "string" },
+            "disable": { "type": "boolean" }
+          }
+        },
+        "restart": {
+          "description": "Restart policy (compose syntax).",
+          "enum": ["no", "always", "on-failure", "unless-stopped"]
+        },
+        "command": { "description": "Override the container command.", "type": "string" }
+      }
+    },
+
+    "configField": {
+      "type": "object",
+      "required": ["key", "service", "label"],
+      "properties": {
+        "key": { "description": "Env key this value writes to.", "type": "string" },
+        "service": {
+          "description": "Service whose env receives it. Must name a declared service.",
+          "type": "string"
+        },
+        "label": { "description": "Human label, used in summaries.", "type": "string" },
+        "help": { "description": "Longer explanation.", "type": "string" },
+        "type": { "description": "Presentation hint.", "enum": ["text", "password"] },
+        "default": { "description": "Default value when nothing is generated.", "type": "string" },
+        "generate": {
+          "description": "secret = a random value the operator never types. jwt = a signed key.",
+          "enum": ["secret", "jwt"]
+        },
+        "generateGroup": {
+          "description": "Fields sharing a group receive the SAME generated value — how a database password matches on both sides.",
+          "type": "string"
+        },
+        "jwtSecretGroup": {
+          "description": "For generate:\"jwt\" — the generateGroup holding the signing secret. Must match a declared generateGroup.",
+          "type": "string"
+        },
+        "jwtRole": { "description": "Role claim baked into the generated JWT.", "type": "string" },
+        "required": { "description": "Must resolve to a value.", "type": "boolean" },
+        "secret": { "description": "Store encrypted and mask on display.", "type": "boolean" }
+      }
+    },
+
+    "settingGroup": {
+      "type": "object",
+      "required": ["id", "label", "fields"],
+      "properties": {
+        "id": { "description": "Stable group id.", "type": "string" },
+        "label": { "description": "Group heading.", "type": "string" },
+        "description": { "description": "Group help text.", "type": "string" },
+        "fields": { "type": "array", "items": { "$ref": "#/definitions/settingField" } }
+      }
+    },
+
+    "settingField": {
+      "type": "object",
+      "required": ["key", "service", "label", "type"],
+      "properties": {
+        "key": { "description": "Env key this field writes to.", "type": "string" },
+        "service": {
+          "description": "Service whose env it writes to. Must name a declared service.",
+          "type": "string"
+        },
+        "label": { "description": "Field label.", "type": "string" },
+        "type": {
+          "description": "Input type.",
+          "enum": ["text", "password", "boolean", "select", "number", "multiselect", "radio", "textarea"]
+        },
+        "help": { "description": "Help text under the input.", "type": "string" },
+        "options": {
+          "description": "Choices for select, radio, and multiselect.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["value", "label"],
+            "properties": { "value": { "type": "string" }, "label": { "type": "string" } }
+          }
+        },
+        "separator": {
+          "description": "For multiselect — how chosen values are joined into the env value.",
+          "type": "string"
+        },
+        "min": { "description": "Minimum, for type:\"number\".", "type": "number" },
+        "max": { "description": "Maximum, for type:\"number\".", "type": "number" },
+        "step": { "description": "Step, for type:\"number\".", "type": "number" },
+        "integer": { "description": "Require a whole number.", "type": "boolean" },
+        "pattern": { "description": "Regex the value must match.", "type": "string" },
+        "patternError": { "description": "Message shown when pattern fails.", "type": "string" },
+        "default": { "description": "Prefilled value.", "type": "string" },
+        "placeholder": { "description": "Input placeholder.", "type": "string" },
+        "secret": { "description": "Store encrypted and mask on display.", "type": "boolean" },
+        "trueValue": {
+          "description": "For type:\"boolean\" — env value written when on, e.g. \"1\" or \"yes\".",
+          "type": "string"
+        },
+        "falseValue": {
+          "description": "For type:\"boolean\" — env value written when off.",
+          "type": "string"
+        },
+        "requiresRedeploy": {
+          "description": "Changing this field needs a redeploy to take effect; the UI says so.",
+          "type": "boolean"
+        },
+        "advanced": { "description": "Collapse into the advanced section.", "type": "boolean" },
+        "installStep": {
+          "description": "Also collect this field in the install wizard — this is the human-input surface.",
+          "type": "boolean"
+        },
+        "required": { "description": "Gate install or save on a value being present.", "type": "boolean" },
+        "showIf": {
+          "description": "Conditional visibility. equals or truthy only — no expressions.",
+          "type": "object",
+          "required": ["field"],
+          "properties": {
+            "field": { "type": "string" },
+            "service": { "type": "string" },
+            "equals": {
+              "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
+            },
+            "truthy": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "prepareStep": {
+      "type": "object",
+      "required": ["service", "command", "capture"],
+      "properties": {
+        "service": {
+          "description": "Service whose container runs the command. Must name a declared service.",
+          "type": "string"
+        },
+        "command": { "description": "Command to run inside the container.", "type": "string" },
+        "capture": { "description": "Name for the captured stdout.", "type": "string" },
+        "capturePattern": {
+          "description": "Regex to extract the value out of noisier output.",
+          "type": "string"
+        },
+        "persistAs": {
+          "description": "Persist the captured value as this env key.",
+          "type": "object",
+          "required": ["key"],
+          "properties": { "key": { "type": "string" }, "secret": { "type": "boolean" } }
+        },
+        "once": {
+          "description": "Run on first install only, never on later deploys.",
+          "type": "boolean"
+        },
+        "phase": {
+          "description": "When it runs. Defaults to post-start. NOTE: pre-deploy is reserved and not yet run by the engine.",
+          "enum": ["pre-deploy", "post-start", "post-ready"]
+        },
+        "mustSucceed": {
+          "description": "Fail the deploy if the step errors. Default false = advisory.",
+          "type": "boolean"
+        },
+        "readiness": {
+          "description": "For phase:\"post-ready\" — poll test via sh -c every interval ms up to retries before running.",
+          "type": "object",
+          "required": ["test"],
+          "properties": {
+            "test": { "type": "string" },
+            "interval": { "type": "number" },
+            "retries": { "type": "number" }
+          }
+        },
+        "title": { "$ref": "#/definitions/localized" },
+        "description": { "$ref": "#/definitions/localized" },
+        "icon": { "description": "Icon id for the stepper row.", "type": "string" }
+      }
+    },
+
+    "connection": {
+      "description": "The post-install Connection card.",
+      "type": "object",
+      "required": ["outputs"],
+      "properties": {
+        "title": { "description": "Card heading.", "type": "string" },
+        "description": { "description": "Card intro copy.", "type": "string" },
+        "outputs": { "type": "array", "items": { "$ref": "#/definitions/output" } },
+        "guide": {
+          "type": "object",
+          "properties": {
+            "intro": { "$ref": "#/definitions/localized" },
+            "useHint": { "$ref": "#/definitions/localized" },
+            "defaultMode": {
+              "description": "Which form of the values is shown first.",
+              "enum": ["internal", "public"]
+            }
+          }
+        },
+        "firstLogin": {
+          "description": "Static default credentials the app ships with, e.g. Grafana admin/admin. Fixed values, not resolved from a running service.",
+          "type": "object",
+          "properties": {
+            "username": { "$ref": "#/definitions/localized" },
+            "password": { "$ref": "#/definitions/localized" },
+            "note": { "$ref": "#/definitions/localized" }
+          }
+        }
+      }
+    },
+
+    "outputSource": {
+      "description": "env:<service>:<KEY>, publicUrl:<service>[:<port>], or template:… — anything else fails validation.",
+      "type": "string",
+      "pattern": "^(env:[^:]+:[^:]+|publicUrl:[^:]+(:[0-9]+)?|template:)"
+    },
+
+    "output": {
+      "type": "object",
+      "required": ["id", "label", "source"],
+      "properties": {
+        "id": {
+          "description": "Stable id. Referenced by provides.outputRefs.",
+          "type": "string"
+        },
+        "label": { "description": "Row label.", "type": "string" },
+        "source": { "$ref": "#/definitions/outputSource" },
+        "help": { "description": "Row help text.", "type": "string" },
+        "secret": { "description": "Mask the value with a reveal action.", "type": "boolean" },
+        "envKey": {
+          "description": "Env key to prefill when handing this value to another project.",
+          "type": "string"
+        },
+        "service": {
+          "description": "Source service alias — authoritative for internal-mode host rewriting. Set it when a template: source cannot carry the service.",
+          "type": "string"
+        },
+        "recommended": {
+          "description": "Highlight this output in the \"Use in a project\" handover.",
+          "type": "boolean"
+        },
+        "sourceLabel": { "$ref": "#/definitions/localized" },
+        "variants": {
+          "description": "Labeled alternative forms of the same value, e.g. a public versus an internal-network URL. Rendered as a switch.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "source"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "$ref": "#/definitions/localized" },
+              "source": { "$ref": "#/definitions/outputSource" }
+            }
+          }
+        },
+        "width": {
+          "description": "half pairs two short outputs on one line, e.g. user and password.",
+          "enum": ["full", "half"]
+        },
+        "kind": {
+          "description": "url adds an open-in-new-tab action. Honored only when the resolved value is http(s).",
+          "enum": ["text", "url"]
+        }
+      }
+    },
+
+    "endpoint": {
+      "type": "object",
+      "required": ["service", "port", "label", "kind"],
+      "properties": {
+        "service": {
+          "description": "Service this port belongs to. Must name a declared service.",
+          "type": "string"
+        },
+        "port": { "description": "Container port.", "type": "number" },
+        "label": { "description": "How the wizard names this endpoint.", "type": "string" },
+        "kind": {
+          "description": "http is domain-routable; tcp is a raw port such as a database, with no domain.",
+          "enum": ["http", "tcp"]
+        },
+        "required": {
+          "description": "The user must choose an exposure for it.",
+          "type": "boolean"
+        },
+        "scope": {
+          "description": "Declares reachability intent.",
+          "enum": ["public", "internal", "local"]
+        },
+        "defaultMode": {
+          "description": "Preselected exposure.",
+          "enum": ["domain", "port", "publish", "internal"]
+        },
+        "allowedModes": {
+          "description": "Restrict which exposures are offered.",
+          "type": "array",
+          "items": { "enum": ["domain", "port", "publish", "internal"] }
+        }
+      }
+    },
+
+    "file": {
+      "type": "object",
+      "required": ["service", "path", "content"],
+      "properties": {
+        "service": {
+          "description": "Service to mount into. Must name a declared service.",
+          "type": "string"
+        },
+        "path": { "description": "Absolute path inside the container.", "type": "string" },
+        "content": {
+          "description": "File contents. Supports placeholders.",
+          "type": "string"
+        }
+      }
+    },
+
+    "provides": {
+      "type": "object",
+      "required": ["id", "outputRefs"],
+      "properties": {
+        "id": { "description": "Bundle id.", "type": "string" },
+        "outputRefs": {
+          "description": "Ids of connection.outputs to include. Each must reference a real output.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "category": {
+          "description": "Bundle category, used for matching.",
+          "type": "string"
+        }
+      }
+    },
+
+    "requires": {
+      "type": "object",
+      "required": ["id", "label", "envKey"],
+      "properties": {
+        "id": { "description": "Requirement id.", "type": "string" },
+        "label": { "$ref": "#/definitions/localized" },
+        "envKey": {
+          "description": "Env key the chosen connection is written to.",
+          "type": "string"
+        },
+        "category": {
+          "description": "Restrict candidate sources to this category.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Which form of the source value to wire in.",
+          "enum": ["internal", "public"]
+        },
+        "optional": {
+          "description": "Install can proceed without it.",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

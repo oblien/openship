@@ -21,8 +21,9 @@
  */
 
 import type { ResourceConfig } from "@repo/adapters";
+import { RESOURCE_TIER_SPECS, type FixedResourceTier, type ResourceTier } from "@repo/core";
 
-export type CloudResourceTier = "micro" | "low" | "medium" | "high" | "custom";
+export type CloudResourceTier = FixedResourceTier | "custom";
 
 /** User-supplied values when tier === "custom". Same shape as ResourceConfig. */
 export interface CloudResourceCustom {
@@ -31,20 +32,25 @@ export interface CloudResourceCustom {
   diskMb: number;
 }
 
-const TIER_RESOURCES: Record<Exclude<CloudResourceTier, "custom">, ResourceConfig> = {
-  micro: { cpuCores: 0.25, memoryMb: 256, diskMb: 4096 },
-  low: { cpuCores: 0.5, memoryMb: 512, diskMb: 8192 },
-  medium: { cpuCores: 1, memoryMb: 1024, diskMb: 16384 },
-  high: { cpuCores: 2, memoryMb: 2048, diskMb: 32768 },
-};
+/** The tier table lives in @repo/core so the self-hosted project settings and
+ *  this cloud provisioner can never drift apart. */
+const TIER_RESOURCES: Record<FixedResourceTier, ResourceConfig> = RESOURCE_TIER_SPECS;
 
 /**
  * Resolve a cloud resource tier (or custom values) into the concrete
  * ResourceConfig the cloud runtime provisions with. A "custom" selection
  * with missing/invalid values falls back to the "low" tier.
+ *
+ * Cloud has NO unlimited option (unlike self-hosted, where 0 = no cap): a
+ * metered Oblien workspace must be provisioned at a concrete size, so a 0 here
+ * is invalid input and lands on "low" like any other unusable custom value.
  */
 export function resolveCloudResourceConfig(
-  tier: CloudResourceTier,
+  /** Accepts the FULL tier union, not just the cloud subset: this value can come
+   *  from a repo's `openship.json`, so "unlimited" is reachable input even though
+   *  it isn't a cloud option. Narrowing the parameter would only move the problem
+   *  to a cast at the call site. */
+  tier: ResourceTier,
   custom?: CloudResourceCustom | null,
 ): ResourceConfig {
   if (tier === "custom") {
@@ -57,5 +63,9 @@ export function resolveCloudResourceConfig(
     }
     return TIER_RESOURCES.low;
   }
-  return TIER_RESOURCES[tier];
+  // "unlimited" (or any tier with no cloud spec) → the free tier. A metered
+  // workspace must be sized, and indexing the table with an unknown key would
+  // return undefined-as-ResourceConfig, which crashes the cloud deploy later at
+  // `config.resources.cpuCores`.
+  return TIER_RESOURCES[tier as FixedResourceTier] ?? TIER_RESOURCES.low;
 }

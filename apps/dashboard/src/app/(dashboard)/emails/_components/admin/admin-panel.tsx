@@ -25,6 +25,7 @@ import {
   LayoutDashboard,
   Globe,
   UserRound,
+  Forward,
   FileText,
   HeartPulse,
   Send,
@@ -39,6 +40,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { OverviewTab } from "./overview-tab";
 import { DomainsTab } from "./domains-tab";
 import { MailboxesTab } from "./mailboxes-tab";
+import { AliasesTab } from "./aliases-tab";
 import { DnsTab } from "./dns-tab";
 import { HealthTab } from "./health-tab";
 import { TestTab } from "./test-tab";
@@ -47,6 +49,7 @@ import { SendingTab } from "./sending-tab";
 import { AdvancedTab } from "./advanced-tab";
 import { WelcomeModal } from "./welcome-modal";
 import { ReputationBanner } from "./reputation-banner";
+import { MailEngineBanner } from "./engine-banner";
 
 const WELCOME_SEEN_PREFIX = "openship:mail:welcome-seen:";
 
@@ -62,6 +65,7 @@ type TabKey =
   | "overview"
   | "domains"
   | "mailboxes"
+  | "aliases"
   | "dns"
   | "health"
   | "test"
@@ -78,6 +82,7 @@ const TABS: TabDef[] = [
   { key: "overview", icon: LayoutDashboard },
   { key: "domains", icon: Globe },
   { key: "mailboxes", icon: UserRound },
+  { key: "aliases", icon: Forward },
   { key: "dns", icon: FileText },
   { key: "health", icon: HeartPulse },
   { key: "test", icon: Send },
@@ -134,6 +139,11 @@ export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: Mai
 
   return (
     <div className="space-y-6">
+      {/* Engine state first: when it isn't serving, every tab below fails, so the
+          one condition and the one fix belong above the tab bar rather than
+          rediscovered as an error inside whichever tab the operator opened. */}
+      <MailEngineBanner serverId={serverId} engine={status.engine} onRepaired={onRefresh} />
+
       {primaryDomain && (
         <ReputationBanner serverId={serverId} domain={primaryDomain} />
       )}
@@ -164,6 +174,14 @@ export function MailAdminPanel({ status, serverId, onRefresh, onForgotten }: Mai
         )}
         {tab === "mailboxes" && (
           <MailboxesTab
+            serverId={serverId}
+            primaryDomain={primaryDomain}
+            selectedDomain={selectedDomain}
+            onSelectDomain={(d) => setQuery({ domain: d })}
+          />
+        )}
+        {tab === "aliases" && (
+          <AliasesTab
             serverId={serverId}
             primaryDomain={primaryDomain}
             selectedDomain={selectedDomain}

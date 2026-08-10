@@ -7,7 +7,8 @@
  *
  * Supports:
  *   JS/TS:   Next.js, Nuxt, SvelteKit, Astro, Vite, Angular, Gatsby, Remix,
- *            CRA, Vue, Express, Fastify, Hono, NestJS, Koa, AdonisJS, Elysia
+ *            TanStack Start, CRA, Vue, Express, Fastify, Hono, NestJS, Koa,
+ *            AdonisJS, Elysia
  *   Go:      Standard, Gin, Fiber, Echo
  *   Rust:    Standard, Actix, Axum, Rocket
  *   Python:  Standard, Django, Flask, FastAPI
@@ -143,6 +144,21 @@ export function detectPackageManager(
   return "unknown";
 }
 
+/**
+ * The JS package manager of a repo whose PRIMARY package manager is something
+ * else. A Laravel app is detected as `composer` — correct for its dependencies,
+ * but useless for its asset build, which still needs to know whether to run
+ * `npm ci` or `pnpm install`. Same lockfile precedence as the JS arm of
+ * `detectPackageManager`; defaults to npm, which the asset stage always has.
+ */
+export function detectJsPackageManager(files?: RepoFile[]): string {
+  const fileSet = new Set((files ?? []).map((f) => f.name.toLowerCase()));
+  if (fileSet.has("pnpm-lock.yaml")) return "pnpm";
+  if (fileSet.has("bun.lockb") || fileSet.has("bun.lock")) return "bun";
+  if (fileSet.has("yarn.lock")) return "yarn";
+  return "npm";
+}
+
 // ─── Framework detection rules ───────────────────────────────────────────────
 
 interface FrameworkRule {
@@ -163,6 +179,25 @@ function hasAnyRootMarker(detection: StackDetection | undefined, fileSet: Set<st
     if (fileSet.has(marker.toLowerCase())) return true;
   }
   return false;
+}
+
+/**
+ * A repo with a NON-JS backend framework at its root that ALSO ships a Vite/
+ * asset frontend must detect as the BACKEND, not as a bare Vite SPA. Stock
+ * scaffolds do exactly this: `laravel new` (v9+) includes vite.config.js + a
+ * package.json, which otherwise shadows Laravel — the deploy then lands on the
+ * `vite` stack with an empty start command and is refused. Restricted to
+ * unambiguous non-JS backends (PHP/Python/Ruby/Elixir) so a pure-JS Vite app is
+ * untouched and a Go/Rust monorepo with a JS frontend isn't flipped. #231
+ */
+function hasBackendMarker(fileSet: Set<string>): boolean {
+  return (
+    fileSet.has("composer.json") || // Laravel / Symfony (PHP)
+    fileSet.has("artisan") || // Laravel
+    fileSet.has("manage.py") || // Django (Python)
+    fileSet.has("gemfile") || // Rails (Ruby)
+    fileSet.has("mix.exs") // Phoenix (Elixir)
+  );
 }
 
 /** True if any of the stack's deps appears in the dep map. */
@@ -204,9 +239,18 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
   { stack: "sveltekit" },
   { stack: "astro" },
   { stack: "remix" },
+  // TanStack Start is Vite-based and often ships vite.config.* — must win over
+  // the generic vite SPA rule so imports get fullstack defaults (.output server)
+  // instead of static Vite (empty start). #400
+  { stack: "tanstack-start" },
   { stack: "angular" },
   { stack: "gatsby" },
-  { stack: "vite" },
+  // Vite matches on its own root markers, but a backend framework (Laravel/
+  // Symfony/Django/Rails/Phoenix) shipping a Vite asset frontend must fall
+  // through to its own rule below — otherwise stock `laravel new` detects as a
+  // bare Vite SPA (empty start command → deploy refused). Veto the Vite match
+  // when a backend marker is present. #231
+  { stack: "vite", fileMatch: (fs) => hasAnyRootMarker(STACKS.vite.detection, fs) && !hasBackendMarker(fs) },
   // CRA has no durable file marker - depMatch alone is authoritative.
   {
     stack: "cra",
@@ -449,13 +493,22 @@ export function detectStack(
     }
   }
 
+  // A Dockerfile owns its own build — the runtime builds straight from it
+  // (requireRepositoryDockerfile), so nothing is synthesized around it.
+  // buildCommand/startCommand already come out empty via the registry defaults
+  // on the `docker` stack, but installCommand is derived from the package
+  // manager alone, which has no way to know that. A Dockerfile sub-app that
+  // also carries a package.json for workspace membership (the Railway-style
+  // monorepo layout) would otherwise be handed a bogus `npm i --force`.
+  const projectType = getProjectType(matched);
+
   const result: StackResult = {
     stack: matched,
-    projectType: getProjectType(matched),
+    projectType,
     category: stackDef.category,
     dependencies: deps,
     packageManager: pm,
-    installCommand: getInstallCommand(pm),
+    installCommand: projectType === "docker" ? "" : getInstallCommand(pm),
     buildCommand: getBuildCommand(pm, matched, packageJson, files),
     startCommand,
     buildImage: getBuildImage(matched, pm),
@@ -714,6 +767,18 @@ export function getBuildCommand(
   }
 
   const lang = STACKS[stack].language;
+
+  // PHP: the install step is `composer install`, so the BUILD step is the asset
+  // pipeline — a Laravel/Vite or Symfony/Encore app ships CSS/JS that has to be
+  // compiled or it deploys with no styling at all. Emitted as a real command
+  // (rather than hidden in the Dockerfile) so it shows up in the wizard and can
+  // be edited; the recipe runs it in a Node stage, since php:*-cli has no node.
+  // Empty when the repo has no JS build — most Symfony APIs, plain PHP.
+  if (lang === "php") {
+    if (!scripts.build) return "";
+    const jsPm = detectJsPackageManager(files);
+    return `${getInstallCommand(jsPm)} && ${scriptRunner(jsPm)} build`;
+  }
 
   // Python: install per detected package manager; Django also collects static.
   if (lang === "python") {

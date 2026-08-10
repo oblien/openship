@@ -3,6 +3,7 @@
     "title": "Servidor de correo",
     "subtitle": "Configura un servidor de correo autoalojado con unos pocos clics",
     "backToServers": "Volver a los servidores de correo",
+    "backToAdmin": "Volver a la administración de correo",
     "addServer": "Añadir servidor de correo",
     "removeModal": {
       "title": "¿Eliminar este servidor de correo?",

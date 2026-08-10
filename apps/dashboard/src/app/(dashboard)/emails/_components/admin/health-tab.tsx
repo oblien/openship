@@ -359,6 +359,13 @@ function DaemonRow({
               {interpolate(h.up, { time: timeAgo(new Date(component.activeSince).getTime(), h.time) })}
             </p>
           )}
+          {/* The probe's own words for an undetermined state. Server-generated
+              (docker/supervisord output), so it is not a translation key. */}
+          {component.detail && (
+            <p className="text-[11px] text-warning mt-0.5 break-words">
+              {component.detail}
+            </p>
+          )}
         </div>
         <StatusPill tone={presentation.tone} icon={presentation.PillIcon}>
           {statusLabel}

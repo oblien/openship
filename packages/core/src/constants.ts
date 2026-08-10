@@ -4,6 +4,39 @@
 
 export const APP_NAME = "Openship";
 
+/**
+ * Outbound links to our own properties — docs, support, community, socials.
+ *
+ * Shared because they're needed from places that can't import each other: the
+ * dashboard's in-app help menu (React) and the desktop app's NATIVE application
+ * menu (Electron main). They were literally the same five URLs typed twice, which
+ * is how a docs link ends up dead in one menu and fine in the other.
+ */
+/**
+ * Where our published images live when nothing overrides it.
+ *
+ * `OPENSHIP_IMAGE_REGISTRY` overrides it everywhere. Shared because the fallback
+ * was typed independently in the CLI's compose generator, the API's edge-image
+ * pin and the adapters' edge installer — three defaults that had to agree for a
+ * pull to resolve, with nothing making them.
+ *
+ * NOTE: the shipped compose YAML repeats it as `${OPENSHIP_IMAGE_REGISTRY:-…}`
+ * because compose interpolation can't read TypeScript. That copy is asserted
+ * against this one by test.
+ */
+export const DEFAULT_IMAGE_REGISTRY = "ghcr.io/oblien";
+
+export const BRAND_LINKS = {
+  site: "https://openship.io",
+  docs: "https://openship.io/docs",
+  support: "https://openship.io/support",
+  contact: "https://openship.io/contact",
+  github: "https://github.com/oblien/openship",
+  issues: "https://github.com/oblien/openship/issues/new",
+  community: "https://discord.gg/Q9eWNCeXjg",
+  x: "https://x.com/openship",
+} as const;
+
 export const DEPLOYMENT_STATUSES = [
   "queued",
   "building",
@@ -301,3 +334,29 @@ export function validatePlanPriceIds(): PlanPriceIdValidation {
 
   return { missing };
 }
+
+/**
+ * #336: the sentinel a compose-service env value is masked to on API output.
+ * Shared so the API (apps/api/src/lib/secret-env.ts) and the dashboard's env
+ * editor agree on the EXACT string — the reveal + round-trip contract (a value
+ * echoed back unchanged means "keep the stored secret") hinges on it, so the two
+ * sides must never drift.
+ */
+export const ENV_MASK = "••••••••";
+export const isMaskedValue = (value: unknown): boolean => value === ENV_MASK;
+
+/**
+ * Successful runs a backup policy keeps when it says nothing about retention.
+ *
+ * `retain_count` and `retain_days` were the only two fields on the policy insert
+ * with no meaningful default and no column default, so every policy created
+ * through the API stored NULL for both — and the prune short-circuits on
+ * "no retention configured". Result: retention never ran for any API- or
+ * MCP-created policy, and their runs grew until the destination filled.
+ *
+ * The value is the dashboard's own default (`PolicyEditor`'s `retainCount`
+ * state), so the DB column default, the API fallback, and the form a human
+ * actually sees all agree. Changing it here means changing all three at once —
+ * which is the point. Existing NULL rows were backfilled by migration 0096.
+ */
+export const DEFAULT_RETAIN_COUNT = 7;

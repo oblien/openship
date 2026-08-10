@@ -42,6 +42,7 @@ import {
   type UpdateInfo,
 } from "./updater";
 import { closeUpdateWindow, openUpdateWindow } from "./update-window";
+import { buildAppMenu } from "./menu";
 
 // ─── Persistent config ───────────────────────────────────────────────────────
 
@@ -216,31 +217,48 @@ let mainWindow: BrowserWindow | null = null;
 /** The update found by the launch check, pending user action in the update window. */
 let pendingUpdate: UpdateInfo | null = null;
 
+/** The download/install currently running, or null. The single-flight lock that
+ *  keeps concurrent triggers from each starting their own download. */
+let updateInFlight: Promise<boolean> | null = null;
+
 function createWindow() {
   const bounds = store.get("windowBounds");
   // Never open larger than the display (a previously-stored oversized bound, or
   // a small screen, would otherwise make the window bigger than the desktop).
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-  const width = Math.min(bounds?.width ?? 1200, screenW);
-  const height = Math.min(bounds?.height ?? 800, screenH);
+  // Default to a generous window, not the whole screen. Leaving a margin makes it
+  // obvious the app is a window you can move and resize; it used to open
+  // maximized on every fresh launch (see the maximize block below), which read as
+  // the app forcing itself fullscreen.
+  const width = Math.min(bounds?.width ?? 1440, screenW - 80);
+  const height = Math.min(bounds?.height ?? 900, screenH - 80);
+  // Only honour a stored position — a fresh launch centres instead of pinning to
+  // the top-left corner.
+  const hasStoredPosition = typeof bounds?.x === "number" && typeof bounds?.y === "number";
 
   mainWindow = new BrowserWindow({
     width,
     height,
-    x: bounds?.x,
-    y: bounds?.y,
+    ...(hasStoredPosition ? { x: bounds?.x, y: bounds?.y } : { center: true }),
     minWidth: 800,
     minHeight: 560,
     title: "Openship",
-    // Seamless native frame (like VS Code / Spotify): no OS title-bar strip,
-    // traffic lights inlaid top-left. The dashboard reserves top-left space +
-    // a drag region for them (see the `is-desktop` handling in the web app).
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    // Inset the traffic lights a touch further down/right so they sit inside the
-    // window's rounded content area rather than hugging the corner. Kept in sync
-    // with the dashboard's `--titlebar-h` reserved strip so they never overhang
-    // page content.
-    trafficLightPosition: { x: 22, y: 22 },
+    // The app draws its own header row (DesktopChrome in the dashboard), so no
+    // platform gets an OS title-bar strip above it.
+    //
+    // macOS stays on `hiddenInset` rather than going fully frameless: that keeps
+    // the REAL traffic lights, so the green-button fullscreen menu and hover
+    // behaviour work as Mac users expect, and the window is still closable by
+    // mouse if the renderer ever stalls. Windows/Linux have no equivalent, so
+    // there we take the frame off and draw ─ □ ✕ ourselves.
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset" as const,
+          // Vertically centre the lights in the header row (--titlebar-h, 44px):
+          // (44 - 12) / 2 ≈ 16. Keep in sync with that CSS var or they sit off-axis.
+          trafficLightPosition: { x: 18, y: 16 },
+        }
+      : { frame: false }),
     // Match the OS appearance so there's no wrong-theme flash while the dashboard
     // loads (the web UI defaults to "system" in desktop). Dark bg is the app's
     // --th-bg-page dark value (#000000); light is #ffffff.
@@ -254,11 +272,34 @@ function createWindow() {
     },
   });
 
-  // Full-window by default: maximize unless the user chose a non-maximized
-  // size last time.
-  if (store.get("windowMaximized") !== false) {
+  // Restore a maximized window only if the user actually left it maximized. This
+  // was `!== false`, i.e. undefined counted as "maximize" — so every first launch
+  // (and any launch after a config reset) opened fullscreen-wide regardless of the
+  // sizing above.
+  if (store.get("windowMaximized") === true) {
     mainWindow.maximize();
   }
+
+  // Keep the renderer's restore icon honest: the window can be maximized by the
+  // OS, a keyboard shortcut, or a double-click, none of which go through our IPC.
+  const emitMaximized = (maximized: boolean) =>
+    mainWindow?.webContents.send("window:maximized-change", maximized);
+  mainWindow.on("maximize", () => emitMaximized(true));
+  mainWindow.on("unmaximize", () => emitMaximized(false));
+
+  // Same idea for the titlebar's back/forward arrows: most navigation happens
+  // through links and the Next router, not our IPC, so push the real state after
+  // every navigation instead of letting the renderer guess. `did-navigate-in-page`
+  // is the one that fires for Next's client-side pushState routing.
+  const emitNav = () => {
+    const h = mainWindow?.webContents.navigationHistory;
+    mainWindow?.webContents.send("window:nav-state-change", {
+      canGoBack: h?.canGoBack() ?? false,
+      canGoForward: h?.canGoForward() ?? false,
+    });
+  };
+  mainWindow.webContents.on("did-navigate", emitNav);
+  mainWindow.webContents.on("did-navigate-in-page", emitNav);
 
   // Show the window once content is painted (avoids white flash)
   mainWindow.once("ready-to-show", () => {
@@ -304,24 +345,203 @@ function createWindow() {
 
 // ─── Loading strategies ──────────────────────────────────────────────────────
 
-/** Minimal inline splash shown while the bundled services boot (packaged app). */
+/**
+ * Inline splash shown while the bundled services boot (packaged app).
+ *
+ * This is the app's FIRST screen, so it carries the brand mark (the Openship
+ * ring) over the same node-graph motif the dashboard's first-run state uses —
+ * hub wired to repo / services / data / domain, with the links animating as it
+ * comes up. That reads as "connecting", which is what's actually happening, so
+ * there's no generic spinner.
+ *
+ * Colours come from `prefers-color-scheme`, which Electron drives from
+ * `nativeTheme` — the same source as the BrowserWindow's `backgroundColor`
+ * above, so the splash can't be a white flash inside a black window (it was).
+ * Dark uses #000 to match that window background exactly, with no seam.
+ */
 const LOADING_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
-  html,body{margin:0;height:100%;background:#ffffff;color:#0f0f0f;
-    font-family:system-ui,-apple-system,sans-serif;display:flex;
-    align-items:center;justify-content:center}
-  .box{text-align:center}
-  .spinner{width:28px;height:28px;margin:0 auto 16px;border-radius:50%;
-    border:3px solid rgba(0,0,0,.12);border-top-color:#0f0f0f;
-    animation:spin 1s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  p{font-size:14px;opacity:.55;margin:0}
+  :root{color-scheme:light dark;
+    --bg:#ffffff;--fg:#0f0f0f;--dim:rgba(0,0,0,.55);
+    --line:rgba(0,0,0,.14);--tile:rgba(0,0,0,.035);--glyph:rgba(0,0,0,.30);--ok:#16a34a;--glow:rgba(0,0,0,.035)}
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#000000;--fg:#f5f5f5;--dim:rgba(255,255,255,.5);
+      --line:rgba(255,255,255,.16);--tile:rgba(255,255,255,.045);--glyph:rgba(255,255,255,.34);--ok:#22c55e;--glow:rgba(255,255,255,.045)}
+  }
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(60% 55% at 50% 45%,var(--glow),transparent 70%)}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;
+    align-items:center;justify-content:center;overflow:hidden}
+  .box{text-align:center;animation:rise .6s cubic-bezier(.2,.7,.2,1) both}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  /* Fixed, modest size — a splash mark, not a poster. Scaling with the viewport
+     (68vw) made it fill half a desktop window. Only clamps on a tiny window. */
+  svg{display:block;width:min(300px,72vw);height:auto;margin:0 auto 20px}
+
+  /* Links flow inward — dash period (10) == offset, so the loop is seamless. */
+  .link{stroke:var(--line);stroke-width:1.5;fill:none;stroke-dasharray:5 5;
+    animation:flow 1.2s linear infinite}
+  @keyframes flow{to{stroke-dashoffset:-10}}
+
+  /* Each service "comes online" in turn: the tiles brighten around the ring. */
+  .node{animation:wake 3.2s ease-in-out infinite}
+  .node:nth-of-type(2){animation-delay:.4s}
+  .node:nth-of-type(3){animation-delay:.8s}
+  .node:nth-of-type(4){animation-delay:1.2s}
+  @keyframes wake{0%,55%,100%{opacity:.45}22%{opacity:1}}
+  .led{fill:var(--ok);opacity:0;animation:led 3.2s ease-in-out infinite}
+  .pkt{fill:var(--ok);opacity:0}
+  .node:nth-of-type(2) .led{animation-delay:.4s}
+  .node:nth-of-type(3) .led{animation-delay:.8s}
+  .node:nth-of-type(4) .led{animation-delay:1.2s}
+  @keyframes led{0%,55%,100%{opacity:0}22%{opacity:1}}
+  .tile{fill:var(--tile);stroke:var(--line);stroke-width:1.25}
+  .glyph{stroke:var(--glyph);stroke-width:1.75;fill:none;stroke-linecap:round}
+
+  /* The brand ring is the loading indicator — no spinner needed. */
+  .halo{fill:none;stroke:var(--fg);stroke-width:1;opacity:.10;
+    animation:halo 2.4s ease-out infinite;transform-origin:140px 62px}
+  @keyframes halo{0%{transform:scale(.8);opacity:.16}70%,100%{transform:scale(1.35);opacity:0}}
+  .mark{fill:none;stroke:var(--fg);stroke-width:5;opacity:.28}
+  /* Real progress, drawn on the brand ring itself. dasharray = 2*pi*r (r=24);
+     fill-box origin keeps the -90deg start at 12 o'clock without user-unit math. */
+  .prog{fill:none;stroke:var(--ok);stroke-width:5;stroke-linecap:round;
+    stroke-dasharray:150.8;stroke-dashoffset:150.8;
+    transform-box:fill-box;transform-origin:center;transform:rotate(-90deg);
+    transition:stroke-dashoffset .45s cubic-bezier(.3,.7,.2,1)}
+
+  h1{font-size:15px;font-weight:500;letter-spacing:-.1px;margin:0;color:var(--fg);opacity:.85}
+  .d{animation:blink 1.4s ease-in-out infinite;opacity:.25}
+  .d:nth-child(2){animation-delay:.2s}
+  .d:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:.95}}
+  @media (prefers-reduced-motion: reduce){
+    .link,.node,.led,.halo,.mark,.d,.box{animation:none}
+    .pkt{opacity:0}
+    .prog{transition:none}
+    .led{opacity:1}
+  }
 </style></head><body><div class="box">
-  <div class="spinner"></div><p>Starting Openship…</p>
-</div></body></html>`;
+  <svg viewBox="0 0 280 124" fill="none" aria-hidden="true">
+    <!-- Tile edge (x=58 / 222) → ring edge (r=24 along each diagonal). -->
+    <path class="link" d="M58 32 Q 92 40 117 53"/>
+    <path class="link" d="M58 92 Q 92 84 117 71"/>
+    <path class="link" d="M163 53 Q 188 40 222 32"/>
+    <path class="link" d="M163 71 Q 188 84 222 92"/>
+
+    <!-- Repo -->
+    <g class="node">
+      <rect class="tile" x="18" y="14" width="40" height="36" rx="11"/>
+      <circle class="led" cx="50" cy="23" r="2.6"/>
+      <circle class="glyph" cx="31" cy="39" r="3.5"/>
+      <circle class="glyph" cx="45" cy="25" r="3.5"/>
+      <path class="glyph" d="M31 35.5v-4a4 4 0 0 1 4-4h6"/>
+    </g>
+    <!-- Data -->
+    <g class="node">
+      <rect class="tile" x="18" y="74" width="40" height="36" rx="11"/>
+      <circle class="led" cx="50" cy="83" r="2.6"/>
+      <ellipse class="glyph" cx="38" cy="85" rx="9" ry="3.4"/>
+      <path class="glyph" d="M29 85v10c0 1.9 4 3.4 9 3.4s9-1.5 9-3.4V85"/>
+      <path class="glyph" d="M29 90.5c0 1.9 4 3.4 9 3.4s9-1.5 9-3.4"/>
+    </g>
+    <!-- Domain -->
+    <g class="node">
+      <rect class="tile" x="222" y="14" width="40" height="36" rx="11"/>
+      <circle class="led" cx="254" cy="23" r="2.6"/>
+      <circle class="glyph" cx="242" cy="32" r="9.5"/>
+      <path class="glyph" d="M232.5 32h19M242 22.5c4.8 4.5 4.8 14.5 0 19M242 22.5c-4.8 4.5-4.8 14.5 0 19"/>
+    </g>
+    <!-- Services -->
+    <g class="node">
+      <rect class="tile" x="222" y="74" width="40" height="36" rx="11"/>
+      <circle class="led" cx="254" cy="83" r="2.6"/>
+      <rect class="glyph" x="232" y="84" width="20" height="15" rx="3"/>
+      <path class="glyph" d="M238.5 84v15M245.5 84v15"/>
+    </g>
+
+
+    <!-- Packets travel tile → hub, one per link, staggered so something is
+         always arriving. Paths are the links' shapes as deltas from cx/cy. -->
+    <g class="pkts">
+      <circle class="pkt" cx="58" cy="32" r="2.2">
+        <animateMotion dur="2.6s" begin="0s" repeatCount="indefinite" path="M0 0 Q 34 8 59 21"/>
+        <animate attributeName="opacity" dur="2.6s" begin="0s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.15;.8;1"/>
+      </circle>
+      <circle class="pkt" cx="58" cy="92" r="2.2">
+        <animateMotion dur="2.6s" begin=".65s" repeatCount="indefinite" path="M0 0 Q 34 -8 59 -21"/>
+        <animate attributeName="opacity" dur="2.6s" begin=".65s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.15;.8;1"/>
+      </circle>
+      <circle class="pkt" cx="222" cy="32" r="2.2">
+        <animateMotion dur="2.6s" begin="1.3s" repeatCount="indefinite" path="M0 0 Q -34 8 -59 21"/>
+        <animate attributeName="opacity" dur="2.6s" begin="1.3s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.15;.8;1"/>
+      </circle>
+      <circle class="pkt" cx="222" cy="92" r="2.2">
+        <animateMotion dur="2.6s" begin="1.95s" repeatCount="indefinite" path="M0 0 Q -34 -8 -59 -21"/>
+        <animate attributeName="opacity" dur="2.6s" begin="1.95s" repeatCount="indefinite" values="0;1;1;0" keyTimes="0;.15;.8;1"/>
+      </circle>
+    </g>
+    <circle class="halo" cx="140" cy="62" r="30"/>
+    <circle class="mark" cx="140" cy="62" r="24"/>
+    <circle class="prog" id="prog" cx="140" cy="62" r="24"/>
+  </svg>
+  <h1><span id="stage">Starting Openship</span><span class="d">.</span><span class="d">.</span><span class="d">.</span></h1>
+</div>
+<script>
+  /* Progress on the ring. The main process reports the stage it has ACTUALLY
+     reached plus a ceiling; between stages the arc eases toward that ceiling
+     asymptotically (never touching it), so it always looks like work is
+     happening but never claims a milestone that hasn't landed. */
+  (function () {
+    var C = 150.8, p = 0.05, ceiling = 0.22, arc = null, timer = null;
+    function paint() {
+      arc = arc || document.getElementById("prog");
+      if (arc) arc.style.strokeDashoffset = String(C * (1 - p));
+    }
+    timer = setInterval(function () {
+      if (p < ceiling) { p += (ceiling - p) * 0.09; paint(); }
+    }, 180);
+    /* text: what's happening. target: 0..1 ceiling; >=1 completes and stops. */
+    window.__osStage = function (text, target) {
+      var el = document.getElementById("stage");
+      if (el && typeof text === "string" && text) el.textContent = text;
+      if (typeof target !== "number") return;
+      if (target >= 1) { clearInterval(timer); p = 1; } else { ceiling = target; }
+      paint();
+    };
+    paint();
+  })();
+</script>
+</body></html>`;
 
 function showLoading() {
   if (!mainWindow) return;
   mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(LOADING_HTML)}`);
+}
+
+/**
+ * Report boot progress to the splash: the caption, and a ceiling for the arc on
+ * the brand ring.
+ *
+ * `ceiling` is where the arc is allowed to ease toward until the NEXT real
+ * milestone — not where it jumps to. So the arc keeps moving during the long
+ * wait (a parked arc reads as hung) while never claiming a stage that hasn't
+ * landed. `1` completes it.
+ *
+ * The GRAPH stays ambient on purpose: desktop runs PGlite plus one bundled API
+ * binary, so there is no per-node "postgres is up" truth to report, and lighting
+ * tiles from invented milestones would be an animation that lies. Only the
+ * caption and the arc are driven by real state.
+ *
+ * Fire-and-forget: the splash may already have been replaced by the dashboard
+ * (or never loaded), and a failed progress update must never block launch.
+ */
+function setLoadingStage(text: string, ceiling?: number) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const args = ceiling === undefined ? JSON.stringify(text) : `${JSON.stringify(text)},${ceiling}`;
+  void mainWindow.webContents
+    .executeJavaScript(`window.__osStage && window.__osStage(${args})`)
+    .catch(() => {});
 }
 
 /**
@@ -369,11 +589,19 @@ function loadDashboard() {
 app.whenReady().then(async () => {
   createWindow(); // shows the loading splash immediately
 
+  // Native menu: Reload / Developer Tools / Help. Registered on every platform —
+  // Windows/Linux are frameless so no menu bar renders, but the accelerators
+  // (Ctrl+R, Ctrl+Shift+I) still install, and the titlebar keeps a ⋯ there.
+  buildAppMenu(() => mainWindow);
+
   // In a packaged build there are no external dev servers — boot the bundled
   // API + dashboard ourselves before routing to the real view. In dev the
   // servers run via `bun dev`, so we skip straight to routing.
   if (app.isPackaged) {
     try {
+      // Ceilings, not positions: services are the long leg of the boot, so the
+      // arc creeps to ~55% while they come up and completes when they're up.
+      setLoadingStage("Starting services", 0.55);
       await startLocalServices(internalToken);
     } catch (err) {
       dialog.showErrorBox(
@@ -383,6 +611,7 @@ app.whenReady().then(async () => {
       app.quit();
       return;
     }
+    setLoadingStage("Opening dashboard", 1);
   }
   routeInitialView();
 
@@ -397,16 +626,21 @@ app.whenReady().then(async () => {
       const notify = store.get("updateNotifications") !== false; // default ON
 
       if (autoUpdate) {
-        // Auto-install: download + install straight away. Progress streams to
-        // the dashboard's top-of-page surface (no modal needed).
+        // Auto-install: the user opted IN to always taking updates, so this is
+        // not an interruption — advisory or not, download + install straight
+        // away. Progress streams to the dashboard's top surface (no modal).
         await runUpdate();
-      } else if (notify) {
-        // Notify-only (the default): offer it in the native modal, user decides.
-        // On "Update now" the modal hands off to the header progress bar.
+      } else if (notify && result.announcement) {
+        // Notify-only (the default): the modal appears ONLY when the release
+        // advisory says so (`bun run release … publish` writes `announce`). A
+        // newer version on its own is NOT a reason to interrupt anyone — routine
+        // releases go out often, and a modal on every launch trains people to
+        // dismiss the one that actually matters. Unannounced releases stay
+        // discoverable in Settings → Updates and the home Updates block.
         openUpdateWindow(mainWindow, result);
       }
-      // Muted + not auto → stay silent here. The dashboard still surfaces
-      // matching advisories on its own (critical ones always).
+      // Muted, or no announcement → stay silent here. The dashboard still
+      // surfaces matching advisories on its own (critical ones always).
     });
   }
 
@@ -442,25 +676,63 @@ app.on("before-quit", () => {
 
 // ─── IPC: Updates ─────────────────────────────────────────────────────────────
 
+/** Ensure `pendingUpdate` reflects the latest release. The boot check used to be
+ *  the ONLY writer, so a release published after launch (or an offline-at-boot
+ *  check) left it null and the dashboard's "Update now" hit a silent no-op that
+ *  only a restart fixed. Re-check on demand here so the button + native wizard
+ *  work without a restart. `checkForUpdate` never throws. */
+async function ensurePendingUpdate(): Promise<void> {
+  if (pendingUpdate) return;
+  const result = await checkForUpdate();
+  if (result.available) pendingUpdate = result;
+}
+
 ipcMain.handle("update:dismiss", () => {
   closeUpdateWindow();
   return true;
 });
 
-// Reopen the native update window on demand (e.g. the dashboard's "Update now"
-// when notifications were muted at launch). No-op if there's no pending update.
-ipcMain.handle("update:open", () => {
+// Re-check GitHub on demand and stage the result — drives the dashboard's
+// "Check now" so a check happens without a restart. Returns the check result so
+// the renderer can reflect it.
+ipcMain.handle("update:check", async () => {
+  const result = await checkForUpdate();
+  if (result.available) pendingUpdate = result;
+  return result;
+});
+
+// Open the native update window on demand (the dashboard's "Update now"). Stages
+// the pending update first, so it works even when the boot check found nothing.
+ipcMain.handle("update:open", async () => {
+  await ensurePendingUpdate();
   if (!pendingUpdate) return false;
   openUpdateWindow(mainWindow, pendingUpdate);
   return true;
 });
+
+/** Single-flight guard over performUpdate. Every trigger funnels here — the
+ *  dashboard's beginUpdate() (update:start), the native modal's "Update now"
+ *  (also update:start), and the boot auto-update. Without coalescing, two
+ *  presses launch two downloadUpdate() calls that write the SAME temp file and
+ *  stream two progress tracks at once (the 33%-and-15% race). A concurrent call
+ *  now attaches to the run already in flight. The lock clears on failure so a
+ *  retry works; on success the app quits + relaunches, so nothing is left to
+ *  unlock. */
+function runUpdate(): Promise<boolean> {
+  if (updateInFlight) return updateInFlight;
+  updateInFlight = performUpdate().finally(() => {
+    updateInFlight = null;
+  });
+  return updateInFlight;
+}
 
 /** Download + install the pending update. The moment the download starts we
  *  hand the UI off to the dashboard's top-of-page update surface: the small
  *  native modal closes and progress streams into the main window instead, so
  *  the bar lives in the header the user already has — not stuck in the modal.
  *  Shared by the user-initiated IPC handler and the auto-update path. */
-async function runUpdate(): Promise<boolean> {
+async function performUpdate(): Promise<boolean> {
+  await ensurePendingUpdate();
   if (!pendingUpdate) return false;
   // Close the notify modal — from here on progress belongs to the dashboard.
   closeUpdateWindow();
@@ -488,6 +760,87 @@ async function runUpdate(): Promise<boolean> {
 }
 
 ipcMain.handle("update:start", () => runUpdate());
+
+// ─── IPC: Window controls ───────────────────────────────────────────────────
+//
+// Drives the app's own header row (DesktopChrome). Only Windows/Linux render
+// buttons — macOS keeps its native traffic lights — but all four are registered
+// on every platform so the renderer never branches on process.platform.
+
+ipcMain.handle("window:minimize", () => {
+  mainWindow?.minimize();
+  return true;
+});
+
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow) return false;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+  return mainWindow.isMaximized();
+});
+
+ipcMain.handle("window:close", () => {
+  // close(), not destroy() — the existing "close" handler persists window bounds
+  // and decides hide-vs-quit per platform.
+  mainWindow?.close();
+  return true;
+});
+
+ipcMain.handle("window:is-maximized", () => mainWindow?.isMaximized() ?? false);
+
+// ─── IPC: In-app navigation (titlebar back / forward / reload) ──────────────
+//
+// Driven from the main process rather than the renderer's own `history` API,
+// because only Electron can answer canGoBack/canGoForward: `history.length`
+// counts forward entries too and never shrinks, so the renderer cannot tell when
+// to disable an arrow. Next's client-side routing pushes real history entries, so
+// this covers SPA navigation as well as full page loads.
+
+/** Electron 40 moved navigation history onto `webContents.navigationHistory`. */
+function navHistory() {
+  return mainWindow?.webContents.navigationHistory;
+}
+
+function navState(): { canGoBack: boolean; canGoForward: boolean } {
+  const h = navHistory();
+  return { canGoBack: h?.canGoBack() ?? false, canGoForward: h?.canGoForward() ?? false };
+}
+
+ipcMain.handle("window:nav-back", () => {
+  const h = navHistory();
+  if (h?.canGoBack()) h.goBack();
+  return navState();
+});
+
+ipcMain.handle("window:nav-forward", () => {
+  const h = navHistory();
+  if (h?.canGoForward()) h.goForward();
+  return navState();
+});
+
+ipcMain.handle("window:reload", () => {
+  mainWindow?.webContents.reload();
+  return true;
+});
+
+ipcMain.handle("window:nav-state", () => navState());
+
+/**
+ * Toggle DevTools from the titlebar's ⋯ menu.
+ *
+ * This is the ONLY route on Windows/Linux: those run `frame: false`, so there is
+ * no menu bar at all. macOS still has Electron's default application menu (main
+ * never calls Menu.setApplicationMenu, so the built-in one with View → Toggle
+ * Developer Tools stays), but it lives in the system menu bar — having it in the
+ * window too costs nothing and keeps the two platforms behaving the same.
+ */
+ipcMain.handle("window:toggle-devtools", () => {
+  const wc = mainWindow?.webContents;
+  if (!wc) return false;
+  if (wc.isDevToolsOpened()) wc.closeDevTools();
+  else wc.openDevTools({ mode: "right" });
+  return wc.isDevToolsOpened();
+});
 
 // ─── IPC: Config store ───────────────────────────────────────────────────────
 

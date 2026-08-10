@@ -255,7 +255,7 @@ async function handleCreditsDepleted(orgId: string): Promise<void> {
   if (!org) return;
 
   await audit.record(
-    { organizationId: orgId, actorUserId: null },
+    { organizationId: orgId, actorUserId: null, source: "webhook" },
     {
       eventType: "billing.credit_exhausted",
       resourceType: "organization",

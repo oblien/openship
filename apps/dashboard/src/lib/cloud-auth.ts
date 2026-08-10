@@ -1,4 +1,5 @@
 import { getCloudApiOrigin, getCloudDashboardUrl } from "@/lib/api/urls";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 export const DESKTOP_CLOUD_FLOW = "desktop-cloud";
 const DEFAULT_APP_NAME = "Openship Desktop";
@@ -61,10 +62,16 @@ export function generatePkceVerifier(): string {
 }
 
 /** RFC 7636 S256 code_challenge: base64url(SHA-256(verifier)). */
-export async function computePkceChallenge(verifier: string): Promise<string> {
+export async function computePkceChallenge(
+  verifier: string,
+  subtleCrypto: SubtleCrypto | null | undefined = globalThis.crypto?.subtle,
+): Promise<string> {
   const data = new TextEncoder().encode(verifier);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return base64UrlEncode(new Uint8Array(digest));
+  if (subtleCrypto) {
+    const digest = await subtleCrypto.digest("SHA-256", data);
+    return base64UrlEncode(new Uint8Array(digest));
+  }
+  return base64UrlEncode(sha256(data));
 }
 
 /** Random flow id, used as the storage key for the verifier and the
@@ -191,7 +198,13 @@ export function validateReturnTo(input: string | null): string | null {
   // Split off any query/fragment for the prefix check, but keep them on
   // the returned value so the consent page reloads with its params.
   const pathOnly = input.split(/[?#]/)[0];
-  const ALLOWED_PREFIXES = ["/cloud-authorize", "/"];
+  // `/mcp/authorize` is here for the same reason as `/cloud-authorize`: it's a
+  // consent page for an ALREADY-authenticated visitor that sends the user to
+  // /login with a returnTo when the session is missing. Without it in this list
+  // the returnTo was silently dropped and the user landed on `/`, abandoning the
+  // OAuth authorize the MCP client was waiting on — the flow could not complete
+  // for anyone not already signed in.
+  const ALLOWED_PREFIXES = ["/cloud-authorize", "/mcp/authorize", "/"];
   const isAllowed = ALLOWED_PREFIXES.some((prefix) => {
     if (prefix === "/") return pathOnly === "/";
     return pathOnly === prefix || pathOnly.startsWith(prefix + "/");

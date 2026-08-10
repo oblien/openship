@@ -1012,3 +1012,197 @@ describe("discoverMonorepoApps - .NET class-library exclusion", () => {
     expect(result!.apps.map((app) => app.rootDirectory).sort()).toEqual([".", "ApiB"]);
   });
 });
+
+describe("discoverMonorepoApps - formal workspace monorepo with per-app Dockerfiles", () => {
+  // Mirrors a Railway-style pnpm/turbo monorepo where every sub-app carries its
+  // own Dockerfile (and often a railway.json) instead of being buildpack-
+  // detected. Each sub-app's stack therefore resolves to "docker"
+  // (projectType "docker"), not "app" - previously excluded entirely by
+  // isMonorepoAppCandidate, which dropped candidates to 0 and made
+  // discoverMonorepoApps return null for the whole repo.
+  const root = () => ({
+    rootDirectory: "",
+    files: [
+      { name: "package.json", type: "file" as const },
+      { name: "pnpm-workspace.yaml", type: "file" as const },
+      { name: "turbo.json", type: "file" as const },
+      { name: "apps", type: "dir" as const },
+    ],
+    packageJson: { packageManager: "pnpm@9.0.0" },
+    fileContents: { "pnpm-workspace.yaml": "packages:\n  - 'apps/*'\n" },
+  });
+
+  const dockerSubApp = (dir: string) => ({
+    rootDirectory: dir,
+    source: "workspace" as const,
+    files: [
+      { name: "package.json", type: "file" as const },
+      { name: "Dockerfile", type: "file" as const },
+      { name: "railway.json", type: "file" as const },
+    ],
+    packageJson: { name: dir.split("/").at(-1) },
+    fileContents: {},
+  });
+
+  it("detects a monorepo whose sub-apps each have their own Dockerfile", () => {
+    const result = discoverMonorepoApps(root(), [
+      dockerSubApp("apps/api"),
+      dockerSubApp("apps/saas"),
+      dockerSubApp("apps/marketing"),
+    ]);
+
+    expect(result).not.toBeNull();
+    expect(result!.apps.map((app) => app.rootDirectory).sort()).toEqual([
+      "apps/api",
+      "apps/marketing",
+      "apps/saas",
+    ]);
+    for (const app of result!.apps) {
+      expect(app.stack).toBe("docker");
+      // The Dockerfile owns install/build/start - the runtime builds straight
+      // from it (requireRepositoryDockerfile), so these stay empty rather than
+      // being synthesized.
+      expect(app.installCommand).toBe("");
+      expect(app.buildCommand).toBe("");
+      expect(app.startCommand).toBe("");
+    }
+    expect(result!.workspace.packageManager).toBe("pnpm");
+  });
+
+  it("still excludes a services (docker-compose) candidate from the app list", () => {
+    const composeSubApp = {
+      rootDirectory: "apps/infra",
+      source: "workspace" as const,
+      files: [{ name: "docker-compose.yml", type: "file" as const }],
+      fileContents: {},
+    };
+    const result = discoverMonorepoApps(root(), [
+      dockerSubApp("apps/api"),
+      dockerSubApp("apps/saas"),
+      composeSubApp,
+    ]);
+    expect(result).not.toBeNull();
+    expect(result!.apps.map((app) => app.rootDirectory).sort()).toEqual(["apps/api", "apps/saas"]);
+  });
+
+  it("blanks a Dockerfile-owned sub-app's install command outside a hoisting workspace", () => {
+    // The sibling assertion above passes for a free reason: a pnpm workspace
+    // hoists install to the root, so applyWorkspaceContext already clears it.
+    // With no workspace manifest there is no hoisting, and detectStack happily
+    // emits "npm i --force" off the sub-app's package.json - a command the
+    // Dockerfile branch never runs. Keyed on stack === "docker".
+    const rootBackend = {
+      rootDirectory: "",
+      files: [
+        { name: "package.json", type: "file" as const },
+        { name: "package-lock.json", type: "file" as const },
+        { name: "server.js", type: "file" as const },
+        { name: "worker", type: "dir" as const },
+      ],
+      packageJson: {
+        name: "api",
+        dependencies: { express: "^5.0.0" },
+        scripts: { start: "node server.js" },
+      },
+      fileContents: {},
+    };
+    const dockerWorker = {
+      rootDirectory: "worker",
+      source: "discovered" as const,
+      files: [
+        { name: "package.json", type: "file" as const },
+        { name: "package-lock.json", type: "file" as const },
+        { name: "Dockerfile", type: "file" as const },
+      ],
+      packageJson: { name: "worker" },
+      fileContents: {},
+    };
+
+    const result = discoverMonorepoApps(rootBackend, [dockerWorker]);
+    expect(result).not.toBeNull();
+    const worker = result!.apps.find((app) => app.rootDirectory === "worker");
+    expect(worker).toBeDefined();
+    expect(worker!.stack).toBe("docker");
+    expect(worker!.installCommand).toBe("");
+    expect(worker!.buildCommand).toBe("");
+    expect(worker!.startCommand).toBe("");
+  });
+
+  it("keeps real commands on a framework sub-app that merely ships a Dockerfile", () => {
+    // The inverse guard. A Vite/Next app shipping an OPTIONAL Dockerfile still
+    // detects as its framework, so the pipeline takes the buildpack branch
+    // (`stack === "docker" || dockerfilePath`, see cloud.ts) - keying the blanking
+    // on "a Dockerfile exists" instead of on the stack leaves it with nothing to
+    // install, build, or start.
+    const viteWithDockerfile = {
+      rootDirectory: "frontend",
+      source: "discovered" as const,
+      files: [
+        { name: "package.json", type: "file" as const },
+        { name: "package-lock.json", type: "file" as const },
+        { name: "vite.config.js", type: "file" as const },
+        { name: "index.html", type: "file" as const },
+        { name: "Dockerfile", type: "file" as const },
+      ],
+      packageJson: {
+        name: "frontend",
+        dependencies: { react: "^19.0.0", vite: "^8.0.0" },
+        scripts: { build: "vite build" },
+      },
+      fileContents: {},
+    };
+    const rootBackend = {
+      rootDirectory: "",
+      files: [
+        { name: "package.json", type: "file" as const },
+        { name: "package-lock.json", type: "file" as const },
+        { name: "server.js", type: "file" as const },
+        { name: "frontend", type: "dir" as const },
+      ],
+      packageJson: {
+        name: "api",
+        dependencies: { express: "^5.0.0" },
+        scripts: { start: "node server.js" },
+      },
+      fileContents: {},
+    };
+
+    const result = discoverMonorepoApps(rootBackend, [viteWithDockerfile]);
+    expect(result).not.toBeNull();
+    const frontend = result!.apps.find((app) => app.rootDirectory === "frontend");
+    expect(frontend).toBeDefined();
+    expect(frontend!.stack).toBe("vite");
+    expect(frontend!.installCommand).not.toBe("");
+    expect(frontend!.buildCommand).toBe("npm run build");
+  });
+
+  it("sanitizes an npm-scoped package.json name into a Docker-safe service name", () => {
+    // pnpm/turborepo workspaces conventionally name sub-apps "@scope/pkg".
+    // That name is persisted as Service.name and used verbatim as a Docker
+    // container/network name downstream, which rejects "@" and "/" - this
+    // was the exact shape of the Virtalio repo that surfaced the bug.
+    const scopedSubApp = (dir: string, pkgName: string) => ({
+      rootDirectory: dir,
+      source: "workspace" as const,
+      files: [
+        { name: "package.json", type: "file" as const },
+        { name: "Dockerfile", type: "file" as const },
+      ],
+      packageJson: { name: pkgName },
+      fileContents: {},
+    });
+
+    const result = discoverMonorepoApps(root(), [
+      scopedSubApp("apps/api", "@virtalio/api"),
+      scopedSubApp("apps/saas", "@virtalio/saas"),
+      scopedSubApp("apps/marketing", "@virtalio/marketing"),
+    ]);
+
+    expect(result).not.toBeNull();
+    const names = result!.apps.map((app) => app.name).sort();
+    expect(names).toEqual(["virtalio-api", "virtalio-marketing", "virtalio-saas"]);
+    for (const name of names) {
+      expect(name).toMatch(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/);
+    }
+  });
+});

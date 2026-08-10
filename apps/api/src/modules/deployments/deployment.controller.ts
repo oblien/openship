@@ -14,6 +14,7 @@ import * as buildService from "./build.service";
 import * as buildStatusService from "./build-status.service";
 import * as sslService from "./ssl.service";
 import * as prepareService from "./prepare.service";
+import { maskEnv, maskScanService } from "../../lib/secret-env";
 import { maybeProxyCloudProject, proxyToSaaS } from "../../lib/cloud/project-router";
 import { promoteProjectToCloud, TransferConflictError } from "../projects/transfer.service";
 import { env } from "../../config";
@@ -34,7 +35,7 @@ export async function list(c: Context) {
 
   return c.json({
     success: true,
-    data: result.rows,
+    data: deploymentService.presentDeployments(result.rows),
     total: result.total,
     page: result.page,
     perPage: result.perPage,
@@ -89,12 +90,13 @@ export async function create(c: Context) {
   });
   // Flatten `deployment` into the `{ deployment_id, project_id }` contract the
   // CLI and dashboard read (see apps/cli deploy.ts, dashboard api/updates.ts).
-  // Additive: `deployment` (and `skipped`) stay so existing readers of those
-  // keep working.
+  // Additive: the masked `deployment` (and `skipped`) stay so existing readers
+  // of those keep working.
   return c.json(
     {
       data: {
         ...result,
+        deployment: deploymentService.presentDeployment(result.deployment),
         deployment_id: result.deployment.id,
         project_id: result.deployment.projectId,
       },
@@ -112,7 +114,7 @@ export async function getById(c: Context) {
   // verification against the live host (deduped, fire-and-forget). The current
   // row is returned as-is; the resolved status arrives via the next poll/SSE.
   if (dep?.status === "reconciling") triggerReconcile(id);
-  return c.json({ data: dep });
+  return c.json({ data: deploymentService.presentDeployment(dep) });
 }
 
 export async function logs(c: Context) {
@@ -196,11 +198,25 @@ export async function rollback(c: Context) {
   const ctx = getRequestContext(c);
   const id = param(c, "id");
   await permission.assert(getRequestContext(c), { resourceType: "deployment", resourceId: id, action: "admin" });
-  // GitHub access gate: a git-strategy rollback re-clones the repo, so a
-  // member must be granted it (default-deny). Owner passes.
-  await deploymentService.assertGitHubAccessForDeployment(ctx, id, ctx.organizationId);
+  // GitHub access gate — only when this restore actually needs the repo. A
+  // rebuild re-clones, so a member must be granted access (default-deny); an
+  // instant restore from a retained image touches no repository at all, and
+  // demanding GitHub access for it would block the fastest recovery path for
+  // exactly the members most likely to need it.
+  const preview = await deploymentService.previewRestore(id, ctx.organizationId);
+  if (preview.needsRepository) {
+    await deploymentService.assertGitHubAccessForDeployment(ctx, id, ctx.organizationId);
+  }
   const dep = await deploymentService.rollbackDeployment(id, ctx.organizationId);
-  return c.json({ data: dep });
+  return c.json({ data: deploymentService.presentDeployment(dep) });
+}
+
+/** GET /deployments/:id/restore-plan — how a rollback here would run. */
+export async function restorePlan(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  await permission.assert(ctx, { resourceType: "deployment", resourceId: id, action: "read" });
+  return c.json({ data: await deploymentService.previewRestore(id, ctx.organizationId) });
 }
 
 export async function pin(c: Context) {
@@ -212,7 +228,7 @@ export async function pin(c: Context) {
     .catch(() => ({} as { pinned?: boolean }));
   const pinned = body.pinned !== false; // default true on POST
   const dep = await deploymentService.setDeploymentPin(id, ctx.organizationId, pinned);
-  return c.json({ data: dep });
+  return c.json({ data: deploymentService.presentDeployment(dep) });
 }
 
 export async function reject(c: Context) {
@@ -234,7 +250,7 @@ export async function keep(c: Context) {
   await permission.assert(getRequestContext(c), { resourceType: "deployment", resourceId: id, action: "write" });
   try {
     const result = await deploymentService.keepDeployment(id, ctx.organizationId);
-    return c.json(result);
+    return c.json({ ...result, deployment: deploymentService.presentDeployment(result.deployment) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to keep deployment";
     return c.json({ success: false, error: message }, 400);
@@ -289,7 +305,7 @@ export async function restart(c: Context) {
   const id = param(c, "id");
   await permission.assert(getRequestContext(c), { resourceType: "deployment", resourceId: id, action: "write" });
   const dep = await deploymentService.restartDeployment(id, ctx.organizationId);
-  return c.json({ data: dep });
+  return c.json({ data: deploymentService.presentDeployment(dep) });
 }
 
 export async function containerInfo(c: Context) {
@@ -306,6 +322,23 @@ export async function containerUsage(c: Context) {
   await permission.assert(getRequestContext(c), { resourceType: "deployment", resourceId: id, action: "read" });
   const usage = await deploymentService.getContainerUsage(id, ctx.organizationId);
   return c.json({ data: usage });
+}
+
+/**
+ * GET /deployments/:id/pending — what this specific deploy is waiting on.
+ *
+ * Same builders as the project-scoped view (see pending-actions.service), so the
+ * two can't describe one condition differently. This is the one to poll while
+ * watching a deploy: a held prompt appears here with its deadline and the exact
+ * body that answers it.
+ */
+export async function pendingActions(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = param(c, "id");
+  await permission.assert(getRequestContext(c), { resourceType: "deployment", resourceId: id, action: "read" });
+  const { getDeploymentPendingActions } = await import("../projects/pending-actions.service");
+  const actions = await getDeploymentPendingActions(id, ctx.organizationId);
+  return c.json({ data: { actions } });
 }
 
 export async function buildRespond(c: Context) {
@@ -333,10 +366,16 @@ export async function prepare(c: Context) {
     repo?: string;
     branch?: string;
     path?: string;
+    composePath?: string;
+    env?: Record<string, string>;
   }>();
 
   // Determine source - callers may send { owner, repo } without an explicit source
   const source = body.source ?? (body.owner && body.repo ? "github" : undefined);
+  const composePath = body.composePath?.trim() || undefined;
+  // Interpolation-only: never persisted here, and the response masks every
+  // service env below, so supplying a value cannot echo it back unmasked.
+  const composeEnv = body.env && Object.keys(body.env).length > 0 ? body.env : undefined;
 
   try {
     let input: prepareService.Source;
@@ -345,7 +384,15 @@ export async function prepare(c: Context) {
       if (!body.owner || !body.repo) {
         return c.json({ error: "owner and repo are required" }, 400);
       }
-      input = { source: "github", owner: body.owner, repo: body.repo, branch: body.branch, ctx };
+      input = {
+        source: "github",
+        owner: body.owner,
+        repo: body.repo,
+        branch: body.branch,
+        ctx,
+        composePath,
+        env: composeEnv,
+      };
     } else if (source === "local") {
       if (env.CLOUD_MODE) {
         return c.json({ error: "Local projects are not available in cloud mode" }, 403);
@@ -353,13 +400,20 @@ export async function prepare(c: Context) {
       if (!body.path) {
         return c.json({ error: "path is required" }, 400);
       }
-      input = { source: "local", path: body.path };
+      input = { source: "local", path: body.path, composePath, env: composeEnv };
     } else {
       return c.json({ error: "source must be 'github' or 'local'" }, 400);
     }
 
     const info = await prepareService.resolveProjectInfo(input);
-    return c.json(info);
+    // #336: mask env on output like the sibling scan endpoints (scanLocal /
+    // folder scan go through projectInfoToScanResponse). The deploy pipeline
+    // re-derives real values from source, so masking the scan is display-only.
+    return c.json({
+      ...info,
+      ...(info.services && { services: info.services.map(maskScanService) }),
+      ...(info.rootEnv && { rootEnv: maskEnv(info.rootEnv) }),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to initialize deploy";
     return c.json({ error: message }, 400);

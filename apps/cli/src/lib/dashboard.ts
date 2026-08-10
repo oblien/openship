@@ -14,7 +14,8 @@ import { join } from "node:path";
 import { CACHE_DIR, downloadToFile } from "./cache";
 import { assetUrl, expectedSha256, resolveLatestTag } from "./github-releases";
 
-const DASHBOARD_CACHE = join(CACHE_DIR, "dashboard");
+/** Where release bundles are cached (named by `up --dry-run`). */
+export const DASHBOARD_CACHE = join(CACHE_DIR, "dashboard");
 
 function assetName(tag: string): string {
   return `openship-dashboard-${tag}.tar.gz`;
@@ -22,7 +23,8 @@ function assetName(tag: string): string {
 
 export interface DashboardBundle {
   tag: string;
-  /** server.js entry to run with the CLI's runtime (Node/Bun). */
+  /** Entry to run with the CLI's runtime (Node/Bun): the WS-capable
+   *  standalone-server.mjs wrapper when present, else the plain server.js. */
   entry: string;
   /** Directory the entry must run from so its relative .next/public resolve. */
   cwd: string;
@@ -33,6 +35,19 @@ export interface DashboardBundle {
  * if missing) and return where to run it. Throws with an actionable message on
  * a missing asset or checksum mismatch.
  */
+/**
+ * The entry to run. Proxy-mode bundles (Docker image, `--from-source` stage)
+ * ship `standalone-server.mjs` — a WS-capable wrapper that proxies `/api/proxy/*`
+ * WebSocket upgrades (the server terminal) to the internal API, since the Next
+ * `/api/proxy` route handler can't upgrade. Non-proxy bundles (which reach the
+ * API directly, so WS needs no proxy) ship only `server.js`. Prefer the wrapper
+ * when present; fall back to the plain standalone entry otherwise.
+ */
+function resolveDashboardEntry(cwd: string): string {
+  const wrapped = join(cwd, "standalone-server.mjs");
+  return existsSync(wrapped) ? wrapped : join(cwd, "server.js");
+}
+
 export async function ensureDashboard(
   opts: { tag?: string; onProgress?: (received: number, total: number) => void } = {},
 ): Promise<DashboardBundle> {
@@ -43,13 +58,13 @@ export async function ensureDashboard(
   const override = process.env.OPENSHIP_DASHBOARD_DIR?.trim();
   if (override) {
     const cwd = join(override, "apps", "dashboard");
-    const entry = join(cwd, "server.js");
-    if (!existsSync(entry)) {
+    const serverJs = join(cwd, "server.js");
+    if (!existsSync(serverJs)) {
       throw new Error(
-        `OPENSHIP_DASHBOARD_DIR=${override} but ${entry} is missing — build the dashboard standalone first (see docs).`,
+        `OPENSHIP_DASHBOARD_DIR=${override} but ${serverJs} is missing — build the dashboard standalone first (see docs).`,
       );
     }
-    return { tag: "local", entry, cwd };
+    return { tag: "local", entry: resolveDashboardEntry(cwd), cwd };
   }
 
   const requested = opts.tag ?? (await resolveLatestTag());
@@ -79,12 +94,12 @@ async function fetchBundle(
 ): Promise<DashboardBundle> {
   const dir = join(DASHBOARD_CACHE, tag);
   const cwd = join(dir, "apps", "dashboard");
-  const entry = join(cwd, "server.js");
+  const serverJs = join(cwd, "server.js");
   const marker = join(dir, ".extracted");
 
   // Cached + intact → reuse.
-  if (existsSync(marker) && existsSync(entry)) {
-    return { tag, entry, cwd };
+  if (existsSync(marker) && existsSync(serverJs)) {
+    return { tag, entry: resolveDashboardEntry(cwd), cwd };
   }
 
   // Start from a clean dir (a prior run may have partially extracted).
@@ -113,9 +128,9 @@ async function fetchBundle(
   }
   rmSync(tarball, { force: true });
 
-  if (!existsSync(entry)) {
-    throw new Error(`Dashboard bundle extracted but ${entry} is missing (unexpected layout).`);
+  if (!existsSync(serverJs)) {
+    throw new Error(`Dashboard bundle extracted but ${serverJs} is missing (unexpected layout).`);
   }
   writeFileSync(marker, `${tag}\n`);
-  return { tag, entry, cwd };
+  return { tag, entry: resolveDashboardEntry(cwd), cwd };
 }

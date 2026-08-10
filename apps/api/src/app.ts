@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { env, trustedOrigins } from "./config/env";
 import { handleApiError } from "./middleware/error-handler";
-import { rateLimiter, rateLimiterFor } from "./middleware/rate-limiter";
+import { rateLimiterFor } from "./middleware/rate-limiter";
 import { clientIpMiddleware } from "./middleware/client-ip";
 import { betterAuthShield } from "./middleware/better-auth-shield";
 import { forceMcpConsent } from "./middleware/mcp-consent";
@@ -12,6 +12,7 @@ import { migrationGuard } from "./middleware/migration-guard";
 import { initPlatform } from "@repo/adapters";
 import { resolvePlatformConfig } from "./lib/controller-helpers";
 import { runWithRequestStore } from "./lib/request-store";
+import { runWithCallSource } from "./lib/call-source";
 
 import { authRoutes } from "./modules/auth/auth.routes";
 import { auth } from "./lib/auth";
@@ -19,8 +20,12 @@ import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-a
 import { projectRoutes } from "./modules/projects/project.routes";
 import { appRoutes } from "./modules/apps/app.routes";
 import { appSettingsRoutes } from "./modules/apps/app-settings.routes";
+import { appConnectionRoutes } from "./modules/apps/app-connection.routes";
+import { projectConnectionRoutes } from "./modules/projects/project-connection.routes";
+import { projectStorageRoutes } from "./modules/projects/project-storage.routes";
 import { deploymentRoutes } from "./modules/deployments/deployment.routes";
 import { domainRoutes } from "./modules/domains/domain.routes";
+import { issuesRoutes } from "./modules/issues/issues.routes";
 import { jobRoutes } from "./modules/jobs/job.routes";
 import { noticeRoutes } from "./modules/notices/notice.routes";
 import { serviceRoutes } from "./modules/services/service.routes";
@@ -39,7 +44,6 @@ import { imageRoutes } from "./modules/images/images.routes";
 import { backupRoutes } from "./modules/backups/backup.routes";
 import { auditRoutes } from "./modules/audit/audit.routes";
 import { permissionsRoutes } from "./modules/permissions/permissions.routes";
-import { backupWebhookRoutes } from "./modules/backups/webhook.routes";
 import { backupDestinationRoutes } from "./modules/backup-destinations/destination.routes";
 import { reconcileAllSchedules } from "./modules/backups/triggers/cron";
 import { reconcileJobs } from "./modules/jobs/job.service";
@@ -72,6 +76,10 @@ app.use("*", logger());
 // auth-mode, installations) to one call each — a single /github/status was
 // fanning out into ~6 /cloud/account + 3 installations round-trips otherwise.
 app.use("*", (_c, next) => runWithRequestStore(() => next()));
+// Ambient call source (dashboard / mcp / cli / api). Seeded here so the audit
+// emitters that run outside the handler chain — Better Auth's organization hooks
+// — can still record WHERE a member/invitation change came from.
+app.use("*", (c, next) => runWithCallSource(c, () => next()));
 app.use("*", clientIpMiddleware);
 // CSRF defence: reject mutating requests from untrusted origins BEFORE
 // the auth chain touches the session. Webhooks (Stripe, Oblien) don't
@@ -87,18 +95,18 @@ app.use("*", migrationGuard);
 // AppError / ZodError get serialized with their statusCode and code.
 app.onError(handleApiError);
 
-// Global rate-limit for the entire /api surface. The middleware picks
-// `default-anon` (per-IP, 100/min) for unauthed requests and
-// `default-authed` (per-user, 600/min) for authed ones. Per-route
-// policies (set via secureRouter's `rateLimit` spec field) override
-// this default — see lib/rate-limit/policies.ts for the catalog.
-app.use("/api/*", rateLimiter);
-
-// Auth-tight bucket for POST /api/auth/* (sign-in, sign-up, password
-// reset, etc.) — 10/min/IP. Catches credential-stuffing well before the
-// default-anon limit fires. GET routes (/get-session, OAuth callbacks)
-// stay on the default-anon policy since they need to be hot.
+// Rate limiting now lives in the route chain, NOT in a global `/api/*`
+// middleware (fixes #123). secureRouter injects a per-route limiter AFTER
+// authMiddleware — `default-authed` (per user) for permission-tagged routes,
+// `default-anon` (per IP) for public ones, or the route's explicit `rateLimit`
+// policy. A global limiter ran upstream of auth, so it could never see `ctx`
+// (always default-anon) and double-charged routes with their own policy.
+//
+// Better Auth is a RAW catch-all (not secureRouter), so it carries its own:
+// POST → `auth-tight` (credential-stuffing), GET (get-session, OAuth
+// callbacks) → `default-anon` (hot). See lib/rate-limit/policies.ts.
 app.on("POST", "/api/auth/*", rateLimiterFor("auth-tight"));
+app.on("GET", "/api/auth/*", rateLimiterFor("default-anon"));
 
 // Shield Better Auth's organization-plugin reads (list-members,
 // list-invitations, get-active-member-role) — they leak admin-tier
@@ -119,6 +127,9 @@ app.route("/api/projects", projectRoutes);
 app.route("/api/apps", appRoutes);
 app.route("/api/projects/:id/services", serviceRoutes);
 app.route("/api/projects/:id/app-settings", appSettingsRoutes);
+app.route("/api/projects/:id/app-connection", appConnectionRoutes);
+app.route("/api/projects/:id/connections", projectConnectionRoutes);
+app.route("/api/projects/:id/storage", projectStorageRoutes);
 app.route("/api/deployments", deploymentRoutes);
 app.route("/api/domains", domainRoutes);
 app.route("/api/webhooks", webhookRoutes);
@@ -131,11 +142,12 @@ app.route("/api/billing", billingPlansRoutes);
 app.route("/api/images", imageRoutes);
 app.route("/api", backupRoutes);
 app.route("/api/backup-destinations", backupDestinationRoutes);
-app.route("/api/webhooks/backup", backupWebhookRoutes);
 app.route("/api/audit", auditRoutes);
 app.route("/api/permissions", permissionsRoutes);
 app.route("/api/notifications", notificationsRoutes);
 app.route("/api/updates", updatesRoutes);
+// Org-wide issue feed — reads the caches the jobs above write; no detection of its own.
+app.route("/api/issues", issuesRoutes);
 app.route("/api/jobs", jobRoutes);
 // Platform status notices — banner feed (public read) + operator push (internal).
 // Both modes; primarily consumed on the SaaS.
@@ -228,8 +240,11 @@ if (env.CLOUD_MODE) {
   const { billingLocalRoutes } = await import("./modules/billing/billing-local.routes");
   app.route("/api/billing", billingLocalRoutes);
 
-  // Analytics is scraped ON-DEMAND when a server's analytics is viewed
-  // (analytics.controller → scrapeServerIfStale) — no background interval.
+  // Analytics is scraped on two triggers, neither wired here: the
+  // `analytics:scrape` system job owns durability (the edge holds counters in RAM
+  // under a TTL, so an unswept server loses them), and the read handlers scrape
+  // on view for freshness. Both go through scrapeServerIfStale, which throttles
+  // and dedups, so they collapse rather than compete.
 }
 
 // ─── Backup job runner + boot reconcile ─────────────────────────────

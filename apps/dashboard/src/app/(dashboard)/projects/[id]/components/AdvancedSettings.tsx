@@ -1,27 +1,37 @@
 import React, { useState } from "react";
 import {
+  Activity,
   AlertTriangle,
   ArrowRightLeft,
+  Check,
+  ChevronDown,
   Cloud,
   Copy,
   HardDrive,
   Hammer,
   Loader2,
+  Network,
   Package,
   Pause,
   Play,
   Server,
   Settings2,
+  ShieldCheck,
   Trash2,
+  Waypoints,
+  Zap,
 } from "lucide-react";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { DeletionModal } from "./DeletionModal";
 import { useToast } from "@/context/ToastContext";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 import { projectsApi } from "@/lib/api";
+import type { RouteStrategy } from "@/lib/api/settings";
+import type { OpenshipReadiness } from "@repo/core";
+import ReadinessSection from "@/components/project-settings/ReadinessSection";
 
 interface Props {
-  onDeleteProject: (deleteApp?: boolean) => void;
+  onDeleteProject: (deleteApp?: boolean, wipeVolumes?: boolean, recordOnly?: boolean) => void;
 }
 
 const ICON_TONES = {
@@ -40,25 +50,54 @@ function SectionCard({
   icon: Icon,
   iconTone,
   children,
+  collapsible = false,
+  defaultOpen = false,
 }: {
   title: string;
   description: string;
   icon: React.ComponentType<{ className?: string }>;
   iconTone: keyof typeof ICON_TONES;
   children: React.ReactNode;
+  /** Render collapsed behind an expand toggle (header stays visible), matching
+   *  the collapsible settings sections. */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const expanded = collapsible ? open : true;
+
+  const header = (
+    <>
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}>
+        <Icon className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
+        <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
+      </div>
+      {collapsible && (
+        <ChevronDown
+          className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      )}
+    </>
+  );
+
   return (
     <div className="overflow-hidden rounded-2xl border border-border/50 bg-card">
-      <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ICON_TONES[iconTone]}`}>
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] font-semibold text-foreground">{title}</h3>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
-        </div>
-      </div>
-      <div className="space-y-4 px-5 py-4">{children}</div>
+      {collapsible ? (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={`flex w-full items-start gap-3 px-5 py-4 text-start ${expanded ? "border-b border-border/40" : ""}`}
+        >
+          {header}
+        </button>
+      ) : (
+        <div className="flex items-start gap-3 border-b border-border/40 px-5 py-4">{header}</div>
+      )}
+      {expanded && <div className="space-y-4 px-5 py-4">{children}</div>}
     </div>
   );
 }
@@ -184,6 +223,61 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
           </div>
         </SectionCard>
 
+        {/* Routing (edge → app upstream) — self-hosted only; cloud handles its
+            own ingress. Advanced opt-in; loopback-port is the safe default. */}
+        {projectData?.deployTarget !== "cloud" && (
+          <SectionCard
+            title={t.projectSettings.advanced.routing.title}
+            description={t.projectSettings.advanced.routing.description}
+            icon={Waypoints}
+            iconTone="primary"
+            collapsible
+          >
+            <RoutingStrategyCard
+              projectId={projectData.id}
+              initial={(projectData?.routeStrategy as RouteStrategy) ?? "auto"}
+            />
+          </SectionCard>
+        )}
+
+        {/* Internal hostname (east-west alias) — single-app, self-hosted, with a
+            running container only. Compose projects set this per service in the
+            service form; static/cloud apps have no private container to name. */}
+        {projectData?.deployTarget !== "cloud" &&
+          (projectData?.serviceCount ?? 0) === 0 &&
+          projectData?.hasServer !== false &&
+          projectData?.options?.hasServer !== false &&
+          projectData?.productionMode !== "static" && (
+            <SectionCard
+              title={t.projectSettings.advanced.internalAlias.title}
+              description={t.projectSettings.advanced.internalAlias.description}
+              icon={Network}
+              iconTone="primary"
+              collapsible
+            >
+              <InternalAliasCard
+                projectId={projectData.id}
+                initial={(projectData?.internalAlias as string | null) ?? ""}
+                slug={(projectData?.slug as string | undefined) ?? ""}
+              />
+            </SectionCard>
+          )}
+
+        {/* Health checks — collapsed, and off unless opted into. Reuses the
+            wizard's section so the form and its copy exist once. */}
+        <SectionCard
+          title={t.importProject.buildSettings.healthCheck.title}
+          description={t.importProject.buildSettings.healthCheck.subtitle}
+          icon={Activity}
+          iconTone="primary"
+          collapsible
+        >
+          <ReadinessCard
+            projectId={projectData.id}
+            initial={(projectData?.readiness as OpenshipReadiness | null) ?? null}
+          />
+        </SectionCard>
+
         {/* Cache Management (mock — hidden until wired) */}
         {SHOW_MOCK_ADVANCED && (
         <SectionCard
@@ -272,10 +366,180 @@ export const AdvancedSettings = ({ onDeleteProject }: Props) => {
         onConfirm={onDeleteProject}
         projectName={projectData?.name || projectData?.domain}
         projectId={projectData?.id}
+        selfHosted={projectData?.deployTarget !== "cloud"}
       />
     </div>
   );
 };
+
+/* ── Routing strategy (edge → app upstream) ───────────────────────── */
+
+const ROUTE_MODES: {
+  value: RouteStrategy;
+  key: "auto" | "loopbackPort" | "containerIp";
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { value: "auto", key: "auto", icon: Zap },
+  { value: "loopback-port", key: "loopbackPort", icon: ShieldCheck },
+  { value: "container-ip", key: "containerIp", icon: Network },
+];
+
+function RoutingStrategyCard({
+  projectId,
+  initial,
+}: {
+  projectId: string;
+  initial: RouteStrategy;
+}) {
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const [strategy, setStrategy] = useState<RouteStrategy>(initial);
+  const [saving, setSaving] = useState(false);
+
+  async function handleChange(mode: RouteStrategy) {
+    if (mode === strategy || saving) return;
+    const prev = strategy;
+    setStrategy(mode);
+    setSaving(true);
+    try {
+      const res = await projectsApi.update(projectId, { routeStrategy: mode });
+      if ((res as { success?: boolean })?.success === false) throw new Error("update failed");
+      const label = t.projectSettings.advanced.routing.modes[ROUTE_MODES.find((m) => m.value === mode)!.key].label;
+      showToast(
+        interpolate(t.projectSettings.advanced.routing.toast.saved, { mode: label }),
+        "success",
+        t.projectSettings.advanced.routing.title,
+      );
+    } catch {
+      setStrategy(prev);
+      showToast(
+        t.projectSettings.advanced.routing.toast.failed,
+        "error",
+        t.projectSettings.advanced.routing.title,
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="text-[12px] text-muted-foreground">{t.projectSettings.advanced.routing.intro}</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {ROUTE_MODES.map(({ value, key, icon: ModeIcon }) => {
+          const active = strategy === value;
+          return (
+            <button
+              key={value}
+              onClick={() => handleChange(value)}
+              disabled={saving}
+              className={`relative text-start rounded-xl border p-4 transition-all ${
+                active
+                  ? "border-primary/50 bg-primary/5 ring-1 ring-primary/20"
+                  : "border-border/50 bg-card hover:bg-muted/40 hover:border-border"
+              } disabled:opacity-50`}
+            >
+              <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg bg-muted">
+                <ModeIcon className="size-4 text-muted-foreground" />
+              </div>
+              <p className="text-[13px] font-medium text-foreground">
+                {t.projectSettings.advanced.routing.modes[key].label}
+              </p>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">
+                {t.projectSettings.advanced.routing.modes[key].desc}
+              </p>
+              {active && (
+                <div className="absolute top-3 end-3">
+                  <Check className="size-4 text-primary" />
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[12px] text-muted-foreground">{t.projectSettings.advanced.routing.note}</p>
+    </>
+  );
+}
+
+/**
+ * Single-app custom east-west hostname. Persists `project.internalAlias`, which
+ * the deploy adds as an EXTRA docker alias alongside the default `<slug>` (both
+ * resolve). Explicit Save (free-text) with optimistic toast + rollback, matching
+ * RoutingStrategyCard. Server normalizes + rejects an empty-after-normalize value;
+ * we mirror the "needs a usable char" check client-side for a fast inline error.
+ */
+function InternalAliasCard({
+  projectId,
+  initial,
+  slug,
+}: {
+  projectId: string;
+  initial: string;
+  slug: string;
+}) {
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const c = t.projectSettings.advanced.internalAlias;
+  const [value, setValue] = useState(initial);
+  const [saved, setSaved] = useState(initial);
+  const [saving, setSaving] = useState(false);
+
+  const trimmed = value.trim();
+  const dirty = trimmed !== saved.trim();
+
+  async function handleSave() {
+    if (!dirty || saving) return;
+    // Empty clears it (server falls back to the slug). A non-empty value must
+    // carry at least one letter/digit or it normalizes to nothing.
+    if (trimmed && !/[a-z0-9]/i.test(trimmed)) {
+      showToast(c.toast.invalid, "error", c.title);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await projectsApi.update(projectId, { internalAlias: trimmed || null });
+      if ((res as { success?: boolean })?.success === false) throw new Error("update failed");
+      setSaved(trimmed);
+      showToast(c.toast.saved, "success", c.title);
+    } catch {
+      showToast(c.toast.failed, "error", c.title);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <p className="text-[12px] text-muted-foreground">{c.intro}</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <label className="flex-1">
+          <span className="mb-1 block text-[12px] font-medium text-foreground">{c.label}</span>
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); void handleSave(); }
+            }}
+            placeholder={slug || "app"}
+            spellCheck={false}
+            autoCapitalize="none"
+            className="h-11 w-full rounded-xl border border-border/50 bg-muted/20 px-3 text-sm text-foreground outline-none transition-colors focus:border-primary/40 font-mono"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!dirty || saving}
+          className="h-11 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+        >
+          {c.save}
+        </button>
+      </div>
+      <p className="text-[12px] text-muted-foreground">{c.hint}</p>
+    </>
+  );
+}
 
 function MetricRow({ label, value }: { label: string; value: string }) {
   return (
@@ -284,6 +548,57 @@ function MetricRow({ label, value }: { label: string; value: string }) {
       <span className="max-w-[180px] truncate text-end text-[13px] font-medium text-foreground">{value}</span>
     </div>
   );
+}
+
+/* ── Health checks ────────────────────────────────────────────────── */
+
+/**
+ * Persisting wrapper around the shared ReadinessSection.
+ *
+ * Debounced because the section has free-text/number inputs — RoutingStrategyCard
+ * can PATCH per click since it's a 3-way pick, but a timeout field would otherwise
+ * fire a request per keystroke. Optimistic with a rollback on failure, matching
+ * RoutingStrategyCard.
+ */
+function ReadinessCard({
+  projectId,
+  initial,
+}: {
+  projectId: string;
+  initial: OpenshipReadiness | null;
+}) {
+  const { t } = useI18n();
+  const { showToast } = useToast();
+  const [value, setValue] = useState<OpenshipReadiness | null>(initial);
+  const savedRef = React.useRef<OpenshipReadiness | null>(initial);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const title = t.importProject.buildSettings.healthCheck.title;
+
+  React.useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  function handleChange(next: OpenshipReadiness | undefined) {
+    const resolved = next ?? null;
+    setValue(resolved);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(async () => {
+      const previous = savedRef.current;
+      try {
+        const res = await projectsApi.update(projectId, { readiness: resolved });
+        if ((res as { success?: boolean })?.success === false) throw new Error("update failed");
+        savedRef.current = resolved;
+      } catch {
+        setValue(previous);
+        showToast(t.projectSettings.advanced.routing.toast.failed, "error", title);
+      }
+    }, 700);
+  }
+
+  return <ReadinessSection value={value} onChange={handleChange} embedded />;
 }
 
 /* ── Transfer & Clone ─────────────────────────────────────────────── */

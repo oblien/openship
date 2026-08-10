@@ -325,6 +325,7 @@ export async function attributeGithubInstall(input: {
         eventType: "github.install",
         resourceType: "github",
         resourceId: String(installationId),
+        source: "dashboard",
         ipAddress: clientIp,
         userAgent: userAgent,
         before: null,

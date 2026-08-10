@@ -46,5 +46,36 @@
     "backToDashboard": "Voltar ao painel",
     "viewDeployments": "Ver implantações",
     "copyId": "Copiar ID"
+  },
+  "window": {
+    "back": "Voltar",
+    "forward": "Avançar",
+    "reload": "Recarregar",
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "restore": "Restaurar",
+    "close": "Fechar",
+    "devTools": "Ferramentas de desenvolvedor",
+    "navigation": "Navegação"
+  },
+  "apiDown": {
+    "title": "Não é possível acessar a API",
+    "description": "O painel está funcionando, mas não consegue se comunicar com a API do Openship — portanto, ainda não há nada para mostrar. Seus deploys continuam rodando normalmente.",
+    "hintStatus": "Verifique se a API está ativa: execute `openship status` no host.",
+    "hintStart": "Não está em execução? Inicie com `openship up`.",
+    "hintRemote": "Gerenciando um servidor remoto? Confirme a URL dele e se a porta da API está acessível daqui.",
+    "docs": "Documentação de auto-hospedagem",
+    "retry": "Tentar novamente"
+  },
+  "error": {
+    "title": "Esta página encontrou um erro",
+    "description": "Algo nesta tela não pôde ser renderizado. Tentar novamente costuma resolver — nada do que você implantou foi afetado.",
+    "tryAgain": "Tentar novamente",
+    "goToProjects": "Ir para projetos",
+    "refCode": "Ref."
+  },
+  "errorLinks": {
+    "docs": "Documentação",
+    "github": "Relatar um problema"
   }
 }

@@ -1,25 +1,36 @@
 /**
  * Mail-server health checks.
  *
- * For each daemon the slimmed iRedMail engine installs, run a cheap
- * `systemctl is-active <unit>` and a one-line uptime probe. Surface the
- * results to the dashboard so the Mail tab shows real running/stopped
- * state instead of a static "Bundled" badge.
+ * One catalog of daemons, probed over whichever engine the box runs: the
+ * `openship-mail` container (supervisord programs + a pg sidecar) or a legacy
+ * host-native install (systemd units). The probe COMMAND and its parsing are the
+ * only difference and both live in `./mail-engine.ts`; this file resolves the
+ * topology once per request and stays flavor-blind. That's deliberate — the
+ * container-only rewrite is what made a legacy box report nine "unknown" rows.
  *
- * Service unit names target Debian/Ubuntu - that's what our slimmed
- * engine supports. If we add other distros later, the unit names map
- * will need DISTRO-aware branches.
+ * `unit` is the supervisord PROGRAM name inside the engine image, kept identical
+ * to the legacy systemd unit name so ONE catalog serves both flavors; PostgreSQL
+ * is the one special case (a sidecar container vs the host's `postgresql` unit).
  */
 
 import type { CommandExecutor } from "@repo/adapters";
+import { safeErrorMessage } from "@repo/core";
 
-/** Components we check. `unit` is the systemd unit name on Debian/Ubuntu. */
+import {
+  mailUnitProbeCommand,
+  parseMailUnitProbe,
+  resolveMailEngine,
+  type MailEngineFlavor,
+  type MailUnitStatus,
+} from "./mail-engine";
+
+/** Components we check. `unit` is the supervisord program name in the engine image. */
 export interface MailComponentDef {
   /** Stable id - used by the frontend as a React key + for icon lookup. */
   key: string;
   label: string;
   description: string;
-  /** systemd unit. `null` for non-service components (none today). */
+  /** supervisord program name inside the engine (or the pg sidecar for postgresql). */
   unit: string;
 }
 
@@ -58,7 +69,15 @@ export const MAIL_COMPONENTS: MailComponentDef[] = [
     key: "spamassassin",
     label: "SpamAssassin",
     description: "Spam scoring",
-    unit: "spamassassin",
+    // `spamd`, not `spamassassin`, on BOTH flavors: the Debian/Ubuntu package
+    // (>=4.0) ships its systemd unit as `spamd.service`, so checking
+    // `spamassassin` always read LoadState=not-found ("Missing") on a perfectly
+    // healthy legacy host — and the engine image's supervisord program is named
+    // to match. Note Amavis scores spam via its own in-process
+    // Mail::SpamAssassin integration regardless of this daemon's state; spamd is
+    // the standalone network-facing scorer other tools (spamc) talk to, and this
+    // check is about ITS state specifically.
+    unit: "spamd",
   },
   {
     key: "iredapd",
@@ -80,14 +99,8 @@ export const MAIL_COMPONENTS: MailComponentDef[] = [
   },
 ];
 
-export type MailComponentStatus =
-  | "active"
-  | "inactive"
-  | "failed"
-  | "activating"
-  | "deactivating"
-  | "missing"
-  | "unknown";
+/** Normalized daemon state — defined with the probes that produce it. */
+export type MailComponentStatus = MailUnitStatus;
 
 export interface MailComponentHealth {
   key: string;
@@ -95,110 +108,90 @@ export interface MailComponentHealth {
   description: string;
   unit: string;
   status: MailComponentStatus;
-  /** systemd's free-form sub-state when running (e.g. "running"). */
+  /** Free-form sub-state when running — systemd's, or supervisord's state word. */
   subState?: string;
-  /** ISO timestamp the unit entered its current state, if known. */
+  /** ISO timestamp the unit entered its current state, if known (systemd only). */
   activeSince?: string;
+  /**
+   * Why the status is `unknown` — the probe's own words. Absent for every state we
+   * actually determined. Without it "unknown" is unactionable, and the operator's
+   * only recourse is to SSH in and re-run the probe by hand.
+   */
+  detail?: string;
+}
+
+/** First meaningful line of probe output, capped for inline display. */
+function firstLine(text: string): string {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find(Boolean);
+  if (!line) return "";
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
 }
 
 /**
- * Probe every component in a single SSH session. Uses one `systemctl show`
- * batch per unit (cheap - Postfix/Dovecot/etc. are local services) and
- * parses key=value lines so we get state + sub-state + entry timestamp in
- * one round trip per unit.
+ * Probe every component: resolve the box's engine topology ONCE, then one exec per
+ * daemon in parallel over the same channel. Roundtrips: O(components) + 1.
  *
- * Total roundtrips: O(components). Could be batched into one shell pipe
- * with `systemctl show <unit1> <unit2> …` but the result parsing gets
- * fiddly - keep it simple and parallel-friendly via Promise.all.
+ * A box with no mail engine at all reports every component `missing` rather than
+ * `unknown` — "there is nothing here" is a conclusion, not a failed probe.
  */
 export async function checkMailHealth(
   exec: CommandExecutor,
 ): Promise<MailComponentHealth[]> {
-  const results = await Promise.all(
-    MAIL_COMPONENTS.map(async (comp) => probeUnit(exec, comp)),
-  );
-  return results;
+  const probe = await resolveMailEngine(exec).catch(() => null);
+  if (probe?.flavor === "none") {
+    return MAIL_COMPONENTS.map((comp) => ({ ...describe(comp), status: "missing" as const }));
+  }
+  const flavor = probe?.flavor ?? "container";
+  return Promise.all(MAIL_COMPONENTS.map(async (comp) => probeUnit(exec, flavor, comp)));
+}
+
+/** The daemons that decide whether a box is delivering mail at all. */
+const SERVING_COMPONENTS: readonly string[] = ["postfix", "dovecot"];
+
+/**
+ * Is this box serving mail right now?
+ *
+ * "An engine is here" and "mail is being delivered" are different questions: a
+ * running container can hold a dead Postfix, and a legacy box can have its units
+ * masked. This answers the second one — through the same catalog and the same
+ * probe the health panel uses, so there is no second definition of "up" to drift
+ * (the old copy hand-rolled `supervisorctl status` AND `systemctl is-active`,
+ * which is how the container rewrite silently stopped recognising legacy boxes).
+ *
+ * Costs the topology probe + one exec per serving daemon (2), not the full
+ * nine-component sweep: this runs on the scan / install pre-flight path.
+ */
+export async function mailIsServing(exec: CommandExecutor): Promise<boolean> {
+  const probe = await resolveMailEngine(exec).catch(() => null);
+  if (!probe || probe.flavor === "none" || !probe.running) return false;
+  const comps = MAIL_COMPONENTS.filter((c) => SERVING_COMPONENTS.includes(c.key));
+  if (comps.length !== SERVING_COMPONENTS.length) return false; // catalog drifted
+  const states = await Promise.all(comps.map((c) => probeUnit(exec, probe.flavor, c)));
+  return states.every((s) => s.status === "active");
+}
+
+function describe(comp: MailComponentDef) {
+  return {
+    key: comp.key,
+    label: comp.label,
+    description: comp.description,
+    unit: comp.unit,
+  };
 }
 
 async function probeUnit(
   exec: CommandExecutor,
+  flavor: MailEngineFlavor,
   comp: MailComponentDef,
 ): Promise<MailComponentHealth> {
+  const base = describe(comp);
   try {
-    // `systemctl show` prints requested properties as key=value lines.
-    // LoadState=not-found means the unit doesn't exist on this host.
-    const raw = await exec.exec(
-      `systemctl show ${comp.unit} -p LoadState -p ActiveState -p SubState -p ActiveEnterTimestamp 2>/dev/null || true`,
-    );
-    const fields = parseKv(raw);
-
-    if (!fields.LoadState || fields.LoadState === "not-found") {
-      return {
-        key: comp.key,
-        label: comp.label,
-        description: comp.description,
-        unit: comp.unit,
-        status: "missing",
-      };
-    }
-
-    return {
-      key: comp.key,
-      label: comp.label,
-      description: comp.description,
-      unit: comp.unit,
-      status: mapActiveState(fields.ActiveState),
-      subState: fields.SubState || undefined,
-      activeSince: parseTimestamp(fields.ActiveEnterTimestamp),
-    };
-  } catch {
-    return {
-      key: comp.key,
-      label: comp.label,
-      description: comp.description,
-      unit: comp.unit,
-      status: "unknown",
-    };
+    const raw = await exec.exec(mailUnitProbeCommand(flavor, comp.key, comp.unit));
+    return { ...base, ...parseMailUnitProbe(flavor, comp.key, comp.unit, raw) };
+  } catch (err) {
+    return { ...base, status: "unknown", detail: firstLine(safeErrorMessage(err)) };
   }
-}
-
-function parseKv(raw: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const line of raw.split("\n")) {
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    out[line.slice(0, eq)] = line.slice(eq + 1).trim();
-  }
-  return out;
-}
-
-function mapActiveState(s: string | undefined): MailComponentStatus {
-  switch (s) {
-    case "active":
-      return "active";
-    case "inactive":
-      return "inactive";
-    case "failed":
-      return "failed";
-    case "activating":
-      return "activating";
-    case "deactivating":
-      return "deactivating";
-    default:
-      return "unknown";
-  }
-}
-
-/**
- * Parse `ActiveEnterTimestamp` → ISO 8601 string. systemd's format is
- * "Mon 2025-04-12 14:23:01 UTC" (or empty if never started). We normalise
- * to ISO so the frontend can do "<x> ago" with `Date()`.
- */
-function parseTimestamp(s: string | undefined): string | undefined {
-  if (!s || s.trim() === "" || s === "0") return undefined;
-  // Strip the leading day-of-week ("Mon ") which Date() doesn't parse.
-  const stripped = s.replace(/^[A-Z][a-z]{2}\s+/, "");
-  const d = new Date(stripped);
-  if (Number.isNaN(d.getTime())) return undefined;
-  return d.toISOString();
 }

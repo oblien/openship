@@ -18,6 +18,33 @@ Cloud — you provision it against a server you've added under **Servers**. For 
 whole flow (including webmail), see [Email &amp; webmail](/docs/guides/email-webmail).
 </Callout>
 
+## Why run your own — and how deliverability works
+
+Two things usually stop people self-hosting email, and Openship's model is built around exactly those two
+gaps: **deliverability** (a brand-new server IP lands in spam) and the fact that transactional senders like
+**Amazon SES**, Postmark, or SendGrid **only send** — they give you no inbox, no IMAP, no webmail, and no
+ownership of your messages.
+
+- **You own the inbox.** Openship self-hosts the *receiving* side those providers don't offer — real Postfix +
+  Dovecot mailboxes, IMAP/POP3, and webmail — so your messages, domains, and mailbox data live on **your**
+  server. You own the infrastructure and the data, not a vendor.
+- **You borrow the reputation for sending.** Outbound can go direct-to-MX, or **relay through a trusted
+  provider's SMTP** (Amazon SES, or any SMTP relay). When you relay, your mail inherits the provider's warmed,
+  high-reputation sending IPs — the deliverability of a managed sender — while everything else stays on your
+  box. Openship writes the Postfix relay (`relayhost` + SASL) for you and aligns SPF, DKIM, and MAIL FROM
+  (SES-aware) so messages authenticate.
+
+<Callout title="A realistic promise" type="info">
+Relaying through a trusted provider gives you **that provider's sending reputation** — which is what actually
+lands mail in the inbox, with no self-hosted-IP warm-up fight. It isn't a literal "100% delivery" guarantee
+(no mail system can promise that), but it closes the gap that makes self-hosted *sending* risky, while keeping
+the **mailbox** — the part SES has no answer for — entirely yours.
+</Callout>
+
+The relay is optional and scoped: apply it to **all** domains, or only **selected** senders (the rest keep
+delivering direct-to-MX). Prefer to run your own IP? Direct-to-MX with the reputation warm-up stays fully
+supported.
+
 ## What the screen shows you
 
 The screen adapts to how many mail servers you already have:

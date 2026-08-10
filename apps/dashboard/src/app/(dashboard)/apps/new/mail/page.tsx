@@ -16,6 +16,7 @@ import { AppLogo } from "@/components/AppLogo";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { OptionCard } from "@/app/(dashboard)/(deployment)/deploy/[slug]/components/DeployTargetStep";
 import { useToast } from "@/context/ToastContext";
+import { useCloud } from "@/context/CloudContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -39,6 +40,7 @@ export default function MailWizardPage() {
   const w = t.projectSettings.appInstall;
   const m = w.mail;
   const { showToast } = useToast();
+  const { connected: cloudConnected, requireCloud } = useCloud();
   const { baseDomain } = usePlatform();
 
   const [phase, setPhase] = useState<Phase>("choose");
@@ -82,7 +84,11 @@ export default function MailWizardPage() {
         if (status === "ready") {
           setLiveUrl(firstPublicHost(s?.config?.publicEndpoints, baseDomain));
           setPhase("done");
-        } else if (["failed", "cancelled", "partial_failure", "rejected"].includes(status)) {
+        } else if (
+          // Every SETTLED status — see the same list in apps/new/[appId]. Without
+          // `action_required` this polls at 2s forever on a named blocker.
+          ["failed", "cancelled", "partial_failure", "action_required", "rejected"].includes(status)
+        ) {
           setErrorMsg(s.failureMessage || w.installFailed);
           setPhase("error");
         }
@@ -111,6 +117,11 @@ export default function MailWizardPage() {
     if (!imapHost.trim() || !smtpHost.trim()) {
       showToast(m.hostsRequired, "error");
       return;
+    }
+    // Deploying the webmail TO Openship Cloud needs a cloud connection — same
+    // gate as the deploy wizard / app install, so the pick isn't a dead end.
+    if (destination?.deployTarget === "cloud" && !cloudConnected) {
+      if (!(await requireCloud("cloud-deploy-target"))) return;
     }
     setBusy(true);
     try {
@@ -302,7 +313,7 @@ export default function MailWizardPage() {
                 <h3 className="text-sm font-semibold text-foreground">{w.destinationTitle}</h3>
                 <p className="mt-0.5 text-xs text-muted-foreground">{w.destinationHint}</p>
                 <div className="mt-4">
-                  <AppDestinationPicker value={destination} onChange={setDestination} allowLocal />
+                  <AppDestinationPicker value={destination} onChange={setDestination} />
                 </div>
               </div>
 
@@ -324,7 +335,7 @@ export default function MailWizardPage() {
 }
 
 const INPUT =
-  "w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring";
+  "w-full rounded-xl border border-border/50 bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25";
 
 function Field({
   label,

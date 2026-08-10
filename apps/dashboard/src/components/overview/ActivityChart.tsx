@@ -53,17 +53,13 @@ const ActivityChart: React.FC<ActivityChartProps> = ({ projects, numbers }) => {
       });
     }
     
-    // Debug log
-    console.log('Daily deployments data:', numbers?.daily_deployments);
-    console.log('Processed days:', days);
-    
     return days;
   };
 
   const data = getLast7DaysData();
   const maxCount = Math.max(...data.map(d => d.count), 1);
-  const totalDeployments = numbers.total_deployments;
-  const liveProjects = numbers.total_active_projects;
+  const totalDeployments = numbers?.total_deployments ?? 0;
+  const liveProjects = numbers?.total_active_projects ?? 0;
   
   // Calculate trend
   const recentDays = data.slice(-3).reduce((sum, d) => sum + d.count, 0);

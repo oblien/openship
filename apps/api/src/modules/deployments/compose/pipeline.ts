@@ -15,6 +15,8 @@
 import { repos } from "@repo/db";
 import type { Deployment, Project } from "@repo/db";
 import type {
+  AmbientGitVia,
+  CommandExecutor,
   ResourceConfig,
   MultiServiceRuntimeAdapter,
   RoutingProvider,
@@ -29,6 +31,7 @@ import {
   onFailure,
   onReconciling,
   onSuccess,
+  routeIssuesWarning,
   setDeploymentStatus,
   type LifecycleContext,
 } from "../deployment-lifecycle";
@@ -38,6 +41,7 @@ import { webhookProxyTarget } from "../../../config";
 import { buildComposeImages } from "./build.service";
 import { deployComposeServices } from "./deploy.service";
 import { safeErrorMessage } from "@repo/core";
+import * as sessionManager from "../session-manager";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -49,6 +53,9 @@ export interface ComposePipelineOpts {
    *  ensure openresty/certbot/docker once before the service fan-out, matching
    *  the single-app deploy preflight. */
   system: SystemManager | null;
+  /** Target host executor (SSH/local) — writes app template config files onto
+   *  the Docker host for read-only bind-mounts. Null on cloud. */
+  executor: CommandExecutor | null;
   usesManagedRouting: boolean;
   logger: BuildLogger;
   ctx: LifecycleContext;
@@ -63,6 +70,8 @@ export interface ComposePipelineOpts {
   gitCredentialHelperPath?: string;
   /** Per-server SSH clone credential (ssh-server-key / deploy-key mode). */
   gitSsh?: { privateKey: string; knownHosts: string };
+  /** The build host clones with its OWN verified git credentials (nothing shipped). */
+  gitAmbient?: { via: AmbientGitVia };
   /** Clone each service's source on the remote build host instead of cloning on
    *  the orchestrator and transferring the context. */
   cloneOnServer?: boolean;
@@ -82,6 +91,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     routing,
     ssl,
     system,
+    executor,
     usesManagedRouting,
     logger,
     ctx,
@@ -93,6 +103,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     gitToken,
     gitCredentialHelperPath,
     gitSsh,
+    gitAmbient,
     cloneOnServer,
   } = opts;
 
@@ -120,6 +131,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     gitToken,
     gitCredentialHelperPath,
     gitSsh,
+    gitAmbient,
     cloneOnServer,
     targetServiceIds,
     refreshServiceIds,
@@ -136,6 +148,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   await setDeploymentStatus(dep.id, "deploying", {
     extra: { buildDurationMs: composeBuild.durationMs },
   });
+  sessionManager.broadcastInstallPhase(dep.id, { id: "services", status: "active" });
 
   const composeResult = await deployComposeServices(project, dep, runtime, logger, {
     builtImages: composeBuild.imageRefs,
@@ -145,6 +158,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     routing,
     ssl,
     system,
+    executor,
     usesManagedRouting,
     serverId: snapshot.serverId,
     targetServiceIds,
@@ -196,11 +210,20 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   }
 
   const primary = composeResult.services.find((s) => s.containerId);
+  // Routing failures are best-effort (domains are optional — never fail the
+  // deploy). Fold them into the SAME top-level "action required" signal the
+  // single-app pipeline uses (`edgeUnsynced` + `deployWarning` → routingUnsynced
+  // → project attention + Domains-tab dot), cleared by Retry routing / next deploy.
+  const routingWarning = composeResult.routeWarnings?.length
+    ? routeIssuesWarning(composeResult.routeWarnings)
+    : undefined;
+  const successWarning = routingWarning ?? composeResult.warning;
+  sessionManager.broadcastInstallPhase(dep.id, { id: "ready", status: "done" });
   await onSuccess(ctx, {
     containerId: primary?.containerId ?? "compose",
     url: composeResult.publicUrl,
     durationMs: composeBuild.durationMs,
-    warningMessage: composeResult.warning,
+    warningMessage: successWarning,
     metaPatch: {
       composeDeployment: {
         totalServices: composeResult.summary.total,
@@ -209,6 +232,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
         failedServiceNames: composeResult.summary.failedServices,
         warningMessage: composeResult.warning,
       },
+      ...(routingWarning ? { edgeUnsynced: true, deployWarning: routingWarning } : {}),
       ...(composeResult.portChecks && composeResult.portChecks.length > 0
         ? { portCheck: composeResult.portChecks }
         : {}),

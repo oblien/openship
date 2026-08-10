@@ -98,9 +98,16 @@ hours to propagate globally."* Usually it's a few minutes; occasionally it's muc
 1. Double-check there are no typos in the **Host** field and no leftover conflicting record for the same name.
 2. Wait. Save the records, give it several minutes, then click **Verify** again — re-clicking once DNS
    resolves is the reliable path.
-3. Openship also ships a *pending-verification sweep* (`POST /api/domains/verify-pending`) that re-checks
-   still-**Pending** domains and flips them to **Verified** on their own. It isn't on by default — it only runs
-   if your operator has wired it to a scheduler (cron / systemd timer) — so don't wait on it; re-click Verify.
+3. Openship's enabled-by-default **Domain DNS verification** job runs every 13 minutes. Once a pending
+   domain is at least 10 minutes old, the job retries verification and certificate issuance automatically.
+   This also runs in Openship Desktop against the project's connected deployment server. Clicking
+   **Verify** is the faster, explicit retry; it is not required for the normal background lifecycle.
+
+<Callout title="What the first deployment does" type="info">
+A new custom domain starts **Pending**, so its initial deployment creates the HTTP route and prepares the
+server's SSL toolchain, but deliberately does not open an ACME order yet. Certificate issuance begins only
+after verification succeeds, either from the scheduled job or from **Verify**.
+</Callout>
 
 <Callout title="Confirm propagation yourself" type="info">
 To check what the world currently sees, look the record up directly — e.g. `dig TXT _openship-challenge.app.example.com`
@@ -115,9 +122,10 @@ The domain is **Verified**, but the **SSL** pill stays on **Provisioning** inste
 so `https://` doesn't work yet.
 </Callout>
 
-**What it means.** Verifying a domain kicks off certificate issuance from Let's Encrypt **in the background** —
-the verify response comes back fast and the SSL status catches up on its own. **Provisioning** means the
-certificate is still being requested (or a request hasn't finished). It normally clears within a minute or two.
+**What it means.** On a self-hosted or Desktop-connected server, **Verify** obtains the certificate before
+reporting success and rewrites the existing route with TLS. On Openship Cloud, verification can start
+certificate issuance in the background. **Provisioning** means issuance is still in progress, its result has
+not been observed yet, or the first attempt failed.
 
 **How to fix**
 
@@ -127,8 +135,9 @@ certificate is still being requested (or a request hasn't finished). It normally
 2. If Recheck reports *"No valid certificate found for \{hostname} yet. If you just deployed, give Let's Encrypt
    a moment, then recheck."* — the certificate genuinely isn't there yet. Wait a little longer and recheck
    again.
-3. If it never provisions, click **Renew SSL** to force a fresh issuance attempt. Any real failure reason
-   (rate limit, ACME outage) surfaces on that action.
+3. The same scheduled domain job retries incomplete issuance with backoff. If you want an immediate retry,
+   click **Renew SSL**; any real failure reason (DNS, blocked ports, rate limit, ACME outage) surfaces on
+   that action.
 
 <Callout title="Renewing certificates" type="info">
 Once a certificate is **Active** you normally never touch it again. Renewal targets certificates within about
@@ -143,11 +152,11 @@ SSL actions require a **verified** domain — attempting them on a pending one r
 certificate.
 </Callout>
 
-<Callout title="If SSL was never set up on this host" type="warn">
-The certificate toolchain (certbot) is installed during a **deploy**, not by the on-demand Renew/Recheck
-buttons. If a host has never provisioned SSL for any custom domain, **redeploy the project** — the deploy
-preflight installs the toolchain and issues the certificate as part of the build, with the progress in the
-deploy logs. See [Troubleshooting → Deployments](/docs/troubleshooting/deployments).
+<Callout title="Verify should not require a redeploy" type="warn">
+The first deployment prepares certbot even while the domain is pending. After a successful **Verify**, the
+certificate provider re-registers the existing route with TLS, so no redeploy is expected. If a current
+deployment only starts serving HTTPS after redeploying, preserve both the deployment log and the Verify log;
+that indicates a separate edge/route reconciliation failure.
 </Callout>
 
 ## External ingress: your edge terminates TLS (TXT only)

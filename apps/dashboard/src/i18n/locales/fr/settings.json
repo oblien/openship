@@ -53,6 +53,7 @@
       "notifications": "Notifications",
       "audit": "Journal d'audit",
       "cloud": "Cloud",
+      "infrastructure": "Infrastructure",
       "instance": "Instance"
     }
   },
@@ -273,7 +274,7 @@
   },
   "team": {
     "heading": "Équipe",
-    "descPersonal": "Personnes ayant accès à votre espace de travail personnel. Invitez des collaborateurs directement, ou créez une organisation d'équipe distincte.",
+    "descPersonal": "Les personnes ayant accès à votre espace de travail personnel.",
     "descTeam": "Personnes ayant accès aux projets, déploiements et serveurs de cette organisation.",
     "inviteMember": "Inviter un membre",
     "createTeamCard": {
@@ -302,6 +303,14 @@
     "memberPanel": {
       "subtitle": "Les octrois s'appliquent aux membres restreints. Les propriétaires/administrateurs/membres ont par défaut un accès à toute l'organisation.",
       "saveLabel": "Enregistrer l'accès"
+    },
+    "serverAccessWarning": {
+      "title": "Accorder un accès complet au serveur ?",
+      "body": "{member} obtiendra le contrôle total de {scope} — chaque déploiement et ses données, toutes les applications qui y tournent, les secrets et variables d'environnement stockés, l'accès au terminal, et toute intégration connectée (par ex. les jetons GitHub et clés de déploiement qui y sont stockés). Il pourra gérer ou supprimer ces ressources.",
+      "scopeAllServers": "tous les serveurs de cette organisation",
+      "scopeThisServer": "ce serveur",
+      "scopeCount": "{count} serveurs",
+      "confirm": "Accorder l'accès"
     },
     "confirmRemove": "Supprimer ce membre de l'organisation ?",
     "workspace": {
@@ -450,6 +459,8 @@
       "empty": "Aucun canal pour l'instant. Ajoutez-en un pour commencer à recevoir des notifications.",
       "verified": "Vérifié",
       "unverified": "Non vérifié",
+      "sendTest": "Envoyer un test",
+      "testSent": "Test envoyé",
       "deleteChannel": "Supprimer le canal",
       "addChannel": "Ajouter un canal",
       "confirmDelete": "Supprimer ce canal ? Les abonnements qui l'utilisent seront arrêtés.",
@@ -468,6 +479,7 @@
       "slack": "Slack",
       "discord": "Discord",
       "msteams": "Microsoft Teams",
+      "telegram": "Telegram",
       "in_app": "Dans l'application"
     },
     "form": {
@@ -477,6 +489,9 @@
       "slackPlaceholder": "https://hooks.slack.com/services/...",
       "discordPlaceholder": "https://discord.com/api/webhooks/...",
       "msteamsPlaceholder": "https://prod-00.westus.logic.azure.com/workflows/...",
+      "telegramTokenPlaceholder": "Jeton du bot fourni par @BotFather",
+      "telegramChatPlaceholder": "ID du chat (ex. -1001234567890)",
+      "telegramHint": "Créez un bot avec @BotFather, puis envoyez-lui un message (ou ajoutez-le à votre groupe) pour qu'il soit autorisé à répondre.",
       "adding": "Ajout…",
       "addChannel": "Ajouter un canal",
       "labelRequired": "Le libellé est requis"
@@ -485,22 +500,25 @@
       "title": "Ce dont vous voulez être notifié",
       "description": "Choisissez quels événements vont vers quel canal. Chaque cellule est un abonnement.",
       "empty": "Ajoutez d'abord un canal pour vous abonner aux événements.",
+      "allTab": "Tous",
       "eventHeader": "Événement",
-      "cellAria": "{category} via {channel}"
+      "cellAria": "{category} via {channel}",
+      "notifyMe": "Me notifier"
     },
     "orgDefaults": {
       "title": "Valeurs par défaut de l'organisation",
       "description": "Valeurs par défaut appliquées lorsqu'un nouveau membre rejoint cette organisation. Les membres peuvent les remplacer par canal.",
-      "notifyAria": "Notifier pour {category}"
+      "notifyAria": "Notifier pour {category}",
+      "nChannels": "{n} canaux"
     }
   },
   "audit": {
     "heading": "Journal d'audit",
-    "subtitle": "Chaque changement dans cette organisation, qui l'a effectué et quand.",
-    "searchPlaceholder": "Rechercher des événements, acteurs, ressources...",
-    "allEvents": "Tous les événements",
-    "noMatch": "Aucun événement ne correspond à votre recherche.",
-    "noEvents": "Aucun événement pour l'instant.",
+    "subtitle": "Tout ce qui s'est passé dans cette organisation, par qui et quand.",
+    "searchPlaceholder": "Rechercher des apps, serveurs, domaines, personnes…",
+    "noMatch": "Rien ne correspond à ces filtres.",
+    "noEvents": "Rien n'a encore été enregistré.",
+    "clearFilters": "Effacer les filtres",
     "showing": "Affichage de {from}-{to} sur {total}",
     "actor": "Acteur",
     "name": "Nom",
@@ -516,7 +534,50 @@
     "after": "Après",
     "removed": "Supprimé",
     "system": "Système",
-    "actorPrefix": "Acteur {id}"
+    "actorPrefix": "Acteur {id}",
+    "recording": {
+      "title": "Enregistrer l'activité",
+      "description": "Conserver une trace de chaque changement effectué dans cette organisation. Activé par défaut.",
+      "paused": "L'enregistrement est désactivé. Rien de nouveau n'est ajouté — les entrées ci-dessous sont celles capturées avant sa désactivation.",
+      "retention": "Conserver les entrées pendant",
+      "retentionOption": "{days} jours",
+      "retentionHint": "Les entrées plus anciennes sont supprimées automatiquement.",
+      "adminOnly": "Seuls les propriétaires et les administrateurs peuvent modifier ceci.",
+      "saveFailed": "Impossible d'enregistrer les paramètres d'activité."
+    },
+    "filters": {
+      "anyone": "N'importe qui",
+      "period": "Période",
+      "allTime": "Tout",
+      "today": "Aujourd'hui",
+      "last7": "7 derniers jours",
+      "last30": "30 derniers jours",
+      "last90": "90 derniers jours"
+    },
+    "tabs": {
+      "all": "Tout"
+    },
+    "sources": {
+      "all": "Tout",
+      "dashboard": "Tableau de bord",
+      "mcp": "Assistant IA",
+      "cli": "CLI",
+      "api": "API",
+      "webhook": "Webhook",
+      "system": "Système",
+      "unknown": "Inconnu"
+    },
+    "day": {
+      "today": "Aujourd'hui",
+      "yesterday": "Hier"
+    },
+    "details": {
+      "who": "Qui",
+      "when": "Quand",
+      "cameFrom": "Provenance",
+      "technical": "Détails techniques",
+      "eventType": "Type d'événement"
+    }
   },
   "updates": {
     "title": "Mises à jour",
@@ -541,6 +602,20 @@
     "security3": "). Il ne fait que",
     "securityPulls": "récupérer",
     "security4": "ces données — aucun service tiers ni serveur exploité par Openship ne peut pousser de mises à jour ou de signaux vers votre installation. Les avis sont épinglés à chaque version, de sorte que les changements non publiés ne vous parviennent jamais. Les avis de sécurité critiques sont toujours affichés une fois ; tout le reste respecte le paramètre ci-dessus."
+  },
+  "infrastructure": {
+    "title": "Composants de la plateforme",
+    "description": "Comment les conteneurs edge et messagerie de vos serveurs sont maintenus à jour",
+    "autoUpdateLabel": "Mettre à jour automatiquement l'infrastructure serveur",
+    "autoUpdateDesc": "Lorsque ce plan de contrôle est mis à jour, met à jour automatiquement les conteneurs edge et mail sur vos serveurs connectés. Désactivé par défaut — sinon, les mises à jour sont signalées pour être appliquées en un clic sur chaque serveur.",
+    "autoScanLabel": "Analyser automatiquement l'infrastructure des serveurs",
+    "autoScanDesc": "Revérifie discrètement vos serveurs lorsque vous ouvrez la page Serveurs ou la page d'accueil, afin qu'un edge arrêté ou manquant soit signalé sans analyse manuelle. Activé par défaut : détection seule, rien n'est modifié.",
+    "attentionOne": "1 composant à surveiller",
+    "attentionMany": "{n} composants à surveiller",
+    "updatesOne": "1 mise à jour disponible",
+    "updatesMany": "{n} mises à jour disponibles",
+    "allHealthy": "Tous les composants de la plateforme sont à jour",
+    "manageLink": "Gérer dans Serveurs"
   },
   "dataTransfer": {
     "export": {
@@ -705,5 +780,29 @@
     "toastLoadStateFailed": "Échec du chargement de l'état",
     "toastRemoteUnreachable": "Distant injoignable. Cochez « ne pas récupérer les données distantes » pour revenir en arrière quand même.",
     "toastSwitchBackFailed": "Échec du retour en arrière"
+  },
+  "routePreferences": {
+    "title": "Routage",
+    "description": "Comment l'edge atteint les upstreams de vos apps",
+    "loading": "Chargement des préférences…",
+    "intro": "Choisissez l'adressage upstream par défaut pour les nouveaux projets auto-hébergés. Les remplacements par projet se trouvent dans les paramètres du projet.",
+    "modes": {
+      "auto": {
+        "label": "Auto",
+        "desc": "Recommandé (port loopback)"
+      },
+      "loopbackPort": {
+        "label": "Port loopback",
+        "desc": "Port hôte privé 127.0.0.1"
+      },
+      "containerIp": {
+        "label": "IP du conteneur",
+        "desc": "Avancé — IP du bridge"
+      }
+    },
+    "toast": {
+      "setTo": "Stratégie de routage définie sur {mode}",
+      "failed": "Échec de la mise à jour de la stratégie de routage"
+    }
   }
 }

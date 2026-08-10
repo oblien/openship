@@ -32,8 +32,25 @@ export function isServiceFailureStatus(status: string | null | undefined): boole
   return status != null && SERVICE_FAILURE_STATUSES.has(status);
 }
 
-/** Live-ish container/observability state a service_deployment status maps to. */
-export type ServiceContainerState = "running" | "failed" | "starting" | "stopped";
+/**
+ * Live container/observability state.
+ *
+ * `restarting` and `unknown` exist because collapsing them was actively
+ * misleading: docker's `restarting` used to be reported as `running`, so a
+ * crash-looping container rendered a green "Running", and an unreachable host
+ * used to fall back to the last persisted deploy status, so a long-dead service
+ * kept rendering "Running" too.
+ */
+export type ServiceContainerState =
+  | "running"
+  | "failed"
+  | "starting"
+  /** Docker's `restarting` — the container is bouncing (usually a crash loop). */
+  | "restarting"
+  | "stopped"
+  /** The host could not be reached / the runtime can't report. NOT a state of
+   *  the service — a state of our knowledge. Never guess from the DB. */
+  | "unknown";
 
 export function serviceStatusToContainerState(
   status: string | null | undefined,

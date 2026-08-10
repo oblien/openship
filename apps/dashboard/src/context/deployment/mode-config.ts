@@ -1,5 +1,6 @@
 import type { FrameworkId } from "@/components/import-project/types";
 import { normalizeSubdomain } from "@/utils/subdomain";
+import { serviceExposedPort } from "@/utils/compose-ports";
 import {
   createPublicEndpoint,
   resolveBuildImageForDeploymentMode,
@@ -53,7 +54,7 @@ function buildSingleModeSnapshotFromPrimary(args: {
   const { config, defaults, primary, endpoints, productionPort, sourceSignature } = args;
   const existingSnapshot = config.modeSnapshots?.single;
   const buildStrategy = existingSnapshot?.buildStrategy ?? defaults?.buildStrategy ?? config.buildStrategy;
-  const runtimeMode = existingSnapshot?.runtimeMode ?? defaults?.runtimeMode ?? "bare";
+  const runtimeMode = existingSnapshot?.runtimeMode ?? defaults?.runtimeMode ?? "docker";
 
   return {
     framework: primary.framework,
@@ -80,9 +81,6 @@ function buildSingleModeSnapshotFromPrimary(args: {
 }
 
 const PRIMARY_SINGLE_APP_SERVICE_NAMES = new Set(["web", "app", "frontend"]);
-
-const getExposedPort = (svc: ComposeServiceInfo) =>
-  svc.ports[0]?.split(":").pop()?.split("/")[0];
 
 function clonePublicEndpoints(endpoints: PublicEndpoint[]): PublicEndpoint[] {
   return endpoints.map((endpoint) => createPublicEndpoint(endpoint));
@@ -158,7 +156,7 @@ function listSingleAppComposeEndpointCandidates(config: DeploymentConfig) {
     .map((service, index) => {
       if (!service.exposed) return null;
 
-      const port = service.exposedPort || getExposedPort(service) || "";
+      const port = service.exposedPort || serviceExposedPort(service) || "";
       if (!port) return null;
 
       return {
@@ -572,7 +570,8 @@ export function getModeSwitchUpdates(
   if (!singleSnapshot) {
     return {
       serviceDeploymentMode: "single",
-      runtimeMode: existingSingleSnapshot?.runtimeMode ?? "bare",
+      // Sandboxed default — see DEFAULT_CONFIG.runtimeMode.
+      runtimeMode: existingSingleSnapshot?.runtimeMode ?? "docker",
       buildStrategy: existingSingleSnapshot?.buildStrategy ?? config.buildStrategy,
       buildImage: resolveBuildImageForDeploymentMode(config, "single"),
     };

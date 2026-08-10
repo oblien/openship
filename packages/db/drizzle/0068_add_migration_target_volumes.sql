@@ -1,0 +1,1 @@
+ALTER TABLE "docker_migration_run" ADD COLUMN IF NOT EXISTS "target_volumes" jsonb DEFAULT '[]'::jsonb;

@@ -31,8 +31,11 @@ const BLOCK_STATUSES = new Set([401, 403, 404, 429, 444, 451, 503]);
  * data: no control chars (CRLF/header-injection), bounded list/string sizes,
  * ISO-2 countries, known methods/statuses. The Lua guard treats every value as
  * data (never a pattern), but we still normalize defensively at the boundary.
+ *
+ * Exported for tests: it is the whole boundary between a request body and what the
+ * edge enforces.
  */
-function sanitizeSpec(input: unknown): RouteRuleSpec {
+export function sanitizeSpec(input: unknown): RouteRuleSpec {
   const spec = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const out: RouteRuleSpec = {};
 
@@ -113,7 +116,8 @@ function sanitizeSpec(input: unknown): RouteRuleSpec {
   return out;
 }
 
-function normalizePathPrefix(p: string | null | undefined): string | null {
+/** Exported for tests: decides which rule a request's path matches. */
+export function normalizePathPrefix(p: string | null | undefined): string | null {
   if (!p) return null;
   const s = p.trim();
   if (!s || s === "/") return null;

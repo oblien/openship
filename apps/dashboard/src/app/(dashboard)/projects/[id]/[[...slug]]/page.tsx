@@ -1,12 +1,6 @@
 "use client";
 
 import {
-  MoreVertical,
-  HelpCircle,
-  MessageSquare,
-  Bug,
-  BookOpen,
-  ExternalLink,
   Check,
   Plus,
   X,
@@ -20,10 +14,13 @@ import {
 
 import { DomainSettings } from "../components/DomainSettings";
 import { GitSettings } from "../components/GitSettings";
+import { IncomingWebhooks } from "../components/IncomingWebhooks";
 import { BuildSettings } from "../components/BuildSettings";
 import { LogsSettings } from "../components/LogsSettings";
 import { BackupSettings } from "../components/BackupSettings";
 import { Deployments } from "../components/Deployments";
+import { HealthTab } from "../components/HealthTab";
+import { MonitoringTab } from "../components/MonitoringTab";
 import { AdvancedSettings } from "../components/AdvancedSettings";
 import { OverviewTab } from "../components/OverviewTab";
 import { AppConfiguration } from "../components/AppConfiguration";
@@ -33,16 +30,17 @@ import { ProjectSidebar, ProjectMobileTabs } from "../components/ProjectSidebar"
 import { DraftProjectView } from "../components/DraftProjectView";
 import { getProjectStatus } from "@/utils/project-status";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { useProjectInfo } from "@/hooks/useProjectEndpoints";
+import { useProjectInfo, PROJECT_INFO_NOT_FOUND } from "@/hooks/useProjectEndpoints";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/context/ToastContext";
 import { useModal } from "@/context/ModalContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { ApiError, getApiErrorMessage, projectsApi } from "@/lib/api";
+import { invalidateSidebarNavCounts } from "@/lib/sidebar-nav-counts";
 import ErrorState from "@/components/shared/ErrorState";
 import { PageContainer } from "@/components/ui/PageContainer";
-import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
+import { HelpMenu } from "@/components/HelpMenu";
 import { DismissiblePopover } from "@/components/ui/Popover";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -502,6 +500,7 @@ const ProjectSettingsContent = () => {
         if (err instanceof ApiError && err.status === 404) {
           clearInterval(iv);
           showToast(t.projects.delete.alreadyDeleted, "success");
+          invalidateSidebarNavCounts();
           router.push("/");
         }
       }
@@ -512,6 +511,10 @@ const ProjectSettingsContent = () => {
   const handleDeleteProject = async (
     deleteApp = true,
     wipeVolumes = false,
+    // Record-only (soft) delete — kept ahead of force/forceOrphan so the delete
+    // modal's (deleteApp, wipeVolumes, recordOnly) call maps positionally, and
+    // so it survives the force/forceOrphan retries below.
+    recordOnly = false,
     force = false,
     forceOrphan = false,
   ) => {
@@ -522,6 +525,7 @@ const ProjectSettingsContent = () => {
       const response = await projectsApi.delete(projectData.id, {
         deleteApp,
         wipeVolumes,
+        recordOnly,
         force,
         forceOrphan,
       });
@@ -546,6 +550,23 @@ const ProjectSettingsContent = () => {
             "success",
           );
         }
+        // Projects this app was linked into: they keep running, but their live
+        // container still holds the connection value until they redeploy.
+        const unlinkedNames = [
+          ...new Set(
+            (Array.isArray(response.unlinked) ? response.unlinked : []).map(
+              (u: { projectName?: string; projectId?: string }) => u.projectName ?? u.projectId,
+            ),
+          ),
+        ].filter(Boolean);
+        if (unlinkedNames.length > 0) {
+          showToast(
+            interpolate(t.projects.delete.unlinked, { projects: unlinkedNames.join(", ") }),
+            "success",
+            t.projects.delete.unlinkedTitle,
+          );
+        }
+        invalidateSidebarNavCounts();
         router.push("/");
         return;
       }
@@ -561,6 +582,7 @@ const ProjectSettingsContent = () => {
           "success",
           t.projects.delete.partialCleanupTitle,
         );
+        invalidateSidebarNavCounts();
         router.push("/");
         return;
       }
@@ -593,7 +615,7 @@ const ProjectSettingsContent = () => {
         if (body.code === "PROJECT_HAS_ACTIVE_WORK") {
           if (!force) {
             showToast(t.projects.delete.cancellingActiveWork, "success", t.projects.delete.cleaningUpTitle);
-            void handleDeleteProject(deleteApp, wipeVolumes, true, forceOrphan);
+            void handleDeleteProject(deleteApp, wipeVolumes, recordOnly, true, forceOrphan);
             return;
           }
           showToast(
@@ -655,7 +677,7 @@ const ProjectSettingsContent = () => {
                     type="button"
                     onClick={() => {
                       hideModal(modalId);
-                      void handleDeleteProject(deleteApp, wipeVolumes, force, true);
+                      void handleDeleteProject(deleteApp, wipeVolumes, recordOnly, force, true);
                     }}
                     className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-danger-solid px-4 text-sm font-medium text-white transition-colors hover:bg-danger-solid/90"
                   >
@@ -681,6 +703,7 @@ const ProjectSettingsContent = () => {
       // 404: someone else already deleted the project in another tab.
       if (err instanceof ApiError && err.status === 404) {
         showToast(t.projects.delete.alreadyDeleted, "success");
+        invalidateSidebarNavCounts();
         router.push("/");
         return;
       }
@@ -689,52 +712,6 @@ const ProjectSettingsContent = () => {
     }
   };
 
-  const helpMenuActions: MenuAction[] = [
-    {
-      id: "support",
-      label: t.projects.help.contactSupport,
-      icon: <HelpCircle className="w-4 h-4" />,
-      onClick: () => {
-        window.open("https://openship.io/support", "_blank");
-      },
-    },
-    {
-      id: "report-issue",
-      label: t.projects.help.reportIssue,
-      icon: <Bug className="w-4 h-4" />,
-      onClick: () => {
-        window.open("https://github.com/oblien/openship/deployments/issues/new", "_blank");
-      },
-    },
-    {
-      id: "feedback",
-      label: t.projects.help.sendFeedback,
-      icon: <MessageSquare className="w-4 h-4" />,
-      onClick: () => {
-        window.open("https://openship.io/contact", "_blank");
-      },
-    },
-    {
-      id: "divider",
-      divider: true,
-    },
-    {
-      id: "documentation",
-      label: t.projects.help.documentation,
-      icon: <BookOpen className="w-4 h-4" />,
-      onClick: () => {
-        window.open("https://openship.io/docs", "_blank");
-      },
-    },
-    {
-      id: "community",
-      label: t.projects.help.joinCommunity,
-      icon: <ExternalLink className="w-4 h-4" />,
-      onClick: () => {
-        window.open("https://discord.gg/openship", "_blank");
-      },
-    },
-  ];
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -746,9 +723,15 @@ const ProjectSettingsContent = () => {
         return <DomainSettings />;
       case "deployments":
         return <Deployments />;
+      case "health":
+        return <HealthTab />;
+      case "monitoring":
+        return <MonitoringTab />;
       case "source":
       case "git":
         return <GitSettings />;
+      case "webhooks":
+        return <IncomingWebhooks />;
       case "runtime":
       case "settings":
         // Apps get the 2-mode Configuration surface (App settings | Deployment);
@@ -847,6 +830,14 @@ const ProjectSettingsContent = () => {
       </PageContainer>
     );
   }
+  // A non-404 fetch failure (cloud unreachable, network, 5xx) never delivers
+  // the real project — the empty seed still reads as "draft" below, so guard
+  // here and surface the actual load error instead of a fake draft screen.
+  // (404 / access errors are already handled via projectNotFound above.)
+  if (projectInfoError && projectInfoError !== PROJECT_INFO_NOT_FOUND && !projectDataReady) {
+    return <ErrorState type="load-failed" error={{ details: projectInfoError }} />;
+  }
+
   // Draft / never-successfully-deployed projects (no active deployment)
   // get a focused screen instead of the analytics dashboard, which would
   // otherwise render empty. In-flight first builds (queued/building/
@@ -916,11 +907,8 @@ const ProjectSettingsContent = () => {
 
           <div className="flex items-center gap-2">
             <EnvironmentSwitcher />
-            <DropdownMenu
-              actions={helpMenuActions}
-              trigger={<MoreVertical className="w-5 h-5 text-muted-foreground" />}
-              align="right"
-            />
+            {/* Shared definition — the same ⋮ the Apps page header carries. */}
+            <HelpMenu />
           </div>
         </div>
       </div>

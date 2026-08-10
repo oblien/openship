@@ -48,10 +48,19 @@ domain sends traffic to. Openship pre-fills it with your app's port, so you can 
 
 There are two optional toggles:
 
-- **Include www** — also set up records for the `www.` version of your domain.
+- **Include www** — also claim the `www.` version of your domain. It becomes a domain in its own right: it
+  gets its own DNS record, its own **Verify**, and its own certificate, and by default it sends visitors on to
+  the bare domain with a `301` redirect (see [Redirect one domain to another](#redirect-one-domain-to-another)
+  if you'd rather have it the other way round, or have both serve the app).
 - **External ingress & TLS** — turn this on **only** if your own edge (like a Cloudflare Tunnel or a load
   balancer) already handles HTTPS. Most people leave it off. See [DNS setup, three ways](#dns-setup-three-ways)
   below.
+
+<Callout title="www needs its own DNS record" type="warn">
+Because `www.example.com` is a separate domain, it needs a separate DNS record — Openship lists it alongside
+the bare domain's in the next step. Skip it and `www` will stay Pending: it can't be verified, so it never gets
+a certificate.
+</Callout>
 
 When the form is filled in, press the **Add domain** button at the bottom of the form to save it. (Yes,
 it's the same label as the button you just clicked — the first one opens the form, this one saves it.)
@@ -186,6 +195,36 @@ point at it and does **not** issue a certificate — your edge is doing that job
 
 </Tabs>
 
+## Redirect one domain to another
+
+Any domain on a project can send its visitors to another domain on the same project instead of serving the
+app. Openship answers a `301` (or `302`, if you pick it) and keeps the rest of the URL, so
+`https://www.example.com/pricing?ref=x` lands on `https://example.com/pricing?ref=x`.
+
+Open your project's **Domains** tab, press **Edit**, and set **Redirect** on the domain you want to send
+*away*. Pick the destination from the list — it only offers this project's own domains — and choose whether
+it's permanent (`301`) or temporary (`302`). Choose **Serve the app here** to turn a redirect off again.
+
+The two common uses:
+
+- **Pick a canonical hostname.** `www.example.com` → `example.com`, or the reverse. This is what **Include www**
+  sets up for you (pointing `www` at the bare domain), and you can flip it either way. Without a redirect both
+  hostnames serve the same app, which search engines treat as duplicate content.
+- **Move to a new domain.** Keep the old one verified and redirect it to the new one, so existing links and
+  bookmarks keep working.
+
+<Callout title="A redirecting domain still needs DNS, verification and a certificate" type="info">
+It has to answer `https://` before it can redirect anyone, so it goes through the same setup as any other
+domain. That's also why it keeps showing its own **Status** and **SSL** rows.
+</Callout>
+
+Two things Openship won't let you do, because both break the site rather than the setting: redirecting to a
+domain outside the project (that would turn a domain you own into an open redirect for someone else's traffic),
+and creating a loop — `A` → `B` → `A` would bounce every request until the browser gave up.
+
+Redirects are rendered into your server's own edge configuration, so they're a self-hosted feature. On Openship
+Cloud the managed edge owns routing; point the extra hostname at the same app instead.
+
 ## Bring your own certificate
 
 For setups where your upstream needs the **origin** to present a real certificate too — most commonly
@@ -250,6 +289,19 @@ The certificate is still being issued, or a request to Let's Encrypt hasn't comp
 open the domain's **⋯** menu and click **Recheck SSL** — a quick, no-cost check that flips the status to
 **Active** once the certificate is actually in place. If it never provisions, use **Renew SSL** to try again;
 the error message will name the real reason.
+</Callout>
+
+<Callout title="The bare domain works but www doesn't (or the other way round)" type="warn">
+They're two separate domains, so they're set up separately. Check the **Domains** tab: whichever one is still
+**Pending** is missing its DNS record. Openship listed both records when you added the domain — open the failing
+domain's DNS panel again, add the one it's asking for, then press its own **Verify**. A working apex tells you
+nothing about `www`; each has its own record, verification and certificate.
+</Callout>
+
+<Callout title="Verify failed and you want the actual reason" type="info">
+On a self-hosted install, Verify streams the certificate request live and the log stays on screen whatever the
+outcome — that log names the real cause (DNS not resolving, port 80 unreachable, a proxy answering `404`). Use
+**Copy log** if you want to keep it, and **Try again** to re-run without closing the window.
 </Callout>
 
 ## What next?

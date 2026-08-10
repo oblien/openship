@@ -24,8 +24,14 @@
  */
 
 import type { Deployment } from "@repo/db";
-import type { Platform, RouteProxyLocation, RouteRedirect, RouteHeaderRule } from "@repo/adapters";
-import { safeErrorMessage } from "@repo/core";
+import type {
+  Platform,
+  RouteProxyLocation,
+  RouteRedirect,
+  RouteHeaderRule,
+  RouteHostRedirect,
+} from "@repo/adapters";
+import { safeErrorMessage, sanitizeProxySettings, type RoutingConfig } from "@repo/core";
 import { platform } from "./controller-helpers";
 import { resolveDeploymentRuntime } from "./deployment-runtime";
 import {
@@ -37,12 +43,30 @@ import { webhookProxyTarget } from "../config";
 
 export interface RouteReconcileProject extends CloudRouteProject {
   webhookDomain?: string | null;
+  /**
+   * The project's routing config. Read here for `proxy` (upload limit, timeouts,
+   * buffering, gzip) so EVERY live route apply picks it up from one place —
+   * per-caller threading is how a domain edit and a redeploy end up emitting
+   * different vhosts for the same project.
+   */
+  routingConfig?: RoutingConfig | null;
 }
 
 export interface RouteRegister {
   hostname: string;
   /** Self-hosted upstream, e.g. `http://<ip>:<port>`. Required for self-hosted. */
   targetUrl?: string;
+  /**
+   * Serve this domain's `/` from FILES on the host instead of proxying to an
+   * upstream — `root <dir>; try_files $uri $uri/ /index.html;`.
+   *
+   * Mutually exclusive with `targetUrl`, and it composes with `proxyLocations`:
+   * `registerRoute` emits the extra path-prefix locations before `location /`, so a
+   * static frontend at `/` alongside a backend at `/api/` is ONE vhost with no web
+   * server of its own. Self-hosted only — Oblien runs the workload on cloud, so
+   * there is no host directory to serve and those keep a served container.
+   */
+  staticRoot?: string;
   /** Cloud target port (workspace expose / domains.connect). */
   port?: number;
   isCustomDomain: boolean;
@@ -61,6 +85,13 @@ export interface RouteRegister {
   proxyLocations?: RouteProxyLocation[];
   redirects?: RouteRedirect[];
   headerRules?: RouteHeaderRule[];
+  /**
+   * Canonical redirect to another host instead of serving (see
+   * RouteConfig.redirectHost). Carried on the LIVE path too, so turning a
+   * redirect on or off takes effect on save rather than waiting for a redeploy —
+   * the same treatment a domain/port edit already gets.
+   */
+  redirectHost?: RouteHostRedirect;
 }
 
 export interface RouteRemove {
@@ -111,6 +142,15 @@ export async function reconcileProjectRoutes(
     // orphaned → stale 502). On remote-server deploys the route isn't local, so
     // this is a harmless no-op.
     if (removes.length > 0) {
+      // Teardown runs against the API's OWN routing context. For a single-box
+      // install that IS the edge; for a containerized API or a remote/takeover'd
+      // target it isn't, so the stray vhost may actually live on another host and
+      // these removes are a no-op there. Non-fatal either way, but log it so an
+      // orphaned vhost that survives isn't mistaken for a completed teardown.
+      console.warn(
+        `[route-apply] no deployment routing resolved — running ${removes.length} route removal(s) ` +
+          `against the API's own edge context; a remote/takeover'd edge may retain the vhost until redeploy`,
+      );
       const local = platform().routing;
       for (const r of removes) {
         await local
@@ -129,6 +169,10 @@ export async function reconcileProjectRoutes(
   }
 
   const webhookHost = project.webhookDomain?.trim().toLowerCase() || null;
+  // Sanitized here, not trusted from the row: the API validates on write, but a
+  // value could also have been seeded from a repo config or an older schema, and
+  // this string is interpolated into generated nginx config.
+  const proxy = sanitizeProxySettings(project.routingConfig?.proxy);
 
   for (const r of removes) {
     await routing
@@ -139,9 +183,11 @@ export async function reconcileProjectRoutes(
   }
 
   for (const r of registers) {
-    if (!r.targetUrl) {
+    // A route serves `/` from ONE of two things: a host directory (static, files
+    // on disk) or an upstream. Neither → nothing to serve.
+    if (!r.staticRoot && !r.targetUrl) {
       console.warn(
-        `[route-apply] no upstream resolved for ${r.hostname} — route not applied (redeploy to re-sync)`,
+        `[route-apply] no upstream or static root resolved for ${r.hostname} — route not applied (redeploy to re-sync)`,
       );
       continue;
     }
@@ -150,11 +196,26 @@ export async function reconcileProjectRoutes(
       .registerRoute({
         domain: r.hostname,
         tls: true,
-        targetUrl: r.targetUrl,
+        // A custom domain's TLS is ours to terminate, so the edge must keep a :443
+        // listener up for it even before its cert exists — otherwise HTTPS for it
+        // falls through to the edge's 443 catch-all, which answers with a
+        // domain-less placeholder cert and the branded not-found page, i.e. the
+        // domain reads as unconfigured rather than pending (#308).
+        // A free *.opsh.io host is fronted by Cloud's edge; not ours.
+        terminatesTlsLocally: r.isCustomDomain,
+        // staticRoot wins when present: it is the more specific instruction, and a
+        // caller that resolved a doc root has already decided this domain serves
+        // files. registerRoute keys off which one is set.
+        ...(r.staticRoot ? { staticRoot: r.staticRoot } : { targetUrl: r.targetUrl! }),
+        // Project-wide tunables, applied on the LIVE path too so raising an upload
+        // limit takes effect on save rather than waiting for a redeploy — the same
+        // treatment a domain/port edit already gets.
+        ...(proxy ? { proxy } : {}),
         ...(isWebhook ? { webhookProxy: webhookProxyTarget } : {}),
         ...(r.proxyLocations?.length ? { proxyLocations: r.proxyLocations } : {}),
         ...(r.redirects?.length ? { redirects: r.redirects } : {}),
         ...(r.headerRules?.length ? { headerRules: r.headerRules } : {}),
+        ...(r.redirectHost ? { redirectHost: r.redirectHost } : {}),
       })
       .catch((err) =>
         console.warn(`[route-apply] registerRoute ${r.hostname} failed (non-fatal): ${safeErrorMessage(err)}`),

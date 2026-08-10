@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { AdvisorySeverity } from "@repo/core";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import CopyCommand, { SELF_UPDATE_COMMAND } from "@/components/shared/CopyCommand";
 import { useUpdates } from "./useUpdates";
 
 const SEVERITY = {
@@ -51,6 +52,7 @@ export function UpdateCenter() {
     latest,
     muted,
     desktop,
+    mode,
     whatsNewVersion,
     dismissAdvisory,
     dismissWhatsNew,
@@ -152,6 +154,12 @@ export function UpdateCenter() {
                       <Download className="size-3.5" />
                       {advisory.action.label}
                     </button>
+                  ) : advisory.action?.kind === "update" && mode === "selfhosted" ? (
+                    // A server can't be updated from the browser — the control
+                    // plane upgrades itself through the CLI. Show the command
+                    // instead of dropping the action entirely, which left the
+                    // operator with a critical banner and no way to act on it.
+                    <CopyCommand command={SELF_UPDATE_COMMAND} />
                   ) : null}
                   <ExternalLinkBtn href={changelog}>{w.viewChangelog}</ExternalLinkBtn>
                 </div>

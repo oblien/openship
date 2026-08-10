@@ -1,0 +1,18 @@
+-- Deploy-time readiness gate, per project.
+--
+-- Named `readiness`, NOT `health_check`, on purpose: a compose service already
+-- carries a `healthcheck` (the Docker HEALTHCHECK directive, stored in
+-- `service.advanced`) which the daemon runs and which has nothing to do with
+-- whether a DEPLOY is allowed to finish. Two fields one capital letter apart in
+-- the same openship.json would be a footgun.
+--
+-- Nullable with NO default, and no backfill: NULL means "off", so every existing
+-- project moves to the new off-by-default behaviour. Previously the 15s
+-- stabilization watch and the 45s TCP probe were hardcoded on every deploy and
+-- could fail (and then force-remove) a container that was running fine. Opting
+-- in is now explicit.
+--
+-- Shape (all fields optional, all defaults off) — see OpenshipReadiness:
+--   { enabled, path, port, timeoutSeconds,
+--     stabilization, stabilizationSeconds, onFailure: "warn" | "fail" }
+ALTER TABLE "project" ADD COLUMN IF NOT EXISTS "readiness" jsonb;

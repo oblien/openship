@@ -1,7 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
-import { getBuildImage, STACKS, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId, type RoutingConfig } from "@repo/core";
+import { getBuildImage, STACKS, type ProjectType, type BuildStrategy, type DeployTarget, type RuntimeMode, type StackId, type RoutingConfig, type OpenshipReadiness, type ResourceTier as CoreResourceTier } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { randomUUID } from "@/lib/random-uuid";
 
@@ -145,6 +145,11 @@ export interface PublicEndpoint {
   domain: string;
   customDomain: string;
   domainType: "free" | "custom";
+  /** Canonical redirect: answer a 30x to this hostname (another of the project's
+   *  own) instead of serving the app here. Undefined = serves the app. */
+  redirectTo?: string;
+  /** 301 (default) | 302. Only meaningful alongside `redirectTo`. */
+  redirectStatus?: number;
 }
 
 // ─── Per-service deployment status (live from SSE or loaded from DB) ─────────
@@ -208,12 +213,13 @@ export interface DeploymentModeSnapshots {
 }
 
 /**
- * Resource tier IDs for Openship Cloud deploys. The label, RAM/CPU/disk
- * shape and price are placeholder values defined alongside the picker UI
- * — see `CLOUD_RESOURCE_TIERS` in `DeployTargetStep.tsx`. The backend
- * is the source of truth for what each tier actually provisions.
+ * Resource tier IDs for Openship Cloud deploys — DERIVED from the one tier union
+ * in @repo/core, which the backend provisioner reads too. `unlimited` is excluded
+ * because a metered cloud workspace must be provisioned at a concrete size.
+ * The picker's display specs come from the same core table (see
+ * `CLOUD_RESOURCE_TIERS` in `DeployTargetStep.tsx`).
  */
-export type CloudResourceTier = "micro" | "low" | "medium" | "high" | "custom";
+export type CloudResourceTier = Exclude<CoreResourceTier, "unlimited">;
 
 /**
  * User-supplied resource values when `cloudResourceTier === "custom"`.
@@ -243,6 +249,14 @@ export interface DeploymentConfig {
   owner: string;
   /** Absolute path for local projects (mutually exclusive with owner/repo git source) */
   localPath?: string;
+  /**
+   * Explicit compose file location, for repos that keep it outside the detected
+   * root (e.g. `deploy/docker-compose/docker-compose.yml`). Set via
+   * `rescanWithComposePath` — it can't be edited locally like other fields
+   * because the whole service list is derived from that file — and persisted so
+   * redeploys re-read the same path.
+   */
+  composePath?: string;
   /** Folder-upload deploy: the upload session whose workspace/staging dir holds
    *  the source. Sent to buildAccess so the build adopts that uploaded source. */
   uploadSessionId?: string;
@@ -250,8 +264,23 @@ export interface DeploymentConfig {
   buildStrategy: BuildStrategy;
   /** Where the app deploys to: "local" (this machine), "server" (remote SSH), or "cloud" (Oblien) */
   deployTarget: DeployTarget;
+  /**
+   * Rollback retention, chosen in the wizard's target panel. Only used for a
+   * project that doesn't exist yet — once it does, the panel edits the project
+   * row directly (there's no reason to stage a change we can persist now).
+   * `rollbackWindow: null` = size it from the target's free disk.
+   */
+  rollbackWindow?: number | null;
+  rollbackStrategy?: "git" | "snapshot";
   /** Which server to deploy to when deployTarget === "server" */
   serverId?: string;
+  /**
+   * "None" routing: deploy with NO public URL (internal / port-only). When true
+   * the deploy sends `publicEndpoints: []` regardless of what's staged, and the
+   * domain picker collapses. Backend treats [] as no route (preflight warns, no
+   * Cloud gate). Free/Custom are expressed via each endpoint's domainType.
+   */
+  noPublicRoute?: boolean;
   /** Display name of the target server (resolved by the API for the detail UI). */
   serverName?: string;
   /** Runtime mode: "bare" (direct process) or "docker" (container-based) */
@@ -289,6 +318,13 @@ export interface DeploymentConfig {
    *  project create so the backend persists + compiles it. Opaque passthrough. */
   routingConfig?: RoutingConfig | null;
   /**
+   * Deploy-time readiness gate, set in the wizard's collapsed Health section and
+   * seeded by the repo's `openship.json`. Undefined/null = OFF, which is the
+   * default: the deploy reports ready as soon as the workload is up and routed,
+   * and nothing post-start can delay or veto it.
+   */
+  readiness?: OpenshipReadiness | null;
+  /**
    * Resource tier picked for Openship Cloud deploys. Self-hosted servers
    * inherit the host's capacity, so this field is meaningless for them
    * — kept on the config (not nested under cloud) because operators
@@ -301,16 +337,6 @@ export interface DeploymentConfig {
   cloudResourceTier?: CloudResourceTier;
   /** Custom CPU/RAM/disk values, used only when cloudResourceTier === "custom". */
   cloudResourceCustom?: CloudResourceCustom;
-  /**
-   * Per-deploy opt-in (desktop-only; default off) to forward the operator's
-   * LOCAL `gh` identity to a remote server so it can clone on-server using the
-   * relay — instead of building locally + uploading. Only meaningful for a
-   * server-target build; nothing is persisted on the remote.
-   *
-   * Internal now: derived from `cloneStrategy === "server"` on desktop. The
-   * user picks the clone location; this stays the backend relay switch.
-   */
-  forwardGitCredentials?: boolean;
   /**
    * Where a server deploy clones the repo (default "api-host"). "server" makes
    * the build host clone directly — desktop via the credential relay, a
@@ -331,16 +357,18 @@ export const DEFAULT_CONFIG: DeploymentConfig = {
   repo: "",
   owner: "",
   localPath: undefined,
+  composePath: undefined,
   uploadSessionId: undefined,
   buildStrategy: "server",
   deployTarget: "cloud",
-  runtimeMode: "bare",
+  runtimeMode: "docker",
   projectType: "app",
   framework: "nextjs",
   detectedFramework: null,
   packageManager: "npm",
   buildImage: "node:22",
   publicEndpoints: [],
+  noPublicRoute: false,
   branch: "main",
   branches: [],
   services: [],
@@ -427,20 +455,10 @@ export function resolveBuildImageForDeploymentMode(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Whether any compose service uses a managed (free) domain that requires
- * Openship Cloud. Checks by domain *type*, not by domain string -
- * works regardless of the configured cloud domain.
- */
-export function servicesNeedCloud(services?: ComposeServiceInfo[]): boolean {
-  if (!services?.length) return false;
-  return services.some((s) => s.exposed && s.domainType !== "custom");
-}
-
-export function publicEndpointsNeedCloud(endpoints?: PublicEndpoint[]): boolean {
-  if (!endpoints?.length) return false;
-  return endpoints.some((endpoint) => endpoint.domainType !== "custom");
-}
+// The needs-cloud predicate (managed/free domain ⇒ needs cloud) is defined ONCE
+// in @repo/core and re-exported here under the historical names, so existing
+// importers are unchanged and client + server share one definition.
+export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } from "@repo/core";
 
 export function createPublicEndpoint(
   overrides: Partial<PublicEndpoint> = {},
@@ -452,6 +470,8 @@ export function createPublicEndpoint(
     domain: overrides.domain ?? "",
     customDomain: overrides.customDomain ?? "",
     domainType: overrides.domainType ?? "free",
+    ...(overrides.redirectTo ? { redirectTo: overrides.redirectTo } : {}),
+    ...(overrides.redirectStatus ? { redirectStatus: overrides.redirectStatus } : {}),
   };
 }
 
@@ -545,24 +565,31 @@ export function usesServiceDeployment(
   return config.projectType === "services" && config.serviceDeploymentMode === "services";
 }
 
+/**
+ * The hostnames a deploy screen may PRINT for a config, in endpoint order.
+ *
+ * Only hosts the config actually names: a custom domain the operator typed, or
+ * `<chosen label>.<baseDomain>`. Empty when the config names none — the caller
+ * then hides the row / disables the link rather than showing a guess.
+ *
+ * It used to synthesize a missing endpoint from a `fallbackDomain` seeded with
+ * `config.projectName` — the RAW project name, not a slug — so "My App" became
+ * a `My App.opsh.io` Domain row AND the target of the primary "Visit Site"
+ * button on the deploy-success screen. That host never existed: the deploy mints
+ * its free route from the project's SLUG, so even the slug-shaped cases pointed
+ * somewhere else. Nothing may name a host this function can't derive from the
+ * config's own endpoints.
+ */
 export function getPublicEndpointHosts(
   endpoints: PublicEndpoint[] | undefined,
   baseDomain: string,
-  fallbackDomain: string,
 ): string[] {
-  return ensurePublicEndpoints(endpoints, {
-    domain: fallbackDomain,
-    domainType: "free",
-  })
-    .map((endpoint) => (
-      endpoint.domainType === "custom"
-        ? endpoint.customDomain
-        : endpoint.domain
-          ? `${endpoint.domain}.${baseDomain}`
-          : fallbackDomain
-            ? `${fallbackDomain}.${baseDomain}`
-            : ""
-    ))
+  return (endpoints ?? [])
+    .map((endpoint) => {
+      if (endpoint.domainType === "custom") return endpoint.customDomain?.trim() ?? "";
+      const label = endpoint.domain?.trim();
+      return label && baseDomain ? `${label}.${baseDomain}` : "";
+    })
     .filter((hostname, index, hostnames) => Boolean(hostname) && hostnames.indexOf(hostname) === index);
 }
 
@@ -730,11 +757,24 @@ export interface DeploymentContextType {
     owner: string,
     repo: string,
     force?: string,
-    context?: { branch?: string; projectId?: string },
+    context?: { branch?: string; projectId?: string; composePath?: string },
   ) => Promise<{ success: boolean; error?: string; errorType?: string; buildInProgress?: boolean }>;
   initializeFromLocal: (
     path: string,
-    context?: { projectId?: string },
+    context?: { projectId?: string; composePath?: string },
+  ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
+  /**
+   * Re-run detection pinned to an explicit compose file path (or clear it with
+   * ""), then reload the config from that scan. This is what turns a repo the
+   * detector read as a single app into the compose project the user knows it is —
+   * the compose file sits in a subfolder the heuristics don't promote.
+   *
+   * Unlike the other config fields this one CANNOT be applied locally: the
+   * service list, env, and project type all come from the compose file, so the
+   * repo has to be re-read. Hence an explicit action rather than a plain input.
+   */
+  rescanWithComposePath: (
+    composePath: string,
   ) => Promise<{ success: boolean; error?: string; errorType?: string }>;
   /** Folder-upload hydration — seed from the user-picked stack's defaults
    *  (no auto-detection); falls back to the session scan when no stack given. */
@@ -755,6 +795,13 @@ export interface DeploymentContextType {
   stopDeployment: () => Promise<void>;
   redeploy: (deploymentId: string) => Promise<string | null>;
   respondToPrompt: (action: string) => Promise<void>;
+  /** Open the shared clone-credential modal for a github-credential error code
+   *  (single handler for the deploy wizard, redeploy, and the build page).
+   *  Returns true when it opened; false when the code isn't credential-related. */
+  maybeOpenCredentialModal: (
+    errorCode: string | null | undefined,
+    opts?: { trigger?: "preflight-fail" | "build-fail"; onResolved?: () => void },
+  ) => boolean;
   reset: () => void;
 
   // Terminal

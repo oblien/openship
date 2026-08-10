@@ -24,12 +24,17 @@
 
 import type { Context, Next, MiddlewareHandler } from "hono";
 import type { TSchema } from "@sinclair/typebox";
-import { NotFoundError } from "@repo/core";
-import { permission, type CheckedResourceType } from "./permission";
+import { NotFoundError, normalizeRepoPath } from "@repo/core";
+import { permission, ORG_SINGLETON_RESOURCES, type CheckedResourceType } from "./permission";
 import { getRequestContext } from "./request-context";
 import type { Permission as Action } from "@repo/db";
 import { repos } from "@repo/db";
 import { audit, auditContextFrom } from "./audit";
+import {
+  canUseGitHubRepo,
+  checkSourceTier,
+  type SourceTier,
+} from "../modules/github/github-access";
 
 /* ------------------------------------------------------------------ */
 /*  Tag types                                                          */
@@ -106,28 +111,12 @@ const ROOT_RESOURCES = new Set<string>([
 ]);
 
 /**
- * Resources that exist exactly once per org and don't carry a resource id
- * in the URL. The middleware treats the action as operating on "*" (the
- * org-singleton) and resolves the org from the request scope instead of
- * loading a specific row.
- *
- * Add here any new "feature" tag whose URL doesn't follow the
- * /resource/:id pattern. Per-resource types (project, deployment, etc.)
- * MUST NOT be in this set.
+ * Re-exported from ./permission, which is where this policy now lives so the
+ * restricted arm of `checkPermission` can honor org-singleton grants without
+ * importing this module (that would cycle). Kept exported here for the existing
+ * importers (mcp-tools.ts).
  */
-export const ORG_SINGLETON_RESOURCES = new Set<string>([
-  "billing",
-  "audit",
-  "analytics",
-  "github",
-  "permissions",
-  "settings",
-  "job",
-  "cloud",
-  "terminal",
-  "notifications",
-  "updates",
-]);
+export { ORG_SINGLETON_RESOURCES };
 
 /**
  * Resources that are normally per-row but ALSO support org-level bulk
@@ -144,7 +133,7 @@ const CONDITIONAL_SINGLETON_RESOURCES = new Set<string>([
 
 const VALID_ACTIONS = new Set(["read", "write", "admin", "list"]);
 
-interface ParsedTag {
+export interface ParsedTag {
   raw: string;
   /** First segment of the tag (e.g. "project" in "project:service:edit"). */
   root: CheckedResourceType;
@@ -280,16 +269,17 @@ export type RateLimitPolicyId =
 /**
  * MCP exposure for a route. Presence of this block is the MCP allowlist:
  * routes without `mcp` are never exposed as tools (see modules/mcp/mcp-tools).
- * Co-locating it with the route keeps the description and the body-param schema
- * next to the handler instead of in a detached map.
+ * Co-locating it with the route keeps the description next to the handler
+ * instead of in a detached map.
  */
 export interface McpRouteMeta {
   /** Agent-facing tool description. */
   description: string;
   /**
-   * TypeBox schema for the request body — emitted verbatim as the tool's body
-   * params. TypeBox *is* JSON Schema, so there's no second contract to keep in
-   * sync; reuse the same schema the controller types against.
+   * @deprecated Declare the body schema ONCE via the top-level `spec.body`
+   * field instead — secureRouter auto-wires `tbValidator` from it AND the MCP
+   * layer reads it as the tool's body params, so there is a single source. This
+   * field is kept only as a fallback for the (now migrated) legacy call sites.
    */
   body?: TSchema;
 }
@@ -297,6 +287,22 @@ export interface McpRouteMeta {
 export interface PermissionSpec {
   /** The tag describing what action is being performed. */
   tag: PermissionTag;
+  /**
+   * Source-access tier for a GitHub route that touches repository CONTENT.
+   *
+   * A repo grant is metadata-only by default: `github:read` on a repo authorises
+   * deploying it, reading branches, and detecting its stack, but NOT crawling it.
+   * Any route that serves file bytes or directory entries MUST declare this, or a
+   * deploy-only token would read content it was never granted.
+   *
+   * One declaration, two behaviours — the same doctrine as `tag`:
+   *   - `requirePermission` enforces the tier per call (below)
+   *   - `mcp-tools.ts` hides the tool from a principal without the capability
+   *
+   * `test/lib/github-source-tier.test.ts` is the ratchet: add a content-serving
+   * github route without a tier and it fails.
+   */
+  source?: SourceTier;
   /**
    * Per-route rate-limit policy. When set, the rate-limit middleware
    * uses this policy instead of `default-authed`. See
@@ -349,6 +355,26 @@ export interface PermissionSpec {
    *  routes (ensure/scan/import) that can reference existing projects. */
   projectCreate?: boolean;
   /**
+   * The route's BODY names the project it acts on (a required `projectId`), and
+   * its handler already asserts `{project, body.projectId, <action>}` itself.
+   * Skips the collection-level `{leaf,"*"}` pre-check here and lets that handler
+   * assert be the authority.
+   *
+   * Why this exists: `resourceId: "*"` is unsatisfiable for a `restricted`
+   * principal (`permission.ts` denies every wildcard except the project-create
+   * pair), so the pre-check wasn't a second line of defence for scoped tokens —
+   * it was the ONLY line, and it rejected them before the precise per-project
+   * check could pass. A token granted a project could not deploy that project.
+   * For owner/admin/member nothing changes: both checks resolve to the same
+   * `roleAllowsResourceType` answer.
+   *
+   * Only set this where BOTH hold, or the route loses its gate entirely:
+   *   1. `body` declares `projectId` as REQUIRED — the auto-wired validator runs
+   *      right after this middleware, so a missing id is a 400 before the handler.
+   *   2. The handler asserts on that id before doing any work.
+   */
+  collectionProject?: boolean;
+  /**
    * Restrict this route to self-hosted instances. The secure router mounts the
    * `localOnly` middleware ahead of auth, so a request in CLOUD_MODE gets a 404
    * before any handler runs. Declarative replacement for an inline
@@ -359,6 +385,16 @@ export interface PermissionSpec {
   localOnly?: boolean;
   /** Opt this route into the MCP tool surface. See {@link McpRouteMeta}. */
   mcp?: McpRouteMeta;
+  /**
+   * TypeBox schema for the JSON request body. Declared ONCE here and consumed
+   * in two places — no duplication:
+   *   1. secureRouter auto-mounts `tbValidator("json", body)` ahead of the
+   *      handlers (so every body-carrying route validates by construction).
+   *   2. The MCP layer emits it verbatim as the tool's `body` params (TypeBox
+   *      *is* JSON Schema, so there's no second contract to keep in sync).
+   * Prefer this over the deprecated `mcp.body`.
+   */
+  body?: TSchema;
 }
 
 export interface PublicSpec {
@@ -381,6 +417,53 @@ export type RouteSpec = PermissionSpec | PublicSpec;
 
 export function isPublicSpec(spec: RouteSpec): spec is PublicSpec {
   return (spec as PublicSpec).public === true;
+}
+
+/* ------------------------------------------------------------------ */
+/*  GitHub grant-width resolution                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * GitHub read/list routes whose URL names a repo owner.
+ *
+ * GitHub is granted at three widths — org-wide `github` (resourceId "*"),
+ * per-account `github_installation` (the owner login), and per-repo
+ * `github_repository` ("owner/repo"). `modules/github/github-access.ts` is
+ * the resolver for all three, and mcp-tools.ts already documents it as the
+ * call-time authority.
+ *
+ * Without this branch these routes fall through to the isList /
+ * ORG_SINGLETON_RESOURCES paths, which assert
+ * `{resourceType:"github", resourceId:"*"}`. For a restricted principal that
+ * check can never pass at ANY width: `resolveResourceOrg` sends "github" to
+ * `loadRootOrgId`, which has no "github" case and returns null, so
+ * `checkPermission` denies regardless of the grant held. Meanwhile
+ * `filterToolsForPrincipal` advertises these tools to any holder of a
+ * github-family grant (GITHUB_GRANT_FAMILY in mcp-tools.ts). Net effect
+ * before this fix: every GitHub MCP tool was listed and then failed with the
+ * tell-tale `github '*' not found`.
+ *
+ * Deliberately limited to read/list. Write/admin GitHub routes (create or
+ * delete repo, disconnect, instance-token) keep the strict org-wide check —
+ * owner role or an all-GitHub grant — and MCP exposes no GitHub mutations.
+ * Paramless GitHub routes (/home, /status, /repos) also stay on the org-wide
+ * path: `filterToolsForPrincipal` already hides them from a scoped token via
+ * `perm.wildcard`, and their handlers narrow results through
+ * filterAllowedRepos / filterAllowedAccounts.
+ *
+ * Exported for the regression test that pins this invariant.
+ */
+export function githubReadTarget(
+  parsed: ParsedTag,
+  c: Context,
+): { owner: string; repo: string | null; key: string } | null {
+  if (parsed.leaf !== "github") return null;
+  if (parsed.action !== "read" && parsed.action !== "list") return null;
+  // ":owner" on /repos/:owner/:repo…, ":org" on /orgs/:org/repos.
+  const owner = c.req.param("owner") ?? c.req.param("org");
+  if (!owner) return null;
+  const repo = c.req.param("repo") ?? null;
+  return { owner, repo, key: repo ? `${owner}/${repo}` : owner };
 }
 
 /* ------------------------------------------------------------------ */
@@ -410,7 +493,74 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     let leafId: string | undefined;
 
-    if (parsed.isList) {
+    const ghTarget = githubReadTarget(parsed, c);
+
+    if (ghTarget) {
+      // Authorize against the caller's ACTUAL GitHub grant width instead of
+      // the unsatisfiable {github,"*"} singleton check — see githubReadTarget.
+      // `canUseGitHubRepo` gates membership itself and short-circuits to allow
+      // for a non-scoped owner, so relative to the old path this narrows
+      // (an ungranted member is now stopped at the gate rather than opaquely
+      // downstream in tokenFor) and never widens.
+      const allowed = await canUseGitHubRepo(
+        getRequestContext(c),
+        { owner: ghTarget.owner, repo: ghTarget.repo },
+        parsed.action === "list" ? "list" : "read",
+      );
+      // NotFoundError over 403 to match the IDOR-safe convention used
+      // throughout this middleware — and it names the repo actually
+      // requested rather than a bare "*".
+      if (!allowed) throw new NotFoundError("github", ghTarget.key);
+
+      // Second gate: may they reach this SURFACE of the repo? Passing the check
+      // above only means "may use this repo at all" (deploy, branches, detect).
+      // Content is separately granted and path-scoped.
+      if (spec.source) {
+        // `?file=` on the single-file route, `?path=` on the tree route; absent
+        // means the repo root, which is what /files with no path lists.
+        const rawPath = c.req.query("file") ?? c.req.query("path") ?? "";
+
+        // Normalise HERE, once, and publish the result — so the string we
+        // authorise is byte-identical to the one the handler goes on to fetch.
+        // Handlers used to re-read the raw query param, which meant the check and
+        // the read operated on different strings ("src/./a.ts" was authorised as
+        // "src/a.ts"). They resolve to the same object today, so this was not
+        // exploitable — but "check one string, use another" is one refactor of
+        // normalizeRepoPath away from being a real bypass, and it costs nothing
+        // to make them the same value.
+        //
+        // null ⇒ traversal / NUL / backslash / over-length: refuse, never resolve.
+        const path = normalizeRepoPath(rawPath);
+        if (path === null) {
+          throw new NotFoundError("github", `${ghTarget.key}/${rawPath}`);
+        }
+
+        const { ok, readPaths } = await checkSourceTier(
+          getRequestContext(c),
+          { owner: ghTarget.owner, repo: ghTarget.repo },
+          spec.source,
+          path,
+        );
+        if (!ok) {
+          // Name the path, not just the repo — the caller may legitimately hold
+          // the repo and only be missing this subtree.
+          throw new NotFoundError("github", path ? `${ghTarget.key}/${path}` : ghTarget.key);
+        }
+        // Hand the allow-list to the handler so a tree listing can filter its
+        // entries without resolving the grant a second time, and the authorised
+        // path so it never re-derives one.
+        c.set("sourceReadPaths", readPaths);
+        c.set("sourcePath", path);
+      }
+
+      leafId = ghTarget.key;
+    } else if (spec.collectionProject) {
+      // The body names the target project and the handler asserts on it — see
+      // PermissionSpec.collectionProject for why the `"*"` pre-check is skipped
+      // rather than kept as belt-and-braces. `leafId` stays "*" so the audit
+      // record below is byte-identical to the collection branch's.
+      leafId = "*";
+    } else if (parsed.isList) {
       // List scope — org from request (X-Organization-Id header or
       // session default). No specific resource id.
       await permission.assert(getRequestContext(c), {

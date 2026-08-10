@@ -119,9 +119,162 @@ export type ComposeHealthcheck = {
  * host-level options) warn-and-drop rather than fail. Lives in @repo/core so
  * both @repo/db (storage) and @repo/adapters (runtime) can share one definition.
  */
+/**
+ * Openship's own DEPLOY-TIME readiness gate — the sibling of, and NOT the same
+ * thing as, `ComposeHealthcheck` above.
+ *
+ *   ComposeHealthcheck  = the Docker HEALTHCHECK directive. An arbitrary command
+ *                         ("pg_isready", "curl -f /health") that the DAEMON runs
+ *                         on an interval, forever, to mark a container
+ *                         healthy/unhealthy. Custom conditions, continuous.
+ *   OpenshipReadiness   = "did this thing actually come up?", asked ONCE by the
+ *                         deploy pipeline between "started" and "ready". A port
+ *                         that accepts a connection (optionally an HTTP path that
+ *                         answers < 500), a static site whose doc-root has a
+ *                         servable index, and/or a container that didn't fall into
+ *                         a restart loop. It is the only one that can hold up — or
+ *                         veto — a deploy.
+ *
+ * EVERYTHING HERE IS OFF BY DEFAULT, and that is the point. Omit the block and a
+ * deploy does no post-start waiting whatsoever: activate → route → ready. The
+ * pipeline still runs *advisory* probes once the deploy is live (`auditPorts` →
+ * `meta.portCheck`, `auditStaticOutput` → `meta.outputCheck`, both re-runnable on
+ * demand), so "is it listening?" and "will it 404?" are answered without a gate
+ * that can delay or fail a working deploy.
+ *
+ * Turn these on when you want the deploy itself to refuse to go green — e.g. a
+ * release pipeline that must not advance on a broken build.
+ *
+ * Settable per PROJECT (the project's `readiness` column) and per compose SERVICE
+ * (`service.advanced.readiness`, which overrides the project's for that service).
+ */
+export type OpenshipReadiness = {
+  /**
+   * Probe the workload after start and wait for it to answer — a port for a
+   * running process, servable files for a static site. `false`/absent ⇒ no probe
+   * is issued at all (the default).
+   */
+  enabled?: boolean;
+  /**
+   * Require an HTTP GET to this path to answer below 500. Omit to accept a bare
+   * TCP connection, which also passes for non-HTTP services. Ignored by the
+   * static-file probe, which checks the doc-root instead.
+   */
+  path?: string;
+  /** Port to probe. Defaults to the workload's own port. */
+  port?: number;
+  /** How long to wait for the workload to answer. Default 45. */
+  timeoutSeconds?: number;
+  /**
+   * Watch the container for a restart loop before reporting ready. Independent of
+   * `enabled` — this reads the runtime (so it also covers remote/SSH targets)
+   * rather than dialing anything. `false`/absent ⇒ not watched.
+   */
+  stabilization?: boolean;
+  /** How long to watch for a restart loop. Default 15. */
+  stabilizationSeconds?: number;
+  /**
+   * What a failed check does.
+   *   "warn" (default) — the deploy stays `ready` and carries an
+   *                      action-required warning. Never destroys anything.
+   *   "fail"           — the deploy fails and reverts to the previous
+   *                      deployment, which keeps serving.
+   */
+  onFailure?: OpenshipReadinessFailureAction;
+};
+
+export type OpenshipReadinessFailureAction = "warn" | "fail";
+
+export const OPENSHIP_READINESS_FAILURE_ACTIONS: readonly OpenshipReadinessFailureAction[] = [
+  "warn",
+  "fail",
+];
+
+/**
+ * `advanced` as sent on a WRITE, rather than as stored.
+ *
+ * Every key is additionally nullable because the server MERGES this onto the
+ * stored blob instead of replacing it (`mergeAdvanced`, below):
+ *   omitted → leave the stored value alone
+ *   null    → remove that key
+ * Replacing wholesale meant any caller that mentioned one key silently dropped the
+ * others — and since the update route is MCP-exposed, an agent setting a
+ * healthcheck would erase the readiness gate and an app template's config files.
+ */
+export type ComposeAdvancedPatch = {
+  [K in keyof ComposeAdvanced]?: ComposeAdvanced[K] | null;
+};
+
 export type ComposeAdvanced = {
   healthcheck?: ComposeHealthcheck;
+  /**
+   * Per-service deploy-time readiness gate, overriding the project's for THIS
+   * service. Absent ⇒ inherit the project's; neither ⇒ off.
+   *
+   * Distinct from `healthcheck` above in both what it asks and what it can do:
+   * that one is a daemon-run custom command, this one is the pipeline's one-shot
+   * "did it come up?" and is the only one that can fail a deploy.
+   */
+  readiness?: OpenshipReadiness;
+  /**
+   * Generated config files bind-mounted (read-only) into this service's
+   * container at deploy — seeded from an app template's `files` (e.g. Kong's
+   * `kong.yml`, Postgres init `.sql`). Content is resolved at install (generated
+   * keys) with `{{publicUrl:…}}` left for deploy-time substitution. JSONB blob —
+   * no migration.
+   */
+  files?: { path: string; content: string }[];
+  /**
+   * Per-service cpu/memory caps authored in the compose file, normalized from
+   * either the short form (`mem_limit`, `cpus`) or the swarm form
+   * (`deploy.resources.limits.{memory,cpus}`). These were silently dropped
+   * before — an uploaded compose that asked for 4 GB still got the project-wide
+   * value — so a service that declares its own limit now overrides the project
+   * default at deploy time. `0`/absent = inherit the project (see
+   * UNLIMITED_RESOURCES in ./resources).
+   */
+  resources?: { cpuCores?: number; memoryMb?: number };
+  /**
+   * Custom east-west DNS alias for this service, resolving ALONGSIDE the default
+   * `service.name` on the project network — both names reach the container. Set
+   * so another service can address this one by a stable, operator-chosen name
+   * (e.g. `db` instead of `postgres-1`). Normalized with `normalizeServiceLabel`
+   * before it reaches Docker; the single-app equivalent is `project.internal_alias`.
+   * An alias existing is not exposure — publish stays loopback-only behind the edge.
+   */
+  alias?: string;
 };
+
+/**
+ * Merge an incoming `advanced` patch onto what's stored, so a caller that mentions
+ * one key can't erase the others.
+ *
+ * Semantics, mirroring how a JSON-merge patch behaves:
+ *   key absent  → leave the stored value alone
+ *   key = null  → remove it
+ *   key present → replace that key outright (shallow — see the call site)
+ *
+ * Lives beside the type it operates on because @repo/db needs it too: the compose
+ * sync in service.repo.ts writes this blob and cannot import from apps/api. It is
+ * the only thing standing between a partial write and a silently-wiped readiness
+ * gate, generated config files, or an east-west alias.
+ */
+export function mergeAdvanced(
+  stored: ComposeAdvanced | null | undefined,
+  incoming: unknown,
+): ComposeAdvanced {
+  const base: ComposeAdvanced = { ...(stored ?? {}) };
+  // A non-object (or explicit null) `advanced` means "clear it" — the one way to
+  // reset the whole blob, kept because that used to be the only behaviour.
+  if (incoming === null || typeof incoming !== "object" || Array.isArray(incoming)) {
+    return incoming === undefined ? base : {};
+  }
+  for (const [key, value] of Object.entries(incoming as Record<string, unknown>)) {
+    if (value === null) delete (base as Record<string, unknown>)[key];
+    else if (value !== undefined) (base as Record<string, unknown>)[key] = value;
+  }
+  return base;
+}
 
 /**
  * Per-route edge rules (rate-limit, ban, allow/deny) enforced by the self-hosted

@@ -15,8 +15,11 @@ import { organization } from "./organization";
  *   - domain.*     added, removed, ssl-renewed
  *   - backup.*     policy-created, run-succeeded, restore-initiated
  *
- * Retention is org-configurable via organization.metadata.auditRetentionDays
- * (default 90). A daily prune job deletes rows older than the per-org TTL.
+ * Retention is org-configurable via audit_settings.retentionDays (default 90,
+ * falling back to the legacy organization.metadata.auditRetentionDays). A daily
+ * prune job deletes rows older than the per-org TTL. Recording can be switched
+ * off entirely per org via audit_settings.enabled — the gate lives in the repo's
+ * create(), which every writer goes through.
  *
  * `before`/`after` carry a small JSON snapshot of relevant fields for
  * mutation events. Both are nullable — auth/lifecycle events don't have
@@ -48,6 +51,15 @@ export const auditEvent = pgTable(
     /** Source IP + UA for forensic queries. */
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    /**
+     * Which surface the action came in through: "dashboard" | "mcp" | "cli" |
+     * "api" | "webhook" | "system". Null on rows written before the column
+     * existed — those are genuinely unknown, not "api".
+     *
+     * "mcp" is the one value a caller could gain by faking, so it is never
+     * taken from a client header: see apps/api/src/lib/call-source.ts.
+     */
+    source: text("source"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -59,5 +71,7 @@ export const auditEvent = pgTable(
     index("audit_event_org_actor_idx").on(t.organizationId, t.actorUserId),
     // Filter by specific resource (per-resource activity tab).
     index("audit_event_resource_idx").on(t.resourceType, t.resourceId),
+    // "Only what the AI assistant did" — source filter, newest first.
+    index("audit_event_org_source_idx").on(t.organizationId, t.source, t.createdAt.desc()),
   ],
 );

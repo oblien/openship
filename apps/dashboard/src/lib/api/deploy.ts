@@ -1,11 +1,65 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { StackId, ComposeAdvanced, RoutingConfig } from "@repo/core";
+import type { StackId, ComposeAdvanced, RoutingConfig, OpenshipResourceTier, OpenshipReadiness } from "@repo/core";
 import type { CloudResourceTier, CloudResourceCustom, PublicEndpoint, PortCheckUI, OutputCheckUI } from "@/context/deployment/types";
 
+/** How a rollback to a given deployment would run — see the API's restore plan. */
+export interface RestorePlanUI {
+  /** `redeploy-pinned` = instant (reuses the retained image), `unit-swap` =
+   *  instant (restarts the retained unit), `rebuild` = builds the commit again,
+   *  `ineligible` = can't be restored (already active, not successful). */
+  mode: "redeploy-pinned" | "unit-swap" | "rebuild" | "ineligible";
+  /** True when the restore clones the repo (so it needs GitHub access). */
+  needsRepository: boolean;
+  /** Services that must rebuild because their image aged out. */
+  rebuildServices: string[];
+  /**
+   * Which env keys the release's frozen snapshot would change, and how it lands.
+   * KEYS ONLY — the API never sends values here. Absent when the plan is
+   * ineligible or the preview couldn't be derived.
+   */
+  env?: {
+    /** `overlay` = frozen shadows matching keys; `replace` = frozen used
+     *  verbatim (keys added since are dropped); `unchanged` = the container is
+     *  restarted, not recreated. */
+    strategy: "overlay" | "replace" | "unchanged";
+    changes: Array<{
+      key: string;
+      direction: "frozen-wins" | "removed-since" | "added-since";
+      /** Defined per-service today but captured unscoped — one value would
+       *  land on every service. */
+      scopeAmbiguous?: boolean;
+      serviceName?: string;
+    }>;
+    /** Count BEFORE the cap — show this, not `changes.length`. */
+    totalChanges: number;
+    truncated: boolean;
+  };
+  /** Services that exist today but not in this release. They keep running. */
+  untouchedServices: string[];
+  code?: string;
+  reason?: string;
+}
+
 export type PrepareProjectSource =
-  | { source?: "github"; owner: string; repo: string; branch?: string; force?: string | boolean }
-  | { source: "local"; path: string };
+  | {
+      source?: "github";
+      owner: string;
+      repo: string;
+      branch?: string;
+      force?: string | boolean;
+      /** Pin the compose file location (file or directory) instead of detecting the root. */
+      composePath?: string;
+      /** Env already configured for this deploy, for compose interpolation. */
+      env?: Record<string, string>;
+    }
+  | {
+      source: "local";
+      path: string;
+      composePath?: string;
+      /** Env already configured for this deploy, for compose interpolation. */
+      env?: Record<string, string>;
+    };
 
 export interface PrepareComposeService {
   name: string;
@@ -23,6 +77,9 @@ export interface PrepareComposeService {
       defaultValue?: string;
       resolvedValue: string;
       expression?: string;
+      /** The compose file marks this one mandatory (`${VAR:?…}`) and it has no
+       *  value yet — always alongside `source: "missing"`. */
+      required?: boolean;
     }
   >;
   volumes: string[];
@@ -100,6 +157,9 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
     branches?: Array<{ name: string }>;
   };
   singleAppCandidate?: PrepareSingleAppCandidate;
+  /** The compose path this scan used (request value, or the one openship.json
+   *  declared). Absent when the root was detected normally. */
+  composePath?: string;
   services?: PrepareComposeService[];
   monorepoApps?: PrepareMonorepoApp[];
   monorepoWorkspace?: PrepareMonorepoWorkspace;
@@ -121,7 +181,13 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
     targetPath?: string;
   }>;
   /** Declared cloud sizing (tier OR explicit cpu/mem/disk). Seeds resource tier. */
-  resources?: { tier?: "micro" | "low" | "medium" | "high"; cpuCores?: number; memoryMb?: number; diskMb?: number };
+  /** Tier ids come from @repo/core (OpenshipResourceTier) — not re-spelled here. */
+  resources?: { tier?: OpenshipResourceTier; cpuCores?: number; memoryMb?: number; diskMb?: number };
+  /**
+   * Declared readiness gate. Seeds the wizard's Health section; absent (the
+   * common case) leaves it off, which is also what the pipeline does.
+   */
+  readiness?: OpenshipReadiness;
   error?: string;
   current_status?: string;
   exists?: boolean;
@@ -169,10 +235,16 @@ export const deployApi = {
   checkOutput: (projectId: string) =>
     api.post<{ data: OutputCheckUI[] }>(endpoints.projects.outputCheck(projectId)),
 
-  /** Roll back to a previous successful deployment. The orchestrator
-   *  validates artifact-retained + not-already-active before swapping. */
+  /** Roll back to a previous successful deployment. The orchestrator resolves
+   *  HOW at call time — instant from the retained image, or a rebuild from the
+   *  target's commit — so this never fails just because an artifact aged out. */
   rollback: (id: string) =>
     api.post<any>(endpoints.deploy.rollback(id)),
+
+  /** How a rollback to this deployment WOULD run, for the confirm dialog's copy.
+   *  Read-only; safe to call when the menu opens. */
+  restorePlan: (id: string) =>
+    api.get<{ data: RestorePlanUI }>(endpoints.deploy.restorePlan(id)),
 
   /** Pin / unpin a deployment. Pinned deployments are exempt from the
    *  retention prune — their artifact stays rollback-restorable
@@ -258,9 +330,6 @@ export const deployApi = {
     }>;
     cloudResourceTier?: CloudResourceTier;
     cloudResourceCustom?: CloudResourceCustom;
-    /** Desktop-only, per-deploy: forward the local `gh` identity for an
-     *  on-server clone (relay). The API enforces desktop + server-build gating. */
-    forwardGitCredentials?: boolean;
     /** Per-deploy clone location for a server target. "server" clones on the
      *  build host (relay on desktop, token otherwise); default clones on the
      *  API host and transfers. The API gates + falls back as needed. */

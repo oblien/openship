@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, isNotNull, lte } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
 import { serviceDeployment, service } from "../schema";
@@ -145,53 +145,40 @@ export function createServiceDeploymentRepo(db: Database) {
     },
 
     /**
-     * Latest successful per-service deploy for the given branch of a
-     * project. Joins through `deployment` (status = "ready" AND
-     * branch matches) so it's safe to call without first finding the
-     * deployment row. Returns the newest row by service deploy
-     * `createdAt`. Used by:
+     * The image each service was ACTUALLY running as of `deploymentId` — the
+     * newest row at-or-before it that recorded one.
      *
-     *   - the smart deploy change detector when picking the
-     *     "previous good image" to reuse for skipped services
-     *   - the rollback orchestrator when restoring per-service state.
+     * A deploy only rebuilds what changed: an untouched service carries its
+     * previous image forward, and a smart-deploy `skipped` row can record no
+     * image at all. So "what was service X running in that release?" is not
+     * always answerable from that release's own rows — it's the last row that
+     * named an image, walking backwards. This is what lets a rollback reuse the
+     * images that are ALREADY on the host for the services a deploy never
+     * touched, instead of rebuilding the whole stack.
+     *
+     * Returns serviceId → { imageRef, serviceName }, newest-wins.
      */
-    async getLatestSuccessfulForBranch(
+    async effectiveImagesAsOf(
       projectId: string,
-      branch: string,
-      opts?: { serviceId?: string },
-    ) {
-      // Local import to dodge the circular import that pulling
-      // `deployment` into the top of the file would cause via
-      // schema/index re-exports.
-      const { deployment } = await import("../schema");
+      createdAtOrBefore: Date,
+    ): Promise<Map<string, { imageRef: string; serviceName: string | null }>> {
       const rows = await db
         .select({ sd: serviceDeployment })
         .from(serviceDeployment)
-        .innerJoin(deployment, eq(deployment.id, serviceDeployment.deploymentId))
+        .innerJoin(service, eq(service.id, serviceDeployment.serviceId))
         .where(
           and(
-            eq(deployment.projectId, projectId),
-            eq(deployment.branch, branch),
-            eq(deployment.status, "ready"),
-            eq(serviceDeployment.status, "success"),
-            ...(opts?.serviceId
-              ? [eq(serviceDeployment.serviceId, opts.serviceId)]
-              : []),
+            eq(service.projectId, projectId),
+            isNotNull(serviceDeployment.imageRef),
+            lte(serviceDeployment.createdAt, createdAtOrBefore),
           ),
         )
-        .orderBy(desc(serviceDeployment.createdAt))
-        .limit(opts?.serviceId ? 1 : 50);
+        .orderBy(desc(serviceDeployment.createdAt));
 
-      if (opts?.serviceId) {
-        return rows[0]?.sd ?? null;
-      }
-      // Without a serviceId filter, collapse to the newest row per service.
-      const seen = new Set<string>();
-      const out: ServiceDeployment[] = [];
+      const out = new Map<string, { imageRef: string; serviceName: string | null }>();
       for (const { sd } of rows) {
-        if (seen.has(sd.serviceId)) continue;
-        seen.add(sd.serviceId);
-        out.push(sd);
+        if (out.has(sd.serviceId) || !sd.imageRef) continue;
+        out.set(sd.serviceId, { imageRef: sd.imageRef, serviceName: sd.serviceName });
       }
       return out;
     },

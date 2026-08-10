@@ -17,8 +17,14 @@
  * surface stays identical.
  */
 
-import { repos, type Service, type BackupRunStatus } from "@repo/db";
-import { containerIdForService } from "../services/service-container";
+import {
+  repos,
+  type Service,
+  type BackupRunStatus,
+  type BackupPolicy,
+  type BackupDestination,
+} from "@repo/db";
+import { liveContainerIdForService } from "../services/service-container";
 import { backupRunBus } from "./backup.sse";
 import { getJobRunner } from "../../lib/job-runner";
 import { toAdapterRow } from "../backup-destinations/hydrate-server";
@@ -36,6 +42,7 @@ import {
   type BackupExecutor,
   type BackupTrigger,
   type PayloadKind,
+  type ProducerOpts,
   type ServiceHandle,
 } from "@repo/adapters";
 import { Readable } from "node:stream";
@@ -44,9 +51,19 @@ import { decryptEnvMap } from "../../lib/encryption";
 import { notification } from "../../lib/notification-dispatcher";
 import crypto from "node:crypto";
 import { safeErrorMessage } from "@repo/core";
+import {
+  boundedStorableText,
+  sanitizeStorableStrings,
+} from "../deployments/build-log-sanitize";
 
 const TRUNCATE_ERROR = 4096;
 const TRUNCATE_HOOK_LOG = 64 * 1024;
+/** Cap on waiting for a finished hook's stdout to drain (see runHook). */
+const HOOK_DRAIN_TIMEOUT_MS = 500;
+/** Short form for the notification payload + destination verify note. */
+const TRUNCATE_ERROR_SUMMARY = 500;
+/** A `PutResult.etag` in this shape is a sha256 we can compare ours against. */
+const SHA256_HEX = /^[0-9a-f]{64}$/i;
 
 // ─── Public surface ──────────────────────────────────────────────────────────
 
@@ -55,6 +72,10 @@ export interface RunBackupInput {
    *  the payload kind + hooks. */
   policyId: string;
   trigger: BackupTrigger;
+  /** Concrete service to back up. Set by the project-default fan-out to spawn
+   *  one child run per service; omitted for direct per-service / mail / cron
+   *  triggers (the source is then derived from the policy). */
+  serviceId?: string;
 }
 
 /** Source-agnostic context the shared upload/manifest pipeline needs,
@@ -84,7 +105,7 @@ export class BackupOrchestrator {
    * In Chunk 1 the actual work runs via setImmediate. Chunk 2 swaps
    * to BullMQ.add() — this method's contract doesn't change.
    */
-  async enqueue(input: RunBackupInput): Promise<{ runId: string }> {
+  async enqueue(input: RunBackupInput): Promise<{ runId: string; runIds: string[] }> {
     const policy = await repos.backupPolicy.findById(input.policyId);
     if (!policy) {
       throw new Error(`Backup policy ${input.policyId} not found`);
@@ -108,6 +129,66 @@ export class BackupOrchestrator {
     const organizationId =
       policyProject?.organizationId ?? destination.organizationId ?? null;
 
+    // Resolve which SOURCE(s) this trigger backs up:
+    //  - explicit serviceId (a fan-out child call) → that one service
+    //  - mail_server policy → the mail server
+    //  - per-service policy → its service
+    //  - project-default policy (no serviceId) → fan out to every ENABLED
+    //    service of the project, one child run each. Single-app projects have
+    //    no service rows → nothing to back up (surfaced as an error).
+    if (input.serviceId) {
+      const runId = await this.spawnRun(policy, destination, organizationId, { serviceId: input.serviceId }, input.trigger);
+      return { runId, runIds: [runId] };
+    }
+    if (policy.sourceKind === "mail_server") {
+      const runId = await this.spawnRun(policy, destination, organizationId, { mailServerId: policy.mailServerId ?? null }, input.trigger);
+      return { runId, runIds: [runId] };
+    }
+    if (policy.serviceId) {
+      const runId = await this.spawnRun(policy, destination, organizationId, { serviceId: policy.serviceId }, input.trigger);
+      return { runId, runIds: [runId] };
+    }
+
+    // Project-default: fan out across the project's enabled services.
+    if (!policy.projectId) {
+      throw new Error(`Backup policy ${policy.id} has neither a service nor a project to back up`);
+    }
+    const services = (await repos.service.listByProject(policy.projectId)).filter((s) => s.enabled);
+    if (services.length === 0) {
+      throw new Error("Project has no services to back up — add a service or pick one.");
+    }
+    const runIds: string[] = [];
+    for (const svc of services) {
+      try {
+        runIds.push(
+          await this.spawnRun(policy, destination, organizationId, { serviceId: svc.id }, input.trigger),
+        );
+      } catch (err) {
+        console.warn(
+          `[backup-orchestrator] failed to enqueue service ${svc.id} for policy ${policy.id}: ${safeErrorMessage(err)}`,
+        );
+      }
+    }
+    if (runIds.length === 0) {
+      throw new Error("Failed to enqueue any service backups for this project.");
+    }
+    return { runId: runIds[0], runIds };
+  }
+
+  /**
+   * Create one queued backup_run row for a concrete source (a single service or
+   * a mail server) and hand it to the JobRunner. The runner is BullMQ-backed
+   * when Redis is reachable, in-process otherwise — the backup_run row is the
+   * crash-safe record either way (stale-run sweep on boot reconciles). Falls
+   * back to inline execution if the runner enqueue throws. Returns the run id.
+   */
+  private async spawnRun(
+    policy: BackupPolicy,
+    destination: BackupDestination,
+    organizationId: string,
+    target: { serviceId: string } | { mailServerId: string | null },
+    trigger: BackupTrigger,
+  ): Promise<string> {
     const runId = `bkr_${crypto.randomUUID()}`;
     await repos.backupRun.create({
       id: runId,
@@ -115,22 +196,18 @@ export class BackupOrchestrator {
       destinationId: destination.id,
       sourceKind: policy.sourceKind,
       projectId: policy.projectId,
-      serviceId: policy.serviceId,
-      mailServerId: policy.mailServerId ?? null,
+      serviceId: "serviceId" in target ? target.serviceId : null,
+      mailServerId: "mailServerId" in target ? target.mailServerId : null,
       organizationId,
       status: "queued",
-      triggeredBy: input.trigger.source,
+      triggeredBy: trigger.source,
       triggeredByUserId:
-        input.trigger.source === "manual" || input.trigger.source === "webhook"
-          ? input.trigger.userId
+        trigger.source === "manual" || trigger.source === "webhook"
+          ? trigger.userId
           : null,
-      clientIp: input.trigger.clientIp ?? null,
+      clientIp: trigger.clientIp ?? null,
     });
 
-    // Hand off to the JobRunner. The runner is BullMQ-backed when
-    // Redis is reachable, in-process otherwise — orchestrator doesn't
-    // care which, the row in backup_run guarantees crash-safety either
-    // way (stale-run sweep on boot reconciles).
     try {
       const runner = await getJobRunner();
       await runner.enqueueRun(runId);
@@ -147,7 +224,7 @@ export class BackupOrchestrator {
       });
     }
 
-    return { runId };
+    return runId;
   }
 
   /**
@@ -204,14 +281,16 @@ export class BackupOrchestrator {
         executor = built.executor;
         ctx = built.ctx;
       } else {
-        if (!policy.serviceId) {
+        // The concrete service lives on the RUN row (set at spawn for both
+        // per-service policies and project-default fan-out children), so a
+        // project-default policy resolves to a real service here.
+        if (!run.serviceId) {
           throw new Error(
-            "Project-default backup policies aren't executable yet. " +
-              "Create a per-service policy.",
+            `Backup run ${run.id} has no service to back up`,
           );
         }
-        const serviceRow = await repos.service.findById(policy.serviceId);
-        if (!serviceRow) throw new Error(`Service ${policy.serviceId} disappeared`);
+        const serviceRow = await repos.service.findById(run.serviceId);
+        if (!serviceRow) throw new Error(`Service ${run.serviceId} disappeared`);
 
         const project = await repos.project.findById(serviceRow.projectId);
         if (!project) throw new Error(`Project ${serviceRow.projectId} disappeared`);
@@ -294,18 +373,21 @@ export class BackupOrchestrator {
       }> = [];
       let totalBytes = 0;
 
-      const producerOpts = {
-        sourceIds: (policy.payloadConfig as { sourceIds?: string[] })?.sourceIds,
-        command: (policy.payloadConfig as { command?: string })?.command,
-        exclude: (policy.payloadConfig as { exclude?: string[] })?.exclude,
-      };
+      // D5: forward the payloadConfig WHOLE. Hand-picking sourceIds/command/
+      // exclude here dropped every custom_command key — produceCommand,
+      // restoreCommand, artifactName — which is exactly what a mail-server
+      // policy writes, so every mail backup captured an unrestorable artifact.
+      // The producer's own cast hid it from the typechecker; the keys are
+      // declared on ProducerOpts now, and this forwards unfiltered so a new
+      // payload key can never be silently lost again.
+      const producerOpts = (policy.payloadConfig ?? {}) as ProducerOpts;
 
       for await (const artifact of producer.produce(serviceHandle, executor, producerOpts)) {
         const recorded = await this.uploadArtifact(destination, baseKey, artifact);
         artifactsRecorded.push(recorded);
         totalBytes += recorded.sizeBytes;
         await this.transition(runId, "uploading", {
-          artifacts: artifactsRecorded,
+          artifacts: sanitizeStorableStrings(artifactsRecorded),
           bytesTransferred: totalBytes,
         });
       }
@@ -331,11 +413,17 @@ export class BackupOrchestrator {
         },
       });
       const manifestK = manifestKey(baseKey);
-      await destination.put(
-        manifestK,
-        Readable.from([Buffer.from(JSON.stringify(manifest, null, 2))]),
-        { contentType: "application/json", size: 0 },
-      );
+      const manifestBody = Buffer.from(JSON.stringify(manifest, null, 2));
+      await destination.put(manifestK, Readable.from([manifestBody]), {
+        contentType: "application/json",
+        // Buffered, so both the real length and the digest are knowable up
+        // front. That makes this the one put in this file that can hand the
+        // destination a sha256 to gate on (the previous `size: 0` also lied to
+        // S3's multipart threshold), and the manifest is the file restore keys
+        // "is this run complete" off.
+        size: manifestBody.byteLength,
+        sha256: crypto.createHash("sha256").update(manifestBody).digest("hex"),
+      });
 
       // 7. Post-hook. Failure is logged but doesn't fail the run.
       if (policy.postHook) {
@@ -358,8 +446,8 @@ export class BackupOrchestrator {
       await this.transition(runId, "succeeded", {
         manifestKey: manifestK,
         bytesTransferred: totalBytes,
-        artifacts: artifactsRecorded,
-        hookLog: hookLog.join("\n").slice(0, TRUNCATE_HOOK_LOG),
+        artifacts: sanitizeStorableStrings(artifactsRecorded),
+        hookLog: boundedStorableText(hookLog.join("\n"), TRUNCATE_HOOK_LOG),
       });
 
       notification.emit({
@@ -376,18 +464,22 @@ export class BackupOrchestrator {
         },
       });
     } catch (err) {
-      const message = safeErrorMessage(err);
+      // Both forms are scrubbed independently: a second `.slice` over an
+      // already-scrubbed string can split a surrogate pair back open.
+      const raw = safeErrorMessage(err);
+      const message = boundedStorableText(raw, TRUNCATE_ERROR);
+      const summary = boundedStorableText(raw, TRUNCATE_ERROR_SUMMARY);
       console.error(`[backup-orchestrator] run ${runId} failed: ${message}`);
 
       if (policy?.destinationId) {
         // Note the destination verify failed so the UI surfaces it.
         await repos.backupDestination
-          .setLastVerified(policy.destinationId, false, message.slice(0, 500))
+          .setLastVerified(policy.destinationId, false, summary)
           .catch(() => {});
       }
 
       await this.transition(runId, "failed", {
-        errorMessage: message.slice(0, TRUNCATE_ERROR),
+        errorMessage: message,
       });
 
       // Fan-out to subscribers. We re-fetch destination if needed —
@@ -405,7 +497,7 @@ export class BackupOrchestrator {
             resourceId: runId,
             payload: {
               destinationName: destForNotify.name,
-              errorMessage: message.slice(0, 500),
+              errorMessage: summary,
             },
           });
         }
@@ -467,13 +559,40 @@ export class BackupOrchestrator {
     // sha256 + byte count as bytes flow.
     artifact.stream.pipe(hasher);
 
-    await destination.put(key, hasher, {
+    // S3 stores each metadata key as an `x-amz-meta-*` HTTP header, and
+    // header values may only contain printable ASCII — no newlines. Some
+    // producers (e.g. custom_command) stash multiline shell commands in
+    // metadata for restore, so only header-safe values go to the put call.
+    // The unfiltered `artifact.metadata` is still recorded on the backup
+    // run below (`recorded.metadata`), which is what restore reads from.
+    const headerSafeMetadata = Object.fromEntries(
+      Object.entries(artifact.metadata ?? {}).filter(
+        ([, v]) => typeof v === "string" && /^[\x20-\x7e]*$/.test(v),
+      ),
+    );
+
+    const result = await destination.put(key, hasher, {
       size: artifact.sizeHint,
       contentType: "application/octet-stream",
-      metadata: artifact.metadata as Record<string, string>,
+      metadata: headerSafeMetadata as Record<string, string>,
     });
 
     const { sha256, bytesWritten } = hasher.summary();
+
+    // An artifact's digest doesn't exist until its bytes have already been
+    // written, so it can't be handed to `put` as a precondition (see
+    // PutOpts.sha256). Where the destination reports one back — local hashes as
+    // it lands the file — compare: a disagreement means what's stored is not
+    // what we hashed, and recording OUR digest would make restore's verification
+    // pass against corrupt bytes. S3's ETag is an MD5/multipart composite and
+    // SFTP reports none, so the shape guard keeps this to destinations where the
+    // comparison means something.
+    if (result?.etag && SHA256_HEX.test(result.etag) && result.etag.toLowerCase() !== sha256) {
+      throw new Error(
+        `Artifact "${artifact.name}" changed in transit: hashed ${sha256} on the way out, destination stored ${result.etag.toLowerCase()}`,
+      );
+    }
+
     return {
       name: artifact.name,
       key,
@@ -503,12 +622,36 @@ export class BackupOrchestrator {
     stdout.on("data", (chunk: Buffer) => {
       if (chunks.length < 64) chunks.push(chunk);
     });
+    // `awaitExit` can settle before the stream has delivered its buffered chunks,
+    // which loses the hook's output entirely for a hook that finishes fast. Wait
+    // for the stream as well — bounded, because a killed exec can leave it open
+    // forever and a hook log must never hold up the backup.
+    const drained = new Promise<void>((resolve) => {
+      stdout.once("end", () => resolve());
+      stdout.once("close", () => resolve());
+      stdout.once("error", () => resolve());
+    });
     const exit = await awaitExit;
+    let drainTimer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      drained,
+      new Promise<void>((resolve) => {
+        drainTimer = setTimeout(resolve, HOOK_DRAIN_TIMEOUT_MS);
+      }),
+    ]);
+    if (drainTimer) clearTimeout(drainTimer);
     const stdoutText = Buffer.concat(chunks).toString("utf8").slice(0, 8 * 1024);
     log.push(stdoutText);
     if (exit.stderr) log.push(`[${phase}-hook stderr] ${exit.stderr.slice(0, 4 * 1024)}`);
-    if (exit.code !== 0) {
-      throw new Error(`${phase}-hook exited with code ${exit.code}`);
+    // An UNKNOWN exit status is not success. Executors can surface a null exit
+    // code (docker reports ExitCode: null while an exec is still reaping, ssh2
+    // reports none when a channel dies), and the pre-hook is what guarantees the
+    // snapshot is consistent — reading "don't know" as 0 would ship a torn dump.
+    const code: number | null | undefined = exit.code;
+    if (code !== 0) {
+      throw new Error(
+        `${phase}-hook exited with code ${code ?? "unknown (no exit status reported)"}`,
+      );
     }
   }
 
@@ -606,13 +749,15 @@ export class BackupOrchestrator {
     };
   }
 
-  /** Find the live container id for a service, via the shared resolver. */
+  /** Find the live container id for a service, via the shared resolver —
+   *  verified against the host, so a backup never targets a container a
+   *  redeploy already replaced. */
   private async resolveServiceContainerId(serviceRow: Service): Promise<string | null> {
     const project = await repos.project.findById(serviceRow.projectId);
     if (!project?.activeDeploymentId) return null;
     const dep = await repos.deployment.findById(project.activeDeploymentId);
     if (!dep) return null;
-    return containerIdForService(dep, serviceRow);
+    return liveContainerIdForService(project, dep, serviceRow, { projectId: project.id });
   }
 }
 

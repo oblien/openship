@@ -35,6 +35,10 @@
         "backToDashboard": "Zurück zum Dashboard",
         "createNewProject": "Neues Projekt erstellen"
       },
+      "loadFailed": {
+        "title": "Projekt konnte nicht geladen werden",
+        "subtitle": "Beim Erreichen dieses Projekts ist ein Problem aufgetreten. Prüfe deine Verbindung und versuche es erneut."
+      },
       "accessDenied": {
         "title": "Zugriff verweigert",
         "subtitle": "Du hast keine Berechtigung, auf diese Ressource zuzugreifen.",
@@ -205,7 +209,8 @@
   "routing": {
     "domainSwitcher": {
       "notConfigured": "Nicht konfiguriert",
-      "selectDomain": "Domain auswählen"
+      "selectDomain": "Domain auswählen",
+      "allDomains": "Alle Domains"
     },
     "publicEndpoints": {
       "mappedToPort": "Auf Port {port} zugeordnet.",
@@ -236,7 +241,39 @@
       "permanent": "permanent",
       "cleanUrls": "Saubere URLs",
       "cleanUrlsHint": "(.html entfernen)",
-      "trailingSlash": "Abschließender Schrägstrich"
+      "trailingSlash": "Abschließender Schrägstrich",
+      "proxyLimits": "Anfrage-Limits",
+      "proxyLimitsHint": "Upload-Größe und Timeouts. Leer gelassen gelten die Proxy-Standardwerte – 1 MB Uploads und 60s Timeouts.",
+      "maxBodySize": "Maximale Upload-Größe",
+      "maxBodySizeHint": "z. B. 25m. Größere Anfragen werden mit 413 abgelehnt. Standard 1m.",
+      "readTimeout": "Lese-Timeout",
+      "readTimeoutHint": "z. B. 300s. Wie lange auf die Antwort der App gewartet wird. Standard 60s.",
+      "sendTimeout": "Sende-Timeout",
+      "sendTimeoutHint": "z. B. 300s. Wie lange beim Senden an die App gewartet wird. Standard 60s.",
+      "bodyTimeout": "Upload-Timeout",
+      "bodyTimeoutHint": "z. B. 300s. Für große Uploads ebenfalls erhöhen, sonst brechen sie mitten in der Übertragung ab. Standard 60s.",
+      "proxyBuffering": "Antworten puffern",
+      "proxyBufferingHint": "(für Streaming / SSE deaktivieren)",
+      "gzip": "Antworten komprimieren",
+      "gzipHint": "(gzip für Text, JSON, JS, CSS)",
+      "proxyGroups": {
+        "body": "Request-Body",
+        "timeouts": "Upstream-Timeouts",
+        "buffering": "Antwort-Puffer",
+        "compression": "Komprimierung",
+        "headers": "Header & Protokoll",
+        "upstreamTls": "TLS zur App"
+      },
+      "proxyInherit": "nginx-Standard",
+      "proxyNotSet": "nicht gesetzt",
+      "proxyLiveLabel": "Ausgeliefert:",
+      "proxyLiveVaries": "je Host unterschiedlich",
+      "proxyDrift": "weicht vom gespeicherten Wert ab",
+      "proxyDriftSummary": "Das Edge liefert andere Werte für:",
+      "proxyAdoptLive": "Live-Werte übernehmen",
+      "proxyLiveUnavailable": "Die Live-Konfiguration des Servers dieses Projekts konnte nicht gelesen werden.",
+      "proxyLiveSource": "Gelesen von:",
+      "proxyRefreshLive": "Live-Konfiguration neu lesen"
     },
     "settingsCard": {
       "recordLabels": {
@@ -254,6 +291,11 @@
       "checkingDns": "DNS wird geprüft…",
       "addRecordHint": "Füge einen {primary}- und einen {txt}-Eintrag hinzu",
       "viewRecords": "Einträge anzeigen",
+      "redirectTo": "Weiterleitung",
+      "redirectServeApp": "App hier ausliefern",
+      "redirectToHost": "→ {hostname}",
+      "redirectPermanent": "301 dauerhaft",
+      "redirectTemporary": "302 temporär",
       "exposedPort": "Freigegebener Port",
       "staticPath": "Statischer Pfad",
       "staticPathHint": "Dateien aus diesem Unterverzeichnis innerhalb der Build-Ausgabe bereitstellen. Verwende {path} für die Root-Ausgabe.",

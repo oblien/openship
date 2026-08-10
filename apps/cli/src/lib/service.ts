@@ -15,14 +15,21 @@ import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
-const HOME = homedir();
-const OS_DIR = join(HOME, ".openship");
-const LOG_DIR = join(OS_DIR, "logs");
+import { readCliInstall } from "./cli-install";
+import { IS_ALT_HOME, LOG_DIR, OS_DIR } from "./paths";
+import { readStoredPorts } from "./ports";
 
-const MAC_LABEL = "io.openship.up";
+const HOME = homedir();
+/** Where the tarball install's stable launcher + PATH entry live. */
+const OPENSHIP_BIN = join(OS_DIR, "bin");
+
+// A from-source/dev install (OPENSHIP_HOME set → IS_ALT_HOME) gets its OWN boot
+// service, so `openship up` from source never clobbers or fights a production
+// install's service. Same derivation across install/stop/restart/status.
+const MAC_LABEL = IS_ALT_HOME ? "io.openship-dev.up" : "io.openship.up";
 const MAC_PLIST = join(HOME, "Library", "LaunchAgents", `${MAC_LABEL}.plist`);
-const SYSTEMD_NAME = "openship";
-const WIN_TASK = "Openship";
+const SYSTEMD_NAME = IS_ALT_HOME ? "openship-dev" : "openship";
+const WIN_TASK = IS_ALT_HOME ? "OpenshipDev" : "Openship";
 
 /** Flags the user gave to `openship up`, replayed into the service's run command. */
 export interface UpFlags {
@@ -36,6 +43,8 @@ export interface UpFlags {
   publicUrl?: string;
   /** Trust X-Forwarded-For from a front proxy. */
   trustProxy?: boolean;
+  /** Bind the dashboard to this interface (reverse-proxy / LAN access). */
+  host?: string;
   /** Managed edge: install OpenResty + Let's Encrypt on this box and route here. */
   managedEdge?: boolean;
   /** ACME contact email for the managed edge. */
@@ -43,7 +52,15 @@ export interface UpFlags {
 }
 
 /** The CLI's own runtime + entry, so the service invokes THIS install. */
-function selfInvocation(): { runtime: string; args: string[] } {
+export function selfInvocation(): { runtime: string; args: string[] } {
+  // Tarball installs run through the stable launcher (~/.openship/bin/openship):
+  // it re-resolves node and cli/current on every boot, so `openship update` and
+  // Node bumps repoint symlinks with NO service-unit rewrite. The launcher
+  // `exec`s node, preserving the PID/process-group semantics up.ts supervises.
+  const cli = readCliInstall();
+  if (cli?.method === "tarball" && existsSync(cli.launcher)) {
+    return { runtime: cli.launcher, args: [] };
+  }
   const runtime = process.execPath; // node or bun that's running us
   const entry = resolve(process.argv[1] ?? ""); // dist/index.js (absolute)
   return { runtime, args: [entry] };
@@ -58,6 +75,7 @@ function upArgs(flags: UpFlags): string[] {
   if (flags.uiVersion) a.push("--ui-version", flags.uiVersion);
   if (flags.publicUrl) a.push("--public-url", flags.publicUrl);
   if (flags.trustProxy) a.push("--trust-proxy");
+  if (flags.host) a.push("--host", flags.host);
   if (flags.managedEdge) a.push("--managed-edge");
   if (flags.acmeEmail) a.push("--acme-email", flags.acmeEmail);
   return a;
@@ -126,20 +144,27 @@ function xmlEscape(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** Extra env the service should carry. Only OPENSHIP_DASHBOARD_DIR today, and
- *  only when set — lets `openship`/wizard run a locally-built dashboard for
- *  pre-release testing; unset in production so nothing changes. */
+/** Extra env the service should carry, only when set (unset in production so
+ *  nothing changes). OPENSHIP_DASHBOARD_DIR lets a from-source install serve its
+ *  locally-built dashboard; OPENSHIP_HOME pins the supervised process to the
+ *  same alternate home (data dir / tokens / ports) the install runs under —
+ *  without it the boot service would fall back to the production ~/.openship. */
 function serviceEnv(): Record<string, string> {
   const extra: Record<string, string> = {};
   const dashDir = process.env.OPENSHIP_DASHBOARD_DIR?.trim();
   if (dashDir) extra.OPENSHIP_DASHBOARD_DIR = dashDir;
+  const home = process.env.OPENSHIP_HOME?.trim();
+  if (home) extra.OPENSHIP_HOME = home;
   return extra;
 }
 
 function plist(flags: UpFlags): string {
   const argv = runArgv(flags);
   const items = argv.map((a) => `      <string>${xmlEscape(a)}</string>`).join("\n");
-  const path = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", join(HOME, ".bun/bin")].join(":");
+  // Tarball installs need ~/.openship/bin on PATH (the launcher resolves system
+  // node from the standard dirs); npm/bun installs keep ~/.bun/bin.
+  const runtimeBin = readCliInstall()?.method === "tarball" ? OPENSHIP_BIN : join(HOME, ".bun/bin");
+  const path = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", runtimeBin].join(":");
   const extraEnv = Object.entries(serviceEnv())
     .map(([k, v]) => `<key>${xmlEscape(k)}</key><string>${xmlEscape(v)}</string>`)
     .join("");
@@ -169,6 +194,12 @@ function systemdUnit(flags: UpFlags): string {
   const extraEnv = Object.entries(serviceEnv())
     .map(([k, v]) => `Environment=${k}=${v}\n`)
     .join("");
+  // Tarball launcher resolves system node off PATH; systemd's default PATH is
+  // minimal, so pin one that covers the standard install dirs + ~/.openship/bin.
+  const pathEnv =
+    readCliInstall()?.method === "tarball"
+      ? `Environment=PATH=${["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin", OPENSHIP_BIN].join(":")}\n`
+      : "";
   return `[Unit]
 Description=Openship control plane
 After=network-online.target
@@ -180,7 +211,7 @@ ExecStart=${execStart}
 Restart=always
 RestartSec=2
 Environment=NODE_ENV=production
-${extraEnv}
+${pathEnv}${extraEnv}
 [Install]
 WantedBy=default.target
 `;
@@ -192,6 +223,27 @@ export interface ServiceResult {
   kind: ServiceKind;
   /** Human note about what happened / how to inspect it. */
   detail: string;
+}
+
+/**
+ * How `installAndStart` enables + starts the service on this manager, as one line
+ * for `up --dry-run`. Lives beside the code that runs it so the preview and the
+ * commands below can't drift.
+ */
+export function installStepFor(kind: ServiceKind): string {
+  switch (kind) {
+    case "launchd":
+      return "launchctl bootstrap  (starts it now and at login)";
+    case "systemd-user":
+      return "systemctl --user enable --now + loginctl enable-linger  (starts it now, on boot, without a login session)";
+    case "systemd-system":
+      return "systemctl enable --now  (starts it now and on boot)";
+    case "schtasks":
+      return "schtasks /Create /SC ONLOGON  (starts it at logon)";
+    default:
+      // detectKind found nothing to install into — installAndStart throws here.
+      return "nothing — no supported service manager on this box (needs systemd on Linux); `up --foreground` or `up --compose` instead";
+  }
 }
 
 /** Return (don't write) the service definition — for `--dry-run`/debugging. */
@@ -338,17 +390,18 @@ export function serviceStatus(): { kind: ServiceKind; installed: boolean; runnin
  * reaper) can orphan the API + dashboard onto the port — leaving `stop`
  * reporting success while `lsof -i :4000` still shows live processes. Scoped to
  * OUR ports (from ports.json) so it never touches an unrelated app. POSIX only.
+ *
+ * Reads through readStoredPorts (OS_DIR), NOT a hardcoded `~/.openship`: this used
+ * to inline its own path, so a from-source install (OPENSHIP_HOME=~/.openship-dev)
+ * swept the PRODUCTION install's ports — `openship stop` in the dev tree could
+ * SIGKILL the production API and dashboard. Every other part of this file already
+ * derives from OS_DIR precisely so the two installs can't fight.
  */
 function sweepOrphanPorts(): void {
   if (process.platform === "win32") return;
-  let ports: number[] = [];
-  try {
-    const raw = readFileSync(join(HOME, ".openship", "ports.json"), "utf8");
-    const p = JSON.parse(raw) as { api?: number; dashboard?: number };
-    ports = [p.api, p.dashboard].filter((n): n is number => typeof n === "number");
-  } catch {
-    return; // no remembered ports → nothing scoped to sweep
-  }
+  const stored = readStoredPorts();
+  const ports = [stored.api, stored.dashboard].filter((n): n is number => typeof n === "number");
+  if (ports.length === 0) return; // no remembered ports → nothing scoped to sweep
   const self = process.pid;
   for (const port of ports) {
     const q = run("lsof", ["-ti", `tcp:${port}`]);

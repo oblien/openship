@@ -5,6 +5,16 @@
  */
 import { getApiUrl as getConfiguredApiUrl, getToken } from "./config";
 
+/** Injected at bundle time; absent when running from source. */
+declare const __CLI_VERSION__: string;
+
+/**
+ * Identifies CLI traffic to the API. The audit log reads this to record a "CLI"
+ * source instead of a generic "API" one — a PAT call from here and a PAT call
+ * from a script are otherwise identical on the wire.
+ */
+const USER_AGENT = `openship-cli/${typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "dev"}`;
+
 /** Base API URL including the /api prefix, resolved from the active context. */
 export function getApiUrl(): string {
   return `${getConfiguredApiUrl()}/api`;
@@ -25,6 +35,7 @@ export class ApiError extends Error {
 function buildHeaders(extra?: RequestInit["headers"]): Headers {
   const headers = new Headers(extra);
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (!headers.has("User-Agent")) headers.set("User-Agent", USER_AGENT);
   const token = getToken();
   if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
   return headers;

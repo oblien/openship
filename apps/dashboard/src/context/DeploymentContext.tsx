@@ -27,6 +27,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     initializeFromLocal,
     initializeFromUpload,
     initializeFromProject,
+    rescanWithComposePath,
   } = useDeploymentConfig();
 
   const {
@@ -43,6 +44,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     reset,
     onTerminalReady,
     respondToPrompt,
+    maybeOpenCredentialModal,
     _setContainerFailed,
   } = useDeploymentBuild(config, setConfig);
 
@@ -57,6 +59,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     initializeFromLocal,
     initializeFromUpload,
     initializeFromProject,
+    rescanWithComposePath,
     startDeployment,
     connectToBuild,
     loadBuildSession,
@@ -65,6 +68,7 @@ export const DeploymentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     reset,
     onTerminalReady,
     respondToPrompt,
+    maybeOpenCredentialModal,
     steps,
     deploymentStatus,
     _setContainerFailed,

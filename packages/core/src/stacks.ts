@@ -79,8 +79,15 @@ export const LANGUAGES = {
   },
   php: {
     name: "PHP",
-    buildImage: "php:8.3-cli",
-    runtimeImage: "php:8.3-fpm",
+    buildImage: "php:8.4-cli",
+    // FrankenPHP, not php:*-fpm. An fpm image is a FastCGI backend, not a
+    // process host: it ships no web server, and pairing it with an apt nginx
+    // means two processes under a shell that swallows SIGTERM — a container stop
+    // then kills in-flight work instead of draining it. FrankenPHP is ONE
+    // process that owns both the HTTP server and PHP, so signals land where they
+    // should with no supervision tree, it runs fine as a non-root user, and its
+    // docroot convention (`/app/public`) is already the layout our recipes emit.
+    runtimeImage: "dunglas/frankenphp:1-php8.4-bookworm",
     packageManagers: ["composer"],
     requiredTools: ["php", "composer"],
   },
@@ -199,6 +206,17 @@ export interface StackDefinition {
    */
   cacheDirs?: readonly string[];
   /**
+   * Paths (relative to the app root) this framework WRITES at runtime and would
+   * lose on redeploy. Declared here so a stock app keeps its data with no
+   * configuration; the project can override the list. Resolved by
+   * `resolveStackVolumes` in `volumes.ts`, which turns each entry into a real
+   * mount — so keep them to paths that are genuinely stateful. A path that also
+   * holds CODE must not be listed: mounting over it shadows what later releases
+   * ship there (Laravel's `database/` holds migrations as well as the SQLite
+   * file, which is why only `storage` is declared).
+   */
+  persistentPaths?: readonly string[];
+  /**
    * Preferred build location for this stack.
    * "server" = build in the cloud/workspace (default if omitted).
    * "local"  = build on the host machine, then transfer the artifact.
@@ -226,9 +244,7 @@ export const STACKS = {
     defaultBuildCommand: "next build",
     defaultStartCommand: "next start",
     requiredToolVersions: { node: "20.9.0" },
-    cacheDirs: [".next/cache"],
-    defaultBuildStrategy: "local",
-    detection: {
+    cacheDirs: [".next/cache"],    detection: {
       rootMarkers: ["next.config.js", "next.config.mjs", "next.config.ts"],
       deps: ["next"],
     },
@@ -241,9 +257,7 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "nuxt build",
     defaultStartCommand: "node .output/server/index.mjs",
-    cacheDirs: [".nuxt"],
-    defaultBuildStrategy: "local",
-    detection: {
+    cacheDirs: [".nuxt"],    detection: {
       rootMarkers: ["nuxt.config.js", "nuxt.config.ts", "nuxt.config.mjs"],
       deps: ["nuxt", "@nuxt/core"],
     },
@@ -255,9 +269,7 @@ export const STACKS = {
     outputDirectory: ".svelte-kit",
     defaultPort: 3000,
     defaultBuildCommand: "vite build",
-    defaultStartCommand: "node build/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node build/index.js",    detection: {
       rootMarkers: ["svelte.config.js", "svelte.config.mjs"],
       deps: ["svelte", "@sveltejs/kit"],
     },
@@ -269,11 +281,37 @@ export const STACKS = {
     outputDirectory: "build",
     defaultPort: 3000,
     defaultBuildCommand: "remix build",
-    defaultStartCommand: "remix-serve build/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "remix-serve build/index.js",    detection: {
       rootMarkers: ["remix.config.js", "remix.config.ts"],
       deps: ["@remix-run/react", "@remix-run/node", "remix"],
+    },
+  },
+  "tanstack-start": {
+    name: "TanStack Start",
+    language: "typescript",
+    category: "fullstack",
+    outputDirectory: ".output",
+    defaultPort: 3000,
+    defaultBuildCommand: "vite build",
+    defaultStartCommand: "node .output/server/index.mjs",
+    // Nitro/Vinxi server bundle is self-contained under .output — same shape as Nuxt.
+    productionPaths: [".output"],
+    detection: {
+      // TanStack Start is Vite/Rsbuild-based; app.config.* is the older
+      // framework-specific marker, while current apps commonly ship vite.config.*
+      // or rsbuild.config.* plus the start package dep.
+      rootMarkers: [
+        "app.config.ts",
+        "app.config.js",
+        "app.config.mjs",
+        "vite.config.ts",
+        "vite.config.js",
+        "vite.config.mjs",
+        "rsbuild.config.ts",
+        "rsbuild.config.js",
+        "rsbuild.config.mjs",
+      ],
+      deps: ["@tanstack/react-start", "@tanstack/start"],
     },
   },
   astro: {
@@ -283,9 +321,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 4321,
     defaultBuildCommand: "astro build",
-    defaultStartCommand: "node dist/server/entry.mjs",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node dist/server/entry.mjs",    detection: {
       rootMarkers: ["astro.config.mjs", "astro.config.js", "astro.config.ts"],
       deps: ["astro"],
     },
@@ -297,9 +333,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 5173,
     defaultBuildCommand: "vite build",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       rootMarkers: ["vite.config.js", "vite.config.ts", "vite.config.mjs"],
       deps: ["vite"],
     },
@@ -311,9 +345,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 4200,
     defaultBuildCommand: "ng build --configuration production",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       rootMarkers: ["angular.json"],
       deps: ["@angular/core"],
     },
@@ -326,9 +358,7 @@ export const STACKS = {
     defaultPort: 8000,
     defaultBuildCommand: "gatsby build",
     defaultStartCommand: "gatsby serve",
-    cacheDirs: [".cache"],
-    defaultBuildStrategy: "local",
-    detection: {
+    cacheDirs: [".cache"],    detection: {
       rootMarkers: ["gatsby-config.js", "gatsby-config.ts"],
       deps: ["gatsby"],
     },
@@ -340,9 +370,7 @@ export const STACKS = {
     outputDirectory: "build",
     defaultPort: 3000,
     defaultBuildCommand: "react-scripts build",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       // CRA's only durable signal is the react-scripts dep; the public+src
       // layout is shared with many other React setups.
       deps: ["react-scripts"],
@@ -355,9 +383,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 8080,
     defaultBuildCommand: "vue-cli-service build",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       rootMarkers: ["vue.config.js", "vue.config.ts"],
       // Note: deps gate is the disambiguator vs. Nuxt - checked in stack-detector.
       deps: ["vue"],
@@ -370,9 +396,7 @@ export const STACKS = {
     outputDirectory: "build",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-  },
+    defaultStartCommand: "",  },
 
   // ── JavaScript / TypeScript - Backend ──────────────────────────────────────
 
@@ -383,9 +407,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node index.js",    detection: {
       deps: ["express"],
     },
   },
@@ -396,9 +418,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node dist/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node dist/index.js",    detection: {
       deps: ["fastify"],
     },
   },
@@ -409,9 +429,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node dist/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node dist/index.js",    detection: {
       deps: ["hono"],
     },
   },
@@ -422,9 +440,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "nest build",
-    defaultStartCommand: "node dist/main.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node dist/main.js",    detection: {
       rootMarkers: ["nest-cli.json"],
       deps: ["@nestjs/core"],
     },
@@ -436,9 +452,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node index.js",    detection: {
       deps: ["koa"],
     },
   },
@@ -449,9 +463,7 @@ export const STACKS = {
     outputDirectory: "build",
     defaultPort: 3333,
     defaultBuildCommand: "node ace build --production",
-    defaultStartCommand: "node build/server.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node build/server.js",    detection: {
       rootMarkers: ["ace.js", ".adonisrc.json", "adonisrc.ts"],
       deps: ["@adonisjs/core"],
     },
@@ -463,9 +475,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "bun dist/index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "bun dist/index.js",    detection: {
       deps: ["elysia"],
     },
   },
@@ -671,19 +681,29 @@ export const STACKS = {
 
   // ── PHP ────────────────────────────────────────────────────────────────────
 
-  // PHP stacks run php-fpm behind nginx (docroot public/). The generated
-  // Dockerfile (docker-build-plan.ts PHP branch) installs nginx + writes the
-  // config template; this start command renders it for the injected $PORT and
-  // launches both processes. Runtime image inherits php:8.3-fpm from the language.
+  // PHP stacks serve `public/` from FrankenPHP (see LANGUAGES.php). `exec` hands
+  // the container's PID to frankenphp so SIGTERM drains in-flight requests
+  // instead of being swallowed by the shell; SERVER_NAME carries the injected
+  // $PORT (a bare `:port` also keeps Caddy's automatic HTTPS out of the way —
+  // TLS terminates at the edge). No build command: `composer install` is the
+  // INSTALL step, and the build step is where a JS asset pipeline goes (the
+  // detector fills it in when the repo has one).
   laravel: {
     name: "Laravel",
     language: "php",
     category: "fullstack",
     outputDirectory: "public",
     defaultPort: 8000,
-    defaultBuildCommand: "composer install --no-dev --optimize-autoloader",
+    defaultBuildCommand: "",
     defaultStartCommand:
-      "envsubst '$PORT' < /etc/nginx/app.conf.template > /etc/nginx/conf.d/default.conf && php-fpm -D && nginx -g 'daemon off;'",
+      'SERVER_NAME=":$PORT" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile',
+    // Everything a stock Laravel app writes lives here: uploads
+    // (storage/app), sessions + cache when the drivers are `file`, and the
+    // framework's own scratch space. `database/` is deliberately NOT persisted —
+    // it holds migrations, so mounting over it would hide the ones a later
+    // release adds. A SQLite app should point DB_DATABASE at a persisted path or
+    // (better) use a database service.
+    persistentPaths: ["storage"],
     detection: {
       rootMarkers: ["artisan", "composer.json"],
       deps: ["laravel/framework"],
@@ -695,9 +715,11 @@ export const STACKS = {
     category: "fullstack",
     outputDirectory: "public",
     defaultPort: 8000,
-    defaultBuildCommand: "composer install --no-dev --optimize-autoloader",
+    defaultBuildCommand: "",
     defaultStartCommand:
-      "envsubst '$PORT' < /etc/nginx/app.conf.template > /etc/nginx/conf.d/default.conf && php-fpm -D && nginx -g 'daemon off;'",
+      'SERVER_NAME=":$PORT" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile',
+    // No persistentPaths: Symfony's `var/` is cache + logs, both regenerated,
+    // and it has no convention for where user uploads land.
     detection: {
       rootMarkers: ["composer.json", "symfony.lock"],
       deps: ["symfony/framework-bundle"],
@@ -714,9 +736,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "mvn clean package -DskipTests",
     defaultStartCommand: "java -jar target/*.jar",
-    productionPaths: ["target"],
-    defaultBuildStrategy: "local",
-    // Predominantly a Maven stack; bare-metal builds need `mvn` ensured. Gradle
+    productionPaths: ["target"],    // Predominantly a Maven stack; bare-metal builds need `mvn` ensured. Gradle
     // Spring Boot projects still build via their `./gradlew` wrapper (JDK-only).
     requiredTools: ["java", "javac", "maven"],
     detection: {
@@ -737,9 +757,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "mvn clean package -DskipTests",
     defaultStartCommand: "java -jar target/quarkus-app/quarkus-run.jar",
-    productionPaths: ["target"],
-    defaultBuildStrategy: "local",
-    requiredTools: ["java", "javac", "maven"],
+    productionPaths: ["target"],    requiredTools: ["java", "javac", "maven"],
     detection: {
       rootMarkers: ["pom.xml", "build.gradle", "build.gradle.kts"],
       deps: ["io.quarkus:quarkus-core", "quarkus"],
@@ -764,9 +782,7 @@ export const STACKS = {
     defaultPort: 8080,
     defaultBuildCommand: "gradle build -x test",
     defaultStartCommand: "java -jar build/libs/*.jar",
-    productionPaths: ["build/libs"],
-    defaultBuildStrategy: "local",
-    // Gradle-based; bare-metal builds need `gradle` ensured (or the `./gradlew`
+    productionPaths: ["build/libs"],    // Gradle-based; bare-metal builds need `gradle` ensured (or the `./gradlew`
     // wrapper, which the detector prefers when present).
     requiredTools: ["java", "javac", "gradle"],
     detection: {
@@ -840,9 +856,7 @@ export const STACKS = {
     outputDirectory: "dist",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "node index.js",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "node index.js",    detection: {
       rootMarkers: ["package.json"],
     },
   },
@@ -854,9 +868,7 @@ export const STACKS = {
     outputDirectory: ".",
     defaultPort: 3000,
     defaultBuildCommand: "",
-    defaultStartCommand: "",
-    defaultBuildStrategy: "local",
-    detection: {
+    defaultStartCommand: "",    detection: {
       rootMarkers: ["index.html"],
     },
   },
@@ -1058,10 +1070,20 @@ export function getBuildImage(stackId: StackId, packageManager?: string): string
  * it installs the pnpm/yarn shims and lets each project's
  * `package.json#packageManager` field select the exact version. Falls back to a
  * global npm install when corepack is unavailable (old Node / no perms), and is
- * fully swallowed so it never fails the build. Returns "" for `npm` (already
- * present), `bun` (its own image), and every non-node PM (in-image).
+ * fully swallowed so it never fails the build.
+ *
+ * `bun` gets a presence check instead: corepack doesn't manage it. Inside a
+ * container this is a no-op — getBuildImage already resolves bun-eligible stacks
+ * to oven/bun, so `command -v bun` short-circuits before the npm fallback (which
+ * matters: that image ships no npm). It earns its keep on a BARE target, where we
+ * install onto whatever the box already has (see runtime/bare.ts).
+ *
+ * Returns "" for `npm` (already present) and every non-node PM (in-image).
  */
 export function packageManagerEnsureCommand(packageManager?: string): string {
+  if (packageManager === "bun") {
+    return `(command -v bun >/dev/null 2>&1 || npm i -g bun) >/dev/null 2>&1 || true`;
+  }
   if (packageManager !== "pnpm" && packageManager !== "yarn") return "";
   return `(corepack enable ${packageManager} || corepack enable || npm i -g ${packageManager}) >/dev/null 2>&1 || true`;
 }
@@ -1095,6 +1117,27 @@ export function getProjectType(stackId: StackId): ProjectType {
 }
 
 /**
+ * Normalizes a framework input (stack ID or display name like "Static Site", "Next.js")
+ * to its canonical stack ID ("static", "nextjs", etc.).
+ */
+export function normalizeFramework(framework?: string | null): string {
+  if (!framework) return "unknown";
+  const trimmed = framework.trim();
+  if (!trimmed) return "unknown";
+  const lower = trimmed.toLowerCase();
+  if (lower in STACKS) return lower;
+  for (const [id, def] of Object.entries(STACKS)) {
+    if (def.name.toLowerCase() === lower) return id;
+  }
+  // Common display aliases
+  if (lower === "static site" || lower === "plain html" || lower === "html/js") return "static";
+  if (lower === "nextjs" || lower === "next.js" || lower === "next") return "nextjs";
+  if (lower === "nuxtjs" || lower === "nuxt.js" || lower === "nuxt") return "nuxt";
+  if (lower === "dockerfile" || lower === "docker compose") return "docker";
+  return lower;
+}
+
+/**
  * Is a project SERVICE-FIRST — i.e. the project itself IS a set of services
  * (a docker-compose / "services" stack), NOT a single/static app that merely
  * had sidecar services added to it? Keyed on the project's own framework, so
@@ -1108,6 +1151,25 @@ export function isServicesFramework(framework?: string | null): boolean {
   } catch {
     return framework === "docker-compose";
   }
+}
+
+/**
+ * Does this stack normally HAVE a build step?
+ *
+ * The registry already answers this: a stack with no `defaultBuildCommand` is one
+ * whose dependency install is the whole story (Express, Hono, plain Node), whose
+ * build lives in its own Dockerfile (`docker`), or whose build step is reserved
+ * for something optional (PHP: `composer install` is the install step, and the
+ * build step only exists when the repo ships a JS asset pipeline).
+ *
+ * Use it before telling a user that a missing build command looks wrong — for the
+ * stacks above it's the normal state, and warning there is noise that trains
+ * people to ignore preflight. False for an unknown framework: no declared
+ * expectation, nothing to flag.
+ */
+export function stackExpectsBuildCommand(framework?: string | null): boolean {
+  if (!framework || !(framework in STACKS)) return false;
+  return !!(STACKS[framework as StackId] as StackDefinition).defaultBuildCommand;
 }
 
 /**
@@ -1132,6 +1194,7 @@ export const STACK_ICONS: Partial<Record<StackId, string>> = {
   nuxt:        `${DI}/nuxtjs/nuxtjs-original.svg`,
   sveltekit:   `${DI}/svelte/svelte-original.svg`,
   remix:       `${DI}/react/react-original.svg`,
+  "tanstack-start": `${DI}/react/react-original.svg`,
   astro:       `${DI}/astro/astro-original.svg`,
   vite:        `${DI}/vitejs/vitejs-original.svg`,
   angular:     `${DI}/angular/angular-original.svg`,

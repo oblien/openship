@@ -6,11 +6,13 @@ import ProjectSettings from "@/components/import-project/ProjectSettings";
 import BuildSettings from "@/components/import-project/BuildSettings";
 import DockerSettings from "@/components/import-project/DockerSettings";
 import ComposeServices from "@/components/import-project/ComposeServices";
+import { ComposePathField } from "@/components/import-project/ComposePathField";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import MonorepoApps from "@/components/import-project/MonorepoApps";
 import RoutingSection from "@/components/import-project/RoutingSection";
+import ReadinessSection from "@/components/project-settings/ReadinessSection";
 import Sidebar from "./components/Sidebar";
-import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets } from "./components/DeployTargetStep";
+import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets, useSeedDeployTarget } from "./components/DeployTargetStep";
 // Clone-strategy gate moved from inline render to a preflight modal
 // triggered from <Sidebar>'s handleDeploy. The inline placement was
 // wrong (showed before the user clicked Deploy). See
@@ -18,7 +20,7 @@ import DeployTargetStep, { DeployTargetSummary, lastPickStore, useDesktopTargets
 import { decodeSlug } from "@/utils/repoSlug";
 import { useDeployment } from "@/context/DeploymentContext";
 import { usesServiceDeployment } from "@/context/deployment/types";
-import { usePlatform } from "@/context/PlatformContext";
+import { usePlatform, canUseCloudConnection } from "@/context/PlatformContext";
 import SkeletonLoader from "./components/SkeletonLoader";
 import ErrorState from "@/components/shared/ErrorState";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -59,7 +61,7 @@ const DeployRepository: React.FC = () => {
     const params = useParams();
     const slug = params.slug as string;
     const { config, initializeFromRepo, initializeFromLocal, initializeFromUpload, initializeFromProject, updateConfig } = useDeployment();
-    const { deployMode } = usePlatform();
+    const { deployMode, selfHosted } = usePlatform();
     const { t } = useI18n();
     const searchParams = useSearchParams();
     const force = searchParams.get("force") || undefined;
@@ -71,7 +73,13 @@ const DeployRepository: React.FC = () => {
     const uploadName = searchParams.get("name") || undefined;
     // Edit-from-Runtime-tab: hydrate from SAVED settings, skip repo re-detection.
     const isConfigEdit = searchParams.get("mode") === "config" && !!projectId;
-    const isDesktop = deployMode === "desktop";
+    // Desktop AND self-hosted pick a deploy target (this box / a registered server
+    // / cloud) — only the multi-tenant SaaS always deploys to cloud. Self-hosted
+    // was wrongly excluded, so its target picker never mounted and the "cloud"
+    // DEFAULT_CONFIG value silently shipped ("Build Location: Openship Cloud").
+    // Reuse the shared "self-managed, not SaaS" predicate instead of re-deriving
+    // it inline; the picker's own auto-select already prefers "This Server". #263
+    const canPickTarget = canUseCloudConnection({ selfHosted, deployMode });
 
     // Decode the slug at render time so the skeleton can name the source
     // ("Fetching owner/repo from GitHub") on the very first paint, before the
@@ -108,21 +116,29 @@ const DeployRepository: React.FC = () => {
     // Desktop-only: resolve available deploy targets (server / cloud)
     const targets = useDesktopTargets();
 
-    // Step: "target" = pick build/deploy target, "config" = project settings
-    // Only desktop gets step 1. Non-desktop skips straight to config.
+    // Existing/saved projects (config-edit, or a repo-less one-click / services
+    // project) already carry a deploy target — it hydrates from
+    // initializeFromProject. The silent seed stays OFF for them so it can never
+    // overwrite that saved target with the user's global default.
+    const decodedForTarget = React.useMemo(() => (slug ? decodeSlug(slug) : null), [slug]);
+    const isExistingProject = isConfigEdit || decodedForTarget?.kind === "project";
+
+    // Seed the deploy target SILENTLY so the config view's summary bar is correct
+    // without ever mounting the full target step. New deploys only.
+    useSeedDeployTarget(targets, canPickTarget && !isExistingProject);
+
+    // The wizard ALWAYS lands on the config step. The deploy target is seeded
+    // silently — applyLastPick (below, useLayoutEffect) for the fast localStorage
+    // path, useSeedDeployTarget (above) for the settings/server default — and is
+    // shown in the DeployTargetSummary bar at the top of the config view.
+    // Clicking that bar (onEdit) is the only way into the full target picker.
     //
-    // Returning users land directly on "config": we read their soft
-    // last-pick from localStorage SYNCHRONOUSLY in the useState initializer
-    // and skip the target picker entirely. Avoids the brief flash of
-    // "Where do you want to deploy?" + spinner that DeployTargetStep
-    // would otherwise show while waiting for settingsApi.get() to resolve.
-    // The settings-API default is still authoritative and gets applied
-    // if the user clicks "edit" to reopen the picker.
-    const [step, setStep] = useState<"target" | "config">(() => {
-        if (!isDesktop) return "config";
-        if (typeof window === "undefined") return "target";
-        return lastPickStore.read() ? "config" : "target";
-    });
+    // Previously first-time users (no soft last-pick) started on "target", which
+    // can't know the servers/default synchronously: the step mounted, showed a
+    // centered spinner while listServers() / settingsApi.get() / cloud resolved,
+    // then auto-advanced by calling onContinue() — the visible "spin then bounce"
+    // flash. Landing on config and seeding silently removes it entirely.
+    const [step, setStep] = useState<"target" | "config">("config");
 
     // Apply the soft last-pick to config so step="config" renders with the
     // correct target/serverId. Runs TWICE:
@@ -136,18 +152,29 @@ const DeployRepository: React.FC = () => {
     const appliedLastPickRef = useRef(false);
 
     const applyLastPick = useCallback(() => {
-        if (!isDesktop || appliedLastPickRef.current) return;
+        // Don't override a SAVED project's hydrated target (same gate as
+        // useSeedDeployTarget) — the last-pick memory is for NEW deploys only.
+        if (!canPickTarget || isExistingProject || appliedLastPickRef.current) return;
         const last = typeof window !== "undefined" ? lastPickStore.read() : null;
         if (!last) return;
-        appliedLastPickRef.current = true;
-        if (last.target === "server" && last.serverId) {
+        if (last.target === "server") {
+            // lastPickStore is a browser-GLOBAL key, so this serverId may be from
+            // another project/org or a since-removed server. Replay it ONLY when
+            // it's a live target in THIS org's list (mirrors useSeedDeployTarget's
+            // gate) — otherwise leave appliedLastPickRef UNconsumed so pass-2 (after
+            // targets load) can retry, and fall through to the validated seed rather
+            // than submitting a serverId the deploy's org doesn't own.
+            if (!last.serverId || !targets.servers.some((s) => s.id === last.serverId)) return;
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "server", serverId: last.serverId });
         } else if (last.target === "cloud") {
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "cloud", serverId: undefined, buildStrategy: "server" });
         } else if (last.target === "local") {
+            appliedLastPickRef.current = true;
             updateConfig({ deployTarget: "local", serverId: undefined });
         }
-    }, [isDesktop, updateConfig]);
+    }, [canPickTarget, isExistingProject, targets.servers, updateConfig]);
 
     useLayoutEffect(() => {
         applyLastPick();
@@ -167,6 +194,17 @@ const DeployRepository: React.FC = () => {
             updateConfig({ serverId: targets.servers[0].id });
         }
     }, [config.deployTarget, config.serverId, targets.servers, updateConfig]);
+
+    // Cloud always builds in the cloud runtime. The full target step enforces
+    // buildStrategy="server" for a cloud target while it's open; replicate just
+    // that rule here so it also holds on the config view (where the step isn't
+    // mounted) — otherwise repo-init can reseed buildStrategy from the stack
+    // default and ship a cloud deploy with a local build strategy.
+    useEffect(() => {
+        if (config.deployTarget === "cloud" && config.buildStrategy !== "server") {
+            updateConfig({ buildStrategy: "server" });
+        }
+    }, [config.deployTarget, config.buildStrategy, updateConfig]);
 
     // Track whether the user explicitly came back to step 1 via the edit
     // affordance. If they did, we must NOT auto-skip past it again - they
@@ -306,10 +344,27 @@ const DeployRepository: React.FC = () => {
             {config.projectType === "docker" && <DockerSettings />}
             {config.projectType === "services" && <ComposeServices />}
             {isMonorepoFlow && <MonorepoApps />}
+            {/* Outside every type-specific section on purpose: a repo whose compose
+                file lives in a subfolder scans as an app/docker project, and applying
+                a path flips this to `services` — so the control has to survive that
+                flip to stay correctable. */}
             {!isServiceDeployment &&
                 !(isMonorepoFlow && config.serviceDeploymentMode !== "single") && (
                 <EnvironmentVariables collapsible />
             )}
+            {/* Both of these sit AFTER env and outside every type-specific section:
+                they're project-level opt-ins that apply to whatever this deploy
+                turns out to be, and a control nested in the app/docker section
+                would vanish the moment applying a compose path flipped the wizard
+                to `services`. Readiness covers a port/path probe for a server, a
+                doc-root+index probe for a static site, and a restart-loop watch for
+                containers; compose services can override it individually in the
+                service's own settings. Both collapsed and off unless opened. */}
+            <ComposePathField />
+            <ReadinessSection
+                value={config.readiness}
+                onChange={(next) => updateConfig({ readiness: next ?? null })}
+            />
             <ProjectName />
             {(config.projectType === "app" || isMonorepoFlow) && <RoutingSection />}
         </>
@@ -321,12 +376,13 @@ const DeployRepository: React.FC = () => {
                     DeployTargetStep owns its own max-width: it widens to two columns
                     when a right-hand panel (cloud power / server runtime) is shown, and
                     stays narrow single-column otherwise. The page just centers it. */}
-                {step === "target" && isDesktop && (
+                {step === "target" && canPickTarget && (
                     <div className="flex items-center justify-center min-h-[calc(100vh-8rem)] py-8">
                         <DeployTargetStep
                             targets={targets}
                             autoSkipAllowed={autoSkipTargetRef.current}
                             onContinue={() => setStep("config")}
+                            projectId={projectId}
                         />
                     </div>
                 )}
@@ -335,14 +391,18 @@ const DeployRepository: React.FC = () => {
                 {step === "config" && (
                     <div className="grid lg:grid-cols-[1fr_340px] gap-6">
                         <div className="space-y-5">
-                            {/* Target summary bar - click to go back to step 1 (desktop only) */}
-                            {isDesktop && (
+                            {/* Target summary bar — click to go back to step 1 (desktop + self-hosted) */}
+                            {canPickTarget && (
                                 <DeployTargetSummary
                                     deployTarget={config.deployTarget}
                                     buildStrategy={config.buildStrategy}
                                     showBuildStrategy={isSingleAppFlow}
                                     cloudResourceTier={config.cloudResourceTier}
                                     hasServer={config.options.hasServer}
+                                    runtimeMode={config.runtimeMode}
+                                    isServices={usesServiceDeployment(config)}
+                                    rollbackWindow={config.rollbackWindow}
+                                    rollbackStrategy={config.rollbackStrategy}
                                     serverName={(() => {
                                         // Resolve the selected server by id; if id isn't set yet but
                                         // there's exactly one server, use it (covers the paint before

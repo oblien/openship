@@ -8,6 +8,18 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./ports": {
+      "types": "./src/ports.ts",
+      "import": "./src/ports.ts"
+    }
+  },
+  "//typesVersions": "Electron main (apps/desktop) emits CommonJS, so it is stuck on classic moduleResolution, which predates `exports` maps and cannot see the ./ports subpath. This is how that resolver finds it; modern consumers use `exports` above.",
+  "typesVersions": {
+    "*": {
+      "ports": [
+        "./src/ports.ts"
+      ]
     }
   },
   "scripts": {

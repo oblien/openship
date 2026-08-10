@@ -29,6 +29,34 @@ export async function getBuildMode(userId: string): Promise<BuildMode> {
   return (settings?.buildMode as BuildMode) ?? "auto";
 }
 
+// ── Route strategy (edge → app upstream addressing) ──────────────────────────
+
+/** How the edge reaches a deployed app's upstream.
+ *   - "auto"          → resolved to loopback-port (the safe self-host default)
+ *   - "loopback-port" → publish + route via a pinned `127.0.0.1:<hostPort>`
+ *   - "container-ip"  → route via the container's bridge IP (advanced; zero-
+ *                       downtime swaps, needs the edge on the docker bridge,
+ *                       unsupported on Docker Desktop) */
+export type RouteStrategyPref = "auto" | "loopback-port" | "container-ip";
+
+const VALID_ROUTE_STRATEGIES: RouteStrategyPref[] = ["auto", "loopback-port", "container-ip"];
+
+export function isValidRouteStrategy(value: unknown): value is RouteStrategyPref {
+  return typeof value === "string" && (VALID_ROUTE_STRATEGIES as string[]).includes(value);
+}
+
+/**
+ * The user's default route strategy (seeds new projects + the deploy wizard).
+ * Unset/invalid → "auto". A per-project value still wins over this; the pure
+ * `resolveRouteStrategy` in lib/upstream-url coerces the effective value to a
+ * concrete strategy at each upstream-resolution site.
+ * @scope user
+ */
+export async function getRouteStrategy(userId: string): Promise<RouteStrategyPref> {
+  const settings = await repos.settings.findByUser(userId);
+  return isValidRouteStrategy(settings?.routeStrategy) ? settings.routeStrategy : "auto";
+}
+
 /**
  * Has the user explicitly opted out of the gh-CLI fallback?
  * Used by github.auth.getUserStatus to honor a disconnect from cli mode.
@@ -55,6 +83,63 @@ export async function setGithubCliDisabled(userId: string, disabled: boolean): P
     userId,
     buildMode: "auto",
     githubCliDisabled: disabled,
+  });
+}
+
+/**
+ * Mark this user as the instance operator allowed to use the instance-wide git
+ * identity (`ghCliOperatorOptedIn`).
+ *
+ * `tokenFor` gates the stored-credential branch on this flag, and nothing ever
+ * SET it — it was read-only, so on a self-hosted install the flag stayed false
+ * and the branch was unreachable unless GITHUB_AUTH_MODE=cli. Result: an operator
+ * could paste a token, see "Connected", and still get "no App/PAT token is
+ * available" on the next deploy.
+ *
+ * Connecting a credential inside Openship (device sign-in or pasted token) is the
+ * explicit act this flag exists to record, so the connect handlers set it.
+ * @scope user
+ */
+export async function setGhCliOperatorOptedIn(userId: string, optedIn: boolean): Promise<void> {
+  const existing = await repos.settings.findByUser(userId);
+  if (existing) {
+    await repos.settings.update(userId, { ghCliOperatorOptedIn: optedIn });
+    return;
+  }
+  const { randomBytes } = await import("node:crypto");
+  await repos.settings.upsert({
+    id: "us_" + randomBytes(12).toString("base64url"),
+    userId,
+    buildMode: "auto",
+    ghCliOperatorOptedIn: optedIn,
+  });
+}
+
+/**
+ * Generic (per-operator, instance-wide) "forward my git identity to remote build
+ * servers" preference — replaces the old per-deploy `forwardGitCredentials`
+ * toggle. Read by the deploy pipeline to decide whether a server clone may
+ * forward the local `gh` over the SSH tunnel. Defaults false.
+ * @scope user
+ */
+export async function getForwardGitToServer(userId: string): Promise<boolean> {
+  const settings = await repos.settings.findByUser(userId);
+  return settings?.forwardGitToServer ?? false;
+}
+
+/** Flip the generic git-forward preference. Inserts a row if the user has none. @scope user */
+export async function setForwardGitToServer(userId: string, enabled: boolean): Promise<void> {
+  const existing = await repos.settings.findByUser(userId);
+  if (existing) {
+    await repos.settings.update(userId, { forwardGitToServer: enabled });
+    return;
+  }
+  const { randomBytes } = await import("node:crypto");
+  await repos.settings.upsert({
+    id: "us_" + randomBytes(12).toString("base64url"),
+    userId,
+    buildMode: "auto",
+    forwardGitToServer: enabled,
   });
 }
 

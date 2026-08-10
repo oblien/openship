@@ -78,6 +78,43 @@
       "toggleFailed": "Umschalten des Projekts fehlgeschlagen",
       "clearInstallFailed": "Leeren des Installations-Cache fehlgeschlagen",
       "clearBuildFailed": "Leeren des Build-Cache fehlgeschlagen"
+    },
+    "routing": {
+      "title": "Routing",
+      "description": "Wie der Edge den Upstream dieser App erreicht",
+      "intro": "Wähle, wie der Edge den Container dieses Projekts adressiert.",
+      "note": "Loopback-Port wird empfohlen: ein privater 127.0.0.1-Host-Port, stabil über Neustarts hinweg und nie im Netzwerk exponiert. Container-IP ist fortgeschritten (Zero-Downtime-Wechsel; benötigt den Edge auf der Docker-Bridge; auf Docker Desktop nicht unterstützt).",
+      "modes": {
+        "auto": {
+          "label": "Auto",
+          "desc": "Empfohlen (Loopback-Port)"
+        },
+        "loopbackPort": {
+          "label": "Loopback-Port",
+          "desc": "Privater 127.0.0.1-Host-Port"
+        },
+        "containerIp": {
+          "label": "Container-IP",
+          "desc": "Fortgeschritten – Bridge-IP"
+        }
+      },
+      "toast": {
+        "saved": "Routing auf {mode} gesetzt",
+        "failed": "Routing konnte nicht aktualisiert werden"
+      }
+    },
+    "internalAlias": {
+      "title": "Interner Hostname",
+      "description": "Eigener Name, unter dem andere Dienste diese App privat erreichen",
+      "intro": "Lege einen zusätzlichen DNS-Namen für diese App in ihrem privaten Projektnetzwerk fest. Er wird neben dem Standard (dem Projekt-Slug) aufgelöst – andere verknüpfte Dienste können beide verwenden. Der öffentliche Zugriff bleibt unverändert; dies gibt niemals einen Port frei.",
+      "label": "Hostname-Alias",
+      "hint": "Nur Buchstaben, Ziffern und Bindestriche. Leer lassen, um den Projekt-Slug zu verwenden.",
+      "save": "Speichern",
+      "toast": {
+        "saved": "Interner Hostname aktualisiert",
+        "failed": "Interner Hostname konnte nicht aktualisiert werden",
+        "invalid": "Gib mindestens einen Buchstaben oder eine Ziffer ein"
+      }
     }
   },
   "backup": {
@@ -151,19 +188,56 @@
       "framework": "Framework",
       "packageManager": "Paketmanager",
       "runtimeIsolation": "Laufzeit-Isolation",
-      "resources": "Ressourcen",
-      "resourcesValue": "{cpu} vCPU · {memory} MB",
       "runtimePort": "Laufzeit-Port",
       "installCommand": "Installationsbefehl",
       "buildCommand": "Build-Befehl",
       "noBuildStep": "Kein Build-Schritt",
       "outputDirectory": "Ausgabeverzeichnis",
       "rootDirectory": "Stammverzeichnis",
+      "composePath": "Compose-Datei",
       "startCommand": "Startbefehl",
       "staticNoServer": "Statisch (kein Server)",
       "modeSandboxed": "Sandbox (Container)",
       "modeDirect": "Direkt (Host-Prozess)",
-      "modeDefault": "Standard (beim Deploy aufgelöst)"
+      "modeDefault": "Standard (beim Deploy aufgelöst)",
+      "modeStatic": "Keine – als statische Dateien ausgeliefert"
+    },
+    "storage": {
+      "title": "Dauerhafter Speicher",
+      "description": "Pfade, die erhalten bleiben, wenn eine neue Version die alte ersetzt. Alles andere im Container wird beim Deploy verworfen.",
+      "edit": "Bearbeiten",
+      "save": "Speichern",
+      "cancel": "Abbrechen",
+      "saved": "Speicher aktualisiert. Wird beim nächsten Deploy angewendet.",
+      "reset": "Framework-Standard verwenden",
+      "empty": "Zwischen Deploys wird nichts erhalten.",
+      "inherited": "Framework-Standard für diesen Stack.",
+      "declared": "Für dieses Projekt festgelegt.",
+      "placeholder": "storage\nuploads:/app/public/uploads",
+      "hint": "Einer pro Zeile. Ein einfacher Pfad ist relativ zur App (storage), oder gib einen vollständigen Mount an (name:/app/pfad, /host/pfad:/app/pfad)."
+    },
+    "objectStorage": {
+      "title": "Objektspeicher",
+      "description": "Ein S3-Bucket für Uploads — übersteht Deploys und funktioniert auch mit mehreren Replicas, anders als ein lokaler Pfad.",
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "disconnected": "Objektspeicher getrennt.",
+      "connected": "Bucket geprüft und verbunden. Wird beim nächsten Deploy angewendet.",
+      "loading": "Wird geprüft…",
+      "empty": "Kein Bucket verbunden. Uploads bleiben auf der Festplatte des Containers.",
+      "sourceLabel": "Quelle",
+      "externalOption": "Externer Anbieter",
+      "providerLabel": "Anbieter",
+      "bucketLabel": "Bucket",
+      "endpointLabel": "Endpunkt",
+      "regionLabel": "Region",
+      "accessKeyLabel": "Access-Key-ID",
+      "secretKeyLabel": "Secret Access Key",
+      "testAndConnect": "Testen & verbinden",
+      "cancel": "Abbrechen",
+      "envLabel": "Variablen",
+      "envHint": "Setzt:",
+      "appliesOnDeploy": "Wird beim nächsten Deploy angewendet."
     },
     "env": {
       "title": "Umgebungsvariablen",
@@ -202,7 +276,12 @@
       "applyingTitle": "Wird angewendet",
       "applyFailed": "Umgebung konnte nicht auf den laufenden Dienst angewendet werden",
       "applyFailedTitle": "Anwenden fehlgeschlagen"
-    }
+    },
+    "linkedBadge": "Verknüpft",
+    "linkedManaged": "über {app}",
+    "linkedTitle": "Verknüpfte Integration",
+    "linkedBody": "Dieser Wert stammt aus der {app}-Verbindung. Verwalte ihn in dieser App — hier vorgenommene Änderungen bleiben nicht erhalten.",
+    "unlink": "Verbindung entfernen"
   },
   "gitInfo": {
     "repository": "Repository",
@@ -289,18 +368,29 @@
       "title": "Rollback-Strategie",
       "rebuild": "Neubau (Git)",
       "instant": "Sofort (Snapshot)",
-      "descRebuild": "Rollback klont und baut den alten Commit neu — günstiger, aber langsamer und kann fehlschlagen, wenn dieser Commit nicht mehr baubar ist.",
-      "descInstant": "Behält das Build-Artefakt jeder Version auf der Festplatte für ein Rollback in Sekunden. Verbraucht zusätzlichen Speicherplatz, begrenzt durch das Verlaufslimit.",
-      "toggleAria": "Snapshot-Aufbewahrung umschalten"
+      "descRebuild": "Baut den alten Commit neu, sofern dessen Image nicht noch auf dem Host liegt.",
+      "descInstant": "Behält das Image jeder Version, sodass eine Wiederherstellung nie neu baut. Braucht mehr Speicher.",
+      "toggleAria": "Snapshot-Aufbewahrung umschalten",
+      "keepNone": "Keine Extra-Kopien",
+      "keepCopies": "Eine Kopie pro Version",
+      "descRebuildFiles": "Baut den alten Commit neu, sofern dessen Dateien nicht noch auf dem Host liegen.",
+      "descInstantFiles": "Behält die Dateien jeder Version, sodass eine Wiederherstellung nie neu baut. Braucht mehr Speicher."
     },
     "rollbackHistory": {
       "title": "Rollback-Verlauf",
       "valueOne": "{count} Version",
       "valueOther": "{count} Versionen",
-      "descSnapshot": "Wie viele der letzten Versionen ihr Build-Artefakt für ein Rollback behalten. Ältere werden aufgeräumt, um Speicherplatz freizugeben.",
-      "descGit": "Gilt nur für den Modus „Sofort“ (Snapshot) — der Git-Modus behält keine Artefakte zur Aufbewahrung.",
+      "descSnapshot": "Ältere Versionen werden entfernt, um Speicher freizugeben.",
+      "descGit": "Aktuelle Images bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann.",
       "decreaseAria": "Rollback-Verlauf verringern",
-      "increaseAria": "Rollback-Verlauf erhöhen"
+      "increaseAria": "Rollback-Verlauf erhöhen",
+      "sizeEach": "~{size} pro Version",
+      "diskFree": "{size} frei",
+      "autoBadge": "automatisch bemessen",
+      "manualBadge": "manuell gesetzt",
+      "kindFiles": "gebaute Dateien auf der Platte",
+      "kindImages": "Images auf dem Host",
+      "descGitFiles": "Die Dateien aktueller Versionen bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann."
     },
     "commits": {
       "title": "Letzte Commits",
@@ -363,38 +453,53 @@
   },
   "resources": {
     "title": "Maschinenleistung",
-    "description": "Konfigurieren Sie die Maschinenleistung für Ihr Projekt.",
+    "description": "CPU- und Speichergrenzen für die Container dieses Projekts.",
+    "loading": "Zielmaschine wird gelesen …",
+    "machineCapacity": "Maschine: {cpu} vCPU · {memory}",
+    "exceedsMachine": "Übersteigt diese Maschine",
+    "appliesOnNextDeploy": "Grenzen werden beim Neuerstellen des Containers angewendet – für eine Änderung neu deployen.",
     "tiers": {
-      "lightweight": { "name": "Leichtgewichtig", "description": "Kleine Apps und statische Websites" },
-      "standard": { "name": "Standard", "description": "Die meisten Webanwendungen" },
-      "performance": { "name": "Performance", "description": "Anwendungen mit hohem Traffic" },
-      "enterprise": { "name": "Enterprise", "description": "Produktions-Apps in großem Maßstab" },
-      "autoscale": { "name": "Auto Scale", "description": "Skaliert je nach Bedarf" }
+      "unlimited": {
+        "name": "Keine Grenzen",
+        "description": "Die ganze Maschine nutzen (Standard)",
+        "spec": "Maschinenkapazität"
+      },
+      "micro": {
+        "name": "Micro",
+        "description": "Kleine Sidecars und Worker"
+      },
+      "low": {
+        "name": "Low",
+        "description": "Kleine Apps und statische Seiten"
+      },
+      "medium": {
+        "name": "Medium",
+        "description": "Die meisten Webanwendungen"
+      },
+      "high": {
+        "name": "High",
+        "description": "Anwendungen mit hohem Traffic"
+      }
     },
-    "dynamic": "Dynamisch",
     "custom": {
       "name": "Benutzerdefiniert",
-      "description": "Definieren Sie Ihre eigenen Ressourcen",
-      "clickToConfigure": "Zum Konfigurieren klicken"
+      "description": "Eigene Grenzen festlegen",
+      "notSet": "Nicht gesetzt"
     },
-    "cpuValue": "{cpu} vCPU",
     "customPanel": {
-      "title": "Benutzerdefinierte Ressourcen konfigurieren",
+      "boundedBy": "Diese Maschine hat {cpu} vCPU und {memory}. 0 bedeutet keine Grenze.",
+      "capacityUnknown": "Die Kapazität dieser Maschine konnte nicht gelesen werden, daher gilt keine Obergrenze. 0 bedeutet keine Grenze.",
       "cpuCores": "CPU-Kerne",
-      "cpuRange": "Bereich: 0.25 - 4.00",
-      "memory": "Arbeitsspeicher (MB)",
-      "memoryRange": "Bereich: 128 - 8192",
+      "memory": "Speicher (MB)",
+      "zeroMeansNoLimit": "0 = keine Grenze",
       "cancel": "Abbrechen",
-      "saving": "Wird gespeichert...",
-      "save": "Konfiguration speichern"
+      "saving": "Wird gespeichert …",
+      "save": "Speichern"
     },
     "toast": {
-      "updated": "Ressourcen erfolgreich aktualisiert",
-      "updateFailed": "Aktualisieren der Ressourcen fehlgeschlagen",
-      "cpuRange": "CPU muss zwischen 0.25 und 4.00 Kernen liegen",
-      "memoryRange": "Arbeitsspeicher muss zwischen 128 MB und 8192 MB liegen",
-      "customSaved": "Benutzerdefinierte Ressourcen erfolgreich gespeichert",
-      "customSaveFailed": "Speichern der benutzerdefinierten Ressourcen fehlgeschlagen"
+      "updated": "Maschinenleistung aktualisiert",
+      "updateFailed": "Maschinenleistung konnte nicht aktualisiert werden",
+      "invalidValues": "CPU und Speicher müssen 0 oder eine positive Zahl sein"
     }
   },
   "sleep": {
@@ -449,7 +554,11 @@
     "confirmDeleteWipe": "Löschen + Daten entfernen",
     "confirmDeleteEnvWipe": "Umgebung löschen + Daten entfernen",
     "confirmDelete": "Projekt löschen",
-    "confirmDeleteEnv": "Umgebung löschen"
+    "confirmDeleteEnv": "Umgebung löschen",
+    "linkedTitleOne": "{count} Projekt ist mit dieser App verbunden",
+    "linkedTitleOther": "{count} Projekte sind mit dieser App verbunden",
+    "linkedNote": "Sie laufen mit unveränderten Daten weiter – nur diese Verbindung entfällt. Deploye sie neu, damit das greift.",
+    "linkedNoteRecordOnly": "Sie laufen weiter, aber die Verknüpfung verschwindet mit dem Eintrag – ein späterer Re-Import stellt sie nicht wieder her."
   },
   "routing": {
     "title": "Routing",
@@ -533,12 +642,13 @@
       "infoPreview": "Fügen Sie diese Einträge zuerst hinzu — sie ändern sich nach dem Hinzufügen nicht, sodass die Propagierung jetzt beginnt. Drücken Sie dann „Domain hinzufügen“, um sie anzuhängen, und schließlich „Verifizieren“, sobald das DNS auflöst.",
       "infoApply": "DNS-Änderungen können bis zu 48 Stunden dauern, um sich global zu propagieren. Sobald die Einträge auflösen, klicken Sie unten auf „Verifizieren“ — wir prüfen das DNS, markieren die Domain als aktiv und stellen SSL im Hintergrund bereit.",
       "verifying": "Wird verifiziert...",
-      "verify": "{hostname} verifizieren",
-      "copy": "Kopieren"
+      "verify": "{hostname} verifizieren"
     },
     "overview": {
       "primary": "Primär",
       "mappedTo": "Zugeordnet zu",
+      "redirect": "Weiterleitung",
+      "redirectValue": "{status} → {hostname}",
       "status": "Status",
       "ssl": "SSL",
       "visit": "Besuchen"
@@ -618,6 +728,19 @@
       "noServicePort": "Kein Dienst veröffentlicht Port {port}. Fügen Sie diesen Port zuerst einem Dienst hinzu.",
       "enterCustom": "Geben Sie eine benutzerdefinierte Domain ein.",
       "enterSubdomain": "Geben Sie eine Subdomain ein."
+    },
+    "edge": {
+      "setUp": "Edge einrichten",
+      "ready": "Edge bereit",
+      "checking": "Edge wird geprüft…",
+      "recheck": "Erneut prüfen",
+      "foreignProxyHint": "Ein anderer Proxy belegt 80/443"
+    },
+    "diagnosis": {
+      "title": "Warum das nicht funktioniert",
+      "noneYet": "Es wurde noch keine Prüfung ausgeführt, daher gibt es kein Ergebnis. Fügen Sie die angezeigten DNS-Einträge hinzu und führen Sie dann „Verifizieren“ aus.",
+      "attempts": "Bisher {count} fehlgeschlagene Versuche.",
+      "pillHint": "Grund anzeigen"
     }
   }
 }

@@ -1,0 +1,218 @@
+/*
+ * Choropleth fill.
+ *
+ * Two independent axes:
+ *   COLOURING  — user's choice, `data-geo-mode` on the map wrapper: "theme" | "flag".
+ *   THEME      — `data-theme` on <html>: light | dark | dim.
+ * All four combinations have to look deliberate, so each is stated rather than left to
+ * fall out of a default.
+ *
+ * ── Everything is SOLID ─────────────────────────────────────────────────────
+ *
+ * The rank ramp used to be `fill-opacity`, which is why light mode washed out: a
+ * translucent fill composites against whatever sits behind it, and over a near-white
+ * card there is almost nothing to composite with. Opacity also stacks badly with the
+ * hairline stroke between countries.
+ *
+ * So rank is now encoded in the COLOUR itself and every fill is fully opaque:
+ *   theme mode → `color-mix()` between the theme's primary and its muted tone. Derived
+ *                from the theme, so it tracks light/dark/dim automatically and always
+ *                lands on shades that belong to the active palette.
+ *   flag mode  → `hsl()` with the flag's hue and a fixed saturation, lightness by rank.
+ *
+ * Driven by CSS rather than React: the cascade already knows the theme, so reading it in
+ * JS would mean a hook, a hydration mismatch on first paint, and a re-render per toggle.
+ */
+
+/* ── Unlit countries: one flat wash in every mode. Tinting them would imply data. ── */
+.geo-country {
+  fill: color-mix(in oklab, var(--color-muted-foreground) 12%, var(--color-card));
+  fill-opacity: 1;
+}
+
+/* ── Theme colouring, LIGHT ────────────────────────────────────────────────────
+ * Ramps `--color-info` (a real blue, #2563eb) toward the card, NOT `--color-primary`.
+ * In light themes primary resolves to near-black, so mixing it toward muted produced a
+ * ramp of muddy greys — technically "from the theme" and genuinely ugly. Dark and dim
+ * keep the primary ramp below, because there primary is near-WHITE and the greyscale
+ * reads clean against black.
+ */
+[data-geo-mode="theme"] .geo-country[data-lit] {
+  fill: color-mix(in oklab, var(--color-info) var(--geo-mix, 60%), var(--color-card));
+  fill-opacity: 1;
+}
+
+[data-theme="dark"] [data-geo-mode="theme"] .geo-country[data-lit],
+[data-theme="dim"] [data-geo-mode="theme"] .geo-country[data-lit] {
+  fill: color-mix(in oklab, var(--color-primary) var(--geo-mix, 60%), var(--color-muted));
+}
+
+/* ── Flag colouring ───────────────────────────────────────────────────────────
+ * Hue from the country's own flag; saturation and lightness imposed here. Real flag
+ * colours side by side are a clown map — flags are designed to contrast with each
+ * other, not to compose — so only the hue survives.
+ */
+[data-geo-mode="flag"] .geo-country[data-hue] {
+  fill: hsl(var(--geo-hue) 58% var(--geo-l, 55%));
+  fill-opacity: 1;
+}
+
+/*
+ * Dark and dim need the flag ramp INVERTED. On a light card the busiest country should
+ * be the darkest; on a near-black one darkest reads as *absent*, so busiest becomes the
+ * brightest. `--geo-l-dark` carries that second ramp.
+ *
+ * Saturation drops slightly too: a colour that reads as pleasantly vivid on white goes
+ * neon against black.
+ */
+[data-theme="dark"] [data-geo-mode="flag"] .geo-country[data-hue],
+[data-theme="dim"] [data-geo-mode="flag"] .geo-country[data-hue] {
+  fill: hsl(var(--geo-hue) 46% var(--geo-l-dark, 55%));
+}
+
+/* A flag with no chromatic colour falls back to the theme ramp rather than to nothing. */
+[data-geo-mode="flag"] .geo-country[data-lit]:not([data-hue]) {
+  fill: color-mix(in oklab, var(--color-info) var(--geo-mix, 60%), var(--color-card));
+  fill-opacity: 1;
+}
+
+[data-theme="dark"] [data-geo-mode="flag"] .geo-country[data-lit]:not([data-hue]),
+[data-theme="dim"] [data-geo-mode="flag"] .geo-country[data-lit]:not([data-hue]) {
+  fill: color-mix(in oklab, var(--color-primary) var(--geo-mix, 60%), var(--color-muted));
+}
+
+/* ── Selection: clicking a country dims every other one ──────────────────────
+ * Opacity is right HERE, unlike for the rank ramp: this is a transient interaction
+ * state, not data, and a wash is exactly the "these are not what you asked about"
+ * signal. Kept off `fill` so it composes with whichever ramp is active.
+ */
+[data-geo-selected] .geo-country[data-lit]:not([data-selected]) {
+  /*
+   * Light themes need a GENTLER wash than dark ones. The light ramp's faint end is
+   * already a pale blue a few percent off the card, so 0.22 took the whole map to blank
+   * white — you could no longer see which countries had traffic at all, only which one
+   * was selected. Dark's faint end is a mid grey against near-black, which survives the
+   * same treatment; it keeps the stronger value below.
+   */
+  opacity: 0.45;
+}
+
+[data-theme="dark"] [data-geo-selected] .geo-country[data-lit]:not([data-selected]),
+[data-theme="dim"] [data-geo-selected] .geo-country[data-lit]:not([data-selected]) {
+  opacity: 0.25;
+}
+
+.geo-country[data-lit] {
+  cursor: pointer;
+  transition: opacity 120ms ease-out;
+}
+
+[data-geo-selected] .geo-swatch:not([data-selected]),
+[data-geo-selected] .geo-legend-row:not([data-selected]) {
+  opacity: 0.4;
+}
+
+/* ── Legend swatch ────────────────────────────────────────────────────────────
+ * Same logic on `background-color`, since a <span> has no fill. Kept in this file so the
+ * map, the donut and the key can only ever be changed together — a key whose colour
+ * differs from what it keys is worse than no key.
+ */
+.geo-swatch {
+  background-color: color-mix(in oklab, var(--color-info) var(--geo-mix, 60%), var(--color-card));
+}
+
+[data-theme="dark"] .geo-swatch,
+[data-theme="dim"] .geo-swatch {
+  background-color: color-mix(in oklab, var(--color-primary) var(--geo-mix, 60%), var(--color-muted));
+}
+
+[data-geo-mode="flag"] .geo-swatch[data-hue] {
+  background-color: hsl(var(--geo-hue) 58% var(--geo-l, 55%));
+}
+
+[data-theme="dark"] [data-geo-mode="flag"] .geo-swatch[data-hue],
+[data-theme="dim"] [data-geo-mode="flag"] .geo-swatch[data-hue] {
+  background-color: hsl(var(--geo-hue) 46% var(--geo-l-dark, 55%));
+}
+
+/* ── Live hits ────────────────────────────────────────────────────────────────
+ * One expanding ring plus a solid dot per request, positioned from the country's own
+ * getBBox() centre (see LiveHits.tsx).
+ *
+ * The animation is CSS, not React state: a ring driven by rAF and setState would
+ * re-render the whole map — 250-odd <path> elements — on every frame of every concurrent
+ * ripple. Here React only mounts and unmounts the ripple; the compositor does the rest.
+ *
+ * `--color-info` rather than the choropleth's own ramp: a hit has to be visible ON TOP of
+ * whatever shade its country already is, including the busiest country at full strength.
+ */
+.geo-ripple-ring {
+  fill: none;
+  stroke: var(--color-info);
+  stroke-width: 0.7;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: geo-ripple-out var(--geo-ripple-ms, 1600ms) ease-out forwards;
+}
+
+.geo-ripple-dot {
+  fill: var(--color-info);
+  animation: geo-ripple-dot var(--geo-ripple-ms, 1600ms) ease-out forwards;
+}
+
+@keyframes geo-ripple-out {
+  from { transform: scale(0.35); opacity: 0.95; }
+  to   { transform: scale(4.2);  opacity: 0; }
+}
+
+@keyframes geo-ripple-dot {
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* A ring that expands and fades every few hundred ms is exactly the kind of motion
+ * reduced-motion exists for. The dot still appears, so the information — a request came
+ * from here — survives; only the sweep is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .geo-ripple-ring {
+    animation: none;
+    opacity: 0;
+  }
+  .geo-ripple-dot {
+    animation: geo-ripple-dot-static var(--geo-ripple-ms, 1600ms) linear forwards;
+  }
+  @keyframes geo-ripple-dot-static {
+    0%, 70% { opacity: 1; }
+    to      { opacity: 0; }
+  }
+}
+
+/* Selection dimming must not swallow the live layer: a country you filtered to still
+ * receives hits from elsewhere, and hiding them would misreport the stream as idle. */
+[data-geo-selected] .geo-ripples {
+  opacity: 1;
+}
+
+/* ── Country tooltip ──────────────────────────────────────────────────────────
+ * Anchored over the country (see VisitorMap's `hoverAt`), not the pointer. Because the
+ * anchor jumps from one country's centre to the next, the transition is what makes that
+ * read as one tooltip moving rather than two appearing — and it costs nothing, since only
+ * `left`/`top`/`opacity` change and none of them are recomputed per frame by JS.
+ */
+.geo-tooltip {
+  transition:
+    left 140ms ease-out,
+    top 140ms ease-out;
+  /* Same order recharts' wrapper gets in chart.css: the map's absolutely-positioned
+     overlays (ripples, legend) otherwise paint over it. */
+  z-index: 40;
+}
+
+/* A tooltip that slides across the map while the pointer is already gone is worse than
+ * no animation; position changes are instant when motion is unwelcome. */
+@media (prefers-reduced-motion: reduce) {
+  .geo-tooltip {
+    transition: none;
+  }
+}

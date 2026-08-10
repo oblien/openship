@@ -41,6 +41,11 @@ interface ScanRes {
   outputDirectory?: string;
   rootDirectory?: string;
   port?: number;
+  /** Compose / multi-service definitions the scan detected. Forwarded to
+   *  build/access so the project is deployed as a SERVICES project (rows synced,
+   *  preflight uses the services branch — not single-app "missing build image"),
+   *  and so per-service scoping (--service-ids) has real rows to act on. */
+  services?: Array<Record<string, unknown>>;
   error?: string;
 }
 interface EnsureRes {
@@ -85,6 +90,9 @@ export async function deployFolder(opts: {
   /** Reuse/update an existing project instead of creating one. */
   projectId?: string;
   environment?: string;
+  /** Scope a folder REDEPLOY to a subset of services; others carry forward
+   *  untouched (no needless stateful recreate). Ignored on a first deploy. */
+  serviceIds?: string[];
   onStep?: (message: string) => void;
 }): Promise<FolderDeployResult> {
   const { cwd } = opts;
@@ -186,6 +194,12 @@ export async function deployFolder(opts: {
       projectId: ensured.project_id,
       uploadSessionId: session.sessionId,
       ...(opts.environment ? { environment: opts.environment } : {}),
+      // Carry the scanned compose services so a multi-service folder deploys as
+      // a services project (persisted rows + services-mode preflight). Absent for
+      // single-app folders, so their path is unchanged.
+      ...(scan.services && scan.services.length > 0 ? { services: scan.services } : {}),
+      // Scope a redeploy to a subset of services (others carry forward untouched).
+      ...(opts.serviceIds && opts.serviceIds.length > 0 ? { serviceIds: opts.serviceIds } : {}),
     }),
   });
   if (!dep.deployment_id) throw new Error(dep.error || "Failed to start deployment");

@@ -16,20 +16,48 @@
  */
 
 import type { Context } from "hono";
-import { repos } from "@repo/db";
+import { repos, type ChannelKind } from "@repo/db";
 import { getRequestContext } from "../../lib/request-context";
 import { audit, auditContextFrom } from "../../lib/audit";
 import { encrypt } from "../../lib/encryption";
-import { CATEGORIES } from "../../lib/notification-categories";
+import { CATEGORIES, CATEGORY_GROUPS } from "../../lib/notification-categories";
+import { env } from "../../config/env";
+import { assertPublicUrlLiteral, SsrfError } from "../../lib/ssrf-guard";
+import { sendTestToChannel } from "../../lib/notification-workers";
+import { safeErrorMessage } from "@repo/core";
 import { randomBytes } from "node:crypto";
 
-const VALID_CHANNEL_KINDS = new Set(["email", "webhook", "in_app", "slack", "discord", "msteams"]);
+const VALID_CHANNEL_KINDS = new Set([
+  "email",
+  "webhook",
+  "in_app",
+  "slack",
+  "discord",
+  "msteams",
+  "telegram",
+]);
 
 /* ─── Categories (static, no DB) ─────────────────────────────────────── */
 
-/** GET /categories — list every notification category (static registry). */
+/**
+ * GET /categories — the static registry, plus the groups the Settings UI tabs by.
+ *
+ * Billing is dropped outside CLOUD_MODE: those two categories are fed by
+ * Stripe/Oblien, so on a self-hosted box they are toggles that can never fire.
+ * The filter lives HERE and not in `CATEGORIES` on purpose — `findCategory`
+ * supplies the title and body of every delivered alert
+ * (notification-workers.ts) and the dispatcher's `defaultEnabled` fallback, so
+ * the registry has to stay complete or an org that already holds a billing row
+ * would start rendering the raw category id.
+ */
 export async function listCategories(c: Context) {
-  return c.json({ categories: CATEGORIES });
+  if (env.CLOUD_MODE) {
+    return c.json({ categories: CATEGORIES, groups: CATEGORY_GROUPS });
+  }
+  return c.json({
+    categories: CATEGORIES.filter((cat) => cat.group !== "billing"),
+    groups: CATEGORY_GROUPS.filter((g) => g.id !== "billing"),
+  });
 }
 
 /* ─── Channels ───────────────────────────────────────────────────────── */
@@ -81,10 +109,9 @@ export async function createChannel(c: Context) {
   });
 
   return c.json({
-    channel: {
-      ...channel,
-      config: redactChannelConfig(channel.kind, channel.config as Record<string, unknown>),
-    },
+    channel: { ...channel, config: redactChannelConfig(channel.kind, channel.config as Record<string, unknown>) },
+    // One-time reveal: the signing secret is never returned again.
+    ...(config.revealSecret ? { secret: config.revealSecret } : {}),
   });
 }
 
@@ -103,12 +130,21 @@ export async function updateChannel(c: Context) {
   const updates: Record<string, unknown> = {};
   if (typeof body.label === "string") updates.label = body.label;
   if (typeof body.enabled === "boolean") updates.enabled = body.enabled;
-  if (typeof body.verified === "boolean") updates.verified = body.verified;
+  // `verified` is SERVER-SET ONLY (via the test-send endpoint). Never trust a
+  // client-supplied value — otherwise a member could flip verified=true on an
+  // arbitrary outbound webhook/email channel and exfiltrate org event payloads,
+  // bypassing the dispatcher's enabled&&verified gate.
 
+  let revealSecret: string | undefined;
   if (body.config) {
-    const config = sanitizeChannelConfig(existing.kind, body.config);
+    const config = sanitizeChannelConfig(
+      existing.kind,
+      body.config,
+      existing.config as Record<string, unknown>,
+    );
     if (!config.ok) return c.json({ error: config.error }, 400);
     updates.config = config.value;
+    revealSecret = config.revealSecret;
     // Config change re-requires verification (the user might have
     // pointed it at a different webhook URL or email).
     if (existing.kind !== "in_app") updates.verified = false;
@@ -132,7 +168,41 @@ export async function updateChannel(c: Context) {
           config: redactChannelConfig(channel.kind, channel.config as Record<string, unknown>),
         }
       : null,
+    // One-time reveal when a config change generated a new signing secret.
+    ...(revealSecret ? { secret: revealSecret } : {}),
   });
+}
+
+/**
+ * POST /channels/:id/test — send a REAL test delivery via the per-kind worker;
+ * on success mark the channel verified (the only path to verified — server-set).
+ */
+export async function testChannel(c: Context) {
+  const ctx = getRequestContext(c);
+  const id = c.req.param("id");
+  if (!id) return c.json({ error: "id is required" }, 400);
+
+  const channel = await repos.notificationChannel.findById(id);
+  if (!channel || channel.userId !== ctx.userId) {
+    return c.json({ error: "Channel not found" }, 404);
+  }
+
+  try {
+    await sendTestToChannel(channel);
+  } catch (err) {
+    return c.json({ ok: false, error: safeErrorMessage(err) }, 400);
+  }
+
+  const updated = channel.verified
+    ? channel
+    : await repos.notificationChannel.update(id, { verified: true });
+  audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
+    eventType: "notification_channel.updated",
+    resourceType: "notifications",
+    resourceId: id,
+    after: { action: "test.verified", verified: true },
+  });
+  return c.json({ ok: true, verified: updated?.verified ?? true });
 }
 
 /** DELETE /channels/:id — remove a channel the caller owns. */
@@ -234,16 +304,28 @@ export async function upsertDefault(c: Context) {
   if (!body.category || typeof body.defaultEnabled !== "boolean") {
     return c.json({ error: "category and defaultEnabled are required" }, 400);
   }
-  const kind = body.defaultChannelKind ?? "email";
-  if (!VALID_CHANNEL_KINDS.has(kind)) {
-    return c.json({ error: "Invalid defaultChannelKind" }, 400);
+  // Multi-channel: accept an array of kinds; tolerate the legacy single
+  // `defaultChannelKind` string. Dedupe + require a non-empty, all-valid set.
+  const rawKinds: unknown[] = Array.isArray(body.defaultChannelKinds)
+    ? body.defaultChannelKinds
+    : body.defaultChannelKind != null
+      ? [body.defaultChannelKind]
+      : ["email"];
+  const kinds = Array.from(new Set(rawKinds)).filter(
+    (k): k is string => typeof k === "string",
+  );
+  if (kinds.length === 0 || !kinds.every((k) => VALID_CHANNEL_KINDS.has(k))) {
+    return c.json(
+      { error: "defaultChannelKinds must be a non-empty list of valid channel kinds" },
+      400,
+    );
   }
 
   const def = await repos.notificationDefault.upsert({
     organizationId: ctx.organizationId,
     category: body.category,
     defaultEnabled: body.defaultEnabled,
-    defaultChannelKind: kind,
+    defaultChannelKinds: kinds as ChannelKind[],
   });
 
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
@@ -253,7 +335,7 @@ export async function upsertDefault(c: Context) {
     after: {
       category: def.category,
       defaultEnabled: def.defaultEnabled,
-      defaultChannelKind: def.defaultChannelKind,
+      defaultChannelKinds: def.defaultChannelKinds,
     },
   });
 
@@ -292,14 +374,8 @@ export async function markSeen(c: Context) {
 
 /* ─── Helpers ────────────────────────────────────────────────────────── */
 
-interface ConfigOk {
-  ok: true;
-  value: Record<string, unknown>;
-}
-interface ConfigErr {
-  ok: false;
-  error: string;
-}
+interface ConfigOk { ok: true; value: Record<string, unknown>; revealSecret?: string }
+interface ConfigErr { ok: false; error: string }
 
 /**
  * Sanitize + normalize the inbound config per kind. Secrets (webhook
@@ -308,7 +384,11 @@ interface ConfigErr {
  *
  * Returns either { ok: true, value } or { ok: false, error }.
  */
-function sanitizeChannelConfig(kind: string, raw: unknown): ConfigOk | ConfigErr {
+function sanitizeChannelConfig(
+  kind: string,
+  raw: unknown,
+  existing?: Record<string, unknown>,
+): ConfigOk | ConfigErr {
   const cfg = (raw ?? {}) as Record<string, unknown>;
   switch (kind) {
     case "email": {
@@ -321,13 +401,34 @@ function sanitizeChannelConfig(kind: string, raw: unknown): ConfigOk | ConfigErr
     case "webhook": {
       const url = String(cfg.url ?? "").trim();
       if (!/^https?:\/\//.test(url)) return { ok: false, error: "Invalid webhook URL" };
-      // Auto-generate a signing secret if the user didn't supply one —
-      // we'll show it back via the verification flow so they can save it.
-      const rawSecret =
-        typeof cfg.hmacSecret === "string" && cfg.hmacSecret.length > 0
-          ? cfg.hmacSecret
-          : randomBytes(32).toString("base64url");
-      return { ok: true, value: { url, hmacSecret: encrypt(rawSecret) } };
+      // SaaS SSRF guard: reject internal/loopback/metadata targets at create.
+      // Self-hosted operators may webhook their own LAN → gate on CLOUD_MODE.
+      // The DNS-rebinding pin runs at fetch time in notification-workers.
+      if (env.CLOUD_MODE) {
+        try {
+          assertPublicUrlLiteral(url, { allowHttp: true });
+        } catch (e) {
+          return { ok: false, error: e instanceof SsrfError ? e.message : "Invalid webhook URL" };
+        }
+      }
+      // Signing-secret policy (revealSecret is returned to the client EXACTLY
+      // ONCE so a receiver can verify X-Openship-Signature-256):
+      //   - explicit hmacSecret in the body → (re)set + reveal (create / rotate)
+      //   - none supplied but one already stored (an edit of e.g. the URL) → CARRY
+      //     the stored secret forward. Do NOT regenerate — that silently breaks
+      //     every existing receiver's signature check — and do NOT reveal.
+      //   - none supplied and none stored (fresh create) → generate + reveal
+      const provided =
+        typeof cfg.hmacSecret === "string" && cfg.hmacSecret.length > 0 ? cfg.hmacSecret : null;
+      const storedEnc = typeof existing?.hmacSecret === "string" ? existing.hmacSecret : null;
+      if (provided) {
+        return { ok: true, value: { url, hmacSecret: encrypt(provided) }, revealSecret: provided };
+      }
+      if (storedEnc) {
+        return { ok: true, value: { url, hmacSecret: storedEnc } };
+      }
+      const generated = randomBytes(32).toString("base64url");
+      return { ok: true, value: { url, hmacSecret: encrypt(generated) }, revealSecret: generated };
     }
     case "in_app":
       return { ok: true, value: {} };
@@ -373,6 +474,39 @@ function sanitizeChannelConfig(kind: string, raw: unknown): ConfigOk | ConfigErr
       }
       return { ok: true, value: { webhookUrl: encrypt(webhookUrl) } };
     }
+    case "telegram": {
+      // Two required inputs, and the token is the secret half. Same carry-forward
+      // rule as the webhook HMAC: an edit that only changes the chat id must not
+      // wipe the stored token (the client never receives it back to resend).
+      const provided = String(cfg.botToken ?? "").trim();
+      const storedEnc = typeof existing?.botToken === "string" ? existing.botToken : null;
+      if (provided && !/^\d{4,}:[A-Za-z0-9_-]{20,}$/.test(provided)) {
+        return { ok: false, error: "Invalid Telegram bot token (expected <id>:<secret>)" };
+      }
+      if (!provided && !storedEnc) return { ok: false, error: "Telegram bot token is required" };
+
+      // Numeric ids (negative for groups/supergroups) or @publicchannelname.
+      const chatId = String(cfg.chatId ?? "").trim();
+      if (!/^(-?\d+|@[A-Za-z][A-Za-z0-9_]{4,})$/.test(chatId)) {
+        return { ok: false, error: "Invalid Telegram chat ID" };
+      }
+
+      const out: Record<string, unknown> = {
+        botToken: provided ? encrypt(provided) : storedEnc,
+        chatId,
+      };
+      // The id half of the token is the bot's public user id, not a secret —
+      // keep it in the clear so the channel list can say WHICH bot sends.
+      const botId = provided ? provided.split(":")[0] : existing?.botId;
+      if (botId) out.botId = String(botId);
+
+      const thread = String(cfg.messageThreadId ?? "").trim();
+      if (thread) {
+        if (!/^\d+$/.test(thread)) return { ok: false, error: "Invalid Telegram topic ID" };
+        out.messageThreadId = thread;
+      }
+      return { ok: true, value: out };
+    }
     default:
       return { ok: false, error: `Unsupported channel kind: ${kind}` };
   }
@@ -411,6 +545,13 @@ function redactChannelConfig(
     case "msteams":
       return {
         webhookUrlConfigured: !!cfg.webhookUrl,
+      };
+    case "telegram":
+      return {
+        botTokenConfigured: !!cfg.botToken,
+        botId: cfg.botId ?? null,
+        chatId: cfg.chatId ?? "",
+        messageThreadId: cfg.messageThreadId ?? null,
       };
     default:
       return {};

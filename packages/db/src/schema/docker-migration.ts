@@ -48,7 +48,10 @@ export const dockerMigrationRun = pgTable(
     projectName: text("project_name").notNull(),
     serviceNames: jsonb("service_names").$type<string[]>().notNull().default([]),
 
-    /** FSM: queued|adopting|moving_data|deploying|verifying|awaiting_cutover|cutover|succeeded|failed|rolled_back */
+    /** FSM: queued|adopting|moving_data|deploying|verifying|awaiting_cutover|cutover|succeeded|failed|rolled_back|partial
+     *  `partial` = target verified + UP, but some paths didn't move (missing /
+     *  denied / errored). Parked like awaiting_cutover (source stopped-but-kept,
+     *  cutover gated) until the pending items are resolved + resumed to full. */
     status: text("status").notNull().default("queued"),
     /** "cross_server" | "same_server" */
     mode: text("mode").notNull().default("cross_server"),
@@ -70,6 +73,23 @@ export const dockerMigrationRun = pgTable(
     bytesMoved: bigint("bytes_moved", { mode: "number" }),
     /** Truncated to 4 KiB. */
     errorMessage: text("error_message"),
+    /** Durable session log (newline-joined, throttled-flushed, truncated to
+     *  256 KiB) so a failed or reloaded run can be debugged after the fact —
+     *  the in-memory progress/log buffers don't survive a client reload. */
+    logs: text("logs"),
+
+    /** Items that did NOT transfer (a `partial` run's to-do list): each
+     *  { key, kind:"volume"|"bind"|"path", source, dest?, serviceName?, reason }.
+     *  Resolved (edit path / skip) + resumed to complete the migration. */
+    pendingItems: jsonb("pending_items").$type<unknown[]>().default([]),
+    /** Snapshot of the sanitized start input, so a `partial` run can be resumed
+     *  and a `failed` run can be re-opened pre-filled (edit & retry). */
+    inputSnapshot: jsonb("input_snapshot").$type<Record<string, unknown> | null>(),
+    /** Volume names this run WROTE on the TARGET (cross-server). After a failed
+     *  deploy the rollback leaves these copies behind (never wipes data blindly);
+     *  the user can opt to remove them so a retry starts clean instead of hitting
+     *  "target already has data". Excludes "keep"-resolved (pre-existing) volumes. */
+    targetVolumes: jsonb("target_volumes").$type<string[]>().default([]),
 
     startedAt: timestamp("started_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),

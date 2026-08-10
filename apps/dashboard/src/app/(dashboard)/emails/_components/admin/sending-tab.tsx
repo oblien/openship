@@ -247,7 +247,11 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
               </button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground/80">{scope === "all" ? s.scopeAllHint : s.scopeSelectedHint}</p>
+          {/* "selected" leaves non-chosen senders delivering direct (off-SES) —
+              flag it so an "everything via SES" expectation isn't silently broken. */}
+          <p className={`text-xs ${scope === "selected" ? "text-warning" : "text-muted-foreground/80"}`}>
+            {scope === "all" ? s.scopeAllHint : s.scopeSelectedHint}
+          </p>
           {scope === "selected" && (
             <div className="mt-1 flex flex-wrap gap-1.5">
               {domainList.length === 0 && <span className="text-xs text-muted-foreground/70">{s.noDomains}</span>}
@@ -342,6 +346,7 @@ export function SendingTab({ serverId, primaryDomain }: { serverId: string; prim
               <li>{s.guidanceSandbox}</li>
               <li>{s.guidanceCreds}</li>
               <li>{s.guidanceDns}</li>
+              <li>{s.guidanceSystem}</li>
             </ul>
           </div>
         )}

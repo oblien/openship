@@ -17,16 +17,17 @@
   },
   "domainSettings": {
     "saveFailed": "Échec de l'enregistrement des domaines",
-    "toastTitle": "Domaines"
+    "toastTitle": "Domaines",
+    "routeFreeLabel": "Sous-domaine gratuit",
+    "routeFreeDesc": "Une URL {domain} gratuite, prête immédiatement.",
+    "routeCustomLabel": "Domaine personnalisé",
+    "routeCustomDesc": "Pointez votre propre domaine vers ce déploiement.",
+    "routeNoneLabel": "Aucun",
+    "routeNoneDesc": "Pas d'URL publique — interne uniquement. Accès par port sur l'hôte."
   },
   "dns": {
     "title": "Configuration DNS",
     "addRecordsFor": "Ajoutez ces enregistrements chez votre fournisseur DNS pour",
-    "descCname": "Achemine votre domaine à travers le réseau edge",
-    "descA": "Pointe votre domaine vers le serveur",
-    "descTxt": "Vérifie la propriété du domaine",
-    "nameHost": "Nom / Hôte",
-    "valueTarget": "Valeur / Cible",
     "selfInfoPre": "Ajoutez l'",
     "recordA": "enregistrement A",
     "selfInfoMid": " pointant vers l'IP de votre serveur, puis ajoutez l'",
@@ -34,7 +35,31 @@
     "verifySuffix": " pour la vérification de propriété.",
     "cloudInfoPre": "Ajoutez l'",
     "recordCname": "enregistrement CNAME",
-    "cloudInfoMid": " pour le routage, puis ajoutez l'"
+    "cloudInfoMid": " pour le routage, puis ajoutez l'",
+    "modalTitle": "Pointez votre domaine, puis déployez",
+    "modalSubtitle": "Le HTTPS est émis lors du premier déploiement dès que votre domaine pointe ici — ou passez cette étape et ajoutez le DNS plus tard depuis l’onglet Domaines.",
+    "autoConfigTitle": "Configurer automatiquement avec mon fournisseur DNS",
+    "autoConfigDesc": "Connectez votre registraire et nous ajouterons ces enregistrements pour vous.",
+    "comingSoon": "Bientôt disponible",
+    "deployAction": "Déployer",
+    "cancel": "Annuler",
+    "loadingRecords": "Chargement des enregistrements DNS…",
+    "serverIpPlaceholder": "l’IP publique de ton serveur",
+    "record": {
+      "purposeA": "Pointe {hostname} vers l’adresse IP de ce serveur",
+      "purposeCname": "Achemine {hostname} via le réseau edge",
+      "purposeCnameAlias": "Pointe {hostname} vers {target}",
+      "purposeTxt": "Prouve que {hostname} vous appartient — nous consultons cet enregistrement lors de la vérification",
+      "fieldType": "Type",
+      "fieldName": "Nom",
+      "fieldValue": "Valeur",
+      "fieldTtl": "TTL",
+      "ttlValue": "Auto (ou 3600)",
+      "apexHint": "« @ » désigne le domaine lui-même — certains fournisseurs veulent ce champ vide",
+      "fullName": "Nom complet, si votre fournisseur l’exige :",
+      "proxyNote": "Laissez tout proxy/CDN désactivé (Cloudflare : nuage gris, « DNS only ») pour que le HTTPS puisse être émis pour ce domaine.",
+      "copy": "Copier"
+    }
   },
   "buildSummary": {
     "title": "Récapitulatif du déploiement",
@@ -119,6 +144,8 @@
     "addServer": "Ajouter votre propre serveur",
     "continue": "Continuer",
     "chooseServer": "Choisir un serveur",
+    "thisServerBadge": "Ce serveur",
+    "thisServerHost": "Hôte actuel — les déploiements s'exécutent ici",
     "searchPlaceholder": "Rechercher des serveurs…",
     "noServersMatch": "Aucun serveur ne correspond à votre recherche.",
     "requireCloudFeature": "Déploiement vers Openship Cloud",
@@ -177,7 +204,15 @@
       "apiHostServerDesc": "Clonez sur l'hôte Openship, puis téléversez. Fonctionne partout.",
       "serverLabel": "Sur le serveur",
       "serverDesc": "Clonez sur le serveur — sans téléversement. Idéal pour les gros dépôts."
-    }
+    },
+    "rollbackTitle": "Restauration et sauvegardes",
+    "rollbackHint": "Combien de versions précédentes restent restaurables sur ce serveur, et ce qui est sauvegardé avant un déploiement.",
+    "rollbackFirstDeploy": "Modifiable dans les paramètres du projet après le premier déploiement.",
+    "backupSummaryNone": "Aucune règle de sauvegarde",
+    "backupSummaryConfigured": "{count} règle(s) de sauvegarde · avant déploiement : {preDeploy}",
+    "backupManage": "Gérer les sauvegardes",
+    "on": "activé",
+    "off": "désactivé"
   },
   "summary": {
     "buildAndDeploy": "Builder et déployer :",
@@ -188,7 +223,16 @@
     "targetServer": "Mon serveur",
     "targetCloud": "Openship Cloud",
     "buildLocal": "Cette machine",
-    "buildRemote": "Distant"
+    "buildRemote": "Distant",
+    "runtimeStatic": "Static · edge-served",
+    "runtimeSandboxed": "Sandboxed",
+    "runtimeDirectWarning": "Not sandboxed",
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed.",
+    "rollbackOne": "{count} version",
+    "rollbackOther": "{count} versions",
+    "rollbackAuto": "Rollback : auto",
+    "rollbackSnapshotHint": "Une copie de chaque version est conservée, donc un rollback ne reconstruit jamais. Modifiable dans Avancé.",
+    "rollbackGitHint": "Combien de versions passées restent restaurables. Modifiable dans Avancé."
   },
   "power": {
     "heading": "Puissance",
@@ -288,5 +332,20 @@
     "deployButton": "Déployer le webmail",
     "deployFailedTitle": "Échec du déploiement",
     "deployFailed": "Échec du démarrage du déploiement"
+  },
+  "serveMode": {
+    "heading": "How it's served",
+    "subtitle": "Serve the built files, or run it as a live server process.",
+    "staticLabel": "Serve as static files",
+    "staticDesc": "The build output is served directly by the edge. Nothing runs as a process.",
+    "serverLabel": "Run as a server process",
+    "serverDesc": "Start a long-running process (needs a start command and port).",
+    "staticNote": "Built in an isolated Docker sandbox, then served as static files by the edge.",
+    "startCommandLabel": "Start command",
+    "startCommandPlaceholder": "npm start",
+    "startCommandHint": "Leave empty to serve the build output as static files from the edge (nothing runs). Enter a command to run it as a live server process.",
+    "modeStatic": "Statique",
+    "modeProcess": "Processus serveur",
+    "portLabel": "Port"
   }
 }

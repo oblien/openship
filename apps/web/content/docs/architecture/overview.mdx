@@ -45,7 +45,7 @@ All three interfaces are thin — they render screens and send requests. The rea
 
 - **Dashboard** — a [Next.js](https://nextjs.org) web app. This is the full graphical UI, built for teams, and what you see in most screenshots in these docs.
 - **CLI** — the `openship` command you install from npm. It wears two hats: `openship up` can stand up a whole self-hosted instance on your machine — it bundles the API and fetches the dashboard for you — while everyday commands like `openship deploy` are a thin HTTP client that calls the same API endpoints the dashboard does. Great for self-hosting, scripting, and CI.
-- **Desktop app** — an [Electron](https://www.electronjs.org) wrapper that shows the same dashboard and runs its own local copy of the API on your machine, so you can deploy from a laptop with no server at all.
+- **Desktop app** — an [Electron](https://www.electronjs.org) wrapper that shows the same dashboard and runs its own local copy of the API on your machine (only while it's open). You manage everything from a laptop with no always-on server; deploys go out to a server you connect over SSH, or to Openship Cloud.
 
 Because they share the API, you can start a deploy in the dashboard and check on it from the CLI — it's one system, not three.
 
@@ -54,7 +54,7 @@ Because they share the API, you can start a deploy in the dashboard and check on
 When the API needs to *do* something to the outside world — build an image, start a container, wire up a domain, get an SSL certificate — it doesn't do it directly. It asks the **platform layer** (the `@repo/adapters` package). This is the "appliances" in the kitchen analogy, and it has three parts behind a single entry point:
 
 - **Runtime** — builds and runs your app. There are three runtimes: **Docker** (your app runs in a container), **Bare** (your app runs as a plain process, lighter for small machines and the desktop), and **Cloud** (the work is handed off to Openship Cloud).
-- **Infra** — routing and certificates. On self-hosted instances this is OpenResty (an nginx-based web server) for routing and certbot for automatic Let's Encrypt HTTPS. On cloud, the edge handles it.
+- **Infra** — routing and certificates. On self-hosted instances this is an OpenResty edge (an nginx-based server) for routing plus certbot for automatic Let's Encrypt HTTPS; in the Docker/Compose install the edge runs as a container on :80/:443 that the API drives. On cloud, Openship Cloud's edge handles it.
 - **System** — prerequisite checks and setup (is Docker installed? is git present?). Self-hosted only.
 
 At startup the API picks the right combination of these once, and the rest of the code just calls `getPlatform()`. For the full story of how a deploy resolves to a concrete runtime, see [Runtime model](/docs/architecture/runtime-model).

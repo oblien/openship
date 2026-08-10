@@ -1,10 +1,11 @@
 /**
  * Per-component actions for the mail admin Health tab.
  *
- * Wraps systemctl + journalctl over SSH for the daemons declared in
- * MAIL_COMPONENTS. Only those keys are accepted - we never pass a
- * caller-supplied unit name to systemd. That removes the entire class of
- * "exec arbitrary command" issues from this surface.
+ * Start / stop / restart a daemon and tail its logs, over whichever engine the
+ * box runs — the commands come from `../mail-engine.ts`, which owns the
+ * supervisord-vs-systemd split. Only keys declared in MAIL_COMPONENTS are
+ * accepted; we never pass a caller-supplied unit name to a supervisor. That
+ * removes the entire class of "exec arbitrary command" issues from this surface.
  *
  * `action` is restricted to restart / start / stop. Disable / enable /
  * mask deliberately live outside this surface: they change boot behaviour
@@ -23,9 +24,9 @@
  *     as failure (`Exit code undefined`).
  *
  * Fixes applied below:
- *   • Use `systemctl --no-block …` so the call returns the instant systemd
- *     accepts the job; the daemon cycles in the background and Health tab
- *     polling will reflect the new state seconds later.
+ *   • Return the instant the supervisor accepts the job (`--no-block` on
+ *     systemd; supervisorctl behaves that way already); the daemon cycles in
+ *     the background and Health tab polling reflects the new state seconds later.
  *   • Wrap commands as `( … ; echo __EXIT=$?__ ) 2>&1`. The subshell
  *     always exits 0 (echo succeeds), so the SSH layer always sees a
  *     clean close. We parse the real exit code from stdout.
@@ -33,9 +34,10 @@
  *     stuck journal can't tie up the SSH session.
  */
 
-import { sshManager } from "../../../lib/ssh-manager";
-import { MAIL_COMPONENTS } from "../mail-health.service";
 import { safeErrorMessage } from "@repo/core";
+
+import { MAIL_COMPONENTS } from "../mail-health.service";
+import { mailUnitActionCommand, mailUnitLogsCommand, runMailCommand } from "../mail-engine";
 
 export class UnknownComponentError extends Error {}
 
@@ -52,22 +54,28 @@ function resolveUnit(key: string): string {
 }
 
 /**
- * Run a command and parse the exit code from a stdout sentinel rather
- * than relying on ssh2's exit-status delivery. Returns the trimmed
+ * Run a flavor-correct command and parse the exit code from a stdout sentinel
+ * rather than relying on ssh2's exit-status delivery. Returns the trimmed
  * output (sentinel stripped) and the parsed exit code.
+ *
+ * `build(flavor)` renders the inner command; the sentinel wrapper goes around it
+ * here, so this file never has to know which supervisor it's talking to.
+ * `requireRunning: false` — acting on a daemon is exactly what you do when the
+ * engine ISN'T fully up, so the gate must not refuse it; only a box with no mail
+ * engine at all fails fast (as a typed 409).
  */
 async function execWithExitMarker(
   serverId: string,
-  command: string,
+  build: (flavor: "container" | "host" | "none") => string,
   timeoutMs: number,
 ): Promise<{ output: string; code: number }> {
   // Wrapping subshell: real command runs, exit marker is emitted on stdout,
   // subshell always returns 0 so ssh2 closes cleanly.
-  const wrapped = `( ${command} ; echo __EXIT=$?__ ) 2>&1`;
-  let raw = "";
-  await sshManager.withExecutor(serverId, async (exec) => {
-    raw = await exec.exec(wrapped, { timeout: timeoutMs });
-  });
+  const { output: raw } = await runMailCommand(
+    serverId,
+    (flavor) => `( ${build(flavor)} ; echo __EXIT=$?__ ) 2>&1`,
+    { timeout: timeoutMs, requireRunning: false },
+  );
   const match = raw.match(/__EXIT=(\d+)__\s*$/);
   if (!match) {
     // No marker means the wrapping shell never reached the echo - either
@@ -97,18 +105,13 @@ export async function runComponentAction(
     throw new UnknownComponentError(`Unknown action: ${action}`);
   }
   const unit = resolveUnit(key);
-  // --no-block: systemd queues the job and returns instantly. We never
-  // wait for the daemon to actually finish cycling - the Health tab polls
-  // and shows the live state.
   const { output, code } = await execWithExitMarker(
     serverId,
-    `systemctl --no-block ${action} ${unit}`,
+    (flavor) => mailUnitActionCommand(flavor, key, unit, action),
     20_000,
   );
   if (code !== 0) {
-    throw new Error(
-      output || `systemctl ${action} ${unit} failed (exit ${code})`,
-    );
+    throw new Error(output || `${action} ${unit} failed (exit ${code})`);
   }
   return { key, unit, action, output };
 }
@@ -121,7 +124,7 @@ export interface ComponentLogs {
 }
 
 /**
- * Tail recent journal lines for a component. We cap the request size
+ * Tail recent log lines for a component. We cap the request size
  * server-side so a misbehaving client can't ask for a million lines and
  * tie up the SSH session, and use a remote-side `timeout` so a hung
  * journal can't sit on the SSH channel either.
@@ -133,13 +136,9 @@ export async function getComponentLogs(
 ): Promise<ComponentLogs> {
   const unit = resolveUnit(key);
   const n = clampLines(requested);
-  // `timeout 10` caps the remote journalctl invocation. `|| true` keeps
-  // the exec resolved even when journalctl exits non-zero (e.g. unit has
-  // never logged). The wrapping subshell + EXIT marker keep us immune to
-  // ssh2's occasional missing-exit-code quirk.
   const { output } = await execWithExitMarker(
     serverId,
-    `timeout 10 journalctl -u ${unit} -n ${n} --no-pager -o short || true`,
+    (flavor) => mailUnitLogsCommand(flavor, key, unit, n),
     15_000,
   );
   const lines = output
@@ -167,16 +166,16 @@ export interface BulkRestartResult {
 }
 
 /**
- * Restart every component the host advertises (skipping ones whose unit
- * isn't installed). Each unit goes through `systemctl --no-block restart`
- * so a single slow daemon never blocks the others. The result reports
- * per-unit success - the UI surfaces the failures, the user can dig
- * deeper from the logs drawer.
+ * Restart every component the box advertises (skipping ones whose unit isn't
+ * installed). Each restart is accepted-and-returned rather than waited on, so a
+ * single slow daemon never blocks the others. The result reports per-unit
+ * success — the UI surfaces the failures, the user can dig deeper from the logs
+ * drawer.
  *
- * We do NOT enforce a specific order. systemd's After= chain orchestrates
- * actual dependency timing; "restart all" just kicks each unit and trusts
- * the unit file. iRedMail's stack tolerates concurrent restarts well in
- * practice - postgres + postfix + dovecot all settle within seconds.
+ * We do NOT enforce a specific order. The supervisor's own dependency config
+ * orchestrates actual timing; "restart all" just kicks each unit and trusts it.
+ * iRedMail's stack tolerates concurrent restarts well in practice — postgres +
+ * postfix + dovecot all settle within seconds.
  */
 export async function restartAllComponents(
   serverId: string,
@@ -186,7 +185,7 @@ export async function restartAllComponents(
     try {
       const { output, code } = await execWithExitMarker(
         serverId,
-        `systemctl --no-block restart ${comp.unit}`,
+        (flavor) => mailUnitActionCommand(flavor, comp.key, comp.unit, "restart"),
         20_000,
       );
       if (code === 0) {

@@ -12,6 +12,7 @@
 export {
 	api,
 	ApiError,
+	getApiErrorCode,
 	getApiErrorMessage,
 	isAbortError,
 	isNetworkError,
@@ -25,10 +26,18 @@ export { endpoints } from "./endpoints";
 
 /* --- Domain services ---------------------------------------------- */
 export { projectsApi } from "./projects";
-export type { RouteRuleRow, RouteRuleInput } from "./projects";
+export type {
+  RouteRuleRow,
+  RouteRuleInput,
+  BindObjectStorageBody,
+  ObjectStorageBinding,
+  ObjectStorageProviderSpec,
+  ObjectStorageView,
+} from "./projects";
 export { appsApi } from "./apps";
 export type { AppCatalogEntry, AppCatalogField, InstallAppResult } from "./apps";
 export { deployApi } from "./deploy";
+export type { RestorePlanUI } from "./deploy";
 export { domainsApi } from "./domains";
 export {
   jobsApi,
@@ -45,12 +54,27 @@ export {
 export { tokensApi } from "./tokens";
 export type { AccessToken, CreatedAccessToken, McpClient } from "./tokens";
 export { githubApi } from "./github";
+export type { RepoTreeEntry } from "./github";
 export { iconsApi } from "./icons";
 export { imagesApi } from "./images";
 export type { ImageCatalogEntry, ListImagesResponse } from "./images";
 export { aiApi } from "./ai";
 export { sandboxApi } from "./sandbox";
 export { systemApi } from "./system";
+export type { EdgeOrphanScan, UntrackedEdgeSite, ContainerIssues, ContainerIssue } from "./system";
+export { issuesApi, runResolution } from "./issues";
+export type {
+  SystemIssue,
+  IssueCounts,
+  IssueFeed,
+  IssueKind,
+  IssueScope,
+  IssueSeverity,
+  IssueSource,
+  IssueResolution,
+  IssueInfraFix,
+  RescanResult,
+} from "./issues";
 export { migrationApi } from "./migration";
 export { dockerMigrationApi } from "./server-migration";
 export type {
@@ -58,6 +82,7 @@ export type {
   DiscoveredGroup,
   DiscoveredService,
   DiscoveredVolumeMount,
+  ComposeRepoService,
   OpenshipProjectGroup,
   ReimportResult,
   AdoptResult,
@@ -65,6 +90,10 @@ export type {
   MigrationPreviewService,
   MigrationRun,
   MigrationStatus,
+  TransferProgress,
+  CustomPath,
+  PendingItem,
+  ConflictAction,
 } from "./server-migration";
 export type {
   DomainChoice,
@@ -97,15 +126,17 @@ export { cloudApi } from "./cloud";
 export type { CloudStatus } from "./cloud";
 export { servicesApi, serviceKind } from "./services";
 export type { Service, ServiceContainer, ServiceEnvVar, ServiceInput } from "./services";
-export { mailApi } from "./mail";
+export { mailApi, isMailEngineUnavailable } from "./mail";
 export { mailAdminApi } from "./mail-admin";
 export type {
   AdminDomain,
   AdminMailbox,
+  AdminAlias,
   CreateDomainPayload,
   UpdateDomainPayload,
   CreateMailboxPayload,
   UpdateMailboxPayload,
+  CreateAliasPayload,
   DomainDependents,
   AdditionalDomainDnsState,
   MailServerStats,
@@ -124,6 +155,7 @@ export type {
   MailStepStatus,
   MailSetupStatus,
   MailCredentials,
+  MailEngineState,
   MailWebmailSummary,
   DnsRecord,
   DnsRecords,
@@ -168,6 +200,7 @@ export {
 export { notificationsApi } from "./notifications";
 export type {
   NotificationCategory,
+  NotificationCategoryGroup,
   NotificationChannel,
   NotificationSubscription,
   NotificationDefault,
@@ -175,6 +208,18 @@ export type {
   ChannelKind,
   DeliveryStatus,
 } from "./notifications";
+
+/* --- Audit --------------------------------------------------------- */
+export { auditApi } from "./audit";
+export type {
+  AuditActor,
+  AuditEventRow,
+  AuditFacets,
+  AuditListResponse,
+  AuditQuery,
+  AuditSettings,
+  AuditSource,
+} from "./audit";
 
 /* --- Billing ------------------------------------------------------- */
 export { billingApi } from "./billing";

@@ -65,7 +65,7 @@ export const ProjectIdentity: React.FC = () => {
     <div className="bg-card rounded-2xl border border-border/50 p-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        {generateIcon('layers-363-1658238246.png', 28, 'hsl(var(--primary))')}
+        {generateIcon('layers-363-1658238246.png', 28, 'var(--primary)')}
         <h3 className="text-lg font-semibold text-foreground">{t.projectDetail.general.identity.title}</h3>
       </div>
 

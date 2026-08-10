@@ -91,20 +91,6 @@ export const StatsCardsSkeleton = () => {
   );
 };
 
-export const ProductionUrlSkeleton = () => {
-  return (
-    <div className="bg-gradient-to-br from-muted/40 to-muted rounded-2xl border border-border p-6 h-[100px] flex items-center animate-pulse">
-      <div className="flex items-center gap-4 flex-1">
-        <div className="w-12 h-12 bg-muted/50 rounded-2xl flex-shrink-0"></div>
-        <div className="flex-1 min-w-0">
-          <div className="h-4 w-32 bg-muted/30 rounded-2xl mb-2"></div>
-          <div className="h-5 w-40 bg-muted/50 rounded-2xl"></div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export const ProjectIdentitySkeleton = () => {
   return (
     <div className="bg-card rounded-2xl border border-border overflow-hidden animate-pulse">

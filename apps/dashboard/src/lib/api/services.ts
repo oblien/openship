@@ -1,8 +1,8 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
-import type { ComposeAdvanced } from "@repo/core";
+import type { ComposeAdvanced, ComposeAdvancedPatch } from "@repo/core";
 
-export type { ComposeAdvanced, ComposeHealthcheck } from "@repo/core";
+export type { ComposeAdvanced, ComposeAdvancedPatch, ComposeHealthcheck, OpenshipReadiness } from "@repo/core";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -115,6 +115,10 @@ export interface ServiceDrift {
   changes: Array<{ field: string; from: unknown; to: unknown }>;
 }
 
+/** A service's LIVE runtime view — read off the host on every request, never
+ *  from the deploy-time status column. `status` is
+ *  running | starting | restarting | stopped | failed | unknown
+ *  ("unknown" = the host couldn't be reached, not a claim about the service). */
 export interface ServiceContainer {
   serviceId: string;
   serviceName: string;
@@ -123,6 +127,31 @@ export interface ServiceContainer {
   ip: string | null;
   hostPort: number | null;
   imageRef: string | null;
+  /** Which identity key matched the container: label | name | trackedId | compose. */
+  matchedBy?: "label" | "name" | "trackedId" | "compose" | null;
+  /** Other containers on the host that also answer to this service (leftovers). */
+  duplicates?: string[];
+}
+
+export interface ServiceVolumeSize {
+  /** The compose volume string, verbatim — aligned by index to service.volumes. */
+  raw: string;
+  source: string;
+  target: string | null;
+  kind: "named" | "bind" | "anonymous";
+  readOnly: boolean;
+  /** On-disk size in bytes (apparent), or null when it couldn't be measured. */
+  bytes: number | null;
+}
+
+export interface ServiceVolumeSizes {
+  /** False for cloud/undeployed services (no host to `du` on) → hide sizes. */
+  measurable: boolean;
+  volumes: ServiceVolumeSize[];
+  /** Sum of measured volumes, or null if none measured. */
+  totalBytes: number | null;
+  /** True when a volume couldn't be measured → totalBytes is a lower bound (≥). */
+  partial: boolean;
 }
 
 export interface ServiceEnvVar {
@@ -150,7 +179,7 @@ export type ServiceInput = {
   volumes?: string[];
   command?: string;
   restart?: string;
-  advanced?: ComposeAdvanced;
+  advanced?: ComposeAdvancedPatch;
   exposed?: boolean;
   exposedPort?: string;
   domain?: string;
@@ -190,6 +219,14 @@ export const servicesApi = {
   /** Get a single service */
   get: (projectId: string | number, serviceId: string) =>
     api.get<{ success: boolean; service: Service }>(endpoints.services.get(projectId, serviceId)),
+
+  /** Measure the on-disk size of a service's volumes (runs `du` on the host —
+   *  loaded lazily from the Overview tab, not polled). Aligned by index to
+   *  `service.volumes`. `measurable:false` for cloud/undeployed → no sizes. */
+  volumeSizes: (projectId: string | number, serviceId: string) =>
+    api.get<{ success: boolean } & ServiceVolumeSizes>(
+      endpoints.services.volumeSizes(projectId, serviceId),
+    ),
 
   /** Create a service manually */
   create: (projectId: string | number, data: ServiceInput) =>
@@ -242,6 +279,12 @@ export const servicesApi = {
   getEnv: (projectId: string | number, serviceId: string, environment?: string) =>
     api.get<{ success: boolean; vars: ServiceEnvVar[] }>(
       `${endpoints.services.envGet(projectId, serviceId)}${environment ? `?environment=${environment}` : ""}`,
+    ),
+
+  /** #336: real (unmasked) compose `environment` map — write-gated on the API. */
+  revealEnv: (projectId: string | number, serviceId: string) =>
+    api.get<{ success: boolean; environment: Record<string, string> }>(
+      endpoints.services.envReveal(projectId, serviceId),
     ),
 
   /** Set environment variables for a service */

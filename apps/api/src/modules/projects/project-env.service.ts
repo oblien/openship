@@ -5,6 +5,7 @@
 import { repos } from "@repo/db";
 import { ValidationError, SYSTEM } from "@repo/core";
 import { encrypt, decrypt } from "../../lib/encryption";
+import { ENV_MASK } from "../../lib/secret-env";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { TMergeEnvVarsBody } from "./project.schema";
 
@@ -30,7 +31,7 @@ export async function listEnvVars(
     return {
       id: v.id,
       key: v.key,
-      value: v.isSecret ? "••••••••" : plainValue,
+      value: v.isSecret ? ENV_MASK : plainValue,
       environment: v.environment,
       isSecret: v.isSecret,
       createdAt: v.createdAt,

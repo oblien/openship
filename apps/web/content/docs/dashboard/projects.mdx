@@ -136,8 +136,18 @@ can pick which service's logs to watch. See [Logs & monitoring](/docs/guides/log
 
 `…/advanced` — project-level actions and the danger zone. It opens with the **route rules** editor,
 then a **Project Info** summary and a **Project Status** card whose **Disable** / **Enable** button
-pauses or resumes the project. The red **Danger Zone** at the bottom holds **Delete Project**, which
-permanently removes its deployments, domains, environment variables, and analytics.
+pauses or resumes the project.
+
+**Route rules** apply edge policies to a domain or path prefix, enforced at the OpenResty edge (self-hosted):
+per-client **rate limiting** (requests/sec + burst), **bans** (IPs, CIDRs, countries, user-agents, empty
+user-agent), **access** allow/deny lists and HTTP-method allow-lists, and **hotlink** protection (allowed
+referers). Changes push to the edge live — no reload or redeploy.
+
+The red **Danger Zone** at the bottom holds **Delete Project**. The full delete permanently removes the
+project's deployments, domains, environment variables, and analytics. On **self-hosted** instances you also
+get a **record-only** option that drops Openship's record of the project but **leaves the running
+workload, its data, and its on-server manifest in place** — so you can re-import it later. (Cloud projects
+are always fully deleted.)
 
 ## Where to next
 

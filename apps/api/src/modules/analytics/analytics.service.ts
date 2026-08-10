@@ -4,7 +4,8 @@
  * Data flow:
  *   - OpenResty shared-dict accumulates counters in real-time (log_by_lua)
  *   - Scraper (analytics-scraper.ts) flushes completed minutes from OpenResty → DB
- *     via POST /analytics/flush (read + delete), every 5 min
+ *     via POST /analytics/collect (read + delete, one call for the whole box),
+ *     driven by the `analytics:scrape` system job and by analytics reads
  *   - DB has all flushed history, OpenResty has only unflushed recent data
  *   - Reading always combines both: DB (flushed archive) + live (unflushed tail)
  *   - No overlap, no duplication, no data loss on OpenResty restart
@@ -15,9 +16,9 @@
  */
 
 import { repos } from "@repo/db";
-import { NotFoundError } from "@repo/core";
+import { NotFoundError, AppError, safeErrorMessage } from "@repo/core";
 import type { ResourceUsage } from "@repo/adapters";
-import { resolveDeploymentRuntime } from "../../lib/deployment-runtime";
+import { resolveDeploymentRuntimeForRead } from "../../lib/deployment-runtime";
 import {
   resolveProjectTrafficSources,
   fetchMgmt,
@@ -68,6 +69,37 @@ async function fetchLiveBuckets(
   return getBucketArray(result?.buckets);
 }
 
+/**
+ * The live OpenResty tail is only the last few UNFLUSHED minutes — the DB
+ * already holds every flushed minute (the real snapshot). The tail is fetched
+ * over an SSH tunnel to the edge, which is slow/unreachable when the server is
+ * remote (desktop mode) — and letting it block times out the WHOLE overview
+ * (the "analytics request timed out, works after a huge time" symptom). Cap it
+ * hard and fall back to the DB archive; a few missing seconds of live data is a
+ * fair trade for an overview that always returns fast. Best-effort, never throws.
+ */
+const LIVE_TAIL_TIMEOUT_MS = 3500;
+
+async function fetchLiveBucketsBounded(
+  serverId: string,
+  domain: string,
+  fromMinute: number,
+  toMinute: number,
+): Promise<MgmtAnalyticsBucket[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const capped = new Promise<MgmtAnalyticsBucket[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), LIVE_TAIL_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      fetchLiveBuckets(serverId, domain, fromMinute, toMinute).catch(() => []),
+      capped,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Convert a DB row to the unified bucket shape. */
 function toMgmtBucket(b: {
   minute: number;
@@ -88,18 +120,22 @@ function toMgmtBucket(b: {
 }
 
 /** Reduce an array of buckets into a summary. */
-function summariseBuckets(buckets: MgmtAnalyticsBucket[], lastUpdated: string): AnalyticsSummary {
+export function summariseBuckets(
+  buckets: MgmtAnalyticsBucket[],
+  lastUpdated: string,
+): AnalyticsSummary {
   const totalReqs = buckets.reduce((s, b) => s + b.requests, 0);
   const totalUnique = buckets.reduce((s, b) => s + b.unique_requests, 0);
   const totalIn = buckets.reduce((s, b) => s + b.bandwidth_in, 0);
   const totalOut = buckets.reduce((s, b) => s + b.bandwidth_out, 0);
-  const avgRt = buckets.reduce((s, b) => s + b.response_time, 0) / buckets.length;
+  const weightedRt = buckets.reduce((s, b) => s + b.response_time * b.requests, 0);
   return {
     totalRequests: totalReqs,
-    uniqueVisitors: totalUnique,
+    pageRequests: totalUnique,
+    uniqueVisitors: null,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
-    avgResponseTimeMs: Math.round(avgRt * 1000),
+    avgResponseTimeMs: totalReqs > 0 ? Math.round((weightedRt / totalReqs) * 1000) : 0,
     lastUpdated,
   };
 }
@@ -116,6 +152,9 @@ function summariseCloudBuckets(
 
   return {
     totalRequests: totalReqs,
+    // Oblien exposes distinct visitors but not a non-static request count, so this
+    // is the closest honest mapping: page requests are unknown here.
+    pageRequests: 0,
     uniqueVisitors: totalUnique,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
@@ -124,7 +163,7 @@ function summariseCloudBuckets(
   };
 }
 
-function buildHourlyPeriods(
+export function buildHourlyPeriods(
   buckets: MgmtAnalyticsBucket[],
   fromMinute: number,
   toMinute: number,
@@ -136,8 +175,7 @@ function buildHourlyPeriods(
       uniqueVisitors: number;
       bandwidthIn: number;
       bandwidthOut: number;
-      responseTimeTotal: number;
-      bucketCount: number;
+      responseTimeWeighted: number;
     }
   >();
 
@@ -148,16 +186,14 @@ function buildHourlyPeriods(
       uniqueVisitors: 0,
       bandwidthIn: 0,
       bandwidthOut: 0,
-      responseTimeTotal: 0,
-      bucketCount: 0,
+      responseTimeWeighted: 0,
     };
 
     current.requests += bucket.requests;
     current.uniqueVisitors += bucket.unique_requests;
     current.bandwidthIn += bucket.bandwidth_in;
     current.bandwidthOut += bucket.bandwidth_out;
-    current.responseTimeTotal += bucket.response_time;
-    current.bucketCount += 1;
+    current.responseTimeWeighted += bucket.response_time * bucket.requests;
     hourly.set(hourKey, current);
   }
 
@@ -178,8 +214,8 @@ function buildHourlyPeriods(
       bandwidthIn: current?.bandwidthIn ?? 0,
       bandwidthOut: current?.bandwidthOut ?? 0,
       avgResponseTimeMs:
-        current && current.bucketCount > 0
-          ? Math.round((current.responseTimeTotal / current.bucketCount) * 1000)
+        current && current.requests > 0
+          ? Math.round((current.responseTimeWeighted / current.requests) * 1000)
           : 0,
       topPaths: [],
       trafficByHour: {},
@@ -237,6 +273,10 @@ function buildCloudHourlyPeriods(
 
 const EMPTY_SUMMARY: AnalyticsSummary = {
   totalRequests: 0,
+  pageRequests: 0,
+  // 0, not null: this is the summary for a project with a resolvable traffic
+  // source that genuinely reported nothing, so "zero visitors" is the true answer
+  // rather than "look elsewhere".
   uniqueVisitors: 0,
   bandwidthIn: 0,
   bandwidthOut: 0,
@@ -262,6 +302,36 @@ function extractCloudBuckets(result: unknown): CloudAnalyticsBucket[] {
   return Array.isArray(result) ? (result as CloudAnalyticsBucket[]) : [];
 }
 
+/**
+ * Surface an EXPLICIT Oblien failure envelope (`{ success: false, … }`) as a
+ * thrown error so the caller returns a clean upstream error instead of parsing
+ * it to an empty bucket list and rendering a misleading 0/0/0 summary.
+ *
+ * Deliberately conservative: it throws ONLY on an explicit `success: false`.
+ * A genuine success (empty `data` = no traffic) OR any shape without that flag
+ * falls through to `extractCloudBuckets` exactly as before — so this can never
+ * turn a benign/empty response into a false error, only unmask a declared one.
+ * (Thrown transport errors are already handled by the caller's all-failed 502.)
+ *
+ * Envelope: `{ success, data, meta }`, sometimes wrapped again as `{ data: … }`
+ * on the proxied path (same nesting extractCloudBuckets walks).
+ */
+function assertCloudTimeseriesOk(raw: unknown): void {
+  let node: unknown = raw;
+  for (let depth = 0; depth < 4 && node && typeof node === "object"; depth++) {
+    const obj = node as Record<string, unknown>;
+    if (obj.success === false) {
+      const detail =
+        (typeof obj.error === "string" && obj.error) ||
+        (typeof obj.message === "string" && obj.message) ||
+        "request rejected";
+      throw new Error(`Openship Cloud analytics: ${detail}`);
+    }
+    if (Array.isArray(obj.data)) return; // reached the bucket array — done
+    node = obj.data ?? obj.result;
+  }
+}
+
 async function fetchCloudTimeseries(
   organizationId: string,
   domain: string,
@@ -273,16 +343,34 @@ async function fetchCloudTimeseries(
   const raw = client
     ? await client.analytics.timeseries(domain, params)
     : await cloudClient({ organizationId }).analytics.timeseries(domain, params);
-  // extractCloudBuckets is response PARSING (unwrap the SaaS envelope), not a
-  // cache — it just turns the wire shape into { data: bucket[] }.
+  // Surface a failed fetch as an error (caller → 502) instead of masking it as
+  // an empty summary; only a genuine no-traffic success falls through to [].
+  assertCloudTimeseriesOk(raw);
   return { data: extractCloudBuckets(raw) };
 }
 
 export interface AnalyticsSummary {
   /** Total requests (all time) */
   totalRequests: number;
-  /** Total unique visitors */
-  uniqueVisitors: number;
+  /**
+   * Non-static ("page") requests — NOT people. Five page views from one browser
+   * count five.
+   *
+   * This is what the self-hosted edge's `:u` counter has always measured, and it
+   * was reported as `uniqueVisitors` and then relabelled "Unique IPs" in the
+   * dashboard, which it never was. Named for what it is.
+   */
+  pageRequests: number;
+  /**
+   * Genuinely distinct visitors, or null when this source can't tell.
+   *
+   * Non-null only where the SOURCE does the dedup: Oblien reports
+   * `unique_visitors` per bucket. The self-hosted edge dedups per DAY (a salted
+   * hash set in shared memory), which doesn't decompose into the minute buckets
+   * this summary is built from — so it is null here and the real number comes from
+   * `GET /analytics/geo`. Null means "ask elsewhere", never "zero visitors".
+   */
+  uniqueVisitors: number | null;
   /** Bandwidth in bytes */
   bandwidthIn: number;
   bandwidthOut: number;
@@ -302,6 +390,17 @@ export interface AnalyticsPeriod {
   bandwidthIn: number;
   bandwidthOut: number;
   avgResponseTimeMs: number;
+  /**
+   * ALWAYS EMPTY, and structurally so — not a stub waiting to be filled.
+   *
+   * Path counters are aggregated per DAY at the edge, deliberately: per-minute path
+   * keys would multiply the analytics zone's cardinality by ~1440 and evict the
+   * request counters they annotate. A per-hour period therefore has no path data to
+   * carry. Window-level top paths come from `GET /analytics/geo`, which reads the
+   * daily rollup; the dashboard reads them from there.
+   *
+   * Kept on the type so the wire shape is stable for existing consumers.
+   */
   topPaths: { path: string; count: number }[];
   trafficByHour: Record<string, number>;
 }
@@ -358,18 +457,35 @@ export async function getAnalyticsOverview(
   // when untracked — never fetches an arbitrary cross-tenant host). Without it,
   // aggregate every tracked domain. Both handled by the one resolver.
   const sources = await resolveProjectTrafficSources(projectId, { domain });
+  // No resolvable traffic source (no tracked domain / no primary / no server) is
+  // a legitimate "nothing to show", NOT an error — keep the honest empty summary
+  // so a fresh or domain-less project renders a clean 0-state, not an error.
   if (sources.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
 
   if (sources.every((source) => source.kind === "cloud")) {
     const toMs = to ? new Date(to).getTime() : Date.now();
     const fromMs = from ? new Date(from).getTime() : toMs - 24 * 60 * 60 * 1000;
     const params = { from: fromMs, to: toMs, interval: "hour" as const };
-    const responses = await Promise.all(
-      sources.map((source) =>
-        fetchCloudTimeseries(ctx.organizationId, source.domain, params).catch(() => null),
-      ),
+    // Do NOT swallow a cloud fetch failure into an empty summary — that made an
+    // upstream outage look identical to "no traffic" (zeros with a 200). Settle
+    // per-domain: use whatever succeeded, but if EVERY cloud fetch failed,
+    // surface a real upstream error so the client can tell "broken" from "idle".
+    const settled = await Promise.allSettled(
+      sources.map((source) => fetchCloudTimeseries(ctx.organizationId, source.domain, params)),
     );
-    const buckets = responses.flatMap((response) => response?.data ?? []);
+    const ok = settled.filter(
+      (r): r is PromiseFulfilledResult<CloudTimeseriesResponse | null> => r.status === "fulfilled",
+    );
+    if (ok.length === 0) {
+      const reason = settled.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+      throw new AppError(
+        `Analytics upstream (Openship Cloud) is unavailable${reason ? `: ${safeErrorMessage(reason.reason)}` : ""}`,
+        502,
+        "ANALYTICS_UPSTREAM_UNAVAILABLE",
+      );
+    }
+    const buckets = ok.flatMap((r) => r.value?.data ?? []);
+    // Reached the cloud, but it reported no traffic → genuine empty (200).
     if (buckets.length === 0) return { summary: EMPTY_SUMMARY, periods: [] };
     return {
       summary: summariseCloudBuckets(buckets, new Date(toMs).toISOString()),
@@ -390,7 +506,7 @@ export async function getAnalyticsOverview(
         dbBuckets.length > 0 ? Math.max(...dbBuckets.map((b) => b.minute)) : fromMinute - 1;
       const liveFrom = Math.max(lastDbMinute + 1, fromMinute);
       const liveBuckets =
-        liveFrom <= toMinute ? await fetchLiveBuckets(serverId, domain, liveFrom, toMinute) : [];
+        liveFrom <= toMinute ? await fetchLiveBucketsBounded(serverId, domain, liveFrom, toMinute) : [];
       return [...dbBuckets.map(toMgmtBucket), ...liveBuckets];
     }),
   );
@@ -470,31 +586,23 @@ export async function getDeploymentStats(
 }
 
 // ─── Resource usage (live) ───────────────────────────────────────────────────
+//
+// `getContainerUsage` used to live here and is GONE, not moved: it read
+// `deployment.containerId` alone, which on a compose project is the primary
+// service's container, and reported it as the project's usage. Its replacement is
+// `modules/monitoring/project-usage.ts`, which covers every service and is the one
+// implementation both /analytics/usage and /analytics/resources now share.
 
 /**
- * Get current resource usage for a project's active container.
- * Returns null if no active deployment.
- */
-export async function getContainerUsage(
-  ctx: RequestContext,
-  projectId: string,
-): Promise<ResourceUsage | null> {
-  const project = await repos.project.findById(projectId);
-  if (!project || project.organizationId !== ctx.organizationId) {
-    throw new NotFoundError("Project", projectId);
-  }
-
-  if (!project.activeDeploymentId) return null;
-
-  const dep = await repos.deployment.findById(project.activeDeploymentId);
-  if (!dep?.containerId) return null;
-
-  const { runtime } = await resolveDeploymentRuntime(dep);
-  return runtime.getUsage(dep.containerId);
-}
-
-/**
- * Get container info (status, IP, uptime, current usage).
+ * Container info (status, IP, uptime) for a project's primary container.
+ *
+ * Genuinely single-container by nature — this describes the deployment's own
+ * container, not the stack — so it is not duplicating the usage collector.
+ *
+ * Uses the READ-ONLY resolver: building a full platform here runs
+ * `detectOpenRestyPaths` plus the edge-Lua self-heal inside the provision lock,
+ * which is the documented cause of polled reads timing out while containers were
+ * up. Caller-facing behaviour is unchanged; only the resolution cost is.
  */
 export async function getContainerInfo(ctx: RequestContext, projectId: string) {
   const project = await repos.project.findById(projectId);
@@ -507,8 +615,12 @@ export async function getContainerInfo(ctx: RequestContext, projectId: string) {
   const dep = await repos.deployment.findById(project.activeDeploymentId);
   if (!dep?.containerId) return null;
 
-  const { runtime } = await resolveDeploymentRuntime(dep);
-  return runtime.getContainerInfo(dep.containerId);
+  const { runtime } = await resolveDeploymentRuntimeForRead(dep);
+  try {
+    return await runtime.getContainerInfo(dep.containerId);
+  } finally {
+    void Promise.resolve(runtime.dispose?.()).catch(() => {});
+  }
 }
 
 // ─── Dashboard home stats ────────────────────────────────────────────────────

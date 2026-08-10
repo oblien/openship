@@ -64,10 +64,12 @@ body returns `-32600`).
 
 | Method | Result |
 |---|---|
-| `initialize` | Negotiates the protocol version (default `2025-06-18`; also speaks `2025-03-26` and `2024-11-05`) and returns `capabilities: { tools: { listChanged: false } }` and `serverInfo: { name: "openship", version: "1.0.0" }`. |
+| `initialize` | Negotiates the protocol version (default `2025-06-18`; also speaks `2025-03-26` and `2024-11-05`) and returns `capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } }` and `serverInfo: { name: "openship", version: "1.0.0" }`. |
 | `ping` | Returns `{}`. |
 | `tools/list` | Returns the tools the caller's token can actually use (filtered by read-only flag, role, and grants). |
 | `tools/call` | Dispatches the named tool through the real API and returns its response as JSON text content. |
+| `prompts/list` | Returns the guided-flow catalog — one entry per multi-step workflow (`openship-overview`, `deploy-from-git`, `deploy-a-folder`, `install-catalog-app`). |
+| `prompts/get` | Returns a named prompt's guidance as a user message, with tool references resolved to their live tool names and any `arguments` interpolated. |
 | `notifications/initialized` | Acknowledged only (notification, no reply → `202`). |
 
 ## List available tools
@@ -108,6 +110,31 @@ curl -s https://your-host/api/mcp \
 
 The result wraps the underlying API response as text content, with `isError: true` when the dispatched
 request failed.
+
+## Guided flows (prompts)
+
+`tools/list` is flat — it tells an agent what each tool does, one call at a time, but not how the multi-step
+flows chain together. The **prompts** catalog fills that gap: each prompt is a short, ordered playbook for a
+workflow, referencing the exact tool names to call in sequence. MCP clients surface them as slash-commands /
+starters, so they also serve as the discoverable entry points into a flow.
+
+```bash
+curl -s https://your-host/api/mcp \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"prompts/get",
+       "params":{"name":"deploy-from-git","arguments":{"repo":"acme/widgets"}}}'
+```
+
+| Prompt | What it walks you through |
+|---|---|
+| `openship-overview` | The tool groups, each flow's entry point, and how permission scoping (incl. per-repo GitHub grants) shapes what you can see and do. |
+| `deploy-from-git` | Connect/verify GitHub → pick a repo → detect the stack → create the project → deploy → watch. Optional `repo` / `branch` arguments. |
+| `deploy-a-folder` | The 4-step folder-upload flow, including the out-of-band tarball upload that is deliberately **not** an MCP tool (raw binary can't cross JSON-RPC). |
+| `install-catalog-app` | Browse the catalog → install → handle the `flowHref` that wizard apps (e.g. mail) return instead of installing in-band. |
+
+Prompt text resolves tool references against the live registry, so a renamed route never leaves a prompt
+pointing at a stale tool name.
 
 ## Errors you might see
 

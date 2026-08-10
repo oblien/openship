@@ -28,6 +28,7 @@
  *   slack     POST to Slack incoming-webhook URL the user pasted
  *   discord   POST to Discord webhook URL with a markdown-aware embed
  *   msteams   POST Adaptive Card to a Teams Workflows / legacy connector webhook URL
+ *   telegram  POST sendMessage through a BotFather bot to a chat/group/topic
  */
 
 import {
@@ -55,7 +56,7 @@ export const notificationChannel = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
 
-    /** "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams".
+    /** "email" | "webhook" | "in_app" | "slack" | "discord" | "msteams" | "telegram".
      *  Stored as text so we can add new channel kinds without a schema
      *  migration. The dispatcher's channel registry decides which kinds
      *  are dispatchable. */
@@ -73,6 +74,7 @@ export const notificationChannel = pgTable(
      *   slack   → { webhookUrl: string (encrypted), channelName?: string }
      *   discord → { webhookUrl: string (encrypted) }
      *   msteams → { webhookUrl: string (encrypted) }
+     *   telegram → { botToken: string (encrypted), chatId: string, messageThreadId?: string }
      */
     config: jsonb("config").notNull().default({}),
 
@@ -157,11 +159,11 @@ export const notificationDefault = pgTable(
      *  via the org settings page. */
     defaultEnabled: boolean("default_enabled").notNull().default(true),
 
-    /** Default channel kind for the auto-subscription. "email" by default.
-     *  The dispatcher matches this to the user's first verified channel
-     *  of that kind; if they have none, the subscription is created with
-     *  channelId=null and surfaces in the dashboard as "needs channel". */
-    defaultChannelKind: text("default_channel_kind").notNull().default("email"),
+    /** Default channel KINDS a new member is auto-subscribed on — an array so
+     *  one event can fan out to several destinations (e.g. ["email","slack"]).
+     *  Each kind matches the member's first verified channel of that kind at
+     *  seed time. `["email"]` by default. */
+    defaultChannelKinds: jsonb("default_channel_kinds").$type<string[]>().notNull().default(["email"]),
 
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

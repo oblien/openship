@@ -1,0 +1,37 @@
+# Build-context hygiene — keep the context small and never leak host artifacts
+# or secrets into image layers. Applies to every `docker build` / compose build
+# rooted at the repo (context: .). The Dockerfiles run `bun install` + build
+# INSIDE the image, so none of the host-built output below is needed.
+
+# Dependencies + build output (rebuilt in-image)
+**/node_modules
+**/.next
+**/dist
+**/release-dist
+apps/desktop/out
+apps/desktop/.vite
+
+# VCS + CI
+.git
+.gitignore
+.github
+
+# Secrets / local env — MUST NOT enter the build context or image
+.env
+.env.*
+!.env.example
+
+# Caches + logs
+**/.turbo
+**/.cache
+**/coverage
+**/*.log
+**/.DS_Store
+
+# Docs / assets not needed at build time
+docs
+*.md
+!README.md
+
+# Compose files themselves
+docker-compose*.yml

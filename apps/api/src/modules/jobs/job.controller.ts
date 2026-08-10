@@ -9,7 +9,7 @@ import type { Context } from "hono";
 import { repos } from "@repo/db";
 import { param, isServerInOrg } from "../../lib/controller-helpers";
 import { getRequestContext } from "../../lib/request-context";
-import { permission } from "../../lib/permission";
+import { permission, checkPermissionOnResource } from "../../lib/permission";
 import { streamRunSSE } from "../../lib/run-sse";
 import * as jobService from "./job.service";
 import { jobRunBus } from "./job-run.sse";
@@ -34,6 +34,50 @@ async function assertJobServersWritable(c: Context, serverIds: string[]): Promis
     }
   }
   return null;
+}
+
+/**
+ * Full authorization to RUN a job by key, shared by the run route and any other
+ * caller that can trigger a job (e.g. an incoming-webhook `job` action). Jobs are
+ * instance-global, so a bare `runJobNow(key)` bypasses both the `job:write` org
+ * gate and the per-target server-admin check. Assert both here so no path can
+ * trigger a job the caller couldn't run via `POST /jobs/:key/run`. Returns a
+ * Response (403/404) when denied, or null when the caller may run it.
+ */
+export async function assertJobRunnable(c: Context, key: string): Promise<Response | null> {
+  const ctx = getRequestContext(c);
+  await permission.assert(ctx, { resourceType: "job", resourceId: "*", action: "write" });
+  const row = await repos.job.findByKey(key);
+  if (!row) return c.json({ error: "Job not found" }, 404);
+  const serverIds = resolveServerIds((row.actionConfig ?? {}) as CommandConfig);
+  if (serverIds.length) {
+    const denied = await assertJobServersWritable(c, serverIds);
+    if (denied) return denied;
+  }
+  return null;
+}
+
+/**
+ * Non-throwing boolean form of `assertJobRunnable` — "may this caller run the
+ * job with `key`?". Used to gate disclosure of a job-triggering credential (an
+ * incoming-webhook token/HMAC IS a run-this-job capability, so it may only be
+ * revealed to a principal who could run the job). Returns false on any miss.
+ */
+export async function canRunJob(c: Context, key: string): Promise<boolean> {
+  const ctx = getRequestContext(c);
+  if (!(await checkPermissionOnResource(ctx, { resourceType: "job", resourceId: "*", action: "write" }))) {
+    return false;
+  }
+  const row = await repos.job.findByKey(key);
+  if (!row) return false;
+  const serverIds = resolveServerIds((row.actionConfig ?? {}) as CommandConfig);
+  for (const serverId of new Set(serverIds)) {
+    if (!(await checkPermissionOnResource(ctx, { resourceType: "server", resourceId: serverId, action: "admin" }))) {
+      return false;
+    }
+    if (!(await isServerInOrg(ctx, serverId))) return false;
+  }
+  return true;
 }
 
 /**
@@ -169,17 +213,11 @@ export async function remove(c: Context) {
 
 export async function run(c: Context) {
   const key = param(c, "key");
-  // Re-authorize the job's stored targets on every manual run: jobs are
-  // instance-global, so run-by-key would otherwise let a member trigger a
-  // command job pointed at a server outside their org.
-  const row = await repos.job.findByKey(key);
-  if (!row) return c.json({ error: "Job not found" }, 404);
-  const cfg = (row.actionConfig ?? {}) as { serverIds?: string[]; serverId?: string };
-  const serverIds = resolveServerIds({ serverId: cfg.serverId, serverIds: cfg.serverIds });
-  if (serverIds.length) {
-    const denied = await assertJobServersWritable(c, serverIds);
-    if (denied) return denied;
-  }
+  // Re-authorize on every manual run: jobs are instance-global, so run-by-key
+  // would otherwise let a member trigger a command job pointed at a server
+  // outside their org. Shared with the incoming-webhook `job` action.
+  const denied = await assertJobRunnable(c, key);
+  if (denied) return denied;
   const result = await jobService.runJobNow(key);
   return c.json({ data: result });
 }

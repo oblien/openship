@@ -1,0 +1,79 @@
+---
+title: Database migrations & stateful safety
+description: Safely back up and migrate a persistent database (MySQL/Postgres) volume around a deploy — using Openship's pre-deploy backup trigger and post-deploy jobs.
+---
+
+If a service in your project has a **Docker volume** (MySQL, Postgres, Redis, Qdrant…), two things about
+deploys are worth understanding:
+
+1. A container's `docker-entrypoint-initdb.d` scripts only run on **first initialization** — i.e. when the
+   volume is empty. Once the volume has data, those scripts never run again, so you **cannot** rely on them
+   to apply a schema migration to an existing database.
+2. On a full-stack deploy, a stateful container may be **recreated**. Its named volume is preserved (the
+   data survives), but recreate is still a high-stakes moment for production.
+
+Openship gives you two building blocks to make this safe — a backup *before* the deploy and a migration
+*after* it — plus a way to avoid touching the database at all.
+
+## Don't touch the database on an unrelated change
+
+The simplest safety measure: only deploy the services that changed. A backend code change shouldn't
+recreate your database container.
+
+```bash
+openship deploy --service-ids api,web
+```
+
+Services you don't name carry forward on their existing containers, untouched. See
+[Compose / multi-service](/docs/guides/compose-multi-service).
+
+## Back up before every deploy (rollback safety net)
+
+Create a **backup policy** for the stateful service and enable its **“trigger on pre-deploy”** option. On
+every deploy, Openship runs that backup **after the new build succeeds but before the destructive cutover**,
+so the snapshot captures the *old* container's data — exactly the state you'd want to restore if the new
+version misbehaves.
+
+- Set it up in **Backups** (see [Backups & restore](/docs/guides/backups-restore)); pick an S3/volume
+  destination and turn on the pre-deploy trigger.
+- Pre-deploy backups are best-effort by design: a slow or failing backup **does not block** the deploy, and
+  they're grouped as `pre_deploy` runs in the backup history so you can find the exact pre-cutover snapshot.
+
+## Run a migration after the deploy
+
+For applying a schema/data migration to an **existing** volume, use a **Job** that fires when the deploy
+finishes:
+
+1. Go to **Jobs** (see [Scheduled jobs](/docs/guides/jobs)) and create a **command** job.
+2. Set its trigger to the **“Deploy succeeded”** event.
+3. Point the command at your migration tool. Examples:
+
+**Postgres** (dbmate / Flyway / plain psql):
+
+```bash
+# a one-shot migrator container on the same network as your db service
+docker run --rm --network <project-network> \
+  -e DATABASE_URL="postgres://user:pass@db:5432/app" \
+  ghcr.io/amacneil/dbmate:latest up
+```
+
+**MySQL** (apply a versioned file):
+
+```bash
+docker run --rm --network <project-network> \
+  mysql:8 sh -c 'mysql -h db -u user -ppass app < /migrations/0007.sql'
+```
+
+<Callout title="Order of operations">
+The safe sequence is: **pre-deploy backup** (automatic, if the policy toggle is on) → new version deploys →
+**post-deploy migration job** runs against the now-updated volume. If the migration fails, restore the
+`pre_deploy` snapshot from the backup history.
+</Callout>
+
+## What Openship does NOT do (yet)
+
+There is no built-in **gating** pre-deploy migration step that blocks the app from starting until a
+migration completes — the post-deploy job runs *after* the new container is live. If your app strictly
+requires the schema to be migrated before it boots, run the migration as its own deploy step in your image
+(e.g. an entrypoint that runs `migrate` then `exec` the app) or keep the app tolerant of a brief
+migration window. A first-class gating pre-deploy hook is on the roadmap.

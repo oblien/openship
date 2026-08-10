@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Key, Loader2, Check, Trash2, Eye, EyeOff } from "lucide-react";
-import { settingsApi, type CloneCredentialsState } from "@/lib/api";
+import { settingsApi, githubApi, type CloneCredentialsState } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { SettingsSection } from "./SettingsSection";
 import { useI18n } from "@/components/i18n-provider";
 
@@ -19,6 +20,11 @@ import { useI18n } from "@/components/i18n-provider";
 export function CloneCredentials() {
   const { showToast } = useToast();
   const { t } = useI18n();
+  const { deployMode } = usePlatform();
+  // Whether identity forwarding applies is the BACKEND's call (it mirrors
+  // relayConfigEligible). `deployMode` is only the pre-load fallback so a slow
+  // /github/status doesn't flash a toggle that then disappears.
+  const [forwardingAvailable, setForwardingAvailable] = useState(deployMode === "desktop");
   const [state, setState] = useState<CloneCredentialsState | null>(null);
   const [loading, setLoading] = useState(true);
   const [tokenInput, setTokenInput] = useState("");
@@ -26,12 +32,23 @@ export function CloneCredentials() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [togglingDefault, setTogglingDefault] = useState(false);
+  const [forwardGit, setForwardGit] = useState(false);
+  const [togglingForward, setTogglingForward] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       const res = await settingsApi.get();
       setState(res.cloneToken);
+      setForwardGit(res.forwardGitToServer);
+      // Same source of truth the GitHub card uses, so the two can't disagree.
+      void githubApi
+        .getStatusDeduped<any>()
+        .then((gh) => {
+          const m = gh?.capabilities?.methods?.find((x: any) => x.kind === "forwarding");
+          if (m) setForwardingAvailable(Boolean(m.available));
+        })
+        .catch(() => {});
     } catch {
       // Silent - section just shows empty.
     } finally {
@@ -104,6 +121,20 @@ export function CloneCredentials() {
       showToast(getApiErrorMessage(err, t.settings.cloneCredentials.toast.updateDefaultFailed), "error", t.settings.common.toast.cloneCredentials);
     } finally {
       setTogglingDefault(false);
+    }
+  };
+
+  const handleToggleForward = async (next: boolean) => {
+    setForwardGit(next); // optimistic
+    setTogglingForward(true);
+    try {
+      const res = await settingsApi.updateForwardGitToServer(next);
+      setForwardGit(res.forwardGitToServer);
+    } catch (err) {
+      setForwardGit(!next); // revert
+      showToast(getApiErrorMessage(err, t.settings.cloneCredentials.forwardGitFailed), "error", t.settings.common.toast.cloneCredentials);
+    } finally {
+      setTogglingForward(false);
     }
   };
 
@@ -224,6 +255,33 @@ export function CloneCredentials() {
                 </span>
               </label>
             </div>
+          )}
+
+          {/* DESKTOP ONLY. `relayConfigEligible` (api: deployments/clone-plan.ts)
+              hard-requires isDesktop, and that is load-bearing rather than
+              incidental: the relay vends the operator's account-wide token on
+              demand over the SSH tunnel, whose trust boundary is "my machine → my
+              server". A self-hosted box has no such boundary and uses per-server
+              credentials instead — so on self-hosted this checkbox was flippable
+              but could never take effect. */}
+          {forwardingAvailable && (
+          <label className="flex items-start gap-3 cursor-pointer rounded-xl border border-border/50 bg-muted/15 p-3.5">
+            <input
+              type="checkbox"
+              checked={forwardGit}
+              onChange={(e) => handleToggleForward(e.target.checked)}
+              disabled={togglingForward}
+              className="mt-0.5 size-4 rounded border-border/60 accent-primary"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">
+                {t.settings.cloneCredentials.forwardGitLabel}
+              </span>
+              <span className="block text-[12px] text-muted-foreground/80 mt-0.5 leading-relaxed">
+                {t.settings.cloneCredentials.forwardGitDesc}
+              </span>
+            </span>
+          </label>
           )}
         </div>
       )}

@@ -377,6 +377,16 @@
     "dismissLink": "Lo sé, ocultar esto",
     "dismiss": "Descartar"
   },
+  "engine": {
+    "downTitle": "El motor de correo de este servidor no está en marcha",
+    "downBody": "Mientras esté detenido no se entrega ni se acepta correo, y todas las pestañas de aquí lo necesitan. Volver a iniciarlo es seguro: no se reinstala nada ni se cambia la configuración.",
+    "legacyNote": "Este servidor usa el motor heredado instalado directamente en el host (Postfix/Dovecot con systemd), por lo que no hay ningún contenedor que revisar.",
+    "start": "Iniciar el motor",
+    "missingTitle": "No hay motor de correo en este servidor",
+    "missingBody": "Openship no encuentra ningún motor de correo aquí: ni el contenedor del motor ni las unidades de Postfix/Dovecot. Vuelve a ejecutar la configuración de correo para reinstalarlo.",
+    "rerunSetup": "Repetir la configuración de correo",
+    "cardBlocked": "No disponible hasta que el motor de correo esté en marcha."
+  },
   "welcome": {
     "invalidEmail": "Introduce una dirección de correo válida",
     "sendFailed": "No se pudo enviar",

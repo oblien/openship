@@ -8,6 +8,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./proxy": {
+      "types": "./src/system/proxy/cli.ts",
+      "import": "./src/system/proxy/cli.ts"
     }
   },
   "scripts": {
@@ -15,6 +19,7 @@
     "dev": "tsup src/index.ts --format esm --dts --watch",
     "embed:lua": "bun scripts/embed-lua.ts",
     "embed:catalog": "bun scripts/embed-catalog.ts",
+    "edge:conf": "bun scripts/generate-edge-conf.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "clean": "rm -rf dist .turbo node_modules"
@@ -27,7 +32,8 @@
     "dockerode": "^4.0.9",
     "ignore": "^7.0.5",
     "oblien": "^2.2.45",
-    "ssh2": "^1.17.0"
+    "ssh2": "^1.17.0",
+    "tar-fs": "^2.1.4"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",

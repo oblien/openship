@@ -84,10 +84,33 @@ export function getApiErrorMessage(
     const body = err.body as Record<string, unknown> | undefined;
     if (body && typeof body.message === "string") return body.message;
     if (body && typeof body.error === "string") return body.error;
+    // TypeBox schema-validation 400s carry `{ success:false, errors:[{path,message}] }`
+    // with no top-level message/error, so they used to collapse to the opaque
+    // "API 400: Bad Request" (#427). Surface the first field error instead.
+    if (body && Array.isArray(body.errors) && body.errors.length > 0) {
+      const first = body.errors[0] as { path?: unknown; message?: unknown };
+      const message = typeof first.message === "string" ? first.message : "";
+      const path = typeof first.path === "string" ? first.path : "";
+      if (message) return path ? `${path} ${message}` : message;
+    }
     return err.message || fallback;
   }
   if (err instanceof Error) return err.message;
   return fallback;
+}
+
+/**
+ * The API's machine-readable error code (`AppError.code`, e.g.
+ * `MAIL_ENGINE_NOT_RUNNING`), or `null` when the failure carries none.
+ *
+ * Branch on THIS, never on the message: messages are copy, get translated, and
+ * get reworded. The code is the contract — `handleApiError` puts it in every
+ * `AppError` body alongside the human text.
+ */
+export function getApiErrorCode(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  const body = err.body as Record<string, unknown> | undefined;
+  return body && typeof body.code === "string" ? body.code : null;
 }
 
 /* ------------------------------------------------------------------ */

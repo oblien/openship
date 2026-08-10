@@ -262,6 +262,16 @@ const TABLES: ReadonlyArray<TableSpec> = [
     ],
     hasOrganizationId: false,
   },
+  {
+    sqlName: "incoming_webhook",
+    table: schema.incomingWebhook,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "fk", column: "projectId" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
+    hasOrganizationId: true,
+  },
 
   // Backups
   {
@@ -318,13 +328,19 @@ const TABLES: ReadonlyArray<TableSpec> = [
     scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: false,
   },
+  // notification_subscription / notification_delivery reference
+  // notification_channel (INSTANCE-scope only, above) via channelId, which never
+  // travels on an org/project (remap) dump. Carrying them there would create
+  // dangling channel FKs on the target AND let a crafted ingest attach a
+  // subscription/delivery to a VICTIM tenant's channel (self-containment can
+  // never hold for channelId in these scopes). So — exactly like backup_run for
+  // project scope — they are organization-scope EXCLUDED: a full instance
+  // migration still carries them (the channel travels alongside), but a
+  // cross-org remap does not. notification_default has no channel FK and stays.
   {
     sqlName: "notification_subscription",
     table: schema.notificationSubscription,
-    scopes: [
-      { in: "instance", via: "all-rows" },
-      { in: "organization", via: "organizationId" },
-    ],
+    scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: true,
   },
   {
@@ -339,24 +355,36 @@ const TABLES: ReadonlyArray<TableSpec> = [
   {
     sqlName: "notification_delivery",
     table: schema.notificationDelivery,
-    scopes: [
-      { in: "instance", via: "all-rows" },
-      { in: "organization", via: "organizationId" },
-    ],
+    scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: true,
   },
 
   // Analytics + audit — instance-only.
   { sqlName: "server_analytics", table: schema.serverAnalytics, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
   { sqlName: "server_analytics_geo", table: schema.serverAnalyticsGeo, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  // Project-scoped, unlike the two above (which are keyed by server + domain). So it
+  // carries a project scope as well as the instance one, and a project transfer takes
+  // its usage history along instead of silently resetting the charts on the receiver.
+  {
+    sqlName: "resource_usage",
+    table: schema.resourceUsage,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
+    hasOrganizationId: false,
+  },
   { sqlName: "audit_event", table: schema.auditEvent, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
+  // Travels with audit_event: without it, an instance migration silently turns
+  // audit recording back on for an org that had switched it off.
+  { sqlName: "audit_settings", table: schema.auditSettings, scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false },
 ];
 
 // Deliberately NOT in the catalogue — ephemeral, cloud-only, or re-derived on
 // demand, so shipping them across a migration adds risk without value:
 // build_session, deployment_check_run, orphaned_resource, terminal_sessions,
 // service_terminal_sessions, verification, github_install_state,
-// github_webhook_event, oblien_webhook_event, cloud_handoff_code, and all
+// webhook_delivery, oblien_webhook_event, cloud_handoff_code, and all
 // billing_* / credit_pack / stripe_* (CLOUD_MODE-only, absent on self-hosted).
 
 // Restore order = TABLES order (parents before children). Truncate uses reverse.
@@ -398,6 +426,9 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "project", column: "cloneTokenEncrypted" },
   { table: "project", column: "webhookSecret" },
   { table: "cloud_webhook_binding", column: "webhookSecret" },
+  { table: "webhook_source", column: "secret" },
+  { table: "incoming_webhook", column: "tokenEncrypted" },
+  { table: "incoming_webhook", column: "hmacSecretEncrypted" },
   { table: "env_var", column: "value" },
   { table: "backup_destination", column: "accessKeyIdEnc" },
   { table: "backup_destination", column: "secretAccessKeyEnc" },
@@ -407,6 +438,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "servers", column: "sshPassword" },
   { table: "servers", column: "sshKeyPassphrase" },
   { table: "instance_settings", column: "tunnelToken" },
+  { table: "instance_settings", column: "ghDeviceTokenEncrypted" },
   { table: "deployment", column: "envVars" },
   { table: "notification_channel", column: "config", secretPaths: ["hmacSecret", "webhookUrl"] },
 ];
@@ -635,6 +667,77 @@ export interface RestoreOptions {
   mergeConflictSkip?: string[];
 }
 
+/**
+ * Cross-tenant ingest guard for the REMAP path (cloud ingest + project transfer,
+ * where `remapOrgId` rewrites organizationId on org-owned rows). A CHILD row's
+ * parent FK (projectId / deploymentId / serviceId / groupId / destinationId /
+ * runId / channelId) is NOT remapped, so a crafted dump could point e.g.
+ * `service.projectId` at a VICTIM's project id and attach the row to another
+ * tenant's project — cross-tenant write, and RCE via a planted
+ * service.image/command or routing/SSL hijack via a planted domain (SaaS audit,
+ * critical); or point `backup_run.destinationId` at a victim's backup
+ * destination (→ their decrypted credentials adopted on restore). Require the
+ * dump to be SELF-CONTAINED: every such FK must reference a parent row PRESENT
+ * IN THE DUMP (which is org-remapped on insert), never a pre-existing row that
+ * may belong to another tenant. dumpSubgraph always emits self-contained
+ * subgraphs (tables whose NOT-NULL FK parent does not travel in a given scope —
+ * e.g. notification_subscription.channelId, backup rows in project scope — are
+ * excluded from that scope in TABLES), so legitimate transfers pass; a malicious
+ * partial dump is rejected. Throws on the first violation. Exported for testing.
+ * Pure — no DB access.
+ */
+export function assertDumpSelfContained(dump: DatabaseDump): void {
+  // Column → parent table (sqlName). Every ownership/reference FK that a remap
+  // leaves un-rewritten must be self-contained, or a crafted dump can attach a
+  // remapped row to a pre-existing (cross-tenant) parent. Column names are
+  // unambiguous across the schema, so a name→table map is sufficient.
+  const FK_PARENT: Record<string, string> = {
+    projectId: "project",
+    deploymentId: "deployment",
+    serviceId: "service",
+    groupId: "project_app",
+    // Backups: destinationId/runId reference org-scoped parents that DO travel
+    // in an organization dump (backup_destination is org-shared, backup_run is
+    // org-scoped), so a legitimate dump carries them and stays self-contained.
+    // A crafted dump pointing destinationId at a VICTIM's backup_destination
+    // (→ credential adoption on restore) or runId at a foreign run is rejected.
+    destinationId: "backup_destination",
+    runId: "backup_run",
+    // Notifications: channelId references notification_channel, which is
+    // INSTANCE-scope-only and never travels on a remap (org/project) dump, so
+    // any channelId here could only be a pre-existing cross-tenant channel.
+    // notification_subscription/notification_delivery are excluded from the
+    // organization scope (see TABLES) so legit remap dumps never carry them;
+    // this entry rejects such a row defensively if that scope is ever restored.
+    channelId: "notification_channel",
+  };
+  const dumpedIds: Record<string, Set<string>> = {};
+  for (const [sqlName, rows] of Object.entries(dump.tables)) {
+    if (!rows) continue;
+    dumpedIds[sqlName] = new Set(
+      rows
+        .map((r) => (r as { id?: unknown }).id)
+        .filter((id): id is string => typeof id === "string"),
+    );
+  }
+  for (const [sqlName, rows] of Object.entries(dump.tables)) {
+    if (!rows) continue;
+    for (const r of rows) {
+      const row = r as Record<string, unknown>;
+      for (const [col, parent] of Object.entries(FK_PARENT)) {
+        const v = row[col];
+        if (v == null) continue;
+        if (!dumpedIds[parent]?.has(String(v))) {
+          throw new Error(
+            `restore rejected: ${sqlName}.${col}="${String(v)}" references a ${parent} not present in the dump — ` +
+              `a remapped ingest may not attach rows to a pre-existing (cross-tenant) parent.`,
+          );
+        }
+      }
+    }
+  }
+}
+
 export async function restoreSubgraph(
   dump: DatabaseDump,
   opts: RestoreOptions,
@@ -645,10 +748,24 @@ export async function restoreSubgraph(
     );
   }
 
+  // Remap path (cloud ingest / project transfer) is the only place an untrusted
+  // caller supplies a dump for a DIFFERENT org — reject cross-tenant FKs there.
+  if (opts.remapOrgId) assertDumpSelfContained(dump);
+
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
 
     if (opts.mode === "wipe") {
+      // Engine-level last-resort gate: a whole-instance TRUNCATE must NEVER run
+      // on the multi-tenant SaaS. The API route is unmounted in CLOUD_MODE and
+      // exportInstance/importInstance refuse too, but this stops even a stray
+      // in-process restoreSubgraph({mode:'wipe'}) from truncating every tenant if
+      // those layers are ever bypassed. packages/db has no apps/api env → read raw.
+      if (process.env.CLOUD_MODE === "true") {
+        throw new Error(
+          "Refusing a wipe restore on a multi-tenant (CLOUD_MODE) instance — this would truncate every tenant.",
+        );
+      }
       // Truncate only the tables this scope claims, in reverse order.
       // For project / organization scope we don't TRUNCATE because that
       // would wipe other tenants — `wipe` mode is conceptually a "this

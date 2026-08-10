@@ -7,6 +7,7 @@ import {
   cliInstallCommand,
   type GithubReleasePayload,
 } from "../src/updates/resolve";
+import { parseManifest } from "../src/updates/advisories";
 
 // A realistic `releases/latest` payload — asset names match .github/workflows/release.yml.
 const RELEASE_0_2_0: GithubReleasePayload = {
@@ -72,6 +73,75 @@ describe("resolveDesktopUpdate", () => {
   it("no update on an empty/absent payload", () => {
     expect(resolveDesktopUpdate({ releasePayload: null, platform: "darwin", arch: "arm64", currentVersion: "0.1.9" }).available).toBe(false);
     expect(resolveDesktopUpdate({ releasePayload: {}, platform: "darwin", arch: "arm64", currentVersion: "0.1.9" }).available).toBe(false);
+  });
+});
+
+// The prompt gate: only the advisory manifest decides whether an available
+// update may interrupt the user, and it says so with the `announce` key.
+describe("resolveDesktopUpdate → announcement", () => {
+  const check = (manifest: unknown, currentVersion = "0.1.9") =>
+    resolveDesktopUpdate({
+      releasePayload: RELEASE_0_2_0,
+      platform: "darwin",
+      arch: "arm64",
+      currentVersion,
+      manifest: manifest === undefined ? undefined : parseManifest(manifest),
+    });
+
+  const entry = (over: Record<string, unknown> = {}) => ({
+    advisories: [
+      {
+        id: "update-0.2.0",
+        severity: "recommended",
+        announce: true,
+        affects: "<0.2.0",
+        title: "t",
+        message: "m",
+        ...over,
+      },
+    ],
+  });
+
+  it("no manifest → update available, but never a prompt", () => {
+    const r = check(undefined);
+    expect(r.available).toBe(true);
+    expect(r.available && r.announcement).toBeNull();
+  });
+
+  it("announce: true + matching affects → prompt, carrying the advisory copy", () => {
+    const r = check(entry());
+    expect(r.available && r.announcement?.id).toBe("update-0.2.0");
+    expect(r.available && r.announcement?.title).toBe("t");
+  });
+
+  it("announce: false is honoured even for a critical advisory", () => {
+    const r = check(entry({ severity: "critical", announce: false }));
+    expect(r.available && r.announcement).toBeNull();
+  });
+
+  it("omitted announce defaults per severity (legacy manifests)", () => {
+    const legacyRecommended = check(entry({ announce: undefined }));
+    const legacyInfo = check(entry({ severity: "info", announce: undefined }));
+    expect(legacyRecommended.available && legacyRecommended.announcement?.id).toBe("update-0.2.0");
+    expect(legacyInfo.available && legacyInfo.announcement).toBeNull();
+  });
+
+  it("affects that misses the running version → no prompt", () => {
+    const r = check(entry({ affects: "<0.1.5" }));
+    expect(r.available).toBe(true);
+    expect(r.available && r.announcement).toBeNull();
+  });
+
+  it("a selfhosted-only advisory never prompts the desktop app", () => {
+    const r = check(entry({ modes: ["selfhosted"] }));
+    expect(r.available && r.announcement).toBeNull();
+    const both = check(entry({ modes: ["selfhosted", "desktop"] }));
+    expect(both.available && both.announcement?.id).toBe("update-0.2.0");
+  });
+
+  it("garbage manifest → no prompt (fails closed)", () => {
+    expect(check({ advisories: "nope" }).available && check({ advisories: "nope" }).announcement).toBeNull();
+    expect(check(null).available && check(null).announcement).toBeNull();
   });
 });
 

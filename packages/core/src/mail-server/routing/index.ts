@@ -11,4 +11,4 @@
  */
 
 export * from "./types";
-export { buildMailServerRoutes } from "./build-routes";
+export { buildMailServerRoutes, mailServerRouteHostnames } from "./build-routes";

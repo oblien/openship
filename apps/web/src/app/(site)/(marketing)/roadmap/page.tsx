@@ -2,15 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Boxes, Scale, Webhook, Layers, ShieldAlert, Globe, Gitlab, Cloud, Smartphone,
-  Container, Palette, Braces, CloudCog, Cloudy, Send,
+  Container, Palette, Braces, CloudCog, Cloudy, Send, Blocks, SquareTerminal, GitPullRequest,
+  FolderSync, Database,
   type LucideIcon,
 } from "lucide-react";
 import { Navbar, Footer } from "@/components/landing";
+import { RoadmapHeroArt } from "./_components/RoadmapHeroArt";
 import "./roadmap.css";
 
 const PAGE_TITLE = "Roadmap";
 const PAGE_DESCRIPTION =
-  "Where Openship is going — clustering and load balancing with a one-click UI, webhook-triggered jobs, a durable queue, a managed WAF, a self-hosted CDN, GitLab and Cloudflare, and a mobile app. Built in the open.";
+  "Where Openship is going — native build pipelines for every stack, clustering and load balancing with a one-click UI, webhook-triggered jobs, a durable queue, a managed WAF, a self-hosted CDN, GitLab and Cloudflare, and a mobile app. Built in the open.";
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -20,8 +22,9 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: `${PAGE_TITLE} — Openship`, description: PAGE_DESCRIPTION },
 };
 
-type Status = "progress" | "next" | "planned" | "exploring";
+type Status = "shipped" | "progress" | "next" | "planned" | "exploring";
 const STATUS: Record<Status, string> = {
+  shipped: "Shipped",
   progress: "In progress",
   next: "Next up",
   planned: "Planned",
@@ -29,11 +32,45 @@ const STATUS: Record<Status, string> = {
 };
 
 type Item = { icon: LucideIcon; title: string; desc: string; status: Status };
-type Phase = { n: string; name: string; blurb: string; items: Item[]; flagship?: boolean; pitch?: string };
+type Phase = {
+  n: string;
+  name: string;
+  blurb: string;
+  items: Item[];
+  flagship?: boolean;
+  pitch?: string;
+  /** Optional "help us get here faster" link rendered under the phase. */
+  cta?: { label: string; href: string };
+};
 
 const PHASES: Phase[] = [
   {
     n: "01",
+    name: "Deploy anything",
+    blurb: "native pipelines for every stack.",
+    pitch:
+      "Node.js and Docker deploy natively today — Openship auto-detects them, builds them, and runs them with zero config. Every other stack — Go, Rust, Python, Ruby, PHP, Java & Kotlin, .NET, Elixir — already ships through the universal pipeline: bring your install, build, and start commands (or a Dockerfile) and deploy. Next, we're promoting each language to first-class, auto-detected native support — one stack at a time, and faster with your help.",
+    cta: {
+      label: "Contribute a stack pipeline",
+      href: "https://github.com/oblien/openship/contribute",
+    },
+    items: [
+      {
+        icon: Blocks,
+        title: "Native builders: Node.js & Docker",
+        status: "shipped",
+        desc: "Auto-detected build + run for the two heaviest cases — the full JavaScript/TypeScript framework family and any Dockerfile or Compose file. No commands to write, no images to pick: link the repo and ship.",
+      },
+      {
+        icon: SquareTerminal,
+        title: "First-class detection for every language",
+        status: "next",
+        desc: "Go, Rust, Python, Ruby, PHP, Java/Kotlin, .NET and Elixir become auto-detected natives — sensible build image, install, build, and start inferred for you. Until each lands, the universal pipeline already deploys them with your own commands, so nothing is blocked in the meantime.",
+      },
+    ],
+  },
+  {
+    n: "02",
     name: "Scale out",
     blurb: "one deploy target, many machines.",
     items: [
@@ -42,6 +79,18 @@ const PHASES: Phase[] = [
         title: "Clustering & multi-node",
         status: "progress",
         desc: "Group your servers into a cluster and ship to it as one. Add a node from the dashboard and Openship spreads containers across the fleet, health-checks them, and reschedules failures automatically — no control plane to babysit, no YAML to hand-write.",
+      },
+      {
+        icon: FolderSync,
+        title: "Shared volumes across nodes",
+        status: "planned",
+        desc: "A volume that follows your app across the fleet — one shared, replicated folder any node can read and write. Uploads, caches, and stateful data stop being pinned to a single machine, so a container can reschedule anywhere without leaving its files behind.",
+      },
+      {
+        icon: Database,
+        title: "Database clustering & replicas",
+        status: "planned",
+        desc: "Turn a managed database into a cluster: read replicas to spread query load, streaming replication across nodes, and automatic failover so losing a machine doesn't mean downtime. One click from the dashboard, no manual pg_basebackup.",
       },
       {
         icon: Container,
@@ -58,15 +107,15 @@ const PHASES: Phase[] = [
     ],
   },
   {
-    n: "02",
+    n: "03",
     name: "Automate",
     blurb: "jobs that react, at any scale.",
     items: [
       {
         icon: Webhook,
         title: "Event & webhook triggers",
-        status: "next",
-        desc: "Fire a job from an inbound webhook or a platform event — a git push, a finished deploy, a failed health check. Chain jobs into pipelines that run themselves, with the trigger you want and the guardrails you set.",
+        status: "shipped",
+        desc: "Fire a deploy or a job from an inbound webhook — per-hook URLs with their own token or HMAC auth — or from a git push. Chaining those triggers into self-running pipelines with platform events (finished deploy, failed health check) is what comes next.",
       },
       {
         icon: Layers,
@@ -77,15 +126,15 @@ const PHASES: Phase[] = [
     ],
   },
   {
-    n: "03",
+    n: "04",
     name: "Route & protect",
     blurb: "your edge, your rules.",
     items: [
       {
         icon: ShieldAlert,
         title: "Advanced route rules & WAF",
-        status: "planned",
-        desc: "Compose per-route rules — rate limits, geo and user-agent filters, bans, hotlink protection — into a managed web-application firewall you edit from the dashboard and apply live, with no reloads and no config files.",
+        status: "progress",
+        desc: "Per-route rules — rate limits, geo and user-agent filters, bans, hotlink protection — are live on self-hosted, edited from the dashboard and applied instantly with no reloads or config files. Next: composing them into a managed WAF and bringing the same rules to cloud.",
       },
       {
         icon: Globe,
@@ -96,7 +145,7 @@ const PHASES: Phase[] = [
     ],
   },
   {
-    n: "04",
+    n: "05",
     name: "Make it yours",
     blurb: "your brand, your look.",
     items: [
@@ -115,7 +164,7 @@ const PHASES: Phase[] = [
     ],
   },
   {
-    n: "05",
+    n: "06",
     name: "Command the cloud",
     blurb: "AWS & Azure, finally pleasant.",
     flagship: true,
@@ -136,7 +185,7 @@ const PHASES: Phase[] = [
     ],
   },
   {
-    n: "06",
+    n: "07",
     name: "Integrate",
     blurb: "connect the rest of your stack.",
     items: [
@@ -154,9 +203,9 @@ const PHASES: Phase[] = [
       },
       {
         icon: Send,
-        title: "Amazon SES mail",
-        status: "planned",
-        desc: "Beyond self-hosted mail: connect Amazon SES and manage senders, domains, and deliverability from Openship — pick the mail engine that fits the job, hosted or your own.",
+        title: "Amazon SES & SMTP mail",
+        status: "shipped",
+        desc: "Beyond self-hosted mail: connect Amazon SES or any SMTP relay and manage senders, domains, and deliverability from Openship — pick the mail engine that fits the job, hosted or your own. Live today.",
       },
     ],
   },
@@ -170,11 +219,9 @@ const LATER: Item = {
 };
 
 function StatusPill({ status }: { status: Status }) {
-  return (
-    <span className={`rm-status ${status === "progress" ? "rm-status--active" : ""}`}>
-      {STATUS[status]}
-    </span>
-  );
+  const variant =
+    status === "progress" ? "rm-status--active" : status === "shipped" ? "rm-status--shipped" : "";
+  return <span className={`rm-status ${variant}`}>{STATUS[status]}</span>;
 }
 
 function MilestoneCard({ item, accent }: { item: Item; accent?: boolean }) {
@@ -235,17 +282,15 @@ export default function RoadmapPage() {
             </span>
           </h1>
           <p className="animate-fade-in-up animate-delay-200 mx-auto mt-6 max-w-[560px] text-[16px] leading-[1.65] th-text-body">
-            The next chapters — clustering you turn on with a click, jobs that trigger themselves,
-            your own edge and CDN, and the integrations you asked for. Shaped in public, shipped as
-            open source.
+            The next chapters — native builds for every stack, clustering you turn on with a click,
+            jobs that trigger themselves, your own edge and CDN, and the integrations you asked for.
+            Shaped in public, shipped as open source.
           </p>
 
-          {/* Legend */}
-          <div className="animate-fade-in-up animate-delay-300 mt-9 flex flex-wrap items-center justify-center gap-2.5">
-            <StatusPill status="progress" />
-            <StatusPill status="next" />
-            <StatusPill status="planned" />
-            <StatusPill status="exploring" />
+          {/* Animated journey vector — replaces the status-pill legend (every
+              milestone card still shows its own status inline). */}
+          <div className="animate-fade-in-up animate-delay-300">
+            <RoadmapHeroArt />
           </div>
         </div>
 
@@ -286,6 +331,20 @@ export default function RoadmapPage() {
                   <MilestoneCard key={item.title} item={item} accent={phase.flagship} />
                 ))}
               </div>
+              {phase.cta && (
+                <a
+                  href={phase.cta.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rm-contribute"
+                >
+                  <GitPullRequest className="size-4" strokeWidth={1.7} />
+                  {phase.cta.label}
+                  <svg className="ml-0.5 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </a>
+              )}
             </div>
           </section>
         ))}

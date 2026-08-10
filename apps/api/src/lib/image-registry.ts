@@ -16,6 +16,9 @@
  * Results are cached in-memory for a few minutes (registry rate limits).
  */
 
+import { env } from "../config/env";
+import { safeFetch, type SafeFetchResponse } from "./safe-fetch";
+
 interface ParsedRef {
   registry: string; // API host, e.g. "registry-1.docker.io", "ghcr.io"
   repo: string; // e.g. "library/mysql", "n8nio/n8n", "get-convex/convex-backend"
@@ -89,12 +92,15 @@ async function fetchToken(challenge: string): Promise<string | null> {
   if (params.service) url.searchParams.set("service", params.service);
   if (params.scope) url.searchParams.set("scope", params.scope);
   try {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 10_000);
-    const res = await fetch(url, {
+    // SSRF-safe: the token `realm` is attacker-influenced (registry's 401
+    // challenge). safeFetch pins the resolved IP; CLOUD_MODE rejects internal
+    // targets while self-hosted may use a LAN registry.
+    const res = await safeFetch(url.toString(), {
       headers: { "User-Agent": "openship" },
-      signal: ctl.signal,
-    }).finally(() => clearTimeout(timer));
+      timeoutMs: 10_000,
+      allowPrivate: !env.CLOUD_MODE,
+      maxRedirects: 3,
+    });
     if (!res.ok) return null;
     const body = (await res.json()) as { token?: string; access_token?: string };
     return body.token ?? body.access_token ?? null;
@@ -108,20 +114,22 @@ async function headManifest(
   repo: string,
   ref: string,
   token?: string,
-): Promise<Response | null> {
+): Promise<SafeFetchResponse | null> {
   try {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 10_000);
-    const res = await fetch(`https://${registry}/v2/${repo}/manifests/${encodeURIComponent(ref)}`, {
+    // SSRF-safe: `registry` is derived from a user's image ref. safeFetch pins the
+    // resolved IP; CLOUD_MODE rejects internal/metadata registries (→ caught → null
+    // = "no update info"), self-hosted may use a LAN registry.
+    return await safeFetch(`https://${registry}/v2/${repo}/manifests/${encodeURIComponent(ref)}`, {
       method: "HEAD",
       headers: {
         Accept: MANIFEST_ACCEPT,
         "User-Agent": "openship",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      signal: ctl.signal,
-    }).finally(() => clearTimeout(timer));
-    return res;
+      timeoutMs: 10_000,
+      allowPrivate: !env.CLOUD_MODE,
+      maxRedirects: 3,
+    });
   } catch {
     return null;
   }
@@ -151,11 +159,11 @@ async function resolveUncached(image: string): Promise<string | null> {
   // First try anonymous; a public registry answers 401 with a token challenge.
   let res = await headManifest(registry, repo, ref);
   if (res && res.status === 401) {
-    const token = await fetchToken(res.headers.get("www-authenticate") ?? "");
+    const token = await fetchToken(res.headers["www-authenticate"] ?? "");
     if (!token) return null;
     res = await headManifest(registry, repo, ref, token);
   }
   if (!res || !res.ok) return null;
-  const digest = res.headers.get("docker-content-digest");
+  const digest = res.headers["docker-content-digest"];
   return digest && digest.startsWith("sha256:") ? digest : null;
 }

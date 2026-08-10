@@ -11,7 +11,13 @@
  *              smtp_sasl_password_maps=hash:/etc/postfix/sasl_passwd
  *              smtp_sasl_security_options=noanonymous
  *              smtp_tls_security_level=encrypt
- *   postmap + systemctl reload postfix
+ *   postmap + postfix reload
+ *
+ * WHERE those run is not decided here: `mailConfigFile` gives the write/read ends
+ * of the map path and `mailEngineCommand` wraps the Postfix commands for whichever
+ * engine the box has (`../mail-engine.ts` owns that matrix). On the container flavor
+ * the map is written to the host end of a bind mount and hashed inside the engine;
+ * on a legacy host-native box both are the same file and the commands run bare.
  *
  * SECURITY (see security-invariants): the SASL credentials are operator-
  * supplied and attacker-influenceable. They are written via `exec.writeFile`
@@ -25,6 +31,12 @@
 import type { CommandExecutor } from "@repo/adapters";
 import { encrypt } from "../../../lib/encryption";
 import {
+  mailEngineCommand,
+  mailConfigFile,
+  requireMailEngine,
+  type MailEngineFlavor,
+} from "../mail-engine";
+import {
   readState,
   mutateState,
   type MailServerState,
@@ -33,8 +45,32 @@ import {
 } from "../mail-state";
 import { execute, q } from "./psql-runner";
 
-const SASL_PASSWD_PATH = "/etc/postfix/sasl_passwd";
 const SES_INCLUDE = "include:amazonses.com";
+
+/**
+ * The flavor-specific halves of every command below, resolved once per operation.
+ *
+ * `saslMap.write` is where `exec.writeFile` (SFTP, no shell — the SASL-password
+ * security invariant) lands the map; `saslMap.engine` is the path Postfix itself
+ * reads, which is what `postmap`/`postconf` must reference. On the container flavor
+ * those are the two ends of a bind mount; on a legacy box they're one file.
+ *
+ * Resolution goes through `requireMailEngine`, so a box with no engine — or a
+ * stopped one, which can't hash a map or reload Postfix — fails as a typed 409 with
+ * a remediation instead of a raw "No such container" 500.
+ */
+async function relayTransport(exec: CommandExecutor): Promise<{
+  flavor: MailEngineFlavor;
+  saslMap: { write: string; engine: string };
+  engine: (cmd: string) => string;
+}> {
+  const { flavor } = await requireMailEngine(exec);
+  return {
+    flavor,
+    saslMap: mailConfigFile(flavor, "saslPasswd"),
+    engine: (cmd: string) => mailEngineCommand(flavor, cmd),
+  };
+}
 
 /** Single-quote-wrap for the one shell-interpolated value (the validated host). */
 function sq(value: string): string {
@@ -189,6 +225,56 @@ function revertRelayDnsForDomain(records: PatchableRecords | null | undefined): 
 }
 
 /**
+ * Recompute the SES send-hop DNS across a whole mail-server state from a
+ * persisted `OutboundRelay` — SPF `include` + SES DKIM/MAIL FROM extras on every
+ * relayed domain (primary + additional), reverting the rest. Pure (no I/O).
+ *
+ * This is the SINGLE source of the relay→DNS mapping: `configureOutboundRelay`
+ * uses it after writing Postfix, and the DKIM-rebuild / domain-add hooks re-run
+ * it so a freshly rebuilt `dnsRecords` (which is otherwise self-host-only)
+ * doesn't silently drop the SES records. Idempotent — safe to re-apply.
+ */
+export function applyRelayToState(
+  state: MailServerState,
+  relay: OutboundRelay,
+): Pick<MailServerState, "dnsRecords" | "additionalDomains"> {
+  const primary = state.domain;
+  const additionalKeys = Object.keys(state.additionalDomains ?? {});
+  const scope = relay.scope === "selected" ? "selected" : "all";
+  const relayed = new Set(
+    scope === "all" ? [primary, ...additionalKeys] : (relay.domains ?? []),
+  );
+  const identityFor = (domain: string): RelayIdentity =>
+    domain === primary
+      ? { mailFromDomain: relay.mailFromDomain, sesDkim: relay.sesDkim }
+      : relay.identities?.[domain] ?? {};
+
+  const dnsRecords = relayed.has(primary)
+    ? applyRelayDnsForDomain(
+        { ...(state.dnsRecords ?? {}) } as PatchableRecords,
+        identityFor(primary),
+        relay.provider,
+        relay.region,
+      )
+    : revertRelayDnsForDomain(state.dnsRecords as PatchableRecords | null);
+
+  const additionalDomains = { ...(state.additionalDomains ?? {}) };
+  for (const d of additionalKeys) {
+    const entry = additionalDomains[d];
+    if (!entry) continue;
+    const patched = relayed.has(d)
+      ? applyRelayDnsForDomain(entry.records as unknown as PatchableRecords, identityFor(d), relay.provider, relay.region)
+      : revertRelayDnsForDomain(entry.records as unknown as PatchableRecords);
+    additionalDomains[d] = { ...entry, records: patched as unknown as typeof entry.records };
+  }
+
+  return {
+    dnsRecords: (dnsRecords ?? null) as MailServerState["dnsRecords"],
+    additionalDomains,
+  };
+}
+
+/**
  * Enable / update the outbound relay on the mail server. Idempotent —
  * re-running with new creds rewrites the map + reloads. Returns the updated
  * state (relay block masked-free is the caller's job via `getOutboundRelay`).
@@ -198,37 +284,41 @@ export async function configureOutboundRelay(
   input: ConfigureRelayInput,
 ): Promise<MailServerState> {
   validate(input);
+  const { saslMap, engine } = await relayTransport(exec);
   const host = resolveHost(input);
   const scope: "all" | "selected" = input.scope === "selected" ? "selected" : "all";
   const nexthop = `[${host}]:${input.port}`;
 
-  // 1) Write the SASL map via SFTP (creds never touch a shell string). One
-  //    entry per relay host covers both global and per-sender routing.
-  await exec.writeFile(SASL_PASSWD_PATH, `${nexthop} ${input.username}:${input.password}\n`);
+  // 1) Write the SASL map via SFTP (creds never touch a shell string). On the
+  //    container flavor that's the host end of the bind mount; Postfix sees it at
+  //    saslMap.engine.
+  await exec.writeFile(saslMap.write, `${nexthop} ${input.username}:${input.password}\n`);
 
-  // 2) Lock down + hash the map (fixed paths, no interpolation).
-  await exec.exec(
-    `chmod 600 ${SASL_PASSWD_PATH} && postmap ${SASL_PASSWD_PATH} && chmod 600 ${SASL_PASSWD_PATH}.db`,
-  );
+  // 2) Lock down + hash the map. chmod the path we wrote; `postmap` must build the
+  //    .db with the Postfix that will READ it (its Berkeley-DB version), so it runs
+  //    wherever the engine is.
+  await exec.exec(`chmod 600 ${saslMap.write}`);
+  await exec.exec(engine(`postmap ${saslMap.engine}`));
+  await exec.exec(`chmod 600 ${saslMap.write}.db`).catch(() => {});
 
   // 3) SASL/TLS client directives always; the GLOBAL relayhost only in "all"
   //    scope. In "selected" scope we clear the global relayhost so unmatched
   //    domains deliver direct, and route the chosen domains via `sender_relayhost`.
   const sasl = [
     "smtp_sasl_auth_enable=yes",
-    `smtp_sasl_password_maps=hash:${SASL_PASSWD_PATH}`,
+    `smtp_sasl_password_maps=hash:${saslMap.engine}`,
     "smtp_sasl_security_options=noanonymous",
     "smtp_tls_security_level=encrypt",
   ];
   if (input.port === 465) sasl.push("smtp_tls_wrappermode=yes"); // implicit-TLS submission
 
   if (scope === "all") {
-    await exec.exec(`postconf -e ${[`relayhost=${nexthop}`, ...sasl].map(sq).join(" ")}`);
+    await exec.exec(engine(`postconf -e ${[`relayhost=${nexthop}`, ...sasl].map(sq).join(" ")}`));
     // No per-sender rows for this relay host when routing everything globally.
     await execute(exec, `DELETE FROM sender_relayhost WHERE relayhost = ${q(nexthop)}`).catch(() => {});
   } else {
-    await exec.exec("postconf -X relayhost 2>/dev/null || true");
-    await exec.exec(`postconf -e ${sasl.map(sq).join(" ")}`);
+    await exec.exec(engine("postconf -X relayhost") + " 2>/dev/null || true");
+    await exec.exec(engine(`postconf -e ${sasl.map(sq).join(" ")}`));
     const selected = (input.domains ?? []).map((d) => `@${d}`);
     for (const account of selected) {
       await execute(
@@ -242,8 +332,8 @@ export async function configureOutboundRelay(
     await execute(exec, `DELETE FROM sender_relayhost WHERE relayhost = ${q(nexthop)}${notIn}`).catch(() => {});
   }
 
-  // 4) Reload Postfix.
-  await exec.exec("systemctl reload postfix 2>/dev/null || postfix reload");
+  // 4) Reload Postfix (inside the engine).
+  await exec.exec(engine("postfix reload"));
 
   // 5) Persist the relay block (encrypted password) + fan DNS across every
   //    relayed domain (primary + additional).
@@ -267,36 +357,9 @@ export async function configureOutboundRelay(
   };
 
   const next = await mutateState(exec, state.serverId, (s) => {
-    const primary = s.domain;
-    const additionalKeys = Object.keys(s.additionalDomains ?? {});
-    const relayed = new Set(scope === "all" ? [primary, ...additionalKeys] : (input.domains ?? []));
-    const identityFor = (domain: string): RelayIdentity =>
-      domain === primary
-        ? { mailFromDomain: input.mailFromDomain, sesDkim: input.sesDkim }
-        : input.identities?.[domain] ?? {};
-
-    // Primary domain (loose record map).
-    const dnsRecords = relayed.has(primary)
-      ? applyRelayDnsForDomain({ ...(s.dnsRecords ?? {}) } as PatchableRecords, identityFor(primary), input.provider, input.region)
-      : revertRelayDnsForDomain(s.dnsRecords as PatchableRecords | null);
-
-    // Additional domains (typed DnsRecordSet each).
-    const additionalDomains = { ...(s.additionalDomains ?? {}) };
-    for (const d of additionalKeys) {
-      const entry = additionalDomains[d];
-      if (!entry) continue;
-      const patched = relayed.has(d)
-        ? applyRelayDnsForDomain(entry.records as unknown as PatchableRecords, identityFor(d), input.provider, input.region)
-        : revertRelayDnsForDomain(entry.records as unknown as PatchableRecords);
-      additionalDomains[d] = { ...entry, records: patched as unknown as typeof entry.records };
-    }
-
-    return {
-      ...s,
-      outboundRelay: relay,
-      dnsRecords: (dnsRecords ?? null) as MailServerState["dnsRecords"],
-      additionalDomains,
-    };
+    // Single source of the relay→DNS mapping (see applyRelayToState).
+    const { dnsRecords, additionalDomains } = applyRelayToState(s, relay);
+    return { ...s, outboundRelay: relay, dnsRecords, additionalDomains };
   });
   if (!next) throw new Error("Failed to persist relay config.");
   return next;
@@ -304,12 +367,16 @@ export async function configureOutboundRelay(
 
 /** Disable the outbound relay — revert Postfix to direct-to-MX + clear state. */
 export async function disableOutboundRelay(exec: CommandExecutor): Promise<MailServerState | null> {
+  const { saslMap, engine } = await relayTransport(exec);
+
   // Remove the relay-specific directives (leave smtp_tls_security_level — it's
   // good hygiene for direct delivery too and reverting it could weaken TLS).
   await exec.exec(
-    "postconf -X relayhost smtp_sasl_auth_enable smtp_sasl_password_maps smtp_sasl_security_options smtp_tls_wrappermode 2>/dev/null || true",
+    engine(
+      "postconf -X relayhost smtp_sasl_auth_enable smtp_sasl_password_maps smtp_sasl_security_options smtp_tls_wrappermode",
+    ) + " 2>/dev/null || true",
   );
-  await exec.exec(`rm -f ${SASL_PASSWD_PATH} ${SASL_PASSWD_PATH}.db`);
+  await exec.exec(`rm -f ${saslMap.write} ${saslMap.write}.db`);
 
   // Delete the per-sender rows we own for this relay host (no `active` column —
   // presence = active, so disable must DELETE rather than deactivate).
@@ -320,7 +387,7 @@ export async function disableOutboundRelay(exec: CommandExecutor): Promise<MailS
     await execute(exec, `DELETE FROM sender_relayhost WHERE relayhost = ${q(nexthop)}`).catch(() => {});
   }
 
-  await exec.exec("systemctl reload postfix 2>/dev/null || postfix reload");
+  await exec.exec(engine("postfix reload"));
 
   const state = await readState(exec);
   if (!state) return null;

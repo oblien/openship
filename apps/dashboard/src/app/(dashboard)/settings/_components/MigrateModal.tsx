@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { BlurIp } from "@/components/BlurIp";
 import {
   Cloud,
   Loader2,
@@ -40,6 +41,7 @@ import type { ServerInfo } from "@/lib/api/system";
 import { useToast } from "@/context/ToastContext";
 import { useCloud } from "@/context/CloudContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import { Modal } from "@/components/ui/Modal";
 
 type PathKind = "server" | "cloud" | "tunnel";
 type Step = "choose" | "form" | "result";
@@ -85,14 +87,20 @@ export function MigrateModal({ open, onClose, onMigrated }: MigrateModalProps) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-6"
-      onClick={handleClose}
+    // Portal-backed shared Modal, not a hand-rolled `fixed inset-0` overlay.
+    // Rendered inline, this sat INSIDE the settings page's stacking/filter
+    // context, so the whole dialog came out washed and the page bled through it.
+    // Modal portals to document.body and owns the scrim + solid surface.
+    <Modal
+      isOpen
+      onClose={handleClose}
+      closable={!submitting}
+      showCloseButton={false}
+      maxWidth="42rem"
+      maxHeight="90vh"
+      overflow="hidden"
     >
-      <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border border-border/50 bg-card"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="flex max-h-[90vh] min-h-0 flex-col">
         <ModalHeader
           step={step}
           path={path}
@@ -106,7 +114,7 @@ export function MigrateModal({ open, onClose, onMigrated }: MigrateModalProps) {
           submitting={submitting}
         />
 
-        <div className="max-h-[calc(90vh-72px)] overflow-y-auto p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
           {step === "choose" && (
             <ChooseStep
               cloudConnected={cloudConnected}
@@ -177,7 +185,7 @@ export function MigrateModal({ open, onClose, onMigrated }: MigrateModalProps) {
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -429,7 +437,7 @@ function ServerForm({
             <option value="">{t.settings.migrate.server.pickServer}</option>
             {servers.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name || s.sshHost} ({s.sshUser}@{s.sshHost})
+                {s.name || <BlurIp>{s.sshHost}</BlurIp>} ({s.sshUser}@<BlurIp>{s.sshHost}</BlurIp>)
               </option>
             ))}
           </select>

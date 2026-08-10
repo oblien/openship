@@ -20,6 +20,14 @@ export interface BuildConfigSnapshotLike {
   hasBuild: boolean;
   localPath?: string;
   buildStrategy?: BuildStrategy;
+  /** ONE-TIME image handover (migration cutover): serviceName → an already-present
+   *  image ref (a transferred / running container's image). A service listed here
+   *  is deployed from that image with NO build and NO pull — the build step seeds
+   *  it straight into `imageRefs`. Only set on the migration's first deploy (the
+   *  snapshot is per-deployment), so a later Redeploy has no handover and rebuilds/
+   *  pulls natively. This is how migration hands its images to the native pipeline
+   *  instead of forking a second deploy path. */
+  handoverImages?: Record<string, string>;
 }
 
 export interface BuildConfigFactoryOptions {

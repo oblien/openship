@@ -25,7 +25,9 @@ export interface Deployment {
   id: string;
   /** Monotonic per-project version (v1, v2, …). Null for legacy rows. */
   version: number | null;
-  status: "success" | "failed" | "building" | "pending" | "canceled" | "cancelled" | "partial_failure" | "rejected" | "reconciling";
+  /** `action_required` = failed on a named, clearable cause (see the API's
+   *  blocking-errors module). Settled, like failed — not in flight. */
+  status: "success" | "failed" | "building" | "pending" | "canceled" | "cancelled" | "partial_failure" | "action_required" | "rejected" | "reconciling";
   domain: string;
   framework: string;
   commit: {
@@ -50,6 +52,9 @@ export interface Deployment {
   branch?: string;
   projectId?: string;
   projectName?: string;
+  /** Auto-detected favicon of the deployed site, cached on the project.
+   *  When present it replaces the framework/Docker glyph as the row logo. */
+  favicon?: string | null;
   failureReason?: string;
   /** Rollback state — populated by the orchestrator-aware listing endpoint.
    *  `artifactRetainedAt` non-null = artifact is archived, rollback-eligible.

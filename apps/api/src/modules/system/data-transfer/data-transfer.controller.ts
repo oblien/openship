@@ -16,6 +16,7 @@ import {
   MigrationLockAcquireError,
 } from "../migration/migration-lock";
 import { exportInstance } from "./export.service";
+import { CloudInstanceNotTransferableError } from "./errors";
 import { importInstance, InvalidTransferFileError } from "./import.service";
 import { WrongPassphraseError } from "./passphrase-crypto";
 import type { DataTransferFile, ImportMode } from "./types";
@@ -37,7 +38,15 @@ export async function exportInstanceHandler(c: Context) {
   const ctx = getRequestContext(c);
   const body = ((await c.req.json<ExportBody>().catch(() => ({}))) ?? {}) as ExportBody;
 
-  const file = await exportInstance({ passphrase: readPassphrase(body.passphrase) });
+  let file: DataTransferFile;
+  try {
+    file = await exportInstance({ passphrase: readPassphrase(body.passphrase) });
+  } catch (err) {
+    if (err instanceof CloudInstanceNotTransferableError) {
+      return c.json({ error: err.message, code: err.code }, 403);
+    }
+    throw err;
+  }
 
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "instance.data.exported",
@@ -83,6 +92,9 @@ export async function importInstanceHandler(c: Context) {
 
     return c.json(result);
   } catch (err) {
+    if (err instanceof CloudInstanceNotTransferableError) {
+      return c.json({ error: err.message, code: err.code }, 403);
+    }
     if (err instanceof WrongPassphraseError || err instanceof InvalidTransferFileError) {
       return c.json({ error: err.message, code: err.code }, 400);
     }

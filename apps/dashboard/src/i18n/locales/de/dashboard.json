@@ -25,6 +25,7 @@
     "projectCountOne": "{count} Projekt",
     "projectCountOther": "{count} Projekte",
     "viewAllProjects": "Alle {count} Projekte anzeigen →",
+    "viewAllApps": "Alle {count} Apps anzeigen →",
     "greetingName": "{greeting}, {name}",
     "importGit": "Git importieren",
     "importGitDesc": "Aus Repository",
@@ -35,7 +36,10 @@
     "docs": "Dokumentation",
     "docsDesc": "Mehr erfahren",
     "activityTitle": "Aktivität",
-    "successRate": "Erfolgsquote",
+    "systemStatus": "Systemstatus",
+    "operational": "Betriebsbereit",
+    "oneIssue": "1 Problem",
+    "manyIssues": "{n} Probleme",
     "recentTitle": "Neueste",
     "activityEmpty": "Ihre Aktivitäten werden hier angezeigt",
     "allSystemsOperational": "Alle Systeme betriebsbereit",
@@ -46,26 +50,31 @@
       "hours": "vor {n} Std.",
       "days": "vor {n} T.",
       "months": "vor {n} Mon."
-    }
+    },
+    "appsEmptyTitle": "Noch keine Apps",
+    "appsEmptyDesc": "Ein Klick, vollständig selbst gehostet — Datenbanken, Automatisierung, Analytics, Passwort-Vaults und mehr, auf deinen eigenen Servern."
   },
   "nav": {
     "home": "Startseite",
     "new-project": "Neues Projekt",
     "projects": "Projekte",
     "deployments": "Deployments",
+    "issues": "Probleme",
     "backups": "Backups",
     "domains": "Domains",
     "monitoring": "Monitoring",
     "servers": "Server",
     "emails": "E-Mails",
     "settings": "Einstellungen",
-    "billing": "Abrechnung",
+    "billing": "Abrechnung & Nutzung",
     "sections": {
       "main": "Allgemein",
       "settings": "Einstellungen",
       "infrastructure": "Infrastruktur",
       "account": "Konto"
-    }
+    },
+    "apps": "Apps",
+    "jobs": "Jobs"
   },
   "sidebar": {
     "expand": "Seitenleiste ausklappen",
@@ -78,6 +87,40 @@
     "preferences": "Voreinstellungen"
   },
   "pages": {
+    "apps": {
+      "moreApps": "+{count} weitere",
+      "title": "Apps",
+      "description": "Managed Services mit einem Klick — installiere und betreibe Convex, WordPress, Mail und mehr.",
+      "createButton": "App installieren",
+      "loading": "Apps werden geladen…",
+      "countOne": "{count} App installiert",
+      "countOther": "{count} Apps installiert",
+      "emptyTitle": "Installiere deine erste App",
+      "emptyDescription": "Starte Convex, n8n, Ghost und mehr — ein Klick, vollständig selbst gehostet. Wähle eins, um zu beginnen.",
+      "popular": "Beliebte Apps",
+      "alsoDeploy": "Du kannst außerdem bereitstellen",
+      "browseAll": "Alle Apps ansehen",
+      "catalogTitle": "App installieren",
+      "catalogDescription": "Managed Services mit einem Klick. Wähle einen aus, um ihn als App zu installieren.",
+      "catalogSearchPlaceholder": "Apps suchen…",
+      "catalogNoResults": "Keine Apps entsprechen deiner Suche.",
+      "cancel": "Abbrechen",
+      "install": "Installieren",
+      "installing": "Wird installiert…",
+      "comingSoon": "Bald verfügbar",
+      "configTitle": "{app} konfigurieren",
+      "nameLabel": "Name",
+      "categories": {
+        "all": "Alle",
+        "backend": "Backend",
+        "database": "Datenbank",
+        "cms": "CMS",
+        "analytics": "Analytics",
+        "automation": "Automatisierung",
+        "mail": "Mail",
+        "other": "Tools"
+      }
+    },
     "projects": {
       "title": "Projekte",
       "description": "Stellen Sie Ihre Anwendungen mühelos bereit und verwalten Sie sie",
@@ -107,6 +150,11 @@
         "rollbacks": "Rollbacks",
         "rollbacksDesc": "Zurücksetzen mit einem Klick",
         "commandPalette": "Oder drücken Sie {key}, um die Befehlspalette zu öffnen"
+      },
+      "view": {
+        "label": "Ansicht",
+        "list": "Liste",
+        "grid": "Raster"
       }
     },
     "deployments": {
@@ -130,7 +178,7 @@
       "description": "Konto-, Team- und Plattformeinstellungen."
     },
     "billing": {
-      "title": "Abrechnung",
+      "title": "Abrechnung & Nutzung",
       "description": "Verwalten Sie Ihr Abonnement, Ihre Nutzung und Ihre Zahlungsmethoden."
     }
   },
@@ -158,7 +206,7 @@
       "description": "Benutzerdefinierte Domains"
     },
     "billing": {
-      "title": "Abrechnung",
+      "title": "Abrechnung & Nutzung",
       "description": "Nutzung & Tarife"
     }
   }

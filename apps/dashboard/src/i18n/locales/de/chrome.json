@@ -46,5 +46,36 @@
     "backToDashboard": "Zurück zum Dashboard",
     "viewDeployments": "Deployments anzeigen",
     "copyId": "ID kopieren"
+  },
+  "window": {
+    "back": "Zurück",
+    "forward": "Vorwärts",
+    "reload": "Neu laden",
+    "minimize": "Minimieren",
+    "maximize": "Maximieren",
+    "restore": "Wiederherstellen",
+    "close": "Schließen",
+    "devTools": "Entwicklertools",
+    "navigation": "Navigation"
+  },
+  "apiDown": {
+    "title": "API nicht erreichbar",
+    "description": "Das Dashboard läuft, kann aber die Openship-API nicht erreichen — daher gibt es noch nichts anzuzeigen. Deine Deployments laufen davon unabhängig weiter.",
+    "hintStatus": "Prüfe, ob die API läuft: führe `openship status` auf dem Host aus.",
+    "hintStart": "Läuft nicht? Starte es mit `openship up`.",
+    "hintRemote": "Verwaltest du einen Remote-Server? Prüfe dessen URL und ob der API-Port von hier erreichbar ist.",
+    "docs": "Self-Hosting-Dokumentation",
+    "retry": "Erneut versuchen"
+  },
+  "error": {
+    "title": "Auf dieser Seite ist ein Fehler aufgetreten",
+    "description": "Ein Teil dieser Ansicht konnte nicht gerendert werden. Ein neuer Versuch behebt das meist — an deinen Deployments hat sich nichts geändert.",
+    "tryAgain": "Erneut versuchen",
+    "goToProjects": "Zu den Projekten",
+    "refCode": "Ref"
+  },
+  "errorLinks": {
+    "docs": "Dokumentation",
+    "github": "Problem melden"
   }
 }

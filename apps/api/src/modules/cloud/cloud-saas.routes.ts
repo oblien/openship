@@ -42,7 +42,14 @@ r.use("/preflight", cloudSessionAuth);
 r.post("/preflight", { tag: "cloud:write" }, saas.preflight);
 
 r.use("/edge-proxy", cloudSessionAuth);
+r.use("/edge-proxy/*", cloudSessionAuth);
 r.post("/edge-proxy", { tag: "cloud:write" }, saas.syncEdgeProxy);
+r.post("/edge-proxy/delete", { tag: "cloud:write" }, saas.deleteEdgeProxy);
+// Target verification. `cloud:write` deliberately: these MUTATE upstream state
+// (issue a challenge, run a probe), and the route scanner makes a POST with a
+// read tag boot-fatal. Covered by the /edge-proxy/* auth above.
+r.post("/edge-proxy/verify", { tag: "cloud:write" }, saas.requestEdgeVerification);
+r.post("/edge-proxy/verify-check", { tag: "cloud:write" }, saas.checkEdgeVerification);
 
 r.use("/analytics", cloudSessionAuth);
 r.post("/analytics", { tag: "cloud:write" }, saas.analyticsProxy);

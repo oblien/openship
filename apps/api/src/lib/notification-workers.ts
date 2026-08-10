@@ -18,7 +18,9 @@ import { createHmac } from "node:crypto";
 import { repos, type NotificationChannel, type NotificationDelivery } from "@repo/db";
 import { sendMail } from "./mail";
 import { decrypt } from "./encryption";
-import { findCategory } from "./notification-categories";
+import { findCategory, headlineForEventType } from "./notification-categories";
+import { env } from "../config/env";
+import { safeFetch } from "./safe-fetch";
 import { safeErrorMessage } from "@repo/core";
 
 /* ─── Render helpers ─────────────────────────────────────────────────────── */
@@ -35,19 +37,29 @@ interface RenderedMessage {
  * category for the title (stable across event types) and pull relevant
  * payload fields into the body. Channel-specific formatting (HTML for
  * email, Slack blocks) wraps this primitive output.
+ *
+ * Exported for the message tests: this is the function that decides what an operator
+ * actually reads, and the payload's `eventType` can disagree with its category's
+ * direction (see `headlineForEventType`).
  */
-function renderMessage(delivery: NotificationDelivery): RenderedMessage {
+export function renderMessage(delivery: NotificationDelivery): RenderedMessage {
   const cat = findCategory(delivery.category);
   const payload = (delivery.payload ?? {}) as Record<string, unknown>;
 
-  const title = cat?.label ?? delivery.category;
+  // A handful of event types share a category with their own opposite — the toggle is
+  // one subscription, the message is one event — and carry their own headline.
+  const own =
+    typeof payload.eventType === "string" ? headlineForEventType(payload.eventType) : undefined;
+  const title = own?.title ?? cat?.label ?? delivery.category;
 
   // Build a body from the payload's most useful fields. Workers can
   // override formatting if they want — Slack does because blocks beat
   // plain text — but this default works for email + webhook + in-app.
   const lines: string[] = [];
 
-  if (cat?.description) lines.push(cat.description);
+  const description = own?.description ?? cat?.description;
+  if (description) lines.push(description);
+  if (payload.message) lines.push(String(payload.message));
 
   if (payload.branch) lines.push(`Branch: ${payload.branch}`);
   if (payload.commitSha) {
@@ -137,6 +149,36 @@ export function buildDiscordMessage(input: {
   };
 }
 
+// Telegram caps sendMessage `text` at 4096 characters.
+const TELEGRAM_TEXT_LIMIT = 4096;
+
+/**
+ * Escape the three characters Telegram's HTML parse mode reserves. Not the same
+ * job as `escapeHtml` below: Telegram decodes `&`/`<`/`>` entities only, and an
+ * unescaped one anywhere in the text 400s the ENTIRE send — so a repo named
+ * `foo & bar` or a log line containing `<nil>` would silently drop every alert.
+ */
+function escapeTelegramHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** `parse_mode: "HTML"` text for a rendered message, bold headline + body,
+ *  clamped to Telegram's limit. */
+export function buildTelegramText(input: { title: string; body: string }): string {
+  const head = `<b>${escapeTelegramHtml(input.title)}</b>`;
+  const body = escapeTelegramHtml(input.body);
+  const text = body ? `${head}\n\n${body}` : head;
+  if (text.length <= TELEGRAM_TEXT_LIMIT) return text;
+  // Slicing already-escaped text can land inside an entity ("…&am"), which
+  // Telegram rejects outright — drop a dangling one before the ellipsis.
+  return `${text.slice(0, TELEGRAM_TEXT_LIMIT - 1).replace(/&[a-z]*$/, "")}…`;
+}
+
+/** Replace a bot token wherever it appears in an error string. */
+function redactBotToken(message: string, botToken: string): string {
+  return botToken ? message.split(botToken).join("bot<redacted>") : message;
+}
+
 /* ─── Channel workers ─────────────────────────────────────────────────────── */
 
 async function sendEmail(
@@ -194,21 +236,29 @@ async function sendWebhook(
     headers["X-Openship-Signature-256"] = `sha256=${sig}`;
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(config.url, {
-      method: "POST",
-      headers,
-      body,
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Webhook returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timer);
+  // SSRF-safe delivery: safeFetch resolves once, pins the validated IP (closes
+  // the DNS-rebind window a validate-then-fetch leaves open), preserves SNI/Host,
+  // and never follows a 3xx into the internal network (maxRedirects defaults to 0,
+  // so a 3xx is non-2xx → thrown). It is the ONLY gate here — a literal pre-check
+  // would be strictly weaker (no DNS pin) and, being unconditional, silently made
+  // the two opt-ins below dead code. Multi-tenant (CLOUD_MODE) always rejects
+  // internal targets; a single-tenant box can opt into its own LAN with
+  // NOTIFY_WEBHOOK_ALLOW_INTERNAL.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  // Plaintext http is only for that LAN opt-in: a receiver on the box's own
+  // network has no usable cert, but a public destination must never get the
+  // payload (and its HMAC) in cleartext.
+  const res = await safeFetch(config.url, {
+    method: "POST",
+    headers,
+    body,
+    timeoutMs: 10_000,
+    allowHttp: allowPrivate,
+    allowPrivate,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Webhook returned ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -231,27 +281,30 @@ async function sendDiscord(
   const webhookUrl = decrypt(config.webhookUrl);
 
   const { title, body } = renderMessage(delivery);
+  // Guard the embed timestamp: a missing/invalid createdAt (e.g. a synthetic test
+  // delivery) makes `new Date(...).toISOString()` throw "Invalid time value" — the
+  // reported Discord "invalid time" error. Fall back to now.
+  const at = delivery.createdAt ? new Date(delivery.createdAt) : new Date();
   const discordPayload = buildDiscordMessage({
     title,
     body,
-    timestamp: new Date(delivery.createdAt).toISOString(),
+    timestamp: (Number.isNaN(at.getTime()) ? new Date() : at).toISOString(),
   });
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(discordPayload),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Discord webhook returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timer);
+  // SSRF-safe: pin the resolved IP and never follow a redirect, like the other
+  // webhook workers. Discord's host is fixed so this is defense-in-depth, but it
+  // removes the last raw-fetch redirect-follower on the delivery path.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(discordPayload),
+    timeoutMs: 10_000,
+    allowPrivate,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Discord webhook returned ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -271,21 +324,19 @@ async function sendSlack(
   const { title, body } = renderMessage(delivery);
   const slackPayload = buildSlackMessage({ title, body });
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(slackPayload),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Slack webhook returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timer);
+  // SSRF-safe: the Slack (or compatible) webhook URL is user-configured, so pin
+  // the resolved IP just like the generic webhook path.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(slackPayload),
+    timeoutMs: 10_000,
+    allowPrivate,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Slack webhook returned ${res.status}: ${text.slice(0, 200)}`);
   }
 }
 
@@ -325,23 +376,87 @@ async function sendMSTeams(
     ],
   };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
+  // SSRF-safe: the Teams webhook URL is user-configured. Creation-time
+  // validation restricts the host to *.logic.azure.com / *.webhook.office.com,
+  // but an attacker-provisioned Azure Logic App passes that suffix check and can
+  // 302-redirect the server-side POST into the internal network / metadata IP.
+  // So pin the resolved IP and never follow a redirect (maxRedirects defaults to
+  // 0 → a 3xx is non-2xx → thrown), exactly like the Slack/webhook workers.
+  const allowPrivate = !env.CLOUD_MODE && env.NOTIFY_WEBHOOK_ALLOW_INTERNAL;
+  const res = await safeFetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(teamsPayload),
+    timeoutMs: 10_000,
+    allowPrivate,
+  });
+  // Note: Power Automate Workflows respond 202 even when the flow fails
+  // downstream — a 2xx means "accepted", not "delivered".
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Microsoft Teams webhook returned ${res.status}: ${text.slice(0, 200)}`);
+  }
+}
+
+async function sendTelegram(
+  delivery: NotificationDelivery,
+  channel: NotificationChannel,
+): Promise<void> {
+  const config = channel.config as {
+    botToken?: string;
+    chatId?: string;
+    messageThreadId?: string;
+  };
+  if (!config?.botToken) throw new Error("Telegram channel has no bot token configured");
+  if (!config?.chatId) throw new Error("Telegram channel has no chat ID configured");
+
+  // Bot token is encrypted at storage time.
+  const botToken = decrypt(config.botToken);
+
+  const { title, body } = renderMessage(delivery);
+  const payload: Record<string, unknown> = {
+    chat_id: config.chatId,
+    text: buildTelegramText({ title, body }),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+  // Forum topic, when the channel points at one thread of a supergroup.
+  if (config.messageThreadId) payload.message_thread_id = Number(config.messageThreadId);
+
+  // The host is fixed (api.telegram.org), so unlike the user-URL workers there's
+  // no allowPrivate escape hatch to honor — still routed through safeFetch for
+  // the IP pin, the redirect refusal and the timeout.
+  let res: Awaited<ReturnType<typeof safeFetch>>;
+  let raw: string;
   try {
-    const res = await fetch(webhookUrl, {
+    res = await safeFetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(teamsPayload),
-      signal: controller.signal,
+      body: JSON.stringify(payload),
+      timeoutMs: 10_000,
     });
-    // Note: Power Automate Workflows respond 202 even when the flow fails
-    // downstream — a 2xx means "accepted", not "delivered".
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Microsoft Teams webhook returned ${res.status}: ${text.slice(0, 200)}`);
-    }
-  } finally {
-    clearTimeout(timer);
+    raw = await res.text().catch(() => "");
+  } catch (err) {
+    // The token sits in the URL path, and delivery errors are persisted and shown
+    // in the dashboard — never let a transport error carry it out of here.
+    throw new Error(redactBotToken(safeErrorMessage(err), botToken));
+  }
+
+  if (!res.ok) {
+    throw new Error(`Telegram API returned ${res.status}: ${raw.slice(0, 200)}`);
+  }
+  // Telegram answers HTTP 200 with `{ok:false, description}` for the most common
+  // misconfigurations (bot never started by the user, kicked from the group, bad
+  // chat id). Checking only the status would mark those delivered — and, worse,
+  // flip the channel to `verified`.
+  let parsed: { ok?: boolean; description?: string } | null = null;
+  try {
+    parsed = JSON.parse(raw) as { ok?: boolean; description?: string };
+  } catch {
+    return; // 200 with an unparseable body: accept rather than retry forever.
+  }
+  if (parsed && parsed.ok === false) {
+    throw new Error(`Telegram rejected the message: ${(parsed.description ?? "unknown error").slice(0, 200)}`);
   }
 }
 
@@ -357,7 +472,27 @@ const WORKERS: Record<
   slack: sendSlack,
   discord: sendDiscord,
   msteams: sendMSTeams,
+  telegram: sendTelegram,
 };
+
+/**
+ * Send a one-off TEST notification to a channel, reusing the exact per-kind
+ * worker — so a passing test proves real delivery works. The verify endpoint
+ * gates channel `verified` on this. Throws on failure (the caller surfaces it).
+ */
+export async function sendTestToChannel(channel: NotificationChannel): Promise<void> {
+  const worker = WORKERS[channel.kind];
+  if (!worker) throw new Error(`No worker for channel kind "${channel.kind}"`);
+  const testDelivery = {
+    id: "test",
+    category: "test",
+    createdAt: new Date(),
+    payload: {
+      message: "Openship test notification — this channel is configured correctly.",
+    },
+  } as unknown as NotificationDelivery;
+  await worker(testDelivery, channel);
+}
 
 /* ─── Runner loop ─────────────────────────────────────────────────────────── */
 

@@ -1,0 +1,31 @@
+{
+  "available": false,
+  "id": "stirling-pdf",
+  "name": "Stirling PDF",
+  "description": "Split, merge, convert, OCR and edit PDFs locally. Default login is admin / stirling — change it.",
+  "kind": "template",
+  "logo": "stirling-pdf",
+  "category": "other",
+  "tags": [
+    "pdf",
+    "documents",
+    "tools"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "stirling-pdf",
+      "image": "stirlingtools/stirling-pdf:latest",
+      "ports": [
+        "8080:8080"
+      ],
+      "exposedPort": 8080,
+      "exposed": true,
+      "volumes": [
+        "stirling_config:/configs",
+        "stirling_tessdata:/usr/share/tessdata"
+      ],
+      "restart": "unless-stopped"
+    }
+  ]
+}

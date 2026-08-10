@@ -3,6 +3,7 @@ import {
   access,
   mkdir as fsMkdir,
   readFile as fsReadFile,
+  rename as fsRename,
   rm as fsRm,
   writeFile as fsWriteFile,
 } from "node:fs/promises";
@@ -33,8 +34,13 @@ export class LocalExecutor implements CommandExecutor {
           env: getLocalExecEnv(),
         },
         (err, stdout, stderr) => {
-          if (err) reject(new Error(stderr.trim() || err.message));
-          else resolve(stdout.trim());
+          // Fold BOTH streams into the failure error. Many CLIs (certbot in
+          // particular) print the real cause to stdout while stderr only carries
+          // boilerplate ("Saving debug log to …"); dropping stdout hid the reason.
+          if (err) {
+            const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+            reject(new Error(detail || err.message));
+          } else resolve(stdout.trim());
         },
       );
     });
@@ -43,8 +49,15 @@ export class LocalExecutor implements CommandExecutor {
   streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }> {
     return new Promise((resolve) => {
+      // Already told to stop before we even spawned (a stream torn down immediately).
+      if (opts?.signal?.aborted) {
+        resolve({ code: 0, output: "" });
+        return;
+      }
+
       const child = spawn(getLocalShellPath(), getLocalShellArgs(command), {
         stdio: ["ignore", "pipe", "pipe"],
         env: getLocalExecEnv(),
@@ -57,23 +70,45 @@ export class LocalExecutor implements CommandExecutor {
       // returned `output` (build-kill-hint detection + persistence fallback).
       // Do NOT split on "\n" or trim here — that is exactly what destroyed the
       // "\r" carriage returns and made every progress tick its own line.
+      // Bounded: a live tail (the exec log transport) can run for the length of a
+      // session, so cap what we retain for `output` — the last N chunks are all any
+      // caller reads (kill-hint detection, an error tail), and unbounded growth here
+      // would be a slow leak.
+      const MAX_RETAINED_CHUNKS = 200;
       const chunks: string[] = [];
 
       const onChunk = (data: Buffer, level: LogEntry["level"]) => {
         const text = data.toString();
         if (!text) return;
         chunks.push(text);
+        if (chunks.length > MAX_RETAINED_CHUNKS) chunks.shift();
         onLog(logEntry(text, level, data.toString("base64")));
       };
+
+      // Kill the child when the caller aborts. `curl -sN` held open by the exec log
+      // transport only ends on the edge closing or on this kill; without it a torn-down
+      // browser stream leaves the curl draining the edge's shared queue.
+      const signal = opts?.signal;
+      const onAbort = () => {
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          /* already gone */
+        }
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const cleanup = () => signal?.removeEventListener("abort", onAbort);
 
       child.stdout.on("data", (data: Buffer) => onChunk(data, "info"));
       child.stderr.on("data", (data: Buffer) => onChunk(data, "warn"));
 
       child.on("close", (code) => {
+        cleanup();
         resolve({ code: code ?? 1, output: chunks.join("") });
       });
 
       child.on("error", (err) => {
+        cleanup();
         onLog(logEntry(`Process error: ${err.message}`, "error"));
         resolve({ code: 1, output: err.message });
       });
@@ -83,6 +118,10 @@ export class LocalExecutor implements CommandExecutor {
   async writeFile(path: string, content: string): Promise<void> {
     await fsMkdir(dirname(path), { recursive: true });
     await fsWriteFile(path, content, "utf-8");
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    await fsRename(from, to);
   }
 
   async readFile(path: string): Promise<string> {

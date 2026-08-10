@@ -7,7 +7,12 @@
  */
 
 import { and, eq, sql } from "drizzle-orm";
-import { generateId } from "@repo/core";
+import {
+  generateId,
+  parseSourceAccessScope,
+  serializeSourceAccessScope,
+  type SourceAccessScope,
+} from "@repo/core";
 import type { Database } from "../client";
 import { resourceGrant } from "../schema/resource-grant";
 
@@ -52,6 +57,13 @@ export interface ResourceGrant {
   resourceType: ResourceType;
   resourceId: string;
   permissions: Permission[];
+  /**
+   * Source-access scope — the SURFACE, where `permissions` is the VERB.
+   * `undefined` means metadata only: for a github repo grant, "read" alone does
+   * NOT authorise reading file content. Malformed stored scopes parse to
+   * `undefined`, so corruption fails closed. See @repo/core source-access.
+   */
+  scope?: SourceAccessScope;
   grantedByUserId: string | null;
   createdAt: Date;
 }
@@ -75,6 +87,7 @@ function rowToGrant(row: ResourceGrantRow): ResourceGrant {
     resourceType: row.resourceType as ResourceType,
     resourceId: row.resourceId,
     permissions,
+    scope: parseSourceAccessScope(row.scopeJson),
     grantedByUserId: row.grantedByUserId,
     createdAt: row.createdAt,
   };
@@ -136,10 +149,14 @@ export function createResourceGrantRepo(db: Database) {
       resourceType: ResourceType;
       resourceId: string;
       permissions: Permission[];
+      scope?: SourceAccessScope | null;
       grantedByUserId: string | null;
     }): Promise<ResourceGrant> {
       const id = generateId("grant");
       const permissionsJson = JSON.stringify(input.permissions);
+      // Normalised on the way in, so a rule the picker accepted but the matcher
+      // would reject can never be stored as if it were enforceable.
+      const scopeJson = serializeSourceAccessScope(input.scope);
 
       await db
         .insert(resourceGrant)
@@ -150,6 +167,7 @@ export function createResourceGrantRepo(db: Database) {
           resourceType: input.resourceType,
           resourceId: input.resourceId,
           permissionsJson,
+          scopeJson,
           grantedByUserId: input.grantedByUserId,
         })
         .onConflictDoUpdate({
@@ -159,7 +177,10 @@ export function createResourceGrantRepo(db: Database) {
             resourceGrant.resourceType,
             resourceGrant.resourceId,
           ],
-          set: { permissionsJson, grantedByUserId: input.grantedByUserId },
+          // scopeJson is REPLACED, not merged: an upsert that omits the scope is
+          // "this grant has no content access", which must be able to revoke a
+          // previously-granted path rather than silently keep it.
+          set: { permissionsJson, scopeJson, grantedByUserId: input.grantedByUserId },
         });
 
       // Return the canonical row (id may differ if conflict updated existing).

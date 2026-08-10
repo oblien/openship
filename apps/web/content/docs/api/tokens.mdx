@@ -46,9 +46,20 @@ POST /api/tokens
     name: { type: 'string', description: 'Human label for the token (1–100 chars).', required: true },
     readOnly: { type: 'boolean', description: 'Read-only tokens reject mutation methods (POST/PUT/PATCH/DELETE).', default: 'false' },
     expiresInDays: { type: 'integer', description: 'Expire the token N days from now (1–365). Omit for a non-expiring token.' },
-    grants: { type: 'TokenGrant[]', description: 'Optional resource scope. When present and non-empty, the token is restricted to exactly these resources — even below the minter’s own role. Each grant must be within the minter’s own access, or the request is rejected.' },
+    grants: { type: 'TokenGrant[]', description: 'Resource scope. When present and non-empty, the token is restricted to exactly these resources — even below the minter’s own role. Each grant must be within the minter’s own access, or the request is rejected.' },
+    fullAccess: { type: 'boolean', description: 'Deliberately mint an UNSCOPED token that acts with your own full access. Required when grants is empty or omitted; sending both is rejected.' },
   }}
 />
+
+<Callout title="Scope must be stated, not inferred" type="warn">
+Send **exactly one** of `grants` (scoped) or `fullAccess: true` (unscoped). An empty or omitted
+`grants` with no `fullAccess` returns `400 TOKEN_SCOPE_REQUIRED`; sending both returns
+`400 AMBIGUOUS_TOKEN_SCOPE`.
+
+Openship used to treat an empty `grants` as full access. That made "I want no limits" and "my scoped
+selection came out empty" the same request — and it failed open for the dangerous one, so a caller
+that meant to restrict a token could silently receive full access. Intent is now explicit.
+</Callout>
 
 Each entry in `grants` is a **TokenGrant**:
 
@@ -146,7 +157,8 @@ POST /api/tokens/mcp-authorize
     clientId: { type: 'string', description: 'The OAuth client to bind. Required.', required: true },
     readOnly: { type: 'boolean', description: 'Confine the client to read-only access.', default: 'false' },
     organizationId: { type: 'string', description: 'Organization the client is confined to. Defaults to the active org; a different org must be one you belong to.' },
-    grants: { type: 'TokenGrant[]', description: 'Optional resource scope, same shape as token grants. Empty means full (unscoped) access within the org.' },
+    grants: { type: 'TokenGrant[]', description: 'Resource scope, same shape as token grants. Non-empty binds the client to exactly these resources.' },
+    fullAccess: { type: 'boolean', description: 'Deliberately record an UNSCOPED binding — the client acts with your own role. Required when grants is empty; sending both is rejected.' },
   }}
 />
 
@@ -154,6 +166,10 @@ POST /api/tokens/mcp-authorize
 Missing `clientId` returns `400 CLIENT_ID_REQUIRED`; an `organizationId` you're not a member of returns
 `403 ORG_NOT_A_MEMBER`. Invalid or over-broad grants fail the same way as token creation
 (`400 INVALID_RESOURCE_TYPE` / `403 GRANT_EXCEEDS_ACCESS`).
+
+Scope intent is explicit here too: an empty `grants` without `fullAccess: true` returns
+`400 TOKEN_SCOPE_REQUIRED`, and sending both returns `400 AMBIGUOUS_TOKEN_SCOPE`. An unscoped binding
+lets the client act with your own role, so it can never be reached by omission.
 </Callout>
 
 ### List connected clients

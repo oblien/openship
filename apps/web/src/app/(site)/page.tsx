@@ -2,7 +2,7 @@ import {
   Navbar,
   Hero,
   Dashboard,
-  Features,
+  SystemMap,
   HowItWorks,
   DeploymentModels,
   CompletePlatform,
@@ -64,7 +64,7 @@ export default function HomePage() {
       <main>
         <Hero />
         <Dashboard />
-        <Features />
+        <SystemMap />
         <HowItWorks />
         <DeploymentModels />
         <CompletePlatform />

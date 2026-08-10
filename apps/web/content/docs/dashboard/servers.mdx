@@ -168,7 +168,15 @@ reachable. If it can't be read, the tab shows a "Couldn't read OpenResty rate li
 **Retry**.
 </Callout>
 
-<Callout title="Screenshot">Security tab with the Requests / second field, the automatic-burst hint, the Advanced burst controls, and the Whitelisted IPs input. *(screenshot pending)*</Callout>
+#### Exposed-port scan
+
+The Security tab also has a **Scan ports** action that lists the ports actually **listening** on the server
+and classifies each as **exposed** (bound to a public/all-interfaces address) or **loopback-only** (bound to
+`127.0.0.1`, reachable only from the host). Use it to spot anything unintentionally reachable from the
+internet — a database that should be loopback-only, a debug port left open — so you can lock it down. It's a
+read-only probe (it changes nothing); re-run it after a deploy to confirm only what you expect is exposed.
+
+<Callout title="Screenshot">Security tab with the Requests / second field, the automatic-burst hint, the Advanced burst controls, the Whitelisted IPs input, and the Scan ports card. *(screenshot pending)*</Callout>
 
 ### Ports tab (port forwarding)
 

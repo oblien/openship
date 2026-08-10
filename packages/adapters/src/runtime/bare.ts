@@ -31,7 +31,7 @@ import type {
 
 import { LocalExecutor, wrapLocalBuildCommand } from "../system/executor";
 import { execReliable } from "../system/remote-journal";
-import { STACKS, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, type StackId, type StackDefinition } from "@repo/core";
+import { STACKS, appVolumeTargets, buildOutputTransferExcludes, safeErrorMessage, missingOutputDirectoryMessage, packageManagerEnsureCommand, type StackId, type StackDefinition } from "@repo/core";
 import { checkToolchainForStack, installTools } from "../toolchain";
 import type {
   RuntimeAdapter,
@@ -40,13 +40,20 @@ import type {
   RollbackInput,
   MakeActiveResult,
 } from "./types";
-import { BuildLogger, detectBuildKillHint, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
+import { BuildCancelledError, BuildLogger, detectBuildKillHint, runBuildPipeline, sq, type BuildEnvironment } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
 import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
 import type { ProcessSupervisor } from "./supervisor/types";
 import { detectSupervisor } from "./supervisor/detect";
 import { probeListeningPort } from "./port-conflict";
+
+/** Parent of a POSIX path on the TARGET machine — node:path would resolve
+ *  against the local platform's separator, which is wrong over SSH from Windows. */
+function parentPath(path: string): string {
+  const idx = path.replace(/\/+$/, "").lastIndexOf("/");
+  return idx > 0 ? path.slice(0, idx) : "/";
+}
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -74,6 +81,17 @@ export interface BareRuntimeOptions {
 const DEFAULT_WORK_DIR = "/opt/openship";
 const DEFAULT_BUILD_TIMEOUT = 10 * 60 * 1000;
 
+/**
+ * Dedicated base for static doc-roots — deliberately separate from
+ * DEFAULT_WORK_DIR. Static sites build in a Docker sandbox and serve their
+ * extracted files from here; this is the ONE directory shared into the edge
+ * container (bind-mounted at the same path) in docker-edge mode, so it must
+ * NOT contain server bundles, node_modules, or release secrets. A static-serve
+ * BareRuntime is constructed with `workDir = STATIC_RELEASE_BASE` so its
+ * releases/.builds subdirs confine here and promote stays same-FS.
+ */
+export const STATIC_RELEASE_BASE = "/opt/openship/static";
+
 
 
 // ─── Bare runtime ────────────────────────────────────────────────────────────
@@ -89,8 +107,17 @@ export class BareRuntime implements RuntimeAdapter {
     "destroy",
     "runtimeLogs",
     "streamLogs",
+    // Real measurements now (cgroup → /proc → ps, via the supervisor), so this can
+    // finally be declared. It was absent while getUsage returned a zeros stub — but
+    // nothing checked, so callers rendered those zeros as data. Anything reading
+    // usage should gate on supports("usage") rather than trust the numbers.
+    // Network is the one gap: per-process rx/tx needs eBPF or a netns, so it stays 0.
+    "usage",
     "containerIp",
     "rollback",
+    // The release dir + supervisor unit survive a redeploy, so restoring a
+    // past release really is an in-place unit swap (see makeActive).
+    "unitRestore",
     "inContainerExec",
   ]);
 
@@ -168,6 +195,68 @@ export class BareRuntime implements RuntimeAdapter {
 
   private releaseDir(deploymentId: string): string {
     return `${this.workDir}/releases/${deploymentId}`;
+  }
+
+  /** Per-project directory holding the paths that must survive a release swap.
+   *  The `shared/` half of the Capistrano layout `releases/` already implements. */
+  private sharedDir(projectId: string): string {
+    return `${this.workDir}/shared/${projectId}`;
+  }
+
+  /**
+   * Repoint the release's persistent paths at `shared/`, so a redeploy doesn't
+   * take the app's data with the old release.
+   *
+   * Docker gets this from a volume; bare has no mount to hang it on, so the
+   * equivalent is the deploy convention: keep the state outside the release tree
+   * and symlink it in. The first release that ships the path SEEDS the shared
+   * copy from it — frameworks ship a skeleton there (Laravel's `storage/` has
+   * `framework/cache`, `framework/sessions`, …) and an app handed an empty
+   * directory instead would fail on write.
+   *
+   * Best-effort per path: a box without the shared dir writable is a storage
+   * problem to report, not a reason to fail an otherwise good release.
+   */
+  private async linkPersistentPaths(
+    releaseDir: string,
+    projectId: string,
+    volumes: string[] | undefined,
+    log?: LogCallback,
+  ): Promise<void> {
+    const targets = appVolumeTargets(volumes ?? []);
+    if (targets.length === 0) return;
+
+    const shared = this.sharedDir(projectId);
+    for (const relative of targets) {
+      const sharedPath = `${shared}/${relative}`;
+      const releasePath = `${releaseDir}/${relative}`;
+      try {
+        if (!(await this.executor.exists(sharedPath))) {
+          await this.executor.mkdir(parentPath(sharedPath));
+          if (await this.executor.exists(releasePath)) {
+            await this.executor.exec(`cp -a ${sq(releasePath)} ${sq(sharedPath)}`);
+          } else {
+            await this.executor.mkdir(sharedPath);
+          }
+        }
+        await this.executor.rm(releasePath);
+        await this.executor.mkdir(parentPath(releasePath));
+        // -n so a pre-existing symlink is replaced rather than followed into
+        // (which would nest shared/storage/storage on the second deploy).
+        await this.executor.exec(`ln -sfn ${sq(sharedPath)} ${sq(releasePath)}`);
+        log?.({
+          timestamp: new Date().toISOString(),
+          message: `Persistent path ${relative} → ${sharedPath}\n`,
+          level: "info",
+        });
+      } catch (err) {
+        log?.({
+          timestamp: new Date().toISOString(),
+          message: `Could not persist ${relative}: ${safeErrorMessage(err)}\n`,
+          level: "warn",
+        });
+      }
+    }
   }
 
   private async promoteBuildArtifact(
@@ -420,12 +509,12 @@ export class BareRuntime implements RuntimeAdapter {
     const buildEnv: BuildEnvironment = {
       projectDir: dir,
       exec: async (command, logCb) => {
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         const effectiveCommand = this.executor instanceof LocalExecutor
           ? wrapLocalBuildCommand(command)
           : command;
         const { code, output } = await this.executor.streamExec(effectiveCommand, logCb);
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         if (code !== 0) {
           const hint = detectBuildKillHint(output);
           throw new Error(
@@ -434,7 +523,7 @@ export class BareRuntime implements RuntimeAdapter {
         }
       },
       preflight: async (cfg, plog) => {
-        if (abort.signal.aborted) throw new Error("Build cancelled");
+        if (abort.signal.aborted) throw new BuildCancelledError();
         await this.ensureToolchain(this.executor, cfg.stack, plog);
         if (cfg.localPath) {
           await this.transferFiles(cfg.localPath, dir, plog);
@@ -498,6 +587,16 @@ export class BareRuntime implements RuntimeAdapter {
       abort.abort();
       this.activeBuilds.delete(sessionId);
     }
+    // Aborting only gates the API BETWEEN commands — the in-flight remote
+    // command (git/npm/vite) keeps running on the target until killed. Kill every
+    // process whose CWD is (under) this build's dir — SIGTERM, then SIGKILL the
+    // survivors. Killing it closes the streamExec channel so the pipeline unwinds
+    // to a cancelled result. Best-effort; a no-op for local builds / non-Linux
+    // targets (nothing runs under this dir there).
+    const dir = sq(this.buildDir(sessionId));
+    const scan = (sig: string) =>
+      `for p in /proc/[0-9]*; do c=$(readlink "$p/cwd" 2>/dev/null); case "$c" in ${dir}|${dir}/*) kill -${sig} "\${p##*/}" 2>/dev/null || true;; esac; done`;
+    await this.executor.exec(`${scan("TERM")}; sleep 2; ${scan("KILL")}`).catch(() => {});
   }
 
   async getBuildLogs(sessionId: string): Promise<LogEntry[]> {
@@ -539,6 +638,11 @@ export class BareRuntime implements RuntimeAdapter {
           config.previousDeploymentId,
         )
       : stagedDir;
+
+    // Before the process starts, not after: the app may open a file under one of
+    // these paths on boot, and it must already be the shared one.
+    await this.linkPersistentPaths(workDir, config.projectId, config.volumes, _onLog);
+
     const sv = await this.supervisor();
 
     const env: Record<string, string> = {
@@ -582,13 +686,32 @@ export class BareRuntime implements RuntimeAdapter {
           config.previousDeploymentId,
         )
       : stagedDir;
-    const staticRoot = this.resolveStaticRoot(workDir, config.outputDirectory);
+    const staticRoot = resolveStaticOutputPath(workDir, config.outputDirectory);
 
-    if (!(await this.executor.exists(staticRoot))) {
+    const abort = async (message: string): Promise<never> => {
       if (workDir !== stagedDir) {
         await this.executor.rm(workDir).catch(() => {});
       }
-      throw new Error(missingOutputDirectoryMessage(config.outputDirectory));
+      throw new Error(message);
+    };
+
+    if (!(await this.executor.exists(staticRoot))) {
+      return abort(missingOutputDirectoryMessage(config.outputDirectory));
+    }
+
+    // Present but EMPTY is unambiguously broken — no path under an empty root can
+    // serve anything, so unlike a missing index.html (which is legitimate when the
+    // site is routed only at a subpath) this needs no knowledge of the routes to
+    // call. Catches the common "build wrote nothing" / "wrong output directory"
+    // case at deploy time, where the error can still name the cause, instead of
+    // deploying green and 404ing. Index presence is left to the route-aware
+    // post-deploy audit, which is advisory by design.
+    if (await this.isEmptyDir(staticRoot)) {
+      return abort(
+        `The output directory "${config.outputDirectory || "."}" is empty — the build produced ` +
+          `no files to serve, so every request would 404. Check the build command and the ` +
+          `Output Directory setting.`,
+      );
     }
 
     return {
@@ -598,8 +721,22 @@ export class BareRuntime implements RuntimeAdapter {
     };
   }
 
-  resolveStaticRoot(containerId: string, outputDirectory: string): string {
-    return resolveStaticOutputPath(containerId, outputDirectory);
+  /**
+   * Is this an existing directory with no entries? Any inconclusive answer (not a
+   * directory, unreadable, exec failed) returns false — a probe that can't read
+   * must never be the thing that fails a deploy.
+   */
+  private async isEmptyDir(path: string): Promise<boolean> {
+    // Explicit tokens + forced exit 0, same discipline as probeStaticOutput: absence
+    // is an ANSWER here, not a command failure. A plain file (legitimately its own
+    // index) prints no DIR and is therefore never reported empty.
+    const p = sq(path);
+    const out = await this.executor
+      .exec(`if [ -d ${p} ]; then echo DIR; ls -A ${p} 2>/dev/null | head -1; fi; true`)
+      .catch(() => null);
+    if (out === null) return false; // inconclusive → never fail the deploy
+    const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
+    return lines.length === 1 && lines[0] === "DIR";
   }
 
   async stop(containerId: string): Promise<void> {
@@ -720,11 +857,19 @@ export class BareRuntime implements RuntimeAdapter {
     return sv.streamLogs(containerId, onLog, opts);
   }
 
-  async getUsage(_containerId: string): Promise<ResourceUsage> {
-    // Resource usage monitoring is supervisor-independent - systemd can use
-    // cgroup stats, nohup can use /proc. For now return zeros; the dashboard
-    // already handles this gracefully.
-    return { cpuPercent: 0, memoryMb: 0, diskMb: 0, networkRxBytes: 0, networkTxBytes: 0 };
+  /**
+   * CPU / memory / disk-IO for the deployment's process.
+   *
+   * `containerId` is the DEPLOYMENT id here, not a docker container id — that's the
+   * bare runtime's convention throughout (it's what the supervisor keys units and
+   * PID files on).
+   *
+   * The supervisor owns the measurement because the identity differs: systemd has a
+   * unit and a cgroup, nohup has a PID file. Both land on the same probe.
+   */
+  async getUsage(containerId: string): Promise<ResourceUsage> {
+    const sv = await this.supervisor();
+    return sv.getUsage(containerId);
   }
 
   // ── Network ────────────────────────────────────────────────────────────

@@ -350,11 +350,39 @@ restoreCmd
   .argument("<restoreId>", "Restore ID")
   .action((restoreId) =>
     guard(async () => {
-      await apiRequest<Envelope<{ ok: boolean }>>(
-        `/backup-restores/${encodeURIComponent(restoreId)}/cancel`,
-        { method: "POST", body: JSON.stringify({}) },
-      );
-      ok(`\n  Restore cancelled: ${restoreId}\n`);
+      const { data } = await apiRequest<
+        Envelope<{
+          ok: boolean;
+          accepted: boolean;
+          status: string;
+          destructive: boolean;
+          forced: boolean;
+        }>
+      >(`/backup-restores/${encodeURIComponent(restoreId)}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      // A cancel during `applying` is a request the running phase honors at its
+      // next checkpoint — printing "cancelled" there would be a lie, and the
+      // partial-data warning is the whole reason the operator needs the
+      // distinction.
+      if (data.status === "cancelled") {
+        ok(`\n  Restore cancelled: ${restoreId}${data.forced ? " (forced)" : ""}\n`);
+      } else if (data.accepted) {
+        info(
+          `\n  Cancellation requested: ${restoreId} (status=${data.status}).\n` +
+            `  Follow it with: openship backup restore get ${restoreId} --follow\n`,
+        );
+      } else {
+        info(`\n  Restore ${restoreId} already finished (status=${data.status}) — nothing to cancel.\n`);
+      }
+      if (data.destructive) {
+        err(
+          `  The restore had already begun writing its target, so that target now holds\n` +
+            `  PARTIAL data. Re-run this restore (or a newer one) to completion before\n` +
+            `  starting the service.\n`,
+        );
+      }
     }),
   );
 

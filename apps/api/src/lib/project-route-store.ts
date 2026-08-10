@@ -6,6 +6,7 @@ import {
   publicEndpointHostname,
   type StoredPublicEndpoint,
 } from "./public-endpoints";
+import { assertRedirectTargets, normalizeRedirect } from "./domain-redirect";
 import { platform } from "./controller-helpers";
 import { getRoutingBaseDomain } from "./routing-domains";
 import { generateToken } from "./domain-token";
@@ -14,6 +15,15 @@ interface SyncProjectPublicRoutesInput {
   projectId: string;
   endpoints?: StoredPublicEndpoint[] | null;
   currentDomains?: Domain[] | null;
+  /**
+   * When true, a VERIFIED custom domain is never destroyed by this sync: a row
+   * the desired set omits is kept (not deleted), and a desired route that carries
+   * no port/path never nulls the row's live target. Only the DEPLOY pipeline sets
+   * this — a deploy that resolved to the wrong target (e.g. "local") must not
+   * erase a user's proven custom domain (the Access-URL-regressed-to-localhost
+   * bug). The Domains editor leaves it false so explicit removals/edits still win.
+   */
+  preserveVerifiedCustom?: boolean;
 }
 
 interface DesiredProjectRoute {
@@ -22,6 +32,8 @@ interface DesiredProjectRoute {
   targetPath?: string;
   domainType: "free" | "custom";
   isPrimary: boolean;
+  redirectTo: string | null;
+  redirectStatus: number | null;
 }
 
 /**
@@ -82,12 +94,15 @@ function desiredProjectRoutes(endpoints?: StoredPublicEndpoint[] | null): Desire
     if (!hostname || seen.has(hostname)) return [];
 
     seen.add(hostname);
+    const redirect = normalizeRedirect(endpoint);
     return [{
       hostname,
       targetPort: endpoint.port,
       targetPath: endpoint.targetPath,
       domainType: endpoint.domainType,
       isPrimary: index === 0,
+      redirectTo: redirect.redirectTo,
+      redirectStatus: redirect.redirectStatus,
     } satisfies DesiredProjectRoute];
   });
 }
@@ -100,6 +115,10 @@ export async function syncProjectPublicRoutes(
   const existingDomains = allExistingDomains
     .filter((domain) => !domain.serviceId);
   const desiredRoutes = desiredProjectRoutes(endpoints);
+  // Validate redirects against the FULL desired set before writing anything: a
+  // target outside it, or a loop inside it, has to be refused here — once the rows
+  // are written the edge would serve the loop.
+  assertRedirectTargets(desiredRoutes);
   const desiredByHostname = new Map(desiredRoutes.map((route) => [route.hostname, route]));
   const existingByHostname = new Map(
     allExistingDomains.map((domain) => [domain.hostname.toLowerCase(), domain]),
@@ -107,6 +126,12 @@ export async function syncProjectPublicRoutes(
 
   for (const domain of existingDomains) {
     if (!desiredByHostname.has(domain.hostname.toLowerCase())) {
+      // Keep a verified custom domain the deploy didn't mention — see
+      // preserveVerifiedCustom. A row absent from the desired set is otherwise an
+      // explicit removal, which the editor path (flag off) still performs.
+      if (input.preserveVerifiedCustom && domain.domainType === "custom" && domain.verified) {
+        continue;
+      }
       await repos.domain.remove(domain.id);
       existingByHostname.delete(domain.hostname.toLowerCase());
     }
@@ -164,6 +189,8 @@ export async function syncProjectPublicRoutes(
           targetPath: route.targetPath,
           domainType: route.domainType,
           isPrimary: route.isPrimary,
+          redirectTo: route.redirectTo,
+          redirectStatus: route.redirectStatus,
           ...verificationFields,
         });
       } catch (err: any) {
@@ -202,11 +229,35 @@ export async function syncProjectPublicRoutes(
     }
 
     const patch: Record<string, unknown> = {};
+    // Never let a deploy that resolved WITHOUT this domain's target (port/path
+    // undefined) erase a verified custom domain's live upstream — that nulling is
+    // exactly what regressed the Access URL to localhost. An explicit new value is
+    // still applied; only a "no target" desired route is treated as "leave as-is".
+    const protectTarget =
+      input.preserveVerifiedCustom && existing.verified && (existing.domainType ?? route.domainType) === "custom";
     if ((existing.serviceId ?? null) !== null) patch.serviceId = null;
-    if ((existing.targetPort ?? null) !== (route.targetPort ?? null)) patch.targetPort = route.targetPort ?? null;
-    if ((existing.targetPath ?? null) !== (route.targetPath ?? null)) patch.targetPath = route.targetPath ?? null;
+    if (
+      (existing.targetPort ?? null) !== (route.targetPort ?? null) &&
+      !(protectTarget && route.targetPort === undefined)
+    ) {
+      patch.targetPort = route.targetPort ?? null;
+    }
+    if (
+      (existing.targetPath ?? null) !== (route.targetPath ?? null) &&
+      !(protectTarget && route.targetPath === undefined)
+    ) {
+      patch.targetPath = route.targetPath ?? null;
+    }
     if ((existing.domainType ?? null) !== route.domainType) patch.domainType = route.domainType;
     if (existing.isPrimary !== route.isPrimary) patch.isPrimary = route.isPrimary;
+    // The submitted endpoint list is authoritative for the redirect, so an OMITTED
+    // one clears it — that's how "stop redirecting, serve the app here" is
+    // expressed, and the endpoints round-trip through routeDomainRowToPublicEndpoint
+    // so a plain re-save always carries the current value back.
+    if ((existing.redirectTo ?? null) !== route.redirectTo) patch.redirectTo = route.redirectTo;
+    if ((existing.redirectStatus ?? null) !== route.redirectStatus) {
+      patch.redirectStatus = route.redirectStatus;
+    }
     // Auto-verify only host-managed (free) rows. A custom row's verified/status
     // is owned by the /verify DNS check — a re-save (port edit, reorder) must
     // NOT silently verify a pending custom nor reset a verified one.

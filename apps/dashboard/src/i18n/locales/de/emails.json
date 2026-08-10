@@ -3,6 +3,7 @@
     "title": "E-Mail-Server",
     "subtitle": "Richte mit wenigen Klicks einen selbst gehosteten Mailserver ein",
     "backToServers": "Zurück zu den Mailservern",
+    "backToAdmin": "Zurück zur Mail-Verwaltung",
     "addServer": "Mailserver hinzufügen",
     "removeModal": {
       "title": "Diesen Mailserver entfernen?",

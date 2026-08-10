@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "ビルド出力を格納するディレクトリ",
     "sourceFolderLabel": "ソースフォルダ",
     "sourceFolderDesc": "リポジトリまたはローカルプロジェクト内のサブディレクトリからビルドします。",
+    "composePath": {
+      "title": "Compose ファイル",
+      "subtitle": "プロジェクトのルートで自動検出",
+      "label": "Compose ファイルのパス",
+      "description": "compose をルート以外に置いているリポジトリ向け — ファイル（deploy/stack.yml）またはそれを含むフォルダ（deploy/docker-compose）を指定します。リポジトリを再スキャンし、宣言されたサービスをデプロイします。",
+      "apply": "スキャン",
+      "scanning": "スキャン中…",
+      "scanFailed": "その Compose パスをスキャンできませんでした。",
+      "subtitleOptIn": "Docker Compose でデプロイしますか？ファイルを指定してください。"
+    },
+    "healthCheck": {
+      "title": "ヘルスチェック",
+      "subtitle": "オフ — アプリが起動した時点でデプロイは完了します",
+      "subtitleOn": "オン — 公開前にアプリの応答を待ちます",
+      "description": "Openship は起動後のアプリを待たないため、起動が遅くてもデプロイが遅れたり失敗したりすることはありません。公開後にポートは別途確認され、何もブロックせずに報告されます。デプロイ自体を失敗させたい場合にのみ有効にしてください。",
+      "probeLabel": "アプリの応答を待つ",
+      "probeDesc": "コンテナの起動後にアプリのポートへ接続し、接続が受け付けられるまで待ちます。",
+      "pathLabel": "HTTP パス",
+      "pathPlaceholder": "/health",
+      "pathDesc": "このパスへの GET が 500 未満で応答することを必須にします。空にすると任意の TCP 接続を許可し、HTTP 以外のサービスでも動作します。",
+      "timeoutLabel": "打ち切るまでの秒数",
+      "stabilizationLabel": "再起動ループを監視する",
+      "stabilizationDesc": "起動後のコンテナを監視し、クラッシュループを報告します。ランタイムを参照するため、リモートサーバーでも動作します。",
+      "stabilizationWindowLabel": "監視する秒数",
+      "onFailureLabel": "チェックが失敗した場合",
+      "onFailureWarn": "デプロイは公開したまま、確認用にフラグを立てる",
+      "onFailureFail": "デプロイを失敗させ、前のバージョンの配信を続ける"
+    },
     "buildImageLabel": "ビルドイメージ",
     "buildImageDesc": "クラウドまたはサーバービルド用のビルダーコンテナイメージ。検出されたベースイメージが正しくない場合は上書きしてください。",
     "productionPathsLabel": "本番パス",
@@ -122,6 +150,11 @@
       "clipboardEmpty": "クリップボードが空です",
       "clipboardInvalid": "クリップボードに有効な KEY=VALUE 形式の環境変数が含まれていません",
       "clipboardBlocked": "クリップボードへのアクセスがブロックされました。環境ボックス内をクリックし、Cmd/Ctrl+V で貼り付けてください。"
+    },
+    "reveal": {
+      "show": "値を表示",
+      "hide": "値を非表示",
+      "error": "値を表示できませんでした"
     }
   },
   "composeServices": {
@@ -278,7 +311,6 @@
       "successful": "デプロイに成功しました",
       "deploying": "デプロイ中..."
     },
-    "viewDashboard": "ダッシュボードを表示",
     "visitSite": "サイトを開く",
     "warningTitle": "デプロイは完了しましたが、一部のサービスに対応が必要です。",
     "productionLogs": "本番ログ",
@@ -320,7 +352,6 @@
     "running": "稼働中",
     "buildingSuffix": "· {count} 件ビルド中",
     "failedSuffix": "· {count} 件失敗",
-    "viewDashboard": "ダッシュボードを表示",
     "decisionBannerTitle": "対応が必要です — 一部のサービスが失敗しました",
     "decisionBannerDefaultMsg": "このデプロイは失敗したサービスがある状態で完了しました。このまま保持して後で修正するか、拒否して以前のバージョンを復元してください。",
     "review": "確認",

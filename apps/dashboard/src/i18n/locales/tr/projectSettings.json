@@ -12,6 +12,7 @@
     "kindImage": "Konteyner imajı",
     "current": "Mevcut sürüm",
     "latest": "En son sürüm",
+    "repository": "Depo",
     "notChecked": "Henüz kontrol edilmedi",
     "upToDate": "Güncel",
     "updateAvailable": "Güncelleme mevcut",
@@ -63,10 +64,30 @@
     "installFailed": "Kurulum başarısız oldu",
     "viewDetails": "Teknik detayları görüntüle",
     "back": "Geri",
+    "phaseImages": "İmajlar hazırlanıyor",
+    "phaseServices": "Hizmetler başlatılıyor",
+    "phaseAppSetup": "Kurulum tamamlanıyor",
+    "phaseReady": "Yayında",
+    "phaseQueued": "Sırada…",
+    "stepperTitle": "Kurulum adımları",
+    "firstLoginTitle": "İlk giriş",
+    "firstLoginUser": "Kullanıcı adı",
+    "firstLoginPassword": "Parola",
     "destinationTitle": "Nereye kurulacak",
     "destinationHint": "Bu uygulamanın çalışacağı sunucuyu veya bulutu seçin.",
     "destLocal": "Bu bilgisayar",
     "destLocalDesc": "Burada, bu Openship sunucusunda çalıştırın.",
+    "statusInstalling": "Yükleniyor",
+    "statusLive": "Yayında",
+    "statusCancelled": "İptal edildi",
+    "statusFailed": "Başarısız",
+    "stopInstall": "Yüklemeyi durdur",
+    "stopping": "Durduruluyor…",
+    "installCancelled": "Yükleme iptal edildi",
+    "startOver": "Baştan başla",
+    "breadcrumbApps": "Uygulamalar",
+    "appEyebrow": "Uygulama",
+    "stopFailed": "Yükleme durdurulamadı",
     "mail": {
       "title": "E-posta kur",
       "subtitle": "Kendi alan adınızda webmail dağıtın veya mevcut bir posta kutusunu bağlayın.",
@@ -149,6 +170,43 @@
       "toggleFailed": "Proje durumu değiştirilemedi",
       "clearInstallFailed": "Kurulum önbelleği temizlenemedi",
       "clearBuildFailed": "Derleme önbelleği temizlenemedi"
+    },
+    "routing": {
+      "title": "Yönlendirme",
+      "description": "Kenarın bu uygulamanın upstream'ine nasıl ulaştığı",
+      "intro": "Kenarın bu projenin konteynerini nasıl adresleyeceğini seçin.",
+      "note": "Loopback bağlantı noktası önerilir: özel bir 127.0.0.1 ana bilgisayar bağlantı noktası; yeniden başlatmalar arasında kararlı ve ağa hiçbir zaman açık değildir. Konteyner IP gelişmiştir (kesintisiz geçişler; kenarın Docker köprüsünde olmasını gerektirir; Docker Desktop'ta desteklenmez).",
+      "modes": {
+        "auto": {
+          "label": "Otomatik",
+          "desc": "Önerilen (loopback bağlantı noktası)"
+        },
+        "loopbackPort": {
+          "label": "Loopback bağlantı noktası",
+          "desc": "Özel 127.0.0.1 ana bilgisayar bağlantı noktası"
+        },
+        "containerIp": {
+          "label": "Konteyner IP",
+          "desc": "Gelişmiş — köprü IP"
+        }
+      },
+      "toast": {
+        "saved": "Yönlendirme {mode} olarak ayarlandı",
+        "failed": "Yönlendirme güncellenemedi"
+      }
+    },
+    "internalAlias": {
+      "title": "Dahili ana bilgisayar adı",
+      "description": "Diğer servislerin bu uygulamaya özel olarak ulaşmak için kullandığı özel ad",
+      "intro": "Bu uygulama için özel proje ağında ek bir DNS adı belirleyin. Varsayılanın (proje kısaltması) yanında çözümlenir; bağlı diğer servisler ikisini de kullanabilir. Genel erişim değişmez; bu asla bir bağlantı noktasını açığa çıkarmaz.",
+      "label": "Ana bilgisayar adı takma adı",
+      "hint": "Yalnızca harf, rakam ve tire. Proje kısaltmasını kullanmak için boş bırakın.",
+      "save": "Kaydet",
+      "toast": {
+        "saved": "Dahili ana bilgisayar adı güncellendi",
+        "failed": "Dahili ana bilgisayar adı güncellenemedi",
+        "invalid": "En az bir harf veya rakam girin"
+      }
     }
   },
   "routeRules": {
@@ -250,19 +308,56 @@
       "framework": "Framework",
       "packageManager": "Paket yöneticisi",
       "runtimeIsolation": "Çalışma zamanı izolasyonu",
-      "resources": "Kaynaklar",
-      "resourcesValue": "{cpu} vCPU · {memory} MB",
       "runtimePort": "Çalışma zamanı portu",
       "installCommand": "Yükleme komutu",
       "buildCommand": "Derleme komutu",
       "noBuildStep": "Derleme adımı yok",
       "outputDirectory": "Çıktı dizini",
       "rootDirectory": "Kök dizin",
+      "composePath": "Compose dosyası",
       "startCommand": "Başlatma komutu",
       "staticNoServer": "Statik (sunucu yok)",
       "modeSandboxed": "Korumalı Alan (konteyner)",
       "modeDirect": "Doğrudan (ana makine süreci)",
-      "modeDefault": "Varsayılan (dağıtımda çözümlenir)"
+      "modeDefault": "Varsayılan (dağıtımda çözümlenir)",
+      "modeStatic": "Yok — statik dosya olarak sunulur"
+    },
+    "storage": {
+      "title": "Kalıcı depolama",
+      "description": "Yeni sürüm eskisinin yerini aldığında korunan yollar. Konteynerdeki her şey dağıtımda silinir.",
+      "edit": "Düzenle",
+      "save": "Kaydet",
+      "cancel": "İptal",
+      "saved": "Depolama güncellendi. Bir sonraki dağıtımda geçerli olur.",
+      "reset": "Framework varsayılanlarını kullan",
+      "empty": "Dağıtımlar arasında hiçbir şey korunmuyor.",
+      "inherited": "Bu yığın için framework varsayılanları.",
+      "declared": "Bu proje için ayarlandı.",
+      "placeholder": "storage\nuploads:/app/public/uploads",
+      "hint": "Her satıra bir tane. Düz bir yol uygulamaya göredir (storage) ya da tam bir bağlama yazın (ad:/app/yol, /host/yol:/app/yol)."
+    },
+    "objectStorage": {
+      "title": "Nesne depolama",
+      "description": "Yüklemeler için bir S3 kovası — dağıtımlardan etkilenmez ve yerel bir yolun aksine birden fazla replika ile çalışır.",
+      "connect": "Bağlan",
+      "disconnect": "Bağlantıyı kes",
+      "disconnected": "Nesne depolama bağlantısı kesildi.",
+      "connected": "Kova doğrulandı ve bağlandı. Bir sonraki dağıtımda geçerli olur.",
+      "loading": "Kontrol ediliyor…",
+      "empty": "Bağlı kova yok. Yüklemeler konteynerin diskinde kalır.",
+      "sourceLabel": "Kaynak",
+      "externalOption": "Harici sağlayıcı",
+      "providerLabel": "Sağlayıcı",
+      "bucketLabel": "Kova",
+      "endpointLabel": "Uç nokta",
+      "regionLabel": "Bölge",
+      "accessKeyLabel": "Erişim anahtarı kimliği",
+      "secretKeyLabel": "Gizli erişim anahtarı",
+      "testAndConnect": "Test et ve bağlan",
+      "cancel": "İptal",
+      "envLabel": "Değişkenler",
+      "envHint": "Ayarlar:",
+      "appliesOnDeploy": "Bir sonraki dağıtımda uygulanır."
     },
     "env": {
       "title": "Ortam değişkenleri",
@@ -301,7 +396,12 @@
       "applyingTitle": "Uygulanıyor",
       "applyFailed": "Ortam değişkenleri çalışan servise uygulanamadı",
       "applyFailedTitle": "Uygulama başarısız oldu"
-    }
+    },
+    "linkedBadge": "Bağlı",
+    "linkedManaged": "{app} üzerinden",
+    "linkedTitle": "Bağlı entegrasyon",
+    "linkedBody": "Bu değer {app} bağlantısından gelir. Bunu o uygulamadan yönetin — buradaki değişiklikler kalıcı olmaz.",
+    "unlink": "Bağlantıyı kaldır"
   },
   "gitInfo": {
     "repository": "Depo",
@@ -388,18 +488,29 @@
       "title": "Geri alma stratejisi",
       "rebuild": "Yeniden derle (git)",
       "instant": "Anında (anlık görüntü - snapshot)",
-      "descRebuild": "Geri alma eski commit'i tekrar klonlar ve derler — daha ucuzdur ancak daha yavaştır ve o commit artık derlenmiyorsa başarısız olabilir.",
-      "descInstant": "Saniyeler içinde geri dönmek için her sürümün derleme çıktısını diskte saklar. Ek disk kullanır, geçmiş limitiyle sınırlıdır.",
-      "toggleAria": "Anlık görüntü saklamayı değiştir"
+      "descRebuild": "Görüntüsü hâlâ makinede değilse eski commit'i yeniden derler.",
+      "descInstant": "Her sürümün görüntüsünü saklar, böylece geri yükleme asla yeniden derlemez. Daha fazla disk kullanır.",
+      "toggleAria": "Anlık görüntü saklamayı değiştir",
+      "keepNone": "Ek kopya tutulmaz",
+      "keepCopies": "Sürüm başına bir kopya",
+      "descRebuildFiles": "Dosyaları hâlâ makinede değilse eski commit'i yeniden derler.",
+      "descInstantFiles": "Her sürümün dosyalarını saklar, böylece geri yükleme asla yeniden derlemez. Daha fazla disk kullanır."
     },
     "rollbackHistory": {
       "title": "Geri alma geçmişi",
       "valueOne": "{count} sürüm",
       "valueOther": "{count} sürüm",
-      "descSnapshot": "Geri alma için kaç son sürümün derleme çıktısının saklanacağını belirler. Daha eski çıktılar disk alanı açmak için temizlenir.",
-      "descGit": "Yalnızca Anında (anlık görüntü) modu için geçerlidir — Git modu derleme çıktısı saklamaz.",
+      "descSnapshot": "Disk alanı kazanmak için eski sürümler temizlenir.",
+      "descGit": "Son görüntüler her durumda saklanır, böylece geri alma derlemeyi atlayabilir.",
       "decreaseAria": "Geri alma geçmişini azalt",
-      "increaseAria": "Geri alma geçmişini artır"
+      "increaseAria": "Geri alma geçmişini artır",
+      "sizeEach": "her biri ~{size}",
+      "diskFree": "{size} boş",
+      "autoBadge": "otomatik boyutlandırıldı",
+      "manualBadge": "elle ayarlandı",
+      "kindFiles": "diskteki üretilmiş dosyalar",
+      "kindImages": "sunucudaki imajlar",
+      "descGitFiles": "Son sürümlerin dosyaları her durumda saklanır, böylece geri alma derlemeyi atlayabilir."
     },
     "commits": {
       "title": "Son commitler",
@@ -461,54 +572,54 @@
     "projectFallback": "Proje"
   },
   "resources": {
-    "title": "Makine Gücü",
-    "description": "Projeniz için makine gücünü yapılandırın.",
+    "title": "Makine gücü",
+    "description": "Bu projenin konteynerleri için CPU ve bellek sınırları.",
+    "loading": "Hedef makine okunuyor…",
+    "machineCapacity": "Makine: {cpu} vCPU · {memory}",
+    "exceedsMachine": "Bu makineyi aşıyor",
+    "appliesOnNextDeploy": "Sınırlar konteyner yeniden oluşturulduğunda uygulanır — değişikliğin etkili olması için yeniden dağıtın.",
     "tiers": {
-      "lightweight": {
-        "name": "Hafif (Lightweight)",
+      "unlimited": {
+        "name": "Sınır yok",
+        "description": "Makinenin tamamını kullan (varsayılan)",
+        "spec": "Makine kapasitesi"
+      },
+      "micro": {
+        "name": "Micro",
+        "description": "Küçük sidecar'lar ve worker'lar"
+      },
+      "low": {
+        "name": "Düşük",
         "description": "Küçük uygulamalar ve statik siteler"
       },
-      "standard": {
-        "name": "Standart",
+      "medium": {
+        "name": "Orta",
         "description": "Çoğu web uygulaması"
       },
-      "performance": {
-        "name": "Performans",
+      "high": {
+        "name": "Yüksek",
         "description": "Yüksek trafikli uygulamalar"
-      },
-      "enterprise": {
-        "name": "Kurumsal",
-        "description": "Büyük ölçekli canlı ortam uygulamaları"
-      },
-      "autoscale": {
-        "name": "Otomatik Ölçekleme",
-        "description": "Talebe göre ölçeklenir"
       }
     },
-    "dynamic": "Dinamik",
     "custom": {
       "name": "Özel",
-      "description": "Kendi kaynaklarınızı tanımlayın",
-      "clickToConfigure": "Yapılandırmak için tıklayın"
+      "description": "Kendi sınırlarınızı belirleyin",
+      "notSet": "Ayarlanmadı"
     },
-    "cpuValue": "{cpu} vCPU",
     "customPanel": {
-      "title": "Özel Kaynakları Yapılandır",
-      "cpuCores": "CPU Çekirdekleri",
-      "cpuRange": "Aralık: 0.25 - 4.00",
+      "boundedBy": "Bu makinede {cpu} vCPU ve {memory} var. Sınır olmaması için 0 girin.",
+      "capacityUnknown": "Bu makinenin kapasitesi okunamadı, bu yüzden üst sınır uygulanmıyor. Sınır olmaması için 0 girin.",
+      "cpuCores": "CPU çekirdeği",
       "memory": "Bellek (MB)",
-      "memoryRange": "Aralık: 128 - 8192",
+      "zeroMeansNoLimit": "0 = sınır yok",
       "cancel": "İptal",
-      "saving": "Kaydediliyor...",
-      "save": "Yapılandırmayı Kaydet"
+      "saving": "Kaydediliyor…",
+      "save": "Kaydet"
     },
     "toast": {
-      "updated": "Kaynaklar başarıyla güncellendi",
-      "updateFailed": "Kaynaklar güncellenemedi",
-      "cpuRange": "CPU 0.25 ile 4.00 çekirdek arasında olmalıdır",
-      "memoryRange": "Bellek 128 MB ile 8192 MB arasında olmalıdır",
-      "customSaved": "Özel kaynaklar başarıyla kaydedildi",
-      "customSaveFailed": "Özel kaynaklar kaydedilemedi"
+      "updated": "Makine gücü güncellendi",
+      "updateFailed": "Makine gücü güncellenemedi",
+      "invalidValues": "CPU ve bellek 0 veya pozitif bir sayı olmalıdır"
     }
   },
   "sleep": {
@@ -563,7 +674,11 @@
     "confirmDeleteWipe": "Sil + verileri temizle",
     "confirmDeleteEnvWipe": "Ortamı sil + verileri temizle",
     "confirmDelete": "Projeyi sil",
-    "confirmDeleteEnv": "Ortamı sil"
+    "confirmDeleteEnv": "Ortamı sil",
+    "linkedTitleOne": "{count} proje bu uygulamaya bağlı",
+    "linkedTitleOther": "{count} proje bu uygulamaya bağlı",
+    "linkedNote": "Verileri dokunulmadan çalışmaya devam eder — yalnızca bu bağlantıyı kaybederler. Uygulamak için yeniden dağıtın.",
+    "linkedNoteRecordOnly": "Çalışmaya devam ederler, ama bağlantı kayıtla birlikte gider — uygulamayı sonra yeniden içe aktarmak onu geri getirmez."
   },
   "routing": {
     "title": "Yönlendirme",
@@ -655,8 +770,7 @@
       "infoPreview": "Önce bu kayıtları ekleyin — eklendikten sonra değişmezler, böylece yayılma şimdi başlar. Ardından bağlamak için Alan adı ekle'ye basın ve son olarak DNS çözümlendiğinde Doğrula'ya tıklayın.",
       "infoApply": "DNS değişikliklerinin küresel olarak yayılması 48 saati bulabilir. Kayıtlar çözümlendiğinde aşağıdan Doğrula'ya tıklayın — DNS'i kontrol edeceğiz, alan adını etkinleştireceğiz ve arka planda SSL sağlayacağız.",
       "verifying": "Doğrulanıyor...",
-      "verify": "{hostname} adresini doğrula",
-      "copy": "Kopyala"
+      "verify": "{hostname} adresini doğrula"
     },
     "records": {
       "toggle": "DNS kayıtları",
@@ -679,6 +793,8 @@
     "overview": {
       "primary": "Birincil",
       "mappedTo": "Eşleştiği yer:",
+      "redirect": "Yönlendirme",
+      "redirectValue": "{status} → {hostname}",
       "status": "Durum",
       "ssl": "SSL",
       "visit": "Aç"
@@ -775,6 +891,19 @@
       "noServicePort": "Hiçbir servis {port} portunu dışa açmıyor. Önce bu portu bir servise ekleyin.",
       "enterCustom": "Özel bir alan adı girin.",
       "enterSubdomain": "Bir alt alan adı girin."
+    },
+    "edge": {
+      "setUp": "Kenarı kur",
+      "ready": "Kenar hazır",
+      "checking": "Kenar denetleniyor…",
+      "recheck": "Yeniden denetle",
+      "foreignProxyHint": "Başka bir proxy 80/443'ü kullanıyor"
+    },
+    "diagnosis": {
+      "title": "Bu neden çalışmıyor",
+      "noneYet": "Henüz bir kontrol çalıştırılmadı, bu yüzden gösterilecek bir sonuç yok. Gösterilen DNS kayıtlarını ekleyin, ardından Doğrula'yı çalıştırın.",
+      "attempts": "Şu ana kadar {count} başarısız deneme.",
+      "pillHint": "Nedenini göster"
     }
   }
 }

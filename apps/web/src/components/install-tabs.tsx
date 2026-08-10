@@ -21,7 +21,7 @@ const TABS: { key: TabKey; label: string; prompt: string; cmd: string }[] = [
     key: "windows",
     label: "Windows",
     prompt: "PS>",
-    cmd: "irm https://raw.githubusercontent.com/oblien/openship/main/scripts/install.ps1 | iex",
+    cmd: "irm https://git.openship.io/windows | iex",
   },
 ];
 

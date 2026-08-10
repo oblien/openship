@@ -12,7 +12,9 @@
 
 import { db, eq, inArray, restoreSubgraph } from "@repo/db";
 
+import { env } from "../../../config/env";
 import { withMigrationLock } from "../migration/migration-lock";
+import { CloudInstanceNotTransferableError } from "./errors";
 import { openSecretBundle } from "./passphrase-crypto";
 import { sealForInstance } from "./secret-codec";
 import { SECRET_COLUMNS, type SecretColumn } from "./secret-registry";
@@ -94,6 +96,9 @@ export async function importInstance(opts: {
   mode: ImportMode;
 }): Promise<ImportResult> {
   const { file, mode } = opts;
+  // GATE 1: never import (esp. wipe) onto a multi-tenant SaaS instance — a
+  // wipe restore TRUNCATEs every tenant. Refuse before opening the bundle.
+  if (env.CLOUD_MODE) throw new CloudInstanceNotTransferableError();
   assertValidEnvelope(file);
 
   // Open the bundle FIRST — a wrong passphrase throws here, before any write.
@@ -104,6 +109,13 @@ export async function importInstance(opts: {
   const secretsSkipped = !bundle;
 
   const rowsRestored = Object.values(file.dump.tables).reduce((n, rows) => n + rows.length, 0);
+
+  // Local-folder (localPath / folder-upload) projects carry a SOURCE-machine path
+  // that won't exist on this install — surface them so the operator re-points or
+  // re-deploys instead of hitting a "folder not found" on the next deploy.
+  const localPathProjects = (file.dump.tables["project"] ?? [])
+    .filter((r) => typeof r.localPath === "string" && (r.localPath as string).trim() !== "")
+    .map((r) => ({ slug: String(r.slug ?? r.id ?? "?"), localPath: String(r.localPath) }));
 
   let secretsRehydrated = 0;
 
@@ -160,5 +172,5 @@ export async function importInstance(opts: {
     });
   });
 
-  return { mode, rowsRestored, secretsRehydrated, secretsSkipped };
+  return { mode, rowsRestored, secretsRehydrated, secretsSkipped, localPathProjects };
 }

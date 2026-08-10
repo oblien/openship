@@ -55,7 +55,15 @@ export const emailOtp = (authClient as any).emailOtp as {
  * the client object so TypeScript doesn't complain about missing
  * static properties.
  */
-export const forgetPassword = (authClient as any).forgetPassword as (
+// Better Auth's client proxy (better-auth/dist/client/proxy.mjs) derives the
+// HTTP path straight from the accessed property name via camelCase ->
+// kebab-case, with no check that the server actually registered a matching
+// route - an accessed property that doesn't exist just silently builds a
+// 404. The server-side endpoint (better-auth/dist/api/routes/password.mjs)
+// is `requestPasswordReset` -> POST /request-password-reset; `forgetPassword`
+// was a stale property name from an older Better Auth version that never
+// reaches the handler.
+export const forgetPassword = (authClient as any).requestPasswordReset as (
   opts: { email: string; redirectTo?: string },
 ) => Promise<{ error?: { message?: string } }>;
 

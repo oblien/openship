@@ -25,6 +25,7 @@ import { DnsHoldBanner } from "./_components/dns-hold-banner";
 import { PtrHoldBanner } from "./_components/ptr-hold-banner";
 import { MailAdminPanel } from "./_components/admin/admin-panel";
 import { MailServerList, type MailServerListItem } from "./_components/mail-server-list";
+import { resolveMailView } from "./_lib/view-gate";
 
 export default function EmailsPage() {
   const { t } = useI18n();
@@ -37,6 +38,11 @@ export default function EmailsPage() {
   // of dropping back to the picker. Also set by the Mail tab's "Provision"
   // button on the server detail page.
   const hintedServerId = searchParams.get("serverId");
+  // `?force=wizard` — re-open the setup form for a server that is already a
+  // registered mail server. Written by the Advanced tab's "Re-run setup" and by
+  // the engine banner when the box's mail engine is gone entirely (the one case
+  // the in-place repair can't help, because recreating it needs setup's secrets).
+  const forceWizard = searchParams.get("force") === "wizard";
 
   const [status, setStatus] = useState<MailSetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -729,36 +735,29 @@ export default function EmailsPage() {
   const registryCompleted = !!selectedMailRow?.completed;
   const gatesActive = !!dnsPendingStep || !!ptrPending;
 
-  // Day-2 admin: the registry says installed (or an install just finished)
-  // and nothing is mid-install.
-  const showAdmin =
-    !addingNew &&
-    !!selectedServer &&
-    !!status &&
-    (registryCompleted || isCompleted) &&
-    !running &&
-    !gatesActive;
+  // Which surface to render, resolved by one pure gate (see _lib/view-gate).
+  const view = resolveMailView({
+    addingNew,
+    hasServer: !!selectedServer,
+    hasStatus: !!status,
+    registryCompleted,
+    isCompleted: !!isCompleted,
+    running,
+    hasStarted: !!hasStarted,
+    gatesActive,
+    hasCompletionData: !!completionData,
+    forceWizard,
+    serverCount: mailServers.length,
+  });
+  const showAdmin = view === "admin";
+  const showList = view === "list";
+  const showSetupForm = view === "setup";
+  const showProgress = view === "progress";
 
-  // Several registered mail servers, none opened → the registry cards list.
-  const showList = !addingNew && !selectedServer && mailServers.length > 1;
-
-  // The provision/adopt wizard: adding a new one, none registered yet, or a
-  // picked server that isn't a registered mail server — and no install active.
-  const showSetupForm =
-    !showAdmin &&
-    !showList &&
-    !running &&
-    !hasStarted &&
-    !gatesActive &&
-    !completionData;
-
-  // Install progress / gates surface (streaming, resumable, or partially done).
-  const showProgress =
-    !showAdmin &&
-    !showList &&
-    !showSetupForm &&
-    (running || hasStarted || gatesActive || !!completionData);
-
+  // Leaving a FORCED wizard means dropping the param, not tearing down the
+  // selection — the operator came from this server's admin panel and expects to
+  // land back on it. Only offer it while there's a panel to return to.
+  const canExitForcedWizard = forceWizard && !!selectedServer && (registryCompleted || isCompleted);
   // "← Mail servers" is only meaningful when there's a list to return to.
   const canGoBack = mailServers.length > 1 && (!!selectedServer || addingNew);
   const handleBack = () => {
@@ -786,7 +785,19 @@ export default function EmailsPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            {canGoBack && (
+            {/* One slot, two meanings: cancelling a forced re-run returns to the
+                panel it was launched from, which takes precedence over the
+                list-level back (the operator's last step was opening this form). */}
+            {canExitForcedWizard ? (
+              <button
+                type="button"
+                onClick={() => setServerInUrl(selectedServer!.id)}
+                className="flex size-9 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground transition-colors hover:text-foreground"
+                title={t.emails.page.backToAdmin}
+              >
+                <ArrowLeft className="size-4 rtl:rotate-180" />
+              </button>
+            ) : canGoBack ? (
               <button
                 type="button"
                 onClick={handleBack}
@@ -795,7 +806,7 @@ export default function EmailsPage() {
               >
                 <ArrowLeft className="size-4 rtl:rotate-180" />
               </button>
-            )}
+            ) : null}
             <div>
               <h1
                 className="text-2xl font-medium text-foreground/80"
@@ -847,7 +858,13 @@ export default function EmailsPage() {
             onDomainChange={setDomain}
             onPasswordChange={setAdminPassword}
             onServerSelect={setSelectedServer}
-            onStart={() => handleStart()}
+            onStart={() => {
+              // Drop `force` as the install begins: it exists to override the admin
+              // panel, and leaving it set would keep the form up after the re-run
+              // finishes instead of handing the server back to its admin view.
+              if (forceWizard && selectedServer) setServerInUrl(selectedServer.id);
+              handleStart();
+            }}
             onAdopted={async (serverId) => {
               // Re-adopted an existing mail server — register it in the
               // list, then open it (registry `completed` drives the admin).

@@ -62,6 +62,10 @@ export async function registerMailServerRoutes(
       await routing.registerRoute({
         domain: route.hostname,
         tls: route.tls,
+        // Mail routes are the operator's own hostnames on this box, so their TLS is
+        // ours: keep a :443 listener up from the start rather than refusing the
+        // handshake until a cert lands (Cloudflare 525, #308).
+        terminatesTlsLocally: route.tls,
         targetUrl: route.targetUrl,
       });
       results.push({ routeId: route.id, hostname: route.hostname, ok: true });

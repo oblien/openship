@@ -21,13 +21,30 @@ export default function DocsRootLayout({ children }: { children: ReactNode }) {
         nav={{
           mode: "top",
           title: (
-            <>
+            // Same mark as the marketing navbar: a ring + wordmark.
+            //
+            // INLINE STYLES, not Tailwind utilities: this document loads ONLY
+            // fumadocs' standalone Tailwind build (see (docs)/layout.tsx), which
+            // contains just the classes fumadocs itself uses. Arbitrary utilities
+            // like `h-[22px]`/`border-[2.5px]` aren't in it, so with preflight's
+            // `border-width: 0` the ring rendered as a 0x0 invisible span — the
+            // wordmark showed alone. `currentColor` keeps the ring tracking the nav
+            // text through the light/dark toggle.
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
               <span
-                className="inline-block h-[22px] w-[22px] shrink-0 rounded-full border-[2.5px] border-current"
                 aria-hidden
+                style={{
+                  width: 22,
+                  height: 22,
+                  flexShrink: 0,
+                  borderRadius: 9999,
+                  borderWidth: 2.5,
+                  borderStyle: "solid",
+                  borderColor: "currentColor",
+                }}
               />
-              <span className="font-semibold">Openship</span>
-            </>
+              <span style={{ fontWeight: 600 }}>Openship</span>
+            </span>
           ),
           url: "/",
         }}

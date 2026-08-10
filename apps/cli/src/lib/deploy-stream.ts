@@ -19,10 +19,42 @@ export interface StreamResult {
   status?: string;
   success?: boolean;
   message?: string;
+  /** Services that ended in `failed` — set on a partial deploy (some services
+   *  live, some failed) that the session still reports as "ready". */
+  failedServices?: Array<{ id: string; name: string }>;
 }
 
 export async function streamDeploymentLogs(deploymentId: string): Promise<StreamResult> {
   const result: StreamResult = {};
+
+  // Per-service outcomes (compose deploys). The build session's terminal status
+  // is "ready" even when SOME services failed (the DB row carries the real
+  // partial_failure), so without this the CLI would print "✓ ready" and hide it.
+  const serviceStatuses = new Map<string, { name: string; status: string }>();
+  let terminalPrinted = false;
+
+  const finishAndReport = (): void => {
+    if (terminalPrinted) return;
+    terminalPrinted = true;
+    const failed = [...serviceStatuses.entries()]
+      .filter(([, s]) => s.status === "failed")
+      .map(([id, s]) => ({ id, name: s.name }));
+    if (failed.length > 0) {
+      result.failedServices = failed;
+      const names = failed.map((f) => f.name).join(", ");
+      const ids = failed.map((f) => f.id).join(",");
+      err(
+        `\n⚠  ${failed.length} of ${serviceStatuses.size} service(s) failed to deploy: ${names}\n` +
+          `   The others are live; each failed service keeps serving its PREVIOUS container.\n` +
+          `   Retry only the failed ones (the rest stay untouched):\n` +
+          `     openship deploy --service-ids ${ids}\n`,
+      );
+    } else if (result.success) {
+      ok(`\n✓ ${result.message ?? "Deployment ready"}`);
+    } else {
+      err(`\n✗ ${result.message ?? "Deployment failed"}`);
+    }
+  };
 
   for await (const ev of sseRequest(`/deployments/${deploymentId}/stream`)) {
     if (ev.event === "ping") continue;
@@ -48,11 +80,20 @@ export async function streamDeploymentLogs(deploymentId: string): Promise<Stream
         if (!isJsonMode() && msg) process.stdout.write(msg);
         break;
       }
+      case "service-status": {
+        const id = typeof payload.serviceId === "string" ? payload.serviceId : "";
+        if (id) {
+          serviceStatuses.set(id, {
+            name: typeof payload.serviceName === "string" ? payload.serviceName : id,
+            status: String(payload.status ?? ""),
+          });
+        }
+        break;
+      }
       case "complete": {
         result.success = payload.success === true;
         result.message = typeof payload.message === "string" ? payload.message : undefined;
-        if (result.success) ok(`\n✓ ${result.message ?? "Deployment ready"}`);
-        else err(`\n✗ ${result.message ?? "Deployment failed"}`);
+        finishAndReport();
         break;
       }
       case "cancelled":
@@ -61,6 +102,9 @@ export async function streamDeploymentLogs(deploymentId: string): Promise<Stream
         break;
       case "end":
         result.status = (payload.status as string) ?? result.status;
+        // Fallback if no `complete` fired (e.g. reconnect mid-stream) — still
+        // surface a partial failure the session reported as a clean status.
+        finishAndReport();
         return result;
       case "error":
         err(`\n${(payload.error as string) ?? "Stream error"}`);

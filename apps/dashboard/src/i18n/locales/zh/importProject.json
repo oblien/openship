@@ -47,6 +47,34 @@
     "outputDirectoryDesc": "包含构建产物的目录",
     "sourceFolderLabel": "源文件夹",
     "sourceFolderDesc": "从仓库或本地项目内的子目录进行构建。",
+    "composePath": {
+      "title": "Compose 文件",
+      "subtitle": "在项目根目录自动检测",
+      "label": "Compose 文件路径",
+      "description": "适用于将 compose 放在根目录之外的仓库 — 填写文件（deploy/stack.yml）或包含它的文件夹（deploy/docker-compose）。将重新扫描仓库并部署其中声明的服务。",
+      "apply": "扫描",
+      "scanning": "扫描中…",
+      "scanFailed": "无法扫描该 Compose 路径。",
+      "subtitleOptIn": "使用 Docker Compose 部署？请指定文件。"
+    },
+    "healthCheck": {
+      "title": "健康检查",
+      "subtitle": "关闭 — 应用一启动，部署即完成",
+      "subtitleOn": "开启 — 部署会先等待应用响应再上线",
+      "description": "Openship 在应用启动后不会等待它，因此启动缓慢绝不会拖慢或搞失败一次部署。上线后仍会检查端口并报告结果，且不会阻塞任何环节。只有当你希望部署本身拒绝转为成功时，才开启这些选项。",
+      "probeLabel": "等待应用响应",
+      "probeDesc": "容器启动后连接应用端口，并等待它接受连接。",
+      "pathLabel": "HTTP 路径",
+      "pathPlaceholder": "/health",
+      "pathDesc": "要求对该路径的 GET 返回低于 500 的状态码。留空则接受任意 TCP 连接，这对非 HTTP 服务同样适用。",
+      "timeoutLabel": "超时放弃（秒）",
+      "stabilizationLabel": "监视重启循环",
+      "stabilizationDesc": "在容器启动后监视它并报告崩溃循环。它读取运行时信息，因此在远程服务器上同样有效。",
+      "stabilizationWindowLabel": "监视时长（秒）",
+      "onFailureLabel": "如果检查失败",
+      "onFailureWarn": "保持部署上线，并标记为待复查",
+      "onFailureFail": "让部署失败，并继续由上一个版本提供服务"
+    },
     "buildImageLabel": "构建镜像",
     "buildImageDesc": "用于云端或服务器构建的构建容器镜像。当检测到的基础镜像有误时可覆盖此项。",
     "productionPathsLabel": "生产路径",
@@ -122,6 +150,11 @@
       "clipboardEmpty": "剪贴板为空",
       "clipboardInvalid": "剪贴板不包含有效的 KEY=VALUE 环境变量",
       "clipboardBlocked": "剪贴板访问被阻止。请点击环境变量框内部，并使用 Cmd/Ctrl+V 粘贴。"
+    },
+    "reveal": {
+      "show": "显示值",
+      "hide": "隐藏值",
+      "error": "无法显示值"
     }
   },
   "composeServices": {
@@ -278,7 +311,6 @@
       "successful": "部署成功",
       "deploying": "正在部署……"
     },
-    "viewDashboard": "查看仪表盘",
     "visitSite": "访问站点",
     "warningTitle": "部署已完成，但部分服务仍需处理。",
     "productionLogs": "生产日志",
@@ -320,7 +352,6 @@
     "running": "运行中",
     "buildingSuffix": "· {count} 个构建中",
     "failedSuffix": "· {count} 个失败",
-    "viewDashboard": "查看仪表盘",
     "decisionBannerTitle": "需要操作 —— 部分服务失败",
     "decisionBannerDefaultMsg": "本次部署完成时存在失败的服务。您可以保留它并稍后修复，或拒绝它以恢复到之前的版本。",
     "review": "审查",

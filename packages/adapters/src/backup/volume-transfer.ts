@@ -24,6 +24,7 @@
  * executor primitives that shell-escape their own args.
  */
 
+import { Transform } from "node:stream";
 import type { BackupExecutor, ServiceHandle } from "./types";
 
 export type TransferMode = "auto" | "stream" | "direct" | "rsync";
@@ -45,6 +46,9 @@ export interface TransferOptions {
   clearTarget?: boolean;
   /** Optional progress/decision log sink (e.g. the orchestrator's run log). */
   log?: (message: string) => void;
+  /** Running byte count as data streams (stream mode only — the direct
+   *  same-daemon copy reports its total once at the end). */
+  onProgress?: (bytesMoved: number) => void;
 }
 
 export interface TransferPlan {
@@ -147,6 +151,7 @@ export async function transferVolume(
       dst.sourceId,
       { clearTarget },
     );
+    opts?.onProgress?.(bytesWritten);
     return { bytesMoved: bytesWritten, strategy: "direct", compression: "none" };
   }
 
@@ -155,7 +160,20 @@ export async function transferVolume(
   const read = await src.exec.streamPath(src.handle, src.sourceId, {
     compression: plan.compression,
   });
-  const { bytesWritten } = await dst.exec.receiveStream(dst.handle, dst.sourceId, read.stdout, {
+  let source = read.stdout;
+  if (opts?.onProgress) {
+    let moved = 0;
+    const counter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        moved += chunk.length;
+        opts.onProgress!(moved);
+        cb(null, chunk);
+      },
+    });
+    read.stdout.on("error", (err) => counter.destroy(err));
+    source = read.stdout.pipe(counter);
+  }
+  const { bytesWritten } = await dst.exec.receiveStream(dst.handle, dst.sourceId, source, {
     compression: plan.compression,
     clearTarget,
   });

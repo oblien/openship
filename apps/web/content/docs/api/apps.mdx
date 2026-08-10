@@ -1,0 +1,276 @@
+---
+title: Apps API
+description: Browse the one-click app catalog, install an app as a project, manage per-organization custom apps, and read an installed app's curated settings and resolved connection details.
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+An **app** is a JSON definition that installs a set of containers as a project in one click — with
+its images, wiring, generated secrets, curated settings form, and connection card already described.
+This API covers browsing the catalog, installing, adding your organization's own custom apps, and
+reading or updating an installed app afterwards.
+
+In the dashboard this is the **Apps** tab. The definition format is documented in the
+[App catalog JSON reference](/docs/reference/app-catalog), and authoring workflow in
+[Add an app](/docs/guides/add-an-app).
+
+<Callout title="Base path & auth">
+Catalog and install paths sit at **`/api/apps`**; the two per-project paths are nested under
+**`/api/projects/:id`**. Send a personal access token as a bearer header
+(`Authorization: Bearer <token>`), created with [`openship token create`](/docs/cli/access). The
+dashboard uses your session cookie instead. See the [API overview](/docs/api) for the full auth model
+and [security/permissions](/docs/security/permissions) for how tags map to grants.
+</Callout>
+
+<Callout title="Self-hosted and cloud" type="info">
+Apps install as normal services projects, so this module is available on both self-hosted and
+Openship Cloud. For the per-project paths, a cloud project is transparently proxied to Openship
+Cloud while a local project is served by your own instance.
+</Callout>
+
+## Endpoints
+
+| Method & path | Permission | What it does |
+|---|---|---|
+| `GET /api/apps/catalog` | `project:list` | List the app catalog. |
+| `GET /api/apps/catalog/:id` | `project:list` | Get one app's full definition by id. |
+| `GET /api/apps/custom` | `project:list` | List this organization's custom (uploaded, unverified) apps. |
+| `POST /api/apps/custom` | `project:write` | Add a custom app from an uploaded JSON definition. |
+| `DELETE /api/apps/custom/:appId` | `project:write` | Remove a custom app from this organization's catalog. |
+| `POST /api/apps` | `project:write` | Install an app as a project. |
+| `GET /api/projects/:id/app-settings` | `project:read` | Get an installed app's curated settings schema and current values. |
+| `PATCH /api/projects/:id/app-settings` | `project:write` | Update an installed app's curated settings. |
+| `GET /api/projects/:id/app-connection` | `project:write` | Get an installed app's resolved connection details. |
+
+## List the catalog
+
+```
+GET /api/apps/catalog
+```
+
+The runtime catalog is the copy **bundled** in your build, overlaid by a live fetch of the curated
+catalog from the Openship repo (refreshed on a 10-minute TTL, stale-while-revalidate), plus your
+organization's custom apps. A failed fetch or an offline instance simply keeps serving the last-good
+copy, so the overlay can never break the catalog.
+
+<Callout title="Overlay trust model" type="info">
+The overlay is fetched over HTTPS from Openship's own repository — repo-curated, with **no signing**
+and no user uploads in that channel — and **every entry is shape-validated before it can drive an
+install**, using the same strict validator as the bundled set. Your organization's custom apps are a
+separate, always-unverified channel.
+</Callout>
+
+Because the overlay can be **ahead of your instance**, entries carry compatibility flags:
+
+<TypeTable
+  type={{
+    available: { type: 'boolean', description: 'false → shown as coming soon and not installable. Enforced server-side, not just in the UI.' },
+    verified: { type: 'boolean', description: 'Curated and reviewed. Always false for custom apps — trust is provenance-based, never read from the JSON.' },
+    custom: { type: 'boolean', description: 'true for a per-organization uploaded app.' },
+    updateAvailable: { type: 'boolean', description: 'A newer definition exists upstream but needs a newer Openship, so your bundled copy is being served. Still installable.' },
+    requiresUpdate: { type: '{ minVersion?: string }', description: 'This app has no runnable copy on this instance. A guided placeholder is returned instead of the definition, and install is refused.' },
+  }}
+/>
+
+## Get one app
+
+```
+GET /api/apps/catalog/:id
+```
+
+Returns the full definition — services, config fields, endpoints, settings, connection. Curated apps
+win over custom ones: a custom app can never shadow a verified id (also enforced at upload).
+
+This is **config metadata only, never secrets** — generated values are minted at install, so nothing
+sensitive exists to return yet.
+
+The response also carries a `draft` alongside `data`: this organization's **open, never-deployed**
+draft of the same app, if one exists.
+
+<Callout title="Install adopts an open draft" type="warn">
+An install request for the same name **adopts that draft** rather than starting clean. So a client
+must render the draft's stored configuration, not the app's defaults — otherwise Install silently
+changes what the operator set up last time.
+</Callout>
+
+## Install an app
+
+```
+POST /api/apps
+```
+
+For a `template` app this creates the project and starts the deploy. For a `flow` app it returns the
+route of that app's bespoke wizard instead of installing anything.
+
+<TypeTable
+  type={{
+    templateId: { type: 'string', description: 'Catalog app id to install.', required: true },
+    name: { type: 'string', description: 'Project name. Defaults from the app definition.' },
+    config: { type: 'Record<string, string>', description: 'Values for the app configFields, keyed by env key. Generated secrets are filled server-side.' },
+    routes: { type: 'RouteChoice[]', description: 'One entry per endpoint you decided to expose. Max 40.' },
+  }}
+/>
+
+Each `routes` entry:
+
+<TypeTable
+  type={{
+    service: { type: 'string', description: 'Service name from the app definition.', required: true },
+    port: { type: 'integer', description: 'Container port this choice routes (1–65535).', required: true },
+    mode: { type: '"port" | "free" | "custom"', description: 'port = no public route, published host port only. free = a managed *.opsh.io subdomain (requires Openship Cloud). custom = a hostname you own.', required: true },
+    domain: { type: 'string', description: 'free mode: the subdomain slug. Omit to take the app default label.' },
+    customDomain: { type: 'string', description: 'custom mode: the hostname you own. Required in that mode.' },
+  }}
+/>
+
+<Callout title="No routes means no domain" type="warn">
+Public hostnames come **only** from `routes`. A service with no entry gets **no public route** — a
+hostname is never invented on your behalf. Omit `routes` entirely and the app installs port-only,
+which is a perfectly good outcome for a database or an internal tool.
+</Callout>
+
+```bash
+curl -X POST https://your-host/api/apps \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "templateId": "ghost",
+    "name": "my-blog",
+    "routes": [
+      { "service": "ghost", "port": 2368, "mode": "custom", "customDomain": "blog.acme.com" }
+    ]
+  }'
+```
+
+## Custom apps
+
+```
+POST   /api/apps/custom
+GET    /api/apps/custom
+DELETE /api/apps/custom/:appId
+```
+
+`POST` accepts a full [app definition](/docs/reference/app-catalog) as the request body. The body is
+gated here only as "must be a JSON object" — the authoritative validation runs in the service and is
+the **same strict check** as the curated catalog, shape plus every referential rule.
+
+Four constraints are enforced:
+
+- **Always unverified.** `verified` and `available` are set by the server, so a file claiming
+  `"verified": true` is ignored.
+- **`kind` must be `template`.** Flow apps are rejected.
+- **The `id` cannot shadow a built-in app.**
+- **Validation errors are returned with the offending detail**, including a distinct message when the
+  definition targets a newer catalog `schemaVersion` than the instance supports.
+
+A custom app installs through the normal services pipeline with the same in-container boundary as any
+project you deploy yourself — no new privilege.
+
+## Curated settings
+
+```
+GET   /api/projects/:id/app-settings
+PATCH /api/projects/:id/app-settings
+```
+
+`GET` returns the app's settings schema together with current values, so a client can render the
+form without knowing the app. `PATCH` applies a safe env merge — only the keys you send are touched:
+
+<TypeTable
+  type={{
+    changes: { type: '{ service, key, value }[]', description: 'Settings to apply. service is the docker service/alias, key the curated setting env key.' },
+  }}
+/>
+
+Empty-string semantics differ by field kind, which matters when a form re-submits untouched inputs:
+
+| Field | `value: ""` means |
+|---|---|
+| Non-secret | Clear the override, reverting to the app default |
+| Secret | Leave the stored value **unchanged** |
+
+Fields marked `requiresRedeploy` in the definition take effect only after a redeploy; the response
+and the dashboard both surface that.
+
+## Connection details
+
+```
+GET /api/projects/:id/app-connection
+```
+
+Resolves the app's connection outputs against the running services — public URLs, generated keys,
+composed connection strings — and returns them ready to use, including any labeled
+[variants](/docs/reference/app-catalog#connection) such as a public versus internal-network form.
+
+<Callout title="This route requires project:write, deliberately" type="warn">
+It returns **fully decrypted** credentials — service-role JWTs, database passwords embedded in
+`postgres://…` URLs — which bypass database row-level security. The env listing can mask secrets at
+`project:read`; this surface cannot, so it sits above the read tier on purpose. A read-only grant or
+a `project:read` MCP token must not be able to exfiltrate live credentials. Treat the response as
+secret material.
+</Callout>
+
+## MCP exposure
+
+Every route in this module is also exposed as an [MCP](/docs/api/mcp) tool, so an AI agent can browse
+the catalog, install an app, and read its settings and connection details. Tool exposure is an
+**opt-in allowlist** — a route becomes a tool only when its spec declares an `mcp` block — and the
+module-level hard-deny list covers only `tokens`, `auth`, and `mcp`. `apps` is not on it.
+
+Every MCP call **re-checks the caller's permissions**, so the tags in the
+[endpoints table](#endpoints) apply unchanged. What that means in practice:
+
+| Agent token | Can do |
+|---|---|
+| Read-only (`project:list` / `project:read`) | Browse the catalog, read an installed app's settings schema |
+| `project:write` | Also **install apps** and **read decrypted connection credentials** |
+
+<Callout title="Scope agent tokens deliberately" type="warn">
+Because `app-connection` is a tool and it returns live credentials, a `project:write` agent token can
+read an installed app's database passwords and service-role keys. If you are handing a token to an
+agent that only needs to inspect things, issue a read-only one.
+</Callout>
+
+## Errors you might see
+
+<Callout title="400 — install refused" type="warn">
+Install validates the app and your routing choices, and returns the reason as the message. Common
+ones: the app is still marked coming soon (`available: false`); it needs a newer Openship
+(`requiresUpdate`, reported as *Requires Openship ≥ X*); the app id is unknown; a `routes` entry
+names a service the app does not declare, or a port that service does not serve; two `routes` entries
+target the same service and port; or `mode: "custom"` was sent without a `customDomain`. A missing
+`templateId` is rejected the same way.
+</Callout>
+
+<Callout title="400 — invalid app definition (custom upload)" type="warn">
+The uploaded JSON failed the strict schema, and the message carries the offending detail — a bad
+enum, a missing required field, or a dangling reference such as a `service` that no declared service
+matches. Distinct messages cover the three non-shape rejections: a `flow` app, an `id` that shadows a
+built-in, and a definition targeting a newer catalog `schemaVersion` than this instance supports.
+</Callout>
+
+<Callout title="400 — settings rejected" type="warn">
+From `PATCH /app-settings`: the project is not an app or declares no settings
+(*This app has no configurable settings*), a change names a key the app does not define
+(*Unknown setting: service.KEY*), a `required` field was cleared, a value failed its `pattern` or
+numeric bounds, or the named service does not exist on the project.
+</Callout>
+
+<Callout title="403 — needs Openship Cloud" type="error">
+A `routes` entry used `mode: "free"` (a managed `*.opsh.io` subdomain) on an instance that is not
+connected to Openship Cloud. These carry a `CLOUD_REQUIRED_*` code so a client can turn them into a
+connect prompt rather than a dead end. Use `mode: "custom"` with your own hostname, or `mode: "port"`
+for no public route.
+</Callout>
+
+<Callout title="404 — unknown app" type="error">
+`GET /api/apps/catalog/:id` returns `{ "error": "Unknown app" }` when the id is neither a curated app
+nor one of your organization's custom apps. List valid ids with `GET /api/apps/catalog`.
+</Callout>
+
+## See also
+
+- [App catalog JSON](/docs/reference/app-catalog) — every field in an app definition
+- [Add an app](/docs/guides/add-an-app) — submit a curated app, or upload a custom one
+- [Services API](/docs/api/services) — the services an installed app is made of
+- [Projects API](/docs/api/projects) — the project an app installs into

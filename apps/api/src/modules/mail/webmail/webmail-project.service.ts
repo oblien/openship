@@ -263,6 +263,10 @@ async function registerWebmailCloudProxy(
   await platform.routing.registerRoute({
     domain: hostname,
     tls: true,
+    // We issue this host's cert right below, so the edge must keep a :443 listener
+    // up meanwhile — a routed host with no TLS listener refuses the handshake
+    // (Cloudflare 525, #308) and that also blocks the issuance itself.
+    terminatesTlsLocally: true,
     targetUrl: cloudUrl,
   });
   // Provision a cert for the proxy hostname. The mail VPS already has

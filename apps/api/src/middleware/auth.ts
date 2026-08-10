@@ -10,6 +10,7 @@ import { hashPatToken } from "../lib/pat";
 import { isPatToken, parseBearerToken } from "../lib/bearer";
 import {
   buildRequestContext,
+  type PrincipalKind,
   type RequestContext,
   type RequestContextRole,
   type SessionKind,
@@ -66,10 +67,38 @@ const PAT_HANDLED = Symbol("pat-handled");
  * proceed. Messages are caller-supplied so each surface keeps its wording; the
  * codes (TOKEN_ORG_SCOPE / TOKEN_READ_ONLY) are shared.
  */
-function enforceBoundOrgAndReadOnly(
+export function enforceBoundOrgAndReadOnly(
   c: Context,
-  opts: { boundOrg: string | null; readOnly: boolean; orgScopeMessage: string; readOnlyMessage: string },
+  opts: {
+    boundOrg: string | null;
+    readOnly: boolean;
+    scoped: boolean;
+    orgScopeMessage: string;
+    readOnlyMessage: string;
+  },
 ): Response | null {
+  // Fail closed on a scoped principal with no bound org. A scoped token's grants
+  // are looked up by token id with the (org, user) arguments DISCARDED
+  // (grant-source.ts), and wildcard/list-scope checks take their org from
+  // X-Organization-Id (permission.ts resolveRequestScopeOrg). With no bound org to
+  // pin that header against, the header alone would decide which org the token's
+  // capabilities apply in — a trust input we don't want, now that an org-singleton
+  // "*" grant actually authorizes something. Membership is still required, so this
+  // was never cross-tenant; rejecting keeps the header from selecting the tenant.
+  //
+  // Unreachable for tokens minted today (mint binds ctx.organizationId, which is
+  // non-null), so this guards older rows and any OAuth-MCP binding recorded
+  // without one.
+  if (opts.scoped && !opts.boundOrg) {
+    return c.json(
+      {
+        error:
+          "This access token is scoped but not bound to an organization. Re-create it from an organization context.",
+        code: "TOKEN_ORG_UNBOUND",
+      },
+      403,
+    );
+  }
   if (opts.boundOrg) {
     const requestedOrg = c.req.header("x-organization-id")?.trim();
     if (requestedOrg && requestedOrg !== opts.boundOrg) {
@@ -95,6 +124,7 @@ async function finishBearer(
   principalId: string,
   boundOrg: string | null,
   patScope: { tokenId: string; scoped: boolean } | undefined,
+  principalKind: PrincipalKind,
 ): Promise<typeof PAT_HANDLED> {
   await applyAuthedRequest(
     c,
@@ -102,6 +132,7 @@ async function finishBearer(
     { id: principalId, activeOrganizationId: boundOrg },
     "bearer",
     patScope,
+    principalKind,
   );
   await next();
   return PAT_HANDLED;
@@ -232,6 +263,7 @@ async function tryBearerAuth(c: Context, next: Next): Promise<Response | typeof 
   const denied = enforceBoundOrgAndReadOnly(c, {
     boundOrg: resolved.organizationId,
     readOnly: resolved.readOnly,
+    scoped: resolved.scoped,
     orgScopeMessage:
       resolved.kind === "pat"
         ? "This access token is scoped to a different organization"
@@ -247,7 +279,15 @@ async function tryBearerAuth(c: Context, next: Next): Promise<Response | typeof 
   }
 
   const patScope = resolved.scoped ? { tokenId: resolved.tokenId, scoped: true } : undefined;
-  return finishBearer(c, next, user, resolved.principalId, resolved.organizationId, patScope);
+  return finishBearer(
+    c,
+    next,
+    user,
+    resolved.principalId,
+    resolved.organizationId,
+    patScope,
+    resolved.kind,
+  );
 }
 
 export async function authMiddleware(c: Context, next: Next) {
@@ -346,6 +386,7 @@ async function applyAuthedRequest(
     | null,
   sessionKind: SessionKind,
   patScope?: { tokenId: string; scoped: boolean },
+  principalKind?: PrincipalKind,
 ): Promise<void> {
   c.set("user", user);
   if (session && sessionKind !== "zero-auth") c.set("session", session);
@@ -391,6 +432,7 @@ async function applyAuthedRequest(
       membershipId: membership.id,
       sessionId: session?.id ?? "zero-auth",
       sessionKind,
+      principalKind: principalKind ?? null,
       tokenScope: patScope?.scoped ? { tokenId: patScope.tokenId } : null,
       clientIp,
       userAgent,

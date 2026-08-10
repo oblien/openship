@@ -1,5 +1,8 @@
 // ─── Database client ─────────────────────────────────────────────────────────
 export { db, getDriver, getPgPool, closeDb, type Database, type Driver } from "./client";
+// The dev hot-reload contract: shutdown must free the PGlite lock inside the
+// successor's takeover grace, or every reload hard-kills the DB mid-close.
+export { DEV_LOCK_TAKEOVER_GRACE_MS, isDevWatchReload } from "./pglite-lock";
 
 // ─── Advisory locking (cross-process serialization) ──────────────────────────
 export {
@@ -12,6 +15,17 @@ export {
 // ─── Schema (table definitions) ──────────────────────────────────────────────
 export * as schema from "./schema";
 export type { ComposeServiceSpec, ServicePublicEndpoint } from "./schema/service";
+export type { ServerContainerDetail } from "./schema/server-container-status";
+export type {
+  IncomingWebhookActionType,
+  IncomingWebhookActionConfig,
+  IncomingWebhookAuthMode,
+} from "./schema/incoming-webhook";
+export { INCIDENT_KINDS, type IncidentKind } from "./schema/service-incident";
+export {
+  RESOURCE_BUCKET_MINUTES,
+  SINGLE_APP_SERVICE_KEY,
+} from "./schema/resource-usage";
 
 // ─── Dump / restore (team-mode migration + project transfer) ─────────────────
 export {
@@ -144,6 +158,20 @@ export {
   createUpdateStatusRepo,
   type UpdateStatus,
   type NewUpdateStatus,
+  createServerContainerStatusRepo,
+  type ServerContainerStatus,
+  type NewServerContainerStatus,
+  type ServerContainerComponent,
+  type IncomingWebhook,
+  type NewIncomingWebhook,
+  type WebhookDelivery,
+  type EdgeTargetVerification,
+  createServiceIncidentRepo,
+  incidentSeverity,
+  type ServiceIncident,
+  type NewServiceIncident,
+  type ResourceUsageRow,
+  type NewResourceUsage,
 } from "./repos";
 
 // ─── Drizzle operators (re-exported for convenience) ─────────────────────────

@@ -15,6 +15,7 @@ import {
   resolveVerifiedCatalog,
   reconcileServerModule,
   readManifest,
+  ourEdgeContainerRunning,
   type CommandExecutor,
   type ReconcileResult,
 } from "@repo/adapters";
@@ -32,6 +33,19 @@ interface ModuleDef {
   seed?: { legacyMarkerPath: string; baselineVersion: string };
   /** Post-apply hook (config test + reload). Best-effort. */
   postApply?: (executor: CommandExecutor) => Promise<void>;
+  /**
+   * Why this module — though `presenceProbe` finds it — is NOT what serves traffic
+   * on this box, or null when it is. Migrations run against the host install, so a
+   * superseded module must be neither reported nor applied.
+   *
+   * `presenceProbe` asks "is the binary here", which stopped being the same
+   * question as "is this the edge" once the edge became a container on every box.
+   * A legacy box converted to the container edge keeps its host OpenResty, and
+   * without this its row reads as a version for the edge while describing a config
+   * nothing loads — and applying a migration would stamp that config "current"
+   * and reload a binary serving nothing.
+   */
+  supersededBy?: (executor: CommandExecutor) => Promise<string | null>;
 }
 
 const OPENRESTY_BIN = "$(command -v openresty || echo /usr/local/openresty/bin/openresty)";
@@ -52,6 +66,18 @@ const MODULE_DEFS: Record<string, ModuleDef> = {
       await executor.exec(`${OPENRESTY_BIN} -t 2>&1`);
       await executor.exec(`${OPENRESTY_BIN} -s reload 2>&1`);
     },
+    // A running edge container OWNS 80/443 (see `ourEdgeContainerRunning`), so a
+    // host binary alongside it is not the edge — and the container's config is
+    // baked into its image, which is why the answer is to skip rather than to
+    // `docker exec` the migration in: an edit inside the container is lost the next
+    // time it is recreated. A container edge converges by taking a new image.
+    //
+    // Keys on RUNNING, not merely present: a Docker-less box (the case bare host
+    // OpenResty still exists for) has no container to find, so it stays eligible.
+    supersededBy: async (executor) =>
+      (await ourEdgeContainerRunning(executor))
+        ? "this box serves through the openship-edge container, whose config is baked into its image"
+        : null,
   },
 };
 
@@ -164,6 +190,14 @@ export async function scanServer(server: Server): Promise<ServerModuleView[]> {
   await sshManager.withExecutor(server.id, async (executor) => {
     for (const name of KNOWN_MODULES) {
       const def = MODULE_DEFS[name]!;
+      // Superseded → drop any row a previous scan left. A box that was bare when
+      // it was last scanned and now runs the container edge would otherwise keep
+      // showing a version, and an update prompt, for a config nothing loads.
+      const superseded = await def.supersededBy?.(executor).catch(() => null);
+      if (superseded) {
+        await repos.serverModuleStatus.remove(server.id, name).catch(() => {});
+        continue;
+      }
       const view = await detectModule(executor, def).catch(() => null);
       if (view) {
         views.push(view);
@@ -188,6 +222,14 @@ export async function applyServerModule(
   await repos.serverModuleStatus.setInProgress(server.id, moduleName, true).catch(() => {});
   try {
     return await sshManager.withExecutor(server.id, async (executor) => {
+      // Checked here too, not just in the scan: a row cached before the box moved
+      // to the container edge still renders an Update button, and the CLI and API
+      // can call this directly. Applying would rewrite a config nothing loads and
+      // stamp it current.
+      const superseded = await def.supersededBy?.(executor).catch(() => null);
+      if (superseded) {
+        throw new Error(`${moduleName} migrations do not apply here: ${superseded}`);
+      }
       const catalog = await resolveVerifiedCatalog(moduleName);
       if (!catalog) {
         throw new Error(`no verified catalog available for ${moduleName} (unsigned/offline)`);

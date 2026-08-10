@@ -377,6 +377,16 @@
     "dismissLink": "我知道了，隐藏此提示",
     "dismiss": "关闭"
   },
+  "engine": {
+    "downTitle": "此服务器上的邮件引擎未运行",
+    "downBody": "停止期间既不会投递也不会接收邮件，而这里的所有标签页都依赖它。重新启动是安全的：不会重装，也不会修改配置。",
+    "legacyNote": "此服务器使用直接安装在宿主机上的旧版引擎（systemd 的 Postfix/Dovecot），因此没有容器可供查看。",
+    "start": "启动引擎",
+    "missingTitle": "此服务器上没有邮件引擎",
+    "missingBody": "Openship 在这里找不到任何邮件引擎——既没有引擎容器，也没有 Postfix/Dovecot 服务单元。请重新运行邮件设置以重新安装。",
+    "rerunSetup": "重新运行邮件设置",
+    "cardBlocked": "邮件引擎运行后才可用。"
+  },
   "welcome": {
     "invalidEmail": "请输入有效的电子邮件地址",
     "sendFailed": "发送失败",

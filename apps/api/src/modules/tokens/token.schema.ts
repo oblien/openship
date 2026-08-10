@@ -1,5 +1,17 @@
 import { Type, type Static } from "@sinclair/typebox";
 
+/**
+ * Repo source access — the SURFACE a github grant reaches, where `permissions` is
+ * the VERB. Omit for the default: metadata only (deploy, branches, detect — no
+ * file contents). Patterns are validated + normalised server-side by
+ * `parseSourceAccessScope`; anything unmatchable is dropped rather than stored.
+ */
+const SourceScope = Type.Object({
+  v: Type.Literal(1),
+  read: Type.Optional(Type.Object({ paths: Type.Array(Type.String({ maxLength: 1024 })) })),
+  write: Type.Optional(Type.Object({ paths: Type.Array(Type.String({ maxLength: 1024 })) })),
+});
+
 const TokenGrant = Type.Object({
   resourceType: Type.String(),
   resourceId: Type.String(),
@@ -13,6 +25,7 @@ const TokenGrant = Type.Object({
       Type.Literal("create"),
     ]),
   ),
+  scope: Type.Optional(SourceScope),
 });
 
 export const CreateTokenBody = Type.Object({
@@ -27,6 +40,18 @@ export const CreateTokenBody = Type.Object({
    * role. Each grant must be within the minter's own access (validated server-side).
    */
   grants: Type.Optional(Type.Array(TokenGrant)),
+  /**
+   * Explicit "no limits" intent: mint an UNSCOPED token that acts with the
+   * minter's own role.
+   *
+   * Required when `grants` is empty. It used to be inferred from `grants.length
+   * === 0`, which made "I deliberately want no limits" and "my scoped selection
+   * came out empty" the same wire payload — so a caller that meant to restrict a
+   * token and sent nothing (or sent grants whose `permissions` arrays were all
+   * empty, which the controller filters out) silently got FULL access. Intent
+   * now has to be stated, and stating both is rejected as ambiguous.
+   */
+  fullAccess: Type.Optional(Type.Boolean()),
 });
 export type TCreateTokenBody = Static<typeof CreateTokenBody>;
 

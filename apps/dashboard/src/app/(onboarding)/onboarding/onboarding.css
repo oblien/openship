@@ -112,14 +112,10 @@
   background: var(--th-sf-05);
 }
 
-/* Desktop (Electron): the macOS traffic-light window controls sit in the
-   top-left strip. Drop the whole bar BELOW that strip (matching
-   .app-sidebar-header in globals.css) instead of squeezing the logo to their
-   right — so the logo + links read as a clean header after the native chrome,
-   not sharing its row. */
-.is-desktop .ob-top-bar {
-  padding-top: calc(var(--titlebar-h, 2rem) + 0.75rem);
-}
+/* Desktop (Electron): nothing needed here any more. The app header is a real row
+   with a matching `body` inset (globals.css), so this bar already starts below it
+   — the old `padding-top: calc(--titlebar-h + …)` dodge now double-counts and
+   pushes the onboarding header down twice. */
 
 /* ─── Language switcher ─── */
 .ob-lang {

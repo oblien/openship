@@ -15,8 +15,20 @@ describe("packageManagerEnsureCommand", () => {
     }
   });
 
-  it("is a no-op for npm (present), bun (own image), unknown, and undefined", () => {
-    for (const pm of ["npm", "bun", "go", "cargo", "pip", undefined] as const) {
+  it("emits a presence-check prelude for bun (corepack does not manage it)", () => {
+    const cmd = packageManagerEnsureCommand("bun");
+    // Checks first so the oven/bun image — which ships no npm — short-circuits
+    // before the fallback can be reached.
+    expect(cmd).toContain("command -v bun");
+    expect(cmd.indexOf("command -v bun")).toBeLessThan(cmd.indexOf("npm i -g bun"));
+    expect(cmd).toContain("npm i -g bun");
+    expect(cmd.endsWith("|| true")).toBe(true);
+    // corepack has no bun shim — asking it to enable one always fails.
+    expect(cmd).not.toContain("corepack");
+  });
+
+  it("is a no-op for npm (present), unknown, and undefined", () => {
+    for (const pm of ["npm", "go", "cargo", "pip", undefined] as const) {
       expect(packageManagerEnsureCommand(pm)).toBe("");
     }
   });

@@ -2,8 +2,9 @@ import type { Context } from "hono";
 import { repos, type Permission, type PublicPersonalAccessToken } from "@repo/db";
 import { param } from "../../lib/controller-helpers";
 import { getRequestContext, type RequestContext } from "../../lib/request-context";
-import { checkPermission } from "../../lib/permission";
-import { canUseGitHubRepo } from "../github/github-access";
+import { checkPermissionOnResource } from "../../lib/permission";
+import { canUseGitHubRepo, resolveSourceAccess } from "../github/github-access";
+import { scopeIsSubset, type SourceAccessScope } from "@repo/core";
 import { mintPatToken } from "../../lib/pat";
 import { wildcardProjectGrantRejected, type TCreateTokenBody } from "./token.schema";
 
@@ -42,6 +43,19 @@ function strongestAction(perms: Permission[]): Permission {
 }
 
 /**
+ * A github grant's resourceId → (owner, repo). `github_repository` is
+ * "owner/repo"; `github_installation` is the bare account login.
+ */
+function splitRepoGrant(g: { resourceType: string; resourceId: string }): {
+  owner: string | undefined;
+  repo: string | undefined;
+} {
+  const [owner, repo] =
+    g.resourceType === "github_repository" ? g.resourceId.split("/") : [g.resourceId, undefined];
+  return { owner, repo };
+}
+
+/**
  * A token can only grant access the MINTER already has — reuses the live
  * permission path (owner ⇒ everything; others ⇒ their own grants). GitHub goes
  * through its dedicated gate.
@@ -53,15 +67,73 @@ async function minterHasAccess(
   const action = strongestAction(g.permissions);
   if (g.resourceType === "github_installation" || g.resourceType === "github_repository") {
     const op = action === "read" ? "read" : "write";
-    const [owner, repo] =
-      g.resourceType === "github_repository" ? g.resourceId.split("/") : [g.resourceId, undefined];
+    const { owner, repo } = splitRepoGrant(g);
     return canUseGitHubRepo(ctx, { owner: owner ?? "", repo: repo ?? null }, op);
   }
-  return checkPermission(ctx.userId, ctx.organizationId, {
+  // Resolve the grant's resource to its OWN org and check access there — NOT
+  // the minter's active org. Otherwise a non-restricted role passes for the
+  // resource TYPE without verifying the specific id belongs to their org, so a
+  // grant naming another org's resource id would mint a usable token (SaaS
+  // audit: cross-tenant privilege escalation). Mirrors permission.assert.
+  return checkPermissionOnResource(ctx, {
     resourceType: g.resourceType as never,
     resourceId: g.resourceId,
     action,
   });
+}
+
+type GrantError = { status: 400 | 403; body: { error: string; code: string } };
+
+/**
+ * Scoped or unscoped — decided from EXPLICIT intent, never from `grants.length`.
+ *
+ * SHARED by both mint paths (PAT create + MCP authorize) so the rule cannot drift,
+ * for the same reason `validateGrants` is shared.
+ *
+ * The old rule was `scoped = grants.length > 0`, which meant an empty grant list
+ * minted an UNSCOPED binding acting with the minter's full role. That made two
+ * opposite intents indistinguishable on the wire, and it failed OPEN for the
+ * dangerous one: a caller that meant to scope a token but produced no usable
+ * grants — including one whose grants all had empty `permissions` arrays, since
+ * both callers filter those out before getting here — received full access. The
+ * only thing standing between that and a live token was the consent screen's
+ * client-side guard.
+ *
+ * Now: grants ⇒ scoped; no grants + `fullAccess: true` ⇒ unscoped; no grants and
+ * no flag ⇒ refused. Sending both is refused too — an ambiguous request is a
+ * caller bug, and guessing which half to honour is how this class of hole starts.
+ */
+export function resolveScopeIntent(opts: {
+  hasGrants: boolean;
+  fullAccess?: boolean;
+}): { scoped: boolean } | { error: GrantError } {
+  if (opts.hasGrants) {
+    if (opts.fullAccess === true) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error:
+              "Send either `grants` (a scoped token) or `fullAccess: true` (an unscoped one), not both.",
+            code: "AMBIGUOUS_TOKEN_SCOPE",
+          },
+        },
+      };
+    }
+    return { scoped: true };
+  }
+  if (opts.fullAccess === true) return { scoped: false };
+  return {
+    error: {
+      status: 400,
+      body: {
+        error:
+          "No grants were given. Send `grants` to scope this token, or `fullAccess: true` to " +
+          "deliberately mint one with your own full access.",
+        code: "TOKEN_SCOPE_REQUIRED",
+      },
+    },
+  };
 }
 
 /**
@@ -72,7 +144,12 @@ async function minterHasAccess(
  */
 async function validateGrants(
   ctx: RequestContext,
-  grants: Array<{ resourceType: string; resourceId: string; permissions: Permission[] }>,
+  grants: Array<{
+    resourceType: string;
+    resourceId: string;
+    permissions: Permission[];
+    scope?: SourceAccessScope | null;
+  }>,
 ): Promise<{ status: 400 | 403; body: { error: string; code: string } } | null> {
   for (const g of grants) {
     if (!GRANTABLE_TOKEN_TYPES.has(g.resourceType)) {
@@ -93,6 +170,25 @@ async function validateGrants(
           code: "INVALID_GRANT_SCOPE",
         },
       };
+    }
+    // Source scope must be contained by the minter's OWN source access for this
+    // repo. Without this, a member scoped to `src/**` could mint a token granting
+    // itself the whole repo — the grant loop above only checks the repo, not how
+    // far into it. Resolved through the same gate that enforces at call time.
+    if (g.scope && (g.resourceType === "github_repository" || g.resourceType === "github_installation")) {
+      const { owner, repo } = splitRepoGrant(g);
+      const mine = await resolveSourceAccess(ctx, { owner: owner ?? "", repo: repo ?? null });
+      const readOk = scopeIsSubset(g.scope.read?.paths ?? [], mine.readPaths);
+      const writeOk = scopeIsSubset(g.scope.write?.paths ?? [], mine.writePaths);
+      if (!readOk || !writeOk) {
+        return {
+          status: 403,
+          body: {
+            error: `You can't grant source access you don't have yourself: ${g.resourceType} / ${g.resourceId}`,
+            code: "GRANT_EXCEEDS_ACCESS",
+          },
+        };
+      }
     }
     if (!(await minterHasAccess(ctx, g))) {
       return {
@@ -117,7 +213,12 @@ export async function create(c: Context) {
   // The "projects it creates" scope is just a grant like any other:
   // {project,"*",[create]} — no special-casing here.
   const grants = (body.grants ?? []).filter((g) => g.permissions.length > 0);
-  const wantScoped = grants.length > 0;
+  const intent = resolveScopeIntent({
+    hasGrants: grants.length > 0,
+    fullAccess: body.fullAccess,
+  });
+  if ("error" in intent) return c.json(intent.error.body, intent.error.status);
+  const wantScoped = intent.scoped;
   if (wantScoped) {
     const err = await validateGrants(ctx, grants);
     if (err) return c.json(err.body, err.status);
@@ -146,6 +247,9 @@ export async function create(c: Context) {
         resourceType: g.resourceType as never,
         resourceId: g.resourceId,
         permissions: g.permissions,
+        // Normalised by the repo on write, so a pattern the matcher would reject
+        // is never stored as though it were enforceable.
+        scope: g.scope,
       })),
     );
   }
@@ -189,7 +293,17 @@ export async function authorizeMcpClient(c: Context) {
     clientId?: string;
     readOnly?: boolean;
     organizationId?: string;
-    grants?: Array<{ resourceType: string; resourceId: string; permissions: Permission[] }>;
+    /** Explicit "no limits" intent — required when `grants` is empty. See
+     *  resolveScopeIntent: an empty list no longer implies full access. */
+    fullAccess?: boolean;
+    grants?: Array<{
+      resourceType: string;
+      resourceId: string;
+      permissions: Permission[];
+      /** Repo source access. Omitted ⇒ metadata only — the consent screen has to
+       *  send this explicitly for an agent to read file contents. */
+      scope?: SourceAccessScope | null;
+    }>;
   }>();
 
   const clientId = body.clientId?.trim();
@@ -212,7 +326,12 @@ export async function authorizeMcpClient(c: Context) {
   }
 
   const grants = (body.grants ?? []).filter((g) => g.permissions.length > 0);
-  const scoped = grants.length > 0;
+  const intent = resolveScopeIntent({
+    hasGrants: grants.length > 0,
+    fullAccess: body.fullAccess,
+  });
+  if ("error" in intent) return c.json(intent.error.body, intent.error.status);
+  const scoped = intent.scoped;
 
   const grantErr = await validateGrants(ctx, grants);
   if (grantErr) return c.json(grantErr.body, grantErr.status);
@@ -234,6 +353,9 @@ export async function authorizeMcpClient(c: Context) {
         resourceType: g.resourceType as never,
         resourceId: g.resourceId,
         permissions: g.permissions,
+        // Normalised by the repo on write, so a pattern the matcher would reject
+        // is never stored as though it were enforceable.
+        scope: g.scope,
       })),
     );
   }

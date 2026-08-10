@@ -28,6 +28,13 @@ export type ComposeServiceSpec = {
   environment?: Record<string, string>;
   volumes?: string[];
   command?: string | null;
+  /**
+   * #332: structured argv for the container Cmd. `null` = no override (use image
+   * CMD); `[]` = clear the image CMD; `[...]` = argv passed verbatim (NO implicit
+   * `sh -c`). The text `command` above is kept for display / legacy rows; when
+   * `commandArgv` is null the runtime falls back to `sh -c command` (legacy).
+   */
+  commandArgv?: string[] | null;
   restart?: string | null;
   advanced?: ComposeAdvanced;
 };
@@ -104,8 +111,15 @@ export const service = pgTable("service", {
    * names and lose no data (see volume-namespace.ts). Bind mounts are unaffected.
    */
   namespaceVolumes: boolean("namespace_volumes").notNull().default(true),
-  /** Override command */
+  /** Override command (text form — display / legacy `sh -c` fallback, see #332) */
   command: text("command"),
+  /**
+   * #332: structured argv for the container Cmd (docker-compose semantics —
+   * overrides image CMD, no implicit `sh -c`). Null = legacy row → runtime falls
+   * back to `sh -c command`. `[]` = clear image CMD. Additive/nullable, so no
+   * backfill; new parses/edits populate it.
+   */
+  commandArgv: jsonb("command_argv").$type<string[]>(),
   /** Restart policy: no | always | on-failure | unless-stopped */
   restart: text("restart").default("unless-stopped"),
   /**
@@ -284,13 +298,7 @@ export const serviceDeployment = pgTable(
     /** Public URL of the GitHub check run (denormalized for the dashboard). */
     checkRunUrl: text("check_run_url"),
 
-    /* ── Rollback / logs pointers ───────────────────────────────────── */
-    /**
-     * Per-service mirror of `deployment.artifactRetainedAt` — set
-     * when this service's artifact (image / workspace snapshot) is
-     * archived for rollback. Null = not retained / already purged.
-     */
-    artifactRetainedAt: timestamp("artifact_retained_at"),
+    /* ── Logs pointer ────────────────────────────────────────────────── */
     /**
      * Pointer into the deployment's build_session.logs structure
      * scoping which log section belongs to this service (e.g.

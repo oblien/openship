@@ -17,16 +17,17 @@
   },
   "domainSettings": {
     "saveFailed": "Alan adları kaydedilemedi",
-    "toastTitle": "Alan Adları"
+    "toastTitle": "Alan Adları",
+    "routeFreeLabel": "Ücretsiz alt alan adı",
+    "routeFreeDesc": "Anında hazır, ücretsiz bir {domain} adresi.",
+    "routeCustomLabel": "Özel alan adı",
+    "routeCustomDesc": "Kendi alan adınızı bu dağıtıma yönlendirin.",
+    "routeNoneLabel": "Yok",
+    "routeNoneDesc": "Herkese açık adres yok — yalnızca dahili. Host üzerindeki port ile erişin."
   },
   "dns": {
     "title": "DNS Yapılandırması",
     "addRecordsFor": "Aşağıdaki DNS kayıtlarını alan adı sağlayıcınıza ekleyin:",
-    "descCname": "Alan adınızı edge ağı üzerinden yönlendirir",
-    "descA": "Alan adınızı sunucuya yönlendirir",
-    "descTxt": "Alan adı sahipliğini doğrular",
-    "nameHost": "Ad / Host",
-    "valueTarget": "Değer / Hedef",
     "selfInfoPre": "Sunucu IP adresinize yönlendiren ",
     "recordA": "A kaydını",
     "selfInfoMid": " ekleyin, ardından ",
@@ -34,7 +35,31 @@
     "verifySuffix": " sahiplik doğrulaması için ekleyin.",
     "cloudInfoPre": "Yönlendirme için ",
     "recordCname": "CNAME kaydını",
-    "cloudInfoMid": " ekleyin, ardından "
+    "cloudInfoMid": " ekleyin, ardından ",
+    "modalTitle": "Alan adınızı yönlendirin, sonra dağıtın",
+    "modalSubtitle": "Alan adınız buraya yönlendiğinde HTTPS ilk dağıtımda verilir — ya da atlayıp DNS’i daha sonra Alan Adları sekmesinden ekleyin.",
+    "autoConfigTitle": "DNS sağlayıcım ile otomatik yapılandır",
+    "autoConfigDesc": "Kayıt operatörünüzü bağlayın, bu kayıtları sizin için ekleyelim.",
+    "comingSoon": "Yakında",
+    "deployAction": "Dağıt",
+    "cancel": "İptal",
+    "loadingRecords": "DNS kayıtları yükleniyor…",
+    "serverIpPlaceholder": "sunucunuzun genel IP adresi",
+    "record": {
+      "purposeA": "{hostname} adresini bu sunucunun IP adresine yönlendirir",
+      "purposeCname": "{hostname} trafiğini edge ağı üzerinden yönlendirir",
+      "purposeCnameAlias": "{hostname} adresini {target} adresine yönlendirir",
+      "purposeTxt": "{hostname} alan adının size ait olduğunu kanıtlar — doğrulamada bu kaydı sorgularız",
+      "fieldType": "Tür",
+      "fieldName": "Ad",
+      "fieldValue": "Değer",
+      "fieldTtl": "TTL",
+      "ttlValue": "Otomatik (veya 3600)",
+      "apexHint": "“@” alan adının kendisidir — bazı sağlayıcılar bu alanın boş bırakılmasını ister",
+      "fullName": "Sağlayıcınız isterse tam ad:",
+      "proxyNote": "Proxy/CDN anahtarını kapalı bırakın (Cloudflare’de: gri bulut, “DNS only”) — böylece bu alan adı için HTTPS verilebilir.",
+      "copy": "Kopyala"
+    }
   },
   "buildSummary": {
     "title": "Dağıtım Özeti",
@@ -119,6 +144,8 @@
     "addServer": "Kendi sunucunuzu ekleyin",
     "continue": "Devam et",
     "chooseServer": "Bir sunucu seçin",
+    "thisServerBadge": "Bu Sunucu",
+    "thisServerHost": "Mevcut ana makine — dağıtımlar burada çalışır",
     "searchPlaceholder": "Sunucularda ara…",
     "noServersMatch": "Aramanızla eşleşen sunucu bulunamadı.",
     "requireCloudFeature": "Openship Bulut'a Dağıtılıyor",
@@ -177,7 +204,15 @@
       "apiHostServerDesc": "Openship üzerinde klonlayın, ardından yükleyin.",
       "serverLabel": "Sunucuda",
       "serverDesc": "Sunucuda klonlayın. Yükleme yok."
-    }
+    },
+    "rollbackTitle": "Geri alma ve yedekler",
+    "rollbackHint": "Bu sunucuda kaç eski sürümün geri yüklenebilir kaldığı ve dağıtımdan önce neyin yedeklendiği.",
+    "rollbackFirstDeploy": "İlk dağıtımdan sonra proje ayarlarından düzenlenebilir.",
+    "backupSummaryNone": "Henüz yedek kuralı yok",
+    "backupSummaryConfigured": "{count} yedek kuralı · dağıtım öncesi: {preDeploy}",
+    "backupManage": "Yedekleri yönet",
+    "on": "açık",
+    "off": "kapalı"
   },
   "summary": {
     "buildAndDeploy": "Derle ve Dağıt:",
@@ -188,7 +223,16 @@
     "targetServer": "Sunucum",
     "targetCloud": "Openship Bulut",
     "buildLocal": "Bu Bilgisayar",
-    "buildRemote": "Uzak Sunucu"
+    "buildRemote": "Uzak Sunucu",
+    "runtimeStatic": "Static · edge-served",
+    "runtimeSandboxed": "Sandboxed",
+    "runtimeDirectWarning": "Not sandboxed",
+    "runtimeDirectHint": "Runs directly on the host — not sandboxed.",
+    "rollbackOne": "{count} sürüm",
+    "rollbackOther": "{count} sürüm",
+    "rollbackAuto": "Geri alma: otomatik",
+    "rollbackSnapshotHint": "Her sürümün bir kopyası saklanır, böylece geri alma asla yeniden derlemez. Gelişmiş bölümünden değiştirin.",
+    "rollbackGitHint": "Kaç önceki sürümün geri yüklenebilir kaldığı. Gelişmiş bölümünden değiştirin."
   },
   "power": {
     "heading": "Performans Gücü",
@@ -288,5 +332,20 @@
     "deployButton": "Webmail dağıt",
     "deployFailedTitle": "Dağıtım başarısız",
     "deployFailed": "Dağıtım başlatılamadı"
+  },
+  "serveMode": {
+    "heading": "How it's served",
+    "subtitle": "Serve the built files, or run it as a live server process.",
+    "staticLabel": "Serve as static files",
+    "staticDesc": "The build output is served directly by the edge. Nothing runs as a process.",
+    "serverLabel": "Run as a server process",
+    "serverDesc": "Start a long-running process (needs a start command and port).",
+    "staticNote": "Built in an isolated Docker sandbox, then served as static files by the edge.",
+    "startCommandLabel": "Start command",
+    "startCommandPlaceholder": "npm start",
+    "startCommandHint": "Leave empty to serve the build output as static files from the edge (nothing runs). Enter a command to run it as a live server process.",
+    "modeStatic": "Statik",
+    "modeProcess": "Sunucu süreci",
+    "portLabel": "Port"
   }
 }

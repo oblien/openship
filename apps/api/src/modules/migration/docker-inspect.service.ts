@@ -9,16 +9,26 @@
  */
 
 import type { DockerContainerDetail } from "@repo/adapters";
+import { safeErrorMessage, withTimeout } from "@repo/core";
 import { repos } from "@repo/db";
 import { createServerDockerRuntime } from "../../lib/deployment-runtime";
 import { sshManager } from "../../lib/ssh-manager";
+import { pruneOrphanManifestArtifacts } from "../../lib/openship-manifest-sync";
 import { parseComposeFile, type ComposeService } from "../../lib/compose-parser";
-import { readManifest, type ManifestProjectEntry } from "../../lib/openship-manifest";
+import { readManifest, projectSnapshotExists, type ManifestProjectEntry } from "../../lib/openship-manifest";
 import {
   reconcileStack,
   reconcileOpenshipProjects,
+  isBuildHelper,
+  imageRefKey,
+  toDiscoveredService,
   type DiscoveredStack,
 } from "./docker-reconcile";
+import { scanProxyRoutes } from "./proxy-route-scan";
+
+/** Openship project-id shape — used to reject crafted `openship.project` labels
+ *  before they reach the remote snapshot probe (same shape migrate.service uses). */
+const OPENSHIP_PROJECT_ID_RE = /^proj_[A-Za-z0-9]+$/;
 
 export type {
   DiscoveredStack,
@@ -27,6 +37,17 @@ export type {
   OpenshipProjectGroup,
 } from "./docker-reconcile";
 export { reconcileStack } from "./docker-reconcile";
+
+// Cap the connect+reachability probe so a hung SSH docker forward can't leave the
+// migration scan spinning on "Connecting to Docker…" forever (the reported bug).
+const REACHABILITY_TIMEOUT_MS = 25_000;
+// Cap the rest of discovery (listing + inspecting containers/volumes/networks,
+// reading compose files, scanning the proxy, image env lookups, project
+// recovery) as one unit — see the comment at its call site. Generous: a large
+// stack (hundreds of containers) legitimately needs more than a few seconds
+// at mapLimit's concurrency of 5, but this still guarantees the scan fails
+// loudly well under a minute instead of hanging indefinitely.
+const DISCOVERY_TIMEOUT_MS = 90_000;
 
 async function mapLimit<T, R>(
   items: T[],
@@ -99,111 +120,271 @@ export async function discoverServerStack(
   serverId: string,
   organizationId: string,
   onProgress?: (message: string) => void,
+  opts?: {
+    /** "Flat Docker" mode: ignore `openship.*` labels entirely so Openship-managed
+     *  deploy containers are adopted as PLAIN compose/standalone (no re-import,
+     *  no snapshot restore). The one filter (`isOpenshipOwned`) is bypassed. */
+    flatDocker?: boolean;
+  },
 ): Promise<DiscoveredStack> {
   const step = (m: string) => onProgress?.(m);
+  const flatDocker = opts?.flatDocker === true;
   step("Connecting to Docker…");
   const rt = await createServerDockerRuntime(serverId, organizationId);
   try {
-    if (!(await rt.ping())) {
-      throw new Error("Docker daemon is not reachable on this server.");
-    }
-
-    step("Listing containers, volumes and networks…");
-    const [containers, volumes, networks] = await Promise.all([
-      rt.listAllContainers(),
-      rt.listAllVolumes(),
-      rt.listAllNetworks(),
-    ]);
-
-    // Split by ownership. GENERIC candidates (no openship.* label) feed the
-    // normal adopt grid. OPENSHIP-owned deploy containers are recovered as their
-    // own projects (re-import) — build helpers (`openship.build`) are neither.
-    const isOpenshipOwned = (labels: Record<string, string>) =>
-      Object.keys(labels).some((k) => k === "openship" || k.startsWith("openship."));
-    const managed = containers.filter((c) => isOpenshipOwned(c.labels));
-    const candidates = containers.filter((c) => !isOpenshipOwned(c.labels));
-    const managedApp = managed.filter(
-      (c) => c.labels["openship.project"] && !c.labels["openship.build"],
-    );
-
-    step(`Inspecting ${candidates.length} container(s)…`);
-    const [details, managedDetails] = await Promise.all([
-      mapLimit(candidates, 5, (c) => rt.inspectContainer(c.id)).then((d) =>
-        d.filter((x): x is DockerContainerDetail => x !== null),
-      ),
-      mapLimit(managedApp, 5, (c) => rt.inspectContainer(c.id)).then((d) =>
-        d.filter((x): x is DockerContainerDetail => x !== null),
-      ),
-    ]);
-
-    // Group by compose project (standalone containers key on "") for the
-    // compose-file reads; reconciliation itself is pure (see reconcileStack).
-    const groups = new Map<string, DockerContainerDetail[]>();
-    for (const d of details) {
-      const key = d.composeProject ?? "";
-      const list = groups.get(key) ?? [];
-      list.push(d);
-      groups.set(key, list);
-    }
-
-    step("Reading compose files…");
-    const declared = await readComposeDeclarations(serverId, groups);
-
-    // Fetch each distinct image's baked-in env once (candidates AND openship
-    // containers), so discovery can subtract image defaults and import only the
-    // vars the operator actually set.
-    const uniqueImages = [
-      ...new Set([...details, ...managedDetails].map((d) => d.image).filter(Boolean)),
-    ];
-    const imageInfoPairs = await mapLimit(uniqueImages, 4, async (ref) => {
-      const [env, cmd] = await Promise.all([rt.inspectImageEnv(ref), rt.inspectImageCmd(ref)]);
-      return [ref, { env: new Set(env), cmd }] as const;
-    });
-    const imageDefaults = new Map(imageInfoPairs.map(([ref, v]) => [ref, v.env]));
-    const imageCmds = new Map(imageInfoPairs.map(([ref, v]) => [ref, v.cmd]));
-
-    // Recover Openship projects: read the on-server manifest (rich, faithful
-    // recipe) and cross-reference each openship.project id against THIS org's DB.
-    // Present here = genuinely managed → counted; absent = orphaned → re-importable.
-    let openshipProjects: DiscoveredStack["openshipProjects"] = [];
-    let alreadyManaged = 0;
-    const projectIds = [...new Set(managedApp.map((c) => c.labels["openship.project"]!).filter(Boolean))];
-    if (projectIds.length > 0) {
-      step("Recovering Openship projects…");
-      const manifest = await sshManager
-        .withExecutor(serverId, (exec) => readManifest(exec))
-        .catch(() => null);
-      const manifestById = manifest
-        ? new Map<string, ManifestProjectEntry>(manifest.projects.map((p) => [p.id, p]))
-        : null;
-      const knownHereIds = new Set<string>();
-      await Promise.all(
-        projectIds.map(async (id) => {
-          const row = await repos.project.findByIdInOrganization(id, organizationId);
-          if (row) knownHereIds.add(id);
-        }),
+    // Surface the transport's detailed reachability diagnostic (socket path,
+    // streamlocal/permission hints, remote `ls -ld` of the socket) instead of a
+    // bare "not reachable" — ping() collapses that to a boolean and logs it away,
+    // which is why a failed migrate showed no actionable reason.
+    try {
+      // Safety net on top of the transport's own streamlocal timeout: never let the
+      // scan hang indefinitely on an unresponsive daemon/SSH forward — surface a
+      // clear error (with the transport diagnostic) instead of a silent spinner.
+      await withTimeout(
+        rt.assertReachable(),
+        REACHABILITY_TIMEOUT_MS,
+        `timed out after ${REACHABILITY_TIMEOUT_MS / 1000}s connecting to the Docker daemon`,
       );
-      openshipProjects = reconcileOpenshipProjects({
-        managedDetails,
-        manifestById,
-        knownHereIds,
-        imageDefaults,
-        imageCmds,
-      });
-      alreadyManaged = managedApp.filter((c) => knownHereIds.has(c.labels["openship.project"]!)).length;
+    } catch (err) {
+      throw new Error(`Docker daemon is not reachable on this server. ${safeErrorMessage(err)}`);
     }
 
-    return reconcileStack({
-      serverId,
-      details,
-      volumes,
-      networks,
-      declared,
-      alreadyManaged,
-      imageDefaults,
-      imageCmds,
-      openshipProjects,
+    // Every step below makes several Docker API calls over the SAME SSH
+    // bridge the reachability ping above just proved is up. In rare cases
+    // (observed empirically; no reproducible trigger found) ONE such call can
+    // still hang indefinitely with no error even on an otherwise-healthy
+    // bridge — without a bound here, that stalls the whole migration scan
+    // forever past the point REACHABILITY_TIMEOUT_MS already cleared. Bound
+    // the rest of discovery as one unit so a stuck call surfaces as a clear,
+    // retryable error (`step`'s last message tells you which stage) instead
+    // of a silent "stuck on Listing containers…" spinner.
+    return await withTimeout(
+      (async (): Promise<DiscoveredStack> => {
+        step("Listing containers, volumes and networks…");
+        const [containers, volumes, networks] = await Promise.all([
+          rt.listAllContainers(),
+          rt.listAllVolumes(),
+          rt.listAllNetworks(),
+        ]);
+
+        // Split by ownership. GENERIC candidates (no openship.* label) feed the
+        // normal adopt grid. OPENSHIP-owned deploy containers are recovered as their
+        // own projects (re-import) — build helpers (`openship.build`) are neither.
+        //
+        // FLAT DOCKER mode ignores the openship.* namespace: every container (minus
+        // transient build helpers) is a generic candidate, so Openship-managed
+        // workloads adopt as plain compose/standalone — no managed set, no re-import.
+        const isOpenshipOwned = (labels: Record<string, string>) =>
+          Object.keys(labels).some((k) => k === "openship" || k.startsWith("openship."));
+        const managed = flatDocker ? [] : containers.filter((c) => isOpenshipOwned(c.labels));
+        const candidates = flatDocker
+          ? containers.filter((c) => !isBuildHelper(c.labels))
+          : containers.filter((c) => !isOpenshipOwned(c.labels));
+        const managedApp = managed.filter(
+          (c) => c.labels["openship.project"] && !isBuildHelper(c.labels),
+        );
+
+        step(`Inspecting ${candidates.length} container(s)…`);
+        const [details, managedDetails] = await Promise.all([
+          mapLimit(candidates, 5, (c) => rt.inspectContainer(c.id)).then((d) =>
+            d.filter((x): x is DockerContainerDetail => x !== null),
+          ),
+          mapLimit(managedApp, 5, (c) => rt.inspectContainer(c.id)).then((d) =>
+            d.filter((x): x is DockerContainerDetail => x !== null),
+          ),
+        ]);
+
+        // Group by compose project (standalone containers key on "") for the
+        // compose-file reads; reconciliation itself is pure (see reconcileStack).
+        const groups = new Map<string, DockerContainerDetail[]>();
+        for (const d of details) {
+          const key = d.composeProject ?? "";
+          const list = groups.get(key) ?? [];
+          list.push(d);
+          groups.set(key, list);
+        }
+
+        step("Reading compose files…");
+        const declared = await readComposeDeclarations(serverId, groups);
+
+        // Detect routes the server's existing (foreign) reverse proxy already serves,
+        // indexed by published host port — so the wizard can surface each container's
+        // current domain(s)+SSL. Own read-only SSH pass; self-catching (never fails
+        // discovery). Skipped in flat mode is unnecessary — a foreign proxy is a
+        // foreign proxy regardless of how we classify the app containers.
+        step("Scanning existing reverse proxy…");
+        const proxyRoutesByPort = await scanProxyRoutes(serverId);
+
+        // Fetch each distinct image's baked-in env + CMD once (candidates AND
+        // openship containers), so discovery can tell which env the OPERATOR set
+        // from what the image merely bakes in (order matters — see
+        // splitEnvByProvenance) and can drop a command that only restates the
+        // image default. Keyed by CONTENT ID (imageRefKey), not the tag: a tag that
+        // moved since the container started resolves to a different image, whose
+        // defaults would drop real config or keep stale vars.
+        const uniqueImages = [
+          ...new Set([...details, ...managedDetails].map(imageRefKey).filter(Boolean)),
+        ];
+        const imageInfoPairs = await mapLimit(uniqueImages, 4, async (ref) => {
+          const [env, cmd] = await Promise.all([rt.inspectImageEnv(ref), rt.inspectImageCmd(ref)]);
+          return [ref, { env, cmd }] as const;
+        });
+        const imageEnv = new Map(imageInfoPairs.map(([ref, v]) => [ref, v.env]));
+        const imageCmds = new Map(imageInfoPairs.map(([ref, v]) => [ref, v.cmd]));
+
+        // Recover Openship projects: read the on-server manifest (rich, faithful
+        // recipe) and cross-reference each openship.project id against THIS org's DB.
+        // Present here = genuinely managed → counted; absent = orphaned → re-importable.
+        let openshipProjects: DiscoveredStack["openshipProjects"] = [];
+        let alreadyManaged = 0;
+        // SECURITY: `openship.project` is a container LABEL — attacker-controllable
+        // via a malicious image's LABEL, inherited onto the container. It flows into
+        // a remote root shell (`projectSnapshotExists` → `test -f …snapshot-<id>…`),
+        // so validate the id shape BEFORE the probe; a crafted `x$(cmd)` label is
+        // dropped here (belt-and-braces with the store's own quoting).
+        const projectIds = [
+          ...new Set(
+            managedApp
+              .map((c) => c.labels["openship.project"]!)
+              .filter((id) => id && OPENSHIP_PROJECT_ID_RE.test(id)),
+          ),
+        ];
+
+        // Self-heal the on-server recovery state before recovering from it: every
+        // re-migration mints a NEW project id, so dead entries + snapshots pile up
+        // in .openship/manifest.json (the file we're about to read) and it grows
+        // unbounded. Drop THIS org's entries that are neither a live DB project nor
+        // backed by a running container — i.e. true orphans. A running container's
+        // id is kept so a soft-deleted (record-only) workload stays re-importable.
+        try {
+          const liveDb = await repos.project.listByOrganization(organizationId, {
+            page: 1,
+            perPage: 1000,
+          });
+          const liveProjectIds = new Set<string>([...liveDb.rows.map((p) => p.id), ...projectIds]);
+          await sshManager
+            .withExecutor(serverId, (exec) =>
+              pruneOrphanManifestArtifacts(exec, { organizationId, liveProjectIds }),
+            )
+            .catch(() => {});
+        } catch {
+          /* best-effort — never fail discovery on a prune hiccup */
+        }
+
+        if (projectIds.length > 0) {
+          step("Recovering Openship projects…");
+          // One SSH session: read the manifest AND check which projects have a full
+          // recovery snapshot (cheap `test -f`, no read — the dump is read only at
+          // re-import time, for one project).
+          const { manifestById, snapshotIds } = await sshManager
+            .withExecutor(serverId, async (exec) => {
+              const manifest = await readManifest(exec).catch(() => null);
+              const snap = new Set<string>();
+              await Promise.all(
+                projectIds.map(async (id) => {
+                  if (await projectSnapshotExists(exec, id).catch(() => false)) snap.add(id);
+                }),
+              );
+              return {
+                manifestById: manifest
+                  ? new Map<string, ManifestProjectEntry>(manifest.projects.map((p) => [p.id, p]))
+                  : null,
+                snapshotIds: snap,
+              };
+            })
+            .catch(() => ({ manifestById: null, snapshotIds: new Set<string>() }));
+          const knownHereIds = new Set<string>();
+          await Promise.all(
+            projectIds.map(async (id) => {
+              const row = await repos.project.findByIdInOrganization(id, organizationId);
+              if (row) knownHereIds.add(id);
+            }),
+          );
+          openshipProjects = reconcileOpenshipProjects({
+            managedDetails,
+            manifestById,
+            knownHereIds,
+            snapshotIds,
+            imageEnv,
+            imageCmds,
+          });
+          alreadyManaged = managedApp.filter((c) =>
+            knownHereIds.has(c.labels["openship.project"]!),
+          ).length;
+        }
+
+        return reconcileStack({
+          serverId,
+          details,
+          volumes,
+          networks,
+          declared,
+          alreadyManaged,
+          imageEnv,
+          imageCmds,
+          openshipProjects,
+          proxyRoutesByPort,
+        });
+      })(),
+      DISCOVERY_TIMEOUT_MS,
+      `timed out after ${DISCOVERY_TIMEOUT_MS / 1000}s scanning the server's containers, volumes and networks — the server may be under heavy load or a Docker API call over SSH stalled; retrying usually succeeds`,
+    );
+  } finally {
+    await rt.dispose();
+  }
+}
+
+/**
+ * Reveal ONE container's operator env, UNMASKED, for the migration wizard's env
+ * viewer (the per-row eye / "Show values"). Reproduces discovery's env computation
+ * for a single container — inspect the container, its image env and its compose
+ * declaration, then run the SAME `toDiscoveredService` merge — so the record is
+ * byte-for-byte the keys the wizard shows masked (`maskDiscoveredStack`), only
+ * with the real values. One round-trip, not a full re-scan. Read-only on the box.
+ *
+ * Write-gated at the route (`server:write`): the masked scan is a `:read`,
+ * revealing the real secret is a `:write`, the same split as the service-env
+ * reveal (#336).
+ */
+export async function revealContainerEnv(
+  serverId: string,
+  organizationId: string,
+  containerId: string,
+): Promise<Record<string, string>> {
+  const rt = await createServerDockerRuntime(serverId, organizationId);
+  try {
+    await withTimeout(
+      rt.assertReachable(),
+      REACHABILITY_TIMEOUT_MS,
+      `timed out after ${REACHABILITY_TIMEOUT_MS / 1000}s connecting to the Docker daemon`,
+    ).catch((err) => {
+      throw new Error(`Docker daemon is not reachable on this server. ${safeErrorMessage(err)}`);
     });
+
+    return await withTimeout(
+      (async () => {
+        const detail = await rt.inspectContainer(containerId);
+        if (!detail) throw new Error("Container not found on this server.");
+        // Same inputs as discovery: image env (provenance split) + the compose
+        // declaration (keeps declared keys that equal the image default). Skip the
+        // image lookup when there's no resolvable ref — discovery drops those too
+        // (`.filter(Boolean)`), and an empty ref means "import all env" either way.
+        const ref = imageRefKey(detail);
+        const groups = new Map<string, DockerContainerDetail[]>([
+          [detail.composeProject ?? "", [detail]],
+        ]);
+        const [declared, imageEnv] = await Promise.all([
+          readComposeDeclarations(serverId, groups),
+          ref ? rt.inspectImageEnv(ref) : Promise.resolve([]),
+        ]);
+        const declaredSvc = detail.composeService
+          ? declared.get(detail.composeService)
+          : undefined;
+        return toDiscoveredService(detail, declaredSvc, imageEnv).env;
+      })(),
+      DISCOVERY_TIMEOUT_MS,
+      `timed out after ${DISCOVERY_TIMEOUT_MS / 1000}s reading the container's environment`,
+    );
   } finally {
     await rt.dispose();
   }

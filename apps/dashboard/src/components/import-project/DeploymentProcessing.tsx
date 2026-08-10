@@ -5,6 +5,7 @@ import Image from "next/image";
 import {
   CheckCircle2,
   XCircle,
+  ExternalLink,
   Loader2,
   Clock,
   Server,
@@ -25,6 +26,7 @@ import { useDeployment } from "@/context/DeploymentContext";
 import { getPublicEndpointHosts } from "@/context/deployment/types";
 import { resolveBuildElapsedMs } from "@/context/deployment/types";
 import { usePlatform } from "@/context/PlatformContext";
+import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { useTheme } from "@/components/theme-provider";
 import { useModal } from "@/context/ModalContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -161,10 +163,9 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
     });
   }, [state.pendingPrompt, showModal, hideModal, respondToPrompt]);
 
-  // Build domain for display
-  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName);
-  const domain = endpointHosts[0] ?? "";
-  const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
+  // The host to OPEN, or none. Never composed from the project name — that host
+  // doesn't exist, and this one is behind the primary "Visit Site" button.
+  const domain = getPublicEndpointHosts(config.publicEndpoints, baseDomain)[0] ?? "";
 
   const handleTerminalReady = useCallback((terminal: Terminal) => {
     if (terminalRef) {
@@ -174,9 +175,13 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
   }, [terminalRef, onTerminalReady]);
 
   const handleViewDashboard = () => {
-    if (state.projectId) {
-      router.push(`/projects/${state.projectId}`);
-    }
+    if (!state.projectId) return;
+    // Backstop: drop the cached project info at the point of NAVIGATION, whichever
+    // path observed the deploy finishing. Without it, opening the project while a
+    // deploy was still running cached the pre-deploy DRAFT, and this button then
+    // landed on "Ready to deploy" beside an already-Deployed release.
+    invalidateProjectCaches(state.projectId);
+    router.push(`/projects/${state.projectId}`);
   };
 
   const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
@@ -208,22 +213,19 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
               </div>
             </div>
 
-            {deploymentStatus === "ready" && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleViewDashboard}
-                  className="flex items-center gap-2 text-foreground font-medium transition-all duration-300 bg-card rounded-xl px-4 py-2 text-sm border border-border hover:shadow-md"
-                >
-                  {dp.viewDashboard}
-                </button>
-                <button
-                  onClick={() => window.open(`https://${domain}`, "_blank")}
-                  className="flex items-center gap-2 text-primary-foreground font-medium transition-all duration-300 bg-primary rounded-xl px-4 py-2 text-sm hover:bg-primary/90 shadow-md hover:shadow-lg"
-                >
-                  {dp.visitSite}
-                  {generateIcon('External_link_HtLszLDBXqHilHK674zh2aKoSL7xUhyboAzP.png', 16, '#fff')}
-                </button>
-              </div>
+            {/* Visit Site only. "View dashboard" used to sit here too, duplicating
+                the primary "Open Dashboard" button in the details column below —
+                same handler, same destination, two buttons one screen apart. */}
+            {deploymentStatus === "ready" && !!domain && (
+              <button
+                onClick={() => window.open(`https://${domain}`, "_blank", "noopener,noreferrer")}
+                className="flex items-center gap-2 text-primary-foreground font-medium transition-all duration-300 bg-primary rounded-xl px-4 py-2 text-sm hover:bg-primary/90 shadow-md hover:shadow-lg"
+              >
+                {dp.visitSite}
+                {/* lucide, not a hashed PNG — the previous asset silently resolved
+                    to nothing, so the button rendered with no icon at all. */}
+                <ExternalLink className="size-4" />
+              </button>
             )}
 
           </div>
@@ -280,7 +282,7 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                     return (
                       <div key={index} className="flex flex-col items-center gap-2.5 z-10">
                         <div
-                          style={{ boxShadow: "0 0 0 6px var(--th-card-bg-solid)" }}
+                          style={{ boxShadow: "0 0 0 6px var(--th-card-on-page)" }}
                           className={`rounded-full flex items-center justify-center w-10 h-10 transition-all duration-300 ${
                             hasFailed
                               ? "bg-destructive"
@@ -290,9 +292,12 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
                                   ? "bg-foreground"
                                   : // Pending: SOLID fill (the `bg-muted` token is a
                                     // translucent surface tint, so the connector line
-                                    // showed through). Use the solid card color so the
-                                    // line is fully occluded under the circle.
-                                    "bg-[var(--th-card-bg-solid)] border border-border"
+                                    // showed through). --th-card-on-page is the OPAQUE
+                                    // composite of this card over the page, so the dot
+                                    // and its ring match the card exactly. NOT the modal
+                                    // token --th-card-bg-solid: that is darker than a
+                                    // real card in dark (#060606 vs #0d0d0d).
+                                    "bg-[var(--th-card-on-page)] border border-border"
                           }`}
                         >
                           {hasFailed ? (
@@ -447,7 +452,7 @@ const DeploymentDetails = memo(() => {
   const dp = t.importProject.deploymentProcessing;
   const router = useRouter();
   const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
-  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain, config.projectName);
+  const endpointHosts = getPublicEndpointHosts(config.publicEndpoints, baseDomain);
   const domain = endpointHosts[0] ?? "";
   const extraEndpointCount = endpointHosts.length > 1 ? endpointHosts.length - 1 : 0;
 

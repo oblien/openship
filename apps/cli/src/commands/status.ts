@@ -10,13 +10,12 @@
  */
 import { Command } from "commander";
 import chalk from "chalk";
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { apiRequest, getApiUrl, ApiError } from "../lib/api-client";
 import { getActiveContext } from "../lib/config";
 import { serviceStatus } from "../lib/service";
+import { readInstallMethod, composePs } from "../lib/compose";
 import { isJsonMode, printJson } from "../lib/output";
+import { readStoredPorts } from "../lib/ports";
 
 interface Health {
   status?: string;
@@ -33,21 +32,29 @@ interface HealthEnv {
   hostDomain?: string;
 }
 
-function readPorts(): { api?: number; dashboard?: number } {
-  try {
-    return JSON.parse(readFileSync(join(homedir(), ".openship", "ports.json"), "utf8"));
-  } catch {
-    return {};
-  }
-}
-
 export const statusCommand = new Command("status")
   .description("Show the local Openship service (installed/running, ports) and the active context's API health")
   .action(async () => {
     const context = getActiveContext();
     const apiUrl = getApiUrl();
+
+    // Compose install → the bare service manager reads "not installed", which is
+    // misleading. Show the stack (docker compose ps) + a health probe instead.
+    if (readInstallMethod() === "compose" && !isJsonMode()) {
+      console.log(chalk.bold("\n  Openship status (Docker Compose)\n"));
+      composePs();
+      try {
+        const h = await apiRequest<Health>("/health", { signal: AbortSignal.timeout(8000) });
+        console.log(chalk.dim(`\n  API: ${apiUrl} — `) + chalk.green(h.status ?? "ok") + "\n");
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : (e as Error).message;
+        console.log(chalk.dim(`\n  API: ${apiUrl} — `) + chalk.red("not reachable") + chalk.dim(`  ${msg}\n`));
+      }
+      return;
+    }
+
     const svc = serviceStatus();
-    const ports = readPorts();
+    const ports = readStoredPorts();
 
     let health: Health | null = null;
     let envInfo: HealthEnv | null = null;

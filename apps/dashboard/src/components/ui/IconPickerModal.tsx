@@ -227,7 +227,7 @@ export function IconPickerModal({
                                                 : 'group-hover:scale-105'
                                             }`}>
                                             <div className="scale-[0.75]">
-                                                {generateIcon(filename, 40, isSelected ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))')}
+                                                {generateIcon(filename, 40, isSelected ? 'var(--primary-foreground)' : 'var(--foreground)')}
                                             </div>
                                         </div>
                                     </button>

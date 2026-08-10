@@ -24,8 +24,11 @@ import * as rateLimit from "./rate-limit.controller";
 import * as tunnels from "./tunnels.controller";
 import * as serverGithub from "../github/server-github.controller";
 import * as serverModules from "./server-modules.controller";
+import * as serverContainers from "./server-containers.controller";
 import * as migration from "./migration/migration.controller";
 import * as dataTransfer from "./data-transfer/data-transfer.controller";
+import * as systemHealth from "./system-health.controller";
+import * as edgeOrphans from "./edge-orphans.controller";
 
 const r = secureRouter(new Hono(), {
   module: "system",
@@ -42,6 +45,7 @@ r.public("post", "/onboarding/test-connection", { reason: "First-run SSH reachab
 /* ── Internal routes (Electron → API with shared token) ─────────── */
 r.public("post", "/setup", { reason: "Electron desktop client setup - protected by internalAuth shared token" }, internalAuth, setup.setup);
 r.public("get", "/setup", { reason: "Electron desktop client setup read - protected by internalAuth shared token" }, internalAuth, setup.getSetup);
+r.public("get", "/health", { reason: "CLI `openship doctor` — internal-token gated deep health rollup (DB liveness/migrations + project/service counts); the public /api/health is only a liveness stub" }, internalAuth, systemHealth.systemHealth);
 r.public("post", "/bootstrap-admin", { reason: "CLI first-admin creation — internal-token gated, one-shot before any admin exists (openship setup)" }, internalAuth, setup.bootstrapAdmin);
 r.public("post", "/reset-admin-password", { reason: "CLI password recovery — internal-token gated; resets the local admin login for a locked-out operator (openship reset-admin-password)" }, internalAuth, setup.resetAdminPassword);
 r.public("post", "/invite-signup", { reason: "Self-host invited signup — authorized by the unguessable invitation id (token) in the emailed link, NOT a session; creates the account for the invitation's own email. Public + rate-limited because the invitee isn't logged in yet." }, rateLimiterFor("auth-tight"), setup.inviteSignup);
@@ -55,11 +59,30 @@ r.public("post", "/cloud-connect", { reason: "CLI setup — finalize Openship Cl
 r.public("post", "/self-register", { reason: "CLI setup — register the control plane as an app + attach its domain; internal-token gated" }, internalAuth, selfApp.selfRegister);
 r.public("get", "/self-register/stream", { reason: "CLI setup — SSE progress for custom-domain edge provisioning; internal-token gated" }, internalAuth, selfApp.selfRegisterStream);
 r.public("post", "/self-edge/preflight", { reason: "CLI setup — detect what owns ports 80/443 before installing OpenResty; internal-token gated" }, internalAuth, selfApp.selfEdgePreflight);
+r.public("post", "/edge/import-sites", { reason: "CLI `openship up` (compose) — register sites migrated from a foreign proxy into the container edge (host stops the proxy pre-up; api re-serves via DockerEdgeExecutor); internal-token gated" }, internalAuth, selfApp.edgeImportSites);
+
+/* ── Untracked edge vhosts ──────────────────────────────────────────
+ * Edge config lives on the host and outlives its DB rows by design (record-only
+ * delete keeps the workload AND its route running). A leftover PROXY vhost 502s
+ * and announces itself; a leftover STATIC one keeps serving the removed project's
+ * files with a 200. This finds them, and removes them one named hostname at a
+ * time — never as a sweep, which would break record-only's guarantee. */
+r.get("/edge/untracked", { tag: "settings:read" }, edgeOrphans.listUntrackedEdgeSites);
+// Stops serving a hostname → owner-only, like the other destructive system routes.
+r.post(
+  "/edge/untracked/remove",
+  { tag: "settings:admin" },
+  requireRole("owner"),
+  edgeOrphans.removeUntrackedEdgeSite,
+);
 
 /* ── Authenticated routes (dashboard settings page) ─────────────── */
 r.get("/settings", { tag: "settings:read" }, setup.getSetup);
 r.patch("/settings", { tag: "settings:write" }, setup.updateSettings);
-r.delete("/settings", { tag: "settings:admin" }, setup.deleteSettings);
+// Destructive reset — owner-only (like the other destructive settings routes),
+// and the handler is org-scoped (it only clears the CALLER's-org servers, never
+// every org's — see deleteSettings).
+r.delete("/settings", { tag: "settings:admin" }, requireRole("owner"), setup.deleteSettings);
 
 // Instance SMTP (Settings → Email) — self-hosted operator transport for all
 // system mail (password reset, verification, invites, notifications).
@@ -100,12 +123,37 @@ r.delete("/servers/:id", { tag: "server:admin" }, serversCtrl.deleteServer);
 /* ── Per-server rate limiting (OpenResty level) ─────────────────── */
 r.get("/servers/:id/rate-limit", { tag: "server:read" }, rateLimit.getRateLimit);
 r.patch("/servers/:id/rate-limit", { tag: "server:write" }, rateLimit.updateRateLimit);
+r.post("/servers/:id/ports/scan", { tag: "server:read", readOnly: true }, serverCheck.scanExposedPorts);
 
 // ── Native-module versioning + migration (OpenResty, …). The `:id` server is
 //    the permission resource; handlers hard-guard cloud + org-scope. ──
 r.get("/servers/:id/modules", { tag: "server:read" }, serverModules.listServerModules);
 r.post("/servers/:id/modules/scan", { tag: "server:write" }, serverModules.scanServerModules);
 r.post("/servers/:id/modules/:module/apply", { tag: "server:write" }, serverModules.applyServerModuleUpdate);
+
+// ── Managed CONTAINER versioning (edge / mail images pinned to APP_VERSION).
+//    Same `:id`-server permission resource + cloud/org guards as modules; apply
+//    STREAMS the rollback-guarded image swap. ──
+// Org-wide drift count for the home nudge — no :id, so collection:true scopes
+// the permission check to the active org (like /install/stream, /monitor/stream)
+// instead of demanding a server param.
+r.get("/containers/behind", { tag: "server:read", collection: true }, serverContainers.containersBehind);
+r.get("/containers/issues", { tag: "server:read", collection: true }, serverContainers.containerIssues);
+// Global infra view — every server × component. No :id, so collection:true scopes
+// the check to the active org (same as /containers/behind). Scan is detect-only.
+r.get("/containers", { tag: "server:read", collection: true }, serverContainers.listAllContainers);
+r.post("/containers/scan", { tag: "server:write", collection: true }, serverContainers.scanAllContainers);
+// Fleet bulk apply — targets are derived from the cache server-side, so the body
+// only carries which intents to run ("update" swaps, "repair" restarts).
+r.post("/containers/apply-all", { tag: "server:write", collection: true }, serverContainers.applyAllContainers);
+r.get("/servers/:id/containers", { tag: "server:read" }, serverContainers.listServerContainers);
+r.post("/servers/:id/containers/scan", { tag: "server:write" }, serverContainers.scanServerContainers);
+r.post("/servers/:id/containers/:component/apply/stream", { tag: "server:write" }, serverContainers.applyServerContainerStream);
+// Read-only siblings of the POST apply stream, for page reloads: /session hands
+// back a running swap's id, /stream (GET) re-attaches to it. Neither can start a
+// run, so they stay on server:read while the POST keeps server:write.
+r.get("/servers/:id/containers/:component/apply/session", { tag: "server:read" }, serverContainers.getServerContainerApplySession);
+r.get("/servers/:id/containers/:component/apply/stream", { tag: "server:read" }, serverContainers.attachServerContainerStream);
 
 // ── Per-server GitHub auth (self-hosted): device-login token / PAT / SSH
 //    server-key / per-repo deploy-key. The `:id` server is the permission

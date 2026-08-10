@@ -8,7 +8,7 @@
  *   restore      — restore history (sibling of run)
  */
 
-import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { Database } from "../client";
 import {
   backupDestination,
@@ -16,6 +16,7 @@ import {
   backupRestore,
   backupRun,
 } from "../schema";
+import { detailOf } from "./storable-detail";
 
 // ─── Inferred types ──────────────────────────────────────────────────────────
 
@@ -77,6 +78,72 @@ export const IN_FLIGHT_RESTORE_STATUSES: BackupRestoreStatus[] = [
 // Note: `prepared` is INTENTIONALLY not in-flight — it's a quiescent
 // waiting state. Boot sweep doesn't kill prepared restores, the user
 // gets to apply them after a restart.
+
+// ─── Transition durability ───────────────────────────────────────────────────
+
+/**
+ * Persist an FSM transition so the STATUS can never be lost to its payload.
+ *
+ * A run/restore's status is the RECORD; the patch riding with it — hook log,
+ * error text, artifact metadata — is raw remote bytes, i.e. observability.
+ * Postgres refuses a NUL in a text column ("invalid byte sequence for encoding
+ * UTF8: 0x00") and an unpaired surrogate in jsonb, and both used to travel in
+ * ONE statement with the status: a user shell hook that printed a NUL turned a
+ * SUCCEEDED backup into a FAILED one (the rejected UPDATE threw out of the
+ * orchestrator's try, whose catch then transitioned the run to "failed" — with
+ * the artifact already uploaded and the manifest already written).
+ *
+ * So: status first, in its own statement out of values we construct. Then the
+ * payload, which sheds itself column-by-column — a poisoned hook log costs its
+ * own column and nothing else, and a rejected string column keeps a marker
+ * naming the DB error rather than going blank (a failed run with no reason
+ * reads as "no reason given").
+ */
+async function persistTransition(
+  label: string,
+  id: string,
+  status: string,
+  core: Record<string, unknown>,
+  patch: Record<string, unknown> | undefined,
+  write: (values: Record<string, unknown>) => Promise<unknown>,
+): Promise<void> {
+  await write(core);
+  if (!patch) return;
+  // `status` never rides the payload — the core write above owns it.
+  const rest: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (key !== "status") rest[key] = value;
+  }
+  const keys = Object.keys(rest);
+  if (keys.length === 0) return;
+
+  try {
+    await write(rest);
+    return;
+  } catch (err) {
+    console.error(
+      `[db] ${label} ${id}: payload rejected (${detailOf(err)}) — status "${status}" is persisted; salvaging per column`,
+    );
+  }
+
+  for (const key of keys) {
+    try {
+      await write({ [key]: rest[key] });
+      continue;
+    } catch (err) {
+      const detail = detailOf(err);
+      if (typeof rest[key] === "string") {
+        try {
+          await write({ [key]: `[unstorable: ${detail}]` });
+          continue;
+        } catch {
+          // fall through to the log below
+        }
+      }
+      console.error(`[db] ${label} ${id}: column ${key} rejected (${detail}) — left unset`);
+    }
+  }
+}
 
 // ─── Destination repo ────────────────────────────────────────────────────────
 
@@ -327,6 +394,44 @@ export function createBackupPolicyRepo(db: Database) {
       }
     },
 
+    /**
+     * Every enabled policy with retention configured, cron or not.
+     *
+     * The retention sweep used to walk `iterateEnabledScheduled`, on the theory
+     * that a policy without a cron is manual-only and its owner opted into
+     * fire-and-forget. That theory misses two triggers that produce runs
+     * automatically: `trigger_on_pre_deploy` and the inbound webhook. Those
+     * policies fill a destination on a schedule set by pushes rather than by
+     * cron, and their runs were never pruned even with `retain_count` set —
+     * which is exactly the case where the operator DID ask for a ceiling.
+     *
+     * Paginated because the sweep runs against every org on the instance.
+     */
+    async *iterateEnabledForRetention(
+      pageSize = 100,
+    ): AsyncIterableIterator<BackupPolicy> {
+      let offset = 0;
+      while (true) {
+        const page = await db.query.backupPolicy.findMany({
+          where: and(
+            isNull(backupPolicy.deletedAt),
+            eq(backupPolicy.enabled, true),
+            or(
+              sql`${backupPolicy.retainCount} IS NOT NULL`,
+              sql`${backupPolicy.retainDays} IS NOT NULL`,
+            ),
+          ),
+          orderBy: (t, { asc }) => [asc(t.id)],
+          limit: pageSize,
+          offset,
+        });
+        if (page.length === 0) return;
+        for (const row of page) yield row;
+        if (page.length < pageSize) return;
+        offset += pageSize;
+      }
+    },
+
     /** Every enabled policy with `trigger_on_pre_deploy = true` for a
      *  given project. Used by the pre-deploy hook in the deployment
      *  lifecycle to fire backups before swapping the active deployment. */
@@ -478,7 +583,8 @@ export function createBackupRunRepo(db: Database) {
     },
 
     /** FSM state transition. Always bumps lastEventAt; sets finishedAt
-     *  on terminal states. */
+     *  on terminal states. Status is written separately from the patch — see
+     *  persistTransition for why the two must not fail as a unit. */
     async transition(
       id: string,
       status: BackupRunStatus,
@@ -491,15 +597,19 @@ export function createBackupRunRepo(db: Database) {
         "server_error",
       ];
       const finishing = TERMINAL.includes(status);
-      await db
-        .update(backupRun)
-        .set({
-          status,
-          lastEventAt: new Date(),
-          ...(finishing ? { finishedAt: new Date() } : {}),
-          ...(patch ?? {}),
-        })
-        .where(eq(backupRun.id, id));
+      const now = new Date();
+      await persistTransition(
+        "backup_run",
+        id,
+        status,
+        { status, lastEventAt: now, ...(finishing ? { finishedAt: now } : {}) },
+        patch as Record<string, unknown> | undefined,
+        (values) =>
+          db
+            .update(backupRun)
+            .set(values as Partial<NewBackupRun>)
+            .where(eq(backupRun.id, id)),
+      );
     },
 
     /** Mark every in-flight run as server_error. Called at boot to
@@ -536,6 +646,37 @@ export function createBackupRunRepo(db: Database) {
           lt(backupRun.finishedAt, cutoff),
         ),
       });
+    },
+
+    /**
+     * Runs holding a `custom_command` artifact with no `restoreCommand` — i.e.
+     * an artifact that cannot be put back (D5). Filtered in SQL so an instance
+     * with years of history doesn't page every row in to find a handful, and
+     * matched on the ARTIFACT rather than the policy so runs whose policy was
+     * since deleted still surface (those are unrecoverable, and the operator
+     * needs to hear about them before they need the restore).
+     */
+    async listCustomCommandMissingRestoreCommand(limit = 1000): Promise<BackupRun[]> {
+      return db.query.backupRun.findMany({
+        where: and(
+          isNull(backupRun.deletedAt),
+          sql`jsonb_typeof(${backupRun.artifacts}) = 'array'`,
+          sql`exists (
+            select 1 from jsonb_array_elements(${backupRun.artifacts}) as entry
+            where entry->>'payloadKind' = 'custom_command'
+              and coalesce(entry->'metadata'->>'restoreCommand', '') = ''
+          )`,
+        ),
+        orderBy: (t, { asc }) => [asc(t.startedAt)],
+        limit,
+      });
+    },
+
+    /** Rewrite the recorded artifact list. A run's artifacts are otherwise
+     *  write-once at capture time — the D5 `restoreCommand` backfill is the only
+     *  caller, and it touches nothing else on the row (status included). */
+    async setArtifacts(id: string, artifacts: unknown[]): Promise<void> {
+      await db.update(backupRun).set({ artifacts }).where(eq(backupRun.id, id));
     },
 
     async softDelete(id: string): Promise<void> {
@@ -611,6 +752,25 @@ export function createBackupRestoreRepo(db: Database) {
       return row;
     },
 
+    /**
+     * Record a cancel request without transitioning — the running phase honors
+     * it at its next checkpoint. Returns the updated row so the caller can read
+     * back the FIRST press time, which `coalesce` preserves: a second press is
+     * the force-terminal signal and must not reset its own window.
+     */
+    async requestCancel(id: string): Promise<BackupRestore | undefined> {
+      const [row] = await db
+        .update(backupRestore)
+        .set({
+          cancelRequested: true,
+          cancelRequestedAt: sql`coalesce(${backupRestore.cancelRequestedAt}, now())`,
+          lastEventAt: new Date(),
+        })
+        .where(eq(backupRestore.id, id))
+        .returning();
+      return row;
+    },
+
     async transition(
       id: string,
       status: BackupRestoreStatus,
@@ -623,15 +783,24 @@ export function createBackupRestoreRepo(db: Database) {
         "server_error",
       ];
       const finishing = TERMINAL.includes(status);
-      await db
-        .update(backupRestore)
-        .set({
+      const now = new Date();
+      await persistTransition(
+        "backup_restore",
+        id,
+        status,
+        {
           status,
-          lastEventAt: new Date(),
-          ...(finishing ? { finishedAt: new Date() } : {}),
-          ...(patch ?? {}),
-        })
-        .where(eq(backupRestore.id, id));
+          lastEventAt: now,
+          ...(finishing ? { finishedAt: now } : {}),
+          ...(status === "cancelled" ? { cancelledAt: now } : {}),
+        },
+        patch as Record<string, unknown> | undefined,
+        (values) =>
+          db
+            .update(backupRestore)
+            .set(values as Partial<NewBackupRestore>)
+            .where(eq(backupRestore.id, id)),
+      );
     },
 
     async sweepStaleRestores(reason: string): Promise<number> {

@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { safeErrorMessage } from "@repo/core";
 import { getRequestContext } from "../../../lib/request-context";
+import { requestApiPublicUrl } from "../../../lib/public-url";
 import { projectInfoToScanResponse } from "../../deployments/prepare.service";
 import { createFolderSession, acceptRelayUpload, scanFolderSession } from "./folder.service";
 import { getFolderSession } from "./session-store";
@@ -24,6 +25,7 @@ export async function createSession(c: Context) {
       stack: body.stack,
       packageManager: body.packageManager,
       name: body.name,
+      apiBaseUrl: requestApiPublicUrl(c.req.raw),
     });
     return c.json({ success: true, ...result });
   } catch (err) {
@@ -82,4 +84,25 @@ export async function scanSession(c: Context) {
   } catch (err) {
     return c.json({ error: safeErrorMessage(err) }, 500);
   }
+}
+
+/**
+ * GET /projects/folder/scan/:sessionId/env-reveal
+ * #336: the scan response masks compose env, so the wizard's "show values"
+ * toggle fetches the REAL values here. Backed by `session.services`, which the
+ * scan captured PRE-mask. Write-gated at the route (project:write) so a
+ * read-only caller can't reveal. Returns real env keyed by service name.
+ */
+export async function revealSessionEnv(c: Context) {
+  const { organizationId } = getRequestContext(c);
+  const sessionId = c.req.param("sessionId");
+  const session = sessionId ? getFolderSession(sessionId) : undefined;
+  if (!session || session.orgId !== organizationId) {
+    return c.json({ error: "Upload session not found" }, 404);
+  }
+  const environments: Record<string, Record<string, string>> = {};
+  for (const s of session.services ?? []) {
+    if (s.name) environments[s.name] = s.environment ?? {};
+  }
+  return c.json({ success: true, environments });
 }

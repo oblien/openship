@@ -38,13 +38,19 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { buildMailImageRef } from "@repo/core";
 import { apiRequest, ApiError } from "../lib/api-client";
 import { sseRequest } from "../lib/sse";
 import { streamDeploymentLogs } from "../lib/deploy-stream";
 import { getToken } from "../lib/config";
 import { fetchCaps, requireSelfHost } from "../lib/caps";
+import { has } from "../lib/from-source";
+import { readSourceInstall } from "../lib/source-install";
 import { isJsonMode, printJson, printTable, ok, err, info } from "../lib/output";
 
 // ─── Shared plumbing ──────────────────────────────────────────────────────────
@@ -453,6 +459,83 @@ postmasterCmd.addCommand(
     ),
 );
 
+// ─── Dev: build the engine image locally ──────────────────────────────────────
+
+const DOCKERFILE_REL = join("apps", "email", "Dockerfile");
+
+/** Repo root to build from: --context, else a source-install marker, else cwd. */
+function resolveBuildContext(explicit?: string): string | null {
+  if (explicit?.trim()) return resolve(explicit.trim());
+  const marker = readSourceInstall();
+  if (marker?.dir && existsSync(join(marker.dir, DOCKERFILE_REL))) return marker.dir;
+  const cwd = process.cwd();
+  if (existsSync(join(cwd, DOCKERFILE_REL))) return cwd;
+  return null;
+}
+
+/**
+ * The ref the API's `pinnedMailImage()` will look for: buildMailImageRef with the
+ * fallback tag read from the checkout's apps/api version, honoring the same
+ * OPENSHIP_MAIL_* / OPENSHIP_IMAGE_REGISTRY env the API reads — so the CLI tags
+ * exactly what mail bring-up resolves.
+ */
+function defaultMailRef(context: string): string {
+  let fallbackTag: string | undefined;
+  try {
+    const pkg = JSON.parse(readFileSync(join(context, "apps", "api", "package.json"), "utf8")) as {
+      version?: string;
+    };
+    if (typeof pkg.version === "string") fallbackTag = pkg.version;
+  } catch {
+    /* no checkout package.json → buildMailImageRef falls back to OPENSHIP_VERSION / latest */
+  }
+  return buildMailImageRef({ fallbackTag });
+}
+
+const buildCmd = new Command("build")
+  .description("Build the openship-mail engine image locally from a source checkout [dev]")
+  .option("--context <dir>", "Repo root containing apps/email/Dockerfile (default: checkout or cwd)")
+  .option("--tag <ref>", "Image ref to tag (default: the pinned openship-mail ref)")
+  .action(async (opts: { context?: string; tag?: string }) => {
+    try {
+      if (!has("docker")) {
+        err("Docker isn't on PATH — install Docker, then retry.");
+        process.exit(1);
+      }
+      const context = resolveBuildContext(opts.context);
+      if (!context) {
+        err(
+          "No source checkout to build from. Run from the repo root, or pass --context <path>.",
+        );
+        process.exit(1);
+      }
+      const dockerfile = join(context, DOCKERFILE_REL);
+      if (!existsSync(dockerfile)) {
+        err(`No apps/email/Dockerfile under ${context} — is that the repo root?`);
+        process.exit(1);
+      }
+      const ref = opts.tag?.trim() || defaultMailRef(context);
+
+      info(`  Building ${ref}`);
+      info(`    context:    ${context}`);
+      info(`    dockerfile: ${dockerfile}`);
+      // JSON mode: suppress build stdout so the closing JSON stays parseable; keep
+      // stderr so a failing build is still diagnosable.
+      const res = spawnSync("docker", ["build", "-t", ref, "-f", dockerfile, context], {
+        stdio: [isJsonMode() ? "ignore" : "inherit", isJsonMode() ? "ignore" : "inherit", "inherit"],
+      });
+      if (res.status !== 0) {
+        err(`docker build failed (exit ${res.status ?? "signal"}).`);
+        process.exit(1);
+      }
+      if (isJsonMode()) printJson({ ok: true, image: ref, context });
+      else ok(`  Built ${ref}. Run \`mail setup\` (or redeploy) and it's used without a registry pull.`);
+    } catch (e) {
+      err(e instanceof Error ? e.message : String(e));
+      process.exit(1);
+    }
+  });
+
 // ─── Parent ─────────────────────────────────────────────────────────────────
 
 export const mailCommand = new Command("mail")
@@ -470,4 +553,5 @@ export const mailCommand = new Command("mail")
   .addCommand(forgetCmd)
   .addCommand(healthCmd)
   .addCommand(logsCmd)
-  .addCommand(postmasterCmd);
+  .addCommand(postmasterCmd)
+  .addCommand(buildCmd);

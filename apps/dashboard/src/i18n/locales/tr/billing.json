@@ -1,4 +1,15 @@
 {
+  "capacity": {
+    "title": "Kapasite ve Kullanım",
+    "subtitle": "Planınıza dahil kapasite ve ne kadar kullandığınız. Canlı veriler Openship Cloud'dan senkronize edilir.",
+    "routes": "Ücretsiz rotalar",
+    "workspaces": "Çalışma alanları",
+    "unlimited": "Sınırsız",
+    "used": "kullanıldı",
+    "of": "/ {max}",
+    "syncing": "Buluttan senkronize ediliyor"
+  },
+  "topupsComingSoon": "Tek seferlik kredi yüklemeleri yakında geliyor — burada aylık kotanıza ek olarak kredi ekleyebileceksiniz.",
   "header": {
     "credits": "Krediler",
     "creditsSuffix": "toplam {limit}",
@@ -157,7 +168,7 @@
     "weekTick": "{n}. hafta"
   },
   "layout": {
-    "title": "Faturalandırma",
+    "title": "Faturalandırma ve Kullanım",
     "subtitle": "Aboneliğinizi, kullanımınızı ve ödeme yöntemlerinizi yönetin."
   },
   "sidebar": {

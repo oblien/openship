@@ -78,6 +78,43 @@
       "toggleFailed": "プロジェクトの切り替えに失敗しました",
       "clearInstallFailed": "インストールキャッシュの消去に失敗しました",
       "clearBuildFailed": "ビルドキャッシュの消去に失敗しました"
+    },
+    "routing": {
+      "title": "ルーティング",
+      "description": "エッジがこのアプリのアップストリームに到達する方法",
+      "intro": "エッジがこのプロジェクトのコンテナをどう指定するかを選択します。",
+      "note": "ループバックポートを推奨します。プライベートな 127.0.0.1 ホストポートで、再起動をまたいで安定し、ネットワークに公開されません。コンテナ IP は上級者向けです（無停止切り替え。エッジが Docker ブリッジ上にある必要があり、Docker Desktop では未対応）。",
+      "modes": {
+        "auto": {
+          "label": "自動",
+          "desc": "推奨（ループバックポート）"
+        },
+        "loopbackPort": {
+          "label": "ループバックポート",
+          "desc": "プライベートな 127.0.0.1 ホストポート"
+        },
+        "containerIp": {
+          "label": "コンテナ IP",
+          "desc": "上級者向け — ブリッジ IP"
+        }
+      },
+      "toast": {
+        "saved": "ルーティングを {mode} に設定しました",
+        "failed": "ルーティングの更新に失敗しました"
+      }
+    },
+    "internalAlias": {
+      "title": "内部ホスト名",
+      "description": "他のサービスがこのアプリにプライベートで到達するためのカスタム名",
+      "intro": "このアプリのプライベートなプロジェクトネットワーク上に追加の DNS 名を設定します。既定（プロジェクトのスラッグ）と並んで解決され、リンクされた他のサービスはどちらも使用できます。公開アクセスは変わらず、これによってポートが公開されることはありません。",
+      "label": "ホスト名エイリアス",
+      "hint": "英数字とハイフンのみ。空欄にするとプロジェクトのスラッグを使用します。",
+      "save": "保存",
+      "toast": {
+        "saved": "内部ホスト名を更新しました",
+        "failed": "内部ホスト名を更新できませんでした",
+        "invalid": "英字または数字を 1 文字以上入力してください"
+      }
     }
   },
   "backup": {
@@ -151,19 +188,56 @@
       "framework": "フレームワーク",
       "packageManager": "パッケージマネージャー",
       "runtimeIsolation": "ランタイム分離",
-      "resources": "リソース",
-      "resourcesValue": "{cpu} vCPU · {memory} MB",
       "runtimePort": "ランタイムポート",
       "installCommand": "インストールコマンド",
       "buildCommand": "ビルドコマンド",
       "noBuildStep": "ビルドステップなし",
       "outputDirectory": "出力ディレクトリ",
       "rootDirectory": "ルートディレクトリ",
+      "composePath": "Compose ファイル",
       "startCommand": "起動コマンド",
       "staticNoServer": "静的（サーバーなし）",
       "modeSandboxed": "サンドボックス化（コンテナ）",
       "modeDirect": "ダイレクト（ホストプロセス）",
-      "modeDefault": "デフォルト（デプロイ時に解決）"
+      "modeDefault": "デフォルト（デプロイ時に解決）",
+      "modeStatic": "なし（静的ファイルとして配信）"
+    },
+    "storage": {
+      "title": "永続ストレージ",
+      "description": "新しいバージョンが古いバージョンを置き換えても保持されるパス。コンテナ内のそれ以外はデプロイ時に破棄されます。",
+      "edit": "編集",
+      "save": "保存",
+      "cancel": "キャンセル",
+      "saved": "ストレージを更新しました。次回のデプロイから適用されます。",
+      "reset": "フレームワークの既定値を使う",
+      "empty": "デプロイ間で保持されるものはありません。",
+      "inherited": "このスタックのフレームワーク既定値です。",
+      "declared": "このプロジェクト用に設定されています。",
+      "placeholder": "storage\nuploads:/app/public/uploads",
+      "hint": "1行に1つ。パスのみの場合はアプリからの相対パス（storage）、完全なマウント指定も可能です（name:/app/path、/host/path:/app/path）。"
+    },
+    "objectStorage": {
+      "title": "オブジェクトストレージ",
+      "description": "アップロード用の S3 バケット。デプロイをまたいで残り、ローカルパスと違って複数レプリカでも機能します。",
+      "connect": "接続",
+      "disconnect": "切断",
+      "disconnected": "オブジェクトストレージを切断しました。",
+      "connected": "バケットを確認して接続しました。次回のデプロイから適用されます。",
+      "loading": "確認中…",
+      "empty": "接続されたバケットはありません。アップロードはコンテナのディスクに保存されます。",
+      "sourceLabel": "ソース",
+      "externalOption": "外部プロバイダー",
+      "providerLabel": "プロバイダー",
+      "bucketLabel": "バケット",
+      "endpointLabel": "エンドポイント",
+      "regionLabel": "リージョン",
+      "accessKeyLabel": "アクセスキー ID",
+      "secretKeyLabel": "シークレットアクセスキー",
+      "testAndConnect": "テストして接続",
+      "cancel": "キャンセル",
+      "envLabel": "変数",
+      "envHint": "設定される変数:",
+      "appliesOnDeploy": "次回のデプロイで適用されます。"
     },
     "env": {
       "title": "環境変数",
@@ -194,7 +268,13 @@
       "savedTitle": "保存しました",
       "saveFailed": "環境変数の保存に失敗しました",
       "saveFailedTitle": "保存に失敗しました"
-    }
+    },
+    "linkedBadge": "リンク済み",
+    "linkedManaged": "{app} 経由",
+    "linkedTitle": "リンクされた統合",
+    "linkedBody": "この値は {app} の接続から取得されます。そのアプリ側で管理してください — ここでの変更は保存されません。",
+    "unlink": "接続を削除",
+    "close": "閉じる"
   },
   "gitInfo": {
     "repository": "リポジトリ",
@@ -281,18 +361,29 @@
       "title": "ロールバック戦略",
       "rebuild": "再ビルド（git）",
       "instant": "即時（スナップショット）",
-      "descRebuild": "ロールバックは古いコミットを再クローンして再ビルドします。コストは低いですが、遅く、そのコミットがビルドできなくなっていると失敗する可能性があります。",
-      "descInstant": "各バージョンのビルド成果物をディスクに保持し、数秒でロールバックできます。追加のディスクを使用し、履歴の上限で制限されます。",
-      "toggleAria": "スナップショット保持を切り替え"
+      "descRebuild": "イメージがホストに残っていない場合は、以前のコミットを再ビルドします。",
+      "descInstant": "各バージョンのイメージを保持するため、復元で再ビルドは発生しません。ディスク使用量は増えます。",
+      "toggleAria": "スナップショット保持を切り替え",
+      "keepNone": "追加のコピーを保持しない",
+      "keepCopies": "バージョンごとにコピーを保持",
+      "descRebuildFiles": "ファイルがホストに残っていない場合は、以前のコミットを再ビルドします。",
+      "descInstantFiles": "各バージョンのファイルを保持するため、復元で再ビルドは発生しません。ディスク使用量は増えます。"
     },
     "rollbackHistory": {
       "title": "ロールバック履歴",
       "valueOne": "{count} バージョン",
       "valueOther": "{count} バージョン",
-      "descSnapshot": "直近の何バージョン分のビルド成果物をロールバック用に保持するか。古いものはディスクを回収するために削除されます。",
-      "descGit": "即時（スナップショット）モードにのみ適用されます。Git モードでは保持する成果物がありません。",
+      "descSnapshot": "古いバージョンは削除され、ディスクが解放されます。",
+      "descGit": "最近のイメージはいずれの場合も保持されるため、ロールバックはビルドを省略できます。",
       "decreaseAria": "ロールバック履歴を減らす",
-      "increaseAria": "ロールバック履歴を増やす"
+      "increaseAria": "ロールバック履歴を増やす",
+      "sizeEach": "各 ~{size}",
+      "diskFree": "空き {size}",
+      "autoBadge": "自動調整",
+      "manualBadge": "手動設定",
+      "kindFiles": "ディスク上のビルド済みファイル",
+      "kindImages": "ホスト上のイメージ",
+      "descGitFiles": "最近のバージョンのファイルはいずれの場合も保持されるため、ロールバックはビルドを省略できます。"
     },
     "commits": {
       "title": "最近のコミット",
@@ -355,38 +446,53 @@
   },
   "resources": {
     "title": "マシンパワー",
-    "description": "プロジェクトのマシンパワーを設定します。",
+    "description": "このプロジェクトのコンテナに適用する CPU とメモリの上限。",
+    "loading": "対象マシンを読み取っています…",
+    "machineCapacity": "マシン: {cpu} vCPU · {memory}",
+    "exceedsMachine": "このマシンの容量を超えています",
+    "appliesOnNextDeploy": "上限はコンテナの再作成時に適用されます。変更を反映するには再デプロイしてください。",
     "tiers": {
-      "lightweight": { "name": "ライトウェイト", "description": "小規模なアプリと静的サイト" },
-      "standard": { "name": "スタンダード", "description": "ほとんどのウェブアプリケーション" },
-      "performance": { "name": "パフォーマンス", "description": "高トラフィックのアプリケーション" },
-      "enterprise": { "name": "エンタープライズ", "description": "大規模な本番アプリ" },
-      "autoscale": { "name": "オートスケール", "description": "需要に応じてスケールします" }
+      "unlimited": {
+        "name": "上限なし",
+        "description": "マシン全体を使う（既定）",
+        "spec": "マシンの容量"
+      },
+      "micro": {
+        "name": "Micro",
+        "description": "小さなサイドカーやワーカー"
+      },
+      "low": {
+        "name": "Low",
+        "description": "小規模アプリと静的サイト"
+      },
+      "medium": {
+        "name": "Medium",
+        "description": "ほとんどの Web アプリケーション"
+      },
+      "high": {
+        "name": "High",
+        "description": "高トラフィックのアプリケーション"
+      }
     },
-    "dynamic": "ダイナミック",
     "custom": {
       "name": "カスタム",
-      "description": "独自のリソースを定義します",
-      "clickToConfigure": "クリックして設定"
+      "description": "上限を自分で指定する",
+      "notSet": "未設定"
     },
-    "cpuValue": "{cpu} vCPU",
     "customPanel": {
-      "title": "カスタムリソースを設定",
-      "cpuCores": "CPU コア",
-      "cpuRange": "範囲: 0.25 - 4.00",
-      "memory": "メモリ（MB）",
-      "memoryRange": "範囲: 128 - 8192",
+      "boundedBy": "このマシンには {cpu} vCPU と {memory} があります。0 を入力すると上限なしになります。",
+      "capacityUnknown": "このマシンの容量を読み取れなかったため、上限は適用されません。0 を入力すると上限なしになります。",
+      "cpuCores": "CPU コア数",
+      "memory": "メモリ (MB)",
+      "zeroMeansNoLimit": "0 = 上限なし",
       "cancel": "キャンセル",
-      "saving": "保存中...",
-      "save": "設定を保存"
+      "saving": "保存中…",
+      "save": "保存"
     },
     "toast": {
-      "updated": "リソースを更新しました",
-      "updateFailed": "リソースの更新に失敗しました",
-      "cpuRange": "CPU は 0.25 から 4.00 コアの間で指定してください",
-      "memoryRange": "メモリは 128 MB から 8192 MB の間で指定してください",
-      "customSaved": "カスタムリソースを保存しました",
-      "customSaveFailed": "カスタムリソースの保存に失敗しました"
+      "updated": "マシンパワーを更新しました",
+      "updateFailed": "マシンパワーの更新に失敗しました",
+      "invalidValues": "CPU とメモリは 0 または正の数を指定してください"
     }
   },
   "sleep": {
@@ -441,7 +547,11 @@
     "confirmDeleteWipe": "削除してデータを消去",
     "confirmDeleteEnvWipe": "環境を削除してデータを消去",
     "confirmDelete": "プロジェクトを削除",
-    "confirmDeleteEnv": "環境を削除"
+    "confirmDeleteEnv": "環境を削除",
+    "linkedTitleOne": "{count} 件のプロジェクトがこのアプリに接続しています",
+    "linkedTitleOther": "{count} 件のプロジェクトがこのアプリに接続しています",
+    "linkedNote": "データはそのままで動作を続けます。失うのはこの接続だけです。反映するには再デプロイしてください。",
+    "linkedNoteRecordOnly": "動作は続きますが、リンクはレコードとともに失われます。後でこのアプリを再インポートしても復元されません。"
   },
   "routing": {
     "title": "ルーティング",
@@ -525,12 +635,13 @@
       "infoPreview": "まずこれらのレコードを追加してください。追加後に変更されないため、伝播はすぐに始まります。次に「ドメインを追加」を押して接続し、最後に DNS が解決されたら「検証」を行ってください。",
       "infoApply": "DNS の変更が世界中に伝播するまで最大48時間かかることがあります。レコードが解決されたら、下の「検証」をクリックしてください。DNS を確認し、ドメインをアクティブにして、バックグラウンドで SSL をプロビジョニングします。",
       "verifying": "検証中...",
-      "verify": "{hostname} を検証",
-      "copy": "コピー"
+      "verify": "{hostname} を検証"
     },
     "overview": {
       "primary": "プライマリ",
       "mappedTo": "マッピング先",
+      "redirect": "リダイレクト",
+      "redirectValue": "{status} → {hostname}",
       "status": "ステータス",
       "ssl": "SSL",
       "visit": "アクセス"
@@ -610,6 +721,19 @@
       "noServicePort": "ポート {port} を公開しているサービスがありません。先にそのポートをサービスに追加してください。",
       "enterCustom": "カスタムドメインを入力してください。",
       "enterSubdomain": "サブドメインを入力してください。"
+    },
+    "edge": {
+      "setUp": "エッジを設定",
+      "ready": "エッジ準備完了",
+      "checking": "エッジを確認中…",
+      "recheck": "再確認",
+      "foreignProxyHint": "別のプロキシが 80/443 を使用中"
+    },
+    "diagnosis": {
+      "title": "うまくいかない理由",
+      "noneYet": "まだチェックが実行されていないため、表示できる結果がありません。表示されている DNS レコードを追加してから「検証」を実行してください。",
+      "attempts": "これまでに {count} 回失敗しています。",
+      "pillHint": "理由を表示"
     }
   }
 }

@@ -10,6 +10,8 @@ import {
   GitFork,
   ArrowRight,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Github,
   Plus,
   AlertTriangle,
@@ -49,6 +51,28 @@ interface Account {
   avatar_url: string;
 }
 
+/**
+ * Server-pagination controls. When provided, the list stops filtering/sorting/
+ * slicing locally — `repos` is already the server-resolved page, the search /
+ * visibility / sort inputs become controlled (reported up so the server can
+ * refetch), the footer shows the authoritative `count`, and a pager appears.
+ * Absent → the list runs entirely client-side over `repos` (its original
+ * behavior, used by the repo pickers in GitSettings + the migration wizard).
+ */
+export interface RepoServerPagination {
+  search: string;
+  onSearch: (value: string) => void;
+  visibility: VisibilityFilter;
+  onVisibility: (value: VisibilityFilter) => void;
+  sort: SortBy;
+  onSort: (value: SortBy) => void;
+  page: number;
+  totalPages: number;
+  onPage: (page: number) => void;
+  /** Repos matching the active search + visibility (drives the footer count). */
+  count: number;
+}
+
 interface RepositoryListProps {
   repos: GitHubRepo[];
   accounts: Account[];
@@ -60,6 +84,8 @@ interface RepositoryListProps {
   onSelect?: (owner: string, repo: GitHubRepo) => void;
   /** GitHub App install URL - shown when connected but no installations */
   installUrl?: string | null;
+  /** Opt into server-side pagination (Library). Omit for client-side lists. */
+  server?: RepoServerPagination;
 }
 
 export function RepositoryList({
@@ -71,15 +97,27 @@ export function RepositoryList({
   loadingRepos,
   onSelect,
   installUrl,
+  server,
 }: RepositoryListProps) {
   const { t } = useI18n();
   const router = useRouter();
-  const [search, setSearch] = useState("");
-  const [visibility, setVisibility] = useState<VisibilityFilter>("all");
-  const [sortBy, setSortBy] = useState<SortBy>("updated");
+  // Search / visibility / sort live locally for client-side lists; in server
+  // mode they're controlled by the parent (which refetches on change).
+  const [localSearch, setLocalSearch] = useState("");
+  const [localVisibility, setLocalVisibility] = useState<VisibilityFilter>("all");
+  const [localSortBy, setLocalSortBy] = useState<SortBy>("updated");
+
+  const search = server ? server.search : localSearch;
+  const setSearch = server ? server.onSearch : setLocalSearch;
+  const visibility = server ? server.visibility : localVisibility;
+  const setVisibility = server ? server.onVisibility : setLocalVisibility;
+  const sortBy = server ? server.sort : localSortBy;
+  const setSortBy = server ? server.onSort : setLocalSortBy;
 
   const filtered = useMemo(() => {
     if (!Array.isArray(repos)) return [];
+    // Server mode: `repos` is already the searched/sorted/sliced page.
+    if (server) return repos;
     let list = repos;
 
     if (search) {
@@ -101,7 +139,11 @@ export function RepositoryList({
     });
 
     return list;
-  }, [repos, search, visibility, sortBy]);
+  }, [repos, search, visibility, sortBy, server]);
+
+  // Footer count: authoritative server count (search/visibility-scoped) in
+  // server mode, else the locally-filtered length.
+  const footerCount = server ? server.count : filtered.length;
 
   const handleDeploy = (ownerLogin: string, repoName: string) => {
     const slug = encodeRepoSlug(ownerLogin, repoName);
@@ -357,9 +399,43 @@ export function RepositoryList({
             })}
           </div>
           {filtered.length > 0 && (
-            <div className="px-5 py-3 text-center text-xs text-muted-foreground/50 border-t border-border/30">
-              {interpolate(filtered.length === 1 ? t.library.repositoryList.repoCountSingular : t.library.repositoryList.repoCountPlural, { count: String(filtered.length) })}
-              {search && ` ${interpolate(t.library.repositoryList.matching, { query: search })}`}
+            <div
+              className={`px-5 py-3 border-t border-border/30 ${
+                server ? "flex items-center justify-between gap-3" : "text-center"
+              }`}
+            >
+              <span className="text-xs text-muted-foreground/50">
+                {interpolate(footerCount === 1 ? t.library.repositoryList.repoCountSingular : t.library.repositoryList.repoCountPlural, { count: String(footerCount) })}
+                {search && ` ${interpolate(t.library.repositoryList.matching, { query: search })}`}
+              </span>
+              {server && server.totalPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => server.onPage(server.page - 1)}
+                    disabled={server.page <= 1}
+                    aria-label={t.library.repositoryList.pagination.previous}
+                    className="inline-flex size-7 items-center justify-center rounded-lg border border-border/50 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <ChevronLeft className="size-4 rtl:rotate-180" />
+                  </button>
+                  <span className="px-1 text-xs text-muted-foreground tabular-nums">
+                    {interpolate(t.library.repositoryList.pagination.pageOf, {
+                      page: String(server.page),
+                      total: String(server.totalPages),
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => server.onPage(server.page + 1)}
+                    disabled={server.page >= server.totalPages}
+                    aria-label={t.library.repositoryList.pagination.next}
+                    className="inline-flex size-7 items-center justify-center rounded-lg border border-border/50 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <ChevronRight className="size-4 rtl:rotate-180" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>

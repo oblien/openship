@@ -1,7 +1,7 @@
-import type { ChangelogFrontmatter } from "@/lib/source";
+import type { ChangelogEntry } from "@/lib/changelog";
 import { ShareButton } from "./share-button";
 
-export type Entry = { url: string; data: ChangelogFrontmatter };
+export type Entry = ChangelogEntry;
 
 const TAG_STYLE: Record<string, { bg: string; fg: string }> = {
   feature: { bg: "var(--th-clr-sea-bg)", fg: "var(--th-clr-sea)" },
@@ -9,11 +9,6 @@ const TAG_STYLE: Record<string, { bg: string; fg: string }> = {
   breaking: { bg: "var(--th-clr-terra-bg)", fg: "var(--th-clr-terra)" },
   security: { bg: "rgba(253,230,138,.30)", fg: "#b45309" },
 };
-
-/** Trailing path segment of a changelog page url → the shareable slug. */
-export function slugOf(url: string): string {
-  return url.split("/").filter(Boolean).pop() ?? "";
-}
 
 function fmtDate(iso: string): { top: string; year: string } {
   const d = new Date(iso);
@@ -38,14 +33,12 @@ export function ChangelogEntries({
   return (
     <>
       {entries.map((entry) => {
-        const slug = slugOf(entry.url);
-        const highlighted = slug === highlightSlug;
-        const { top, year } = fmtDate(entry.data.date);
-        const Body = entry.data.body;
+        const highlighted = entry.slug === highlightSlug;
+        const { top, year } = fmtDate(entry.date);
         return (
           <article
-            key={entry.url}
-            id={slug}
+            key={entry.slug}
+            id={entry.slug}
             className={`changelog-entry grid grid-cols-1 gap-4 py-12 sm:grid-cols-[140px_1fr] sm:gap-8 ${
               highlighted ? "changelog-highlight" : "border-t"
             }`}
@@ -59,9 +52,9 @@ export function ChangelogEntries({
             <div>
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="th-text-heading text-xl font-semibold tracking-[-0.01em]">
-                  {entry.data.version}
+                  {entry.displayVersion}
                 </span>
-                {(entry.data.tags ?? []).map((t) => {
+                {entry.tags.map((t) => {
                   const s =
                     TAG_STYLE[t] ?? {
                       bg: "var(--th-sf-06)",
@@ -77,16 +70,12 @@ export function ChangelogEntries({
                     </span>
                   );
                 })}
-                <ShareButton slug={slug} className="ml-auto" />
+                <ShareButton slug={entry.slug} className="ml-auto" />
               </div>
-              {entry.data.title && (
-                <h2 className="th-text-title mt-2 text-lg font-medium">
-                  {entry.data.title}
-                </h2>
-              )}
-              <div className="changelog-prose th-text-body mt-4 text-[15px] leading-relaxed">
-                <Body />
-              </div>
+              <div
+                className="changelog-prose th-text-body mt-4 text-[15px] leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: entry.html }}
+              />
             </div>
           </article>
         );

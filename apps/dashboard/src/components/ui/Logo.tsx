@@ -11,4 +11,4 @@ const Logo: React.FC<LogoProps> = ({ className = '', color = '#fff' }) => {
   );
 };
 
-export default Logo; 
+export default Logo;

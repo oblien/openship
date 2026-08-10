@@ -1,0 +1,140 @@
+{
+  "available": true,
+  "verified": true,
+  "id": "minio",
+  "name": "MinIO",
+  "description": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it, or bind a bucket straight into another project's uploads.",
+  "kind": "template",
+  "logo": "minio",
+  "category": "database",
+  "tags": [
+    "storage",
+    "s3",
+    "object-storage"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "minio",
+      "image": "minio/minio:latest",
+      "command": "server /data --console-address :9001",
+      "ports": [
+        "9000:9000",
+        "9001:9001"
+      ],
+      "exposedPort": 9001,
+      "routes": [
+        { "port": 9001 },
+        { "port": 9000, "slugSuffix": "s3" }
+      ],
+      "exposed": true,
+      "environment": {
+        "MINIO_BROWSER_REDIRECT_URL": "{{publicUrl:minio}}"
+      },
+      "secretEnv": [
+        "MINIO_ROOT_PASSWORD"
+      ],
+      "volumes": [
+        "minio_data:/data"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "MINIO_ROOT_USER",
+      "service": "minio",
+      "label": "Root user (access key)",
+      "help": "The console + S3 admin username. Minimum 3 characters.",
+      "type": "text",
+      "default": "minio",
+      "required": true
+    },
+    {
+      "key": "MINIO_ROOT_PASSWORD",
+      "service": "minio",
+      "label": "Root password (secret key)",
+      "help": "Auto-generated. The S3 admin secret — shown once after install.",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "OPENSHIP_BUCKET",
+      "service": "minio",
+      "label": "First bucket",
+      "help": "Created on the first deploy so an app can use this storage immediately. More can be added from the console.",
+      "type": "text",
+      "default": "uploads",
+      "required": true
+    }
+  ],
+  "prepare": [
+    {
+      "service": "minio",
+      "command": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" > /dev/null && mc mb --ignore-existing \"local/$OPENSHIP_BUCKET\" > /dev/null && printf '%s' \"$OPENSHIP_BUCKET\"",
+      "capture": "bucket",
+      "phase": "post-ready",
+      "readiness": {
+        "test": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\"",
+        "interval": 1000,
+        "retries": 30
+      },
+      "once": true
+    }
+  ],
+  "endpoints": [
+    { "service": "minio", "port": 9001, "label": "Console", "kind": "http" },
+    { "service": "minio", "port": 9000, "label": "S3 API", "kind": "http" }
+  ],
+  "connection": {
+    "title": "S3 connection",
+    "description": "Use these with any S3 client — the endpoint is the S3 API URL, the keys are the root user / password.",
+    "outputs": [
+      { "id": "console", "label": "Console", "source": "publicUrl:minio:9001", "kind": "url" },
+      {
+        "id": "endpoint",
+        "label": "S3 endpoint",
+        "source": "publicUrl:minio:9000",
+        "service": "minio",
+        "envKey": "S3_ENDPOINT",
+        "recommended": true
+      },
+      {
+        "id": "accessKey",
+        "label": "Access key",
+        "source": "env:minio:MINIO_ROOT_USER",
+        "service": "minio",
+        "envKey": "S3_ACCESS_KEY_ID",
+        "recommended": true
+      },
+      {
+        "id": "secretKey",
+        "label": "Secret key",
+        "source": "env:minio:MINIO_ROOT_PASSWORD",
+        "service": "minio",
+        "envKey": "S3_SECRET_ACCESS_KEY",
+        "secret": true,
+        "recommended": true
+      },
+      {
+        "id": "bucket",
+        "label": "Bucket",
+        "source": "env:minio:OPENSHIP_BUCKET",
+        "service": "minio",
+        "envKey": "S3_BUCKET"
+      }
+    ],
+    "guide": {
+      "intro": "Your app gets an S3-compatible bucket it can write uploads to.",
+      "useHint": "Bind it from the consuming project's Configuration → Object storage to get the framework's own env names (Laravel gets FILESYSTEM_DISK + AWS_*), or wire these values by hand.",
+      "defaultMode": "internal"
+    }
+  },
+  "provides": [
+    {
+      "id": "s3",
+      "outputRefs": ["endpoint", "accessKey", "secretKey", "bucket"],
+      "category": "database"
+    }
+  ]
+}

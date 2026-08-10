@@ -15,6 +15,8 @@ import {
   advisoryManifestUrl,
   parseManifest,
   resolveUpdateState,
+  matchAdvisories,
+  type AdvisoryMode,
   compareSemver,
   type AdvisoryManifest,
   type LatestRelease,
@@ -148,6 +150,13 @@ export interface UseUpdates {
   latest: LatestRelease | null;
   muted: boolean;
   desktop: boolean;
+  /**
+   * Which install this is — the same value advisories are filtered on. Surfaces
+   * need it to offer the RIGHT action: desktop drives the native updater,
+   * self-hosted has to run the CLI on the host, cloud has nothing to update.
+   * "cloud" until deployment info loads, so nothing suggests a wrong action.
+   */
+  mode: AdvisoryMode;
   /** The version to celebrate in a "what's new" notice, or null. */
   whatsNewVersion: string | null;
   dismissAdvisory: (id: string) => void;
@@ -180,6 +189,17 @@ export function useUpdates(): UseUpdates {
   const [updateProgress, setUpdateProgress] = useState(0);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
+  // Which install is this? Mode-targeted advisories are filtered on it, so a
+  // desktop-installer notice never reaches a VPS dashboard and an edge/compose
+  // notice never reaches the desktop app. Desktop wins over selfHosted: the
+  // Electron app reports selfHosted too, but it updates through its own
+  // installer, not by the operator upgrading a server.
+  const mode: AdvisoryMode = isDesktop()
+    ? "desktop"
+    : deployInfo?.selfHosted
+      ? "selfhosted"
+      : "cloud";
+
   const load = useCallback(async () => {
     // Desktop + self-hosted operators control their own install → the GitHub
     // update + advisory feed below. The managed SaaS (cloud) has nothing to
@@ -191,7 +211,7 @@ export function useUpdates(): UseUpdates {
       if (!deployInfo) return; // deploy info still loading — not yet known to be cloud
       const [prefs, manifest] = await Promise.all([getPrefs(), fetchNotices()]);
       setMutedState(prefs.muted);
-      const advisories = manifest.advisories
+      const advisories = matchAdvisories(deployInfo.version ?? "", manifest, mode)
         .filter((a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)))
         .sort((x, y) => (SEVERITY_RANK[x.severity] ?? 9) - (SEVERITY_RANK[y.severity] ?? 9));
       setState({
@@ -230,8 +250,9 @@ export function useUpdates(): UseUpdates {
       manifest: remote.manifest,
       dismissed: prefs.dismissed,
       muted: prefs.muted,
+      mode,
     });
-    const noticeAdvisories = notices.advisories.filter(
+    const noticeAdvisories = matchAdvisories(current, notices, mode).filter(
       (a) => a.severity === "critical" || (!prefs.muted && !prefs.dismissed.includes(a.id)),
     );
     const advisories = [...base.advisories, ...noticeAdvisories]
@@ -246,7 +267,7 @@ export function useUpdates(): UseUpdates {
     } else if (compareSemver(current, prefs.lastSeen) > 0) {
       setWhatsNewVersion(current);
     }
-  }, [deployInfo?.version, deployInfo?.selfHosted]);
+  }, [deployInfo?.version, deployInfo?.selfHosted, mode]);
 
   useEffect(() => {
     void load();
@@ -324,9 +345,13 @@ export function useUpdates(): UseUpdates {
       .catch(() => setUpdatePhase("idle"));
   }, []);
 
-  // Force a fresh GitHub check (the session cache is otherwise reused).
+  // Force a fresh GitHub check (the session cache is otherwise reused). Also
+  // prime the desktop main process so its pending-update state — which the
+  // native wizard + install act on — re-checks in lockstep with the renderer,
+  // instead of only being set by the boot check.
   const refresh = useCallback(() => {
     remoteCache = null;
+    void window.desktop?.updates?.check?.();
     void load();
   }, [load]);
 
@@ -335,6 +360,7 @@ export function useUpdates(): UseUpdates {
     latest,
     muted,
     desktop: isDesktop(),
+    mode,
     whatsNewVersion,
     dismissAdvisory,
     dismissWhatsNew,

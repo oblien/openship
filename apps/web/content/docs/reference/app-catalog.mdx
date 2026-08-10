@@ -1,0 +1,407 @@
+---
+title: App catalog JSON
+description: The complete field reference for an Openship App definition — the JSON that turns a set of containers into a one-click install, with generated secrets, a curated settings form, and a connection card.
+---
+
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+An **App** is a JSON file that wraps a deployment into a one-click, focused experience. Instead of
+creating a project, adding a service per container, hand-writing the images and the env that wire
+them together, generating and matching a database password across two services, and then hunting
+through raw env tabs to change a setting — you click the app, fill a short form, and deploy.
+
+So an App is **not a new runtime**. It is metadata over the normal
+[multi-service deploy](/docs/guides/compose-multi-service): a repo-less `services` project marked
+`isApp`. Same engine underneath, much shorter path for the user. This page documents every field you
+can author. To actually submit one, see [Add an app](/docs/guides/add-an-app).
+
+Add the `$schema` line for editor autocomplete and inline validation:
+
+```json
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "id": "it-tools",
+  "name": "IT-Tools",
+  "kind": "template",
+  "category": "other"
+}
+```
+
+It is **JSON, not JSONC** — no comments, no trailing commas.
+
+<Callout title="Unknown keys are ignored, not rejected">
+The validator strips keys it does not recognize instead of failing. That is deliberate: it is what
+lets a newer app definition stay installable on an older Openship, and it is why growth is always
+additive. The trade-off is that a **misspelled field name fails silently** — it is dropped, not
+reported, by both the published schema and the server. So keep the `$schema` line and let your editor
+autocomplete field names rather than typing them from memory.
+</Callout>
+
+## Two kinds
+
+| `kind` | What it does |
+|---|---|
+| **`template`** | Instantiates the `services` defined in the entry (a backend plus its database, a CMS plus its database, …) and deploys them through the compose/services path. This is the common case. |
+| **`flow`** | Provisioning already has a bespoke wizard (for example the mail stack). The entry just points at that wizard via `flowHref`; it does **not** instantiate services. |
+
+## Top level
+
+<TypeTable
+  type={{
+    id: { type: 'string', description: 'Stable kebab-case slug. Must match the filename and be globally unique.', required: true },
+    name: { type: 'string', description: 'Display name shown in the catalog.', required: true },
+    description: { type: 'string', description: 'One-line summary shown on the catalog card.', required: true },
+    kind: { type: '"template" | "flow"', description: 'template instantiates services; flow points at a bespoke wizard.', required: true },
+    logo: { type: 'string', description: 'A simpleicons slug, or an id mapped to a vendored SVG. See Add an app.', required: true },
+    category: { type: '"backend" | "database" | "cms" | "mail" | "analytics" | "automation" | "other"', description: 'Catalog grouping. Closed enum — an unknown value fails validation.', required: true },
+    tags: { type: 'string[]', description: 'Free-form keywords used for catalog search.' },
+    framework: { type: 'string', description: 'Stack slug for the created project. Usually "docker-compose" for template apps.' },
+    services: { type: 'TemplateServiceSpec[]', description: 'The containers to run. Required in practice for template apps.' },
+    configFields: { type: 'AppConfigField[]', description: 'Machine-generated or derived env. Never rendered as a form input.' },
+    flowHref: { type: 'string', description: 'For kind:"flow" — internal route of the bespoke wizard. Must start with "/".' },
+    settings: { type: 'AppSettingGroup[]', description: 'The curated settings form, and the install wizard inputs.' },
+    management: { type: 'object', description: 'Override how the installed app is managed. See Management.' },
+    prepare: { type: 'PrepareStep[]', description: 'Commands run inside a service container after start.' },
+    connection: { type: 'object', description: 'The post-install Connection card. See Connection.' },
+    endpoints: { type: 'Endpoint[]', description: 'How the install wizard offers to expose each port.' },
+    files: { type: 'FileSpec[]', description: 'Generated config files bind-mounted into a container.' },
+    provides: { type: 'Provides[]', description: 'Connectable bundles this app advertises to other projects.' },
+    requires: { type: 'Requires[]', description: 'Connections this app needs from another project.' },
+    available: { type: 'boolean', description: 'false or omitted → shown dimmed as "coming soon" and not installable (enforced server-side too).' },
+    verified: { type: 'boolean', description: 'Curated-catalog marker. Forced by the server on custom uploads — authoring it has no effect.' },
+    schemaVersion: { type: 'number', description: 'JSON shape revision. Defaults to 1. See Stability and versioning.' },
+    minEngine: { type: 'string (semver)', description: 'Minimum Openship version required to install this app.' },
+    updatedAt: { type: 'string', description: 'Informational last-updated stamp.' },
+    repository: { type: 'string (URL)', description: 'Upstream source repository. Must be a valid URL.' },
+  }}
+/>
+
+## Services
+
+Each entry becomes one container in the created project.
+
+<Callout title="Service name is the hostname">
+Services reach each other by `name` on the project network. A service named `ghost-db` is reachable
+at the host `ghost-db` — which is why a database host in `environment` is just the plain service
+name, never an IP or a localhost address.
+</Callout>
+
+<TypeTable
+  type={{
+    name: { type: 'string', description: 'Service name, and its hostname on the project network.', required: true },
+    image: { type: 'string', description: 'Container image. Pin a version — unpinned tags are rejected in review.', required: true },
+    ports: { type: 'string[]', description: 'Compose-style port strings, e.g. ["2368:2368"].' },
+    exposedPort: { type: 'number', description: 'The container port that receives the public route.' },
+    exposed: { type: 'boolean', description: 'Marks this service as the one that gets a public route.' },
+    routes: { type: '{ port, slugSuffix? }[]', description: 'For a service needing more than one public port. slugSuffix distinguishes the extra hostname.' },
+    environment: { type: 'Record<string, string>', description: 'Non-secret env defaults. Supports placeholders.' },
+    secretEnv: { type: 'string[]', description: 'Env keys on this service that are secrets — forced encrypted and never written as plaintext, whether the value comes from environment or a configField.' },
+    volumes: { type: 'string[]', description: 'Compose-style volumes. Named volumes are project-scoped.' },
+    dependsOn: { type: 'string[]', description: 'Other service names this one starts after.' },
+    healthcheck: { type: 'ComposeHealthcheck', description: '{ test, interval, timeout, retries, startPeriod, disable }. disable:true turns off an image baked-in check.' },
+    restart: { type: '"no" | "always" | "on-failure" | "unless-stopped"', description: 'Restart policy.' },
+    command: { type: 'string', description: 'Override the container command.' },
+  }}
+/>
+
+## Two field systems
+
+The single most common authoring mistake is mixing these up. There are **two** places to declare env,
+split by *role*:
+
+| | `configFields` | `settings` with `installStep: true` |
+|---|---|---|
+| For | **Machine**-generated or derived env | **Human** inputs the wizard renders |
+| Rendered as a form input? | **No** — resolved server-side | **Yes** — text, select, number, … |
+| Typical use | `generate: "secret"` / `"jwt"`, `generateGroup` | a name, a toggle, a chosen option |
+
+If you want the user to **fill it in**, it is an `installStep` setting — not a `configField`. Use
+`configFields` only for values the operator never types.
+
+## configFields
+
+Generated or derived env only. Each entry maps to one env `key` on one `service`.
+
+<TypeTable
+  type={{
+    key: { type: 'string', description: 'Env key this value writes to.', required: true },
+    service: { type: 'string', description: 'Service whose env receives it. Must name a declared service.', required: true },
+    label: { type: 'string', description: 'Human label, used in summaries.', required: true },
+    help: { type: 'string', description: 'Longer explanation.' },
+    type: { type: '"text" | "password"', description: 'Presentation hint.' },
+    default: { type: 'string', description: 'Default value when nothing is generated.' },
+    generate: { type: '"secret" | "jwt"', description: 'secret = random value the operator never types. jwt = a signed key (Supabase anon / service_role).' },
+    generateGroup: { type: 'string', description: 'Fields sharing a group get the SAME generated value — how a database password matches on both sides.' },
+    jwtSecretGroup: { type: 'string', description: 'For generate:"jwt" — the generateGroup holding the signing secret. Must match a declared generateGroup.' },
+    jwtRole: { type: 'string', description: 'Role claim baked into the generated JWT.' },
+    required: { type: 'boolean', description: 'Must resolve to a value.' },
+    secret: { type: 'boolean', description: 'Store encrypted and mask on display.' },
+  }}
+/>
+
+```json
+"configFields": [
+  { "key": "MYSQL_ROOT_PASSWORD", "service": "ghost-db", "label": "Database password",
+    "generate": "secret", "generateGroup": "ghostdb", "secret": true },
+  { "key": "database__connection__password", "service": "ghost", "label": "Ghost DB password",
+    "generate": "secret", "generateGroup": "ghostdb", "secret": true }
+]
+```
+
+Both fields share `generateGroup: "ghostdb"`, so one generated password is written to both sides and
+the two always match.
+
+## Settings
+
+The curated settings form, grouped. A field with `installStep: true` is also collected in the
+install wizard — **this is the human-input surface**. Everything else is day-2 configuration.
+Validation is enforced live in the form **and** server-side on save.
+
+Groups:
+
+<TypeTable
+  type={{
+    id: { type: 'string', description: 'Stable group id.', required: true },
+    label: { type: 'string', description: 'Group heading.', required: true },
+    description: { type: 'string', description: 'Group help text.' },
+    fields: { type: 'AppSettingField[]', description: 'The fields in this group.', required: true },
+  }}
+/>
+
+Fields:
+
+<TypeTable
+  type={{
+    key: { type: 'string', description: 'Env key this field writes to.', required: true },
+    service: { type: 'string', description: 'Service whose env it writes to. Must name a declared service.', required: true },
+    label: { type: 'string', description: 'Field label.', required: true },
+    type: { type: '"text" | "password" | "boolean" | "select" | "number" | "multiselect" | "radio" | "textarea"', description: 'Input type.', required: true },
+    help: { type: 'string', description: 'Help text under the input.' },
+    options: { type: '{ value, label }[]', description: 'Choices for select, radio, and multiselect.' },
+    separator: { type: 'string', description: 'For multiselect — how chosen values are joined into the env value.' },
+    min: { type: 'number', description: 'Minimum, for type:"number".' },
+    max: { type: 'number', description: 'Maximum, for type:"number".' },
+    step: { type: 'number', description: 'Step, for type:"number".' },
+    integer: { type: 'boolean', description: 'Require a whole number.' },
+    pattern: { type: 'string', description: 'Regex the value must match.' },
+    patternError: { type: 'string', description: 'Message shown when pattern fails.' },
+    default: { type: 'string', description: 'Prefilled value.' },
+    placeholder: { type: 'string', description: 'Input placeholder.' },
+    secret: { type: 'boolean', description: 'Store encrypted and mask on display.' },
+    trueValue: { type: 'string', description: 'For type:"boolean" — env value written when on (e.g. "1", "yes").' },
+    falseValue: { type: 'string', description: 'For type:"boolean" — env value written when off.' },
+    requiresRedeploy: { type: 'boolean', description: 'Changing this field needs a redeploy to take effect; the UI says so.' },
+    advanced: { type: 'boolean', description: 'Collapse into the advanced section.' },
+    installStep: { type: 'boolean', description: 'Also collect this field in the install wizard.' },
+    required: { type: 'boolean', description: 'Gate install or save on a value being present.' },
+    showIf: { type: '{ field, service?, equals?, truthy? }', description: 'Conditional visibility. equals or truthy only — no expressions.' },
+  }}
+/>
+
+## Connection
+
+The post-install **Connection card**: the URLs and keys a user needs, plus the handover into another
+project.
+
+<TypeTable
+  type={{
+    title: { type: 'string', description: 'Card heading.' },
+    description: { type: 'string', description: 'Card intro copy.' },
+    outputs: { type: 'Output[]', description: 'The values shown. See below.', required: true },
+    guide: { type: '{ intro?, useHint?, defaultMode? }', description: 'Guidance copy. defaultMode ("internal" | "public") preselects which form of the values is shown first.' },
+    firstLogin: { type: '{ username?, password?, note? }', description: 'Static default credentials the app ships with (for example Grafana admin/admin). Fixed values, not resolved from a running service — which is why they cannot live in outputs.' },
+  }}
+/>
+
+Each output:
+
+<TypeTable
+  type={{
+    id: { type: 'string', description: 'Stable id. Referenced by provides.outputRefs.', required: true },
+    label: { type: 'string', description: 'Row label.', required: true },
+    source: { type: 'string', description: 'Where the value comes from. See Output sources.', required: true },
+    help: { type: 'string', description: 'Row help text.' },
+    secret: { type: 'boolean', description: 'Mask the value with a reveal action.' },
+    envKey: { type: 'string', description: 'Env key to prefill when handing this value to another project.' },
+    service: { type: 'string', description: 'Source service alias. Authoritative for internal-mode host rewriting — set it when a template: source cannot carry the service.' },
+    recommended: { type: 'boolean', description: 'Highlight this output in the "Use in a project" handover.' },
+    sourceLabel: { type: 'string | localized', description: 'Labels the primary value when variants are present.' },
+    variants: { type: '{ id, label, source }[]', description: 'Labeled alternative forms of the same value — for example a public URL versus an internal-network URL. Rendered as a switch.' },
+    width: { type: '"full" | "half"', description: 'half pairs two short outputs on one line (for example user and password).' },
+    kind: { type: '"text" | "url"', description: 'url adds an open-in-new-tab action. Honored only when the resolved value is http(s).' },
+  }}
+/>
+
+### Output sources
+
+An output `source` (and each variant `source`) must match one of these three forms:
+
+| Form | Resolves to |
+|---|---|
+| `env:<service>:<KEY>` | That env value on that service |
+| `publicUrl:<service>` or `publicUrl:<service>:<port>` | The public URL for that service, optionally for a specific route |
+| `template:…` | A composed string, embedding `{{env:svc:KEY}}` placeholders |
+
+Anything else fails validation, and the `<service>` part must name a declared service.
+
+## Prepare
+
+Commands run **inside** a service container after it starts — never a host shell. Their stdout can
+be captured and persisted as an env var (this is how an app like Convex gets its admin key).
+
+<Callout title="Must be re-run safe">
+A prepare step can run again on a later deploy. Write it idempotently, or gate it with `once`.
+</Callout>
+
+<TypeTable
+  type={{
+    service: { type: 'string', description: 'Service whose container runs the command. Must name a declared service.', required: true },
+    command: { type: 'string', description: 'Command to run inside the container.', required: true },
+    capture: { type: 'string', description: 'Name for the captured stdout.', required: true },
+    capturePattern: { type: 'string', description: 'Regex to extract the value out of noisier output.' },
+    persistAs: { type: '{ key, secret? }', description: 'Persist the captured value as this env key, optionally encrypted.' },
+    once: { type: 'boolean', description: 'Run on first install only, never on later deploys.' },
+    phase: { type: '"pre-deploy" | "post-start" | "post-ready"', description: 'When it runs. Defaults to post-start.' },
+    mustSucceed: { type: 'boolean', description: 'Fail the deploy if the step errors. Default false = advisory.' },
+    readiness: { type: '{ test, interval?, retries? }', description: 'For phase:"post-ready" — poll test via sh -c every interval ms up to retries before running.' },
+    title: { type: 'string | localized', description: 'Display copy for this step in the install stepper.' },
+    description: { type: 'string | localized', description: 'Longer display copy for the stepper.' },
+    icon: { type: 'string', description: 'Icon id for the stepper row.' },
+  }}
+/>
+
+<Callout title="phase: pre-deploy is reserved" type="warn">
+The schema accepts `"pre-deploy"`, but **the engine does not run it yet**. Do not rely on it. For
+pre-run database initialization use [`files`](#files) to write into
+`/docker-entrypoint-initdb.d`, combined with `dependsOn` and a `healthcheck`.
+</Callout>
+
+## Endpoints
+
+What the install wizard asks you about — how to ship each port. Omit `endpoints` entirely and
+Openship derives one `http` endpoint per exposed service.
+
+<TypeTable
+  type={{
+    service: { type: 'string', description: 'Service this port belongs to. Must name a declared service.', required: true },
+    port: { type: 'number', description: 'Container port.', required: true },
+    label: { type: 'string', description: 'How the wizard names this endpoint.', required: true },
+    kind: { type: '"http" | "tcp"', description: 'http is domain-routable; tcp is a raw port such as a database, with no domain.', required: true },
+    required: { type: 'boolean', description: 'The user must choose an exposure for it.' },
+    scope: { type: '"public" | "internal" | "local"', description: 'Declares reachability intent.' },
+    defaultMode: { type: '"domain" | "port" | "publish" | "internal"', description: 'Preselected exposure.' },
+    allowedModes: { type: 'string[]', description: 'Restrict which exposures are offered.' },
+  }}
+/>
+
+## Provides and requires
+
+The connection graph between projects. `provides` advertises a connectable bundle; `requires`
+declares a connection this app needs **from** another project — the install wizard then offers a
+same-org source picker and wires it in one shot. Same-org only, and always user-confirmed.
+
+<TypeTable
+  type={{
+    'provides[].id': { type: 'string', description: 'Bundle id.', required: true },
+    'provides[].outputRefs': { type: 'string[]', description: 'Ids of connection.outputs to include. Each must reference a real output.', required: true },
+    'provides[].category': { type: 'string', description: 'Bundle category, used for matching.' },
+    'requires[].id': { type: 'string', description: 'Requirement id.', required: true },
+    'requires[].label': { type: 'string | localized', description: 'How the wizard names what is needed.', required: true },
+    'requires[].envKey': { type: 'string', description: 'Env key the chosen connection is written to.', required: true },
+    'requires[].category': { type: 'string', description: 'Restrict candidate sources to this category.' },
+    'requires[].mode': { type: '"internal" | "public"', description: 'Which form of the source value to wire in.' },
+    'requires[].optional': { type: 'boolean', description: 'Install can proceed without it.' },
+  }}
+/>
+
+## Files
+
+Generated config files bind-mounted into a container at deploy — for apps that need a config *file*,
+not just env (an init `.sql`, for example). Supports [placeholders](#placeholders).
+
+<TypeTable
+  type={{
+    service: { type: 'string', description: 'Service to mount into. Must name a declared service.', required: true },
+    path: { type: 'string', description: 'Absolute path inside the container.', required: true },
+    content: { type: 'string', description: 'File contents.', required: true },
+  }}
+/>
+
+<Callout title="Self-hosted and desktop only" type="info">
+`files` are not applied on Openship Cloud.
+</Callout>
+
+## Management
+
+Overrides how the installed app is managed.
+
+| Value | Effect |
+|---|---|
+| `{ "kind": "schema" }` | Render the curated settings form from `settings`. |
+| `{ "kind": "custom", "href": "/emails" }` | Send the user to a bespoke surface instead. |
+
+Omit it and Openship derives the behavior: `schema` when `settings` exist, otherwise the raw project
+tabs.
+
+## Placeholders
+
+Resolved at install. Usable in `environment` values, `files[].content`, and `connection` outputs:
+
+| Placeholder | Resolves to |
+|---|---|
+| `{{publicUrl:<service>}}` | That service public URL. Add `:<port>` for a specific route. |
+| `{{config:<KEY>}}` | A generated config value by key — for example a `generate: "secret"`. |
+
+## Localized strings
+
+Several display-only fields accept either a plain string or an inline per-locale map:
+
+```json
+{ "title": { "en": "Creating the admin key", "ar": "إنشاء مفتاح المدير" } }
+```
+
+This applies to `prepare[].title`, `prepare[].description`, `requires[].label`,
+`connection.firstLogin.username` / `password` / `note`, `connection.guide.intro` / `useHint`,
+`connection.outputs[].sourceLabel`, and `variants[].label`.
+
+## Validation
+
+Beyond field types, these **referential** checks run at the gate — for both curated and custom
+apps — so a dangling reference fails immediately instead of at deploy time:
+
+- Every `service` reference resolves to a declared service — in `configFields`, `prepare`,
+  `endpoints`, `files`, `settings[].fields`, and `connection.outputs[].service`.
+- Every `connection.outputs[].source` and `variants[].source` matches
+  `env:<service>:<KEY>`, `publicUrl:<service>[:<port>]`, or `template:…`.
+- Every `provides[].outputRefs` entry names a real `connection.outputs[].id`.
+- Every `jwtSecretGroup` matches a declared `generateGroup`.
+- `flowHref` starts with `/` — it can never be an external URL.
+- `category` is one of the seven allowed values.
+
+## Stability and versioning
+
+The catalog JSON is a **stable, versioned public API**. Growth is additive and
+backward-compatible: new optional fields and new enum members default to prior behavior, and a field
+is never repurposed or removed within a schema version.
+
+<TypeTable
+  type={{
+    minEngine: { type: 'string (semver)', description: 'THE version knob. Minimum Openship version required to install this app. Set it to the release that introduced whatever capability the definition now uses.' },
+    schemaVersion: { type: 'number', description: 'The JSON shape revision, default 1. An instance refuses a shape newer than it understands. Bump only on a genuinely breaking shape change.' },
+  }}
+/>
+
+**One file per app — never author multiple versions.** The repo always holds the single latest file.
+An older instance simply keeps the copy bundled in its own build. When an instance is older than an
+app `minEngine`:
+
+- the app **is bundled** there → it keeps serving the bundled copy, and may note that an update is
+  available;
+- the app **is brand new** → the catalog shows a guided *Requires Openship ≥ X* card and install is
+  refused, client and server. Never a silent disappearance.
+
+## See also
+
+- [Add an app](/docs/guides/add-an-app) — how to submit one, and how to upload a custom app
+- [Apps API](/docs/api/apps) — the REST surface
+- [openship.json](/docs/reference/openship-json) — the per-repo deploy config

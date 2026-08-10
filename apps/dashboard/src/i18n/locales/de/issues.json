@@ -1,0 +1,92 @@
+{
+  "title": "Probleme",
+  "subtitle": "Alles, was Openship in deinen Projekten, Servern und Domains gefunden hat.",
+  "tabs": {
+    "open": "Offen",
+    "resolved": "Behoben"
+  },
+  "resolvedNote": "Der Verlauf umfasst Container- und Server-Vorfälle — die übrigen Prüfungen melden den aktuellen Zustand, ein behobenes Zertifikat oder Deployment verschwindet hier also einfach.",
+  "rescan": "Neu prüfen",
+  "rescanning": "Prüfung läuft",
+  "filters": {
+    "searchPlaceholder": "Probleme durchsuchen",
+    "all": "Alle",
+    "outage": "Ausfall",
+    "action_required": "Aktion nötig",
+    "advisory": "Hinweis",
+    "clear": "Filter zurücksetzen"
+  },
+  "scopes": {
+    "platform": "Openship",
+    "server": "Server",
+    "project": "Projekte",
+    "domain": "Domains"
+  },
+  "scopeSubtitles": {
+    "platform": "Diese Installation selbst",
+    "server": "Die Maschinen, auf denen deine Workloads laufen",
+    "project": "Bereitgestellte Projekte und ihre Container",
+    "domain": "Eigene Hostnamen und Zertifikate"
+  },
+  "kinds": {
+    "deploy_blocked": "Deployment blockiert",
+    "prompt": "Wartet auf eine Entscheidung",
+    "partial_decision": "Teilweises Release",
+    "routing_unsynced": "Routing nicht synchron",
+    "domain_unverified": "Domain nicht verifiziert",
+    "ssl_error": "Zertifikatsproblem",
+    "port_advisory": "Port-Hinweis",
+    "workload_unhealthy": "Health-Checks schlagen fehl",
+    "workload_crash_loop": "Crash-Loop",
+    "workload_down": "Container gestoppt",
+    "server_unreachable": "Server nicht erreichbar",
+    "edge_down": "Edge ist gestoppt",
+    "edge_absent": "Edge nicht installiert",
+    "mail_down": "Mail-Engine ist gestoppt",
+    "update_available": "Update verfügbar",
+    "component_behind": "Komponenten-Update verfügbar"
+  },
+  "since": "Beginn {when}",
+  "resolvedWhen": "Behoben {when}",
+  "expiresIn": "Abbruch in {n} Min.",
+  "view": "Ansehen",
+  "fix": "Beheben",
+  "install": "Installieren",
+  "update": "Update",
+  "mailSetup": "Mail-Setup",
+  "selfUpdateNote": "Diese Installation aktualisiert sich über die Kommandozeile.",
+  "empty": {
+    "openTitle": "Nichts benötigt Aufmerksamkeit",
+    "openBody": "Keine blockierten oder wartenden Deployments, keine Zertifikats- oder Domain-Probleme, nichts veraltet, nichts auf dem falschen Port. Die Prüfungen laufen im Hintergrund weiter.",
+    "resolvedTitle": "Keine behobenen Vorfälle",
+    "resolvedBody": "Container- und Server-Vorfälle erscheinen hier, sobald sie sich erholt haben, und werden 30 Tage aufbewahrt.",
+    "filteredTitle": "Keine Treffer",
+    "filteredBody": "Es gibt offene Probleme — keines entspricht diesem Filter."
+  },
+  "summary": {
+    "title": "Übersicht",
+    "subtitle": "Zustand auf einen Blick",
+    "totalOpen": "offen",
+    "totalResolved": "behoben",
+    "bySeverity": "Nach Schweregrad",
+    "byArea": "Nach Bereich"
+  },
+  "home": {
+    "attentionTitle": "Benötigt Aufmerksamkeit",
+    "attentionSubtitle": "Etwas ist defekt oder wartet auf dich",
+    "updatesTitle": "Updates verfügbar",
+    "updatesSubtitle": "Neue Versionen bereit zur Installation",
+    "more": "{n} weitere",
+    "hide": "Ausblenden, bis sich etwas ändert"
+  },
+  "loadFailed": "Probleme konnten nicht geladen werden",
+  "toast": {
+    "title": "Probleme",
+    "rescanned": "Prüfung abgeschlossen",
+    "rescanPartial": "Prüfung abgeschlossen, {n} Prüfung(en) fehlgeschlagen",
+    "rescanFailed": "Prüfung fehlgeschlagen",
+    "resolved": "Fertig",
+    "resolveFailed": "Diese Korrektur konnte nicht angewendet werden",
+    "confirmDestructive": "Das hat eine Nebenwirkung, die nicht rückgängig gemacht werden kann. Fortfahren?"
+  }
+}

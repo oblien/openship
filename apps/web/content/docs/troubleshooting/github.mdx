@@ -37,7 +37,10 @@ The deploy pipeline gives a more specific hint depending on where the build runs
 **"Run `gh auth login`, connect Openship Cloud, or set a per-project clone token in Settings."** A remote
 (server / cloud) build asks you to **"Install the Openship GitHub App on this owner, or set a per-project
 clone token in Settings."** — a `gh` CLI token is never shipped off the host, so a remote build needs the
-App or a token.
+App or a token. On a self-hosted **server** deploy you have more options: turn on **Settings → Clone
+credentials → "Forward my git identity to build servers"**, log the server itself into GitHub, or save a
+token/SSH key on the server. See [Git authentication for private repos](/docs/guides/git-authentication)
+for the full chain and how to enable each.
 </Callout>
 
 <Callout type="warn" title="“Openship Cloud is unreachable”">

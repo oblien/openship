@@ -1,4 +1,13 @@
 {
+  "ghCliConsent": {
+    "title": "Read your repositories?",
+    "body": "OpenShip can list your GitHub repositories using the gh CLI you're already logged into.",
+    "bodyWithLogin": "OpenShip can list your GitHub repositories using the gh CLI you're logged into as @{login}.",
+    "pointNoCloud": "Nothing is sent to the cloud — the list never leaves this machine.",
+    "pointDesktopOnly": "Runs only in the desktop app, using your local gh auth.",
+    "pointReadOnly": "Read-only: it lists repos so you can pick one to deploy.",
+    "allow": "Allow"
+  },
   "page": {
     "title": "New Project",
     "subtitle": "Import a repository, paste a URL, or start from a template",
@@ -11,31 +20,45 @@
   },
   "connect": {
     "connectGithub": "Connect GitHub",
-    "manageInSettings": "Manage in Settings",
+    "manageInSettings": "Other connection methods",
     "terminal": {
       "title": "Connect GitHub",
       "checkConnection": "Check Connection",
       "afterLogin": "After logging in, click \"Check Connection\" to continue."
     },
     "deviceFlow": {
-      "title": "Enter this code on GitHub",
+      "title": "Sign in to GitHub",
       "goToPrefix": "Go to",
-      "goToSuffix": "and enter the code above.",
-      "waiting": "Waiting for authorization…"
+      "goToSuffix": "Enter this code on GitHub to finish signing in.",
+      "waiting": "Waiting for authorization…",
+      "openGithub": "Open GitHub",
+      "copyCode": "Click to copy"
     },
     "default": {
       "title": "Connect GitHub to deploy",
       "descSelfHosted": "Pick how Openship reaches your repositories.",
       "descSaas": "Link your GitHub account to browse repos and deploy on every push.",
       "recommended": "Recommended",
-      "cloudApp": "Openship Cloud App",
-      "cloudAppDesc": "Deploy to remote servers with short-lived tokens.",
+      "cloudApp": "Openship Cloud GitHub App",
+      "cloudAppDesc": "Managed GitHub App — deploy to remote servers with short-lived tokens.",
       "connectCloud": "Connect Openship Cloud",
+      "manual": "Manual GitHub connection",
+      "manualDesc": "Set up in Settings — your own GitHub App/OAuth, or this instance's gh CLI. No Openship account.",
+      "manualCta": "Set up in Settings",
       "localBuilds": "Local builds",
-      "ghCli": "Log in with gh CLI",
-      "ghCliDesc": "Use your machine's GitHub login. No cloud needed.",
-      "useGhCli": "Use gh CLI",
-      "connecting": "Connecting…"
+      "ghCli": "Sign in with GitHub",
+      "ghCliDesc": "Browser sign-in with a device code. No app setup, no SSH, no Openship account.",
+      "useGhCli": "Sign in",
+      "connecting": "Connecting…",
+      "byoc": "SSH key or access token",
+      "byocDesc": "Bring your own credential — a deploy key per server, or a token. No sign-in.",
+      "byocCta": "Set up"
+    },
+    "token": {
+      "title": "Connect with a GitHub token",
+      "connect": "Connect",
+      "create": "Create a token on GitHub",
+      "failed": "Could not save the token."
     }
   },
   "folderUpload": {
@@ -120,6 +143,11 @@
     "repoCountSingular": "{count} repository",
     "repoCountPlural": "{count} repositories",
     "matching": "matching \"{query}\"",
+    "pagination": {
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}"
+    },
     "time": {
       "justNow": "just now",
       "minutesAgo": "{n}m ago",
@@ -146,7 +174,9 @@
     "notConnectedManage": "Not connected — manage in Settings",
     "optional": "Optional",
     "footnote": "Local library via gh CLI; remote deploys use short-lived tokens —",
-    "manageGithubSettings": "manage GitHub in Settings"
+    "manageGithubSettings": "manage GitHub in Settings",
+    "methodToken": "GitHub token",
+    "methodDevice": "GitHub sign-in"
   },
   "urlImport": {
     "invalidUrl": "Enter a valid GitHub repository URL",

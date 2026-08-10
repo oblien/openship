@@ -122,7 +122,7 @@ export function ServerModuleUpdates({ serverId }: { serverId: string }) {
                 type="button"
                 onClick={() => onUpdate(m)}
                 disabled={isBusy}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-warning-border bg-warning-bg px-3 py-1.5 text-xs font-medium text-warning transition-colors hover:bg-warning-bg disabled:opacity-50"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-warning-bg px-3 py-1.5 text-xs font-medium text-warning transition-colors hover:bg-warning/20 disabled:opacity-50"
               >
                 {isBusy ? <RefreshCw className="size-3.5 animate-spin" /> : <ArrowUpCircle className="size-3.5" />}
                 {isBusy ? "Updating…" : "Update"}

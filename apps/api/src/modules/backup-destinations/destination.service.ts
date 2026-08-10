@@ -13,40 +13,22 @@
 import { repos, type BackupDestination } from "@repo/db";
 import { type DestinationKind, type BackupDestinationRow } from "@repo/adapters";
 import crypto from "node:crypto";
-import path from "node:path";
-import { realpath } from "node:fs/promises";
+import { assertLocalEndpointInRoot } from "./local-path";
 import { encryptSecretField } from "../../lib/credential-encryption";
 import { assertResourceInOrg } from "../../lib/controller-helpers";
 import type { RequestContext } from "../../lib/request-context";
 import { env } from "../../config/env";
+import { assertPublicUrl, assertPublicHost } from "../../lib/ssrf-guard";
 import { toAdapterRow, hydrateServerAdapterRow } from "./hydrate-server";
 import { safeErrorMessage, type ConnectivityCode } from "@repo/core";
 import { runConnectivityCheck } from "../../lib/connectivity";
 import "../../lib/connectivity-checks"; // registers the backup-destination check
 
 /**
- * Resolve + sandbox a local destination endpoint. Refuses any path
- * that escapes `BACKUP_LOCAL_ROOT` or sits inside known system
- * directories. Symlinks are resolved before the comparison so an
- * attacker can't slip a symlink-into-/etc past the check.
- *
- * The realpath() will fail if the endpoint doesn't exist yet — we
- * fall back to resolving the parent + appending the leaf, which is
- * sufficient because the destination's writes go through fs.mkdir
- * later and a deceptive non-existent path can't outflank the check.
+ * Gate + sandbox a local destination endpoint. The env gates live here; the
+ * path rules live in local-path.ts (see it for why the deny list applies to
+ * the root rather than the endpoint).
  */
-const LOCAL_DEST_DENY = [
-  "/etc",
-  "/proc",
-  "/sys",
-  "/dev",
-  "/root",
-  "/var/lib/postgresql",
-  "/var/lib/docker",
-  "/var/lib/openship",
-  "/boot",
-];
-
 async function validateLocalEndpoint(endpoint: string): Promise<void> {
   if (env.CLOUD_MODE) {
     throw new Error("Local destinations are disabled in cloud mode");
@@ -56,47 +38,7 @@ async function validateLocalEndpoint(endpoint: string): Promise<void> {
       "Local destinations are disabled. Set BACKUP_ALLOW_LOCAL_DESTINATION=true and BACKUP_LOCAL_ROOT to enable.",
     );
   }
-  if (!path.isAbsolute(endpoint)) {
-    throw new Error("Local destination path must be absolute");
-  }
-  const root = path.resolve(env.BACKUP_LOCAL_ROOT);
-  const requested = path.resolve(endpoint);
-
-  // Reject any path that lands inside a denied system directory, even
-  // before we resolve symlinks (catches the obvious case + makes the
-  // error message useful).
-  for (const denied of LOCAL_DEST_DENY) {
-    if (requested === denied || requested.startsWith(denied + path.sep)) {
-      throw new Error(
-        `Local destination path is inside a protected directory (${denied})`,
-      );
-    }
-  }
-
-  // Resolve symlinks where possible. If the leaf doesn't exist yet,
-  // resolve the closest existing ancestor and append the remainder.
-  let resolved = requested;
-  try {
-    resolved = await realpath(requested);
-  } catch {
-    let parent = requested;
-    while (parent !== path.dirname(parent)) {
-      parent = path.dirname(parent);
-      try {
-        const real = await realpath(parent);
-        resolved = path.join(real, requested.slice(parent.length));
-        break;
-      } catch {
-        // keep walking up
-      }
-    }
-  }
-
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
-    throw new Error(
-      `Local destination must be inside BACKUP_LOCAL_ROOT (${root})`,
-    );
-  }
+  await assertLocalEndpointInRoot(endpoint, env.BACKUP_LOCAL_ROOT);
 }
 
 // ─── Public shapes ───────────────────────────────────────────────────────────
@@ -391,6 +333,13 @@ export async function updateDestination(
     }
     await validateLocalEndpoint(patch.endpoint);
   }
+  // SSRF (CLOUD_MODE): a PATCH can repoint endpoint/sshHost at an internal target,
+  // bypassing the create-time guard. Re-guard the EFFECTIVE (merged) values.
+  await assertDestinationTargetPublic({
+    kind: existing.kind,
+    endpoint: patch.endpoint !== undefined ? patch.endpoint : existing.endpoint,
+    sshHost: patch.sshHost !== undefined ? patch.sshHost : existing.sshHost,
+  });
 
   // Encrypt only the credential fields that are explicitly set in the
   // patch. undefined = leave unchanged; null = clear; string = replace.
@@ -446,6 +395,13 @@ export async function preflightDestination(
   assertResourceInOrg(row, "Destination", ctx.organizationId, id);
 
   try {
+    // Local destinations: run the same disabled/sandbox gate as create/update so a
+    // disabled instance or an out-of-root path returns the clean policy message
+    // instead of a raw fs error (ENOENT/EACCES) leaking from the adapter's mkdir.
+    if (row.kind === "local") await validateLocalEndpoint(row.endpoint ?? "");
+    // SSRF (CLOUD_MODE): the saved endpoint/sshHost may have been PATCHed to an
+    // internal target after create — re-guard s3/sftp before dialing.
+    await assertDestinationTargetPublic({ kind: row.kind, endpoint: row.endpoint, sshHost: row.sshHost });
     const adapterRow = await toAdapterRow(row);
     const result = await runConnectivityCheck("backup-destination", adapterRow);
     await repos.backupDestination.setLastVerified(
@@ -480,6 +436,9 @@ export async function preflightDraft(
     stored = (await repos.backupDestination.findById(existingId)) ?? null;
     assertResourceInOrg(stored, "Destination", ctx.organizationId, existingId);
   }
+
+  // SaaS SSRF guard — before the connectivity check touches the network.
+  await assertDestinationTargetPublic(input);
 
   // Non-secret: prefer the submitted value, else the stored one. Blank ("") is
   // treated as "not provided" so it never blanks a stored field mid-test.
@@ -522,6 +481,10 @@ export async function preflightDraft(
         sftpKeyPassphraseEnc: enc(input.sftpKeyPassphrase, stored?.sftpKeyPassphraseEnc ?? null),
       };
     }
+    // Local destinations: gate on the disabled/sandbox policy first (same as
+    // create/update) so "Test connection" surfaces the clean message rather than a
+    // raw mkdir ENOENT/EACCES from the adapter.
+    if (adapterRow.kind === "local") await validateLocalEndpoint(adapterRow.endpoint ?? "");
     const result = await runConnectivityCheck("backup-destination", adapterRow);
     return result.ok
       ? { ok: true, code: result.code }
@@ -533,9 +496,29 @@ export async function preflightDraft(
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
+/**
+ * SaaS SSRF guard: an authed org member must not aim a destination's
+ * connectivity check / upload at the control plane's own network (loopback /
+ * RFC1918 / 169.254 metadata / …). Self-hosted operators legitimately back up
+ * to their LAN, so this only applies on the multi-tenant SaaS (CLOUD_MODE).
+ */
+async function assertDestinationTargetPublic(input: {
+  kind: string;
+  endpoint?: string | null;
+  sshHost?: string | null;
+}): Promise<void> {
+  if (!env.CLOUD_MODE) return;
+  if (input.kind === "s3_compatible" && input.endpoint) {
+    await assertPublicUrl(input.endpoint, { allowHttp: true });
+  } else if (input.kind === "sftp" && input.sshHost) {
+    await assertPublicHost(input.sshHost);
+  }
+}
+
 async function validateInput(input: CreateDestinationInput): Promise<void> {
   if (!input.name?.trim()) throw new Error("Name is required");
   if (input.name.length > 80) throw new Error("Name is too long (max 80 chars)");
+  await assertDestinationTargetPublic(input);
 
   switch (input.kind) {
     case "s3_compatible":

@@ -6,6 +6,7 @@
  */
 
 import { parse as parseYaml } from "yaml";
+import { commandToArgv } from "@repo/core";
 import type { ComposeAdvanced, ComposeHealthcheck } from "@repo/core";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -32,6 +33,12 @@ export interface ComposeService {
   environmentMeta?: Record<string, ComposeEnvironmentMeta>;
   volumes: string[];
   command?: string;
+  /**
+   * #332: structured argv for the container Cmd. list-form → verbatim;
+   * string-form → shell-word-split. `null`/absent → no override (image CMD);
+   * `[]` → clear image CMD. `command` above is the display/legacy string.
+   */
+  commandArgv?: string[] | null;
   restart?: string;
   /** Extended compose fields (healthcheck, …) not warranting a top-level key. */
   advanced?: ComposeAdvanced;
@@ -46,6 +53,20 @@ export interface ComposeParseResult {
   services: ComposeService[];
   volumes: string[];
   networks: string[];
+  /**
+   * Variables the file marks mandatory (`${VAR:?msg}` / `${VAR?msg}`) that no
+   * `.env` or caller value satisfied. Reported, never thrown — see
+   * {@link parseComposeFile}.
+   */
+  missingRequired: ComposeMissingVariable[];
+}
+
+/** A mandatory compose variable with no value yet. */
+export interface ComposeMissingVariable {
+  variable: string;
+  /** The author's own word after `:?`, VERBATIM — never interpolated, so a
+   *  nested `${SECRET}` in the message can't ride out through a scan response. */
+  message?: string;
 }
 
 export interface ComposeEnvironmentMeta {
@@ -54,6 +75,9 @@ export interface ComposeEnvironmentMeta {
   defaultValue?: string;
   resolvedValue: string;
   expression?: string;
+  /** The file declares this one mandatory (`:?` / `?`). Only set when it also
+   *  came back unresolved, i.e. alongside `source: "missing"`. */
+  required?: boolean;
 }
 
 export interface ComposeParseOptions {
@@ -65,14 +89,34 @@ export interface ComposeParseOptions {
 
 // ─── Parser ──────────────────────────────────────────────────────────────────
 
+/**
+ * Parse a compose file. Throws ONLY when the file itself is unusable (invalid
+ * YAML) — never because a variable has no value.
+ *
+ * A mandatory-variable operator (`${VAR:?msg}`) is a hard stop for
+ * `docker compose up`, but every caller here is INSPECTING a file (import scan,
+ * server migration, redeploy drift) at a point where the user hasn't supplied
+ * values yet: that's the whole reason the wizard shows an env form. Throwing
+ * there took the entire repo load down with "Could not parse the Docker Compose
+ * file: set POSTGRES_PASSWORD in .env" (#472) and left no way forward. So an
+ * unsatisfied mandatory variable resolves to "" like any other unset one, marked
+ * `required` in `environmentMeta` (the wizard's "Needs value" state) and listed
+ * in `missingRequired`.
+ */
 export function parseComposeFile(content: string, options: ComposeParseOptions = {}): ComposeParseResult {
-  const doc = parseYaml(content);
+  // `merge: true` is required, not cosmetic: the parser defaults to YAML 1.2,
+  // where `<<` is an ordinary key. Compose files that hoist shared config into
+  // an anchor (`x-environment: &shared` + `<<: *shared`) otherwise lose every
+  // anchored value and carry a literal "<<" key through to the container env.
+  const doc = parseYaml(content, { merge: true });
 
   if (!doc || typeof doc !== "object") {
-    return { services: [], volumes: [], networks: [] };
+    return { services: [], volumes: [], networks: [], missingRequired: [] };
   }
 
   const interpolationEnv = buildInterpolationEnv(options);
+  const missingRequired = new Map<string, string | undefined>();
+  missingRequiredSinks.set(interpolationEnv, missingRequired);
   const rawServices = doc.services ?? {};
   const services: ComposeService[] = [];
 
@@ -93,7 +137,7 @@ export function parseComposeFile(content: string, options: ComposeParseOptions =
       environment: environment.values,
       ...(Object.keys(environment.metadata).length > 0 && { environmentMeta: environment.metadata }),
       volumes: parseVolumes(svc.volumes, interpolationEnv),
-      command: parseCommand(svc.command, interpolationEnv),
+      ...parseCommand(svc.command, interpolationEnv),
       restart: typeof svc.restart === "string" ? interpolateComposeString(svc.restart, interpolationEnv) : undefined,
       ...(advanced && { advanced }),
     });
@@ -102,7 +146,36 @@ export function parseComposeFile(content: string, options: ComposeParseOptions =
   const volumes = doc.volumes ? Object.keys(doc.volumes) : [];
   const networks = doc.networks ? Object.keys(doc.networks) : [];
 
-  return { services, volumes, networks };
+  return {
+    services,
+    volumes,
+    networks,
+    missingRequired: [...missingRequired].map(([variable, message]) => ({
+      variable,
+      ...(message && { message }),
+    })),
+  };
+}
+
+/**
+ * Where {@link resolveInterpolationExpression} reports unsatisfied mandatory
+ * variables. Keyed by the interpolation env object of the parse that's running,
+ * so a sink is scoped to one `parseComposeFile` call and there is no global state
+ * to reset — a resolver reached with any other env record (`.env` self-expansion
+ * in `parseComposeEnvFile`) simply has nowhere to report, which is fine.
+ */
+const missingRequiredSinks = new WeakMap<Record<string, string>, Map<string, string | undefined>>();
+
+function reportMissingRequired(
+  key: string,
+  rawWord: string,
+  env: Record<string, string>,
+): { value: string; source: "missing"; variable: string; required: true } {
+  const sink = missingRequiredSinks.get(env);
+  // First mention wins: the same variable is often required in several services
+  // and the first message is as good as the last.
+  if (sink && !sink.has(key)) sink.set(key, rawWord.trim() || undefined);
+  return { value: "", source: "missing", variable: key, required: true };
 }
 
 // ─── Field parsers ───────────────────────────────────────────────────────────
@@ -240,12 +313,25 @@ function parseVolumes(vols: unknown, env: Record<string, string>): string[] {
   });
 }
 
-function parseCommand(command: unknown, env: Record<string, string>): string | undefined {
-  if (typeof command === "string") return interpolateComposeString(command, env);
-  if (Array.isArray(command)) {
-    return command.map((part) => interpolateComposeString(String(part), env)).join(" ");
+/**
+ * Parse a compose `command` into BOTH a display string and structured argv (#332).
+ * docker-compose semantics: list → argv verbatim; string → shell-word-split into
+ * argv (NO implicit `sh -c` — a shell needs an explicit `sh -c`); absent → no
+ * override. The `command` string is kept for display / legacy compatibility.
+ */
+function parseCommand(
+  command: unknown,
+  env: Record<string, string>,
+): { command?: string; commandArgv?: string[] | null } {
+  if (typeof command === "string") {
+    const interpolated = interpolateComposeString(command, env);
+    return { command: interpolated, commandArgv: commandToArgv(interpolated) };
   }
-  return undefined;
+  if (Array.isArray(command)) {
+    const argv = command.map((part) => interpolateComposeString(String(part), env));
+    return { command: argv.join(" "), commandArgv: argv };
+  }
+  return {};
 }
 
 /**
@@ -260,7 +346,75 @@ function parseAdvanced(svc: Record<string, unknown>, env: Record<string, string>
   const healthcheck = parseHealthcheck(svc.healthcheck, env);
   if (healthcheck) advanced.healthcheck = healthcheck;
 
+  const resources = parseServiceResources(svc, env);
+  if (resources) advanced.resources = resources;
+
   return Object.keys(advanced).length > 0 ? advanced : undefined;
+}
+
+/**
+ * Compose memory string → MB. Accepts the byte-suffix forms compose allows
+ * (`512m`, `2g`, `1024k`, `1073741824`) plus the `2gb`/`512mb` spellings people
+ * actually write. Returns undefined for anything unparseable — a malformed
+ * limit must not silently become a tiny cap.
+ */
+function parseComposeMemory(raw: unknown): number | undefined {
+  if (typeof raw === "number") {
+    // Bare number = bytes (compose treats an unsuffixed value as bytes).
+    return raw > 0 ? Math.floor(raw / (1024 * 1024)) : undefined;
+  }
+  if (typeof raw !== "string") return undefined;
+  const m = raw.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*([kmgt]?)b?$/);
+  if (!m) return undefined;
+  const value = parseFloat(m[1]!);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  const factor: Record<string, number> = {
+    "": 1 / (1024 * 1024), // bytes → MB
+    k: 1 / 1024,
+    m: 1,
+    g: 1024,
+    t: 1024 * 1024,
+  };
+  const mb = value * (factor[m[2]!] ?? 1);
+  return mb >= 1 ? Math.floor(mb) : undefined;
+}
+
+/** Compose cpu string/number → fractional cores ("0.5", 2, "1.5"). */
+function parseComposeCpus(raw: unknown): number | undefined {
+  const n = typeof raw === "number" ? raw : typeof raw === "string" ? parseFloat(raw.trim()) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Normalize a service's own resource limits. Compose has two spellings and we
+ * honor both, with the swarm `deploy.resources.limits` block winning because
+ * it's the more specific/modern form when a file carries both.
+ */
+function parseServiceResources(
+  svc: Record<string, unknown>,
+  env: Record<string, string>,
+): { cpuCores?: number; memoryMb?: number } | undefined {
+  const interp = (v: unknown) =>
+    typeof v === "string" ? interpolateComposeString(v, env) : v;
+
+  let memoryMb = parseComposeMemory(interp(svc.mem_limit));
+  let cpuCores = parseComposeCpus(interp(svc.cpus));
+
+  const limits = (
+    (svc.deploy as Record<string, unknown> | undefined)?.resources as
+      | Record<string, unknown>
+      | undefined
+  )?.limits as Record<string, unknown> | undefined;
+  if (limits) {
+    memoryMb = parseComposeMemory(interp(limits.memory)) ?? memoryMb;
+    cpuCores = parseComposeCpus(interp(limits.cpus)) ?? cpuCores;
+  }
+
+  if (memoryMb === undefined && cpuCores === undefined) return undefined;
+  return {
+    ...(cpuCores !== undefined && { cpuCores }),
+    ...(memoryMb !== undefined && { memoryMb }),
+  };
 }
 
 /**
@@ -335,8 +489,9 @@ export function parseComposeEnvFile(content: string): Record<string, string> {
   const result: Record<string, string> = {};
   const literalKeys = new Set<string>();
 
-  for (const rawLine of content.replace(/^\uFEFF/, "").split(/\r?\n/)) {
-    let line = rawLine.trim();
+  const lines = content.replace(/^\uFEFF/, "").split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
     if (!line || line.startsWith("#")) continue;
     if (line.startsWith("export ")) line = line.slice("export ".length).trimStart();
 
@@ -346,7 +501,14 @@ export function parseComposeEnvFile(content: string): Record<string, string> {
     const key = line.slice(0, eqIdx).trim();
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
 
-    const parsed = parseEnvValue(line.slice(eqIdx + 1));
+    let rawValue = line.slice(eqIdx + 1);
+    const continued = joinQuotedContinuation(rawValue, lines, i);
+    if (continued) {
+      rawValue = continued.value;
+      i = continued.endLine;
+    }
+
+    const parsed = parseEnvValue(rawValue);
     result[key] = parsed.value;
     if (parsed.expand) literalKeys.delete(key);
     else literalKeys.add(key);
@@ -358,6 +520,25 @@ export function parseComposeEnvFile(content: string): Record<string, string> {
   }
 
   return result;
+}
+
+function joinQuotedContinuation(
+  rawValue: string,
+  lines: string[],
+  start: number,
+): { value: string; endLine: number } | undefined {
+  const value = rawValue.trimStart();
+  const quote = value[0];
+  if (quote !== '"' && quote !== "'") return undefined;
+  if (findClosingQuote(value, quote) >= 0) return undefined;
+
+  let joined = value;
+  for (let i = start + 1; i < lines.length; i++) {
+    joined += `\n${lines[i]}`;
+    if (findClosingQuote(joined, quote) >= 0) return { value: joined, endLine: i };
+  }
+
+  return undefined;
 }
 
 function parseEnvValue(rawValue: string): { value: string; expand: boolean } {
@@ -392,19 +573,60 @@ function findClosingQuote(value: string, quote: '"' | "'"): number {
   return -1;
 }
 
+const BARE_VARIABLE_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
+
+/**
+ * Reads the `${...}` expression opening at `start`, counting nested `${` so the
+ * matching close brace is found. Returns null when the expression is never closed.
+ */
+function readBracedExpression(
+  input: string,
+  start: number,
+): { expression: string; end: number } | null {
+  let depth = 1;
+  for (let i = start + 2; i < input.length; i++) {
+    if (input[i] === "$" && input[i + 1] === "{") {
+      depth++;
+      i++;
+    } else if (input[i] === "}" && --depth === 0) {
+      return { expression: input.slice(start + 2, i), end: i + 1 };
+    }
+  }
+  return null;
+}
+
 function interpolateComposeString(input: string, env: Record<string, string>): string {
   const escapedDollar = "\0COMPOSE_ESCAPED_DOLLAR\0";
   const protectedInput = input.replace(/\$\$/g, escapedDollar);
 
-  return protectedInput
-    .replace(
-      /\$(?:\{([^}]+)\}|([A-Za-z_][A-Za-z0-9_]*))/g,
-      (_match, braced: string | undefined, bare: string | undefined) =>
-        braced !== undefined
-          ? resolveInterpolationExpression(braced, env).value
-          : (env[bare!] ?? ""),
-    )
-    .replaceAll(escapedDollar, "$");
+  let out = "";
+  let cursor = 0;
+  while (cursor < protectedInput.length) {
+    const dollar = protectedInput.indexOf("$", cursor);
+    if (dollar < 0) break;
+    out += protectedInput.slice(cursor, dollar);
+    cursor = dollar + 1;
+
+    if (protectedInput[dollar + 1] === "{") {
+      const braced = readBracedExpression(protectedInput, dollar);
+      if (braced && braced.expression) {
+        out += resolveInterpolationExpression(braced.expression, env).value;
+        cursor = braced.end;
+        continue;
+      }
+    } else {
+      const bare = protectedInput.slice(dollar + 1).match(BARE_VARIABLE_RE);
+      if (bare) {
+        out += env[bare[0]] ?? "";
+        cursor = dollar + 1 + bare[0].length;
+        continue;
+      }
+    }
+
+    out += "$";
+  }
+
+  return (out + protectedInput.slice(cursor)).replaceAll(escapedDollar, "$");
 }
 
 function resolveComposeValue(
@@ -412,9 +634,9 @@ function resolveComposeValue(
   env: Record<string, string>,
 ): { value: string; meta?: ComposeEnvironmentMeta } {
   const trimmed = input.trim();
-  const directBraced = trimmed.match(/^\$\{([^}]+)\}$/s);
-  if (directBraced) {
-    const resolved = resolveInterpolationExpression(directBraced[1]!, env);
+  const directBraced = trimmed.startsWith("${") ? readBracedExpression(trimmed, 0) : null;
+  if (directBraced?.expression && directBraced.end === trimmed.length) {
+    const resolved = resolveInterpolationExpression(directBraced.expression, env);
     return {
       value: resolved.value,
       meta: {
@@ -423,6 +645,7 @@ function resolveComposeValue(
         defaultValue: resolved.defaultValue,
         resolvedValue: resolved.value,
         expression: trimmed,
+        ...(resolved.required && { required: true }),
       },
     };
   }
@@ -475,7 +698,13 @@ function resolveBareEnvironmentKey(
 function resolveInterpolationExpression(
   expression: string,
   env: Record<string, string>,
-): { value: string; source: ComposeEnvironmentMeta["source"]; variable?: string; defaultValue?: string } {
+): {
+  value: string;
+  source: ComposeEnvironmentMeta["source"];
+  variable?: string;
+  defaultValue?: string;
+  required?: boolean;
+} {
   const match = expression.match(/^([A-Za-z_][A-Za-z0-9_]*)(?:(:?[-+?])(.*))?$/s);
   if (!match) return { value: "", source: "missing" };
 
@@ -501,9 +730,11 @@ function resolveInterpolationExpression(
         return { value: fallback, source: "default", variable: key, defaultValue: fallback };
       }
     case ":?":
-      return { value: isNonEmpty ? value : "", source: isNonEmpty ? "env-file" : "missing", variable: key };
+      if (isNonEmpty) return { value, source: "env-file", variable: key };
+      return reportMissingRequired(key, rawWord, env);
     case "?":
-      return { value: hasValue ? value : "", source: hasValue ? "env-file" : "missing", variable: key };
+      if (hasValue) return { value, source: "env-file", variable: key };
+      return reportMissingRequired(key, rawWord, env);
     case ":+":
       if (!isNonEmpty) return { value: "", source: "missing", variable: key };
       {

@@ -1,0 +1,80 @@
+{
+  "available": true,
+  "verified": true,
+  "id": "qdrant",
+  "name": "Qdrant",
+  "description": "High-performance vector database for AI search, RAG, and embeddings — with the built-in Qdrant Web UI for browsing collections and running queries.",
+  "kind": "template",
+  "logo": "qdrant",
+  "category": "backend",
+  "tags": [
+    "database",
+    "vector",
+    "ai",
+    "search",
+    "rag",
+    "embeddings"
+  ],
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "qdrant",
+      "image": "qdrant/qdrant:v1.18.3",
+      "ports": [
+        "6333:6333"
+      ],
+      "exposedPort": 6333,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 6333
+        }
+      ],
+      "secretEnv": [
+        "QDRANT__SERVICE__API_KEY"
+      ],
+      "volumes": [
+        "qdrant_storage:/qdrant/storage"
+      ],
+      "restart": "unless-stopped"
+    }
+  ],
+  "configFields": [
+    {
+      "key": "QDRANT__SERVICE__API_KEY",
+      "service": "qdrant",
+      "label": "API key",
+      "help": "Auto-generated. Required as the `api-key` header on every request, and to open the Web UI.",
+      "generate": "secret",
+      "secret": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to Qdrant",
+    "description": "Open the Qdrant Web UI in your browser (it lives under /dashboard), or point a client at the REST API. Every request needs the API key below.",
+    "outputs": [
+      {
+        "id": "ui",
+        "label": "Qdrant Web UI",
+        "source": "publicUrl:qdrant",
+        "kind": "url",
+        "help": "The dashboard is at this URL under /dashboard. Paste the API key when it asks."
+      },
+      {
+        "id": "restUrl",
+        "label": "REST API",
+        "source": "publicUrl:qdrant"
+      },
+      {
+        "id": "apiKey",
+        "label": "API key",
+        "source": "env:qdrant:QDRANT__SERVICE__API_KEY",
+        "secret": true,
+        "help": "Send it as the `api-key` header on every request."
+      }
+    ]
+  }
+}

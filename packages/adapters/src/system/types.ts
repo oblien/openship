@@ -13,6 +13,8 @@
  *     otherwise require interactive input (ACME email, domain, etc.)
  */
 
+import type { ProxySettings } from "@repo/core";
+
 import type { PromptUserFn } from "../runtime/deploy-pipeline";
 
 // ─── Log streaming ───────────────────────────────────────────────────────────
@@ -126,6 +128,12 @@ export interface InstallerConfig {
    */
   edgePolicy?: EdgePolicy;
   /**
+   * Edge container image ref. The API pins this to its OWN version so the Lua
+   * baked into the edge can never skew from the API driving it; unset falls back
+   * to OPENSHIP_EDGE_IMAGE / registry+OPENSHIP_VERSION.
+   */
+  edgeImage?: string;
+  /**
    * Interactive hold: when the edge ports are held by a foreign proxy and no
    * edgePolicy is set, the installer pauses and asks via this callback — the
    * SAME mechanism as the deploy "a service is already running" prompt. Returns
@@ -164,7 +172,15 @@ export interface EdgeOccupant {
 
 export interface EdgeStatus {
   classification: EdgeClassification;
-  /** Foreign owners that must be resolved before we can bind 80/443. */
+  /**
+   * Owners that must be resolved before we can bind 80/443 — i.e. everything on
+   * the edge ports EXCEPT our own healthy edge container.
+   *
+   * A bare-host OpenResty belongs here even one an older Openship installed: the
+   * edge is a container now, so a host OpenResty is a proxy to migrate FROM like
+   * any other. Calling it "ours" was what let it keep :80 while the edge container
+   * crash-looped and every surface reported success.
+   */
   occupants: EdgeOccupant[];
   /** true for free | ours */
   canProceedClean: boolean;
@@ -193,12 +209,33 @@ export interface ImportedSite {
   serverNames: string[];
   /** Whether the source served this site over TLS. */
   ssl: boolean;
-  /** Where requests go: a reverse-proxy upstream, or a static docroot. */
+  /** Where requests go: a reverse-proxy upstream, or a static docroot. `target`
+   *  is the PRIMARY summary (the `/` location, or the first) kept single for
+   *  back-compat; `routes` below carries the full per-path set. */
   target:
     | { kind: "proxy"; url: string }
     | { kind: "static"; root: string };
+  /** Every reverse-proxy upstream this vhost serves, in source order, one per
+   *  location path (e.g. `/ → :1010`, `/v3 → :1020`). Absent for a static site.
+   *  Lets an importer keep a path-fan-out domain instead of collapsing to the
+   *  primary. `routes[].url` is the resolved `http://host:port` upstream. */
+  routes?: { path: string; url: string }[];
   /** Existing certificate paths, if the source terminated TLS itself (reusable). */
   tls?: { certPath: string; keyPath: string };
+  /**
+   * Curated reverse-proxy tunables read off the live vhost, ADOPTABLE — every value
+   * survived `sanitizeProxySettings`, so storing it on `routingConfig.proxy` renders
+   * back byte-identically. Migrating a foreign site carries these over instead of
+   * silently resetting it to nginx's 1 MB / 60 s defaults.
+   */
+  proxy?: ProxySettings;
+  /**
+   * The same directives exactly as the config declares them, INCLUDING values our
+   * validators reject (`20M`, `1d`, an nginx variable). Display-only: this is what
+   * the box serves, so the UI shows it rather than reporting "not set" for a limit
+   * that is very much set. Keyed by `ProxySettings` key, not directive name.
+   */
+  proxyRaw?: Record<string, string>;
   /** Source config file, for traceability. */
   source?: string;
 }

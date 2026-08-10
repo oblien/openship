@@ -37,26 +37,42 @@ export function buildMailServerRoutes(input: MailServerRouteInput): MailServerRo
 
 // ─── Internal: route construction ──────────────────────────────────────────
 
+/**
+ * The hostnames a mail-server install fronts, for one user domain.
+ *
+ * Exported so anything that needs to know "is this hostname a mail route?" reads
+ * it from HERE rather than re-deriving the prefixes. The edge-orphan sweep is the
+ * caller that matters: mail vhosts have no `domain` row, so without this they'd
+ * be reported as untracked on every scan. Re-deriving `mail.`/`api.mail.`/
+ * `autodiscover.` there would mean a prefix change silently starts flagging live
+ * mail routes as orphans.
+ */
+export function mailServerRouteHostnames(userDomain: string): string[] {
+  const d = userDomain;
+  return [`mail.${d}`, `api.mail.${d}`, `autodiscover.${d}`];
+}
+
 function buildRoutes(input: MailServerRouteInput): MailRoute[] {
   const d = input.userDomain;
+  const [clientHost, apiHost, autodiscoverHost] = mailServerRouteHostnames(d);
   return [
     {
       id: "mail-client",
-      hostname: `mail.${d}`,
+      hostname: clientHost!,
       targetUrl: input.zeroClientOrigin,
       tls: true,
       description: "Zero web client - the user-facing webmail UI.",
     },
     {
       id: "mail-api",
-      hostname: `api.mail.${d}`,
+      hostname: apiHost!,
       targetUrl: input.zeroServerOrigin,
       tls: true,
       description: "Zero server - tRPC API consumed by the Zero client (auth via Dovecot IMAP).",
     },
     {
       id: "autodiscover",
-      hostname: `autodiscover.${d}`,
+      hostname: autodiscoverHost!,
       targetUrl: input.openshipApiOrigin,
       tls: true,
       description: "Outlook / Thunderbird autodiscover XML - served by openship's API controller.",

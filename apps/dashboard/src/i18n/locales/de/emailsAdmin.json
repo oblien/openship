@@ -377,6 +377,16 @@
     "dismissLink": "Ich weiß, das ausblenden",
     "dismiss": "Schließen"
   },
+  "engine": {
+    "downTitle": "Die Mail-Engine auf diesem Server läuft nicht",
+    "downBody": "Solange sie gestoppt ist, wird keine Mail zugestellt oder angenommen, und jeder Tab hier braucht sie. Sie wieder zu starten ist sicher – es wird nichts neu installiert und keine Konfiguration geändert.",
+    "legacyNote": "Dieser Server nutzt die alte, direkt auf dem Host installierte Engine (systemd Postfix/Dovecot) – es gibt also keinen Container zum Prüfen.",
+    "start": "Engine starten",
+    "missingTitle": "Keine Mail-Engine auf diesem Server",
+    "missingBody": "Openship findet hier keine Mail-Engine – weder den Engine-Container noch die Postfix-/Dovecot-Units. Führe das Mail-Setup erneut aus, um sie neu zu installieren.",
+    "rerunSetup": "Mail-Setup erneut ausführen",
+    "cardBlocked": "Nicht verfügbar, bis die Mail-Engine läuft."
+  },
   "welcome": {
     "invalidEmail": "Gib eine gültige E-Mail-Adresse ein",
     "sendFailed": "Senden fehlgeschlagen",

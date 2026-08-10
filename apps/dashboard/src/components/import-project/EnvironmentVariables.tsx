@@ -15,11 +15,17 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { ENV_MASK, isMaskedValue } from "@repo/core";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 
+// #336: env values arrive masked as ENV_MASK (shared with the API via @repo/core
+// so the exact sentinel can't drift). A masked row keeps the sentinel in state —
+// a save round-trips it and the backend restores the stored secret; "show
+// values" reveals real values into a display-only overlay; editing a revealed
+// row replaces the sentinel with the typed value.
 type EnvironmentVariableRow = { key: string; value: string; visible: boolean };
 
 type EnvironmentVariableMeta = {
@@ -52,6 +58,13 @@ interface EnvironmentVariablesPropsOptional {
   envVars?: EnvironmentVariableRow[];
   envMeta?: Record<string, EnvironmentVariableMeta>;
   onEnvVarsChange?: (envVars: EnvironmentVariableRow[]) => void;
+  /**
+   * #336: fetch the REAL (unmasked) env values, keyed by env key. When provided
+   * and any row is masked (`••••••••`), a "Show values" toggle appears that
+   * reveals them in a display-only overlay. Omit when there's no reveal source
+   * (a new, unsaved service) — the toggle simply won't show.
+   */
+  onRevealAll?: () => Promise<Record<string, string>>;
 }
 
 const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
@@ -69,6 +82,7 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
   envVars: externalEnvVars,
   envMeta,
   onEnvVarsChange,
+  onRevealAll,
 }) => {
   const deployment = useOptionalDeployment();
   const { showToast } = useToast();
@@ -130,15 +144,86 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
     [currentEnvVars, updateEnvVars]
   );
 
+  // #336: display-only overlay of revealed real values (keyed by env key). Kept
+  // out of `currentEnvVars` on purpose: the row value stays the mask sentinel
+  // until the user actually edits it, so revealing never marks the form dirty
+  // and a save still round-trips the sentinel (backend keeps the stored secret).
+  const [revealedValues, setRevealedValues] = useState<Record<string, string> | null>(null);
+  // Which masked rows are currently SHOWN as text, keyed by env key — a local
+  // overlay, NOT the row's `visible` field. A masked row's value is a sentinel, so
+  // its visibility is a pure display concern; routing it through `updateEnvVars`
+  // would (a) mark the form dirty and (b) silently drop in the migration editor,
+  // whose Record<string,string> bridge (envToRows/rowsToEnv) can't carry `visible`.
+  // Keeping it here makes the eye work identically in every host.
+  const [shownKeys, setShownKeys] = useState<Set<string>>(() => new Set());
+  const [revealing, setRevealing] = useState(false);
+  const hasMaskedRow = currentEnvVars.some((env) => isMaskedValue(env.value));
+
+  // Fetch the real values from the server ONCE (via onRevealAll) into the overlay.
+  // The ref dedupes concurrent callers — a rapid double-click, or the header toggle
+  // racing a per-row eye — so onRevealAll fires a single time. Resolves to the map
+  // (null when no reveal source is wired) and rejects — after toasting — so callers
+  // bail without surfacing a second error.
+  const revealPromiseRef = useRef<Promise<Record<string, string>> | null>(null);
+  const ensureRevealed = useCallback(async (): Promise<Record<string, string> | null> => {
+    if (revealedValues) return revealedValues;
+    if (!onRevealAll) return null;
+    if (!revealPromiseRef.current) {
+      setRevealing(true);
+      revealPromiseRef.current = onRevealAll()
+        .then((vals) => {
+          setRevealedValues(vals);
+          return vals;
+        })
+        .catch((err) => {
+          showToast(ev.reveal?.error ?? "Failed to reveal values", "error", ev.toast.title);
+          throw err;
+        })
+        .finally(() => {
+          setRevealing(false);
+          revealPromiseRef.current = null;
+        });
+    }
+    return revealPromiseRef.current;
+  }, [revealedValues, onRevealAll, showToast, ev]);
+
+  // The per-row eye. A masked row holds only the sentinel: the first reveal fetches
+  // the real values from the server (once) and then this row is toggled shown/hidden
+  // via the local `shownKeys` overlay. A plaintext row (new / already-typed) is the
+  // plain local password/text flip on its own `visible` field.
   const toggleEnvVisibility = useCallback(
-    (index: number) => {
-      const newEnvVars = currentEnvVars.map((env, i) =>
-        i === index ? { ...env, visible: !env.visible } : env
+    async (index: number) => {
+      const target = currentEnvVars[index];
+      if (!target) return;
+      if (isMaskedValue(target.value)) {
+        if (onRevealAll && !(await ensureRevealed().catch(() => null))) return;
+        setShownKeys((prev) => {
+          const next = new Set(prev);
+          if (next.has(target.key)) next.delete(target.key);
+          else next.add(target.key);
+          return next;
+        });
+        return;
+      }
+      updateEnvVars(
+        currentEnvVars.map((env, i) => (i === index ? { ...env, visible: !env.visible } : env))
       );
-      updateEnvVars(newEnvVars);
     },
-    [currentEnvVars, updateEnvVars]
+    [currentEnvVars, updateEnvVars, onRevealAll, ensureRevealed]
   );
+
+  // Header "Show values" / "Hide values": reveal (fetch once) and show every masked
+  // row via the overlay so the button is meaningful on its own; hide clears the
+  // overlay and the shown set so nothing is left exposed.
+  const toggleRevealAll = useCallback(async () => {
+    if (revealedValues) {
+      setRevealedValues(null);
+      setShownKeys(new Set());
+      return;
+    }
+    if (!(await ensureRevealed().catch(() => null))) return;
+    setShownKeys(new Set(currentEnvVars.filter((e) => isMaskedValue(e.value)).map((e) => e.key)));
+  }, [revealedValues, ensureRevealed, currentEnvVars]);
 
   const handleKeyChange = (index: number, value: string) => {
     updateEnvVar(index, "key", value);
@@ -552,6 +637,20 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
               </button>
             </>
           )}
+          {/* #336: reveal masked values. Only when a reveal source is wired
+              (onRevealAll) and there's something masked, or already revealed. */}
+          {onRevealAll && (hasMaskedRow || revealedValues) && (
+            <button
+              type="button"
+              onClick={() => void toggleRevealAll()}
+              disabled={revealing}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground bg-muted/60 hover:bg-muted rounded-lg transition-colors disabled:opacity-50"
+              title={revealedValues ? ev.reveal?.hide : ev.reveal?.show}
+            >
+              {revealedValues ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+              {revealedValues ? ev.reveal?.hide : ev.reveal?.show}
+            </button>
+          )}
           {collapsible && (
             <button
               type="button"
@@ -616,9 +715,22 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                   } ${inputStateClass}`}
                 />
                 <div className="relative flex-1">
+                  {(() => {
+                    // #336: masked rows display the revealed overlay value when
+                    // shown; the underlying state stays the sentinel until edited
+                    // (see revealedValues). Real/typed rows display their own value
+                    // unchanged. Masked-row visibility is the local `shownKeys`
+                    // overlay; plaintext rows keep their own `visible` flag.
+                    const masked = isMaskedValue(env.value);
+                    const showAsText = masked ? shownKeys.has(env.key) : env.visible;
+                    const displayValue =
+                      masked && revealedValues && env.key in revealedValues
+                        ? revealedValues[env.key]
+                        : env.value;
+                    return (
                   <input
-                    type={env.visible ? "text" : "password"}
-                    value={env.value}
+                    type={showAsText ? "text" : "password"}
+                    value={displayValue}
                     onChange={(e) => handleValueChange(index, e.target.value)}
                     placeholder={ev.valuePlaceholder}
                     readOnly={!isEditingMode}
@@ -626,12 +738,18 @@ const EnvironmentVariables: React.FC<EnvironmentVariablesPropsOptional> = ({
                       !isEditingMode ? 'cursor-default bg-muted/20' : 'bg-muted/30'
                     } ${inputStateClass}`}
                   />
+                    );
+                  })()}
                   <button
-                    onClick={() => toggleEnvVisibility(index)}
+                    onClick={() => void toggleEnvVisibility(index)}
                     className="absolute end-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
                     type="button"
                   >
-                    {env.visible ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    {(isMaskedValue(env.value) ? shownKeys.has(env.key) : env.visible) ? (
+                      <EyeOff className="size-3.5" />
+                    ) : (
+                      <Eye className="size-3.5" />
+                    )}
                   </button>
                 </div>
 

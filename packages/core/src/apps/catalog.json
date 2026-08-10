@@ -1,0 +1,1834 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "available": true,
+      "verified": true,
+      "id": "mail",
+      "name": "Openship Mail",
+      "description": "A complete self-hosted mail server — SMTP/IMAP + webmail on your own domain.",
+      "kind": "flow",
+      "logo": "mail-webmail",
+      "category": "mail",
+      "tags": [
+        "mail",
+        "email",
+        "smtp",
+        "imap"
+      ],
+      "flowHref": "/apps/new/mail",
+      "management": {
+        "kind": "custom",
+        "href": "/emails"
+      }
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "supabase",
+      "name": "Supabase",
+      "description": "Full self-hosted Supabase — Postgres, Auth, REST, Realtime, Storage, and Studio behind one API gateway.",
+      "kind": "template",
+      "logo": "supabase",
+      "category": "backend",
+      "tags": [
+        "backend",
+        "database",
+        "postgres",
+        "auth",
+        "realtime",
+        "storage"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "db",
+          "image": "supabase/postgres:17.6.1.136",
+          "environment": {
+            "POSTGRES_HOST": "/var/run/postgresql",
+            "PGPORT": "5432",
+            "POSTGRES_PORT": "5432",
+            "PGPASSWORD": "{{config:POSTGRES_PASSWORD}}",
+            "PGDATABASE": "postgres",
+            "POSTGRES_DB": "postgres",
+            "JWT_EXP": "3600"
+          },
+          "volumes": [
+            "supabase_db_data:/var/lib/postgresql/data",
+            "supabase_db_config:/etc/postgresql-custom"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "pg_isready",
+              "-U",
+              "postgres",
+              "-h",
+              "localhost"
+            ],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 10
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "kong",
+          "image": "kong:3.9.1",
+          "exposedPort": 8000,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 8000
+            }
+          ],
+          "dependsOn": [
+            "auth",
+            "rest",
+            "realtime-dev.supabase-realtime",
+            "storage",
+            "meta",
+            "studio"
+          ],
+          "environment": {
+            "KONG_DATABASE": "off",
+            "KONG_DECLARATIVE_CONFIG": "/usr/local/kong/kong.yml",
+            "KONG_ROUTER_FLAVOR": "traditional_compatible",
+            "KONG_DNS_ORDER": "LAST,A,CNAME",
+            "KONG_PLUGINS": "request-transformer,cors,key-auth,acl,basic-auth,request-termination",
+            "KONG_NGINX_PROXY_PROXY_BUFFER_SIZE": "160k",
+            "KONG_NGINX_PROXY_PROXY_BUFFERS": "64 160k"
+          },
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "kong",
+              "health"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "auth",
+          "image": "supabase/gotrue:v2.189.0",
+          "dependsOn": [
+            "db"
+          ],
+          "environment": {
+            "GOTRUE_API_HOST": "0.0.0.0",
+            "GOTRUE_API_PORT": "9999",
+            "API_EXTERNAL_URL": "{{publicUrl:kong}}",
+            "GOTRUE_DB_DRIVER": "postgres",
+            "GOTRUE_DB_DATABASE_URL": "postgres://supabase_auth_admin:{{config:POSTGRES_PASSWORD}}@db:5432/postgres",
+            "GOTRUE_SITE_URL": "{{publicUrl:kong}}",
+            "GOTRUE_URI_ALLOW_LIST": "",
+            "GOTRUE_DISABLE_SIGNUP": "false",
+            "GOTRUE_JWT_ADMIN_ROLES": "service_role",
+            "GOTRUE_JWT_AUD": "authenticated",
+            "GOTRUE_JWT_DEFAULT_GROUP_NAME": "authenticated",
+            "GOTRUE_JWT_EXP": "3600",
+            "GOTRUE_JWT_SECRET": "{{config:JWT_SECRET}}",
+            "GOTRUE_EXTERNAL_EMAIL_ENABLED": "true",
+            "GOTRUE_MAILER_AUTOCONFIRM": "true",
+            "GOTRUE_EXTERNAL_PHONE_ENABLED": "false",
+            "GOTRUE_SMS_AUTOCONFIRM": "true"
+          },
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "wget",
+              "--no-verbose",
+              "--tries=1",
+              "--spider",
+              "http://localhost:9999/health"
+            ],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 3
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "rest",
+          "image": "postgrest/postgrest:v14.12",
+          "dependsOn": [
+            "db"
+          ],
+          "environment": {
+            "PGRST_DB_URI": "postgres://authenticator:{{config:POSTGRES_PASSWORD}}@db:5432/postgres",
+            "PGRST_DB_SCHEMAS": "public,storage,graphql_public",
+            "PGRST_DB_ANON_ROLE": "anon",
+            "PGRST_JWT_SECRET": "{{config:JWT_SECRET}}",
+            "PGRST_DB_USE_LEGACY_GUCS": "false",
+            "PGRST_APP_SETTINGS_JWT_SECRET": "{{config:JWT_SECRET}}",
+            "PGRST_APP_SETTINGS_JWT_EXP": "3600"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "realtime-dev.supabase-realtime",
+          "image": "supabase/realtime:v2.102.3",
+          "dependsOn": [
+            "db"
+          ],
+          "environment": {
+            "PORT": "4000",
+            "DB_HOST": "db",
+            "DB_PORT": "5432",
+            "DB_USER": "supabase_admin",
+            "DB_PASSWORD": "{{config:POSTGRES_PASSWORD}}",
+            "DB_NAME": "postgres",
+            "DB_AFTER_CONNECT_QUERY": "SET search_path TO _realtime",
+            "DB_ENC_KEY": "supabaserealtime",
+            "API_JWT_SECRET": "{{config:JWT_SECRET}}",
+            "SECRET_KEY_BASE": "{{config:SECRET_KEY_BASE}}",
+            "METRICS_JWT_SECRET": "{{config:JWT_SECRET}}",
+            "ERL_AFLAGS": "-proto_dist inet_tcp",
+            "DNS_NODES": "''",
+            "RLIMIT_NOFILE": "10000",
+            "APP_NAME": "realtime",
+            "SEED_SELF_HOST": "true",
+            "RUN_JANITOR": "true"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "storage",
+          "image": "supabase/storage-api:v1.60.4",
+          "dependsOn": [
+            "db",
+            "rest",
+            "imgproxy"
+          ],
+          "environment": {
+            "ANON_KEY": "{{config:ANON_KEY}}",
+            "SERVICE_KEY": "{{config:SERVICE_ROLE_KEY}}",
+            "POSTGREST_URL": "http://rest:3000",
+            "AUTH_JWT_SECRET": "{{config:JWT_SECRET}}",
+            "DATABASE_URL": "postgres://supabase_storage_admin:{{config:POSTGRES_PASSWORD}}@db:5432/postgres",
+            "FILE_SIZE_LIMIT": "52428800",
+            "STORAGE_BACKEND": "file",
+            "FILE_STORAGE_BACKEND_PATH": "/var/lib/storage",
+            "TENANT_ID": "stub",
+            "REGION": "stub",
+            "GLOBAL_S3_BUCKET": "stub",
+            "ENABLE_IMAGE_TRANSFORMATION": "true",
+            "IMGPROXY_URL": "http://imgproxy:5001"
+          },
+          "volumes": [
+            "supabase_storage_data:/var/lib/storage"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "wget",
+              "--no-verbose",
+              "--tries=1",
+              "--spider",
+              "http://127.0.0.1:5000/status"
+            ],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 3
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "imgproxy",
+          "image": "darthsim/imgproxy:v3.30.1",
+          "environment": {
+            "IMGPROXY_BIND": ":5001",
+            "IMGPROXY_LOCAL_FILESYSTEM_ROOT": "/",
+            "IMGPROXY_USE_ETAG": "true",
+            "IMGPROXY_ENABLE_WEBP_DETECTION": "true"
+          },
+          "volumes": [
+            "supabase_storage_data:/var/lib/storage"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "imgproxy",
+              "health"
+            ],
+            "interval": "5s",
+            "timeout": "5s",
+            "retries": 3
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "meta",
+          "image": "supabase/postgres-meta:v0.96.6",
+          "dependsOn": [
+            "db"
+          ],
+          "environment": {
+            "PG_META_PORT": "8080",
+            "PG_META_DB_HOST": "db",
+            "PG_META_DB_PORT": "5432",
+            "PG_META_DB_NAME": "postgres",
+            "PG_META_DB_USER": "postgres",
+            "PG_META_DB_PASSWORD": "{{config:POSTGRES_PASSWORD}}",
+            "CRYPTO_KEY": "{{config:PG_META_CRYPTO_KEY}}"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "studio",
+          "image": "supabase/studio:2026.07.07-sha-a6a04f2",
+          "dependsOn": [
+            "meta"
+          ],
+          "environment": {
+            "HOSTNAME": "0.0.0.0",
+            "STUDIO_PG_META_URL": "http://meta:8080",
+            "POSTGRES_PASSWORD": "{{config:POSTGRES_PASSWORD}}",
+            "POSTGRES_USER_READ_WRITE": "postgres",
+            "DEFAULT_ORGANIZATION_NAME": "Default Organization",
+            "DEFAULT_PROJECT_NAME": "Default Project",
+            "SUPABASE_URL": "http://kong:8000",
+            "SUPABASE_PUBLIC_URL": "{{publicUrl:kong}}",
+            "SUPABASE_ANON_KEY": "{{config:ANON_KEY}}",
+            "SUPABASE_SERVICE_KEY": "{{config:SERVICE_ROLE_KEY}}",
+            "AUTH_JWT_SECRET": "{{config:JWT_SECRET}}",
+            "PG_META_CRYPTO_KEY": "{{config:PG_META_CRYPTO_KEY}}",
+            "POSTGRES_HOST": "db",
+            "POSTGRES_PORT": "5432",
+            "POSTGRES_DB": "postgres",
+            "PGRST_DB_SCHEMAS": "public,storage,graphql_public"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "POSTGRES_PASSWORD",
+          "service": "db",
+          "label": "Database password",
+          "help": "Auto-generated. The password for the Postgres superuser and Supabase service roles.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "JWT_SECRET",
+          "service": "db",
+          "label": "JWT secret",
+          "help": "Auto-generated. Signs the anon and service_role API keys and every user session.",
+          "generate": "secret",
+          "generateGroup": "jwt",
+          "secret": true
+        },
+        {
+          "key": "ANON_KEY",
+          "service": "kong",
+          "label": "Anon key",
+          "help": "Auto-generated. The public API key for client-side (anonymous) requests.",
+          "generate": "jwt",
+          "jwtSecretGroup": "jwt",
+          "jwtRole": "anon"
+        },
+        {
+          "key": "SERVICE_ROLE_KEY",
+          "service": "kong",
+          "label": "Service role key",
+          "help": "Auto-generated. The secret API key that bypasses row-level security — keep it private.",
+          "generate": "jwt",
+          "jwtSecretGroup": "jwt",
+          "jwtRole": "service_role",
+          "secret": true
+        },
+        {
+          "key": "SECRET_KEY_BASE",
+          "service": "realtime-dev.supabase-realtime",
+          "label": "Realtime secret key base",
+          "help": "Auto-generated. Signs the Realtime service's internal tokens.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "PG_META_CRYPTO_KEY",
+          "service": "meta",
+          "label": "Metadata crypto key",
+          "help": "Auto-generated. Encrypts connection credentials stored by postgres-meta.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "DASHBOARD_PASSWORD",
+          "service": "kong",
+          "label": "Studio password",
+          "help": "Auto-generated. The password to sign in to Supabase Studio.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "DASHBOARD_USERNAME",
+          "service": "kong",
+          "label": "Studio username",
+          "help": "The username to sign in to Supabase Studio.",
+          "default": "supabase"
+        }
+      ],
+      "files": [
+        {
+          "service": "kong",
+          "path": "/usr/local/kong/kong.yml",
+          "content": "_format_version: \"3.0\"\n_transform: true\n\nconsumers:\n  - username: DASHBOARD\n  - username: anon\n    keyauth_credentials:\n      - key: {{config:ANON_KEY}}\n  - username: service_role\n    keyauth_credentials:\n      - key: {{config:SERVICE_ROLE_KEY}}\n\nacls:\n  - consumer: anon\n    group: anon\n  - consumer: service_role\n    group: admin\n\nbasicauth_credentials:\n  - consumer: DASHBOARD\n    username: {{config:DASHBOARD_USERNAME}}\n    password: {{config:DASHBOARD_PASSWORD}}\n\nservices:\n  - name: auth-v1-open\n    url: http://auth:9999/verify\n    routes:\n      - name: auth-v1-open\n        strip_path: true\n        paths:\n          - /auth/v1/verify\n    plugins:\n      - name: cors\n  - name: auth-v1-open-callback\n    url: http://auth:9999/callback\n    routes:\n      - name: auth-v1-open-callback\n        strip_path: true\n        paths:\n          - /auth/v1/callback\n    plugins:\n      - name: cors\n  - name: auth-v1-open-authorize\n    url: http://auth:9999/authorize\n    routes:\n      - name: auth-v1-open-authorize\n        strip_path: true\n        paths:\n          - /auth/v1/authorize\n    plugins:\n      - name: cors\n  - name: auth-v1\n    url: http://auth:9999/\n    routes:\n      - name: auth-v1-all\n        strip_path: true\n        paths:\n          - /auth/v1/\n    plugins:\n      - name: cors\n      - name: key-auth\n        config:\n          hide_credentials: false\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n            - anon\n  - name: rest-v1\n    url: http://rest:3000/\n    routes:\n      - name: rest-v1-all\n        strip_path: true\n        paths:\n          - /rest/v1/\n    plugins:\n      - name: cors\n      - name: key-auth\n        config:\n          hide_credentials: true\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n            - anon\n  - name: graphql-v1\n    url: http://rest:3000/rpc/graphql\n    routes:\n      - name: graphql-v1-all\n        strip_path: true\n        paths:\n          - /graphql/v1\n    plugins:\n      - name: cors\n      - name: key-auth\n        config:\n          hide_credentials: true\n      - name: request-transformer\n        config:\n          add:\n            headers:\n              - Content-Profile:graphql_public\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n            - anon\n  - name: realtime-v1-ws\n    url: http://realtime-dev.supabase-realtime:4000/socket/\n    routes:\n      - name: realtime-v1-ws\n        strip_path: true\n        paths:\n          - /realtime/v1/\n    plugins:\n      - name: cors\n      - name: key-auth\n        config:\n          hide_credentials: false\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n            - anon\n  - name: storage-v1\n    url: http://storage:5000/\n    routes:\n      - name: storage-v1-all\n        strip_path: true\n        paths:\n          - /storage/v1/\n    plugins:\n      - name: cors\n  - name: meta\n    url: http://meta:8080/\n    routes:\n      - name: meta-all\n        strip_path: true\n        paths:\n          - /pg/\n    plugins:\n      - name: key-auth\n        config:\n          hide_credentials: false\n      - name: acl\n        config:\n          hide_groups_header: true\n          allow:\n            - admin\n  - name: dashboard\n    url: http://studio:3000/\n    routes:\n      - name: dashboard-all\n        strip_path: true\n        paths:\n          - /\n    plugins:\n      - name: cors\n      - name: basic-auth\n        config:\n          hide_credentials: true\n"
+        },
+        {
+          "service": "db",
+          "path": "/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql",
+          "content": "BEGIN;\n  -- Create pg_net extension\n  CREATE EXTENSION IF NOT EXISTS pg_net SCHEMA extensions;\n  -- Create supabase_functions schema\n  CREATE SCHEMA supabase_functions AUTHORIZATION supabase_admin;\n  GRANT USAGE ON SCHEMA supabase_functions TO postgres, anon, authenticated, service_role;\n  ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;\n  ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;\n  ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;\n  -- supabase_functions.migrations definition\n  CREATE TABLE supabase_functions.migrations (\n    version text PRIMARY KEY,\n    inserted_at timestamptz NOT NULL DEFAULT NOW()\n  );\n  -- Initial supabase_functions migration\n  INSERT INTO supabase_functions.migrations (version) VALUES ('initial');\n  -- supabase_functions.hooks definition\n  CREATE TABLE supabase_functions.hooks (\n    id bigserial PRIMARY KEY,\n    hook_table_id integer NOT NULL,\n    hook_name text NOT NULL,\n    created_at timestamptz NOT NULL DEFAULT NOW(),\n    request_id bigint\n  );\n  CREATE INDEX supabase_functions_hooks_request_id_idx ON supabase_functions.hooks USING btree (request_id);\n  CREATE INDEX supabase_functions_hooks_h_table_id_h_name_idx ON supabase_functions.hooks USING btree (hook_table_id, hook_name);\n  COMMENT ON TABLE supabase_functions.hooks IS 'Supabase Functions Hooks: Audit trail for triggered hooks.';\n  CREATE FUNCTION supabase_functions.http_request()\n    RETURNS trigger\n    LANGUAGE plpgsql\n    AS $function$\n    DECLARE\n      request_id bigint;\n      payload jsonb;\n      url text := TG_ARGV[0]::text;\n      method text := TG_ARGV[1]::text;\n      headers jsonb DEFAULT '{}'::jsonb;\n      params jsonb DEFAULT '{}'::jsonb;\n      timeout_ms integer DEFAULT 1000;\n    BEGIN\n      IF url IS NULL OR url = 'null' THEN\n        RAISE EXCEPTION 'url argument is missing';\n      END IF;\n\n      IF method IS NULL OR method = 'null' THEN\n        RAISE EXCEPTION 'method argument is missing';\n      END IF;\n\n      IF TG_ARGV[2] IS NULL OR TG_ARGV[2] = 'null' THEN\n        headers = '{\"Content-Type\": \"application/json\"}'::jsonb;\n      ELSE\n        headers = TG_ARGV[2]::jsonb;\n      END IF;\n\n      IF TG_ARGV[3] IS NULL OR TG_ARGV[3] = 'null' THEN\n        params = '{}'::jsonb;\n      ELSE\n        params = TG_ARGV[3]::jsonb;\n      END IF;\n\n      IF TG_ARGV[4] IS NULL OR TG_ARGV[4] = 'null' THEN\n        timeout_ms = 1000;\n      ELSE\n        timeout_ms = TG_ARGV[4]::integer;\n      END IF;\n\n      CASE\n        WHEN method = 'GET' THEN\n          SELECT http_get INTO request_id FROM net.http_get(\n            url,\n            params,\n            headers,\n            timeout_ms\n          );\n        WHEN method = 'POST' THEN\n          payload = jsonb_build_object(\n            'old_record', OLD,\n            'record', NEW,\n            'type', TG_OP,\n            'table', TG_TABLE_NAME,\n            'schema', TG_TABLE_SCHEMA\n          );\n\n          SELECT http_post INTO request_id FROM net.http_post(\n            url,\n            payload,\n            params,\n            headers,\n            timeout_ms\n          );\n        ELSE\n          RAISE EXCEPTION 'method argument % is invalid', method;\n      END CASE;\n\n      INSERT INTO supabase_functions.hooks\n        (hook_table_id, hook_name, request_id)\n      VALUES\n        (TG_RELID, TG_NAME, request_id);\n\n      RETURN NEW;\n    END\n  $function$;\n  -- Supabase super admin\n  DO\n  $$\n  BEGIN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM pg_roles\n      WHERE rolname = 'supabase_functions_admin'\n    )\n    THEN\n      CREATE USER supabase_functions_admin NOINHERIT CREATEROLE LOGIN NOREPLICATION;\n    END IF;\n  END\n  $$;\n  GRANT ALL PRIVILEGES ON SCHEMA supabase_functions TO supabase_functions_admin;\n  GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA supabase_functions TO supabase_functions_admin;\n  GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA supabase_functions TO supabase_functions_admin;\n  ALTER USER supabase_functions_admin SET search_path = \"supabase_functions\";\n  ALTER table \"supabase_functions\".migrations OWNER TO supabase_functions_admin;\n  ALTER table \"supabase_functions\".hooks OWNER TO supabase_functions_admin;\n  ALTER function \"supabase_functions\".http_request() OWNER TO supabase_functions_admin;\n  GRANT supabase_functions_admin TO postgres;\n  -- Remove unused supabase_pg_net_admin role\n  DO\n  $$\n  BEGIN\n    IF EXISTS (\n      SELECT 1\n      FROM pg_roles\n      WHERE rolname = 'supabase_pg_net_admin'\n    )\n    THEN\n      REASSIGN OWNED BY supabase_pg_net_admin TO supabase_admin;\n      DROP OWNED BY supabase_pg_net_admin;\n      DROP ROLE supabase_pg_net_admin;\n    END IF;\n  END\n  $$;\n  -- pg_net grants when extension is already enabled\n  DO\n  $$\n  BEGIN\n    IF EXISTS (\n      SELECT 1\n      FROM pg_extension\n      WHERE extname = 'pg_net'\n    )\n    THEN\n      GRANT USAGE ON SCHEMA net TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n      ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;\n      ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;\n      ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;\n      ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;\n      REVOKE ALL ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;\n      REVOKE ALL ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;\n      GRANT EXECUTE ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n      GRANT EXECUTE ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n    END IF;\n  END\n  $$;\n  -- Event trigger for pg_net\n  CREATE OR REPLACE FUNCTION extensions.grant_pg_net_access()\n  RETURNS event_trigger\n  LANGUAGE plpgsql\n  AS $$\n  BEGIN\n    IF EXISTS (\n      SELECT 1\n      FROM pg_event_trigger_ddl_commands() AS ev\n      JOIN pg_extension AS ext\n      ON ev.objid = ext.oid\n      WHERE ext.extname = 'pg_net'\n    )\n    THEN\n      GRANT USAGE ON SCHEMA net TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n      ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;\n      ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;\n      ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;\n      ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;\n      REVOKE ALL ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;\n      REVOKE ALL ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;\n      GRANT EXECUTE ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n      GRANT EXECUTE ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;\n    END IF;\n  END;\n  $$;\n  COMMENT ON FUNCTION extensions.grant_pg_net_access IS 'Grants access to pg_net';\n  DO\n  $$\n  BEGIN\n    IF NOT EXISTS (\n      SELECT 1\n      FROM pg_event_trigger\n      WHERE evtname = 'issue_pg_net_access'\n    ) THEN\n      CREATE EVENT TRIGGER issue_pg_net_access ON ddl_command_end WHEN TAG IN ('CREATE EXTENSION')\n      EXECUTE PROCEDURE extensions.grant_pg_net_access();\n    END IF;\n  END\n  $$;\n  INSERT INTO supabase_functions.migrations (version) VALUES ('20210809183423_update_grants');\n  ALTER function supabase_functions.http_request() SECURITY DEFINER;\n  ALTER function supabase_functions.http_request() SET search_path = supabase_functions;\n  REVOKE ALL ON FUNCTION supabase_functions.http_request() FROM PUBLIC;\n  GRANT EXECUTE ON FUNCTION supabase_functions.http_request() TO postgres, anon, authenticated, service_role;\nCOMMIT;\n"
+        },
+        {
+          "service": "db",
+          "path": "/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql",
+          "content": "\\set jwt_secret `echo \"$JWT_SECRET\"`\n\\set jwt_exp `echo \"$JWT_EXP\"`\n\nALTER DATABASE postgres SET \"app.settings.jwt_secret\" TO :'jwt_secret';\nALTER DATABASE postgres SET \"app.settings.jwt_exp\" TO :'jwt_exp';\n"
+        },
+        {
+          "service": "db",
+          "path": "/docker-entrypoint-initdb.d/init-scripts/99-roles.sql",
+          "content": "\\set pgpass `echo \"$POSTGRES_PASSWORD\"`\n\nALTER USER authenticator WITH PASSWORD :'pgpass';\nALTER USER pgbouncer WITH PASSWORD :'pgpass';\nALTER USER supabase_auth_admin WITH PASSWORD :'pgpass';\nALTER USER supabase_functions_admin WITH PASSWORD :'pgpass';\nALTER USER supabase_storage_admin WITH PASSWORD :'pgpass';\n"
+        },
+        {
+          "service": "db",
+          "path": "/docker-entrypoint-initdb.d/migrations/99-realtime.sql",
+          "content": "\\set pguser `echo \"$POSTGRES_USER\"`\n\ncreate schema if not exists _realtime;\nalter schema _realtime owner to :pguser;\n"
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Supabase",
+        "description": "Point the Supabase client SDKs or Studio at this deployment. The service role key bypasses row-level security — keep it secret.",
+        "guide": {
+          "intro": "Your project gets the Supabase database connection, ready to use.",
+          "useHint": "Read `process.env.DATABASE_URL` in your code — it's set the next time your project deploys. Nothing else to do.",
+          "defaultMode": "internal"
+        },
+        "outputs": [
+          {
+            "id": "url",
+            "label": "Project URL",
+            "source": "publicUrl:kong",
+            "envKey": "SUPABASE_URL"
+          },
+          {
+            "id": "studio",
+            "label": "Studio",
+            "source": "publicUrl:kong",
+            "kind": "url",
+            "help": "Open in a browser and sign in with the Studio username + password below."
+          },
+          {
+            "id": "studioUser",
+            "label": "Studio username",
+            "source": "env:kong:DASHBOARD_USERNAME"
+          },
+          {
+            "id": "studioPassword",
+            "label": "Studio password",
+            "source": "env:kong:DASHBOARD_PASSWORD",
+            "secret": true
+          },
+          {
+            "id": "anonKey",
+            "label": "Anon (public) key",
+            "source": "env:kong:ANON_KEY",
+            "envKey": "SUPABASE_ANON_KEY"
+          },
+          {
+            "id": "serviceKey",
+            "label": "Service role key",
+            "source": "env:kong:SERVICE_ROLE_KEY",
+            "secret": true,
+            "envKey": "SUPABASE_SERVICE_ROLE_KEY",
+            "help": "Full-access key — never expose it to browsers."
+          },
+          {
+            "id": "dbUrl",
+            "label": "Database URL",
+            "source": "template:postgresql://postgres:{{env:db:POSTGRES_PASSWORD}}@db:5432/postgres",
+            "service": "db",
+            "secret": true,
+            "envKey": "DATABASE_URL",
+            "recommended": true,
+            "help": "Direct Postgres connection (superuser) reachable over this project's shared network. Connect another project to Supabase to inject it automatically."
+          },
+          {
+            "id": "dbPassword",
+            "label": "Database password",
+            "source": "env:db:POSTGRES_PASSWORD",
+            "secret": true,
+            "envKey": "POSTGRES_PASSWORD"
+          }
+        ]
+      },
+      "endpoints": [
+        {
+          "service": "kong",
+          "port": 8000,
+          "label": "Studio & API",
+          "kind": "http"
+        },
+        {
+          "service": "db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal"
+        }
+      ],
+      "settings": [
+        {
+          "id": "auth",
+          "label": "Auth",
+          "fields": [
+            {
+              "key": "GOTRUE_DISABLE_SIGNUP",
+              "service": "auth",
+              "label": "Disable new sign-ups",
+              "type": "boolean",
+              "default": "false"
+            },
+            {
+              "key": "GOTRUE_MAILER_AUTOCONFIRM",
+              "service": "auth",
+              "label": "Auto-confirm new emails (no SMTP)",
+              "type": "boolean",
+              "default": "true"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "mongodb",
+      "name": "MongoDB",
+      "description": "MongoDB document database with the Mongo Express web admin UI.",
+      "kind": "template",
+      "logo": "mongodb",
+      "category": "backend",
+      "tags": [
+        "database",
+        "mongodb",
+        "nosql",
+        "documents"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "mongo",
+          "image": "mongo:7.0",
+          "ports": [
+            "27017:27017"
+          ],
+          "environment": {
+            "MONGO_INITDB_ROOT_USERNAME": "root"
+          },
+          "volumes": [
+            "mongo_data:/data/db"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "mongosh",
+              "--quiet",
+              "--eval",
+              "db.adminCommand('ping')"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "mongo-express",
+          "image": "mongo-express:1.0.2",
+          "exposedPort": 8081,
+          "exposed": true,
+          "ports": [
+            "8081:8081"
+          ],
+          "routes": [
+            {
+              "port": 8081
+            }
+          ],
+          "dependsOn": [
+            "mongo"
+          ],
+          "environment": {
+            "ME_CONFIG_MONGODB_URL": "mongodb://root:{{config:MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/",
+            "ME_CONFIG_MONGODB_ENABLE_ADMIN": "true",
+            "ME_CONFIG_BASICAUTH_USERNAME": "admin"
+          },
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -S --spider http://127.0.0.1:8081/ 2>&1 | grep -q \"HTTP/\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "MONGO_INITDB_ROOT_PASSWORD",
+          "service": "mongo",
+          "label": "Database password",
+          "help": "Auto-generated. The password for the MongoDB root user.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "ME_CONFIG_BASICAUTH_PASSWORD",
+          "service": "mongo-express",
+          "label": "Mongo Express password",
+          "help": "Auto-generated. The password to sign in to the Mongo Express web admin.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to MongoDB",
+        "description": "Open the Mongo Express admin in a browser, or point a driver at the database URL.",
+        "guide": {
+          "intro": "Your project gets the MongoDB connection, ready to use.",
+          "useHint": "Read `process.env.MONGODB_URI` in your code — it's set the next time your project deploys. Nothing else to do.",
+          "defaultMode": "internal"
+        },
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Mongo Express",
+            "source": "publicUrl:mongo-express",
+            "kind": "url",
+            "envKey": "MONGO_EXPRESS_URL",
+            "help": "Sign in with the username + password below."
+          },
+          {
+            "id": "adminUser",
+            "label": "Admin username",
+            "source": "env:mongo-express:ME_CONFIG_BASICAUTH_USERNAME",
+            "envKey": "MONGO_ADMIN_USER",
+            "width": "half"
+          },
+          {
+            "id": "adminPassword",
+            "label": "Admin password",
+            "source": "env:mongo-express:ME_CONFIG_BASICAUTH_PASSWORD",
+            "secret": true,
+            "envKey": "MONGO_ADMIN_PASSWORD",
+            "width": "half"
+          },
+          {
+            "id": "dbUrl",
+            "label": "Database URL",
+            "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@{{host}}:27017/",
+            "sourceLabel": "Public",
+            "variants": [
+              {
+                "id": "internal",
+                "label": "Internal",
+                "source": "template:mongodb://root:{{env:mongo:MONGO_INITDB_ROOT_PASSWORD}}@mongo:27017/"
+              }
+            ],
+            "secret": true,
+            "envKey": "MONGODB_URI",
+            "recommended": true,
+            "help": "Direct MongoDB connection (root user). Published on port 27017. Switch to Internal for apps on the same project network."
+          }
+        ]
+      },
+      "endpoints": [
+        {
+          "service": "mongo-express",
+          "port": 8081,
+          "label": "Mongo Express",
+          "kind": "http"
+        },
+        {
+          "service": "mongo",
+          "port": 27017,
+          "label": "Database",
+          "kind": "tcp"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "convex",
+      "name": "Convex",
+      "description": "Self-hosted Convex reactive backend + dashboard, with a persistent data volume.",
+      "repository": "https://github.com/get-convex/convex-backend",
+      "kind": "template",
+      "logo": "convex",
+      "category": "backend",
+      "tags": [
+        "backend",
+        "database",
+        "realtime"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "backend",
+          "image": "ghcr.io/get-convex/convex-backend:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
+          "ports": [
+            "3210:3210",
+            "3211:3211"
+          ],
+          "exposedPort": 3210,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 3210
+            },
+            {
+              "port": 3211,
+              "slugSuffix": "http"
+            }
+          ],
+          "environment": {
+            "INSTANCE_NAME": "convex-self-hosted",
+            "DISABLE_BEACON": "true",
+            "CONVEX_CLOUD_ORIGIN": "{{publicUrl:backend:3210}}",
+            "CONVEX_SITE_ORIGIN": "{{publicUrl:backend:3211}}"
+          },
+          "secretEnv": [
+            "INSTANCE_SECRET"
+          ],
+          "volumes": [
+            "convex_data:/convex/data"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -f http://localhost:3210/version || exit 1"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 5,
+            "startPeriod": "20s"
+          },
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "dashboard",
+          "image": "ghcr.io/get-convex/convex-dashboard:19431ea0dd90bc55ae58dbbd06d9aa045f97336f",
+          "ports": [
+            "6791:6791"
+          ],
+          "exposedPort": 6791,
+          "exposed": true,
+          "dependsOn": [
+            "backend"
+          ],
+          "environment": {
+            "NEXT_PUBLIC_DEPLOYMENT_URL": "{{publicUrl:backend}}"
+          },
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "INSTANCE_SECRET",
+          "service": "backend",
+          "label": "Instance secret",
+          "help": "Auto-generated. Signs the admin key and internal tokens.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "prepare": [
+        {
+          "service": "backend",
+          "command": "./generate_admin_key.sh",
+          "capture": "adminKey",
+          "capturePattern": "([^\\r\\n]+)\\s*$",
+          "persistAs": {
+            "key": "CONVEX_ADMIN_KEY"
+          },
+          "once": true,
+          "title": "Generate admin key",
+          "description": "Mint the dashboard and CLI admin key from the instance secret.",
+          "icon": "key"
+        }
+      ],
+      "connection": {
+        "title": "Connect to this deployment",
+        "description": "Sign in to the Convex dashboard, or point the Convex CLI here, with these values.",
+        "outputs": [
+          {
+            "id": "dashboard",
+            "label": "Dashboard URL",
+            "source": "publicUrl:dashboard",
+            "kind": "url",
+            "help": "Open the Convex dashboard UI, then sign in with the deployment URL and admin key below."
+          },
+          {
+            "id": "url",
+            "label": "Deployment URL",
+            "source": "env:backend:CONVEX_CLOUD_ORIGIN",
+            "kind": "url"
+          },
+          {
+            "id": "adminKey",
+            "label": "Admin Key",
+            "source": "env:backend:CONVEX_ADMIN_KEY",
+            "secret": true,
+            "help": "Paste into the Convex dashboard login (required each time you open it)."
+          }
+        ]
+      },
+      "settings": [
+        {
+          "id": "general",
+          "label": "General",
+          "fields": [
+            {
+              "key": "DISABLE_BEACON",
+              "service": "backend",
+              "label": "Disable telemetry beacon",
+              "type": "boolean",
+              "default": "true"
+            }
+          ]
+        },
+        {
+          "id": "advanced",
+          "label": "Advanced",
+          "description": "Changing these regenerates or invalidates the deployment's admin key — the dashboard and CLI must be re-authenticated afterwards.",
+          "fields": [
+            {
+              "key": "INSTANCE_NAME",
+              "service": "backend",
+              "label": "Instance name",
+              "help": "Sets the deployment name. Changing it AFTER the first deploy invalidates the admin key and locks the dashboard/CLI out — safest to set it here, at install.",
+              "type": "text",
+              "default": "convex-self-hosted",
+              "advanced": true,
+              "requiresRedeploy": true,
+              "installStep": true
+            },
+            {
+              "key": "INSTANCE_SECRET",
+              "service": "backend",
+              "label": "Instance secret",
+              "help": "Signs the admin key and internal tokens. Rotating it invalidates existing admin keys.",
+              "type": "password",
+              "secret": true,
+              "advanced": true,
+              "requiresRedeploy": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "n8n",
+      "name": "n8n",
+      "description": "Workflow automation — connect apps and APIs with a visual editor.",
+      "kind": "template",
+      "logo": "n8n",
+      "category": "automation",
+      "tags": [
+        "automation",
+        "workflows",
+        "integrations"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "n8n",
+          "image": "n8nio/n8n:latest",
+          "ports": [
+            "5678:5678"
+          ],
+          "exposedPort": 5678,
+          "exposed": true,
+          "environment": {
+            "N8N_PORT": "5678",
+            "N8N_PROTOCOL": "https",
+            "GENERIC_TIMEZONE": "UTC",
+            "WEBHOOK_URL": "{{publicUrl:n8n}}"
+          },
+          "secretEnv": [
+            "N8N_ENCRYPTION_KEY"
+          ],
+          "volumes": [
+            "n8n_data:/home/node/.n8n"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "N8N_ENCRYPTION_KEY",
+          "service": "n8n",
+          "label": "Encryption key",
+          "help": "Auto-generated. Encrypts stored credentials.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "settings": [
+        {
+          "id": "general",
+          "label": "General",
+          "fields": [
+            {
+              "key": "GENERIC_TIMEZONE",
+              "service": "n8n",
+              "label": "Timezone",
+              "help": "Used by Schedule and Cron nodes.",
+              "type": "text",
+              "default": "UTC",
+              "placeholder": "UTC",
+              "installStep": true
+            },
+            {
+              "key": "N8N_DEFAULT_LOCALE",
+              "service": "n8n",
+              "label": "Locale",
+              "type": "text",
+              "default": "en",
+              "placeholder": "en"
+            }
+          ]
+        },
+        {
+          "id": "executions",
+          "label": "Executions",
+          "description": "Bound stored execution history so the data volume doesn't grow without limit.",
+          "fields": [
+            {
+              "key": "EXECUTIONS_DATA_PRUNE",
+              "service": "n8n",
+              "label": "Prune old executions",
+              "type": "boolean",
+              "default": "true"
+            },
+            {
+              "key": "EXECUTIONS_DATA_MAX_AGE",
+              "service": "n8n",
+              "label": "Keep executions for (hours)",
+              "help": "336 hours = 14 days.",
+              "type": "number",
+              "default": "336",
+              "integer": true,
+              "min": 1,
+              "advanced": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "ghost",
+      "name": "Ghost",
+      "description": "Modern publishing platform for blogs, newsletters, and membership sites.",
+      "kind": "template",
+      "logo": "ghost",
+      "category": "cms",
+      "tags": [
+        "cms",
+        "blog",
+        "newsletter"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "ghost-db",
+          "image": "mysql:8.0",
+          "environment": {
+            "MYSQL_DATABASE": "ghost"
+          },
+          "secretEnv": [
+            "MYSQL_ROOT_PASSWORD"
+          ],
+          "volumes": [
+            "ghost_db:/var/lib/mysql"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "ghost",
+          "image": "ghost:5-alpine",
+          "ports": [
+            "2368:2368"
+          ],
+          "exposedPort": 2368,
+          "exposed": true,
+          "dependsOn": [
+            "ghost-db"
+          ],
+          "environment": {
+            "NODE_ENV": "production",
+            "url": "{{publicUrl:ghost}}",
+            "database__client": "mysql",
+            "database__connection__host": "ghost-db",
+            "database__connection__user": "root",
+            "database__connection__database": "ghost"
+          },
+          "secretEnv": [
+            "database__connection__password"
+          ],
+          "volumes": [
+            "ghost_content:/var/lib/ghost/content"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "MYSQL_ROOT_PASSWORD",
+          "service": "ghost-db",
+          "label": "Database password",
+          "generate": "secret",
+          "generateGroup": "ghostdb",
+          "secret": true
+        },
+        {
+          "key": "database__connection__password",
+          "service": "ghost",
+          "label": "Ghost DB password",
+          "generate": "secret",
+          "generateGroup": "ghostdb",
+          "secret": true
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "directus",
+      "name": "Directus",
+      "description": "Headless CMS with an instant REST + GraphQL API over your data. Create the admin on first visit.",
+      "kind": "template",
+      "logo": "directus",
+      "category": "cms",
+      "tags": [
+        "cms",
+        "headless",
+        "api"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "directus",
+          "image": "directus/directus:latest",
+          "ports": [
+            "8055:8055"
+          ],
+          "exposedPort": 8055,
+          "exposed": true,
+          "environment": {
+            "DB_CLIENT": "sqlite3",
+            "DB_FILENAME": "/directus/database/data.db",
+            "PUBLIC_URL": "{{publicUrl:directus}}"
+          },
+          "secretEnv": [
+            "SECRET"
+          ],
+          "volumes": [
+            "directus_database:/directus/database",
+            "directus_uploads:/directus/uploads"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "SECRET",
+          "service": "directus",
+          "label": "App secret",
+          "help": "Auto-generated. Signs access tokens.",
+          "generate": "secret",
+          "secret": true
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "nocodb",
+      "name": "NocoDB",
+      "description": "Airtable-style spreadsheet UI over an SQL database. The first sign-up becomes the admin.",
+      "kind": "template",
+      "logo": "nocodb",
+      "category": "database",
+      "tags": [
+        "database",
+        "airtable",
+        "no-code"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "nocodb",
+          "image": "nocodb/nocodb:latest",
+          "ports": [
+            "8080:8080"
+          ],
+          "exposedPort": 8080,
+          "exposed": true,
+          "volumes": [
+            "nocodb_data:/usr/app/data"
+          ],
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "metabase",
+      "name": "Metabase",
+      "description": "Open-source business intelligence — dashboards and questions over your data.",
+      "kind": "template",
+      "logo": "metabase",
+      "category": "analytics",
+      "tags": [
+        "analytics",
+        "bi",
+        "dashboards"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "metabase",
+          "image": "metabase/metabase:latest",
+          "ports": [
+            "3000:3000"
+          ],
+          "exposedPort": 3000,
+          "exposed": true,
+          "environment": {
+            "MB_DB_FILE": "/metabase-data/metabase.db"
+          },
+          "volumes": [
+            "metabase_data:/metabase-data"
+          ],
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "grafana",
+      "name": "Grafana",
+      "description": "Dashboards and visualization for your metrics and logs. First login is admin / admin.",
+      "kind": "template",
+      "logo": "grafana",
+      "category": "analytics",
+      "tags": [
+        "analytics",
+        "dashboards",
+        "monitoring"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "grafana",
+          "image": "grafana/grafana:latest",
+          "ports": [
+            "3007:3000"
+          ],
+          "exposedPort": 3000,
+          "exposed": true,
+          "environment": {
+            "GF_SERVER_ROOT_URL": "{{publicUrl:grafana}}"
+          },
+          "volumes": [
+            "grafana_data:/var/lib/grafana"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "connection": {
+        "title": "Sign in to Grafana",
+        "outputs": [
+          {
+            "id": "url",
+            "label": "URL",
+            "source": "publicUrl:grafana",
+            "kind": "url"
+          }
+        ],
+        "firstLogin": {
+          "username": "admin",
+          "password": "admin",
+          "note": "Change the admin password right after your first login."
+        }
+      }
+    },
+    {
+      "available": false,
+      "id": "gitea",
+      "name": "Gitea",
+      "description": "Self-hosted Git with issues, pull requests, and a first-run setup wizard.",
+      "kind": "template",
+      "logo": "gitea",
+      "category": "other",
+      "tags": [
+        "git",
+        "vcs",
+        "developer"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "gitea",
+          "image": "gitea/gitea:1",
+          "ports": [
+            "3000:3000"
+          ],
+          "exposedPort": 3000,
+          "exposed": true,
+          "environment": {
+            "GITEA__server__ROOT_URL": "{{publicUrl:gitea}}"
+          },
+          "volumes": [
+            "gitea_data:/data"
+          ],
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "code-server",
+      "name": "code-server",
+      "description": "Run VS Code in your browser, on your server. Login uses an auto-generated password.",
+      "kind": "template",
+      "logo": "code-server",
+      "category": "other",
+      "tags": [
+        "developer",
+        "ide",
+        "vscode"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "code-server",
+          "image": "codercom/code-server:latest",
+          "ports": [
+            "8080:8080"
+          ],
+          "exposedPort": 8080,
+          "exposed": true,
+          "secretEnv": [
+            "PASSWORD"
+          ],
+          "volumes": [
+            "code_server_config:/home/coder/.config",
+            "code_server_local:/home/coder/.local",
+            "code_server_project:/home/coder/project"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "PASSWORD",
+          "service": "code-server",
+          "label": "Login password",
+          "help": "Auto-generated. Required to sign in.",
+          "generate": "secret",
+          "secret": true
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "uptime-kuma",
+      "name": "Uptime Kuma",
+      "description": "Self-hosted uptime monitoring with status pages and alerts.",
+      "kind": "template",
+      "logo": "uptime-kuma",
+      "category": "other",
+      "tags": [
+        "monitoring",
+        "uptime",
+        "status"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "uptime-kuma",
+          "image": "louislam/uptime-kuma:1",
+          "ports": [
+            "3001:3001"
+          ],
+          "exposedPort": 3001,
+          "exposed": true,
+          "volumes": [
+            "uptime_kuma_data:/app/data"
+          ],
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "vaultwarden",
+      "name": "Vaultwarden",
+      "description": "Lightweight self-hosted password manager (Bitwarden-compatible).",
+      "kind": "template",
+      "logo": "vaultwarden",
+      "category": "other",
+      "tags": [
+        "passwords",
+        "security",
+        "bitwarden"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "vaultwarden",
+          "image": "vaultwarden/server:latest",
+          "ports": [
+            "80:80"
+          ],
+          "exposedPort": 80,
+          "exposed": true,
+          "environment": {
+            "DOMAIN": "{{publicUrl:vaultwarden}}"
+          },
+          "volumes": [
+            "vaultwarden_data:/data"
+          ],
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "freshrss",
+      "name": "FreshRSS",
+      "description": "Self-hosted RSS and Atom feed reader with a first-run setup wizard.",
+      "kind": "template",
+      "logo": "freshrss",
+      "category": "other",
+      "tags": [
+        "rss",
+        "feeds",
+        "reader"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "freshrss",
+          "image": "freshrss/freshrss:latest",
+          "ports": [
+            "80:80"
+          ],
+          "exposedPort": 80,
+          "exposed": true,
+          "volumes": [
+            "freshrss_data:/var/www/FreshRSS/data"
+          ],
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "stirling-pdf",
+      "name": "Stirling PDF",
+      "description": "Split, merge, convert, OCR and edit PDFs locally. Default login is admin / stirling — change it.",
+      "kind": "template",
+      "logo": "stirling-pdf",
+      "category": "other",
+      "tags": [
+        "pdf",
+        "documents",
+        "tools"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "stirling-pdf",
+          "image": "stirlingtools/stirling-pdf:latest",
+          "ports": [
+            "8080:8080"
+          ],
+          "exposedPort": 8080,
+          "exposed": true,
+          "volumes": [
+            "stirling_config:/configs",
+            "stirling_tessdata:/usr/share/tessdata"
+          ],
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "it-tools",
+      "name": "IT-Tools",
+      "description": "A handy collection of developer and sysadmin utilities. No login, no setup.",
+      "kind": "template",
+      "logo": "it-tools",
+      "category": "other",
+      "tags": [
+        "developer",
+        "tools",
+        "utilities"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "it-tools",
+          "image": "corentinth/it-tools:latest",
+          "ports": [
+            "80:80"
+          ],
+          "exposedPort": 80,
+          "exposed": true,
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "excalidraw",
+      "name": "Excalidraw",
+      "description": "Virtual whiteboard for sketches and diagrams. Stateless — drawings save in your browser.",
+      "kind": "template",
+      "logo": "excalidraw",
+      "category": "other",
+      "tags": [
+        "whiteboard",
+        "diagrams",
+        "drawing"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "excalidraw",
+          "image": "excalidraw/excalidraw:latest",
+          "ports": [
+            "8203:80"
+          ],
+          "exposedPort": 80,
+          "exposed": true,
+          "restart": "unless-stopped"
+        }
+      ]
+    },
+    {
+      "available": false,
+      "id": "buzz",
+      "name": "Buzz",
+      "description": "Self-hostable workspace where humans and AI agents collaborate — chat, code, reviews, and workflows in one audit log.",
+      "kind": "template",
+      "logo": "buzz",
+      "category": "other",
+      "tags": [
+        "collaboration",
+        "ai",
+        "agents",
+        "chat",
+        "workflows",
+        "nostr"
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "minio",
+      "name": "MinIO",
+      "description": "S3-compatible object storage with a web console — point any S3 client (aws-cli, SDKs) at it, or bind a bucket straight into another project's uploads.",
+      "kind": "template",
+      "logo": "minio",
+      "category": "database",
+      "tags": [
+        "storage",
+        "s3",
+        "object-storage"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "minio",
+          "image": "minio/minio:latest",
+          "command": "server /data --console-address :9001",
+          "ports": [
+            "9000:9000",
+            "9001:9001"
+          ],
+          "exposedPort": 9001,
+          "routes": [
+            {
+              "port": 9001
+            },
+            {
+              "port": 9000,
+              "slugSuffix": "s3"
+            }
+          ],
+          "exposed": true,
+          "environment": {
+            "MINIO_BROWSER_REDIRECT_URL": "{{publicUrl:minio}}"
+          },
+          "secretEnv": [
+            "MINIO_ROOT_PASSWORD"
+          ],
+          "volumes": [
+            "minio_data:/data"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "MINIO_ROOT_USER",
+          "service": "minio",
+          "label": "Root user (access key)",
+          "help": "The console + S3 admin username. Minimum 3 characters.",
+          "type": "text",
+          "default": "minio",
+          "required": true
+        },
+        {
+          "key": "MINIO_ROOT_PASSWORD",
+          "service": "minio",
+          "label": "Root password (secret key)",
+          "help": "Auto-generated. The S3 admin secret — shown once after install.",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "OPENSHIP_BUCKET",
+          "service": "minio",
+          "label": "First bucket",
+          "help": "Created on the first deploy so an app can use this storage immediately. More can be added from the console.",
+          "type": "text",
+          "default": "uploads",
+          "required": true
+        }
+      ],
+      "prepare": [
+        {
+          "service": "minio",
+          "command": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\" > /dev/null && mc mb --ignore-existing \"local/$OPENSHIP_BUCKET\" > /dev/null && printf '%s' \"$OPENSHIP_BUCKET\"",
+          "capture": "bucket",
+          "phase": "post-ready",
+          "readiness": {
+            "test": "mc alias set local http://127.0.0.1:9000 \"$MINIO_ROOT_USER\" \"$MINIO_ROOT_PASSWORD\"",
+            "interval": 1000,
+            "retries": 30
+          },
+          "once": true
+        }
+      ],
+      "endpoints": [
+        {
+          "service": "minio",
+          "port": 9001,
+          "label": "Console",
+          "kind": "http"
+        },
+        {
+          "service": "minio",
+          "port": 9000,
+          "label": "S3 API",
+          "kind": "http"
+        }
+      ],
+      "connection": {
+        "title": "S3 connection",
+        "description": "Use these with any S3 client — the endpoint is the S3 API URL, the keys are the root user / password.",
+        "outputs": [
+          {
+            "id": "console",
+            "label": "Console",
+            "source": "publicUrl:minio:9001",
+            "kind": "url"
+          },
+          {
+            "id": "endpoint",
+            "label": "S3 endpoint",
+            "source": "publicUrl:minio:9000",
+            "service": "minio",
+            "envKey": "S3_ENDPOINT",
+            "recommended": true
+          },
+          {
+            "id": "accessKey",
+            "label": "Access key",
+            "source": "env:minio:MINIO_ROOT_USER",
+            "service": "minio",
+            "envKey": "S3_ACCESS_KEY_ID",
+            "recommended": true
+          },
+          {
+            "id": "secretKey",
+            "label": "Secret key",
+            "source": "env:minio:MINIO_ROOT_PASSWORD",
+            "service": "minio",
+            "envKey": "S3_SECRET_ACCESS_KEY",
+            "secret": true,
+            "recommended": true
+          },
+          {
+            "id": "bucket",
+            "label": "Bucket",
+            "source": "env:minio:OPENSHIP_BUCKET",
+            "service": "minio",
+            "envKey": "S3_BUCKET"
+          }
+        ],
+        "guide": {
+          "intro": "Your app gets an S3-compatible bucket it can write uploads to.",
+          "useHint": "Bind it from the consuming project's Configuration → Object storage to get the framework's own env names (Laravel gets FILESYSTEM_DISK + AWS_*), or wire these values by hand.",
+          "defaultMode": "internal"
+        }
+      },
+      "provides": [
+        {
+          "id": "s3",
+          "outputRefs": [
+            "endpoint",
+            "accessKey",
+            "secretKey",
+            "bucket"
+          ],
+          "category": "database"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "kafka",
+      "name": "Apache Kafka",
+      "description": "Apache Kafka event-streaming broker (KRaft mode — no ZooKeeper) with the Kafbat Kafka UI web console for topics, messages, and consumer groups.",
+      "kind": "template",
+      "logo": "apachekafka",
+      "category": "backend",
+      "tags": [
+        "kafka",
+        "streaming",
+        "events",
+        "queue",
+        "messaging"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "kafka",
+          "image": "apache/kafka:4.0.0",
+          "environment": {
+            "KAFKA_NODE_ID": "1",
+            "KAFKA_PROCESS_ROLES": "broker,controller",
+            "KAFKA_LISTENERS": "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+            "KAFKA_ADVERTISED_LISTENERS": "PLAINTEXT://kafka:9092",
+            "KAFKA_CONTROLLER_LISTENER_NAMES": "CONTROLLER",
+            "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT",
+            "KAFKA_INTER_BROKER_LISTENER_NAME": "PLAINTEXT",
+            "KAFKA_CONTROLLER_QUORUM_VOTERS": "1@kafka:9093",
+            "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": "1",
+            "KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
+            "KAFKA_TRANSACTION_STATE_LOG_MIN_ISR": "1",
+            "KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS": "0",
+            "KAFKA_NUM_PARTITIONS": "3",
+            "KAFKA_LOG_DIRS": "/var/lib/kafka/data"
+          },
+          "volumes": [
+            "kafka_data:/var/lib/kafka/data"
+          ],
+          "restart": "unless-stopped"
+        },
+        {
+          "name": "kafka-ui",
+          "image": "ghcr.io/kafbat/kafka-ui:latest",
+          "exposedPort": 8080,
+          "exposed": true,
+          "ports": [
+            "8080:8080"
+          ],
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
+          "dependsOn": [
+            "kafka"
+          ],
+          "environment": {
+            "KAFKA_CLUSTERS_0_NAME": "local",
+            "KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS": "kafka:9092",
+            "DYNAMIC_CONFIG_ENABLED": "true",
+            "AUTH_TYPE": "LOGIN_FORM",
+            "SPRING_SECURITY_USER_NAME": "admin"
+          },
+          "secretEnv": [
+            "SPRING_SECURITY_USER_PASSWORD"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "SPRING_SECURITY_USER_PASSWORD",
+          "service": "kafka-ui",
+          "label": "Kafka UI password",
+          "help": "Auto-generated. The password to sign in to the Kafka UI web console (username: admin).",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Kafka",
+        "description": "Open the Kafka UI to browse topics and messages, or point a client at the broker from another service in this project.",
+        "outputs": [
+          {
+            "id": "ui",
+            "label": "Kafka UI",
+            "source": "publicUrl:kafka-ui",
+            "kind": "url",
+            "help": "Sign in with the username + password below."
+          },
+          {
+            "id": "uiUser",
+            "label": "UI username",
+            "source": "env:kafka-ui:SPRING_SECURITY_USER_NAME"
+          },
+          {
+            "id": "uiPassword",
+            "label": "UI password",
+            "source": "env:kafka-ui:SPRING_SECURITY_USER_PASSWORD",
+            "secret": true
+          },
+          {
+            "id": "broker",
+            "label": "Bootstrap server (internal)",
+            "source": "template:kafka:9092",
+            "help": "Reachable as kafka:9092 from other services in this project — connect an app to it."
+          }
+        ]
+      },
+      "endpoints": [
+        {
+          "service": "kafka-ui",
+          "port": 8080,
+          "label": "Kafka UI",
+          "kind": "http"
+        }
+      ]
+    },
+    {
+      "available": true,
+      "verified": true,
+      "id": "qdrant",
+      "name": "Qdrant",
+      "description": "High-performance vector database for AI search, RAG, and embeddings — with the built-in Qdrant Web UI for browsing collections and running queries.",
+      "kind": "template",
+      "logo": "qdrant",
+      "category": "backend",
+      "tags": [
+        "database",
+        "vector",
+        "ai",
+        "search",
+        "rag",
+        "embeddings"
+      ],
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "qdrant",
+          "image": "qdrant/qdrant:v1.18.3",
+          "ports": [
+            "6333:6333"
+          ],
+          "exposedPort": 6333,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 6333
+            }
+          ],
+          "secretEnv": [
+            "QDRANT__SERVICE__API_KEY"
+          ],
+          "volumes": [
+            "qdrant_storage:/qdrant/storage"
+          ],
+          "restart": "unless-stopped"
+        }
+      ],
+      "configFields": [
+        {
+          "key": "QDRANT__SERVICE__API_KEY",
+          "service": "qdrant",
+          "label": "API key",
+          "help": "Auto-generated. Required as the `api-key` header on every request, and to open the Web UI.",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Qdrant",
+        "description": "Open the Qdrant Web UI in your browser (it lives under /dashboard), or point a client at the REST API. Every request needs the API key below.",
+        "outputs": [
+          {
+            "id": "ui",
+            "label": "Qdrant Web UI",
+            "source": "publicUrl:qdrant",
+            "kind": "url",
+            "help": "The dashboard is at this URL under /dashboard. Paste the API key when it asks."
+          },
+          {
+            "id": "restUrl",
+            "label": "REST API",
+            "source": "publicUrl:qdrant"
+          },
+          {
+            "id": "apiKey",
+            "label": "API key",
+            "source": "env:qdrant:QDRANT__SERVICE__API_KEY",
+            "secret": true,
+            "help": "Send it as the `api-key` header on every request."
+          }
+        ]
+      }
+    }
+  ]
+}

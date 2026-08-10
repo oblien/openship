@@ -10,22 +10,43 @@ import type { BuildStrategy, ProxySettings } from "@repo/core";
 import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
 
+/**
+ * How a host authenticates to git using its OWN pre-existing credentials —
+ * nothing is shipped to it and nothing is read back off it.
+ *
+ *   "gh"     → the `gh` CLI is installed and logged in; git authenticates via
+ *              `gh auth git-credential` (injected per-invocation, so it works
+ *              even if `gh auth setup-git` was never run).
+ *   "helper" → a git credential helper is already configured on the host (or
+ *              `~/.git-credentials` exists); let git consult it.
+ *   "ssh"    → the host's own ssh keys/agent can reach the remote; clone over
+ *              `git@`.
+ */
+export type AmbientGitVia = "gh" | "helper" | "ssh";
+
 // ─── Resource configuration ──────────────────────────────────────────────────
 
 export interface ResourceConfig {
-  /** CPU cores (fractional, e.g. 0.5, 1.0, 2.0) - the universal unit all runtimes use */
+  /** CPU cores (fractional, e.g. 0.5, 1.0, 2.0) - the universal unit all
+   *  runtimes use. `0` = NO LIMIT (see UNLIMITED_RESOURCES in @repo/core). */
   cpuCores: number;
-  /** Memory limit in megabytes */
+  /** Memory limit in megabytes. `0` = NO LIMIT. */
   memoryMb: number;
   /** Writable disk in megabytes */
   diskMb: number;
 }
 
-/** Single source of truth - production/runtime resources (the free-tier limit).
- *  Deliberately small: a runtime doesn't need build-sized resources, and cloud
- *  runtimes are shrunk to this after the build so they don't hog the pool.
- *  Matches the cloud "low" tier (cloud-resources.ts) so a tier-less / fallback
- *  deploy lands at the same 0.5 vCPU · 512 MB as an explicit free-tier pick. */
+/** CLOUD-ONLY production default (the metered free tier). Deliberately small: a
+ *  runtime doesn't need build-sized resources, and cloud runtimes are shrunk to
+ *  this after the build so they don't hog the pool. Matches the cloud "low" tier
+ *  (cloud-resources.ts) so a tier-less cloud deploy lands at the same
+ *  0.5 vCPU · 512 MB as an explicit free-tier pick.
+ *
+ *  Do NOT use this as a self-hosted fallback. A self-hosted box is the
+ *  operator's own hardware with no pool to protect, so its default is
+ *  UNLIMITED_RESOURCES — applying this tier there silently OOM-killed
+ *  memory-hungry images (ML models, headless browsers) at 512 MB. Resolve the
+ *  right default per target with `resolveRuntimeResources` (apps/api). */
 export const DEFAULT_RESOURCE_CONFIG: ResourceConfig = {
   cpuCores: 0.5,
   memoryMb: 512,
@@ -144,6 +165,28 @@ export interface BuildConfig {
    * monorepo pipeline is container-only).
    */
   isStatic?: boolean;
+  /**
+   * Static build whose output is EXTRACTED, not run.
+   *
+   * `buildStaticToHost` copies the built doc-root onto a host directory the edge
+   * serves, then discards the image — so a web-server runtime stage in that recipe
+   * is pure waste: it pulls `nginx:alpine`, runs six more build steps, and writes an
+   * nginx config nothing ever reads, all to be deleted moments later. With this set,
+   * the recipe stops at the builder and stages the output at
+   * {@link STATIC_EXTRACT_DIR}.
+   *
+   * NOT the same as plain `isStatic`. A static monorepo sub-app in a compose project
+   * (see isStaticService) really is RUN as a container and genuinely needs the nginx
+   * stage — that's why this is a separate flag rather than a change to isStatic.
+   */
+  staticExtractOnly?: boolean;
+  /**
+   * Host directory the extract-only build's files are moved to. Set together with
+   * `staticExtractOnly`; the build's `imageRef` becomes this path instead of an
+   * image tag, matching BareRuntime.build's host-dir contract so the file-backed
+   * serve path consumes it unchanged.
+   */
+  staticOutDir?: string;
   /** Environment variables injected at build time */
   envVars: Record<string, string>;
   /** Resources allocated for the build container */
@@ -169,6 +212,18 @@ export interface BuildConfig {
     privateKey: string;
     knownHosts: string;
   };
+  /**
+   * The BUILD HOST authenticates the clone with its OWN pre-existing git
+   * credentials (`gh` login, a configured credential helper, or its ssh keys) —
+   * verified against this exact repo before the build starts. Nothing is shipped
+   * to the host and nothing is read back off it, so this is the narrowest of the
+   * clone-on-server credentials.
+   *
+   * Valid ONLY for a clone that runs on that host: the orchestrator's api-host
+   * clone must ignore it (see docker-build-context.ts). Mutually exclusive with
+   * `gitToken` / `gitCredentialHelperPath` / `gitSsh`.
+   */
+  gitAmbient?: { via: AmbientGitVia };
   /**
    * Clone the repo ON the remote build host instead of cloning on the
    * orchestrator and transferring the context. The Docker runtime honors this
@@ -201,6 +256,12 @@ export interface DeployConfig {
   environment: string;
   /** Port the application listens on */
   port: number;
+  /**
+   * Pinned LOOPBACK host port to publish (docker: `127.0.0.1:<hostPort>:<port>`)
+   * under the loopback-port route strategy. When unset, docker falls back to a
+   * random loopback host port. Ignored by bare (the app owns 127.0.0.1:<port>).
+   */
+  hostPort?: number;
   /** Shell command to start the application (e.g. "npm start", "node server.js") */
   startCommand?: string;
   /** Detected framework / stack (e.g. "nextjs", "express") */
@@ -213,6 +274,31 @@ export interface DeployConfig {
   restartPolicy?: "always" | "on-failure" | "no";
   /** Runtime-safe identifier used for workload/container/page naming. */
   runtimeName?: string;
+  /** Project slug — scopes named volumes to `openship-<slug>-<name>` so two
+   *  projects that pick the same volume name never share one. */
+  slug?: string;
+  /**
+   * Internal DNS alias for this single-app container. When set, the container
+   * joins its `openship-<slug>` bridge network with this name as a network
+   * alias + `Hostname`, so another project linked to it (via
+   * `attachLinkedNetworks`) resolves it by name — the same east-west
+   * reachability compose services already have. This does NOT publish a public
+   * port: loopback-only publishing is unchanged and the network is the project's
+   * own boundary (a consumer only lands on it through an explicit link).
+   */
+  networkAlias?: string;
+  /** Extra network aliases (e.g. a user-chosen custom hostname) added alongside
+   *  `networkAlias`. All resolve to this container on the project network. */
+  extraAliases?: string[];
+  /**
+   * Persistent mounts for this workload, in compose syntax
+   * (`name:/container/path`, or a host bind mount). Already resolved from the
+   * project's declaration or the stack's defaults by `resolveProjectVolumes`.
+   *
+   * Docker mounts them; bare symlinks the in-app paths into a shared directory
+   * that outlives releases; cloud has no volume primitive and warns.
+   */
+  volumes?: string[];
   /** Authoritative public route mappings for this workload. */
   publicEndpoints?: DeployPublicEndpoint[];
   /** Files/directories to copy into /app/production/ before starting the workload.
@@ -356,11 +442,43 @@ export interface RouteHeaderRule {
   headers: { key: string; value: string }[];
 }
 
+/**
+ * Canonical host redirect: this vhost answers `statusCode` → `https://<target>`
+ * plus the original path and query, instead of serving anything.
+ *
+ * Distinct from {@link RouteRedirect}, which is a per-PATH rule inside a serving
+ * vhost. This replaces the whole route: the classic `www.example.com` →
+ * `example.com` (or the reverse), and old-domain → new-domain moves.
+ */
+export interface RouteHostRedirect {
+  /** Hostname to redirect to. Validated as a domain before it's emitted. */
+  target: string;
+  /** 301 | 302 | 307 | 308. */
+  statusCode: number;
+}
+
 interface BaseRouteConfig {
   /** External domain (e.g. "my-app.example.com") */
   domain: string;
   /** Whether TLS is enabled */
   tls: boolean;
+  /**
+   * TLS for this host terminates on THIS box (we hold or will hold its cert),
+   * rather than at an upstream ingress or Openship Cloud's edge.
+   *
+   * When set, the routing provider guarantees a :443 listener for the host from
+   * the moment the route exists — serving a temporary self-signed cert until the
+   * real one is issued. Without a listener, an unmatched SNI falls through to the
+   * edge's :443 catch-all, which answers a domain we route with the "service not
+   * found" page under a certificate valid for no hostname — and deadlocks issuance,
+   * because the catch-all carries no ACME location on :443 (see #308, and #431 for
+   * why the symptom is now a wrong page rather than error 525).
+   *
+   * Left unset for `externalIngress` hosts and managed `*.opsh.io` hosts, whose
+   * TLS is someone else's: presenting a placeholder cert for those would be wrong,
+   * not merely unnecessary.
+   */
+  terminatesTlsLocally?: boolean;
   /**
    * When set, adds a `/_openship/hooks/` location that proxies
    * webhook requests to the Openship API at this URL.
@@ -376,6 +494,16 @@ interface BaseRouteConfig {
   proxyLocations?: RouteProxyLocation[];
   /** Redirect rules (vercel.json `redirects`) → `return <code> <dest>` locations. */
   redirects?: RouteRedirect[];
+  /**
+   * Serve a canonical redirect to another host INSTEAD of this route's content.
+   *
+   * Overrides the primary target and every path-scoped location: a host that
+   * redirects has no content of its own, so honouring `proxyLocations` /
+   * `redirects` / `headerRules` / `webhookProxy` alongside it would mean some
+   * paths redirect and others don't. It still needs its own certificate — a 301
+   * from `https://` only works if the TLS handshake succeeds first.
+   */
+  redirectHost?: RouteHostRedirect;
   /** Response-header rules (vercel.json `headers`) → `add_header`. */
   headerRules?: RouteHeaderRule[];
   /** Curated reverse-proxy tunables (client_max_body_size, proxy/body timeouts,
@@ -395,6 +523,20 @@ export interface StaticRouteConfig extends BaseRouteConfig {
   /** Absolute path on the target machine to serve via Nginx root. */
   staticRoot: string;
   targetUrl?: never;
+  /**
+   * This root is being ADOPTED from a proxy we're taking over, not produced by an
+   * Openship build.
+   *
+   * Openship-managed roots are confined to {@link MANAGED_STATIC_BASE}: a route we
+   * generate must never be able to publish an arbitrary host directory, so a bad or
+   * crafted value fails closed instead of serving `/etc` to the internet.
+   *
+   * Adoption is the one legitimate exception — an imported vhost's root (e.g.
+   * `/var/www/site`) is a path the operator's own nginx is ALREADY serving publicly,
+   * and refusing it would break proxy migration. Opt-in and named so it can only be
+   * used deliberately, never reached by a caller that forgot the base.
+   */
+  staticRootAdopted?: boolean;
 }
 
 export type RouteConfig = ProxyRouteConfig | StaticRouteConfig;
@@ -419,7 +561,21 @@ export interface SslResult {
    * downgrading a healthy `active` domain to `provisioning`.
    */
   verified: boolean;
-  reason?: "issued" | "renewed" | "missing" | "read_error";
+  /**
+   * `not_local` means no certificate was issued here BY DESIGN — TLS for this
+   * hostname is terminated or supplied elsewhere (an upstream ingress, the managed
+   * `*.opsh.io` edge, an operator-uploaded cert). Distinct from `missing`, which
+   * means a cert was expected and isn't there: persisting `not_local` as
+   * "provisioning" would overwrite a correct `external` status with a lie.
+   */
+  /**
+   * `invalid` means a certificate IS on disk but can't be served for this
+   * hostname — expired, a key that doesn't open it, or issued for other names.
+   * Distinct from `missing` (nothing there) and `read_error` (transient): the file
+   * exists, so a retry won't help, and treating it as valid is what let "Recheck
+   * SSL" report green on a cert browsers reject.
+   */
+  reason?: "issued" | "renewed" | "missing" | "read_error" | "not_local" | "invalid";
 }
 
 // ─── Log streaming callback ──────────────────────────────────────────────────
@@ -486,10 +642,17 @@ export interface CommandExecutor {
   /**
    * Run a command with real-time log streaming.
    * Resolves when the command exits - the log callback fires for each line.
+   *
+   * `opts.signal` aborts a still-running command (kills the child). Needed by the
+   * live-log exec transport, which holds a `curl -sN` open against the edge and must be
+   * able to tear it down when the browser disconnects — otherwise the orphaned curl keeps
+   * draining the edge's shared log queue. Optional; executors that don't stream a killable
+   * child may ignore it.
    */
   streamExec(
     command: string,
     onLog: (log: LogEntry) => void,
+    opts?: { signal?: AbortSignal },
   ): Promise<{ code: number; output: string }>;
 
   /** Write content to a file on the target machine. Creates dirs as needed. */
@@ -506,6 +669,22 @@ export interface CommandExecutor {
 
   /** Remove a file or directory recursively. Silently succeeds if already gone. */
   rm(path: string): Promise<void>;
+
+  /**
+   * Rename within the same filesystem — a FILE operation, not a command.
+   *
+   * It exists because expressing it as `exec("mv a b")` is wrong on a decorated
+   * executor: `edgeContainerExecutor` runs commands INSIDE the edge container while
+   * file ops land on the HOST, so nginx's atomic vhost write (write temp → mv into
+   * place) renamed a path the container cannot see and failed with ENOENT on a file
+   * that had just been written successfully. Routing a rename through the file
+   * channel keeps it in the same namespace as the write.
+   *
+   * Optional: callers must fall back to a shell `mv` when an executor doesn't
+   * implement it (correct for any executor whose commands and files share a
+   * namespace, which is all of the plain ones).
+   */
+  rename?(from: string, to: string): Promise<void>;
 
   /**
    * Transfer a local directory into the target environment.
@@ -561,12 +740,37 @@ export interface CommandExecutor {
   }>;
 
   /**
+   * Run a command with `body` piped to its stdin, half-closing stdin at EOF so
+   * a stdin-draining command (`docker load`, `tar -x`) exits cleanly. Resolves
+   * with the remote exit code + captured stderr. The streaming counterpart to
+   * rawExec (stdout) — lets a Readable move INTO a remote command byte-for-byte
+   * without staging to a temp file first.
+   *
+   * Only available on SshExecutor — local executors do not implement this.
+   */
+  execWithInput?(
+    command: string,
+    body: Readable,
+  ): Promise<{ code: number; stderr: string; stdout: string }>;
+
+  /**
    * Open a Unix domain socket tunnel to the target machine.
    *
    * SshExecutor: opens an SSH streamlocal channel on the persistent connection.
    * Not available on LocalExecutor (local Docker uses socket transport directly).
    */
   forwardUnixSocket?(socketPath: string): Promise<Duplex>;
+
+  /**
+   * Open a `docker system dial-stdio` exec channel to the target's Docker
+   * daemon and return it as a duplex (writes → daemon socket, reads ← daemon
+   * socket). This carries the Docker Engine API over a plain SSH *exec*
+   * channel — no streamlocal forwarding — so it works on every sshd and under
+   * the Bun-compiled desktop runtime where streamlocal hangs. Runs with the
+   * same env/PATH as `streamExec`, so it matches the (working) remote build.
+   * Not available on LocalExecutor (local Docker uses socket transport).
+   */
+  openDockerDialStdio?(): Promise<Duplex>;
 
   /**
    * Open a TCP tunnel to a port on the remote machine (SSH direct-tcpip).

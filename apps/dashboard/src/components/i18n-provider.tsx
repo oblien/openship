@@ -128,10 +128,21 @@ export function I18nProvider({
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
 
+// Fallback used only when a consumer renders outside I18nProvider — in practice
+// just Next's provider-less boundaries (global-error.tsx, and any error/not-found
+// fallback that replaces the root layout). Degrading to the bundled English
+// dictionary keeps those screens rendering instead of throwing a second error on
+// top of whatever already broke. The provider is hoisted to the root layout, so
+// every normal route still receives the live context.
+const I18N_FALLBACK: I18nContextValue = {
+  locale: defaultLocale,
+  setLocale: () => {},
+  t: baseDictionary,
+  dir: isRtl(defaultLocale) ? "rtl" : "ltr",
+};
+
 export function useI18n() {
-  const ctx = useContext(I18nContext);
-  if (!ctx) throw new Error("useI18n must be used within <I18nProvider>");
-  return ctx;
+  return useContext(I18nContext) ?? I18N_FALLBACK;
 }
 
 /**

@@ -377,6 +377,16 @@
     "dismissLink": "Eu sei, ocultar isto",
     "dismiss": "Dispensar"
   },
+  "engine": {
+    "downTitle": "O motor de e-mail deste servidor não está em execução",
+    "downBody": "Enquanto estiver parado, nenhum e-mail é entregue ou recebido, e todas as abas aqui dependem dele. Ligá-lo de novo é seguro: nada é reinstalado e nenhuma configuração é alterada.",
+    "legacyNote": "Este servidor usa o motor antigo instalado diretamente no host (Postfix/Dovecot com systemd), portanto não há contêiner para inspecionar.",
+    "start": "Iniciar o motor",
+    "missingTitle": "Nenhum motor de e-mail neste servidor",
+    "missingBody": "O Openship não encontra nenhum motor de e-mail aqui — nem o contêiner do motor nem as unidades do Postfix/Dovecot. Execute a configuração de e-mail novamente para reinstalá-lo.",
+    "rerunSetup": "Executar a configuração novamente",
+    "cardBlocked": "Indisponível até o motor de e-mail estar em execução."
+  },
   "welcome": {
     "invalidEmail": "Digite um endereço de e-mail válido",
     "sendFailed": "Falha ao enviar",

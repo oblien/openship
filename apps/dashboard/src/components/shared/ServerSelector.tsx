@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { BlurIp } from "@/components/BlurIp";
 import {
   Server,
   CheckCircle2,
@@ -36,6 +37,13 @@ export interface ServerSelectorProps {
   compact?: boolean;
   /** Open the dropdown upward (for selectors pinned near the bottom of a modal). */
   dropUp?: boolean;
+  /**
+   * Pre-select the first server on load even when there are several (nothing
+   * chosen yet). A lone server always auto-selects; this extends that to the
+   * "many servers" case so an install wizard opens with a destination already
+   * picked. Off by default — flows that must not guess (adopt / migrate) skip it.
+   */
+  autoSelectFirst?: boolean;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -60,6 +68,7 @@ export default function ServerSelector({
   disabled = false,
   compact = false,
   dropUp = false,
+  autoSelectFirst = false,
 }: ServerSelectorProps) {
   const router = useRouter();
   const { t } = useI18n();
@@ -76,8 +85,9 @@ export default function ServerSelector({
       if (list.length > 0) {
         const opts = list.map(serverInfoToOption);
         setServers(opts);
-        // Auto-select if only one
-        if (opts.length === 1) onSelect(opts[0]);
+        // Auto-select the lone server, or the first one when the caller asked
+        // for a default and nothing's chosen yet (captured initial `value`).
+        if (opts.length === 1 || (autoSelectFirst && !value)) onSelect(opts[0]);
       } else {
         setServers([]);
         onSelect(null);
@@ -142,10 +152,16 @@ export default function ServerSelector({
     );
   }
 
-  /* ── Single server - auto-selected display ─────────────────────────── */
+  /* ── Single server - auto-selected, still re-selectable ────────────── */
 
   if (servers.length === 1) {
     const s = servers[0];
+    // `value === undefined` = uncontrolled caller, so the auto-pick above stands.
+    // An explicit `null` means the caller moved the selection somewhere else (the
+    // app picker switching to Openship Cloud), so the row reads unselected — and
+    // must stay clickable: as a static div the lone server became unreachable the
+    // moment it was deselected, making the destination choice one-way.
+    const isSelected = value === undefined || value === s.id;
     return (
       <div className={compact ? "" : "mb-5"}>
         {!compact && (
@@ -153,18 +169,32 @@ export default function ServerSelector({
             {labelText}
           </label>
         )}
-        <div className="flex items-center gap-3 px-3.5 py-3 rounded-xl border border-border/50 bg-muted/30">
-          <div className="w-8 h-8 rounded-lg bg-success-bg flex items-center justify-center shrink-0">
-            <Server className="size-4 text-success" />
+        <button
+          type="button"
+          onClick={() => !disabled && onSelect(s)}
+          disabled={disabled}
+          aria-pressed={isSelected}
+          className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border border-border/50 text-start transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+            isSelected ? "bg-muted/30" : "bg-background hover:bg-muted/20"
+          }`}
+        >
+          <div
+            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${isSelected ? "bg-success-bg" : "bg-muted"}`}
+          >
+            <Server className={`size-4 ${isSelected ? "text-success" : "text-muted-foreground"}`} />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
             <p className="text-xs text-muted-foreground">
-              {s.user}@{s.host}:{s.port}
+              {s.user}@<BlurIp>{s.host}</BlurIp>:{s.port}
             </p>
           </div>
-          <CheckCircle2 className="size-4 text-success shrink-0" />
-        </div>
+          {isSelected ? (
+            <CheckCircle2 className="size-4 text-success shrink-0" />
+          ) : (
+            <span className="size-4 rounded-full border border-border shrink-0" aria-hidden />
+          )}
+        </button>
       </div>
     );
   }
@@ -195,7 +225,7 @@ export default function ServerSelector({
                   {selected.name}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {selected.user}@{selected.host}:{selected.port}
+                  {selected.user}@<BlurIp>{selected.host}</BlurIp>:{selected.port}
                 </p>
               </div>
             </>
@@ -236,7 +266,7 @@ export default function ServerSelector({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {s.user}@{s.host}:{s.port}
+                    {s.user}@<BlurIp>{s.host}</BlurIp>:{s.port}
                   </p>
                 </div>
                 {value === s.id && (

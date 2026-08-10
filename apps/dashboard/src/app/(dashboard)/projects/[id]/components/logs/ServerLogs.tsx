@@ -1,39 +1,28 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Server, Clock, User, AlertCircle } from "lucide-react";
 import { getCountryFlagUrl } from "@/lib/country";
 import './logs.css';
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
-import { getApiBaseUrl, api } from "@/lib/api";
+import { getServerLogKey } from "@/context/server-log-dedup";
+import { api } from "@/lib/api";
 import { endpoints } from "@/lib/api/endpoints";
 import { DomainSwitcher } from "@/components/routing/DomainSwitcher";
 import { useI18n } from "@/components/i18n-provider";
+import {
+  normalizeRequestLog,
+  useRequestLogStream,
+  type RequestLogEntry,
+} from "@/hooks/useRequestLogStream";
 
-interface ServerLog {
-  id: string;
-  timestamp: string;
-  ip: string;
-  country?: string;
-  method: string;
-  path: string;
-  statusCode: number;
-  userAgent: string;
-  responseTime: number;
-  requestSize?: number;
-  responseSize?: number;
-}
+type ServerLog = RequestLogEntry;
 
 interface ServerLogsProps {
   projectId: string;
   projectName: string;
   onLogsChange: (logs: string[]) => void;
 }
-
-const appendQueryParam = (url: string, key: string, value: string) => {
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
-};
 
 export const ServerLogs: React.FC<ServerLogsProps> = ({
   projectId,
@@ -54,10 +43,35 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
         .filter((d: unknown): d is string => typeof d === "string" && d.length > 0),
     [domainsData?.domains],
   );
-  const [selectedDomain, setSelectedDomain] = useState(domain || "");
+  // Default to "" = All: combine every domain so a multi-route project never opens on a
+  // dead-looking primary. A specific selection survives a domain-list refresh; anything
+  // else (including a domain that stopped existing) falls back to All.
+  const [selectedDomain, setSelectedDomain] = useState("");
   useEffect(() => {
-    setSelectedDomain((current) => (current && domains.includes(current) ? current : domain || ""));
+    setSelectedDomain((current) => (current && domains.includes(current) ? current : ""));
   }, [domain, domains]);
+
+  // Whether the combined view is active (more than one domain, none singled out) — drives
+  // the per-row host label so you can tell which route a request hit.
+  const isCombined = !selectedDomain && domains.length > 1;
+
+  // Primary-first so the live-stream cap (MAX_STREAMS) drops the least-used tail, not the
+  // domain that matters most.
+  const streamDomains = useMemo(() => {
+    if (domain && domains.includes(domain)) return [domain, ...domains.filter((d) => d !== domain)];
+    return domains;
+  }, [domains, domain]);
+
+  // The stream effect keys off the domain SET, as a string. `domains` is rebuilt by
+  // useMemo on every domainsData change, so depending on the array (or on
+  // `isLoading`, which flips on every refetch) re-ran the effect for reasons that
+  // have nothing to do with routing — and each re-run called setServerLogs([]) and
+  // reopened the EventSource, so the visible log list emptied itself while you
+  // watched it. Content, not identity.
+  const domainsKey = useMemo(() => domains.join(","), [domains]);
+  // Read inside the effect without depending on it (see above).
+  const domainsLoadingRef = useRef(false);
+  domainsLoadingRef.current = Boolean(domainsData?.isLoading);
 
   const formatBytes = useCallback((bytes?: number) => {
     const b = typeof bytes === 'number' ? bytes : 0;
@@ -69,150 +83,22 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
     return `${(mb / 1024).toFixed(2)} GB`;
   }, []);
 
-  const parseNumber = useCallback((value: unknown) => {
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-    return 0;
-  }, []);
-
-  const toIsoTimestamp = useCallback((value: unknown) => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return new Date(value > 1_000_000_000_000 ? value : value * 1000).toISOString();
-    }
-
-    if (typeof value === 'string' && value.trim()) {
-      const numeric = Number(value);
-      if (Number.isFinite(numeric)) {
-        return new Date(numeric > 1_000_000_000_000 ? numeric : numeric * 1000).toISOString();
-      }
-
-      const parsed = new Date(value);
-      if (!Number.isNaN(parsed.getTime())) {
-        return parsed.toISOString();
-      }
-    }
-
-    return new Date().toISOString();
-  }, []);
-
-  const normalizeLogEntry = useCallback((d: any): ServerLog | null => {
-    if (!d || typeof d !== 'object') return null;
-
-    const responseTimeMs = d.responseTime !== undefined
-      ? Math.round(parseNumber(d.responseTime) * 1000)
-      : d.req_time !== undefined
-        ? Math.round(parseNumber(d.req_time) * 1000)
-        : d.rt !== undefined
-          ? Math.round(parseNumber(d.rt) * 1000)
-          : 0;
-
-    return {
-      id: d.id || `req-${d.ts || d.timestamp || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      timestamp: toIsoTimestamp(d.timestamp ?? d.ts ?? d.date),
-      ip: d.ip || '-',
-      country: d.country,
-      method: d.method || 'GET',
-      path: d.path || d.uri || '/',
-      statusCode: d.statusCode !== undefined
-        ? parseInt(String(d.statusCode), 10) || 0
-        : parseInt(String(d.status ?? 0), 10) || 0,
-      userAgent: d.userAgent || d.ua || '',
-      responseTime: responseTimeMs,
-      requestSize: parseNumber(d.requestSize ?? d.req_size ?? d.bw_in),
-      responseSize: parseNumber(d.responseSize ?? d.res_size ?? d.bw_out),
-    };
-  }, [parseNumber, toIsoTimestamp]);
-
   useEffect(() => {
     setServerLogs([]);
     setError(null);
     setIsLoading(true);
 
+    // HTTP request logs come from the edge analytics, which exist only for a
+    // routed domain. With no domain there's nothing to stream — surface the
+    // "add a domain" hint (renderEmpty) instead of a misleading connection
+    // error. Wait while the domain list is still loading; this effect re-runs
+    // when it resolves (domainsKey is in the deps).
+    if (!domainsKey) {
+      if (!domainsLoadingRef.current) setIsLoading(false);
+      return;
+    }
+
     let cancelled = false;
-    let es: EventSource | null = null;
-
-    const handleRequestEvent = (e: MessageEvent) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (!d || typeof d !== 'object') return;
-
-        if (d.error) {
-          setError(d.error);
-          setIsLoading(false);
-          return;
-        }
-
-        const entry = normalizeLogEntry(d);
-        if (entry) {
-          setIsLoading(false);
-          addServerLog(entry);
-        }
-      } catch { /* malformed data */ }
-    };
-
-    const handleErrorEvent = (e: Event) => {
-      const me = e as MessageEvent;
-      if (me.data) {
-        try {
-          const d = JSON.parse(me.data);
-          setError(d.error || t.projectDetail.logs.server.streamError);
-        } catch {
-          setError(me.data);
-        }
-      }
-      if (es?.readyState === EventSource.CLOSED) {
-        setError(t.projectDetail.logs.server.connectionLost);
-      }
-      setIsLoading(false);
-    };
-
-    const initStream = async () => {
-      try {
-        const tokenRes = await api.get<{ kind: string; url?: string; token?: string }>(
-          selectedDomain
-            ? appendQueryParam(endpoints.projects.serverLogsStreamToken(projectId), "domain", selectedDomain)
-            : endpoints.projects.serverLogsStreamToken(projectId),
-        );
-        if (cancelled) return;
-
-        if (tokenRes.kind === "cloud" && tokenRes.url && tokenRes.token) {
-          // Cloud: connect directly to edge
-          const streamUrl = appendQueryParam(tokenRes.url, "token", tokenRes.token);
-          es = new EventSource(streamUrl);
-          // Edge deployments may send either default messages or named request events.
-          es.onmessage = handleRequestEvent;
-          es.addEventListener("request", handleRequestEvent);
-        } else if (tokenRes.kind === "self-hosted") {
-          // Self-hosted: connect to API SSE
-          let streamUrl = `${getApiBaseUrl()}${endpoints.projects.serverLogsStream(projectId)}`;
-          if (selectedDomain) streamUrl = appendQueryParam(streamUrl, "domain", selectedDomain);
-          es = new EventSource(streamUrl, { withCredentials: true });
-          es.addEventListener("request", handleRequestEvent);
-        } else {
-          // Cloud project whose live stream token isn't available right now.
-          // Do NOT hit /server-logs/stream — it 400s for cloud. The recent-logs
-          // fetch below still shows history; just no live tail, no hard error.
-          if (!cancelled) setIsLoading(false);
-          return;
-        }
-
-        es.addEventListener("error", handleErrorEvent);
-        es.onopen = () => {
-          setError(null);
-          setIsLoading(false);
-        };
-      } catch {
-        if (!cancelled) {
-          setError(t.projectDetail.logs.server.connectFailed);
-          setIsLoading(false);
-        }
-      }
-    };
-
-    initStream();
 
     // Fetch recent logs in parallel and merge them behind live data.
     api.get<{ logs: any[] }>(endpoints.projects.serverLogsRecent(projectId), {
@@ -233,7 +119,7 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
 
       if (logs.length) {
         const entries = logs
-          .map(normalizeLogEntry)
+          .map(normalizeRequestLog)
           .filter((e): e is ServerLog => e !== null)
           .sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp));
         if (entries.length > 0) {
@@ -246,9 +132,57 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
 
     return () => {
       cancelled = true;
-      es?.close();
     };
-  }, [projectId, selectedDomain, setServerLogs, addServerLog, mergeServerLogs, normalizeLogEntry]);
+  }, [projectId, selectedDomain, domainsKey, setServerLogs, mergeServerLogs]);
+
+  /**
+   * The live tail.
+   *
+   * `useRequestLogStream` owns the EventSource, the cloud stream-token branch and the
+   * field normalisation — all of which used to be inline here. Extracted when the
+   * monitoring map needed the same feed: two copies of "which URL do I connect to for a
+   * cloud project" would drift, and the second one would be the copy that quietly only
+   * ever worked self-hosted.
+   */
+  useRequestLogStream({
+    projectId,
+    // A specific selection streams that one domain; "All" (empty) fans out across every
+    // route so the combined tail is never empty just because the primary is idle.
+    domain: selectedDomain || undefined,
+    domains: streamDomains,
+    // Gated on the same condition the effect above uses: with no routed domain there is
+    // nothing to stream, and the empty state should say "add a domain" rather than show a
+    // connection error.
+    enabled: !!domainsKey,
+    onEntry: (entry) => {
+      setIsLoading(false);
+      // Live data means whatever failed earlier has recovered. Without this the error
+      // stays latched forever — invisible while logs are on screen (the banner only
+      // renders for an EMPTY list), then revealed the moment you hit Clear, which read as
+      // "Clear broke the log stream".
+      setError(null);
+      addServerLog(entry);
+    },
+    onStatus: (st) => {
+      if (st.state === "open") {
+        setError(null);
+        setIsLoading(false);
+      } else if (st.state === "error") {
+        setError(
+          st.message === "closed"
+            ? t.projectDetail.logs.server.connectionLost
+            : st.message === "connect-failed"
+              ? t.projectDetail.logs.server.connectFailed
+              : st.message,
+        );
+        setIsLoading(false);
+      } else if (st.state === "unavailable") {
+        // Cloud project with no live token right now. History still loads; no live tail
+        // and deliberately no error.
+        setIsLoading(false);
+      }
+    },
+  });
 
   const logsStrings = useMemo(() => {
     return serverLogsData.logs.map((log: any) =>
@@ -294,6 +228,16 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
       );
     }
 
+    if (!domainsData?.isLoading && domains.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <Server className="w-10 h-10 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">{t.projectDetail.logs.server.noDomain}</p>
+          <p className="text-xs text-muted-foreground/70">{t.projectDetail.logs.server.noDomainHint}</p>
+        </div>
+      );
+    }
+
     if (error) {
       return (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
@@ -324,8 +268,9 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
           {domains.length > 1 && (
             <DomainSwitcher
               domains={domains}
-              value={selectedDomain || domain || ""}
+              value={selectedDomain}
               onChange={setSelectedDomain}
+              allowAll
             />
           )}
           {!error && (
@@ -342,7 +287,9 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
         {serverLogsData.logs.length === 0 ? renderEmpty() : (
           <div className="divide-y divide-border/30">
             {serverLogsData.logs.map((log: any) => (
-              <div key={log.id} className="group px-5 py-2.5 hover:bg-muted/30 transition-colors">
+              // Same identity the dedup keyed on, so the render key is provably unique even
+              // for an id-less row that fell back to a content key.
+              <div key={getServerLogKey(log)} className="group px-5 py-2.5 hover:bg-muted/30 transition-colors">
                 <div className="flex items-center gap-2">
                   <span className={`w-[52px] shrink-0 text-center px-1.5 py-0.5 rounded-md text-[11px] font-bold ${getMethodColor(log.method)}`}>
                     {log.method}
@@ -362,6 +309,14 @@ export const ServerLogs: React.FC<ServerLogsProps> = ({
                     <Clock className="w-3 h-3" />
                     <span className="font-mono tabular-nums">{new Date(log.timestamp).toLocaleTimeString()}</span>
                   </span>
+                  {isCombined && log.host && (
+                    <span
+                      className="shrink-0 max-w-[160px] truncate rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-muted-foreground/80"
+                      title={log.host}
+                    >
+                      {log.host}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1 shrink-0">
                     {log.country && (
                       // eslint-disable-next-line @next/next/no-img-element

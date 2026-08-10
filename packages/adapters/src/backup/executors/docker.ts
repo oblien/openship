@@ -14,8 +14,15 @@
 
 import type Dockerode from "dockerode";
 import { PassThrough, Readable } from "node:stream";
-import { DockerRuntime } from "../../runtime/docker";
+import { withTimeout } from "@repo/core";
+import { DockerRuntime, resolveExecExitCode } from "../../runtime/docker";
+import {
+  daemonConnectionFrom,
+  startAttachStream,
+  startExecStream,
+} from "../../runtime/docker-exec-stream";
 import { isHostPathSource, scopedVolumeName } from "../../runtime/volume-namespace";
+import { matchBackupSource } from "../common/source-match";
 import { registerExecutor } from "../registry";
 import type {
   BackupExecutor,
@@ -28,6 +35,88 @@ import type {
 } from "../types";
 
 const HELPER_IMAGE = "alpine:3";
+
+/** No traffic for this long in EITHER direction = wedged. See
+ *  ReceiveStreamOpts.idleTimeoutMs for why idle and not wall-clock. Capture and
+ *  restore share these on purpose: a wall-clock bound that a 50GB restore is
+ *  allowed to blow through cannot be right for the backup that produced it. */
+const DEFAULT_HELPER_IDLE_MS = 10 * 60 * 1000;
+/** Last-resort ceiling behind the idle watchdog. Long enough that no honest
+ *  transfer hits it, short enough that a stuck one is not forever. */
+const DEFAULT_HELPER_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+/** How often to ask the daemon directly whether the helper has exited. */
+const EXIT_POLL_INTERVAL_MS = 2000;
+
+/**
+ * A timer that fires only after `ms` of silence, reset by `touch()`.
+ *
+ * The promise rejects; it is meant to be raced. `dispose()` after the race so a
+ * pending timer can't fire against a finished operation. Timers are unref'd — a
+ * watchdog should never be the reason a process stays alive.
+ */
+function createIdleWatchdog(
+  ms: number,
+  message: string,
+): { touch: () => void; promise: Promise<never>; dispose: () => void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let done = false;
+  let fire: (err: Error) => void = () => {};
+  const promise = new Promise<never>((_resolve, reject) => {
+    fire = reject;
+  });
+  const arm = () => {
+    timer = setTimeout(() => {
+      done = true;
+      fire(new Error(message));
+    }, ms);
+    (timer as { unref?: () => void }).unref?.();
+  };
+  arm();
+  return {
+    touch: () => {
+      if (done) return;
+      if (timer) clearTimeout(timer);
+      arm();
+    },
+    promise,
+    dispose: () => {
+      done = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+/**
+ * A rejection that lands when `signal` aborts, shaped like the idle watchdog so
+ * it can join the same race. `dispose` removes the listener — without it a
+ * long-lived controller (one restore's signal, many artifacts) accumulates one
+ * listener per artifact and warns at ten.
+ */
+function createAbortWatch(
+  signal: AbortSignal,
+  message: string,
+): { promise: Promise<never>; dispose: () => void } {
+  let fire: (err: Error) => void = () => {};
+  const promise = new Promise<never>((_resolve, reject) => {
+    fire = reject;
+  });
+  const onAbort = () => fire(new Error(message));
+  if (signal.aborted) onAbort();
+  else signal.addEventListener("abort", onAbort, { once: true });
+  return {
+    promise,
+    dispose: () => signal.removeEventListener("abort", onAbort),
+  };
+}
+
+/** Destroy a stream without caring whether it was already gone. */
+function destroyQuietly(stream: { destroy?: (err?: Error) => void } | undefined): void {
+  try {
+    stream?.destroy?.();
+  } catch {
+    // best-effort teardown
+  }
+}
 
 /** Single-quote shell escape — safe for arbitrary user-supplied
  *  values passed to `sh -c`. Wraps in single quotes and replaces any
@@ -153,7 +242,15 @@ export class DockerBackupExecutor implements BackupExecutor {
         ? Object.entries(opts.env).map(([k, v]) => `${k}=${v}`)
         : undefined,
     });
-    const stream = await exec.start({ hijack: true, stdin: false });
+    // NO `hijack` — this is the single entry point for EVERY backup producer
+    // (pg_dump, mysqldump, mongodump, redis, custom commands, pre/post hooks), and
+    // hijack makes docker-modem ask for a connection upgrade. The daemon answers
+    // `101 Switching Protocols`; under Bun (the api image and the compiled desktop
+    // binary) node:http surfaces that as a plain `response`, so modem rejected with
+    // `(HTTP code 101) unexpected` — i.e. every database backup on a Docker box
+    // failed before a byte was read. Nothing here writes stdin, so there is no
+    // reason to hijack at all; see DockerEdgeExecutor.run() for the same fix.
+    const stream = await exec.start({ stdin: false });
     return this.attachDemuxed(this.dockerode, exec.id, stream, opts?.timeoutMs);
   }
 
@@ -163,7 +260,7 @@ export class DockerBackupExecutor implements BackupExecutor {
     opts?: StreamPathOpts,
   ): Promise<{ stdout: Readable; awaitExit: Promise<ExecExitInfo> }> {
     const sources = await this.listSources(service);
-    const source = sources.find((s) => s.id === sourceId);
+    const source = matchBackupSource(sources, sourceId);
     if (!source) {
       throw new Error(`Backup source "${sourceId}" not found on service ${service.name}`);
     }
@@ -193,31 +290,48 @@ export class DockerBackupExecutor implements BackupExecutor {
 
     const hostConfig: Dockerode.HostConfig = {
       Binds: [`${source.source}:/mnt:ro`],
-      AutoRemove: true,
+      // OFF, for the reason demuxContainerStream already documents but this line
+      // used to contradict: AutoRemove lets the daemon reap the helper before
+      // container.wait() answers and before the attach stream has drained, which
+      // is a 404 on the exit status or a truncated tar. demuxContainerStream
+      // removes it once the archive is fully demuxed.
+      AutoRemove: false,
+      // The archive streams over `attach()` below — the daemon's default
+      // json-file driver would ALSO write every byte of it to
+      // /var/lib/docker/containers as a log. That's a second copy of the whole
+      // backup, and worse than a copy: json-file escapes binary, so a 4.6 GB
+      // volume ballooned to a 12 GB log file here. Backups then spike the
+      // host's disk by more than the data they read and only release it when
+      // the helper exits. Nothing ever reads these logs.
+      LogConfig: { Type: "none", Config: {} },
     };
 
-    const helper = await this.dockerode.createContainer({
-      Image: helperImage,
-      Cmd: ["sh", "-c", compression === "zstd" ? `apk add --no-cache zstd >/dev/null 2>&1; ${tarCmd}` : tarCmd],
-      HostConfig: hostConfig,
-      AttachStdout: true,
-      AttachStderr: true,
-      Tty: false,
-      // zstd isn't in alpine:3 and is apk-installed at runtime, which needs
-      // egress; gzip/none use busybox built-ins and stay network-isolated.
-      NetworkDisabled: compression !== "zstd",
-    });
-
-    const stream = await helper.attach({
-      stream: true,
-      stdout: true,
-      stderr: true,
-    });
-    await helper.start();
-    // Generous last-resort timeout so a genuinely stuck stream errors instead of
-    // hanging forever (streamPath callers don't pass one).
-    const timeoutMs = opts ? (opts as ExecuteCommandOpts).timeoutMs : undefined;
-    return this.demuxContainerStream(helper, stream, timeoutMs ?? 60 * 60 * 1000);
+    return this.handOffHelper(
+      {
+        Image: helperImage,
+        Cmd: ["sh", "-c", compression === "zstd" ? `apk add --no-cache zstd >/dev/null 2>&1; ${tarCmd}` : tarCmd],
+        HostConfig: hostConfig,
+        AttachStdout: true,
+        AttachStderr: true,
+        Tty: false,
+        // zstd isn't in alpine:3 and is apk-installed at runtime, which needs
+        // egress; gzip/none use busybox built-ins and stay network-isolated.
+        NetworkDisabled: compression !== "zstd",
+      },
+      async (helper) => {
+        const stream = await helper.attach({
+          stream: true,
+          stdout: true,
+          stderr: true,
+        });
+        await helper.start();
+        return this.demuxContainerStream(helper, stream, {
+          idleTimeoutMs: opts?.idleTimeoutMs ?? DEFAULT_HELPER_IDLE_MS,
+          timeoutMs: opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS,
+          label: `Backup of "${sourceId}" on service ${service.name}`,
+        });
+      },
+    );
   }
 
   async receiveStream(
@@ -228,8 +342,11 @@ export class DockerBackupExecutor implements BackupExecutor {
   ): Promise<{ bytesWritten: number }> {
     // Restore path — re-uses the helper-container pattern but inverted:
     // stdin is the tar stream, the helper extracts into /mnt.
+    // Checked before anything is created: past helper.start() the target is
+    // already being cleared, so this is the last free place to bail.
+    opts?.signal?.throwIfAborted();
     const sources = await this.listSources(service);
-    const source = sources.find((s) => s.id === targetSourceId);
+    const source = matchBackupSource(sources, targetSourceId);
     if (!source) {
       throw new Error(`Restore target "${targetSourceId}" not found on service ${service.name}`);
     }
@@ -249,60 +366,234 @@ export class DockerBackupExecutor implements BackupExecutor {
         ? `${clearCmd}zstd -d -c | tar -x -C /mnt`
         : `${clearCmd}tar -x${compressionFlag(compression)}f - -C /mnt`;
 
-    const helper = await this.dockerode.createContainer({
-      Image: helperImage,
-      Cmd: [
-        "sh",
-        "-c",
-        compression === "zstd"
-          ? `apk add --no-cache zstd >/dev/null 2>&1; ${untarCmd}`
-          : untarCmd,
-      ],
-      HostConfig: { Binds: [`${source.source}:/mnt`], AutoRemove: true },
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      OpenStdin: true,
-      StdinOnce: true,
-      Tty: false,
-      // zstd isn't in alpine:3 and is apk-installed at runtime, which needs
-      // egress; gzip/none use busybox built-ins and stay network-isolated.
-      NetworkDisabled: compression !== "zstd",
-    });
+    return this.withHelper(
+      {
+        Image: helperImage,
+        Cmd: [
+          "sh",
+          "-c",
+          compression === "zstd"
+            ? `apk add --no-cache zstd >/dev/null 2>&1; ${untarCmd}`
+            : untarCmd,
+        ],
+        // AutoRemove is OFF deliberately, and this is the fix for the `404 no such
+        // container` in #434: with it on, the daemon could reap the helper before
+        // /containers/{id}/wait answered, and the exit status was then unknowable.
+        // withHelper reaps instead — which also plugs a leak AutoRemove never
+        // covered, since it only fires for a container that actually started.
+        HostConfig: { Binds: [`${source.source}:/mnt`], AutoRemove: false },
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+        OpenStdin: true,
+        StdinOnce: true,
+        Tty: false,
+        // zstd isn't in alpine:3 and is apk-installed at runtime, which needs
+        // egress; gzip/none use busybox built-ins and stay network-isolated.
+        NetworkDisabled: compression !== "zstd",
+      },
+      async (helper) => {
+        let stream: Awaited<ReturnType<typeof startAttachStream>> | undefined;
+        const idleMs = opts?.idleTimeoutMs ?? DEFAULT_HELPER_IDLE_MS;
+        const watchdog = createIdleWatchdog(
+          idleMs,
+          `Restore of "${targetSourceId}" on service ${service.name} moved no data for ` +
+            `${Math.round(idleMs / 1000)}s and was abandoned. The extract helper has been ` +
+            `removed; the target may hold partial data.`,
+        );
+        const abortWatch = opts?.signal
+          ? createAbortWatch(
+              opts.signal,
+              `Restore of "${targetSourceId}" on service ${service.name} was cancelled ` +
+                `mid-extract. The target holds partial data.`,
+            )
+          : undefined;
 
-    const stream = await helper.attach({
-      stream: true,
-      hijack: true,
-      stdin: true,
-      stdout: true,
-      stderr: true,
-    });
-    await helper.start();
+        try {
+          // Hand-rolled upgrade instead of dockerode's `attach({hijack:true})`: this
+          // attach exists to WRITE the archive to the helper's stdin, and dockerode has
+          // no other stdin-capable path. Under Bun its hijack resolves through modem's
+          // `response` branch as `(HTTP code 101) unexpected` rather than handing back
+          // the socket, so no restore could ever write a byte. Same protocol, plain
+          // socket — see docker-exec-stream.ts.
+          stream = await startAttachStream(daemonConnectionFrom(this.dockerode), helper.id, {
+            stdin: true,
+            stdout: true,
+            stderr: true,
+          });
+          await helper.start();
 
-    let bytesWritten = 0;
-    body.on("data", (chunk: Buffer) => {
-      bytesWritten += chunk.byteLength;
-    });
-    // Capture the helper's own stdout/stderr (multiplexed) so a non-zero exit
-    // reports WHY tar failed instead of a bare code.
-    const errChunks: Buffer[] = [];
-    stream.on("data", (c: Buffer) => {
-      if (errChunks.length < 32) errChunks.push(c);
-    });
-    body.pipe(stream);
+          let bytesWritten = 0;
+          let bodyEnded = false;
+          body.on("data", (chunk: Buffer) => {
+            bytesWritten += chunk.byteLength;
+            watchdog.touch();
+          });
+          // Capture the helper's own stdout/stderr (multiplexed) so a non-zero exit
+          // reports WHY tar failed instead of a bare code.
+          const errChunks: Buffer[] = [];
+          stream.on("data", (c: Buffer) => {
+            watchdog.touch();
+            if (errChunks.length < 32) errChunks.push(c);
+          });
+          body.on("end", () => {
+            bodyEnded = true;
+            watchdog.touch();
+          });
+          body.pipe(stream);
 
-    const waitResult = await helper.wait();
-    if (waitResult.StatusCode !== 0) {
-      const detail = Buffer.concat(errChunks)
-        .toString("utf8")
-        .replace(/[^\x20-\x7e\n]+/g, " ")
-        .trim()
-        .slice(-500);
-      throw new Error(
-        `Restore helper exited with code ${waitResult.StatusCode}${detail ? `: ${detail}` : ""}`,
-      );
+          const waitResult = await this.awaitHelperExit(helper, watchdog, () => bodyEnded, {
+            timeoutMs: opts?.timeoutMs ?? DEFAULT_HELPER_TIMEOUT_MS,
+            label: `Restore of "${targetSourceId}" on service ${service.name}`,
+            note: "The target may hold partial data.",
+            cancelled: abortWatch?.promise,
+          });
+          if (waitResult.StatusCode !== 0) {
+            const detail = Buffer.concat(errChunks)
+              .toString("utf8")
+              .replace(/[^\x20-\x7e\n]+/g, " ")
+              .trim()
+              .slice(-500);
+            throw new Error(
+              `Restore helper exited with code ${waitResult.StatusCode}${detail ? `: ${detail}` : ""}`,
+            );
+          }
+          return { bytesWritten };
+        } finally {
+          watchdog.dispose();
+          abortWatch?.dispose();
+          // Order matters: drop the sockets before withHelper removes the
+          // container, so a force-remove can't race a still-open attach. Unlike
+          // streamPath there is nothing left to drain here — the bytes flowed
+          // INTO the helper, and by this point we have its exit status.
+          destroyQuietly(stream);
+          destroyQuietly(body);
+        }
+      },
+    );
+  }
+
+  /**
+   * Create a helper, run `fn`, reap the helper however `fn` ends.
+   *
+   * Every helper here is disposable and every one of them must be removed by us:
+   * `AutoRemove` is off on purpose (it races /wait, and it only ever fires for a
+   * container that actually started, so a throw between create and start leaked
+   * one permanently — the leak behind #434). Four call sites each had their own
+   * correct copy of that reap, which is exactly how one of them came to be the
+   * one that didn't.
+   *
+   * NOT for helpers whose output outlives the call: streamPath hands its
+   * container to demuxContainerStream, which must reap only after the archive
+   * has drained. `handOffHelper` covers that shape.
+   */
+  private async withHelper<T>(
+    spec: Dockerode.ContainerCreateOptions,
+    fn: (helper: Dockerode.Container) => Promise<T>,
+  ): Promise<T> {
+    const helper = await this.dockerode.createContainer(spec);
+    try {
+      return await fn(helper);
+    } finally {
+      await helper.remove({ force: true }).catch(() => {});
     }
-    return { bytesWritten };
+  }
+
+  /**
+   * Create a helper whose lifetime outlives this call: reap it only if `setup`
+   * throws, then hand ownership to whatever `setup` returned. Without this, a
+   * failure between createContainer and the hand-off leaks the container
+   * forever — nothing downstream knows it exists yet.
+   */
+  private async handOffHelper<T>(
+    spec: Dockerode.ContainerCreateOptions,
+    setup: (helper: Dockerode.Container) => Promise<T>,
+  ): Promise<T> {
+    const helper = await this.dockerode.createContainer(spec);
+    try {
+      return await setup(helper);
+    } catch (err) {
+      await helper.remove({ force: true }).catch(() => {});
+      throw err;
+    }
+  }
+
+  /**
+   * Wait for a helper to exit without trusting any single signal.
+   *
+   * `helper.wait()` alone is what hung in #434: /containers/{id}/wait is a
+   * long-poll with no timeout on either the modem or our transport, so a lost
+   * response is indistinguishable from a running container — forever. Three
+   * backstops race it:
+   *
+   *   1. An exit poll that asks the daemon directly. This is what turns the
+   *      common hang into a few seconds. It's the same "don't trust the attach
+   *      stream's terminal signal" reasoning already documented in
+   *      demuxContainerStream; receiveStream was the path without a backstop.
+   *   2. The caller's idle watchdog (fed by real traffic, not by this function).
+   *   3. An absolute ceiling, so even a helper that somehow keeps trickling
+   *      bytes cannot run unbounded.
+   *
+   * The poll only starts once the body has been fully written: before that a
+   * not-yet-running helper is normal, and inspecting on a loop would be noise.
+   * It is gated on the body rather than on the attach stream closing because
+   * over an SSH-tunneled attach that close is not reliably delivered — the very
+   * reason this backstop has to exist.
+   */
+  private async awaitHelperExit(
+    helper: Dockerode.Container,
+    watchdog: { promise: Promise<never> },
+    bodyEnded: () => boolean,
+    opts: { timeoutMs: number; label: string; note?: string; cancelled?: Promise<never> },
+  ): Promise<{ StatusCode: number }> {
+    let polling = true;
+    const pollExit = async (): Promise<{ StatusCode: number }> => {
+      while (polling) {
+        await new Promise((r) => {
+          const t = setTimeout(r, EXIT_POLL_INTERVAL_MS);
+          (t as { unref?: () => void }).unref?.();
+        });
+        if (!polling || !bodyEnded()) continue;
+        let state: { Running?: boolean; Status?: string; ExitCode?: number };
+        try {
+          state = (await helper.inspect()).State ?? {};
+        } catch (err) {
+          // With AutoRemove off, a vanished helper means something outside this
+          // call removed it — we can never learn its exit code, so say that
+          // rather than reporting a success we didn't observe.
+          if ((err as { statusCode?: number })?.statusCode === 404) {
+            throw new Error(
+              `${opts.label}: the helper disappeared before its exit status could be ` +
+                `read.${opts.note ? ` ${opts.note}` : ""}`,
+            );
+          }
+          continue; // transient daemon hiccup — keep polling
+        }
+        // "created" also reports Running:false; only an exit carries a code.
+        if (state.Running === false && state.Status !== "created" && typeof state.ExitCode === "number") {
+          return { StatusCode: state.ExitCode };
+        }
+      }
+      // Only reachable once the race has already settled and the finally below
+      // cleared the flag; never resolving is correct, nobody is listening.
+      return new Promise<never>(() => {});
+    };
+
+    try {
+      return await withTimeout(
+        Promise.race([
+          helper.wait() as Promise<{ StatusCode: number }>,
+          pollExit(),
+          watchdog.promise,
+          ...(opts.cancelled ? [opts.cancelled] : []),
+        ]),
+        opts.timeoutMs,
+        `${opts.label} exceeded its ${Math.round(opts.timeoutMs / 1000)}s ceiling and was ` +
+          `abandoned.${opts.note ? ` ${opts.note}` : ""}`,
+      );
+    } finally {
+      polling = false;
+    }
   }
 
   /**
@@ -323,8 +614,8 @@ export class DockerBackupExecutor implements BackupExecutor {
     dstSourceId: string,
     opts?: { clearTarget?: boolean },
   ): Promise<{ bytesWritten: number }> {
-    const src = (await this.listSources(srcService)).find((s) => s.id === srcSourceId);
-    const dst = (await this.listSources(dstService)).find((s) => s.id === dstSourceId);
+    const src = matchBackupSource(await this.listSources(srcService), srcSourceId);
+    const dst = matchBackupSource(await this.listSources(dstService), dstSourceId);
     if (!src) throw new Error(`Copy source "${srcSourceId}" not found on ${srcService.name}`);
     if (!dst) throw new Error(`Copy target "${dstSourceId}" not found on ${dstService.name}`);
     if (src.type === "tmpfs" || dst.type === "tmpfs") {
@@ -343,32 +634,32 @@ export class DockerBackupExecutor implements BackupExecutor {
     const copyCmd =
       `${clearCmd}{ tar -C /from -cf - . ; echo $? > /tmp/src.rc ; } | tar -C /to -xf - ; ` +
       `rc=$? ; [ "$(cat /tmp/src.rc 2>/dev/null)" = 0 ] && [ "$rc" = 0 ] && du -sk /to 2>/dev/null | cut -f1`;
-    const helper = await this.dockerode.createContainer({
-      Image: HELPER_IMAGE,
-      Cmd: ["sh", "-c", copyCmd],
-      HostConfig: {
-        Binds: [`${src.source}:/from:ro`, `${dst.source}:/to`],
+    return this.withHelper(
+      {
+        Image: HELPER_IMAGE,
+        Cmd: ["sh", "-c", copyCmd],
+        HostConfig: {
+          Binds: [`${src.source}:/from:ro`, `${dst.source}:/to`],
+        },
+        Tty: true, // merged raw stdout so the trailing `du` number reads cleanly
+        NetworkDisabled: true,
       },
-      Tty: true, // merged raw stdout so the trailing `du` number reads cleanly
-      NetworkDisabled: true,
-    });
-    try {
-      await helper.start();
-      const res = await helper.wait();
-      const out = await helper
-        .logs({ follow: false, stdout: true, stderr: true })
-        .then((b) => b.toString().trim())
-        .catch(() => "");
-      if (res.StatusCode !== 0) {
-        throw new Error(
-          `Local volume copy failed (${srcSourceId}→${dstSourceId}): ${out.slice(0, 500) || `exit ${res.StatusCode}`}`,
-        );
-      }
-      const kb = parseInt(out.split(/\s+/).pop() || "0", 10);
-      return { bytesWritten: Number.isFinite(kb) ? kb * 1024 : 0 };
-    } finally {
-      await helper.remove({ force: true }).catch(() => {});
-    }
+      async (helper) => {
+        await helper.start();
+        const res = await helper.wait();
+        const out = await helper
+          .logs({ follow: false, stdout: true, stderr: true })
+          .then((b) => b.toString().trim())
+          .catch(() => "");
+        if (res.StatusCode !== 0) {
+          throw new Error(
+            `Local volume copy failed (${srcSourceId}→${dstSourceId}): ${out.slice(0, 500) || `exit ${res.StatusCode}`}`,
+          );
+        }
+        const kb = parseInt(out.split(/\s+/).pop() || "0", 10);
+        return { bytesWritten: Number.isFinite(kb) ? kb * 1024 : 0 };
+      },
+    );
   }
 
   /**
@@ -382,7 +673,7 @@ export class DockerBackupExecutor implements BackupExecutor {
     service: ServiceHandle,
     sourceId: string,
   ): Promise<{ exists: boolean; empty: boolean }> {
-    const source = (await this.listSources(service)).find((s) => s.id === sourceId);
+    const source = matchBackupSource(await this.listSources(service), sourceId);
     if (!source || source.type !== "volume" || !source.source) {
       return { exists: false, empty: true };
     }
@@ -392,28 +683,28 @@ export class DockerBackupExecutor implements BackupExecutor {
       return { exists: false, empty: true }; // not present → safe to create
     }
     await this.ensureImage(HELPER_IMAGE);
-    const helper = await this.dockerode.createContainer({
-      Image: HELPER_IMAGE,
-      Cmd: [
-        "sh",
-        "-c",
-        'if [ -z "$(ls -A /probe 2>/dev/null)" ]; then echo VOLEMPTY; else echo VOLDATA; fi',
-      ],
-      HostConfig: { Binds: [`${source.source}:/probe:ro`] },
-      Tty: true,
-      NetworkDisabled: true,
-    });
-    try {
-      await helper.start();
-      await helper.wait();
-      const out = await helper
-        .logs({ follow: false, stdout: true, stderr: true })
-        .then((b) => b.toString())
-        .catch(() => "");
-      return { exists: true, empty: out.includes("VOLEMPTY") };
-    } finally {
-      await helper.remove({ force: true }).catch(() => {});
-    }
+    return this.withHelper(
+      {
+        Image: HELPER_IMAGE,
+        Cmd: [
+          "sh",
+          "-c",
+          'if [ -z "$(ls -A /probe 2>/dev/null)" ]; then echo VOLEMPTY; else echo VOLDATA; fi',
+        ],
+        HostConfig: { Binds: [`${source.source}:/probe:ro`] },
+        Tty: true,
+        NetworkDisabled: true,
+      },
+      async (helper) => {
+        await helper.start();
+        await helper.wait();
+        const out = await helper
+          .logs({ follow: false, stdout: true, stderr: true })
+          .then((b) => b.toString())
+          .catch(() => "");
+        return { exists: true, empty: out.includes("VOLEMPTY") };
+      },
+    );
   }
 
   async pipeIntoCommand(
@@ -439,11 +730,17 @@ export class DockerBackupExecutor implements BackupExecutor {
         ? Object.entries(opts.env).map(([k, v]) => `${k}=${v}`)
         : undefined,
     });
-    const stream = await exec.start({ hijack: true, stdin: true });
+    // Hand-rolled upgrade rather than dockerode's `{hijack: true}`: this exec
+    // needs stdin (the dump bytes), and under Bun modem's hijack comes back as
+    // `(HTTP code 101) unexpected` instead of the socket, so every DB restore
+    // failed before writing a byte. Tty stays false so output is still framed.
+    const stream = await startExecStream(daemonConnectionFrom(this.dockerode), exec.id, {
+      tty: false,
+      stdin: true,
+    });
 
-    // Capture stderr while we write to stdin. dockerode demuxes the
-    // hijacked stream — both stdout and stderr come back framed. We
-    // collect a bounded tail for diagnostics; stdout is discarded
+    // Capture stderr while we write to stdin — both streams come back
+    // multiplexed. We collect a bounded tail for diagnostics; stdout is discarded
     // because restore commands typically log to stderr.
     const stderrChunks: Buffer[] = [];
     const { PassThrough } = await import("node:stream");
@@ -482,9 +779,8 @@ export class DockerBackupExecutor implements BackupExecutor {
       stream.on("end", async () => {
         if (timer) clearTimeout(timer);
         try {
-          const info = await this.dockerode.getExec(exec.id).inspect();
           resolve({
-            code: info.ExitCode ?? 0,
+            code: await resolveExecExitCode(exec, exec.id),
             stderr: Buffer.concat(stderrChunks).toString("utf8").slice(0, 16 * 1024),
           });
         } catch (err) {
@@ -571,9 +867,8 @@ export class DockerBackupExecutor implements BackupExecutor {
       stream.on("end", async () => {
         if (timer) clearTimeout(timer);
         try {
-          const info = await docker.getExec(execId).inspect();
           resolve({
-            code: info.ExitCode ?? 0,
+            code: await resolveExecExitCode(docker.getExec(execId), execId),
             stderr: Buffer.concat(stderrChunks).toString("utf8").slice(0, 16 * 1024),
           });
         } catch (err) {
@@ -592,7 +887,7 @@ export class DockerBackupExecutor implements BackupExecutor {
   private demuxContainerStream(
     container: Dockerode.Container,
     stream: NodeJS.ReadWriteStream,
-    timeoutMs: number | undefined,
+    opts: { timeoutMs: number; idleTimeoutMs: number; label: string },
   ): { stdout: Readable; awaitExit: Promise<ExecExitInfo> } {
     const stdout = new PassThrough();
     const stderrChunks: Buffer[] = [];
@@ -609,39 +904,72 @@ export class DockerBackupExecutor implements BackupExecutor {
     // container.wait() — the container can exit while bytes are still buffered,
     // and ending early truncates the tar ("Restore helper exited 1").
     //
+    // Reap only AFTER the sinks are ended, never merely after the container
+    // exits. A force-remove tears down the attach socket, and the container can
+    // exit with bytes still in flight — removing at exit truncates the tar,
+    // which is the "Restore helper exited 1" this whole comment block is about.
+    // Once endSinks has run the remaining bytes are in the PassThrough, where a
+    // removed container can no longer affect them.
+    let sinksEnded = false;
+    let exited = false;
+    const reapIfDone = () => {
+      if (!sinksEnded || !exited) return;
+      void container.remove({ force: true }).catch(() => {});
+    };
     const endSinks = () => {
       stdout.end();
       stderrSink.end();
+      sinksEnded = true;
+      reapIfDone();
     };
     stream.on("end", endSinks);
     stream.on("close", endSinks);
 
-    const awaitExit = new Promise<ExecExitInfo>((resolve, reject) => {
-      const timer = timeoutMs
-        ? setTimeout(() => {
-            stdout.destroy(new Error(`helper container timed out after ${timeoutMs}ms`));
-            reject(new Error(`helper container timed out after ${timeoutMs}ms`));
-          }, timeoutMs)
-        : null;
+    // Capture is bounded exactly like restore, through the same primitive: a
+    // wall-clock ceiling alone had to choose between strangling an honest
+    // multi-hour archive and never noticing a wedged one, and it chose wrong in
+    // both directions — 1h flat, so a volume whose RESTORE is allowed six hours
+    // could not be backed up at all. Silence is what distinguishes the two, and
+    // `tar -c` emits continuously while it works.
+    const watchdog = createIdleWatchdog(
+      opts.idleTimeoutMs,
+      `${opts.label} produced no data for ${Math.round(opts.idleTimeoutMs / 1000)}s and was ` +
+        `abandoned. Nothing was written; the archive is incomplete and was not kept.`,
+    );
+    stream.on("data", () => watchdog.touch());
 
-      container
-        .wait()
-        .then((res) => {
-          if (timer) clearTimeout(timer);
-          // Backstop: over the SSH-tunneled attach the stream's end/close is not
-          // always delivered. The container has exited so all output is pushed;
-          // give the buffer a moment to drain, then force-close. Idempotent.
-          setTimeout(endSinks, 3000);
-          resolve({
-            code: res.StatusCode,
-            stderr: Buffer.concat(stderrChunks).toString("utf8").slice(0, 16 * 1024),
-          });
-        })
-        .catch((err) => {
-          if (timer) clearTimeout(timer);
-          reject(err);
+    const awaitExit = (async (): Promise<ExecExitInfo> => {
+      try {
+        // Poll for the exit only once the attach stream has ended: before that
+        // the helper is SUPPOSED to be running, and a poll that resolved early
+        // would report an archive complete while bytes were still buffered.
+        const res = await this.awaitHelperExit(container, watchdog, () => sinksEnded, {
+          timeoutMs: opts.timeoutMs,
+          label: opts.label,
+          note: "Nothing was written; the archive is incomplete and was not kept.",
         });
-    });
+        exited = true;
+        // Backstop: over the SSH-tunneled attach the stream's end/close is not
+        // always delivered. The container has exited so all output is pushed;
+        // give the buffer a moment to drain, then force-close. Idempotent.
+        setTimeout(endSinks, 3000);
+        reapIfDone();
+        return {
+          code: res.StatusCode,
+          stderr: Buffer.concat(stderrChunks).toString("utf8").slice(0, 16 * 1024),
+        };
+      } catch (err) {
+        // Nothing will drain this helper now, so reap directly rather than
+        // through reapIfDone, which waits for a drain that is never coming. The
+        // consumer learns via stdout as well as the rejection — it may be piping
+        // the archive somewhere and never look at awaitExit until the end.
+        stdout.destroy(err as Error);
+        void container.remove({ force: true }).catch(() => {});
+        throw err;
+      } finally {
+        watchdog.dispose();
+      }
+    })();
 
     return { stdout, awaitExit };
   }

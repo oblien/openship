@@ -1,15 +1,20 @@
 import React, { useEffect, useState } from "react";
-import { AlertTriangle, Database, HardDrive, Loader2 } from "lucide-react";
+import { AlertTriangle, Database, HardDrive, Loader2, Unplug } from "lucide-react";
 import { projectsApi } from "@/lib/api";
+import { connectionsApi, type ConnectionConsumer } from "@/lib/api/connections";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (deleteApp: boolean, wipeVolumes: boolean) => void;
+  onConfirm: (deleteApp: boolean, wipeVolumes: boolean, recordOnly: boolean) => void;
   projectName: string;
   projectId?: string | number;
+  /** Static self-hosted signal from the caller (not cloud-managed). Gates the
+   *  record-only option WITHOUT waiting on / trusting the live deletion preview,
+   *  which can't resolve an unreachable or freshly-imported server. */
+  selfHosted?: boolean;
 }
 
 interface ServicePreview {
@@ -34,13 +39,21 @@ export const DeletionModal = ({
   onConfirm,
   projectName,
   projectId,
+  selfHosted,
 }: Props) => {
   const { t } = useI18n();
   const [inputValue, setInputValue] = useState("");
   const [deleteApp, setDeleteApp] = useState(true);
   const [wipeVolumes, setWipeVolumes] = useState(false);
+  // Record-only ("soft") delete: keep the workload + data on the server, drop
+  // only the Openship record. Self-hosted only (hidden for cloud below).
+  const [recordOnly, setRecordOnly] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // Projects this app is linked into. Deleting it unlinks them automatically
+  // (the link can't outlive the app), so this is a heads-up, not a choice — they
+  // keep running, minus the injected env var.
+  const [linkedProjects, setLinkedProjects] = useState<ConnectionConsumer[]>([]);
 
   const isConfirmDisabled = inputValue !== projectName;
 
@@ -53,11 +66,19 @@ export const DeletionModal = ({
     setInputValue("");
     setDeleteApp(true);
     setWipeVolumes(false);
+    setRecordOnly(false);
     setPreview(null);
+    setLinkedProjects([]);
 
     if (!projectId) return;
     let cancelled = false;
     setPreviewLoading(true);
+    connectionsApi
+      .consumers(String(projectId))
+      .then((res) => {
+        if (!cancelled) setLinkedProjects(res?.data ?? []);
+      })
+      .catch(() => { /* informational — a failed read just hides the notice */ });
     projectsApi
       .deletionPreview(projectId)
       .then((res) => {
@@ -81,11 +102,24 @@ export const DeletionModal = ({
 
   const hasVolumes = (preview?.totalVolumes ?? 0) > 0;
   const servicesWithVolumes = preview?.services.filter((s) => s.volumes.length > 0) ?? [];
-  const showWipeBlock = !previewLoading && preview?.selfHosted && hasVolumes;
+  // One row per linked PROJECT, not per link — an app can inject two env vars
+  // into the same project.
+  const linkedGroups = new Map<string, { name: string; envKeys: string[] }>();
+  for (const l of linkedProjects) {
+    const group = linkedGroups.get(l.targetProjectId);
+    if (group) group.envKeys.push(l.envKey);
+    else linkedGroups.set(l.targetProjectId, { name: l.targetName, envKeys: [l.envKey] });
+  }
+  // Record-only is offered only for self-hosted projects (cloud must fully
+  // delete — the backend enforces this regardless of the UI). Gate on the
+  // caller's static signal when given (so an imported/unreachable-server project
+  // still shows it), else fall back to the live preview.
+  const canRecordOnly = selfHosted ?? (!previewLoading && !!preview?.selfHosted);
+  const showWipeBlock = !previewLoading && preview?.selfHosted && hasVolumes && !recordOnly;
 
   const handleConfirm = () => {
     if (isConfirmDisabled) return;
-    onConfirm(deleteApp, showWipeBlock ? wipeVolumes : false);
+    onConfirm(deleteApp, showWipeBlock ? wipeVolumes : false, recordOnly);
     onClose();
   };
 
@@ -107,7 +141,9 @@ export const DeletionModal = ({
           <div className="min-w-0">
             <h3 className="text-[15px] font-semibold text-foreground">{t.projectSettings.deletion.title}</h3>
             <p className="text-xs text-muted-foreground mt-0.5 truncate">
-              {t.projectSettings.deletion.cannotUndo}
+              {recordOnly
+                ? t.projectSettings.deletion.recordOnlyReversible
+                : t.projectSettings.deletion.cannotUndo}
             </p>
           </div>
         </div>
@@ -117,6 +153,41 @@ export const DeletionModal = ({
           <p className="text-sm text-muted-foreground">
             {t.projectSettings.deletion.aboutToPrefix}<strong className="text-foreground">{projectName}</strong>{t.projectSettings.deletion.aboutToSuffix}
           </p>
+
+          {/* Linked projects. Not a choice: the link can't outlive the app, so
+              deleting it unlinks them. They keep running — this says so. */}
+          {linkedGroups.size > 0 && (
+            <div className="rounded-xl border border-info-border bg-info-bg px-3 py-3">
+              <div className="flex items-center gap-2">
+                <Unplug className="size-3.5 text-info shrink-0" />
+                <span className="text-sm font-medium text-foreground">
+                  {interpolate(
+                    linkedGroups.size === 1
+                      ? t.projectSettings.deletion.linkedTitleOne
+                      : t.projectSettings.deletion.linkedTitleOther,
+                    { count: String(linkedGroups.size) },
+                  )}
+                </span>
+              </div>
+              <ul className="mt-2.5 space-y-1.5">
+                {[...linkedGroups].map(([id, group]) => (
+                  <li key={id} className="flex items-baseline gap-2 min-w-0">
+                    <span className="text-[13px] font-medium text-foreground truncate">
+                      {group.name}
+                    </span>
+                    <span className="font-mono text-[11px] text-muted-foreground truncate">
+                      {group.envKeys.join(", ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
+                {recordOnly
+                  ? t.projectSettings.deletion.linkedNoteRecordOnly
+                  : t.projectSettings.deletion.linkedNote}
+              </p>
+            </div>
+          )}
 
           {/* App vs single environment */}
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/50 bg-muted/15 p-3">
@@ -136,6 +207,27 @@ export const DeletionModal = ({
               </span>
             </span>
           </label>
+
+          {/* Record-only (soft) delete — self-hosted only; keeps the workload on
+              the server and drops just the Openship record. */}
+          {canRecordOnly && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border/50 bg-muted/15 p-3">
+              <Checkbox
+                checked={recordOnly}
+                onCheckedChange={setRecordOnly}
+                className="mt-0.5"
+                aria-label={t.projectSettings.deletion.recordOnlyLabel}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">
+                  {t.projectSettings.deletion.recordOnlyLabel}
+                </span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                  {t.projectSettings.deletion.recordOnlyDesc}
+                </span>
+              </span>
+            </label>
+          )}
 
           {/* Wipe-volumes block - only shows when there's actual data on disk */}
           {previewLoading ? (
@@ -198,13 +290,22 @@ export const DeletionModal = ({
             </div>
           ) : null}
 
-          <div className="rounded-xl border border-warning-border bg-warning-bg px-3 py-2.5">
-            <p className="text-xs text-warning leading-relaxed">
-              {wipeVolumes
-                ? t.projectSettings.deletion.amberWipe
-                : t.projectSettings.deletion.amberNoWipe}
-            </p>
-          </div>
+          {recordOnly ? (
+            // Non-destructive: nothing on the server is touched.
+            <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t.projectSettings.deletion.recordOnlyNote}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-warning-border bg-warning-bg px-3 py-2.5">
+              <p className="text-xs text-warning leading-relaxed">
+                {wipeVolumes
+                  ? t.projectSettings.deletion.amberWipe
+                  : t.projectSettings.deletion.amberNoWipe}
+              </p>
+            </div>
+          )}
 
           <div>
             <p className="text-xs text-muted-foreground mb-2">
@@ -236,12 +337,20 @@ export const DeletionModal = ({
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
               isConfirmDisabled
                 ? "bg-muted text-muted-foreground/70 cursor-not-allowed"
-                : "bg-danger-solid text-white hover:bg-danger-solid/90"
+                : recordOnly
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-danger-solid text-white hover:bg-danger-solid/90"
             }`}
           >
-            {wipeVolumes
-              ? deleteApp ? t.projectSettings.deletion.confirmDeleteWipe : t.projectSettings.deletion.confirmDeleteEnvWipe
-              : deleteApp ? t.projectSettings.deletion.confirmDelete : t.projectSettings.deletion.confirmDeleteEnv}
+            {recordOnly
+              ? t.projectSettings.deletion.confirmRecordOnly
+              : wipeVolumes
+                ? deleteApp
+                  ? t.projectSettings.deletion.confirmDeleteWipe
+                  : t.projectSettings.deletion.confirmDeleteEnvWipe
+                : deleteApp
+                  ? t.projectSettings.deletion.confirmDelete
+                  : t.projectSettings.deletion.confirmDeleteEnv}
           </button>
         </div>
       </div>

@@ -33,6 +33,64 @@ export interface BillingState {
   overQuota: boolean;
   /** Build time this period in minutes (openship-derived; Oblien has no build meter). */
   buildTimeMinutes: number;
+  /**
+   * Live resource capacity + consumption, sourced from Openship Cloud. Optional
+   * and additive: the self-hosted billing proxy forwards it verbatim when the
+   * SaaS provides it, and the dashboard's Capacity panel falls back to the
+   * tier's static `oblienLimits` for any ceiling the cloud hasn't sent yet.
+   *
+   * Each meter is `{ used, max }` where either side may be `null`:
+   *   - `used === null` → cloud hasn't reported consumption yet ("syncing").
+   *   - `max === null`  → no ceiling on this plan ("unlimited").
+   */
+  capacity?: BillingCapacity;
+  /**
+   * MASTER billing-feature availability, decided by Openship Cloud
+   * (`BILLING_ENABLED`). When `enabled` is false the whole billing feature is
+   * pre-launch: the UI shows a "coming soon" surface and every Stripe-mutating
+   * endpoint is refused server-side. Optional/defensive: treated as NOT enabled
+   * when absent, so billing stays gated until the cloud turns it on — no
+   * dashboard release needed to launch.
+   */
+  billing?: BillingFeature;
+  /**
+   * One-time credit top-up availability, decided by Openship Cloud. Requires
+   * the master `billing.enabled` AND the top-ups sub-switch. The UI enables the
+   * buy flow only when `available` is true; otherwise it shows the "coming soon"
+   * preview. Optional/defensive: treated as NOT available when absent.
+   */
+  topups?: TopupAvailability;
+}
+
+export interface BillingFeature {
+  enabled: boolean;
+  status?: "live" | "coming_soon" | "disabled";
+}
+
+export interface TopupAvailability {
+  available: boolean;
+  status?: "available" | "coming_soon" | "unavailable";
+}
+
+/** One resource meter: consumption against a ceiling. Either side may be null. */
+export interface CapacityMeter {
+  used: number | null;
+  max: number | null;
+}
+
+/**
+ * Per-resource capacity snapshot. All fields optional so the cloud can grow the
+ * set without a dashboard release. Units:
+ *   routes/workspaces/vcpus → whole counts · ramMb → MB · diskGb/bandwidthGb → GB.
+ */
+export interface BillingCapacity {
+  /** Free *.opsh.io edge routes the org is using vs its allowed maximum. */
+  routes?: CapacityMeter;
+  workspaces?: CapacityMeter;
+  vcpus?: CapacityMeter;
+  ramMb?: CapacityMeter;
+  diskGb?: CapacityMeter;
+  bandwidthGb?: CapacityMeter;
 }
 
 /**

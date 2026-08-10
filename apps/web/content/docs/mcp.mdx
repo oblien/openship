@@ -15,8 +15,8 @@ and permission stack**, so an agent can only ever see and do what its credential
 
 <Callout title="Where this lives in the dashboard">
 Everything below is set up under **Settings → MCP**. That tab shows the exact endpoint for *your* instance,
-a per-client "add" recipe (Claude Code, Cursor, VS Code, Claude Desktop, Windsurf, Zed), and the list of
-clients you've already connected.
+a per-client "add" recipe (Claude Code, Codex, Cursor, VS Code, Claude Desktop, Windsurf, Zed), and the list
+of clients you've already connected.
 </Callout>
 
 ## The endpoint
@@ -56,15 +56,26 @@ Give the client your endpoint — `https://<your-host>/api/mcp`. In Claude Code 
 claude mcp add --transport http openship https://<your-host>/api/mcp
 ```
 
+Codex registers the server and authorizes it as two commands:
+
+```bash
+codex mcp add openship --url https://<your-host>/api/mcp
+codex mcp login openship
+```
+
 Other clients take it through their own UI; **Settings → MCP** has the exact snippet for each one.
 </Step>
 
 <Step>
 ### Approve it in the browser
 
-The first time the client connects, a browser window opens. There you **choose what the client may do** —
-read-only or full control, and either all resources or a specific set of projects, servers, and repositories.
-No credential to copy or paste.
+For most clients this happens on the first connect: a browser window opens by itself. With Codex it's the
+explicit `codex mcp login openship` above — the server is registered without it, but every call comes back
+unauthorized until you run it.
+
+Either way, that browser page is where you **choose what the client may do** — read-only or full control,
+and either all resources or a specific set of projects, servers, and repositories. No credential to copy
+or paste.
 </Step>
 
 <Step>
@@ -79,6 +90,19 @@ The client can now call tools within exactly the scope you approved. The connect
 <Callout title="The scope you pick is enforced, not advisory" type="info">
 Your choices are stored as the client's grant — the same grant model as a scoped [personal access
 token](/docs/api/tokens). The client can never exceed what you granted, or what you can access yourself.
+</Callout>
+
+<Callout title="Codex: local surfaces share one config; hosted tasks don't" type="warn">
+The Codex **CLI, desktop app, and IDE extension** all read the same local MCP configuration, so adding
+Openship once covers all three. Restart any of them that were already running — they read the config at
+startup.
+
+A **hosted** Codex task is a different environment. It doesn't inherit your machine's MCP config, and it can
+only reach `https://<your-host>/api/mcp` if that environment has network access to your instance. For a
+private or LAN-only self-hosted Openship, it won't — the endpoint has to be reachable from wherever the agent
+actually runs. Openship Cloud, or a self-hosted instance on a public hostname, is reachable; a
+`localhost`/private-network endpoint is not. See [remote access](/docs/getting-started/installation) for
+exposing an instance deliberately.
 </Callout>
 
 </Tab>
@@ -136,6 +160,11 @@ resource types it was granted. And if a `tools/call` touches something outside t
 `404` — the scope doing its job. For the full protocol details (JSON-RPC methods, negotiation, error codes),
 see the [MCP API reference](/docs/api/mcp).
 
+The **organization boundary** applies to MCP exactly as it does to a browser session: because every call
+runs through the same per-resource permission check, an MCP client acts only within organizations you
+belong to and can never reach another org's projects, servers, or secrets — a resource outside your
+membership comes back `404`, just as it would in the dashboard. See [Isolation](/docs/security/isolation).
+
 ## Which tools map to which API
 
 Tools aren't a separate feature set — each one **maps onto a permission-tagged REST route**, and the tool name
@@ -169,6 +198,15 @@ The `tokens`, `auth`, and `mcp` modules are hard-blocked from ever becoming tool
 can't mint itself a fresh credential or escape its own scope. Manage tokens and connected clients from the
 dashboard or the [Tokens API](/docs/api/tokens), not from an agent.
 </Callout>
+
+## Guided flows
+
+Some tasks are a chain of calls in a specific order — deploying a repo, uploading a folder, installing a
+catalog app. The server ships a small set of **prompts** (`prompts/list` / `prompts/get`) that spell those
+chains out step by step, referencing the exact tools to call. Compatible clients surface them as
+slash-commands or starters, so an agent can pick a flow and follow it rather than reverse-engineering the
+order from the flat tool list. See the [MCP API reference](/docs/api/mcp#guided-flows-prompts) for the full
+catalog.
 
 ## Verify from the terminal
 

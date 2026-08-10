@@ -33,7 +33,12 @@ export interface ClonePlanInput {
   buildStrategy?: "local" | "server";
   /** Whether this instance is the desktop app (relay is desktop-only). */
   isDesktop: boolean;
-  /** Per-deploy opt-in to forward the operator's git identity to the server. */
+  /** Forward the operator's git identity to the server for an on-server clone.
+   *  Tri-state: `true`/`undefined` = forward when possible (the secure + atomic
+   *  default for a desktop server clone); `false` = opt out (force an api-host
+   *  clone + context transfer). Whether it ACTUALLY forwards still hinges on a
+   *  real SSH tunnel + a local `gh` identity, probed at runtime by the pipeline /
+   *  resolver — this only expresses the operator's preference. */
   forwardGitCredentials?: boolean | null;
   /** Repo is hosted on GitHub (`gitProvider === "github"` / has a parsed owner) →
    *  the server can download the source tarball directly (source-tarball.ts), so
@@ -64,6 +69,24 @@ export interface ClonePlan {
   relayEligible: boolean;
 }
 
+/**
+ * The CONFIG-level relay gate, on its own so preflight and the pipeline can't
+ * disagree about it. Whether a relay would actually clone additionally needs a
+ * forwardable local identity (`hasLocalGitIdentity`) and a real reverse tunnel
+ * (`executor.reverseForward`) — both runtime state, checked by their owners.
+ *
+ * Desktop-only is deliberate and load-bearing: the relay vends the operator's
+ * account-wide gh token on demand, so its trust boundary is "one operator's
+ * machine → their own server". A multi-tenant self-hosted box does not have that
+ * boundary; it uses per-server credentials or its own ambient git access instead.
+ */
+export function relayConfigEligible(input: {
+  isDesktop: boolean;
+  forwardGitCredentials?: boolean | null;
+}): boolean {
+  return input.isDesktop && input.forwardGitCredentials !== false;
+}
+
 export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   const onServer = input.effectiveTarget === "server";
 
@@ -92,16 +115,39 @@ export function resolveClonePlan(input: ClonePlanInput): ClonePlan {
   // isn't cloning on the server clones on the api-host (both local → gh OK).
   // Everything else (on-server clone, cloud workspace clone) is off-host → remote.
   //
+  // Stated as "off-host unless proven otherwise": the clone runs HERE unless it
+  // runs on a server, or it's a cloud deploy building in the cloud workspace.
+  //
+  // #346 — this was `buildStrategy === "local" || onServer`, which silently
+  // omitted the LOCAL target. A local deploy has no server to clone on, so the
+  // clone always runs here; but no stack declares `defaultBuildStrategy`, so
+  // `resolveStrategy` hands back "server" to every caller that omits it (MCP, the
+  // CLI, CI, webhooks — the dashboard always sends it explicitly, which is why
+  // only non-dashboard deploys broke). That tagged a host-local clone "server",
+  // whose chain refuses the non-shippable gh-cli token, and the deploy hard-failed
+  // "No GitHub token available … (purpose: remote)" on a host that could clone fine.
+  //
+  // Preflight's checkRemoteCloneToken already short-circuits `effectiveTarget ===
+  // "local"` to pass, so it green-lit the very deploy the pipeline then rejected —
+  // the preflight/pipeline drift this function exists to make impossible, surviving
+  // because the rule lived inline in preflight and not in the shared plan. Keep the
+  // two agreeing: a local target is a host-local clone on BOTH sides.
+  //
   // runsLocally MUST imply !runsOnServer — otherwise a contradictory config
   // (buildStrategy="local" + cloneStrategy="server") would tag an on-server clone
   // as local and ship the operator's local gh/OAuth token off-host to the remote.
-  const runsLocally = !runsOnServer && (input.buildStrategy === "local" || onServer);
+  const runsLocally =
+    !runsOnServer && (input.effectiveTarget !== "cloud" || input.buildStrategy === "local");
 
   return {
     runsOnServer,
     dockerClonesOnServer,
     runsLocally,
     cloneBuildStrategy: runsLocally ? "local" : "server",
-    relayEligible: runsOnServer && input.isDesktop && input.forwardGitCredentials === true,
+    // Forward is the DEFAULT for a desktop server clone (secure + atomic: clone
+    // on the build host with the operator's gh identity, nothing persisted),
+    // opt-out via forwardGitCredentials === false. Real capability (SSH tunnel +
+    // local gh) is verified at runtime; this is the config-level eligibility.
+    relayEligible: runsOnServer && relayConfigEligible(input),
   };
 }

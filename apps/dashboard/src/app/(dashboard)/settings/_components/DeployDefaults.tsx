@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Check, Loader2, Server, Cloud, Cpu, Rocket, X } from "lucide-react";
+import { BlurIp } from "@/components/BlurIp";
 import { settingsApi } from "@/lib/api";
 import { systemApi } from "@/lib/api/system";
 import type { ServerInfo } from "@/lib/api/system";
@@ -168,7 +169,7 @@ export function DeployDefaults() {
                             {s.name || s.sshHost}
                           </p>
                           <p className="text-[11px] text-muted-foreground">
-                            {s.sshUser || "root"}@{s.sshHost}:{s.sshPort || 22}
+                            {s.sshUser || "root"}@<BlurIp>{s.sshHost}</BlurIp>:{s.sshPort || 22}
                           </p>
                         </div>
                         {isSelected && (

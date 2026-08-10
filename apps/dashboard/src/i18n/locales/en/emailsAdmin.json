@@ -4,6 +4,7 @@
       "overview": "Overview",
       "domains": "Domains",
       "mailboxes": "Mailboxes",
+      "aliases": "Aliases",
       "dns": "DNS",
       "health": "Health",
       "test": "Test",
@@ -49,6 +50,7 @@
     "guidanceSandbox": "Request production access — SES starts in a sandbox that only sends to verified addresses.",
     "guidanceCreds": "Use SES SMTP credentials (an IAM SMTP user) — not your AWS access keys.",
     "guidanceDns": "Publish the DNS records on the DNS tab, then re-scan to confirm.",
+    "guidanceSystem": "System mail (password resets, invites, notifications) also sends via this relay — unless you've set a separate sender in Settings → Email.",
     "save": "Enable relay",
     "update": "Save changes",
     "disable": "Disable relay",
@@ -242,6 +244,52 @@
       "postmasterNote": "The postmaster mailbox is hard-delete protected - only soft delete is available, so the mail server's bootstrap account stays intact."
     }
   },
+  "aliases": {
+    "heading": "Aliases",
+    "description": "Forward mail from one address to another, or catch every unmatched address at a domain. Live the moment you save - no restart needed.",
+    "addAlias": "Add alias",
+    "domainLabel": "Domain",
+    "loading": "Loading…",
+    "activeCount": "{active} of {total} active",
+    "colSource": "Source",
+    "colDestination": "Forwards to",
+    "colType": "Type",
+    "colStatus": "Status",
+    "typeAlias": "Alias",
+    "typeCatchAll": "Catch-all",
+    "active": "Active",
+    "disabled": "Disabled",
+    "activateAction": "Activate",
+    "deactivateAction": "Deactivate",
+    "deleteAction": "Delete",
+    "loadDomainsFailed": "Failed to load domains",
+    "loadFailed": "Failed to load aliases",
+    "emptyTitle": "No aliases yet",
+    "emptyDesc": "Forward an address, or set up a catch-all, for {domain}.",
+    "create": {
+      "title": "New alias · {domain}",
+      "description": "Creates a row in the mail server's forwarding table. Postfix reads it live - no restart needed.",
+      "submit": "Create alias",
+      "submitting": "Creating…",
+      "catchAllLabel": "Catch-all for this domain",
+      "catchAllHint": "Forwards every address at {domain} that doesn't match a real mailbox or another alias. Replaces any existing catch-all for this domain.",
+      "localPartLabel": "Local part",
+      "localPartHint": "The part before @. Lowercase, alphanumeric.",
+      "destinationLabel": "Forwards to",
+      "destinationHint": "Any valid email address - a mailbox on this server, or external (e.g. Gmail)."
+    },
+    "deleteForm": {
+      "title": "Delete this alias?",
+      "sourceCatchAll": "Catch-all for {domain}",
+      "description": "Removes the forwarding row immediately. Mail to {source} will bounce or fall through to the next matching rule, effective on the next message.",
+      "submit": "Delete alias",
+      "submitting": "Deleting…"
+    },
+    "toast": {
+      "mailboxConflict": "{address} is a real mailbox - creating an alias here would redirect its mail. Edit or delete the mailbox instead.",
+      "alreadyExists": "That exact forward already exists."
+    }
+  },
   "health": {
     "heading": "Health",
     "description": "Live daemon status + DNS scan. Daemons refresh on a 10-second poll; DNS scan runs once on open and again whenever you click Rescan.",
@@ -422,6 +470,16 @@
     "body": "Brand-new sending domains have no reputation yet, so providers may file early mail to spam for the first 24-48 hours. This is normal. Mark messages as \"not spam\" from your testing inbox and deliverability improves quickly. ",
     "dismissLink": "I know, hide this",
     "dismiss": "Dismiss"
+  },
+  "engine": {
+    "downTitle": "The mail engine on this server isn't running",
+    "downBody": "While it's stopped, no mail is delivered or accepted, and every tab here needs it. Starting it back up is safe — nothing is reinstalled and no configuration is rewritten.",
+    "legacyNote": "This server runs the legacy host-native engine (systemd Postfix/Dovecot), so there is no container to inspect.",
+    "start": "Start the engine",
+    "missingTitle": "No mail engine on this server",
+    "missingBody": "Openship can't find a mail engine here — neither the engine container nor the Postfix/Dovecot units. Re-run mail setup to reinstall it.",
+    "rerunSetup": "Re-run mail setup",
+    "cardBlocked": "Unavailable until the mail engine is running."
   },
   "welcome": {
     "invalidEmail": "Enter a valid email address",

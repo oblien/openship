@@ -14,6 +14,8 @@ import React, { useCallback } from "react";
 import { Plus, Trash2, ArrowRight } from "lucide-react";
 import { useI18n } from "@/components/i18n-provider";
 import type { RoutingConfig } from "@repo/core";
+import type { EdgeConfigReport } from "@/lib/api/projects";
+import { ProxySettingsSection } from "./ProxySettingsSection";
 
 type Rewrite = { source: string; destination: string };
 type Redirect = { source: string; destination: string; permanent?: boolean };
@@ -32,6 +34,7 @@ function normalize(value: RoutingConfig | null | undefined): RoutingConfig {
     headers: value?.headers ?? [],
     cleanUrls: value?.cleanUrls,
     trailingSlash: value?.trailingSlash,
+    proxy: value?.proxy,
   };
 }
 
@@ -43,6 +46,9 @@ function compact(cfg: RoutingConfig): RoutingConfig | null {
   if (cfg.headers?.length) out.headers = cfg.headers;
   if (cfg.cleanUrls !== undefined) out.cleanUrls = cfg.cleanUrls;
   if (cfg.trailingSlash !== undefined) out.trailingSlash = cfg.trailingSlash;
+  // Carried even when this editor doesn't render the section (the wizard), or
+  // saving from there would silently wipe a limit set on the project tab.
+  if (cfg.proxy && Object.keys(cfg.proxy).length > 0) out.proxy = cfg.proxy;
   return Object.keys(out).length > 0 ? out : null;
 }
 
@@ -100,7 +106,28 @@ export const RoutingConfigEditor: React.FC<{
   value: RoutingConfig | null | undefined;
   onChange: (next: RoutingConfig | null) => void;
   disabled?: boolean;
-}> = ({ value, onChange, disabled }) => {
+  /**
+   * Render the proxy-limits section (upload size, timeouts, buffering, gzip).
+   *
+   * Off by default so the deploy wizard stays about getting a first deploy out —
+   * these are knobs you reach for after something 413s or times out, not before
+   * the app exists. `compact` carries the values either way, so saving from the
+   * wizard can't wipe a limit set on the project tab.
+   */
+  showProxySettings?: boolean;
+  /** Live edge read-back for the proxy section (saved vs. served), when fetched. */
+  edgeConfig?: EdgeConfigReport | null;
+  onRefreshEdgeConfig?: () => void;
+  edgeConfigLoading?: boolean;
+}> = ({
+  value,
+  onChange,
+  disabled,
+  showProxySettings,
+  edgeConfig,
+  onRefreshEdgeConfig,
+  edgeConfigLoading,
+}) => {
   const { t } = useI18n();
   const w = t.widgets.routing.configEditor;
   const cfg = normalize(value);
@@ -321,6 +348,17 @@ export const RoutingConfigEditor: React.FC<{
           {w.trailingSlash}
         </label>
       </div>
+
+      {showProxySettings && (
+        <ProxySettingsSection
+          cfg={cfg}
+          patch={patch}
+          disabled={disabled}
+          edge={edgeConfig}
+          {...(onRefreshEdgeConfig ? { onRefreshEdge: onRefreshEdgeConfig } : {})}
+          edgeLoading={edgeConfigLoading}
+        />
+      )}
     </div>
   );
 };

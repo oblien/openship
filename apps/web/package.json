@@ -1,13 +1,13 @@
 {
   "name": "@repo/web",
-  "version": "0.3.0",
+  "version": "0.6.1",
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "dev": "next dev --port 3009",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
@@ -19,8 +19,10 @@
     "fumadocs-ui": "^16.10.7",
     "gsap": "^3.12.7",
     "lucide-react": "0.474.0",
+    "marked": "^15.0.0",
     "motion": "12.4.7",
     "next": "^16.1.6",
+    "nodemailer": "^6.9.16",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-wrap-balancer": "^1.1.1",
@@ -31,6 +33,7 @@
     "@tailwindcss/postcss": "^4.2.1",
     "@types/mdx": "^2.0.14",
     "@types/node": "^22.13.0",
+    "@types/nodemailer": "^6.4",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "postcss": "^8.5.8",

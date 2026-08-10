@@ -6,9 +6,14 @@
 
 import type { Context } from "hono";
 import { repos } from "@repo/db";
+import { hostControlDisabled } from "@repo/adapters";
 import { invalidateOpenRestyPaths } from "@/lib/openresty-paths";
+import { invalidateHostCapacity } from "@/lib/host-capacity";
 import { env } from "../../config";
 import { sshManager } from "../../lib/ssh-manager";
+import { resolvesToLocalHost } from "@/lib/self-host";
+import { boxOwningOrgId } from "@/lib/box-org";
+import { ensureLocalServer } from "@/lib/startup/self-server";
 import { encryptSecretField } from "@/lib/credential-encryption";
 import { getRequestContext } from "../../lib/request-context";
 import { permission } from "../../lib/permission";
@@ -22,6 +27,9 @@ function serializeServer(s: Awaited<ReturnType<typeof repos.server.get>>) {
   return {
     id: s.id,
     name: s.name,
+    // The auto-registered host row (VPS / server-host mode). The dashboard
+    // badges it "This Server" and hides SSH-credential fields for it.
+    isLocal: s.isLocal,
     sshHost: s.sshHost,
     sshPort: s.sshPort,
     sshUser: s.sshUser,
@@ -42,7 +50,17 @@ export async function listServers(c: Context) {
 
   // Org-scoped: only the caller's org's servers.
   const ctx = getRequestContext(c);
-  const all = await repos.server.listByOrganization(ctx.organizationId);
+  // Self-heal: "this box is a deploy target" is an invariant about the MACHINE, so
+  // materialize it on read instead of trusting whichever install branch ran (that
+  // trust is why a free-domain install listed no servers). Idempotent, single-flight
+  // and a no-op — one findLocal — once the row exists.
+  await ensureLocalServer().catch(() => null);
+  const rows = await repos.server.listByOrganization(ctx.organizationId);
+  // Host control off (`openship up --no-host-control`): this box is not a deploy
+  // target and every host operation refuses, so the local row is hidden rather
+  // than listed-but-dead. Enforced by createHostExecutor throwing — this only
+  // stops the UI from offering something the API will reject.
+  const all = hostControlDisabled() ? rows.filter((s) => !s.isLocal) : rows;
   await primeGeo();
   // Projects currently deployed to each server (active deployment → meta.serverId).
   const projectCounts = await repos.project
@@ -96,6 +114,39 @@ export async function createServer(c: Context) {
   if (!host) return c.json({ error: "SSH host is required" }, 400);
 
   const ctx = getRequestContext(c);
+
+  // Adding THIS host as a server (loopback / the box's own SERVER_IP on a
+  // server-host) must NOT create a plain SSH row — deploys/probes would dial the
+  // API's own loopback (the container's, when compose-deployed) where there is no
+  // sshd → the "Can't reach 127.0.0.1" failure.
+  if (resolvesToLocalHost({ sshHost: host, sshPort: body.sshPort, sshJumpHost: body.sshJumpHost })) {
+    // Only the box-owning org may register the local host — running on it is
+    // code execution on the control plane (host executor + mounted docker socket,
+    // DooD ≈ root). A teammate's org (any member can POST /servers) is refused so
+    // it can't mint itself a host-root deploy target.
+    if (ctx.organizationId !== (await boxOwningOrgId())) {
+      return c.json(
+        { error: "The local host can't be added as a server in this workspace." },
+        400,
+      );
+    }
+    // Adopt the canonical isLocal "This Server" row (create it if nothing has yet)
+    // so the box is a first-class, working deploy target with the right transport —
+    // never a duplicate loopback SSH row. Through the ONE registration primitive,
+    // so this can't race the boot hook / an install call into a second row.
+    const local = await ensureLocalServer({ name: body.name?.trim(), sshHost: host });
+    if (!local) {
+      // Only reachable with host control off (`--no-host-control`): every host
+      // operation refuses and listServers hides the row, so creating one would hand
+      // back a server that cannot work. Say so instead.
+      return c.json(
+        { error: "Host control is disabled on this instance, so the local host can't be a deploy target." },
+        400,
+      );
+    }
+    return c.json(serializeServer(local), 201);
+  }
+
   const server = await repos.server.create({
     organizationId: ctx.organizationId,
     name: body.name?.trim() || null,
@@ -114,6 +165,11 @@ export async function createServer(c: Context) {
 
   sshManager.invalidate(server.id);
   await invalidateOpenRestyPaths(server.id);
+  // createServer upserts, so this id may now point at DIFFERENT hardware —
+  // re-probe rather than validate resource limits against the old box's specs.
+  await invalidateHostCapacity(ctx.organizationId, server.id).catch((err: unknown) =>
+    console.error("[server.create] capacity cache cleanup failed:", err),
+  );
 
   // Names + non-secret connection details only. SSH passwords & key
   // passphrases are encrypted at rest; never include them in the audit.
@@ -168,6 +224,11 @@ export async function updateServer(c: Context) {
   const updated = await repos.server.update(id, patch);
   sshManager.invalidate(id);
   await invalidateOpenRestyPaths(id);
+  // Edited connection details can repoint this row at another machine (and a
+  // resize changes the specs of the same one) — re-probe capacity either way.
+  await invalidateHostCapacity(ctx.organizationId, id).catch((err: unknown) =>
+    console.error("[server.update] capacity cache cleanup failed:", err),
+  );
 
   // Audit only the fields the caller intended to touch. Skip secrets entirely.
   const auditAfter: Record<string, unknown> = {};
@@ -204,6 +265,11 @@ export async function deleteServer(c: Context) {
   const ctx = getRequestContext(c);
   const existing = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!existing) return c.json({ error: "Server not found" }, 404);
+  // The auto-registered host ("This Server") is not user-removable — it IS the
+  // machine OpenShip runs on, and the boot reconcile would just recreate it.
+  if (existing.isLocal) {
+    return c.json({ error: "This is the current host and can't be removed." }, 400);
+  }
 
   // Refuse to hard-delete a server still hosting active deployments — doing so
   // orphans their running containers (server delete does NOT enqueue
@@ -237,6 +303,12 @@ export async function deleteServer(c: Context) {
     );
   sshManager.invalidate(id);
   await invalidateOpenRestyPaths(id);
+  // Drop the cached CPU/RAM capacity for this box so a re-added server (or a
+  // reused id) re-probes instead of validating resource limits against the
+  // hardware of a machine that's gone.
+  await invalidateHostCapacity(ctx.organizationId, id).catch((err: unknown) =>
+    console.error("[server.delete] capacity cache cleanup failed:", err),
+  );
 
   audit.recordAsync(auditContextFrom(c, ctx.organizationId, ctx.userId), {
     eventType: "server.removed",

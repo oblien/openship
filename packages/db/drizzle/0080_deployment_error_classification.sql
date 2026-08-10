@@ -1,0 +1,26 @@
+-- Durable failure classification for a deployment.
+--
+-- The pipeline already classifies failures precisely: a port conflict throws
+-- DeployError(msg, "PORT_IN_USE", {port, pid, command, systemdUnit,
+-- isManagedDeployment, …}) and that reaches onFailure intact. It was then split,
+-- and only half of it was kept: `error_message` went to this table while
+-- `errorCode`/`errorDetails` went ONLY to the in-memory SSE session. Once that
+-- session was evicted (or the API restarted) all that survived a port conflict
+-- was an English sentence, so nothing could offer the operator — or an MCP agent
+-- — a way forward.
+--
+-- The one attempt to recover the code was inverted: build-status re-derived it
+-- with error_message.includes("PORT_IN_USE"), and none of the coded messages
+-- contain that token (they read "Port 3000 is already in use by …"). So the
+-- failures we DID classify lost their code and the ones we didn't got it guessed.
+--
+-- `error_code` is free text with no check constraint, matching `status` on this
+-- table: codes come from DeployError call sites across packages/adapters and must
+-- be extendable without a migration. `error_details` is the DeployError details
+-- bag verbatim (never contains secrets — it is process/port metadata).
+--
+-- Both nullable with no backfill: NULL means "not classified", which is exactly
+-- true of every pre-existing row.
+ALTER TABLE "deployment" ADD COLUMN IF NOT EXISTS "error_code" text;
+--> statement-breakpoint
+ALTER TABLE "deployment" ADD COLUMN IF NOT EXISTS "error_details" jsonb;

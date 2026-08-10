@@ -25,6 +25,7 @@
     "projectCountOne": "{count} 个项目",
     "projectCountOther": "{count} 个项目",
     "viewAllProjects": "查看全部 {count} 个项目 →",
+    "viewAllApps": "查看全部 {count} 个应用 →",
     "greetingName": "{greeting}，{name}",
     "importGit": "导入 Git",
     "importGitDesc": "从代码仓库导入",
@@ -35,7 +36,10 @@
     "docs": "文档",
     "docsDesc": "了解更多",
     "activityTitle": "动态",
-    "successRate": "成功率",
+    "systemStatus": "系统状态",
+    "operational": "正常",
+    "oneIssue": "1 个问题",
+    "manyIssues": "{n} 个问题",
     "recentTitle": "最近",
     "activityEmpty": "你的动态将显示在这里",
     "allSystemsOperational": "所有系统运行正常",
@@ -46,26 +50,31 @@
       "hours": "{n} 小时前",
       "days": "{n} 天前",
       "months": "{n} 个月前"
-    }
+    },
+    "appsEmptyTitle": "还没有应用",
+    "appsEmptyDesc": "一键部署，完全自托管——数据库、自动化、分析、密码库等，都运行在你自己的服务器上。"
   },
   "nav": {
     "home": "首页",
     "new-project": "新建项目",
     "projects": "项目",
     "deployments": "部署",
+    "issues": "问题",
     "backups": "备份",
     "domains": "域名",
     "monitoring": "监控",
     "servers": "服务器",
     "emails": "邮件",
     "settings": "设置",
-    "billing": "账单",
+    "billing": "账单与用量",
     "sections": {
       "main": "主要",
       "settings": "设置",
       "infrastructure": "基础设施",
       "account": "账户"
-    }
+    },
+    "apps": "应用",
+    "jobs": "任务"
   },
   "sidebar": {
     "expand": "展开侧边栏",
@@ -78,6 +87,40 @@
     "preferences": "偏好设置"
   },
   "pages": {
+    "apps": {
+      "moreApps": "还有 {count} 个",
+      "title": "应用",
+      "description": "一键式托管服务——安装并运行 Convex、WordPress、邮件等。",
+      "createButton": "安装应用",
+      "loading": "正在加载应用…",
+      "countOne": "已安装 {count} 个应用",
+      "countOther": "已安装 {count} 个应用",
+      "emptyTitle": "安装你的第一个应用",
+      "emptyDescription": "一键启动 Convex、n8n、Ghost 等，完全自托管。选择一个开始吧。",
+      "popular": "热门应用",
+      "alsoDeploy": "你还可以部署",
+      "browseAll": "浏览所有应用",
+      "catalogTitle": "安装应用",
+      "catalogDescription": "一键式托管服务。选择一个即可作为应用安装。",
+      "catalogSearchPlaceholder": "搜索应用…",
+      "catalogNoResults": "没有匹配搜索的应用。",
+      "cancel": "取消",
+      "install": "安装",
+      "installing": "正在安装…",
+      "comingSoon": "即将推出",
+      "configTitle": "配置 {app}",
+      "nameLabel": "名称",
+      "categories": {
+        "all": "全部",
+        "backend": "后端",
+        "database": "数据库",
+        "cms": "内容管理",
+        "analytics": "分析",
+        "automation": "自动化",
+        "mail": "邮件",
+        "other": "工具"
+      }
+    },
     "projects": {
       "title": "项目",
       "description": "轻松部署和管理你的应用",
@@ -107,6 +150,11 @@
         "rollbacks": "回滚",
         "rollbacksDesc": "一键还原",
         "commandPalette": "或按 {key} 打开命令面板"
+      },
+      "view": {
+        "label": "视图",
+        "list": "列表",
+        "grid": "网格"
       }
     },
     "deployments": {
@@ -130,7 +178,7 @@
       "description": "账户、团队和平台设置。"
     },
     "billing": {
-      "title": "账单",
+      "title": "账单与用量",
       "description": "管理你的订阅、用量和支付方式。"
     }
   },
@@ -158,7 +206,7 @@
       "description": "自定义域名"
     },
     "billing": {
-      "title": "账单",
+      "title": "账单与用量",
       "description": "用量与套餐"
     }
   }

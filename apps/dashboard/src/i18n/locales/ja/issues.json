@@ -1,0 +1,92 @@
+{
+  "title": "問題",
+  "subtitle": "プロジェクト・サーバー・ドメイン全体でOpenshipが検出した問題の一覧です。",
+  "tabs": {
+    "open": "未解決",
+    "resolved": "解決済み"
+  },
+  "resolvedNote": "履歴はコンテナとサーバーのインシデントのみを対象としています。他のチェックは現在の状態を報告するため、証明書やデプロイが修復されると単に表示されなくなります。",
+  "rescan": "再スキャン",
+  "rescanning": "スキャン中",
+  "filters": {
+    "searchPlaceholder": "問題を検索",
+    "all": "すべて",
+    "outage": "停止中",
+    "action_required": "対応が必要",
+    "advisory": "参考情報",
+    "clear": "フィルターをクリア"
+  },
+  "scopes": {
+    "platform": "Openship",
+    "server": "サーバー",
+    "project": "プロジェクト",
+    "domain": "ドメイン"
+  },
+  "scopeSubtitles": {
+    "platform": "このインストール自体",
+    "server": "ワークロードが動作しているマシン",
+    "project": "デプロイ済みのプロジェクトとそのコンテナ",
+    "domain": "カスタムホスト名と証明書"
+  },
+  "kinds": {
+    "deploy_blocked": "デプロイがブロックされました",
+    "prompt": "判断を待っています",
+    "partial_decision": "部分的なリリース",
+    "routing_unsynced": "ルーティングが未同期",
+    "domain_unverified": "ドメインが未確認",
+    "ssl_error": "証明書の問題",
+    "port_advisory": "ポートに関する注意",
+    "workload_unhealthy": "ヘルスチェックが失敗しています",
+    "workload_crash_loop": "クラッシュループ中",
+    "workload_down": "コンテナが停止しています",
+    "server_unreachable": "サーバーに接続できません",
+    "edge_down": "エッジが停止しています",
+    "edge_absent": "エッジが未インストール",
+    "mail_down": "メールエンジンが停止しています",
+    "update_available": "更新があります",
+    "component_behind": "コンポーネントの更新があります"
+  },
+  "since": "{when}に開始",
+  "resolvedWhen": "{when}に解決",
+  "expiresIn": "{n}分後に中止されます",
+  "view": "表示",
+  "fix": "修復",
+  "install": "インストール",
+  "update": "更新",
+  "mailSetup": "メール設定",
+  "selfUpdateNote": "このインストールはコマンドラインから自身を更新します。",
+  "empty": {
+    "openTitle": "対応が必要なものはありません",
+    "openBody": "ブロックされたデプロイや保留中のデプロイも、証明書やドメインの問題も、更新の遅れも、誤ったポートで動いているものもありません。チェックはバックグラウンドで動き続けます。",
+    "resolvedTitle": "解決済みのインシデントはありません",
+    "resolvedBody": "コンテナとサーバーのインシデントは復旧するとここに表示され、30日間保持されます。",
+    "filteredTitle": "一致するものがありません",
+    "filteredBody": "未解決の問題はありますが、このフィルターに一致するものはありません。"
+  },
+  "summary": {
+    "title": "概要",
+    "subtitle": "状態をひと目で",
+    "totalOpen": "未対応",
+    "totalResolved": "解決済み",
+    "bySeverity": "深刻度別",
+    "byArea": "領域別"
+  },
+  "home": {
+    "attentionTitle": "対応が必要",
+    "attentionSubtitle": "何かが壊れているか、判断を待っています",
+    "updatesTitle": "更新があります",
+    "updatesSubtitle": "適用できる新しいリリースがあります",
+    "more": "他{n}件",
+    "hide": "変化があるまで非表示"
+  },
+  "loadFailed": "問題を読み込めませんでした",
+  "toast": {
+    "title": "問題",
+    "rescanned": "再スキャンが完了しました",
+    "rescanPartial": "再スキャンが完了しました（{n}件のチェックが失敗）",
+    "rescanFailed": "再スキャンに失敗しました",
+    "resolved": "完了",
+    "resolveFailed": "この修復を適用できませんでした",
+    "confirmDestructive": "この操作には取り消せない副作用があります。続行しますか？"
+  }
+}

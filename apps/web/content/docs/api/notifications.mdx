@@ -51,8 +51,12 @@ Send a personal access token as a bearer header (`Authorization: Bearer <token>`
 
 Categories are the stable, user-facing event groups (e.g. `deploy.failed`, `backup.failed`,
 `domain.expiring`) that subscriptions and defaults key off. They live in code, not the database, so `GET
-/api/notifications/categories` is a static registry — each entry has an `id`, `label`, `description`, and
-`defaultEnabled`.
+/api/notifications/categories` is a static registry — each entry has an `id`, `group`, `label`,
+`description`, and `defaultEnabled`.
+
+The response also carries a `groups` array (`{ id, label }`, already in display order) that the categories'
+`group` field points into — `deployment`, `app_health`, `backups`, `jobs`, `domains`, `members`, `billing`.
+The `billing` group and its categories are omitted outside Openship Cloud, where nothing can fire them.
 
 ```bash
 curl https://your-host/api/notifications/categories \
@@ -62,7 +66,7 @@ curl https://your-host/api/notifications/categories \
 ## Create a channel
 
 A channel is a destination. The `config` object is shape-checked per `kind`; secrets in it (webhook signing
-keys, Slack URLs) are stored encrypted and never returned in full.
+keys, Slack URLs, Telegram bot tokens) are stored encrypted and never returned in full.
 
 ```
 POST /api/notifications/channels
@@ -71,7 +75,7 @@ POST /api/notifications/channels
 <TypeTable
   type={{
     kind: {
-      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams"',
+      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams" | "telegram"',
       description: "The channel type. Any other value is rejected.",
       required: true,
     },
@@ -118,6 +122,20 @@ The `config` shape depends on `kind`:
       type: "string",
       description: 'A Microsoft Teams incoming-webhook URL. Required for kind "msteams".',
     },
+    "telegram.botToken": {
+      type: "string",
+      description:
+        'A BotFather token in <id>:<secret> form. Required for kind "telegram". Stored encrypted; responses only report botTokenConfigured plus the public botId.',
+    },
+    "telegram.chatId": {
+      type: "string",
+      description:
+        'The destination chat: a numeric id (negative for groups/supergroups) or @publicchannel. Required for kind "telegram".',
+    },
+    "telegram.messageThreadId": {
+      type: "string",
+      description: "Optional forum topic id, to post into one thread of a supergroup.",
+    },
   }}
 />
 
@@ -125,6 +143,13 @@ The `config` shape depends on `kind`:
   In Teams, create a **Workflow** with the **"When a Teams webhook request is received"** trigger
   and use the URL it generates. Legacy `webhook.office.com` connector URLs are also accepted. The
   URL is stored encrypted and comes back as `webhookUrlConfigured` in responses, never in full.
+</Callout>
+
+<Callout title="Getting a Telegram bot token and chat id" type="info">
+  Message **@BotFather** → `/newbot` for the token. A bot can only write to a chat that has already
+  started it, so send the bot a message (or add it to your group) first. For the chat id, call
+  `https://api.telegram.org/bot<token>/getUpdates` and read `result[].message.chat.id` — group ids
+  are negative. Editing a Telegram channel without resending `botToken` keeps the stored one.
 </Callout>
 
 ```bash
@@ -219,7 +244,7 @@ PUT /api/notifications/defaults
       required: true,
     },
     defaultChannelKind: {
-      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams"',
+      type: '"email" | "webhook" | "in_app" | "slack" | "discord" | "msteams" | "telegram"',
       description: "Which channel kind the default routes to.",
       default: '"email"',
     },
@@ -259,11 +284,12 @@ curl "https://your-host/api/notifications/deliveries?unseen=true&limit=20" \
 ## Errors you might see
 
 <Callout title="400 — invalid channel or missing fields" type="warn">
-  The `kind` isn't one of `email`/`webhook`/`in_app`/`slack`/`discord`/`msteams`, `label` is
-  missing, or the `config` failed its per-kind check (a malformed email, a non-`http(s)` webhook
+  The `kind` isn't one of `email`/`webhook`/`in_app`/`slack`/`discord`/`msteams`/`telegram`, `label`
+  is missing, or the `config` failed its per-kind check (a malformed email, a non-`http(s)` webhook
   URL, a Slack URL that isn't `https://hooks.slack.com/...`, a Discord URL that isn't
-  `https://discord.com/api/webhooks/...`, or a Teams URL that isn't an https Workflow or
-  `webhook.office.com` URL). Subscriptions need `category`, `channelId`, and a boolean `enabled`;
+  `https://discord.com/api/webhooks/...`, a Teams URL that isn't an https Workflow or
+  `webhook.office.com` URL, or a Telegram token/chat id that isn't in `<id>:<secret>` /
+  numeric-or-`@name` form). Subscriptions need `category`, `channelId`, and a boolean `enabled`;
   defaults need `category` and a boolean `defaultEnabled`.
 </Callout>
 

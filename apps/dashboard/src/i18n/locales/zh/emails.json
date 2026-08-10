@@ -3,6 +3,7 @@
     "title": "邮件服务器",
     "subtitle": "几次点击即可搭建自托管邮件服务器",
     "backToServers": "返回邮件服务器",
+    "backToAdmin": "返回邮件管理",
     "addServer": "添加邮件服务器",
     "removeModal": {
       "title": "移除此邮件服务器？",

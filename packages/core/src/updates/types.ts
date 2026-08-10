@@ -33,10 +33,35 @@ export interface AdvisoryTarget {
   id?: string;
 }
 
+/**
+ * Which kind of install an advisory applies to.
+ *
+ *   desktop     the Electron app (its own installer + in-app updater)
+ *   selfhosted  a server/VPS install (compose or bare), updated by the operator
+ *   cloud       the managed SaaS — nothing for a user to update
+ *
+ * A release usually only matters to some of these: a desktop installer fix is
+ * noise on a VPS, and an edge/OpenResty fix is noise in the desktop app. An
+ * advisory with no `modes` applies to ALL of them (the legacy default, so
+ * existing manifests keep working).
+ */
+export type AdvisoryMode = "desktop" | "selfhosted" | "cloud";
+
+export const ADVISORY_MODES: readonly AdvisoryMode[] = ["desktop", "selfhosted", "cloud"];
+
 export interface Advisory {
   /** Stable id — used for per-advisory dismissal. */
   id: string;
   severity: AdvisorySeverity;
+  /**
+   * THE interrupt gate, declared by the advisory itself: may this one pull the
+   * user out of what they're doing (desktop launch modal, notification), or is
+   * it in-app surfaces only? `severity` is how LOUD the banner is; `announce` is
+   * whether we're allowed to interrupt — two different decisions, so this is an
+   * explicit key rather than something each client re-derives from severity.
+   * `parseManifest` always fills it in, so consumers just read it.
+   */
+  announce: boolean;
   /** Version range this targets, e.g. "<=0.1.8" or ">=0.1.0 <0.1.9". */
   affects: string;
   title: string;
@@ -44,6 +69,12 @@ export interface Advisory {
   action?: AdvisoryAction;
   /** Optional scope. Absent = platform-wide (the legacy default). */
   target?: AdvisoryTarget;
+  /**
+   * Install kinds this applies to. Absent/empty = every mode (legacy default).
+   * Filtered client-side by `matchAdvisories`, so a desktop-only advisory never
+   * reaches a VPS dashboard and vice versa.
+   */
+  modes?: AdvisoryMode[];
 }
 
 export interface AdvisoryManifest {

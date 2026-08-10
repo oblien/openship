@@ -21,8 +21,14 @@ import {
   type DeploymentMeta,
 } from "../../lib/deployment-runtime";
 import { resolveOrgCloudUserId } from "../../lib/cloud/transport";
+import { computeCleanupKeepSet } from "./cleanup-keep-set";
 import { buildServiceRouteDomain } from "../../lib/routing-domains";
 import { createReachabilityProbe } from "../../lib/server-reachability";
+import { resolveLiveServiceState, type LiveMatchKind } from "../services/live-state";
+
+/** Identity keys a DELETE may act on: each one proves the container is this
+ *  project's. Deliberately excludes `compose` (see ResolveLiveStateInput.tiers). */
+const TEARDOWN_MATCH_TIERS: readonly LiveMatchKind[] = ["label", "name", "trackedId"];
 
 /** Hard ceiling on a docker-over-SSH volume inspect during manifest/preview.
  *  These calls `.catch(() => [])` on ERROR, but a half-open SSH socket never
@@ -326,6 +332,71 @@ export async function collectProjectManifest(
     }
   }
 
+  // ── Adopted-container sweep (identity-based, not label-based) ─────
+  // A migration can adopt a container IN PLACE, and docker labels are immutable
+  // in place — so it still carries the PREVIOUS project's `openship.project` and
+  // is invisible to the label sweep above. Its DB row can also point at an id a
+  // redeploy replaced. Either way the container survived a "delete everything"
+  // teardown, kept its volumes, and then fought the next deploy for its ports.
+  // Resolve by the SAME identity chain the live-state read uses (canonical
+  // `openship-<slug>-<svc>` name / compose labels / tracked id), so teardown
+  // reclaims exactly what the Services panel can see. Deduped by pushContainer.
+  const ownServices = await repos.service.listByProject(project.id).catch(() => []);
+  if (ownServices.length > 0) {
+    const targets = ownServices.map((s) => ({ id: s.id, name: s.name }));
+    for (const docker of sweepRuntimes) {
+      if (!docker.supports("hostContainerQuery") || !docker.listAllContainers) continue;
+      const containers = await withTimeout(
+        docker.listAllContainers(),
+        INSPECT_TIMEOUT_MS,
+        `sweep host containers ${project.id}`,
+      ).catch(() => [] as Awaited<ReturnType<DockerRuntime["listAllContainers"]>>);
+      if (containers.length === 0) continue;
+      const matches = resolveLiveServiceState({
+        services: targets,
+        live: containers,
+        projectId: project.id,
+        slug: project.slug,
+        // OWNERSHIP-PROVING keys only. The `compose` key matches on
+        // `com.docker.compose.project === slug`, which for a migration that KEPT
+        // its source would also match the ORIGINAL stack still running under that
+        // name — destroying containers and volumes the operator chose to keep.
+        tiers: TEARDOWN_MATCH_TIERS,
+      });
+      for (const match of matches.values()) {
+        if (!match.containerId) continue;
+        await pushVolumesForContainer(match.containerId, docker, "adopted");
+        pushContainer(match.containerId, docker, "adopted container");
+      }
+    }
+  }
+
+  // ── Orphan image sweep (label-based, authoritative per host) ──────
+  // Reclaim images labeled `openship.project=<id>` that NO DB row references —
+  // e.g. a service was deleted (its imageRef row cascade-dropped) or a build
+  // crashed after `docker build` but before persisting imageRef. The DB-tracked
+  // pushes above miss these; this label sweep is the authoritative backstop on
+  // hard delete. Deduped via `seenImages`. Base/third-party images are PULLED
+  // (unlabeled) so they can never be selected. Best-effort + bounded.
+  for (const docker of sweepRuntimes) {
+    const imgs = await withTimeout(
+      docker.listProjectImages(project.id),
+      INSPECT_TIMEOUT_MS,
+      `sweep images ${project.id}`,
+    ).catch(() => [] as Awaited<ReturnType<DockerRuntime["listProjectImages"]>>);
+    for (const img of imgs) {
+      const ref = img.repoTags[0] ?? img.id; // readable tag if present, else id
+      if (seenImages.has(ref) || seenImages.has(img.id)) continue;
+      seenImages.add(ref);
+      resources.push({
+        type: "image",
+        ref,
+        label: `orphan image ${ref.slice(0, 24)}`,
+        runtime: docker,
+      });
+    }
+  }
+
   // ── Cloud workspace (the canonical Oblien binding) ────────────────
   // `project.cloudWorkspaceId` is the CURRENT workspace this project
   // deploys to. Deployment rows may reference OLD workspaces (re-provisioned)
@@ -470,7 +541,12 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
   const previewServices: DeletionPreviewService[] = [];
   const deploymentVolumes: string[] = [];
   const networkSlugs = new Set<string>();
-  let selfHosted = false;
+  // Self-hosted is a STATIC fact of the project (anything not cloud-managed), not
+  // something to infer from a live runtime probe: an imported/migrated project on
+  // an unreachable server would otherwise resolve to `false` and hide the
+  // record-only ("Remove from Openship") delete — exactly when it's most useful.
+  // The loop below only strengthens (never un-sets) this.
+  let selfHosted = !project.cloudWorkspaceId;
 
   // Map service id → its container id (most recent deployment wins, which
   // matches the order rows come back in). We resolve volumes per container.
@@ -504,6 +580,36 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
     for (const sd of serviceRows) {
       if (sd.containerId && !serviceContainerByServiceId.has(sd.serviceId)) {
         serviceContainerByServiceId.set(sd.serviceId, { containerId: sd.containerId, runtime });
+      }
+    }
+
+    // Repair the map against the HOST: an adopted container (foreign labels) or
+    // one a redeploy replaced isn't the id the rows name, and the preview would
+    // then show "no container / no volumes" for a service whose volumes the
+    // teardown sweep goes on to delete. The confirmation must not understate the
+    // blast radius, so identity is resolved the same way everywhere.
+    if (runtime instanceof DockerRuntime && runtime.supports("hostContainerQuery")) {
+      const containers = await withTimeout(
+        runtime.listAllContainers(),
+        INSPECT_TIMEOUT_MS,
+        `preview host containers ${project.id}`,
+      ).catch(() => [] as Awaited<ReturnType<DockerRuntime["listAllContainers"]>>);
+      if (containers.length > 0) {
+        const matches = resolveLiveServiceState({
+          services: services.map((s) => ({ id: s.id, name: s.name })),
+          live: containers,
+          projectId: project.id,
+          slug: project.slug,
+          trackedIds: Object.fromEntries(serviceRows.map((sd) => [sd.serviceId, sd.containerId])),
+          // Same restriction as the teardown sweep below — the preview must list
+          // exactly what the delete will touch, never more.
+          tiers: TEARDOWN_MATCH_TIERS,
+        });
+        for (const [serviceId, match] of matches) {
+          if (match.containerId) {
+            serviceContainerByServiceId.set(serviceId, { containerId: match.containerId, runtime });
+          }
+        }
       }
     }
   }
@@ -540,13 +646,37 @@ export async function previewProjectDeletion(project: Project): Promise<Deletion
   };
 }
 
+export interface DeploymentCleanupOpts {
+  /**
+   * Skip artifacts a LIVE or RETAINED release still needs (D3).
+   *
+   * Required, not optional: a compose service that didn't change carries its
+   * `containerId` / `imageRef` verbatim onto the next release's row, so every
+   * per-deployment teardown is one decision away from destroying another
+   * release's running container. A caller has to say which it wants.
+   *
+   * ON for delete / reject / build-cancel — those remove ONE release and the
+   * project keeps running. OFF only for a whole-project teardown, which is
+   * meant to remove everything (and builds its manifest elsewhere anyway).
+   */
+  protectRetained: boolean;
+  /**
+   * A release that must survive even if it isn't flagged active yet. Reject
+   * passes the predecessor it just asked to restore — that restore only
+   * ENQUEUES a deploy, so the active pointer can still name the deployment
+   * being rejected when this runs.
+   */
+  alsoProtectDeploymentId?: string | null;
+}
+
 /**
  * Collect resources for a single deployment.
- * Used by deployment.service.ts deleteDeployment().
+ * Used by deleteDeployment(), rejectDeployment() and cancelBuildSession().
  */
 export async function collectDeploymentManifest(
   dep: Deployment,
-  _project: Project | null,
+  project: Project | null,
+  opts: DeploymentCleanupOpts,
 ): Promise<CleanupManifest> {
   const resources: CleanupResource[] = [];
   const serviceRows = await repos.service.listByDeployment(dep.id).catch(() => []);
@@ -563,6 +693,31 @@ export async function collectDeploymentManifest(
     ),
   ];
 
+  // A project-less deployment has no retained releases to protect, so the keep
+  // set is empty by definition rather than unavailable.
+  const keep =
+    opts.protectRetained && project
+      ? await computeCleanupKeepSet(project, {
+          excludeDeploymentId: dep.id,
+          alsoProtectDeploymentId: opts.alsoProtectDeploymentId,
+        }).catch((err) => {
+          // Fail CLOSED: an unresolvable keep set must not license destroying a
+          // live release. Cleanup is retried by the image GC sweep; a deleted
+          // container is not.
+          console.error(`[CLEANUP] ${dep.id}: keep set failed, protecting everything:`, err);
+          return null;
+        })
+      : { images: new Set<string>(), containers: new Set<string>() };
+  const skip = (kind: "container" | "image", ref: string): boolean => {
+    if (!keep) return true;
+    const held = kind === "container" ? keep.containers : keep.images;
+    if (!held.has(ref)) return false;
+    console.log(
+      `[CLEANUP] ${dep.id}: keeping ${kind} ${ref.slice(0, 24)} — a live or retained release still references it`,
+    );
+    return true;
+  };
+
   // Resolve the runtime once. Anything below this point that depends on the
   // runtime (containers, images) only fires when the runtime is reachable.
   let runtime: RuntimeAdapter | null = null;
@@ -573,6 +728,7 @@ export async function collectDeploymentManifest(
   }
 
   for (const containerId of containerIds) {
+    if (skip("container", containerId)) continue;
     resources.push({
       type: "container",
       ref: containerId,
@@ -589,6 +745,7 @@ export async function collectDeploymentManifest(
     const pushImage = (ref: string | null | undefined, label: string) => {
       if (!ref || seenImages.has(ref)) return;
       seenImages.add(ref);
+      if (skip("image", ref)) return;
       resources.push({ type: "image", ref, label, runtime });
     };
     pushImage(dep.imageRef, `image ${(dep.imageRef ?? "").slice(0, 24)}`);

@@ -35,6 +35,10 @@
         "backToDashboard": "返回仪表板",
         "createNewProject": "创建新项目"
       },
+      "loadFailed": {
+        "title": "无法加载此项目",
+        "subtitle": "访问此项目时出现问题。请检查网络连接后重试。"
+      },
       "accessDenied": {
         "title": "拒绝访问",
         "subtitle": "你没有访问此资源的权限。",
@@ -205,7 +209,8 @@
   "routing": {
     "domainSwitcher": {
       "notConfigured": "未配置",
-      "selectDomain": "选择域名"
+      "selectDomain": "选择域名",
+      "allDomains": "所有域名"
     },
     "publicEndpoints": {
       "mappedToPort": "已映射到端口 {port}。",
@@ -236,7 +241,39 @@
       "permanent": "永久",
       "cleanUrls": "简洁 URL",
       "cleanUrlsHint": "（去除 .html）",
-      "trailingSlash": "尾部斜杠"
+      "trailingSlash": "尾部斜杠",
+      "proxyLimits": "请求限制",
+      "proxyLimitsHint": "上传大小与超时时间。留空则使用代理默认值——上传 1 MB、超时 60s。",
+      "maxBodySize": "最大上传大小",
+      "maxBodySizeHint": "例如 25m。超出的请求会返回 413。默认 1m。",
+      "readTimeout": "读取超时",
+      "readTimeoutHint": "例如 300s。等待应用响应的时长。默认 60s。",
+      "sendTimeout": "发送超时",
+      "sendTimeoutHint": "例如 300s。向应用发送数据时的等待时长。默认 60s。",
+      "bodyTimeout": "上传超时",
+      "bodyTimeoutHint": "例如 300s。大文件上传时也要调高，否则会在传输中途中断。默认 60s。",
+      "proxyBuffering": "缓冲响应",
+      "proxyBufferingHint": "（流式传输 / SSE 请关闭）",
+      "gzip": "压缩响应",
+      "gzipHint": "（对文本、JSON、JS、CSS 使用 gzip）",
+      "proxyGroups": {
+        "body": "请求体",
+        "timeouts": "上游超时",
+        "buffering": "响应缓冲",
+        "compression": "压缩",
+        "headers": "请求头与协议",
+        "upstreamTls": "到应用的 TLS"
+      },
+      "proxyInherit": "nginx 默认值",
+      "proxyNotSet": "未设置",
+      "proxyLiveLabel": "正在提供:",
+      "proxyLiveVaries": "各主机不同",
+      "proxyDrift": "与已保存值不一致",
+      "proxyDriftSummary": "边缘代理正在为以下项提供不同的值:",
+      "proxyAdoptLive": "采用当前生效的值",
+      "proxyLiveUnavailable": "无法读取该项目服务器上的当前配置。",
+      "proxyLiveSource": "读取自:",
+      "proxyRefreshLive": "重新读取当前配置"
     },
     "settingsCard": {
       "recordLabels": {
@@ -254,6 +291,11 @@
       "checkingDns": "正在检查 DNS……",
       "addRecordHint": "添加一条 {primary} 记录和一条 {txt} 记录",
       "viewRecords": "查看记录",
+      "redirectTo": "重定向",
+      "redirectServeApp": "在此提供应用",
+      "redirectToHost": "→ {hostname}",
+      "redirectPermanent": "301 永久",
+      "redirectTemporary": "302 临时",
       "exposedPort": "暴露的端口",
       "staticPath": "静态路径",
       "staticPathHint": "从构建输出内的此子目录提供文件。使用 {path} 表示根输出目录。",
