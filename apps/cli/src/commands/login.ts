@@ -3,19 +3,23 @@ import chalk from "chalk";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { LOCAL_API_URL, LOCAL_DASHBOARD_URL } from "@repo/core";
-import { addContext, DEFAULT_CONTEXT, setActiveContext } from "../lib/config";
+import { addContext, DEFAULT_CONTEXT, getContext, setActiveContext } from "../lib/config";
 import { fetchCaps } from "../lib/caps";
 
 export const loginCommand = new Command("login")
   .description("Authenticate with a Personal Access Token (create one in dashboard Settings)")
   .option("--token <token>", "Personal Access Token (opsh_pat_...) for non-interactive login")
-  .option("--api-url <url>", "API base URL", LOCAL_API_URL)
-  .option("--dashboard-url <url>", "Dashboard base URL", LOCAL_DASHBOARD_URL)
+  .option("--api-url <url>", "API base URL (default: the context's saved URL, else http://localhost:4000)")
+  .option("--dashboard-url <url>", "Dashboard base URL (default: the context's saved URL, else http://localhost:3000)")
   .option("--context <name>", "Name of the context to store this login under", DEFAULT_CONTEXT)
   .action(async (opts) => {
-    const apiUrl: string = opts.apiUrl || LOCAL_API_URL;
-    const dashboardUrl: string = opts.dashboardUrl || LOCAL_DASHBOARD_URL;
     const contextName: string = opts.context || DEFAULT_CONTEXT;
+    // Re-authing an existing context must NOT reset its endpoints. Only override
+    // when the flag is explicitly passed; otherwise keep the saved URL (falling
+    // back to localhost for a brand-new context).
+    const existing = getContext(contextName);
+    const apiUrl: string = opts.apiUrl || existing.apiUrl || LOCAL_API_URL;
+    const dashboardUrl: string = opts.dashboardUrl || existing.dashboardUrl || LOCAL_DASHBOARD_URL;
 
     let token: string | undefined = opts.token;
 
