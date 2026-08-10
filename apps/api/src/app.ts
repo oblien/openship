@@ -196,6 +196,17 @@ setupWebSocket(app);
   app.route("/api/services/terminal", serviceTerminalRoutes);
 }
 
+/* ---------- Service files (both modes) ---------- */
+//
+// Read-only browsing of a service's own filesystem. Same runtime selection and
+// same admin gate as the terminal above — see service-files.routes.ts.
+{
+  const { serviceFilesRoutes } = await import(
+    "./modules/service-files/service-files.routes"
+  );
+  app.route("/api/services/files", serviceFilesRoutes);
+}
+
 /* ---------- Cloud-only routes (gated by CLOUD_MODE) ---------- */
 if (env.CLOUD_MODE) {
   const { cloudSaasRoutes } = await import("./modules/cloud/cloud-saas.routes");

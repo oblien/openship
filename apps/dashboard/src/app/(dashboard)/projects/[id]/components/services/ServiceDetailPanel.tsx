@@ -36,6 +36,7 @@ import {
   Settings,
   Trash2,
   DatabaseBackup,
+  FolderTree,
   PlayCircle,
   Plus,
   LayoutDashboard,
@@ -48,6 +49,7 @@ import { backupsApi, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
 import { ServiceTerminal } from "@/components/terminal/ServiceTerminal";
+import { ServiceFiles } from "@/components/files/ServiceFiles";
 import { useTheme } from "@/components/theme-provider";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import DropdownMenu from "@/components/ui/DropdownMenu";
@@ -58,10 +60,13 @@ import { endpoints } from "@/lib/api/endpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 
-type ServiceTab = "overview" | "terminal" | "logs" | "env" | "settings" | "backup";
+type ServiceTab = "overview" | "terminal" | "files" | "logs" | "env" | "settings" | "backup";
 const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "terminal", label: "Terminal", icon: Terminal },
+  // Sits next to Terminal on purpose: same reach, same server-side gate — one
+  // is the shell, the other is the browser over the same filesystem.
+  { key: "files", label: "Files", icon: FolderTree },
   { key: "logs", label: "Logs", icon: ScrollText },
   { key: "env", label: "Environment", icon: Variable },
   { key: "settings", label: "Settings", icon: Settings },
@@ -750,6 +755,11 @@ export function ServiceDetailPanel({
             {t.projectDetail.services.detail.startShellHint}
           </div>
         ))}
+
+      {/* ── Files ──────────────────────────────────────────────── */}
+      {/* Opens at the container root: the dashboard has no reliable read on a
+          service's WORKDIR, and guessing wrong strands the user in a 404. */}
+      {activeTab === "files" && <ServiceFiles serviceId={service.id} initialPath="/" />}
 
       {/* ── Logs ───────────────────────────────────────────────── */}
       {activeTab === "logs" && (

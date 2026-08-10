@@ -138,6 +138,7 @@
 			"tabs": {
 				"overview": "Übersicht",
 				"terminal": "Terminal",
+				"files": "Dateien",
 				"logs": "Protokolle",
 				"env": "Umgebung",
 				"settings": "Einstellungen",
@@ -209,7 +210,20 @@
 				"backupRunFailed": "Backup-Ausführung fehlgeschlagen"
 			},
 			"duplicateContainers": "Ein weiterer Container passt ebenfalls zu diesem Service: {names}",
-			"editInSettings": "In Einstellungen bearbeiten"
+			"editInSettings": "In Einstellungen bearbeiten",
+			"files": {
+				"loading": "Wird geladen…",
+				"empty": "Dieser Ordner ist leer",
+				"selectPrompt": "Wählen Sie eine Datei zur Vorschau",
+				"download": "Herunterladen",
+				"binary": "Binärdatei ({size}) — zum Ansehen herunterladen",
+				"loadFailed": "Ordner konnte nicht geöffnet werden",
+				"readFailed": "Datei konnte nicht geöffnet werden",
+				"refresh": "Aktualisieren",
+				"back": "Zurück",
+				"downloadFailed": "Download fehlgeschlagen",
+				"truncated": "Die ersten {limit} Einträge werden angezeigt — dieser Ordner enthält mehr."
+			}
 		},
 		"settingsForm": {
 			"name": "Name",
